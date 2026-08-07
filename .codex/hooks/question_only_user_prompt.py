@@ -5,6 +5,11 @@ import sys
 from pathlib import Path
 
 STATE_ROOT = Path("/tmp/codex-question-only-policy")
+QUESTION_ONLY_ADDITIONAL_CONTEXT = (
+    "This prompt is question-only. Answer directly. Research tools, web research, "
+    "and local read-only file inspection are allowed when useful for answering. "
+    "Do not make changes unless the user explicitly asks for them."
+)
 
 ACTION_WORD_PATTERN = re.compile(
     r"\b("
@@ -59,10 +64,7 @@ def main() -> int:
         output = {
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
-                "additionalContext": (
-                    "This prompt is question-only. Answer directly. Do not run tools "
-                    "or make changes unless the user explicitly asks for it."
-                ),
+                "additionalContext": QUESTION_ONLY_ADDITIONAL_CONTEXT,
             }
         }
         print(json.dumps(output))

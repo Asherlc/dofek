@@ -18,8 +18,6 @@ export function ProviderStatsBreakdown({
   const total = providerStatsTotal(stats);
   const breakdown = providerStatsBreakdown(stats);
 
-  if (total === 0) return null;
-
   if (variant === "full") {
     return (
       <section className="card p-4">
@@ -30,12 +28,12 @@ export function ProviderStatsBreakdown({
           <span className="text-sm text-subtle">total records</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {breakdown.map((b) => (
-            <div key={b.label} className="text-center">
+          {breakdown.map((stat) => (
+            <div key={stat.label} className="text-center">
               <div className="text-lg font-semibold text-foreground tabular-nums">
-                {b.count.toLocaleString()}
+                {stat.count.toLocaleString()}
               </div>
-              <div className="text-xs text-subtle">{b.label}</div>
+              <div className="text-xs text-subtle">{stat.label}</div>
             </div>
           ))}
         </div>
@@ -51,16 +49,14 @@ export function ProviderStatsBreakdown({
         </span>
         <span className="text-xs text-subtle">records</span>
       </div>
-      {breakdown.length > 1 && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
-          {breakdown.map((b) => (
-            <div key={b.label} className="flex justify-between text-xs">
-              <span className="text-subtle">{b.label}</span>
-              <span className="text-muted tabular-nums">{b.count.toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
+        {breakdown.map((stat) => (
+          <div key={stat.label} className="flex justify-between text-xs">
+            <span className="text-subtle">{stat.label}</span>
+            <span className="text-muted tabular-nums">{stat.count.toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

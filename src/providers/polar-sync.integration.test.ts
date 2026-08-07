@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -13,6 +13,11 @@ import type {
   PolarNightlyRecharge,
   PolarSleep,
 } from "./polar/types.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
+
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 function fakePolarExercise(overrides: Partial<PolarExercise> = {}): PolarExercise {
   return {
@@ -58,12 +63,15 @@ function fakePolarSleep(overrides: Partial<PolarSleep> = {}): PolarSleep {
 function fakePolarDailyActivity(overrides: Partial<PolarDailyActivity> = {}): PolarDailyActivity {
   return {
     polar_user: "https://www.polaraccesslink.com/v3/users/12345",
-    date: "2026-03-01",
-    created: "2026-03-01T23:59:00Z",
+    start_time: "2026-03-01T08:00:00",
+    end_time: "2026-03-01T23:59:59",
+    active_duration: "PT3H11M",
+    inactive_duration: "PT18H23M30S",
+    daily_activity: 89.1,
     calories: 2400,
     active_calories: 850,
     duration: "PT14H30M",
-    active_steps: 11200,
+    steps: 11200,
     ...overrides,
   };
 }
@@ -113,17 +121,17 @@ function polarHandlers(opts?: {
     }),
 
     // Sleep
-    http.get("https://www.polaraccesslink.com/v3/sleep", () => {
-      return HttpResponse.json(sleep);
+    http.get("https://www.polaraccesslink.com/v3/users/sleep", () => {
+      return HttpResponse.json({ nights: sleep });
     }),
 
     // Nightly recharge
-    http.get("https://www.polaraccesslink.com/v3/nightly-recharge", () => {
-      return HttpResponse.json(nightlyRecharge);
+    http.get("https://www.polaraccesslink.com/v3/users/nightly-recharge", () => {
+      return HttpResponse.json({ recharges: nightlyRecharge });
     }),
 
     // Daily activity
-    http.get("https://www.polaraccesslink.com/v3/activity", () => {
+    http.get("https://www.polaraccesslink.com/v3/users/activities", () => {
       return HttpResponse.json(dailyActivity);
     }),
 
@@ -165,6 +173,7 @@ describe("PolarProvider.sync() (integration)", () => {
 
   afterEach(() => {
     server.resetHandlers();
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterAll(async () => {
@@ -202,10 +211,19 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("polar");
     expect(result.errors).toHaveLength(0);
+    // duration is elapsed wall-clock (Date.now() - startTime), not Date.now() + startTime
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
 
     // Verify exercises -> activity
     const activityRows = await ctx.db
@@ -216,12 +234,12 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const run = activityRows.find((r) => r.externalId === "ex-1001");
     if (!run) throw new Error("expected exercise ex-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Running");
 
     const ride = activityRows.find((r) => r.externalId === "ex-1002");
     if (!ride) throw new Error("expected exercise ex-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
 
     // Verify sleep
     const sleepRows = await ctx.db
@@ -235,6 +253,7 @@ describe("PolarProvider.sync() (integration)", () => {
     expect(sleepRecord.deepMinutes).toBe(85);
     expect(sleepRecord.lightMinutes).toBe(220);
     expect(sleepRecord.remMinutes).toBe(100);
+    expect(sleepRecord.stagingAvailable).toBe(true);
     expect(sleepRecord.awakeMinutes).toBe(40);
 
     // Verify daily metrics (with nightly recharge data merged)
@@ -247,8 +266,6 @@ describe("PolarProvider.sync() (integration)", () => {
     const daily = dailyRows[0];
     if (!daily) throw new Error("expected daily metrics");
     expect(daily.steps).toBe(11200);
-    expect(daily.activeEnergyKcal).toBe(850);
-    expect(daily.restingHr).toBe(52);
     expect(daily.hrv).toBeCloseTo(48.5);
     expect(daily.respiratoryRateAvg).toBeCloseTo(14.8);
   });
@@ -267,7 +284,12 @@ describe("PolarProvider.sync() (integration)", () => {
     server.use(
       ...polarHandlers({
         dailyActivity: [
-          fakePolarDailyActivity({ date: "2026-03-05", active_steps: 8500, active_calories: 600 }),
+          fakePolarDailyActivity({
+            start_time: "2026-03-05T08:00:00",
+            end_time: "2026-03-05T23:59:59",
+            steps: 8500,
+            active_calories: 600,
+          }),
         ],
         nightlyRecharge: [], // No recharge data
       }),
@@ -275,7 +297,13 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -286,8 +314,30 @@ describe("PolarProvider.sync() (integration)", () => {
     const march5 = dailyRows.find((r) => r.date === "2026-03-05");
     if (!march5) throw new Error("expected daily metrics for 2026-03-05");
     expect(march5.steps).toBe(8500);
-    expect(march5.restingHr).toBeNull();
     expect(march5.hrv).toBeNull();
+  });
+
+  it("syncs successfully when optional sync options are omitted", async () => {
+    await saveTokens(ctx.db, "polar", {
+      accessToken: "valid-polar-token",
+      refreshToken: "valid-polar-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "accesslink.read_all",
+    });
+
+    server.use(...polarHandlers());
+
+    const provider = new PolarProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.provider).toBe("polar");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -309,8 +359,20 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -348,7 +410,13 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -358,12 +426,89 @@ describe("PolarProvider.sync() (integration)", () => {
     expect(activityRows[0]?.externalId).toBe("ex-new");
   });
 
+  it("includes records on sync window boundaries and skips records outside them", async () => {
+    await saveTokens(ctx.db, "polar", {
+      accessToken: "valid-polar-token",
+      refreshToken: "valid-polar-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "accesslink.read_all",
+    });
+
+    await ctx.db.delete(activity).where(eq(activity.providerId, "polar"));
+    await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "polar"));
+    await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "polar"));
+
+    server.use(
+      ...polarHandlers({
+        exercises: [
+          fakePolarExercise({ id: "ex-before", start_time: "2026-03-09T23:59:59.999Z" }),
+          fakePolarExercise({ id: "ex-at-since", start_time: "2026-03-10T00:00:00.000Z" }),
+          fakePolarExercise({ id: "ex-at-until", start_time: "2026-03-12T00:00:00.000Z" }),
+          fakePolarExercise({ id: "ex-after", start_time: "2026-03-12T00:00:00.001Z" }),
+        ],
+        sleep: [
+          fakePolarSleep({ date: "2026-03-09", sleep_start_time: "2026-03-09T23:59:59.999Z" }),
+          fakePolarSleep({ date: "2026-03-10", sleep_start_time: "2026-03-10T00:00:00.000Z" }),
+          fakePolarSleep({ date: "2026-03-12", sleep_start_time: "2026-03-12T00:00:00.000Z" }),
+          fakePolarSleep({ date: "2026-03-13", sleep_start_time: "2026-03-12T00:00:00.001Z" }),
+        ],
+        dailyActivity: [
+          fakePolarDailyActivity({ start_time: "2026-03-09T08:00:00" }),
+          fakePolarDailyActivity({ start_time: "2026-03-10T08:00:00", steps: 10_001 }),
+          fakePolarDailyActivity({ start_time: "2026-03-12T08:00:00", steps: 10_002 }),
+          fakePolarDailyActivity({ start_time: "2026-03-13T08:00:00", steps: 10_003 }),
+        ],
+      }),
+    );
+
+    const provider = new PolarProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: new SyncWindow({
+          since: new Date("2026-03-10T00:00:00.000Z"),
+          until: new Date("2026-03-12T00:00:00.000Z"),
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+
+    const activityRows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, "polar"));
+    expect(activityRows.map((row) => row.externalId).sort()).toEqual([
+      "ex-at-since",
+      "ex-at-until",
+    ]);
+
+    const sleepRows = await ctx.db
+      .select()
+      .from(sleepSession)
+      .where(eq(sleepSession.providerId, "polar"));
+    expect(sleepRows.map((row) => row.externalId).sort()).toEqual(["2026-03-10", "2026-03-12"]);
+
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "polar"));
+    expect(dailyRows.map((row) => row.date).sort()).toEqual(["2026-03-10", "2026-03-12"]);
+  });
+
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "polar"));
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -387,17 +532,17 @@ function polarCoverageHandlers(opts: {
     }),
 
     // Sleep — return empty
-    http.get("https://www.polaraccesslink.com/v3/sleep", () => {
-      return HttpResponse.json([]);
+    http.get("https://www.polaraccesslink.com/v3/users/sleep", () => {
+      return HttpResponse.json({ nights: [] });
     }),
 
     // Nightly recharge
-    http.get("https://www.polaraccesslink.com/v3/nightly-recharge", () => {
-      return HttpResponse.json(opts.nightlyRecharges ?? []);
+    http.get("https://www.polaraccesslink.com/v3/users/nightly-recharge", () => {
+      return HttpResponse.json({ recharges: opts.nightlyRecharges ?? [] });
     }),
 
     // Daily activity
-    http.get("https://www.polaraccesslink.com/v3/activity", () => {
+    http.get("https://www.polaraccesslink.com/v3/users/activities", () => {
       if (opts.dailyActivityError) {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }
@@ -438,7 +583,13 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     errorServer.use(...polarCoverageHandlers({ dailyActivityError: true }));
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // The daily_activity fetch fails with 500, which throws inside withSyncLog
     // The outer catch at lines 542-546 should catch it
@@ -459,12 +610,24 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
 
     errorServer.use(
       ...polarCoverageHandlers({
-        dailyActivities: [fakePolarDailyActivity({ date: "2026-03-10", active_steps: 9000 })],
+        dailyActivities: [
+          fakePolarDailyActivity({
+            start_time: "2026-03-10T08:00:00",
+            end_time: "2026-03-10T23:59:59",
+            steps: 9000,
+          }),
+        ],
       }),
     );
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Should succeed
     expect(result.errors).toHaveLength(0);

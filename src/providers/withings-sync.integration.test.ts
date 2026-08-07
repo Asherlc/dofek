@@ -1,11 +1,13 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { bodyMeasurement } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import type { WithingsMeasureGroup } from "./withings.ts";
 import { WithingsProvider } from "./withings.ts";
 
@@ -87,6 +89,7 @@ function withingsHandlers(opts?: { measureGroups?: WithingsMeasureGroup[]; hasMo
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WithingsProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -98,6 +101,10 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -125,31 +132,49 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("withings");
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(2);
 
-    // Verify body measurements
-    const rows = await ctx.db
-      .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.providerId, "withings"));
-    expect(rows).toHaveLength(2);
+    const rows = metricStreamCapture.publishedMetricStreamRows;
+    expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8001", "8002"]));
 
-    const weightEntry = rows.find((r) => r.externalId === "8001");
+    const weightEntry = rows.find(
+      (row) => row.externalId === "8001" && row.channel === "body_weight",
+    );
     if (!weightEntry) throw new Error("expected measurement 8001");
-    expect(weightEntry.weightKg).toBeCloseTo(82.5);
-    expect(weightEntry.bodyFatPct).toBeCloseTo(18.3);
-    expect(weightEntry.muscleMassKg).toBeCloseTo(34.8);
-    expect(weightEntry.boneMassKg).toBeCloseTo(3.2);
+    expect(weightEntry.scalar).toBeCloseTo(82.5);
+    expect(
+      rows.find((row) => row.externalId === "8001" && row.channel === "body_fat_percentage")
+        ?.scalar,
+    ).toBeCloseTo(18.3);
+    expect(
+      rows.find((row) => row.externalId === "8001" && row.channel === "muscle_mass")?.scalar,
+    ).toBeCloseTo(34.8);
+    expect(
+      rows.find((row) => row.externalId === "8001" && row.channel === "bone_mass")?.scalar,
+    ).toBeCloseTo(3.2);
 
-    const bpEntry = rows.find((r) => r.externalId === "8002");
+    const bpEntry = rows.find(
+      (row) => row.externalId === "8002" && row.channel === "systolic_blood_pressure",
+    );
     if (!bpEntry) throw new Error("expected measurement 8002");
-    expect(bpEntry.systolicBp).toBe(122);
-    expect(bpEntry.diastolicBp).toBe(78);
-    expect(bpEntry.heartPulse).toBe(65);
+    expect(bpEntry.scalar).toBe(122);
+    expect(
+      rows.find((row) => row.externalId === "8002" && row.channel === "diastolic_blood_pressure")
+        ?.scalar,
+    ).toBe(78);
+    expect(
+      rows.find((row) => row.externalId === "8002" && row.channel === "heart_pulse")?.scalar,
+    ).toBe(65);
   });
 
   it("skips user objective groups (category 2)", async () => {
@@ -159,9 +184,6 @@ describe("WithingsProvider.sync() (integration)", () => {
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user.metrics",
     });
-
-    // Clear previous data
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "withings"));
 
     server.use(
       ...withingsHandlers({
@@ -181,29 +203,29 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Only the real measurement should be synced
     expect(result.recordsSynced).toBe(1);
 
-    const rows = await ctx.db
-      .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.providerId, "withings"));
-    expect(rows).toHaveLength(1);
+    const rows = metricStreamCapture.publishedMetricStreamRows;
+    expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8010"]));
     expect(rows[0]?.externalId).toBe("8010");
   });
 
-  it("upserts on re-sync (no duplicates)", async () => {
+  it("publishes measurement events on each re-sync", async () => {
     await saveTokens(ctx.db, "withings", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user.metrics",
     });
-
-    // Clear previous data
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "withings"));
 
     server.use(
       ...withingsHandlers({
@@ -214,15 +236,26 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
-    const rows = await ctx.db
-      .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.providerId, "withings"));
-    const countOf8020 = rows.filter((r) => r.externalId === "8020").length;
-    expect(countOf8020).toBe(1);
+    const rows = metricStreamCapture.publishedMetricStreamRows;
+    const countOf8020 = rows.filter(
+      (row) => row.externalId === "8020" && row.channel === "body_weight",
+    ).length;
+    expect(countOf8020).toBe(2);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {
@@ -236,7 +269,13 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.use(...withingsHandlers());
 
     const provider = new WithingsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "withings");
@@ -244,14 +283,21 @@ describe("WithingsProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "withings"));
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No OAuth tokens found");
+    expect(result.errors[0]?.message).toBe("Withings authentication failed.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -262,9 +308,6 @@ describe("WithingsProvider.sync() (integration)", () => {
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user.metrics",
     });
-
-    // Clear previous data
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "withings"));
 
     server.use(
       http.post("https://wbsapi.withings.net/measure", () => {
@@ -280,14 +323,20 @@ describe("WithingsProvider.sync() (integration)", () => {
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Both should succeed (this verifies the happy path through the insert logic)
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
   });
 
-  it("catches outer withSyncLog error and reports it", async () => {
+  it("catches outer withSyncLog error and reports non-auth API errors", async () => {
     await saveTokens(ctx.db, "withings", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -298,18 +347,24 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.use(
       http.post("https://wbsapi.withings.net/measure", () => {
         return HttpResponse.json({
-          status: 401, // Non-zero = Withings API error
+          status: 500, // Non-zero = Withings API error
           body: {},
         });
       }),
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // The outer catch should capture the error
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("body_measurement");
+    expect(result.errors[0]?.message).toContain("metric_stream");
     expect(result.recordsSynced).toBe(0);
   });
 });

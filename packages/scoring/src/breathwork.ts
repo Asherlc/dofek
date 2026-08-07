@@ -8,7 +8,15 @@
 export interface BreathworkTechnique {
   id: string;
   name: string;
+  /** Concise user-facing reason to choose this practice */
+  purpose: string;
   description: string;
+  /** User-facing difficulty label */
+  difficulty: BreathworkDifficulty;
+  /** Possible benefit supported by technique-specific evidence, never a guarantee */
+  possibleBenefit?: string;
+  /** Material guidance that clients must show before a session starts */
+  safety: BreathworkSafetyGuidance;
   /** Inhale duration in seconds */
   inhaleSeconds: number;
   /** Hold after inhale in seconds (optional) */
@@ -21,12 +29,69 @@ export interface BreathworkTechnique {
   defaultRounds: number;
 }
 
+export const BREATHWORK_DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"] as const;
+export type BreathworkDifficulty = (typeof BREATHWORK_DIFFICULTIES)[number];
+
+export interface BreathworkTechniqueDetails extends BreathworkTechnique {
+  /** Server-computed duration for the default session */
+  durationSeconds: number;
+}
+
+export interface BreathworkSafetyGuidance {
+  position: string;
+  warnings: string[];
+  stopCriteria: string;
+  emergency: string;
+}
+
+export const PERCEIVED_BREATHWORK_EFFECTS = ["better", "same", "worse"] as const;
+export type PerceivedBreathworkEffect = (typeof PERCEIVED_BREATHWORK_EFFECTS)[number];
+
+export interface BreathworkOutcomeReport {
+  stressBefore: number | null;
+  stressAfter: number | null;
+  dizzinessAfter: boolean | null;
+  perceivedEffect: PerceivedBreathworkEffect | null;
+}
+
+/**
+ * Safety wording follows NHS breathing/fainting guidance:
+ * https://www.asph.nhs.uk/nervous-system-regulation
+ * https://www.nhs.uk/symptoms/fainting/
+ */
+const STANDARD_SAFETY: BreathworkSafetyGuidance = {
+  position: "Practice seated or lying down in a comfortable, safe place.",
+  warnings: ["Do not force or strain your breath."],
+  stopCriteria: "Stop and return to normal breathing if you feel dizzy or lightheaded.",
+  emergency:
+    "Call emergency services if someone faints and is not breathing, cannot be woken within 1 minute, or has not fully recovered.",
+};
+
+/**
+ * Safety guidance for intense breathing rounds:
+ * https://www.wimhofmethod.com/breathing-exercises
+ */
+const POWER_BREATHING_SAFETY: BreathworkSafetyGuidance = {
+  position: "Practice only while seated or lying down in a safe place.",
+  warnings: [
+    "Intense rounds can, in rare cases, cause loss of consciousness.",
+    "Never practice in or near water, while driving, or anywhere fainting could cause injury.",
+  ],
+  stopCriteria: STANDARD_SAFETY.stopCriteria,
+  emergency: STANDARD_SAFETY.emergency,
+};
+
 export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "box-breathing",
     name: "Box Breathing",
+    purpose: "Calm focus",
     description:
-      "Equal parts inhale, hold, exhale, hold. Used by Navy SEALs to reduce stress and improve focus.",
+      "Breathe in for 4 seconds, hold for 4 seconds, breathe out for 4 seconds, then hold for 4 seconds.",
+    difficulty: "Beginner",
+    // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
+    possibleBenefit: "Regular practice may support a more positive mood.",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 4,
     holdInSeconds: 4,
     exhaleSeconds: 4,
@@ -36,8 +101,11 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "4-7-8",
     name: "4-7-8 Breathing",
+    purpose: "Wind down",
     description:
-      "Relaxing breath technique. Inhale 4s, hold 7s, exhale 8s. Promotes deep relaxation and sleep.",
+      "Breathe in for 4 seconds, hold for 7 seconds, then breathe out slowly for 8 seconds.",
+    difficulty: "Intermediate",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 4,
     holdInSeconds: 7,
     exhaleSeconds: 8,
@@ -46,8 +114,11 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "coherent",
     name: "Coherent Breathing",
+    purpose: "Steady calm",
     description:
-      "Slow, rhythmic breathing at 5 breaths per minute. Balances the autonomic nervous system and optimizes HRV.",
+      "Breathe in for 6 seconds and out for 6 seconds, creating an even rhythm of about 5 breaths per minute.",
+    difficulty: "Beginner",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 6,
     exhaleSeconds: 6,
     defaultRounds: 10,
@@ -55,8 +126,13 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   {
     id: "physiological-sigh",
     name: "Physiological Sigh",
-    description:
-      "Double inhale through the nose followed by a long exhale. Rapidly reduces stress and anxiety.",
+    purpose: "Quick reset",
+    description: "Take two small inhales through the nose, followed by one longer exhale.",
+    difficulty: "Beginner",
+    // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
+    possibleBenefit:
+      "Regular practice may support a more positive mood and slower resting breathing.",
+    safety: STANDARD_SAFETY,
     inhaleSeconds: 3,
     holdInSeconds: 1,
     exhaleSeconds: 6,
@@ -64,9 +140,11 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   },
   {
     id: "wim-hof",
-    name: "Wim Hof Method",
-    description:
-      "Power breathing with deep inhales and passive exhales. Increases energy, focus, and cold tolerance.",
+    name: "Power Breathing",
+    purpose: "Energizing practice",
+    description: "Take 30 rounds of active 2-second inhales followed by 2-second exhales.",
+    difficulty: "Advanced",
+    safety: POWER_BREATHING_SAFETY,
     inhaleSeconds: 2,
     exhaleSeconds: 2,
     defaultRounds: 30,
@@ -78,6 +156,19 @@ export function getTechniqueById(id: string): BreathworkTechnique | undefined {
   return TECHNIQUES.find((t) => t.id === id);
 }
 
+const LEGACY_TECHNIQUE_LABELS: Record<string, string> = {
+  resonance: "Resonant Breathing",
+};
+
+/** Return a human-readable label without exposing a stored technique identifier. */
+export function getBreathworkTechniqueLabel(techniqueId: string): string {
+  return (
+    getTechniqueById(techniqueId)?.name ??
+    LEGACY_TECHNIQUE_LABELS[techniqueId] ??
+    "Breathwork session"
+  );
+}
+
 /** Compute total session duration in seconds for a given number of rounds */
 export function totalSessionSeconds(technique: BreathworkTechnique, rounds: number): number {
   const roundSeconds =
@@ -86,4 +177,14 @@ export function totalSessionSeconds(technique: BreathworkTechnique, rounds: numb
     technique.exhaleSeconds +
     (technique.holdOutSeconds ?? 0);
   return roundSeconds * rounds;
+}
+
+/** Add the server-owned default-session duration to a technique definition. */
+export function toBreathworkTechniqueDetails(
+  technique: BreathworkTechnique,
+): BreathworkTechniqueDetails {
+  return {
+    ...technique,
+    durationSeconds: totalSessionSeconds(technique, technique.defaultRounds),
+  };
 }

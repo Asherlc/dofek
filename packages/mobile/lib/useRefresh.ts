@@ -2,32 +2,50 @@ import { useCallback, useState } from "react";
 import { captureException } from "./telemetry";
 import { trpc } from "./trpc";
 
+type RefreshTask = () => Promise<void> | void;
+
+interface UseRefreshOptions {
+  refresh?: RefreshTask;
+  invalidate?: RefreshTask | null;
+}
+
 /**
- * Pull-to-refresh hook. Invalidates all active tRPC queries on the current
- * screen and optionally runs an extra callback (e.g. trigger server sync).
+ * Pull-to-refresh hook. By default, starts a background tRPC cache invalidation.
+ * Callers can pass a refresh callback to await specific work, and can set
+ * invalidate to null when the refresh callback already targets the needed data.
  */
-export function useRefresh(extra?: () => Promise<void> | void): {
+export function useRefresh(input?: RefreshTask | UseRefreshOptions): {
   refreshing: boolean;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
 } {
   const utils = trpc.useUtils();
   const [refreshing, setRefreshing] = useState(false);
+  const refresh = typeof input === "function" ? input : input?.refresh;
+  const invalidate =
+    typeof input === "function" || input?.invalidate === undefined
+      ? () => utils.invalidate()
+      : input.invalidate;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    if (invalidate != null) {
+      void Promise.resolve()
+        .then(() => invalidate())
+        .catch((error: unknown) => {
+          captureException(error, { source: "useRefresh.invalidate" });
+        });
+    }
+
     try {
-      await Promise.all([
-        utils.invalidate(),
-        Promise.resolve(extra?.()).catch((error: unknown) => {
+      await Promise.resolve()
+        .then(() => refresh?.())
+        .catch((error: unknown) => {
           captureException(error, { source: "useRefresh" });
-        }),
-      ]);
-    } catch {
-      // invalidate() failure — still stop spinner
+        });
     } finally {
       setRefreshing(false);
     }
-  }, [utils, extra]);
+  }, [invalidate, refresh]);
 
   return { refreshing, onRefresh };
 }

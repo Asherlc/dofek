@@ -1,23 +1,6 @@
 # One-time imports for existing resources into the unified workspace.
 # Remove this file after the first successful `terraform apply`.
 
-# ── Hetzner ──────────────────────────────────────────────────────────────
-
-import {
-  to = hcloud_server.dofek
-  id = "125992620"
-}
-
-import {
-  to = hcloud_firewall.dofek
-  id = "10697137"
-}
-
-import {
-  to = hcloud_ssh_key.default
-  id = "110391979"
-}
-
 # ── Cloudflare Zones ─────────────────────────────────────────────────────
 
 import {
@@ -41,11 +24,6 @@ import {
 import {
   to = cloudflare_dns_record.dofek_fit_www
   id = "a744a251a98f2cbffef47d0e3054e084/f0f102e4ea49da103b8685ee3ea0e687"
-}
-
-import {
-  to = cloudflare_dns_record.dofek_fit_preview_wildcard
-  id = "a744a251a98f2cbffef47d0e3054e084/424bedb3215b3ae375717ad639693ce2"
 }
 
 import {

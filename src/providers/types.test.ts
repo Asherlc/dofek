@@ -42,6 +42,11 @@ describe("getProviderAuthType", () => {
     expect(getProviderAuthType(provider)).toBe("none");
   });
 
+  it("returns 'none' when authSetup returns an empty setup", () => {
+    const provider = stubProvider({ authSetup: () => ({}) });
+    expect(getProviderAuthType(provider)).toBe("none");
+  });
+
   it("returns 'none' when authSetup throws", () => {
     const provider = stubProvider({
       authSetup: () => {
@@ -53,10 +58,6 @@ describe("getProviderAuthType", () => {
 
   it("returns 'credential' when automatedLogin is defined", () => {
     const setup: ProviderAuthSetup = {
-      oauthConfig: dummyOAuthConfig,
-      exchangeCode: async () => {
-        throw new Error("not supported");
-      },
       automatedLogin: async () => ({
         accessToken: "tok",
         refreshToken: null,
@@ -66,6 +67,48 @@ describe("getProviderAuthType", () => {
     };
     const provider = stubProvider({ authSetup: () => setup });
     expect(getProviderAuthType(provider)).toBe("credential");
+  });
+
+  it("returns 'token' when manual token authentication is defined", () => {
+    const setup: ProviderAuthSetup = {
+      manualToken: {
+        label: "Personal API token",
+        instructionsUrl: "https://example.com/settings/api-token",
+        exchangeToken: async () => ({
+          accessToken: "tok",
+          refreshToken: null,
+          expiresAt: new Date(),
+          scopes: "read",
+        }),
+      },
+    };
+    const provider = stubProvider({ authSetup: () => setup });
+    expect(getProviderAuthType(provider)).toBe("token");
+  });
+
+  it("prioritizes personal token auth when OAuth is also configured", () => {
+    const setup: ProviderAuthSetup = {
+      oauthConfig: dummyOAuthConfig,
+      exchangeCode: async () => ({
+        accessToken: "oauth-token",
+        refreshToken: null,
+        expiresAt: new Date(),
+        scopes: null,
+      }),
+      manualToken: {
+        label: "Personal API token",
+        instructionsUrl: "https://example.com/settings/api-token",
+        exchangeToken: async () => ({
+          accessToken: "personal-token",
+          refreshToken: null,
+          expiresAt: new Date(),
+          scopes: "read",
+        }),
+      },
+    };
+    const provider = stubProvider({ authSetup: () => setup });
+
+    expect(getProviderAuthType(provider)).toBe("token");
   });
 
   it("returns 'oauth1' when oauth1Flow is defined", () => {
@@ -118,10 +161,16 @@ describe("getProviderAuthType", () => {
     expect(getProviderAuthType(provider)).toBe("credential");
   });
 
-  it("returns 'none' for UltrahumanProvider (server-side env var auth, not user credentials)", async () => {
+  it("returns 'token' for UltrahumanProvider", async () => {
     const { UltrahumanProvider } = await import("./ultrahuman.ts");
     const provider = new UltrahumanProvider();
-    expect(getProviderAuthType(provider)).toBe("none");
+    expect(getProviderAuthType(provider)).toBe("token");
+  });
+
+  it("returns 'credential' for AmazfitZeppProvider", async () => {
+    const { AmazfitZeppProvider } = await import("./amazfit-zepp.ts");
+    const provider = new AmazfitZeppProvider();
+    expect(getProviderAuthType(provider)).toBe("credential");
   });
 
   it("returns 'oauth' when setup has oauthConfig but nothing else", () => {

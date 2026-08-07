@@ -1,4 +1,6 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateLong } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
+import { textColors } from "@dofek/scoring/colors";
 import type {
   SmoothedWeightRow,
   WeightPrediction,
@@ -11,6 +13,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -19,6 +22,10 @@ interface SmoothedWeightChartProps {
   data: SmoothedWeightRow[];
   prediction?: WeightPrediction | null;
   loading?: boolean;
+}
+
+function roundWeight(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeightChartProps) {
@@ -34,7 +41,20 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     );
   }
 
-  const latestWeeklyChange = data[data.length - 1]?.weeklyChange;
+  const ratePerWeekKg = prediction?.ratePerWeek ?? null;
+  const latest = data.at(-1);
+  let latestScaleWeight: number | null = null;
+  let latestScaleWeightStatus: string | null = null;
+  for (let index = data.length - 1; index >= 0; index--) {
+    const row = data[index];
+    if (!row) continue;
+    const rawWeight = row?.rawWeight;
+    if (rawWeight != null) {
+      latestScaleWeight = rawWeight;
+      latestScaleWeightStatus = row.rawWeightStatus?.label ?? null;
+      break;
+    }
+  }
   const goalWeightKg = prediction?.goal?.goalWeightKg ?? null;
   const goalBandKg = 1.1; // ±1.1 kg band around goal
 
@@ -48,7 +68,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
             {
               yAxis: units.convertWeight(goalWeightKg),
               label: {
-                formatter: `Goal: ${formatNumber(units.convertWeight(goalWeightKg))}`,
+                formatter: `Goal: ${formatMeasurementText(units.formatWeight(goalWeightKg))}`,
                 position: "insideEndTop" as const,
               },
               lineStyle: { type: "dashed" as const, color: chartColors.green, width: 2 },
@@ -79,7 +99,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
         .filter(
           (d): d is typeof d & { rawWeight: number } => !d.interpolated && d.rawWeight != null,
         )
-        .map((d) => [d.date, units.convertWeight(d.rawWeight)]),
+        .map((d) => [d.date, roundWeight(units.convertWeight(d.rawWeight))]),
       {
         color: chartThemeColors.axisLabel,
         symbolSize: 4,
@@ -89,8 +109,8 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     // Smoothed trend line with optional goal markLine/markArea
     {
       ...dofekSeries.line(
-        "Trend",
-        data.map((d) => [d.date, units.convertWeight(d.smoothedWeight)]),
+        "Trend Weight",
+        data.map((d) => [d.date, roundWeight(units.convertWeight(d.smoothedWeight))]),
         {
           color: chartColors.teal,
           width: 3,
@@ -105,7 +125,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
         "Weekly Change",
         data
           .filter((d) => d.weeklyChange != null)
-          .map((d) => [d.date, units.convertWeight(d.weeklyChange ?? 0)]),
+          .map((d) => [d.date, roundWeight(units.convertWeight(d.weeklyChange ?? 0))]),
         { yAxisIndex: 1, barWidth: "60%" },
       ),
       itemStyle: {
@@ -121,10 +141,13 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     const projectionData: [string, number][] = [];
     // Start from last actual point for visual continuity
     if (lastDataPoint) {
-      projectionData.push([lastDataPoint.date, units.convertWeight(lastDataPoint.smoothedWeight)]);
+      projectionData.push([
+        lastDataPoint.date,
+        roundWeight(units.convertWeight(lastDataPoint.smoothedWeight)),
+      ]);
     }
     for (const point of prediction.projectionLine) {
-      projectionData.push([point.date, units.convertWeight(point.projectedWeight)]);
+      projectionData.push([point.date, roundWeight(units.convertWeight(point.projectedWeight))]);
     }
 
     const projectionSeries = dofekSeries.line("Projection", projectionData, {
@@ -140,7 +163,28 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
 
   const option = {
     grid: dofekGrid("dualAxis", { top: 30, bottom: 30 }),
-    tooltip: dofekTooltip(),
+    tooltip: dofekTooltip({
+      formatter(
+        params: Array<{
+          seriesName: string;
+          value: [string, number];
+          marker: string;
+        }>,
+      ) {
+        const first = params[0];
+        if (!first) return "";
+        const lines = [`<strong>${escapeTooltipHtml(formatDateLong(first.value[0]))}</strong>`];
+        for (const param of params) {
+          const value = param.value[1];
+          const unit =
+            param.seriesName === "Weekly Change" ? `${units.weightLabel}/week` : units.weightLabel;
+          lines.push(
+            `${param.marker} ${escapeTooltipHtml(param.seriesName)}: ${value} ${escapeTooltipHtml(unit)}`,
+          );
+        }
+        return lines.join("<br/>");
+      },
+    }),
     legend: dofekLegend(true),
     xAxis: dofekAxis.time(),
     yAxis: [
@@ -159,17 +203,29 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
 
   return (
     <div className="space-y-2">
-      {latestWeeklyChange != null && (
-        <div className="flex items-baseline gap-2">
-          <span
-            className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-muted"}`}
-          >
-            {latestWeeklyChange > 0 ? "+" : ""}
-            {formatNumber(units.convertWeight(latestWeeklyChange))} {units.weightLabel}
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-subtle">
+            {latest?.smoothedWeightStatus.label} Trend Weight
+          </div>
+          <div className="text-lg font-semibold font-mono tabular-nums">
+            {latest ? formatMeasurementText(units.formatWeight(latest.smoothedWeight)) : "—"}
+          </div>
+          {latestScaleWeight != null && latestScaleWeightStatus != null && (
+            <div className="text-xs text-subtle">
+              {latestScaleWeightStatus}:{" "}
+              {formatMeasurementText(units.formatWeight(latestScaleWeight))}
+            </div>
+          )}
+        </div>
+        {ratePerWeekKg != null && (
+          <span className="text-lg font-semibold" style={{ color: textColors.secondary }}>
+            {ratePerWeekKg > 0 ? "+" : ""}
+            {formatMeasurementText(units.formatWeight(ratePerWeekKg))}
             /week
           </span>
-        </div>
-      )}
+        )}
+      </div>
       <DofekChart option={option} height={250} />
     </div>
   );

@@ -1,0 +1,114 @@
+name: Storybook Preview
+
+on:
+  workflow_call:
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    name: Deploy Storybook Preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: storybook-build
+          path: storybook-static/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: storybook-mobile-build
+          path: storybook-mobile-static/
+      - name: Prepare preview metadata
+        id: preview
+        env:
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: dofek-storybook
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Storybook preview for forked PR (repository secrets are unavailable)."
+            exit 0
+          fi
+
+          missing=()
+          [ -n "${R2_ENDPOINT:-}" ] || missing+=("R2_ENDPOINT")
+          [ -n "${R2_ACCESS_KEY_ID:-}" ] || missing+=("R2_ACCESS_KEY_ID")
+          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || missing+=("R2_SECRET_ACCESS_KEY")
+          [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Storybook preview missing required GitHub secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          BASE_URL="https://storybook.dofek.fit"
+          PREVIEW_PREFIX="pr-${{ github.event.pull_request.number }}"
+          PREVIEW_URL="$BASE_URL/pr-${{ github.event.pull_request.number }}/index.html"
+          MOBILE_PREVIEW_URL="$BASE_URL/pr-${{ github.event.pull_request.number }}/mobile/index.html"
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "preview_prefix=$PREVIEW_PREFIX" >> "$GITHUB_OUTPUT"
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "mobile_preview_url=$MOBILE_PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=${GITHUB_SHA:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Web Storybook to R2
+        if: steps.preview.outputs.ready == 'true'
+        env:
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: dofek-storybook
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          aws s3 cp storybook-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/" \
+            --recursive \
+            --region auto \
+            --endpoint-url "$R2_ENDPOINT" \
+            --cache-control "no-cache"
+
+      - name: Deploy Mobile Storybook to R2
+        if: steps.preview.outputs.ready == 'true'
+        env:
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: dofek-storybook
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          aws s3 cp storybook-mobile-static/ "s3://$R2_BUCKET/${{ steps.preview.outputs.preview_prefix }}/mobile/" \
+            --recursive \
+            --region auto \
+            --endpoint-url "$R2_ENDPOINT" \
+            --cache-control "no-cache"
+
+      - name: Comment preview URL on PR
+        if: steps.preview.outputs.ready == 'true'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: storybook-preview
+          message: |
+            Storybook previews for `${{ steps.preview.outputs.commit_sha }}` are ready:
+
+            - [Web Storybook](${{ steps.preview.outputs.preview_url }})
+            - [Mobile Storybook](${{ steps.preview.outputs.mobile_preview_url }})
+
+            This comment updates automatically on each PR push.

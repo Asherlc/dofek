@@ -1,8 +1,16 @@
+import { formatDateLong, formatDateYmd } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
+import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
+import { ChartRangeProvider } from "./DofekChart.tsx";
+import { PaginationControls } from "./PaginationControls.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 import { TimeRangeSelector } from "./TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "./TimeSeriesChart.tsx";
 
@@ -18,34 +26,64 @@ const CATEGORY_ORDER = ["wellness", "activity", "substance", "nutrition", "custo
 
 type Tab = "log" | "trends";
 
+function JournalQueryError({
+  error,
+  height,
+  label,
+  refetch,
+  retrying,
+}: {
+  error: unknown;
+  height: number;
+  label: string;
+  refetch: () => Promise<unknown>;
+  retrying: boolean;
+}) {
+  return (
+    <QueryStatePanel
+      error={error}
+      height={height}
+      onRetry={() => void refetch()}
+      retryLabel={label}
+      retrying={retrying}
+    />
+  );
+}
+
 export function JournalPanel() {
   const [tab, setTab] = useState<Tab>("log");
-  const [days, setDays] = useState(30);
+  const { days, description, setDays } = useTimeRangePreference("behavior");
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "log" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
-            onClick={() => setTab("log")}
-          >
-            Log
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "trends" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
-            onClick={() => setTab("trends")}
-          >
-            Trends
-          </button>
+    <ChartRangeProvider days={days}>
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "log" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
+              onClick={() => setTab("log")}
+            >
+              Log
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "trends" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
+              onClick={() => setTab("trends")}
+            >
+              Trends
+            </button>
+          </div>
+          <TimeRangeSelector days={days} description={description} onChange={setDays} />
         </div>
-        <TimeRangeSelector days={days} onChange={setDays} />
-      </div>
 
-      {tab === "log" ? <JournalLog days={days} /> : <JournalTrends days={days} />}
-    </div>
+        {tab === "log" ? (
+          <JournalLog key={days ?? "all"} days={days} />
+        ) : (
+          <JournalTrends days={days} />
+        )}
+      </div>
+    </ChartRangeProvider>
   );
 }
 
@@ -54,7 +92,10 @@ export function JournalPanel() {
 const entrySchema = z.object({
   id: z.string(),
   date: z.string(),
-  provider_id: z.string(),
+  source: z.object({
+    providerId: z.string(),
+    label: z.string(),
+  }),
   question_slug: z.string(),
   display_name: z.string(),
   category: z.string(),
@@ -62,17 +103,22 @@ const entrySchema = z.object({
   unit: z.string().nullable(),
   answer_text: z.string().nullable(),
   answer_numeric: z.coerce.number().nullable(),
-  impact_score: z.coerce.number().nullable(),
 });
 
 type JournalEntry = z.infer<typeof entrySchema>;
+const JOURNAL_PAGE_SIZE = 20;
 
-function JournalLog({ days }: { days: number }) {
+function JournalLog({ days }: { days: TimeRangeDays }) {
   const [showModal, setShowModal] = useState(false);
+  const [page, setPage] = useState(0);
   const utils = trpc.useUtils();
-  const entriesQuery = trpc.journal.entries.useQuery({ days });
+  const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
   const deleteMutation = trpc.journal.delete.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => utils.journal.entries.invalidate(),
+    onError: (error) => {
+      captureException(error, { operation: "journal.delete" });
+    },
   });
 
   const entries = useMemo(() => {
@@ -80,16 +126,28 @@ function JournalLog({ days }: { days: number }) {
     return z.array(entrySchema).parse(entriesQuery.data);
   }, [entriesQuery.data]);
 
-  // Group entries by date
+  const totalPages = Math.ceil(entries.length / JOURNAL_PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
+  const sortedEntries = useMemo(
+    () => [...entries].sort((a, b) => b.date.localeCompare(a.date)),
+    [entries],
+  );
+  const visibleEntries = useMemo(
+    () =>
+      sortedEntries.slice(currentPage * JOURNAL_PAGE_SIZE, (currentPage + 1) * JOURNAL_PAGE_SIZE),
+    [currentPage, sortedEntries],
+  );
+
+  // Group visible entries by date.
   const grouped = useMemo(() => {
     const map = new Map<string, JournalEntry[]>();
-    for (const entry of entries) {
+    for (const entry of visibleEntries) {
       const existing = map.get(entry.date) ?? [];
       existing.push(entry);
       map.set(entry.date, existing);
     }
     return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
-  }, [entries]);
+  }, [visibleEntries]);
 
   return (
     <div>
@@ -103,9 +161,31 @@ function JournalLog({ days }: { days: number }) {
         </button>
       </div>
 
-      {entriesQuery.isLoading && <p className="text-muted text-sm text-center py-8">Loading...</p>}
+      {entriesQuery.isLoading && entriesQuery.data === undefined && (
+        <QueryStatePanel variant="loading" height={96} />
+      )}
 
-      {!entriesQuery.isLoading && entries.length === 0 && (
+      {entriesQuery.error && entriesQuery.data === undefined && (
+        <JournalQueryError
+          error={entriesQuery.error}
+          height={96}
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
+          retrying={entriesQuery.isFetching}
+        />
+      )}
+
+      {entriesQuery.error && entriesQuery.data !== undefined && (
+        <JournalQueryError
+          error={entriesQuery.error}
+          height={72}
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
+          retrying={entriesQuery.isFetching}
+        />
+      )}
+
+      {!entriesQuery.isLoading && entriesQuery.data !== undefined && entries.length === 0 && (
         <p className="text-dim text-sm text-center py-8">No journal entries yet.</p>
       )}
 
@@ -117,6 +197,18 @@ function JournalLog({ days }: { days: number }) {
           onDelete={(id) => deleteMutation.mutate({ id })}
         />
       ))}
+
+      <PaginationControls
+        page={currentPage}
+        pageSize={JOURNAL_PAGE_SIZE}
+        totalItems={entries.length}
+        itemLabel="journal entries"
+        onPageChange={setPage}
+      />
+
+      {deleteMutation.error ? (
+        <p className="text-xs text-red-400 mt-3">{deleteMutation.error.message}</p>
+      ) : null}
 
       {showModal && (
         <AddJournalEntryModal
@@ -141,11 +233,7 @@ function DayGroup({
   entries: JournalEntry[];
   onDelete: (id: string) => void;
 }) {
-  const dateDisplay = new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  const dateDisplay = formatDateLong(date);
 
   // Group by category
   const byCategory = useMemo(() => {
@@ -189,24 +277,16 @@ function JournalEntryRow({
   entry: JournalEntry;
   onDelete: (id: string) => void;
 }) {
-  const isManual = entry.provider_id === "dofek";
+  const isManual = entry.source.providerId === "dofek";
 
   return (
     <div className="flex items-center justify-between py-1">
       <div className="flex items-center gap-2">
         <span className="text-sm text-foreground">{entry.display_name}</span>
         <AnswerDisplay entry={entry} />
-        {entry.impact_score !== null && (
-          <span
-            className={`text-xs px-1.5 py-0.5 rounded ${entry.impact_score >= 0 ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}
-          >
-            {entry.impact_score > 0 ? "+" : ""}
-            {entry.impact_score.toFixed(1)} impact
-          </span>
-        )}
       </div>
       <div className="flex items-center gap-2">
-        {!isManual && <span className="text-xs text-dim">{entry.provider_id}</span>}
+        {!isManual && <JournalSourceDetails source={entry.source} />}
         {isManual && (
           <button
             type="button"
@@ -221,13 +301,32 @@ function JournalEntryRow({
   );
 }
 
+function JournalSourceDetails({ source }: { source: JournalEntry["source"] }) {
+  const [expanded, setExpanded] = useState(false);
+  const action = expanded ? "Hide" : "Show";
+
+  return (
+    <div className="text-right text-xs text-dim">
+      <span>{source.label}</span>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${action} technical source details for ${source.label}`}
+        className="ml-1 text-[10px] text-subtle underline decoration-dotted underline-offset-2 hover:text-muted"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        Technical details
+      </button>
+      {expanded && <span className="block text-[10px]">Provider ID: {source.providerId}</span>}
+    </div>
+  );
+}
+
 function AnswerDisplay({ entry }: { entry: JournalEntry }) {
   if (entry.data_type === "boolean") {
     const isYes = entry.answer_numeric !== null && entry.answer_numeric > 0;
     return (
-      <span
-        className={`text-xs px-1.5 py-0.5 rounded font-medium ${isYes ? "bg-accent/15 text-accent" : "bg-surface-hover text-dim"}`}
-      >
+      <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-surface-hover text-muted">
         {isYes ? "Yes" : "No"}
       </span>
     );
@@ -260,68 +359,55 @@ const TREND_COLORS = [
   chartColors.purple,
 ];
 
-function JournalTrends({ days }: { days: number }) {
-  const questionsQuery = trpc.journal.questions.useQuery();
-  const entriesQuery = trpc.journal.entries.useQuery({ days });
-
-  const questions = useMemo(() => {
-    if (!questionsQuery.data) return [];
-    return z
-      .array(
-        z.object({
-          slug: z.string(),
-          display_name: z.string(),
-          category: z.string(),
-          data_type: z.string(),
-          unit: z.string().nullable(),
-          sort_order: z.coerce.number(),
-        }),
-      )
-      .parse(questionsQuery.data);
-  }, [questionsQuery.data]);
-
-  // Only chart numeric questions that have data
-  const entries = useMemo(() => {
-    if (!entriesQuery.data) return [];
-    return z.array(entrySchema).parse(entriesQuery.data);
-  }, [entriesQuery.data]);
-
-  const numericQuestionSlugs = useMemo(() => {
-    const slugs = new Set<string>();
-    for (const entry of entries) {
-      if (entry.answer_numeric !== null) {
-        slugs.add(entry.question_slug);
-      }
-    }
-    return slugs;
-  }, [entries]);
-
-  const chartableQuestions = useMemo(
-    () => questions.filter((q) => numericQuestionSlugs.has(q.slug)),
-    [questions, numericQuestionSlugs],
-  );
+function JournalTrends({ days }: { days: TimeRangeDays }) {
+  const trendsQuery = trpc.journal.trends.useQuery({
+    days,
+    endDate: formatDateYmd(),
+  });
+  const evidence = trendsQuery.data;
 
   const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set());
 
   // Auto-select first 3 chartable questions if none selected
   const effectiveSlugs = useMemo(() => {
     if (selectedSlugs.size > 0) return selectedSlugs;
-    return new Set(chartableQuestions.slice(0, 3).map((question) => question.slug));
-  }, [selectedSlugs, chartableQuestions]);
+    return new Set(evidence?.series.slice(0, 3).map((series) => series.questionSlug) ?? []);
+  }, [selectedSlugs, evidence?.series]);
 
   const series = useMemo(() => {
     return [...effectiveSlugs].map((slug, index) => {
-      const question = questions.find((candidate) => candidate.slug === slug);
-      const data: [string, number | null][] = entries
-        .filter((entry) => entry.question_slug === slug && entry.answer_numeric !== null)
-        .map((entry) => [entry.date, entry.answer_numeric]);
+      const trend = evidence?.series.find((candidate) => candidate.questionSlug === slug);
+      const data: [string, number | null][] =
+        trend?.points.map((point) => [point.date, point.value]) ?? [];
+      const observedDates =
+        trend?.points.flatMap((point) => (point.value === null ? [] : [point.date])) ?? [];
+      const hasSameDayObservations = new Set(observedDates).size !== observedDates.length;
+      const showAsPoints = trend?.dataType === "boolean" || hasSameDayObservations;
       return {
-        name: question?.display_name ?? slug,
+        name: trend?.displayName ?? slug,
         data,
         color: TREND_COLORS[index % TREND_COLORS.length],
+        missingDates:
+          trend?.points.filter((point) => point.value === null).map((point) => point.date) ?? [],
+        accessibilityDescription:
+          trend?.dataType === "boolean"
+            ? `${trend.displayName} is shown as separate Yes/No points.`
+            : hasSameDayObservations
+              ? `${trend?.displayName ?? slug} is shown as separate points because multiple sources recorded the same date.`
+              : undefined,
+        visualization: showAsPoints ? ("point" as const) : ("line" as const),
+        formatValue:
+          trend?.dataType === "boolean"
+            ? (value: number) => formatJournalTrendValue(value, "boolean", trend.unit)
+            : undefined,
       };
     });
-  }, [effectiveSlugs, entries, questions]);
+  }, [effectiveSlugs, evidence?.series]);
+
+  const selectedEvidence = useMemo(
+    () => evidence?.series.filter((trend) => effectiveSlugs.has(trend.questionSlug)) ?? [],
+    [effectiveSlugs, evidence?.series],
+  );
 
   function toggleSlug(slug: string) {
     setSelectedSlugs((prev) => {
@@ -335,30 +421,150 @@ function JournalTrends({ days }: { days: number }) {
     });
   }
 
-  if (questionsQuery.isLoading || entriesQuery.isLoading) {
-    return <p className="text-muted text-sm text-center py-8">Loading...</p>;
+  if (trendsQuery.isLoading && evidence === undefined) {
+    return <QueryStatePanel variant="loading" height={96} />;
   }
 
-  if (chartableQuestions.length === 0) {
-    return <p className="text-dim text-sm text-center py-8">No numeric journal data to chart.</p>;
+  if (trendsQuery.error && evidence === undefined) {
+    return (
+      <JournalQueryError
+        error={trendsQuery.error}
+        height={96}
+        label="Retry journal trends"
+        refetch={trendsQuery.refetch}
+        retrying={trendsQuery.isFetching}
+      />
+    );
   }
+
+  if (!evidence) {
+    return (
+      <QueryStatePanel
+        variant="empty"
+        height={96}
+        message="Journal trend evidence is unavailable."
+      />
+    );
+  }
+
+  if (evidence.series.length === 0) {
+    return (
+      <div className="space-y-3">
+        {trendsQuery.error ? (
+          <JournalQueryError
+            error={trendsQuery.error}
+            height={72}
+            label="Retry journal trends"
+            refetch={trendsQuery.refetch}
+            retrying={trendsQuery.isFetching}
+          />
+        ) : null}
+        <p className="text-dim text-sm text-center py-8">No numeric journal data to chart.</p>
+      </div>
+    );
+  }
+
+  const dateRange = `${formatDateLong(evidence.window.startDate)} – ${formatDateLong(evidence.window.endDate)}`;
+  const chartDescription =
+    evidence.window.gapRepresentation === "explicit_daily"
+      ? `Journal trends from ${formatDateLong(evidence.window.startDate)} to ${formatDateLong(evidence.window.endDate)}. Missing days are gaps in numeric lines and are listed below with exact observations.`
+      : `Journal trends from ${formatDateLong(evidence.window.startDate)} to ${formatDateLong(evidence.window.endDate)}. Missing days are summarized by count for All history; choose a finite range to inspect exact missing dates.`;
 
   return (
-    <div>
+    <div className="space-y-4">
+      {trendsQuery.error ? (
+        <JournalQueryError
+          error={trendsQuery.error}
+          height={72}
+          label="Retry journal trends"
+          refetch={trendsQuery.refetch}
+          retrying={trendsQuery.isFetching}
+        />
+      ) : null}
+      <div className="rounded-lg border border-border bg-surface-hover/40 p-3 space-y-1">
+        <p className="text-sm font-medium text-foreground">{dateRange}</p>
+        <p className="text-xs text-muted">{evidence.statement}</p>
+        <p className="text-xs text-muted">{evidence.uncertainty.statement}</p>
+      </div>
       <div className="flex flex-wrap gap-1.5 mb-4">
-        {chartableQuestions.map((q) => (
+        {evidence.series.map((trend) => (
           <button
-            key={q.slug}
+            key={trend.questionSlug}
             type="button"
-            className={`px-2.5 py-1 rounded-full text-xs font-medium ${effectiveSlugs.has(q.slug) ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted hover:text-foreground"}`}
-            onClick={() => toggleSlug(q.slug)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium ${effectiveSlugs.has(trend.questionSlug) ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted hover:text-foreground"}`}
+            onClick={() => toggleSlug(trend.questionSlug)}
           >
-            {q.display_name}
+            {trend.displayName}
           </button>
         ))}
       </div>
 
-      <TimeSeriesChart series={series} height={280} loading={false} />
+      <TimeSeriesChart
+        series={series}
+        height={280}
+        loading={false}
+        accessibilityDescription={chartDescription}
+      />
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {selectedEvidence.map((trend) => {
+          const observations = trend.points.filter(
+            (
+              point,
+            ): point is typeof point & {
+              value: number;
+              source: NonNullable<typeof point.source>;
+            } => point.value !== null && point.source !== null,
+          );
+          const missingDates = trend.points
+            .filter((point) => point.value === null)
+            .map((point) => formatDateLong(point.date));
+          return (
+            <section
+              key={trend.questionSlug}
+              className="rounded-lg border border-border bg-surface p-3 space-y-2"
+            >
+              <h4 className="text-sm font-medium text-foreground">{trend.displayName}</h4>
+              <p className="text-xs text-muted">{trend.statement}</p>
+              <details className="text-xs text-muted">
+                <summary className="cursor-pointer font-medium text-foreground">
+                  Exact values ({observations.length})
+                </summary>
+                <ul className="mt-2 space-y-1">
+                  {observations.map((point) => (
+                    <li key={`${point.date}-${point.source.providerId}`}>
+                      <span className="font-medium">{formatDateLong(point.date)}:</span>{" "}
+                      {formatJournalTrendValue(point.value, trend.dataType, trend.unit)} ·{" "}
+                      {point.source.label}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+              <details className="text-xs text-muted">
+                <summary className="cursor-pointer font-medium text-foreground">
+                  Missing days ({trend.missingDayCount})
+                </summary>
+                <p className="mt-2">
+                  {evidence.window.gapRepresentation === "explicit_daily"
+                    ? `Missing: ${missingDates.join(", ") || "None"}`
+                    : `Missing-day dates are summarized by count for All history: ${trend.missingDayCount} days. Choose a finite range to inspect exact missing dates.`}
+                </p>
+              </details>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function formatJournalTrendValue(
+  value: number,
+  dataType: "boolean" | "numeric",
+  unit: string | null,
+): string {
+  if (dataType === "boolean") {
+    return value === 1 ? "Yes" : value === 0 ? "No" : String(value);
+  }
+  return `${value}${unit ? ` ${unit}` : ""}`;
 }

@@ -5,35 +5,102 @@ const {
   mockAdd,
   mockGetJob,
   mockGetJobs,
+  mockGetJobCounts,
+  mockGetProviderSyncQueue,
+  mockImportQueueGetJobs,
+  mockImportQueueGetJobCounts,
   mockGetAllProviders,
   mockGetSyncProviders,
   mockRegisterProvider,
   mockLoggerWarn,
+  mockCaptureException,
   mockInvalidateByPrefix,
   mockVeloHeroProvider,
+  mockCachedProtectedQuery,
+  mockProtectedQueryCache,
+  mockWithUserWriteFence,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
   mockGetJobs: vi.fn().mockResolvedValue([]),
+  mockGetJobCounts: vi.fn(),
+  mockGetProviderSyncQueue: vi.fn((id: string) => ({
+    add: mockAdd,
+    getJob: mockGetJob,
+    getJobs: mockGetJobs,
+    getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+  })),
+  mockImportQueueGetJobs: vi.fn().mockResolvedValue([]),
+  mockImportQueueGetJobCounts: vi.fn(),
   mockGetAllProviders: vi.fn(() => []),
   mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
+  mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
+  mockCachedProtectedQuery: vi.fn(),
+  mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
+  mockWithUserWriteFence: vi.fn(),
 }));
 
+function oauthAuthSetup(authUrl: string) {
+  return {
+    oauthConfig: { authUrl },
+    exchangeCode: vi.fn(),
+  };
+}
+
 // Mock trpc
+type MockAdminDb = {
+  execute: (query: unknown) => Promise<Array<{ is_admin: boolean }>>;
+};
+
+interface MockCachePolicy {
+  maxAge: number;
+}
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
+  const { TRPCError } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: MockAdminDb; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
+  const adminProcedure = trpc.procedure.use(async ({ ctx, next }) => {
+    if (!ctx.userId) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+    }
+    const rows = await ctx.db.execute({ type: "admin-check" });
+    if (rows[0]?.is_admin !== true) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+    }
+    return next({ ctx });
+  });
+  mockCachedProtectedQuery.mockImplementation((policy: MockCachePolicy) =>
+    trpc.procedure.use(async ({ ctx, path, getRawInput, next }) => {
+      const rawInput = await getRawInput();
+      const key = `${ctx.userId ?? "anon"}:${path}:${JSON.stringify(rawInput)}`;
+      const hit = mockProtectedQueryCache.get(key);
+      if (hit && hit.expiresAt > Date.now()) {
+        return { ok: true as const, data: hit.data };
+      }
+
+      const result = await next();
+      if (result.ok) {
+        mockProtectedQueryCache.set(key, {
+          data: result.data,
+          expiresAt: Date.now() + policy.maxAge,
+        });
+      }
+      return result;
+    }),
+  );
   return {
     router: trpc.router,
     publicProcedure: trpc.procedure,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    adminProcedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -43,21 +110,29 @@ vi.mock("dofek/jobs/provider-queue-config", () => ({
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
+  SYNC_JOB_RETRY_OPTIONS: {
+    attempts: 288,
+    backoff: { type: "fixed", delay: 300_000 },
+    removeOnComplete: { age: 86_400, count: 1_000 },
+    removeOnFail: { age: 604_800, count: 1_000 },
+  },
+  IMPORT_QUEUE: "import",
   createSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
     getJobs: mockGetJobs,
   })),
+  getImportQueue: vi.fn(() => ({
+    getJobs: mockImportQueueGetJobs,
+    getJobCounts: mockImportQueueGetJobCounts,
+  })),
   createProviderSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
     getJobs: mockGetJobs,
+    getJobCounts: (...states: string[]) => mockGetJobCounts("created-provider", states),
   })),
-  getProviderSyncQueue: vi.fn(() => ({
-    add: mockAdd,
-    getJob: mockGetJob,
-    getJobs: mockGetJobs,
-  })),
+  getProviderSyncQueue: mockGetProviderSyncQueue,
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
 }));
 
@@ -67,15 +142,13 @@ vi.mock("dofek/providers/registry", () => ({
   registerProvider: mockRegisterProvider,
 }));
 
-vi.mock("dofek/providers/types", () => ({
+vi.mock("dofek/providers/types", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/providers/types")>()),
   isSyncProvider: (p: { importOnly?: boolean }) => p.importOnly !== true,
 }));
 
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
-}));
-
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: (userId: string) => mockInvalidateByPrefix(`${userId}:`),
   queryCache: {
     invalidateByPrefix: mockInvalidateByPrefix,
     get: vi.fn().mockResolvedValue(undefined),
@@ -96,6 +169,14 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: mockLoggerWarn, info: vi.fn() },
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: mockWithUserWriteFence,
+}));
+
 // Mock the dynamic provider imports used in doRegisterProviders
 vi.mock("dofek/providers/wahoo/provider", () => ({ WahooProvider: vi.fn() }));
 vi.mock("dofek/providers/withings", () => ({ WithingsProvider: vi.fn() }));
@@ -107,6 +188,8 @@ vi.mock("dofek/providers/strong-csv", () => ({ StrongCsvProvider: vi.fn() }));
 vi.mock("dofek/providers/polar", () => ({ PolarProvider: vi.fn() }));
 vi.mock("dofek/providers/fitbit", () => ({ FitbitProvider: vi.fn() }));
 vi.mock("dofek/providers/garmin", () => ({ GarminProvider: vi.fn() }));
+vi.mock("dofek/providers/garmin-dump", () => ({ GarminDumpProvider: vi.fn() }));
+vi.mock("dofek/providers/fit-file", () => ({ FitFileProvider: vi.fn() }));
 vi.mock("dofek/providers/strava", () => ({ StravaProvider: vi.fn() }));
 vi.mock("dofek/providers/cronometer-csv", () => ({ CronometerCsvProvider: vi.fn() }));
 vi.mock("dofek/providers/oura", () => ({ OuraProvider: vi.fn() }));
@@ -128,33 +211,73 @@ vi.mock("dofek/providers/velohero", () => ({
 }));
 
 // Mock schema and drizzle-orm for logs query
-vi.mock("dofek/db/schema", () => ({
+vi.mock("dofek/db/schema/events", () => ({
   syncLog: {
     userId: "userId",
     syncedAt: "syncedAt",
   },
 }));
 
+import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
-  ensureProvidersRegistered,
-  isAuthError,
   logsInput,
-  mapBullMqStateToSyncStatus,
-  parseJobId,
   sanitizeErrorMessage,
   syncRouter,
   syncStatusInput,
-  toJobId,
   triggerSyncInput,
 } from "./sync.ts";
+import { ensureProvidersRegistered, parseJobId, toJobId } from "./sync-helpers.ts";
+
+const routerConstructionCachedTtlValues = mockCachedProtectedQuery.mock.calls.map(
+  (call) => call[0],
+);
+
+function createProvidersDbMock() {
+  return {
+    execute: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+  };
+}
 
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
+  it("uses a short cache for read-heavy protected queries", () => {
+    expect(routerConstructionCachedTtlValues).toEqual([
+      { maxAge: 120_000 },
+      { maxAge: 120_000 },
+      { maxAge: 120_000 },
+    ]);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProtectedQueryCache.clear();
+    mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
     mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
+    mockGetProviderSyncQueue.mockImplementation((id: string) => ({
+      add: mockAdd,
+      getJob: mockGetJob,
+      getJobs: mockGetJobs,
+      getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+    }));
+    mockGetJobs.mockResolvedValue([]);
+    mockImportQueueGetJobs.mockResolvedValue([]);
+    mockImportQueueGetJobCounts.mockResolvedValue({
+      waiting: 0,
+      active: 0,
+      delayed: 0,
+      failed: 0,
+    });
+    mockWithUserWriteFence.mockReset();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: MockAdminDb,
+        _userId: string,
+        operation: (database: MockAdminDb) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   describe("ensureProvidersRegistered", () => {
@@ -179,13 +302,13 @@ describe("syncRouter", () => {
           id: "strava",
           name: "Strava",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "broken",
           name: "Broken",
           validate: () => "Missing credentials",
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "no-flow",
@@ -216,13 +339,53 @@ describe("syncRouter", () => {
   });
 
   describe("providers", () => {
+    it("returns manual token connection metadata", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wger",
+          name: "Wger",
+          validate: () => null,
+          authSetup: () => ({
+            manualToken: {
+              label: "JWT refresh token",
+              instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+              exchangeToken: vi.fn(),
+            },
+          }),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+      const wger = result.find((provider: { id: string }) => provider.id === "wger");
+
+      expect(wger).toMatchObject({
+        authType: "token",
+        authorized: false,
+        tokenAuth: {
+          label: "JWT refresh token",
+          instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+        },
+      });
+    });
+
     it("returns provider list with enabled/auth status", async () => {
       mockGetAllProviders.mockReturnValue([
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "peloton",
@@ -268,8 +431,24 @@ describe("syncRouter", () => {
       const result = await caller.providers();
 
       // Peloton is filtered out because its validate() fails
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(6);
       expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
+
+      const bleHeartRate = result.find((p: { id: string }) => p.id === "ble_heart_rate");
+      expect(bleHeartRate?.authType).toBe("push:mobile");
+      expect(bleHeartRate?.pushOnly).toBe(true);
+      expect(bleHeartRate?.name).toBe("Heart Rate Monitor (Bluetooth)");
+
+      const whoopBle = result.find((p: { id: string }) => p.id === "whoop_ble");
+      expect(whoopBle?.authType).toBe("push:mobile");
+      expect(whoopBle?.pushOnly).toBe(true);
+      expect(whoopBle?.importOnly).toBe(false);
+      expect(whoopBle?.needsReauth).toBe(false);
+      expect(whoopBle?.authorized).toBe(false);
+      expect(whoopBle?.name).toBe("WHOOP (Bluetooth)");
+      expect(whoopBle?.description).toBe(
+        "Synced from the iOS app when your WHOOP strap is nearby.",
+      );
 
       // Wahoo: OAuth provider, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
@@ -277,6 +456,7 @@ describe("syncRouter", () => {
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
+      expect(wahoo?.pushOnly).toBe(false);
       expect(wahoo?.needsReauth).toBe(false);
 
       // WHOOP: custom auth, not authorized (no token)
@@ -300,13 +480,13 @@ describe("syncRouter", () => {
           id: "polar",
           name: "Polar",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://flow.polar.com" } }),
+          authSetup: () => oauthAuthSetup("https://flow.polar.com"),
         },
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://api.wahoo.com" } }),
+          authSetup: () => oauthAuthSetup("https://api.wahoo.com"),
         },
       ]);
 
@@ -326,10 +506,14 @@ describe("syncRouter", () => {
               {
                 provider_id: "polar",
                 error_message: "Polar authorization failed while syncing exercises",
+                auth_failure_reason: "authorization_failed",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
               {
                 provider_id: "wahoo",
                 error_message: "Network timeout after 30s",
+                auth_failure_reason: null,
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
             ]),
         },
@@ -346,6 +530,164 @@ describe("syncRouter", () => {
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.needsReauth).toBe(false);
+    });
+
+    it("returns needsReauth=true for a reconnect auth error after tokens are deleted", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "withings",
+          name: "Withings",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://account.withings.com"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            // no oauth tokens after stale refresh-token cleanup
+            .mockResolvedValueOnce([])
+            // last syncs
+            .mockResolvedValueOnce([{ provider_id: "withings", last_synced: "2026-06-02" }])
+            // latest errors
+            .mockResolvedValueOnce([
+              {
+                provider_id: "withings",
+                error_message:
+                  "Withings authorization revoked — re-connect the provider to resume syncing.",
+                auth_failure_reason: "refresh_token_revoked",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
+              },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      const withings = result.find((provider: { id: string }) => provider.id === "withings");
+      expect(withings?.authorized).toBe(false);
+      expect(withings?.needsReauth).toBe(true);
+    });
+
+    it("clears needsReauth when tokens were updated after the latest auth error", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "peloton",
+          name: "Peloton",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { authUrl: "https://auth.onepeloton.com" },
+            automatedLogin: async () => ({}),
+          }),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            // oauth tokens saved after reconnect
+            .mockResolvedValueOnce([
+              { provider_id: "peloton", updated_at: new Date("2026-06-02T10:05:00Z") },
+            ])
+            // last syncs
+            .mockResolvedValueOnce([{ provider_id: "peloton", last_synced: "2026-06-02" }])
+            // latest error happened before reconnect
+            .mockResolvedValueOnce([
+              {
+                provider_id: "peloton",
+                error_message:
+                  "Peloton authorization revoked — re-connect the provider to resume syncing.",
+                auth_failure_reason: "refresh_token_revoked",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
+              },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      const peloton = result.find((provider: { id: string }) => provider.id === "peloton");
+      expect(peloton?.authorized).toBe(true);
+      expect(peloton?.needsReauth).toBe(false);
+    });
+
+    it("marks a push provider authorized when its connection exists", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              { provider_id: "whoop_ble", updated_at: new Date("2026-07-25T00:00:00Z") },
+            ])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+      const whoopBle = result.find((provider: { id: string }) => provider.id === "whoop_ble");
+      expect(whoopBle?.authorized).toBe(true);
+      expect(whoopBle?.lastSyncedAt).toBeNull();
+    });
+
+    it("marks a push provider unauthorized without a connection", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(
+        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
+      ).toBe(false);
+    });
+
+    it("does not depend on provider stats when listing connections", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+      const sensorQuery = vi.fn().mockRejectedValue(new Error("provider stats unavailable"));
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        sensorStore: { query: sensorQuery },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.providers()).resolves.toHaveLength(2);
+      expect(sensorQuery).not.toHaveBeenCalled();
+    });
+
+    it("skips ClickHouse provider stats when sensor store is not configured", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+      const getProviderStats = vi.spyOn(SyncRepository.prototype, "getProviderStats");
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(getProviderStats).not.toHaveBeenCalled();
+      expect(
+        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
+      ).toBe(false);
+      getProviderStats.mockRestore();
     });
 
     it("handles authSetup throwing", async () => {
@@ -369,58 +711,10 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.providers();
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(3);
       expect(result[0]?.authType).toBe("none");
-    });
-  });
-
-  describe("isAuthError", () => {
-    it("detects authorization failure messages", () => {
-      expect(isAuthError("Polar authorization failed while syncing exercises")).toBe(true);
-      expect(isAuthError("Strava API unauthorized (401): /athlete/activities")).toBe(true);
-      expect(isAuthError("Eight Sleep token expired — please re-authenticate via Settings")).toBe(
-        true,
-      );
-      expect(isAuthError("VeloHero session expired — please re-authenticate via Settings")).toBe(
-        true,
-      );
-      expect(isAuthError("Connect API authentication failed: invalid token")).toBe(true);
-    });
-
-    it("rejects non-auth errors", () => {
-      expect(isAuthError("Network timeout after 30s")).toBe(false);
-      expect(isAuthError("Rate limited by provider")).toBe(false);
-      expect(isAuthError("Internal server error")).toBe(false);
-      expect(isAuthError('Polar API error (422): {"error":"unauthorized"}')).toBe(false);
-    });
-
-    it("handles null/empty", () => {
-      expect(isAuthError(null)).toBe(false);
-      expect(isAuthError("")).toBe(false);
-    });
-
-    it("detects each AUTH_ERROR_PATTERNS entry individually", () => {
-      // Each of the 6 patterns must individually trigger true
-      expect(isAuthError("authorization failed")).toBe(true);
-      expect(isAuthError("unauthorized")).toBe(true);
-      expect(isAuthError("re-authenticate")).toBe(true);
-      expect(isAuthError("token expired")).toBe(true);
-      expect(isAuthError("session expired")).toBe(true);
-      expect(isAuthError("authentication failed")).toBe(true);
-    });
-
-    it("is case-insensitive (matches uppercase input)", () => {
-      expect(isAuthError("AUTHORIZATION FAILED")).toBe(true);
-      expect(isAuthError("UNAUTHORIZED")).toBe(true);
-      expect(isAuthError("RE-AUTHENTICATE")).toBe(true);
-      expect(isAuthError("TOKEN EXPIRED")).toBe(true);
-      expect(isAuthError("SESSION EXPIRED")).toBe(true);
-      expect(isAuthError("AUTHENTICATION FAILED")).toBe(true);
-    });
-
-    it("returns false for a partial match that does not contain any pattern", () => {
-      expect(isAuthError("author")).toBe(false);
-      expect(isAuthError("expire")).toBe(false);
+      expect(result[1]?.id).toBe("whoop_ble");
+      expect(result[2]?.id).toBe("ble_heart_rate");
     });
   });
 
@@ -453,16 +747,241 @@ describe("syncRouter", () => {
         { providerId: "strava", jobId: "strava:job-strava", queueName: "sync-strava" },
         { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
       ]);
-      expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
-        providerId: "strava",
-        sinceDays: undefined,
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        1,
+        "sync",
+        expect.objectContaining({
+          providerId: "strava",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          targetRefreshWindow: { type: "full" },
+          userId: "user-1",
+        }),
+        expect.objectContaining({
+          attempts: 288,
+          deduplication: { id: "sync:full:strava:user-1" },
+        }),
+      );
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        2,
+        "sync",
+        expect.objectContaining({
+          providerId: "wahoo",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          targetRefreshWindow: { type: "full" },
+          userId: "user-1",
+        }),
+        expect.objectContaining({
+          attempts: 288,
+          deduplication: { id: "sync:full:wahoo:user-1" },
+        }),
+      );
+      expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+        expect.any(Object),
+        "user-1",
+        expect.any(Function),
+      );
+    });
+
+    it("does not enqueue a manual sync when the account-erasure fence rejects the user", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "strava", name: "Strava", validate: () => null }]);
+      mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
-      expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
-        providerId: "wahoo",
-        sinceDays: undefined,
+
+      await expect(caller.triggerSync({ providerId: "strava" })).rejects.toThrow(
+        "Account erasure is active",
+      );
+
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
+
+    it("returns per-provider outcomes when one sync-all provider is rate limited", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://example.com"),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://example.com"),
+        },
+      ]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(Object.assign({ id: "job-wahoo" }, { alreadyQueued: false }));
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([{ provider_id: "garmin" }, { provider_id: "wahoo" }]),
+        },
         userId: "user-1",
+        timezone: "UTC",
       });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "garmin",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+        {
+          providerId: "wahoo",
+          status: "started",
+          jobId: "wahoo:job-wahoo",
+          queueName: "sync-wahoo",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
+      ]);
+      expect(result.jobIds).toEqual(["wahoo:job-wahoo"]);
+    });
+
+    it("returns skippedCooldown for a single provider instead of throwing rate limit errors", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "garmin", name: "Garmin", validate: () => null }]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null);
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValue([
+              { provider_id: "garmin", updated_at: new Date("2026-07-25T00:00:00Z") },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ providerId: "garmin" });
+      expect(enqueueSpy).toHaveBeenCalledWith(
+        "garmin",
+        expect.objectContaining({ providerId: "garmin", userId: "user-1" }),
+        expect.objectContaining({ skipWhenRateLimited: true }),
+      );
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "garmin",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([]);
+      expect(result.jobIds).toEqual([]);
+    });
+
+    it("reports an already queued provider without failing sync all", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "whoop",
+          name: "WHOOP",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://example.com"),
+        },
+      ]);
+      mockGetJob.mockResolvedValueOnce({
+        id: "job-whoop",
+        getState: vi.fn().mockResolvedValue("waiting"),
+        remove: vi.fn(),
+      });
+
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValueOnce([{ provider_id: "whoop" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "whoop",
+          status: "alreadyQueued",
+          jobId: "whoop:job-whoop",
+          queueName: "sync-whoop",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "whoop", jobId: "whoop:job-whoop", queueName: "sync-whoop" },
+      ]);
+      expect(result.jobIds).toEqual(["whoop:job-whoop"]);
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
+
+    it("reports a failed provider without hiding successful providers", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "polar",
+          name: "Polar",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://example.com"),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://example.com"),
+        },
+      ]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockRejectedValueOnce(new Error("provider queue unavailable"))
+        .mockResolvedValueOnce(Object.assign({ id: "job-wahoo" }, { alreadyQueued: false }));
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([{ provider_id: "polar" }, { provider_id: "wahoo" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "polar",
+          status: "failed",
+          message: "provider queue unavailable",
+        },
+        {
+          providerId: "wahoo",
+          status: "started",
+          jobId: "wahoo:job-wahoo",
+          queueName: "sync-wahoo",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
+      ]);
+      expect(result.jobIds).toEqual(["wahoo:job-wahoo"]);
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "provider queue unavailable" }),
+      );
     });
 
     it("excludes unconnected providers from sync-all fan-out", async () => {
@@ -471,22 +990,18 @@ describe("syncRouter", () => {
           id: "strava",
           name: "Strava",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: () => ({
-            oauthConfig: { clientId: "whoop", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
-            automatedLogin: async () => ({}),
-          }),
         },
         {
           id: "intervals",
@@ -512,7 +1027,7 @@ describe("syncRouter", () => {
 
       const result = await caller.triggerSync({});
       // wahoo has authSetup but no token — excluded
-      // whoop has authSetup but no token — excluded
+      // whoop has no token — excluded when custom auth overrides mark it as needing auth
       // strava has authSetup and has token — included
       // intervals has no authSetup — included (no auth needed)
       expect(result.providerJobs).toEqual([
@@ -540,11 +1055,17 @@ describe("syncRouter", () => {
         { providerId: "strava", jobId: "strava:job-strava", queueName: "sync-strava" },
       ]);
       expect(mockAdd).toHaveBeenCalledTimes(1);
-      expect(mockAdd).toHaveBeenCalledWith("sync", {
-        providerId: "strava",
-        sinceDays: undefined,
-        userId: "user-1",
-      });
+      expect(mockAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining({
+          providerId: "strava",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          targetRefreshWindow: { type: "full" },
+          userId: "user-1",
+        }),
+        expect.objectContaining({ attempts: 288 }),
+      );
     });
 
     it("validates provider exists before enqueuing", async () => {
@@ -562,11 +1083,93 @@ describe("syncRouter", () => {
       expect(result.providerJobs).toEqual([
         { providerId: "wahoo", jobId: "wahoo:job-123", queueName: "sync-wahoo" },
       ]);
-      expect(mockAdd).toHaveBeenCalledWith("sync", {
-        providerId: "wahoo",
-        sinceDays: undefined,
+      expect(mockAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining({
+          providerId: "wahoo",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          targetRefreshWindow: { type: "full" },
+          userId: "user-1",
+        }),
+        expect.objectContaining({ attempts: 288 }),
+      );
+    });
+
+    it("stores a fixed since timestamp when sinceDays is provided", async () => {
+      vi.setSystemTime(new Date("2026-04-28T12:00:00.000Z"));
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
+
+      await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
+      vi.useRealTimers();
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining({
+          providerId: "wahoo",
+          sinceDays: 7,
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+          targetRefreshWindow: { type: "days", days: 7 },
+          userId: "user-1",
+        }),
+        expect.objectContaining({
+          attempts: 288,
+          backoff: { type: "fixed", delay: 300_000 },
+        }),
+      );
+      expect(mockAdd.mock.calls[0]?.[2]).not.toHaveProperty("deduplication");
+    });
+
+    it("uses one sync window for every job in a sync-all fan-out", async () => {
+      const dateNowSpy = vi
+        .spyOn(Date, "now")
+        .mockReturnValueOnce(Date.parse("2026-04-28T12:00:00.000Z"))
+        .mockReturnValueOnce(Date.parse("2026-04-29T12:00:00.000Z"))
+        .mockReturnValue(Date.parse("2026-04-30T12:00:00.000Z"));
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", name: "Strava", validate: () => null },
+        { id: "wahoo", name: "Wahoo", validate: () => null },
+      ]);
+      mockAdd
+        .mockResolvedValueOnce({ id: "job-strava" })
+        .mockResolvedValueOnce({ id: "job-wahoo" });
+
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.triggerSync({ sinceDays: 7 });
+      dateNowSpy.mockRestore();
+
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        1,
+        "sync",
+        expect.objectContaining({
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+        }),
+        expect.anything(),
+      );
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        2,
+        "sync",
+        expect.objectContaining({
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+        }),
+        expect.anything(),
+      );
     });
 
     it("finds the correct provider among multiple", async () => {
@@ -651,6 +1254,122 @@ describe("syncRouter", () => {
       expect(result.jobIds).toHaveLength(1);
       expect(result.providerJobs[0]?.providerId).toBe("wahoo");
     });
+
+    it("returns skippedCooldown when sync enqueue is skipped for rate-limit cooldown", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ providerId: "wahoo" });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ]);
+    });
+  });
+
+  describe("queueBackpressure", () => {
+    it("returns counts for provider sync queues and the import queue", async () => {
+      mockGetJobCounts.mockImplementation((providerId: string) => {
+        if (providerId === "garmin") {
+          return Promise.resolve({ waiting: 2, active: 1, delayed: 3, failed: 4 });
+        }
+        if (providerId === "strava") {
+          return Promise.resolve({ waiting: 5, active: 0, delayed: 1, failed: 0 });
+        }
+        return Promise.resolve({ waiting: 0, active: 0, delayed: 0, failed: 0 });
+      });
+      mockImportQueueGetJobCounts.mockResolvedValueOnce({
+        waiting: 7,
+        active: 1,
+        delayed: 0,
+        failed: 2,
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ is_admin: true }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.queueBackpressure();
+
+      expect(result).toEqual([
+        {
+          queueName: "sync-strava",
+          providerId: "strava",
+          waiting: 5,
+          active: 0,
+          delayed: 1,
+          failed: 0,
+        },
+        {
+          queueName: "sync-garmin",
+          providerId: "garmin",
+          waiting: 2,
+          active: 1,
+          delayed: 3,
+          failed: 4,
+        },
+        {
+          queueName: "sync-whoop",
+          providerId: "whoop",
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          failed: 0,
+        },
+        {
+          queueName: "import",
+          waiting: 7,
+          active: 1,
+          delayed: 0,
+          failed: 2,
+        },
+      ]);
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("strava");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("garmin");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("whoop");
+      expect(mockGetJobCounts).toHaveBeenCalledWith("strava", [
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      ]);
+      expect(mockImportQueueGetJobCounts).toHaveBeenCalledWith(
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      );
+    });
+
+    it("rejects non-admin users before returning global queue counts", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ is_admin: false }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.queueBackpressure()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: "Admin access required",
+      });
+      expect(mockGetProviderSyncQueue).not.toHaveBeenCalled();
+      expect(mockImportQueueGetJobCounts).not.toHaveBeenCalled();
+    });
   });
 
   describe("syncStatus", () => {
@@ -680,8 +1399,9 @@ describe("syncRouter", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when Redis is unavailable", async () => {
-      mockGetJob.mockRejectedValueOnce(new Error("Redis connection refused"));
+    it("reports Redis failures instead of returning a missing job", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJob.mockRejectedValueOnce(redisError);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -689,8 +1409,38 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      const result = await caller.syncStatus({ jobId: "some-job" });
-      expect(result).toBeNull();
+      await expect(caller.syncStatus({ jobId: "some-job" })).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: "some-job" },
+      });
+    });
+
+    it("reports Redis failures when reading job state", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockRejectedValueOnce(redisError),
+        progress: {},
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.syncStatus({ jobId: "some-job" })).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: "some-job" },
+      });
     });
 
     it("returns null when job belongs to different user", async () => {
@@ -803,7 +1553,7 @@ describe("syncRouter", () => {
       });
     });
 
-    it("returns done status for completed job", async () => {
+    it("returns completed status for completed job", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("completed"),
@@ -817,11 +1567,11 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.syncStatus({ jobId: "done-job" });
-      expect(result?.status).toBe("done");
+      expect(result?.status).toBe("completed");
       expect(result?.message).toBe("Sync complete");
     });
 
-    it("returns error status with failedReason for failed job", async () => {
+    it("returns failed status with failedReason for failed job", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("failed"),
@@ -836,7 +1586,7 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.syncStatus({ jobId: "failed-job" });
-      expect(result?.status).toBe("error");
+      expect(result?.status).toBe("failed");
       expect(result?.message).toBe("Connection timeout");
     });
 
@@ -925,7 +1675,7 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.syncStatus({ jobId: "waiting-job" });
-      expect(result?.status).toBe("running");
+      expect(result?.status).toBe("queued");
       expect(result?.providers).toEqual({});
     });
   });
@@ -1004,8 +1754,9 @@ describe("syncRouter", () => {
       expect(result[0]?.percentage).toBe(73);
     });
 
-    it("returns empty array when Redis is unavailable", async () => {
-      mockGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+    it("reports Redis failures instead of returning no active syncs", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJobs.mockRejectedValueOnce(redisError);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1013,8 +1764,40 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      const result = await caller.activeSyncs();
-      expect(result).toEqual([]);
+      await expect(caller.activeSyncs()).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Active syncs are temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.activeSyncs" },
+      });
+    });
+
+    it("reports Redis failures when reading an active job state", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-1",
+          data: { userId: "user-1", providerId: "wahoo" },
+          getState: vi.fn().mockRejectedValueOnce(redisError),
+          progress: {},
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeSyncs()).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Active syncs are temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.activeSyncs" },
+        extra: { jobId: "wahoo:job-1" },
+      });
     });
 
     it("handles jobs with no progress data", async () => {
@@ -1036,6 +1819,25 @@ describe("syncRouter", () => {
       const result = await caller.activeSyncs();
       expect(result).toHaveLength(1);
       expect(result[0]?.providers).toEqual({});
+    });
+
+    it("omits jobs that finish after the active jobs query", async () => {
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-completed",
+          data: { userId: "user-1" },
+          getState: vi.fn().mockResolvedValue("completed"),
+          progress: { percentage: 100 },
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeSyncs()).resolves.toEqual([]);
     });
 
     it("generates fallback jobId when BullMQ job has no id", async () => {
@@ -1092,18 +1894,189 @@ describe("syncRouter", () => {
     });
   });
 
+  describe("activeImports", () => {
+    it("returns progress for current-user imports waiting on FIT children", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-garmin",
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: { percentage: 64, message: "Importing activities" },
+          getState: vi.fn().mockResolvedValue("waiting-children"),
+        },
+        {
+          id: "job-other-user",
+          data: {
+            userId: "user-2",
+            importType: "garmin-dump",
+            filePath: "/tmp/other.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: 20,
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.activeImports();
+
+      expect(mockImportQueueGetJobs).toHaveBeenCalledWith([
+        "active",
+        "waiting",
+        "delayed",
+        "waiting-children",
+      ]);
+      expect(result).toEqual([
+        {
+          jobId: "job-garmin",
+          providerId: "garmin-dump",
+          status: "queued",
+          percentage: 64,
+          message: "Importing activities",
+        },
+      ]);
+    });
+
+    it("uses queued defaults and skips unknown import types", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-waiting",
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: undefined,
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "job-unknown",
+          data: { userId: "user-1", importType: "unknown" },
+          progress: 10,
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeImports()).resolves.toEqual([
+        {
+          jobId: "job-waiting",
+          providerId: "garmin-dump",
+          status: "queued",
+          message: "Waiting to import...",
+        },
+      ]);
+    });
+
+    it("includes failedCount when progress reports it", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-ongoing",
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: {
+            percentage: 46,
+            message: "356 of 15774 complete, 15418 failed",
+            failedCount: 15418,
+          },
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.activeImports();
+
+      expect(result).toEqual([
+        {
+          jobId: "job-ongoing",
+          providerId: "garmin-dump",
+          status: "running",
+          percentage: 46,
+          message: "356 of 15774 complete, 15418 failed",
+          failedCount: 15418,
+        },
+      ]);
+    });
+
+    it("uses a stable fallback jobId when an import job has no id", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: undefined,
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: 20,
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.activeImports();
+      expect(result[0]?.jobId).toBe("job-garmin-dump");
+    });
+
+    it("surfaces an actionable error when the import queue is unavailable", async () => {
+      mockImportQueueGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeImports()).rejects.toThrow(
+        "We couldn't check import progress. Please try again.",
+      );
+    });
+  });
+
   describe("providerStats", () => {
-    it("maps database rows to provider stats", async () => {
+    it("maps ClickHouse rows to provider stats", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: {
-          execute: vi.fn().mockResolvedValue([
+          execute,
+        },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([
             {
               provider_id: "wahoo",
               activities: 10,
               daily_metrics: 5,
               sleep_sessions: 3,
               body_measurements: 2,
-              food_entries: 0,
+              food_entries: 8,
               health_events: 1,
               metric_stream: 100,
               nutrition_daily: 7,
@@ -1122,11 +2095,12 @@ describe("syncRouter", () => {
       expect(result).toEqual([
         {
           providerId: "wahoo",
+          totalRecords: 148,
           activities: 10,
           dailyMetrics: 5,
           sleepSessions: 3,
           bodyMeasurements: 2,
-          foodEntries: 0,
+          foodEntries: 8,
           healthEvents: 1,
           metricStream: 100,
           nutritionDaily: 7,
@@ -1135,17 +2109,37 @@ describe("syncRouter", () => {
           journalEntries: 6,
         },
       ]);
+      expect(execute).not.toHaveBeenCalled();
     });
 
     it("returns empty array when no providers", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+        },
         userId: "user-1",
         timezone: "UTC",
       });
 
       const result = await caller.providerStats();
       expect(result).toEqual([]);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("throws a precondition error when ClickHouse is not configured", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.providerStats()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "sync.providerStats requires the ClickHouse provider stats store. Set CLICKHOUSE_URL and retry.",
+      });
     });
   });
 
@@ -1171,6 +2165,59 @@ describe("syncRouter", () => {
       const result = triggerSyncInput.parse({ providerId: "wahoo", sinceDays: 7 });
       expect(result.providerId).toBe("wahoo");
       expect(result.sinceDays).toBe(7);
+    });
+
+    it("triggerSyncInput rejects invalid calendar dates", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDate: "2026-02-31",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("Invalid calendar date");
+    });
+
+    it("triggerSyncInput accepts a valid date range", () => {
+      const result = triggerSyncInput.parse({
+        providerId: "wahoo",
+        sinceDate: "2026-02-28",
+        untilDate: "2026-03-01",
+      });
+
+      expect(result).toEqual({
+        providerId: "wahoo",
+        sinceDate: "2026-02-28",
+        untilDate: "2026-03-01",
+      });
+    });
+
+    it("triggerSyncInput rejects mixing sinceDays with a date range", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDays: 7,
+          sinceDate: "2026-02-28",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("Use either sinceDays or sinceDate/untilDate, not both");
+    });
+
+    it("triggerSyncInput rejects sinceDate without untilDate", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDate: "2026-02-28",
+        }),
+      ).toThrow("untilDate is required when sinceDate is set");
+    });
+
+    it("triggerSyncInput rejects untilDate without sinceDate", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("sinceDate is required when untilDate is set");
     });
 
     it("syncStatusInput requires jobId string", () => {
@@ -1267,69 +2314,6 @@ describe("syncRouter", () => {
         providerId: null,
         rawId: "job-wahoo-1234567890",
       });
-    });
-  });
-
-  describe("dataHealth", () => {
-    it("returns row counts for base tables and materialized views", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([{ count: 42 }]);
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-      const result = await caller.dataHealth();
-      expect(result.dailyMetrics).toEqual({ baseTable: 42, materializedView: 42 });
-      expect(result.sleep).toEqual({ baseTable: 42, materializedView: 42 });
-      expect(result.activity).toEqual({ baseTable: 42, materializedView: 42 });
-      expect(result.hasStaleViews).toBe(false);
-    });
-
-    it("detects stale views when base has data but view is empty", async () => {
-      let callCount = 0;
-      const mockExecute = vi.fn().mockImplementation(() => {
-        callCount++;
-        // Odd calls (base tables) return data, even calls (views) return 0
-        return Promise.resolve([{ count: callCount % 2 === 1 ? 100 : 0 }]);
-      });
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-      const result = await caller.dataHealth();
-      expect(result.hasStaleViews).toBe(true);
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        expect.stringContaining("stale materialized views"),
-      );
-    });
-  });
-
-  describe("mapBullMqStateToSyncStatus", () => {
-    it("maps 'completed' to 'done'", () => {
-      expect(mapBullMqStateToSyncStatus("completed")).toBe("done");
-    });
-
-    it("maps 'failed' to 'error'", () => {
-      expect(mapBullMqStateToSyncStatus("failed")).toBe("error");
-    });
-
-    it("maps 'active' to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("active")).toBe("running");
-    });
-
-    it("maps 'waiting' to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("waiting")).toBe("running");
-    });
-
-    it("maps unknown states to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("delayed")).toBe("running");
-      expect(mapBullMqStateToSyncStatus("")).toBe("running");
-    });
-
-    it("does not swap 'completed' and 'failed' mappings", () => {
-      expect(mapBullMqStateToSyncStatus("completed")).not.toBe("error");
-      expect(mapBullMqStateToSyncStatus("failed")).not.toBe("done");
     });
   });
 });

@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { healthEvent } from "../db/schema/clinical.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -24,6 +25,9 @@ import type {
   OuraVO2Max,
   OuraWorkout,
 } from "./oura/schemas.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
   return {
@@ -306,6 +310,7 @@ function ouraHandlers(opts?: MockFetchOptions) {
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("OuraProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -317,6 +322,10 @@ describe("OuraProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -359,7 +368,13 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("oura");
     expect(result.errors).toHaveLength(0);
@@ -382,19 +397,16 @@ describe("OuraProvider.sync() (integration)", () => {
       .where(eq(activity.providerId, "oura"));
     const workout = activityRows.find((r) => r.externalId === "workout-001");
     expect(workout).toBeDefined();
-    expect(workout?.activityType).toBe("running");
+    expect(workout?.canonicalType).toBe("running");
     expect(workout?.name).toBe("Morning Run");
 
     // Verify sessions → activity table
     const session = activityRows.find((r) => r.externalId === "session-001");
     expect(session).toBeDefined();
-    expect(session?.activityType).toBe("meditation");
+    expect(session?.canonicalType).toBe("meditation");
 
-    // Verify heart rate → metric_stream
-    const hrRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "oura"));
+    // Verify heart rate metric stream events
+    const hrRows = metricStreamCapture.publishedMetricStreamRows;
     const heartRateSamples = hrRows.filter((sample) => sample.channel === "heart_rate");
     expect(heartRateSamples.length).toBeGreaterThanOrEqual(1);
     expect(heartRateSamples[0]?.scalar).toBe(62);
@@ -454,7 +466,13 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -489,8 +507,20 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const sleepRows = await ctx.db
       .select()
@@ -518,7 +548,13 @@ describe("OuraProvider.sync() (integration)", () => {
     server.use(...ouraHandlers());
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "oura");
@@ -526,11 +562,17 @@ describe("OuraProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "oura"));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -645,7 +687,13 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
     errorServer.use(...ouraErrorHandlers({ sleepError: true }));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const sleepError = result.errors.find((e) => e.message.includes("sleep"));
     expect(sleepError).toBeDefined();

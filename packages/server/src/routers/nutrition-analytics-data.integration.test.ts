@@ -1,15 +1,20 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 import type {
   AdaptiveTdeeResult,
-  CaloricBalanceRow,
   MacroRatioRow,
   MicronutrientAdequacyRow,
+  MicronutrientSafetyReviewResult,
 } from "./nutrition-analytics.ts";
 
 /**
@@ -17,7 +22,6 @@ import type {
  * - adaptiveTdee: EWMA smoothing + rolling 28-day TDEE estimation
  * - macroRatios: protein/carbs/fat percentages + proteinPerKg
  * - micronutrientAdequacy: RDA percentage calculations from food_entry
- * - caloricBalance: daily calorie balance with rolling average
  */
 describe("Nutrition analytics data coverage", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -50,52 +54,73 @@ describe("Nutrition analytics data coverage", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // ── Insert 50 days of nutrition_daily (needed for adaptiveTdee + macroRatios + caloricBalance) ──
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+
+    // ── Insert 50 days of unnamed food-entry nutrition (needed for adaptiveTdee + macroRatios) ──
     for (let i = 49; i >= 0; i--) {
       // Vary calories slightly so TDEE estimation has something to work with
       const calories = 2200 + Math.round(Math.sin(i * 0.5) * 200);
-      const proteinG = 120 + Math.round(Math.cos(i * 0.3) * 20);
+      const proteinG = 88 + Math.round(Math.cos(i * 0.3) * 5);
       const carbsG = 250 + Math.round(Math.sin(i * 0.4) * 30);
       const fatG = 80 + Math.round(Math.cos(i * 0.2) * 10);
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.nutrition_daily (
-              user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              ${calories}, ${proteinG}, ${carbsG}, ${fatG}
-            ) ON CONFLICT DO NOTHING`,
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, external_id, nutrition_grain, food_name, source_name,
+                confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                ${`daily-nutrition-${i}`}, 'daily_aggregate', NULL, 'Fixture', true
+              ) RETURNING id
+            )
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, nutrient_id, amount
+            FROM new_entry
+            CROSS JOIN (VALUES
+              ('calories', ${calories}::real),
+              ('protein', ${proteinG}::real),
+              ('carbohydrate', ${carbsG}::real),
+              ('fat', ${fatG}::real)
+            ) AS nutrient_values(nutrient_id, amount)
+            ON CONFLICT DO NOTHING`,
       );
+      if (i === 10) {
+        await testCtx.db.execute(
+          sql`WITH new_entry AS (
+                INSERT INTO fitness.food_entry (
+                  user_id, provider_id, date, external_id, nutrition_grain, food_name, source_name,
+                  confirmed
+                ) VALUES (
+                  ${TEST_USER_ID}, 'test_provider',
+                  CURRENT_DATE - ${i}::int,
+                  'daily-nutrition-conflict', 'itemized', 'Conflicting meal',
+                  'Conflicting fixture', true
+                ) RETURNING id
+              )
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, 'calories', 1_900
+              FROM new_entry`,
+        );
+      }
     }
 
-    // ── Insert 50 days of body_measurement (weight data for adaptiveTdee EWMA + macroRatios proteinPerKg) ──
+    // ── Insert 50 days of body weight metrics (for adaptiveTdee EWMA + macroRatios proteinPerKg) ──
     // Simulate gradual weight loss from 80kg to ~79kg over 50 days
     for (let i = 49; i >= 0; i--) {
       const weightKg = 80 - (49 - i) * 0.02 + Math.sin(i * 0.7) * 0.3;
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.body_measurement (
-              recorded_at, provider_id, user_id, weight_kg
-            ) VALUES (
-              (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '8 hours',
-              'test_provider', ${TEST_USER_ID}, ${weightKg}
-            )`,
-      );
-    }
-
-    // ── Insert daily_metrics with active_energy_kcal and basal_energy_kcal (for caloricBalance) ──
-    for (let i = 49; i >= 0; i--) {
-      const activeEnergy = 500 + Math.round(Math.sin(i * 0.6) * 150);
-      const basalEnergy = 1700 + Math.round(Math.cos(i * 0.3) * 50);
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, active_energy_kcal, basal_energy_kcal,
-              resting_hr, steps
-            ) VALUES (
-              CURRENT_DATE - ${i}::int,
-              'test_provider', ${TEST_USER_ID},
-              ${activeEnergy}, ${basalEnergy}, 55, 8000
-            ) ON CONFLICT DO NOTHING`,
-      );
+      const recordedAt = new Date();
+      recordedAt.setHours(8, 0, 0, 0);
+      recordedAt.setDate(recordedAt.getDate() - i);
+      metricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt: recordedAt.toISOString(),
+        providerId: "test_provider",
+        externalId: `test-body-${i}`,
+        sourceType: "api",
+        channel: "body_weight",
+        scalar: weightKg,
+      });
     }
 
     // ── Insert food_entry records with micronutrient data (for micronutrientAdequacy) ──
@@ -104,25 +129,33 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'breakfast', 'Fortified Oatmeal', true
+                'itemized', 'breakfast', 'Fortified Oatmeal', true
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              )
-              SELECT id,
-                350, 12, 55, 8, 8,
-                450, 45, 5, 350,
-                6, 100, 4, 800, 400
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 350),
+                ('protein', 12),
+                ('carbohydrate', 55),
+                ('fat', 8),
+                ('fiber', 8),
+                ('vitamin_a', 450),
+                ('vitamin_c', 45),
+                ('vitamin_d', 5),
+                ('calcium', 350),
+                ('iron', 6),
+                ('magnesium', 100),
+                ('zinc', 4),
+                ('potassium', 800),
+                ('sodium', 400)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -131,25 +164,33 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'lunch', 'Chicken Salad Bowl', true
+                'itemized', 'lunch', 'Chicken Salad Bowl', true
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              )
-              SELECT id,
-                550, 40, 30, 22, 6,
-                300, 30, 3, 250,
-                3, 80, 5, 600, 800
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 550),
+                ('protein', 40),
+                ('carbohydrate', 30),
+                ('fat', 22),
+                ('fiber', 6),
+                ('vitamin_a', 300),
+                ('vitamin_c', 30),
+                ('vitamin_d', 3),
+                ('calcium', 250),
+                ('iron', 3),
+                ('magnesium', 80),
+                ('zinc', 5),
+                ('potassium', 600),
+                ('sodium', 800)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -158,25 +199,33 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'dinner', 'Salmon with Vegetables', true
+                'itemized', 'dinner', 'Salmon with Vegetables', true
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              )
-              SELECT id,
-                600, 45, 35, 28, 7,
-                200, 25, 8, 300,
-                2, 120, 3, 900, 600
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 600),
+                ('protein', 45),
+                ('carbohydrate', 35),
+                ('fat', 28),
+                ('fiber', 7),
+                ('vitamin_a', 200),
+                ('vitamin_c', 25),
+                ('vitamin_d', 8),
+                ('calcium', 300),
+                ('iron', 2),
+                ('magnesium', 120),
+                ('zinc', 3),
+                ('potassium', 900),
+                ('sodium', 600)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -186,37 +235,35 @@ describe("Nutrition analytics data coverage", () => {
         await testCtx.db.execute(
           sql`WITH new_entry AS (
                 INSERT INTO fitness.food_entry (
-                  user_id, provider_id, date, meal, food_name, confirmed
+                  user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
                 ) VALUES (
                   ${TEST_USER_ID}, 'dofek',
                   CURRENT_DATE - ${i}::int,
-                  'snack', 'Unconfirmed Snack', false
-                ) RETURNING id
-              ),
-              new_nutrition AS (
-                INSERT INTO fitness.food_entry_nutrition (
-                  food_entry_id,
-                  calories, protein_g, carbs_g, fat_g,
-                  vitamin_c_mg, calcium_mg
-                )
-                SELECT id,
-                  200, 10, 25, 8,
-                  999, 999
+                  'itemized', 'snack', 'Unconfirmed Snack', false
+              ) RETURNING id
+            ),
+            new_nutrition AS (
+                INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+                SELECT id, nutrient_id, amount
                 FROM new_entry
+                CROSS JOIN (VALUES
+                  ('calories', 200),
+                  ('protein', 10),
+                  ('carbohydrate', 25),
+                  ('fat', 8),
+                  ('vitamin_c', 999),
+                  ('calcium', 999)
+                ) AS nutrient_values(nutrient_id, amount)
               )
               SELECT 1`,
         );
       }
     }
 
-    // ── Refresh materialized views ──
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
-    await testCtx.db.execute(
-      sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement`,
-    );
-
     // Start server
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -261,8 +308,8 @@ describe("Nutrition analytics data coverage", () => {
         days: 90,
       });
 
-      // Should have daily data for all 50 days of nutrition data
-      expect(result.dailyData.length).toBeGreaterThanOrEqual(40);
+      expect(result.status).toBe("available");
+      expect(result.dailyData).toHaveLength(90);
 
       // With 50 days of data and weight measurements, TDEE should be estimated
       expect(result.estimatedTdee).not.toBeNull();
@@ -272,11 +319,15 @@ describe("Nutrition analytics data coverage", () => {
         expect(result.estimatedTdee).toBeLessThan(4000);
       }
 
-      // Should have data points from rolling windows
-      expect(result.dataPoints).toBeGreaterThan(0);
-
-      // Confidence should be > 0 with 50 days of data and weight
-      expect(result.confidence).toBeGreaterThan(0);
+      expect(result.estimateRange).not.toBeNull();
+      expect(result.evidence.acceptedWindows).toBeGreaterThan(0);
+      expect(result.evidence.excludedDays.sourceConflict).toBe(1);
+      expect(result.dailyData).toContainEqual(
+        expect.objectContaining({
+          nutritionStatus: "source_conflict",
+          caloriesIn: null,
+        }),
+      );
     });
 
     it("applies EWMA smoothing to weight measurements", async () => {
@@ -366,7 +417,7 @@ describe("Nutrition analytics data coverage", () => {
 
       for (const row of rowsWithProteinPerKg) {
         if (row.proteinPerKg != null) {
-          // With ~120g protein and ~80kg body weight, expect ~1.5 g/kg
+          // With daily nutrition plus itemized food rows, expect a plausible g/kg range.
           expect(row.proteinPerKg).toBeGreaterThan(1.0);
           expect(row.proteinPerKg).toBeLessThan(2.5);
         }
@@ -390,6 +441,28 @@ describe("Nutrition analytics data coverage", () => {
   // micronutrientAdequacy — RDA percentage calculations
   // ══════════════════════════════════════════════════════════════
   describe("micronutrientAdequacy", () => {
+    it("V2 distinguishes food and taken-supplement averages on recorded days", async () => {
+      await queryCache.invalidateAll();
+      const result = await query<MicronutrientSafetyReviewResult>(
+        "nutritionAnalytics.micronutrientAdequacyV2",
+        { days: 30 },
+      );
+
+      const vitaminC = result.nutrients.find((row) => row.nutrientId === "vitamin_c");
+      expect(vitaminC).toBeDefined();
+      expect(vitaminC?.intake.foodDailyAverage).toBe(vitaminC?.intake.totalDailyAverage);
+      expect(vitaminC?.intake.supplementDailyAverage).toBe(0);
+      expect(vitaminC?.intake.daysTracked).toBeGreaterThanOrEqual(10);
+      expect(vitaminC?.adequacy).toMatchObject({
+        reference: {
+          type: "daily_value",
+          amount: 90,
+          population: "Adults and children age 4+",
+        },
+      });
+      expect(result.professionalReview.status).toBe("no_supplements");
+    });
+
     it("returns RDA comparisons for tracked micronutrients", async () => {
       await queryCache.invalidateAll();
       const result = await query<MicronutrientAdequacyRow[]>(
@@ -474,66 +547,6 @@ describe("Nutrition analytics data coverage", () => {
 
       const vitB12 = result.find((r) => r.nutrient === "Vitamin B12");
       expect(vitB12).toBeUndefined();
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // caloricBalance — daily calorie balance with rolling average
-  // ══════════════════════════════════════════════════════════════
-  describe("caloricBalance", () => {
-    it("returns daily caloric balance with expenditure breakdown", async () => {
-      await queryCache.invalidateAll();
-      const result = await query<CaloricBalanceRow[]>("nutritionAnalytics.caloricBalance", {
-        days: 45,
-      });
-
-      // With 50 days of both nutrition_daily and daily_metrics data
-      expect(result.length).toBeGreaterThan(0);
-
-      for (const row of result) {
-        expect(row.date).toBeTruthy();
-        expect(row.caloriesIn).toBeGreaterThan(0);
-        expect(row.basalEnergy).toBeGreaterThan(0);
-        expect(row.activeEnergy).toBeGreaterThanOrEqual(0);
-
-        // totalExpenditure = activeEnergy + basalEnergy
-        expect(row.totalExpenditure).toBe(row.activeEnergy + row.basalEnergy);
-
-        // balance = caloriesIn - totalExpenditure
-        expect(row.balance).toBe(row.caloriesIn - row.totalExpenditure);
-      }
-    });
-
-    it("computes rolling 7-day average balance", async () => {
-      const result = await query<CaloricBalanceRow[]>("nutritionAnalytics.caloricBalance", {
-        days: 45,
-      });
-
-      // rollingAvgBalance should be populated
-      const rowsWithRolling = result.filter((r) => r.rollingAvgBalance != null);
-      expect(rowsWithRolling.length).toBeGreaterThan(0);
-
-      // Rolling average should be a smoothed version of daily balance
-      for (const row of rowsWithRolling) {
-        if (row.rollingAvgBalance != null) {
-          // Should be a reasonable number (not NaN or extreme)
-          expect(Number.isFinite(row.rollingAvgBalance)).toBe(true);
-        }
-      }
-    });
-
-    it("returns results sorted by date ascending", async () => {
-      const result = await query<CaloricBalanceRow[]>("nutritionAnalytics.caloricBalance", {
-        days: 45,
-      });
-
-      for (let i = 1; i < result.length; i++) {
-        const prev = result[i - 1];
-        const curr = result[i];
-        if (prev && curr) {
-          expect(prev.date <= curr.date).toBe(true);
-        }
-      }
     });
   });
 });

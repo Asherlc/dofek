@@ -1,0 +1,65 @@
+{
+  "name": "@dofek/xert",
+  "version": "0.1.1",
+  "description": "Unofficial Xert API client with password authentication, token refresh, and activity parsing",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/xert-client"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/xert-client#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "xert",
+    "cycling",
+    "api-client",
+    "oauth",
+    "unofficial",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/client.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dofek/provider-http": "workspace:*",
+    "@dofek/training": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "3.2.6"
+  }
+}

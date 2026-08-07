@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dofek — Scalable Cycling Analytics Plan</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #eef3ed;
+        --surface: rgba(255, 255, 255, 0.72);
+        --surface-solid: #f8fbf8;
+        --surface-strong: #ffffff;
+        --border: rgba(74, 158, 122, 0.2);
+        --border-strong: rgba(74, 158, 122, 0.36);
+        --accent: #2d7a56;
+        --accent-2: #4a9e7a;
+        --accent-soft: rgba(74, 158, 122, 0.1);
+        --foreground: #1a2e1a;
+        --muted: #4a6a4a;
+        --subtle: #6b8a6b;
+        --warning: #9a6700;
+        --warning-soft: #fff7db;
+        --danger: #b42318;
+        --danger-soft: #fff0ee;
+        --blue: #2563a6;
+        --blue-soft: #edf5ff;
+        --shadow: 0 16px 45px rgba(26, 46, 26, 0.07);
+        --mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; }
+      :where(.grid, .flex) > * { min-width: 0; }
+      :where(p, h1, h2, h3, h4, li, td, th, code, figcaption) { overflow-wrap: anywhere; }
+      :where(img, svg, canvas, iframe) { max-width: 100%; height: auto; }
+
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--foreground);
+        font-family: var(--sans);
+        line-height: 1.55;
+        background:
+          radial-gradient(ellipse at 18% 8%, rgba(74, 158, 122, 0.10), transparent 38%),
+          radial-gradient(ellipse at 86% 26%, rgba(45, 122, 86, 0.06), transparent 34%),
+          var(--page);
+      }
+
+      main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 72px; }
+      .hero, .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        backdrop-filter: blur(14px);
+      }
+      .hero { padding: clamp(26px, 5vw, 52px); box-shadow: var(--shadow); }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 99px; background: var(--accent-2); }
+      h1 { margin: 14px 0 12px; padding-bottom: 0.08em; max-width: 840px; font-size: clamp(34px, 6vw, 64px); line-height: 1.1; letter-spacing: -0.045em; }
+      .lede { margin: 0; max-width: 820px; color: var(--muted); font-size: clamp(16px, 2vw, 20px); }
+      .decision {
+        margin-top: 24px;
+        padding: 16px 18px;
+        border-left: 4px solid var(--accent);
+        border-radius: 10px;
+        background: var(--accent-soft);
+        font-weight: 650;
+      }
+      section { margin-top: 34px; }
+      .section-head { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 14px; }
+      h2 { margin: 0; font-size: clamp(23px, 3vw, 32px); letter-spacing: -0.025em; }
+      h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.012em; }
+      .section-head p, .muted { margin: 0; color: var(--muted); }
+      .grid { display: grid; gap: 14px; }
+      .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .stat { padding: 20px; }
+      .stat-label { color: var(--subtle); font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+      .stat-value { margin: 7px 0 3px; padding-bottom: 0.08em; font-family: var(--mono); font-size: clamp(25px, 4vw, 38px); line-height: 1.15; color: var(--accent); }
+      .stat-note { color: var(--muted); font-size: 13px; }
+      .card { padding: 22px; }
+      .diagram-wrap { padding: 18px; overflow: hidden; background: rgba(255,255,255,.82); }
+      .mermaid { min-width: 0; }
+      code, .mono { font-family: var(--mono); font-size: 0.92em; }
+      code { padding: 2px 5px; border-radius: 5px; background: rgba(45,122,86,.08); color: #205d40; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        padding: 3px 9px;
+        color: var(--accent);
+        background: var(--accent-soft);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .pill.warning { color: var(--warning); border-color: #e7c45d; background: var(--warning-soft); }
+      .pill.blue { color: var(--blue); border-color: #a9c9e9; background: var(--blue-soft); }
+      .pill.danger { color: var(--danger); border-color: #efb2aa; background: var(--danger-soft); }
+      .plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .phase { position: relative; padding-left: 64px; min-height: 156px; }
+      .phase-number {
+        position: absolute;
+        left: 20px;
+        top: 20px;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        color: white;
+        background: var(--accent);
+        font-family: var(--mono);
+        font-weight: 800;
+      }
+      ul { margin: 10px 0 0; padding-left: 19px; }
+      li + li { margin-top: 6px; }
+      .table-shell { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,.7); }
+      table { width: 100%; min-width: 780px; border-collapse: collapse; }
+      th, td { padding: 14px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+      th { color: var(--subtle); background: rgba(245,249,245,.86); font-size: 11px; letter-spacing: .075em; text-transform: uppercase; }
+      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr:hover { background: rgba(74,158,122,.04); }
+      .comparison { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .option { position: relative; }
+      .option.recommended { border-color: var(--accent-2); box-shadow: 0 14px 36px rgba(45,122,86,.10); }
+      .option.recommended::after {
+        content: "Recommended";
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: white;
+        font-size: 11px;
+        font-weight: 800;
+      }
+      .option h3 { padding-right: 86px; }
+      .cost { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+      .gates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .gate { display: flex; gap: 12px; align-items: flex-start; }
+      .check { flex: 0 0 auto; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-weight: 900; }
+      .source-note { margin-top: 26px; padding: 18px 20px; font-size: 13px; color: var(--muted); }
+      .source-note strong { color: var(--foreground); }
+
+      @media (max-width: 900px) {
+        .stats, .comparison { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .plan-grid, .gates { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 620px) {
+        main { width: min(100% - 20px, 1180px); padding-top: 14px; }
+        .hero, .card { border-radius: 12px; }
+        .stats, .comparison { grid-template-columns: 1fr; }
+        .section-head { align-items: start; flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <div class="eyebrow">Dofek capacity plan</div>
+        <h1>Make cycling analytics scale beyond one fast user</h1>
+        <p class="lede">The target is not “run the same 20 statements faster.” It is a bounded cold-load path: two critical serving queries, one progressive activity query, shared caching, and compute sized from measured peak demand.</p>
+        <div class="decision">Recommended direction: reduce the cold cycling page to ≤3 ClickHouse statements, then give ClickHouse four dedicated CPUs and enforce a server-owned global query budget.</div>
+      </header>
+
+      <section aria-labelledby="baseline-title">
+        <div class="section-head">
+          <div><h2 id="baseline-title">Current evidence → target</h2><p>Observed production timings, translated into an explicit capacity contract.</p></div>
+          <span class="pill warning">Cold-cache path is the design constraint</span>
+        </div>
+        <div class="grid stats">
+          <article class="card stat"><div class="stat-label">Current query fan-out</div><div class="stat-value">≈20</div><div class="stat-note">Relevant ClickHouse statements during the observed cycling load.</div></article>
+          <article class="card stat"><div class="stat-label">Current compute</div><div class="stat-value">1 CPU</div><div class="stat-note">ClickHouse service limit; dbt refresh work shares it.</div></article>
+          <article class="card stat"><div class="stat-label">Target query budget</div><div class="stat-value">≤3</div><div class="stat-note">Two critical statements plus one progressive activity statement.</div></article>
+          <article class="card stat"><div class="stat-label">Target cold p95</div><div class="stat-value">&lt;3s</div><div class="stat-note">Complete cycling page under the agreed load profile.</div></article>
+        </div>
+      </section>
+
+      <section aria-labelledby="architecture-title">
+        <div class="section-head">
+          <div><h2 id="architecture-title">Target request path</h2><p>Precompute by domain and grain; keep the interactive path bounded and progressively rendered.</p></div>
+          <span class="pill blue">Shared by web + mobile</span>
+        </div>
+        <figure class="card diagram-wrap">
+          <pre class="mermaid">
+flowchart TD
+  raw["Raw provider + sensor data"] --> dbt["Incremental dbt models\nbackground workload class"]
+  dbt --> daily["analytics.daily_cycling\nproposed daily serving grain"]
+  dbt --> power["analytics.activity_power_curve\nexisting duration grain"]
+  dbt --> activity["analytics.cycling_activity\nproposed per-activity serving grain"]
+
+  client["Web / mobile cycling screen"] --> cache["Redis response cache\n+ distributed single-flight"]
+  cache --> critical["cycling.performance\n2 bounded serving queries"]
+  cache --> secondary["cycling.activities\n1 progressive query"]
+  critical --> scheduler["Global work-conserving scheduler\ncritical → secondary → background"]
+  secondary --> scheduler
+  scheduler --> daily
+  scheduler --> power
+  scheduler --> activity
+
+  classDef primary fill:#e4f3ea,stroke:#2d7a56,color:#1a2e1a,stroke-width:2px;
+  classDef proposed fill:#edf5ff,stroke:#2563a6,color:#17324d;
+  classDef infra fill:#fff7db,stroke:#9a6700,color:#4f3800;
+  class client,critical,secondary primary;
+  class daily,activity proposed;
+  class cache,scheduler,dbt infra;
+          </pre>
+          <figcaption class="muted">Avoid a single all-or-nothing mega-response: performance charts arrive first; activities and variability remain independently refreshable.</figcaption>
+        </figure>
+      </section>
+
+      <section aria-labelledby="work-title">
+        <div class="section-head">
+          <div><h2 id="work-title">Implementation sequence</h2><p>Each phase has a measurable exit gate; no concurrency or cache change ships on intuition alone.</p></div>
+        </div>
+        <div class="grid plan-grid">
+          <article class="card phase"><div class="phase-number">1</div><h3>Establish the capacity contract</h3><span class="pill">Measure first</span><ul><li>Define cold and warm SLOs: first useful chart, complete page, queue wait, and error rate.</li><li>Replay the cycling load at concurrency 1, 2, 4, 8, and during a dbt build.</li><li>Record actual CPU-seconds per serving statement and host CPU headroom.</li></ul></article>
+          <article class="card phase"><div class="phase-number">2</div><h3>Bound the page to three statements</h3><span class="pill">Largest leverage</span><ul><li>Add <code>daily_cycling</code> and <code>cycling_activity</code> incremental serving grains only for metrics currently requested.</li><li>Combine recent + season power curves into one parameterized query over the existing power-curve model.</li><li>Expose shared server contracts for <code>cycling.performance</code> and <code>cycling.activities</code>; clients only render returned values.</li></ul></article>
+          <article class="card phase"><div class="phase-number">3</div><h3>Control admission centrally</h3><span class="pill">Protect latency</span><ul><li>Replace the two independent two-slot queues with one global, work-conserving scheduler.</li><li>Classify procedures centrally as critical, secondary, or background so repositories cannot forget priority.</li><li>Use one total ClickHouse concurrency budget and observe queue depth/wait by class.</li></ul></article>
+          <article class="card phase"><div class="phase-number">4</div><h3>Correct compute and cache behavior</h3><span class="pill">Scale safely</span><ul><li>Allocate four ClickHouse CPUs only after confirming host headroom; otherwise move it to dedicated compute.</li><li>Keep the existing user-scoped Redis response cache and add cross-replica single-flight for identical cold misses.</li><li>Give dbt a constrained background profile so refreshes cannot consume interactive capacity.</li></ul></article>
+        </div>
+      </section>
+
+      <section aria-labelledby="budget-title">
+        <div class="section-head">
+          <div><h2 id="budget-title">Cold-load query budget</h2><p>This is the contract that turns user growth into predictable capacity planning.</p></div>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Request</th><th>What it returns</th><th>ClickHouse budget</th><th>Loading behavior</th><th>Cache policy</th></tr></thead>
+            <tbody>
+              <tr><td><code>cycling.performance</code></td><td>Recent + season power curve, threshold trend, fitness/fatigue/form, efficiency, ascent series</td><td><strong>2 statements maximum</strong></td><td>Starts immediately; above-the-fold</td><td>User + timezone + range; versioned/invalidate on affected analytics refresh</td></tr>
+              <tr><td><code>cycling.activities</code></td><td>Recent activities and paginated variability rows</td><td><strong>1 statement maximum</strong></td><td>Starts after critical response or browser idle</td><td>User + range + pagination; targeted invalidation</td></tr>
+              <tr><td>Repeat navigation</td><td>Same payloads</td><td><strong>0 statements</strong></td><td>Immediate cached render; background freshness is separate</td><td>Existing Redis + TanStack stale data</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="options-title">
+        <div class="section-head">
+          <div><h2 id="options-title">What to ship</h2><p>Capacity alone is faster; bounded work is what scales.</p></div>
+        </div>
+        <div class="grid comparison">
+          <article class="card option"><h3>CPU only</h3><span class="pill warning">Tactical</span><p>Raise ClickHouse from one to four CPUs and keep the ≈20-statement page.</p><ul><li>Fastest immediate relief</li><li>Still expensive per cold user</li><li>Duplicate misses and dbt contention remain</li></ul><div class="cost"><strong>Cost:</strong> capacity spend grows almost directly with user traffic.</div></article>
+          <article class="card option"><h3>Query reduction only</h3><span class="pill blue">Efficient</span><p>Build the bounded serving path but leave ClickHouse on one CPU.</p><ul><li>Much lower work per user</li><li>Likely acceptable at low concurrency</li><li>Little burst or refresh headroom</li></ul><div class="cost"><strong>Cost:</strong> good economics, but one core remains a fragile ceiling.</div></article>
+          <article class="card option recommended"><h3>Bounded path + 4 CPUs</h3><span class="pill">Robust</span><p>Reduce to ≤3 statements, centralize scheduling, suppress stampedes, then add compute.</p><ul><li>Approximately 6–10× more cold page capacity than today</li><li>Predictable latency under mixed workloads</li><li>Clear path to a dedicated node or replicas</li></ul><div class="cost"><strong>Cost:</strong> more implementation work now; substantially better cost per user later.</div></article>
+        </div>
+      </section>
+
+      <section aria-labelledby="gates-title">
+        <div class="section-head">
+          <div><h2 id="gates-title">Definition of done</h2><p>The redesign is complete only when the cold path—not just the cache-hit path—passes.</p></div>
+        </div>
+        <div class="grid gates">
+          <div class="card gate"><div class="check">✓</div><div><h3>Query count</h3><p class="muted">At most three ClickHouse statements for a cold cycling page, asserted in an executable integration/performance test.</p></div></div>
+          <div class="card gate"><div class="check">✓</div><div><h3>Latency</h3><p class="muted">Critical content p95 &lt;2 seconds and complete page p95 &lt;3 seconds at the agreed concurrent load.</p></div></div>
+          <div class="card gate"><div class="check">✓</div><div><h3>Fairness</h3><p class="muted">Interactive queue-wait p95 &lt;250 ms while dbt runs; background work still makes progress.</p></div></div>
+          <div class="card gate"><div class="check">✓</div><div><h3>Parity and correctness</h3><p class="muted">Web and mobile consume the same server-computed metrics, with old/new response parity tested against real ClickHouse fixtures.</p></div></div>
+          <div class="card gate"><div class="check">✓</div><div><h3>Cache stampede</h3><p class="muted">Concurrent identical cold misses across both web replicas produce one backend computation per cache key.</p></div></div>
+          <div class="card gate"><div class="check">✓</div><div><h3>Scale model</h3><p class="muted">Capacity sheet uses measured miss rate and peak page-load rate; alert before projected demand reaches 70% sustained capacity.</p></div></div>
+        </div>
+      </section>
+
+      <aside class="card source-note">
+        <strong>Verified codebase anchors:</strong> the cycling page currently starts its query family in <code>packages/web/src/routes/training/cycling.tsx</code>; web query transport is configured in <code>packages/web/src/lib/trpc.ts</code>; the one-hour user-scoped response cache is in <code>packages/server/src/trpc.ts</code>; the two independent concurrency-two queues are in <code>packages/server/src/repositories/limited-activity-sensor-store.ts</code>; and the production ClickHouse CPU/memory limits are documented in <code>deploy/README.md</code> and configured by <code>deploy/stack.yml</code>. Proposed model and endpoint names are design placeholders, not existing code.
+      </aside>
+    </main>
+
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs";
+      const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      const paint = document.createElement("canvas").getContext("2d");
+      function toRgba(color) {
+        paint.clearRect(0, 0, 1, 1);
+        paint.fillStyle = "#000";
+        paint.fillStyle = color;
+        paint.fillRect(0, 0, 1, 1);
+        return paint.getImageData(0, 0, 1, 1).data;
+      }
+      function composite(foreground, background) {
+        const foregroundAlpha = foreground[3] / 255;
+        const backgroundAlpha = background[3] / 255;
+        const alpha = foregroundAlpha + backgroundAlpha * (1 - foregroundAlpha);
+        if (alpha === 0) return [0, 0, 0, 0];
+        return [
+          (foreground[0] * foregroundAlpha + background[0] * backgroundAlpha * (1 - foregroundAlpha)) / alpha,
+          (foreground[1] * foregroundAlpha + background[1] * backgroundAlpha * (1 - foregroundAlpha)) / alpha,
+          (foreground[2] * foregroundAlpha + background[2] * backgroundAlpha * (1 - foregroundAlpha)) / alpha,
+          alpha * 255,
+        ];
+      }
+      function pageIsDark() {
+        const rootBackground = toRgba(getComputedStyle(document.documentElement).backgroundColor);
+        const bodyBackground = toRgba(getComputedStyle(document.body).backgroundColor);
+        const [red, green, blue, alpha] = composite(bodyBackground, rootBackground);
+        if (alpha > 0) return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255 < 0.5;
+        return darkQuery.matches;
+      }
+      const diagrams = [...document.querySelectorAll(".mermaid")].map((element) => ({ element, source: element.textContent }));
+      let appliedTheme;
+      async function render() {
+        const theme = pageIsDark() ? "dark" : "default";
+        if (theme === appliedTheme) return;
+        mermaid.initialize({ startOnLoad: false, theme, securityLevel: "strict" });
+        for (const { element, source } of diagrams) {
+          element.removeAttribute("data-processed");
+          element.textContent = source;
+        }
+        await mermaid.run({ nodes: diagrams.map(({ element }) => element) });
+        appliedTheme = theme;
+      }
+      if (document.readyState === "complete") void render();
+      else window.addEventListener("load", () => void render(), { once: true });
+      darkQuery.addEventListener("change", () => void render());
+    </script>
+  </body>
+</html>

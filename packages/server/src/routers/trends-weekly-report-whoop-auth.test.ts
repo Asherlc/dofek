@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 const { mockLoggerInfo, mockLoggerError, mockCaptureException } = vi.hoisted(() => ({
   mockLoggerInfo: vi.fn(),
@@ -10,7 +10,12 @@ const { mockLoggerInfo, mockLoggerError, mockCaptureException } = vi.hoisted(() 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -34,7 +39,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("whoop-whoop/client", () => ({
+vi.mock("@dofek/whoop/client", () => ({
   WhoopClient: {
     signIn: vi.fn(),
     verifyCode: vi.fn(),
@@ -75,6 +80,7 @@ describe("trendsRouter", () => {
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeMockSensorStore(rows),
     });
   }
 
@@ -165,6 +171,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.report({ weeks: 12 });
 
@@ -182,7 +189,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 440,
           avg_resting_hr: 55,
           avg_hrv: 62,
-          chronic_avg_load: 45,
           prev_3wk_avg_sleep: 430,
         },
         {
@@ -193,7 +199,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 450,
           avg_resting_hr: 54,
           avg_hrv: 65,
-          chronic_avg_load: 48,
           prev_3wk_avg_sleep: 440,
         },
       ];
@@ -201,13 +206,13 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 12 });
 
       expect(result.current).not.toBeNull();
       expect(result.current?.weekStart).toBe("2024-01-15");
       expect(result.history).toHaveLength(1);
-      expect(result.current?.strainZone).toBeDefined();
       expect(result.current?.sleepPerformancePct).toBeGreaterThan(0);
     });
   });
@@ -219,7 +224,7 @@ describe("whoopAuthRouter", () => {
   const createCaller = createTestCallerFactory(whoopAuthRouter);
 
   it("logs and reports signIn failures", async () => {
-    const { WhoopClient } = await import("whoop-whoop/client");
+    const { WhoopClient } = await import("@dofek/whoop/client");
     const error = new Error("bad sms code request");
     vi.mocked(WhoopClient.signIn).mockRejectedValueOnce(error);
 
@@ -227,6 +232,7 @@ describe("whoopAuthRouter", () => {
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeMockSensorStore([]),
     });
 
     await expect(caller.signIn({ username: "test@example.com", password: "pass" })).rejects.toThrow(
@@ -244,7 +250,7 @@ describe("whoopAuthRouter", () => {
 
   describe("signIn", () => {
     it("returns verification_required when MFA needed", async () => {
-      const { WhoopClient } = await import("whoop-whoop/client");
+      const { WhoopClient } = await import("@dofek/whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "cognito-session-123",
@@ -255,6 +261,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
 
@@ -272,16 +279,17 @@ describe("whoopAuthRouter", () => {
     });
 
     it("returns success when no MFA required", async () => {
-      const { WhoopClient } = await import("whoop-whoop/client");
+      const { WhoopClient } = await import("@dofek/whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "success",
-        token: { accessToken: "at", refreshToken: "rt", userId: 123 },
+        token: { accessToken: "at", refreshToken: "rt", userId: 123, expiresInSeconds: 3600 },
       });
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
 
@@ -299,6 +307,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       await expect(
@@ -307,7 +316,7 @@ describe("whoopAuthRouter", () => {
     });
 
     it("verifies code successfully after signIn", async () => {
-      const { WhoopClient } = await import("whoop-whoop/client");
+      const { WhoopClient } = await import("@dofek/whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "session-xyz",
@@ -317,12 +326,14 @@ describe("whoopAuthRouter", () => {
         accessToken: "new-at",
         refreshToken: "new-rt",
         userId: 456,
+        expiresInSeconds: 3600,
       });
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       // Step 1: sign in to get challengeId
@@ -356,7 +367,7 @@ describe("whoopAuthRouter", () => {
     });
 
     it("logs and reports verifyCode failures", async () => {
-      const { WhoopClient } = await import("whoop-whoop/client");
+      const { WhoopClient } = await import("@dofek/whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "verification_required",
         session: "session-xyz",
@@ -369,6 +380,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       const signInResult = await caller.signIn({ username: "test@example.com", password: "pass" });
@@ -393,12 +405,14 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       const result = await caller.saveTokens({
         accessToken: "at-123",
         refreshToken: "rt-456",
         userId: 789,
+        expiresInSeconds: 3600,
       });
 
       expect(result).toEqual({ success: true });
@@ -411,6 +425,33 @@ describe("whoopAuthRouter", () => {
       );
       expect(saveTokens).toHaveBeenCalled();
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+    });
+
+    it("rejects empty access or refresh tokens", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
+      });
+
+      await expect(
+        caller.saveTokens({
+          accessToken: "",
+          refreshToken: "rt-456",
+          userId: 789,
+          expiresInSeconds: 3600,
+        }),
+      ).rejects.toThrow(/WHOOP access token is required/);
+
+      await expect(
+        caller.saveTokens({
+          accessToken: "at-123",
+          refreshToken: "",
+          userId: 789,
+          expiresInSeconds: 3600,
+        }),
+      ).rejects.toThrow(/WHOOP refresh token is required/);
     });
   });
 });

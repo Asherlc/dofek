@@ -7,6 +7,7 @@ Shared authentication types and schemas.
 - **Identity Providers**: Definitions for supported OAuth providers (Google and Apple).
 - **User Schema**: Zod-validated schema for the authenticated user object.
 - **Provider Configuration**: Schema for tracking which identity and data providers are configured for a user.
+- **Credential Validation**: Shared email guidance and the server's canonical 8–128-character password policy for registration clients.
 
 ## Implementation Details
 

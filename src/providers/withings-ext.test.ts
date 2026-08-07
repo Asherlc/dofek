@@ -393,7 +393,7 @@ describe("WithingsProvider — authSetup", () => {
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
     const provider = new WithingsProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("wbsapi.withings.net");
   });

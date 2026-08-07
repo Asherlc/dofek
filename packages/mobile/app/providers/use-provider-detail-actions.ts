@@ -1,28 +1,24 @@
+import { formatDateYmd } from "@dofek/format/format";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
+import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
-import type { SyncTrpcClient } from "../../lib/health-kit-sync";
-import { syncHealthKitToServer } from "../../lib/health-kit-sync";
+import {
+  HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
+  isHealthKitDatabaseInaccessible,
+} from "../../lib/health-kit-errors";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
-import {
-  getRequestStatus,
-  hasEverAuthorized,
-  isAvailable as isHealthKitAvailable,
-  queryDailyStatistics,
-  queryQuantitySamples,
-  querySleepSamples,
-  queryWorkoutRoutes,
-  queryWorkouts,
-  requestPermissions,
-} from "../../modules/health-kit";
 
 interface ProviderRecord {
   id: string;
   name: string;
   authType: string;
+  tokenAuth?: { label: string; instructionsUrl: string } | null;
   authorized: boolean;
   importOnly: boolean;
+  pushOnly: boolean;
   lastSyncedAt: string | null;
   needsReauth: boolean;
 }
@@ -31,8 +27,10 @@ export interface DisplayProvider {
   id: string;
   name: string;
   authType: string;
+  tokenAuth?: { label: string; instructionsUrl: string } | null;
   authorized: boolean;
   importOnly: boolean;
+  pushOnly: boolean;
   lastSyncedAt: string | null;
 }
 
@@ -41,14 +39,22 @@ interface CredentialAuthProvider {
   name: string;
 }
 
-interface ProviderDetailModals {
+interface TokenAuthProvider extends CredentialAuthProvider {
+  label: string;
+  instructionsUrl: string;
+}
+
+export interface ProviderDetailModals {
   credentialAuthProvider: CredentialAuthProvider | null;
+  tokenAuthProvider: TokenAuthProvider | null;
   whoopAuthOpen: boolean;
   garminAuthOpen: boolean;
   closeCredentialAuth: () => void;
+  closeTokenAuth: () => void;
   closeWhoopAuth: () => void;
   closeGarminAuth: () => void;
   handleCredentialSuccess: () => void;
+  handleTokenSuccess: () => void;
   handleWhoopSuccess: () => void;
   handleGarminSuccess: () => void;
 }
@@ -57,11 +63,13 @@ export interface ProviderDetailActionsResult {
   provider: ProviderRecord | undefined;
   displayProvider: DisplayProvider | undefined;
   isLoading: boolean;
+  inventoryError: unknown;
   isConnected: boolean;
-  primaryActionLabel: "Sync" | "Connect";
+  primaryActionLabel: "Sync" | "Connect" | "Reconnect";
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;
+  syncDateRange: ProviderSyncDateRange | null;
   shouldShowActions: boolean;
   shouldShowFullSync: boolean;
   shouldShowAppleHealthPermissionBanner: boolean;
@@ -70,15 +78,17 @@ export interface ProviderDetailActionsResult {
   modals: ProviderDetailModals;
 }
 
-function createAppleHealthProvider(authorized: boolean): DisplayProvider {
-  return {
-    id: "apple_health",
-    name: "Apple Health",
-    authType: "none",
-    authorized,
-    importOnly: false,
-    lastSyncedAt: null,
-  };
+export interface ProviderSyncDateRange {
+  sinceDate: string;
+  untilDate: string;
+  onSinceDateChange: (date: string) => void;
+  onUntilDateChange: (date: string) => void;
+}
+
+interface SyncWindowInput {
+  sinceDays?: number;
+  sinceDate?: string;
+  untilDate?: string;
 }
 
 export function useProviderDetailActions(
@@ -92,45 +102,57 @@ export function useProviderDetailActions(
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<number | null>(null);
+  const [rangeSinceDate, setRangeSinceDate] = useState(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    return formatDateYmd(start);
+  });
+  const [rangeUntilDate, setRangeUntilDate] = useState(() => formatDateYmd());
   const [credentialAuthProvider, setCredentialAuthProvider] =
     useState<CredentialAuthProvider | null>(null);
+  const [tokenAuthProvider, setTokenAuthProvider] = useState<TokenAuthProvider | null>(null);
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
-  const [healthKitPermissionStatus, setHealthKitPermissionStatus] = useState<
-    "unnecessary" | "shouldRequest" | "unavailable" | "unknown"
-  >("unknown");
-  const [healthKitEverAuthorized, setHealthKitEverAuthorized] = useState(false);
 
+  const isMounted = useRef(false);
   const pollingRef = useRef(false);
   const trpcClient = trpcUtils.client;
-  const healthKitAvailable = isHealthKitAvailable();
+  const appleHealth = useAppleHealthProviderModel({
+    trpcClient,
+    enabled: providerId === "apple_health",
+    onAuthorizationError: (error) => {
+      captureException(error, { context: "healthkit-permission-check" });
+    },
+  });
 
   const provider = (providers.data ?? []).find((currentProvider: ProviderRecord) => {
     return currentProvider.id === providerId;
   });
 
   const displayProvider =
-    providerId === "apple_health" ? createAppleHealthProvider(healthKitEverAuthorized) : provider;
+    providerId === "apple_health" ? appleHealth.model.toDisplayProvider() : provider;
 
   const isConnected = Boolean(displayProvider?.authorized);
+  const needsReauth = Boolean(provider?.needsReauth);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      pollingRef.current = false;
+    };
+  }, []);
 
   const invalidateProviderData = useCallback(() => {
     trpcUtils.sync.providers.invalidate();
     trpcUtils.sync.providerStats.invalidate();
     trpcUtils.sync.logs.invalidate();
-  }, [trpcUtils]);
-
-  useEffect(() => {
-    if (providerId !== "apple_health") return;
-    if (!healthKitAvailable) return;
-
-    setHealthKitEverAuthorized(hasEverAuthorized());
-    void getRequestStatus()
-      .then(setHealthKitPermissionStatus)
-      .catch((error: unknown) => {
-        captureException(error, { context: "healthkit-permission-check" });
-      });
-  }, [healthKitAvailable, providerId]);
+    if (providerId) {
+      trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
+      trpcUtils.providerDetail.logs.invalidate({ providerId });
+      trpcUtils.providerDetail.records.invalidate({ providerId });
+    }
+  }, [providerId, trpcUtils]);
 
   const pollSyncJob = useCallback(
     async (jobId: string) => {
@@ -138,17 +160,22 @@ export function useProviderDetailActions(
       pollingRef.current = true;
 
       const poll = async (): Promise<void> => {
+        if (!isMounted.current) return;
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
         } catch (error: unknown) {
           captureException(error, { context: "provider-sync-poll" });
-          pollingRef.current = false;
-          setIsSyncing(false);
-          setSyncMessage("Sync failed");
-          return;
+          if (!isMounted.current) return;
+          setSyncMessage(
+            error instanceof Error ? error.message : "Sync status is temporarily unavailable.",
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!isMounted.current) return;
+          return poll();
         }
 
+        if (!isMounted.current) return;
         if (!status) {
           pollingRef.current = false;
           setIsSyncing(false);
@@ -161,10 +188,10 @@ export function useProviderDetailActions(
           setSyncMessage(providerStatus.message);
         }
 
-        if (status.status === "done" || status.status === "error") {
+        if (status.status === "completed" || status.status === "failed") {
           pollingRef.current = false;
           setIsSyncing(false);
-          setSyncMessage(status.status === "done" ? "Sync complete" : "Sync failed");
+          setSyncMessage(status.status === "completed" ? "Sync complete" : "Sync failed");
           invalidateProviderData();
           return;
         }
@@ -184,15 +211,13 @@ export function useProviderDetailActions(
     setSyncMessage("Requesting permissions...");
 
     try {
-      const granted = await requestPermissions();
-      setHealthKitEverAuthorized(hasEverAuthorized());
-      const status = await getRequestStatus();
-      setHealthKitPermissionStatus(status);
-
-      if (!granted || status === "unavailable") {
-        setSyncMessage("HealthKit is unavailable on this device");
+      const result = await appleHealth.connect();
+      if (result.state.requestStatus === "unavailable") {
+        setSyncMessage("Apple Health is unavailable on this device");
+      } else if (!result.granted) {
+        setSyncMessage("Apple Health permissions were not granted");
       } else {
-        setSyncMessage(status === "unnecessary" ? "Connected" : null);
+        setSyncMessage(result.state.isConnected() ? "Connected" : null);
       }
 
       invalidateProviderData();
@@ -202,7 +227,7 @@ export function useProviderDetailActions(
     } finally {
       setIsSyncing(false);
     }
-  }, [invalidateProviderData]);
+  }, [appleHealth, invalidateProviderData]);
 
   const handleConnect = useCallback(async () => {
     if (!displayProvider || isSyncing) return;
@@ -214,15 +239,45 @@ export function useProviderDetailActions(
 
     switch (displayProvider.authType) {
       case "oauth":
-      case "oauth1":
+      case "oauth1": {
         if (!sessionToken) return;
-        await WebBrowser.openBrowserAsync(
-          `${serverUrl}/auth/provider/${displayProvider.id}?session=${encodeURIComponent(sessionToken)}`,
-        );
-        trpcUtils.sync.providers.invalidate();
+        try {
+          const handoffCode = await createProviderHandoffCode(
+            serverUrl,
+            displayProvider.id,
+            sessionToken,
+          );
+          await WebBrowser.openBrowserAsync(
+            `${serverUrl}/auth/provider/${displayProvider.id}?code=${encodeURIComponent(handoffCode)}`,
+          );
+          await trpcUtils.sync.providers.invalidate();
+        } catch (error: unknown) {
+          captureException(error, { context: "connect-provider-detail" });
+          setSyncMessage(error instanceof Error ? error.message : "Provider connection failed");
+        }
         break;
+      }
       case "credential":
         setCredentialAuthProvider({ id: displayProvider.id, name: displayProvider.name });
+        break;
+      case "token":
+        if (displayProvider.tokenAuth) {
+          setTokenAuthProvider({
+            id: displayProvider.id,
+            name: displayProvider.name,
+            label: displayProvider.tokenAuth.label,
+            instructionsUrl: displayProvider.tokenAuth.instructionsUrl,
+          });
+        } else {
+          const error = new Error(
+            `${displayProvider.name} personal-token authentication is unavailable. Refresh and try again.`,
+          );
+          captureException(error, {
+            context: "connect-provider-detail",
+            providerId: displayProvider.id,
+          });
+          setSyncMessage(error.message);
+        }
         break;
       case "custom:whoop":
         setWhoopAuthOpen(true);
@@ -234,7 +289,7 @@ export function useProviderDetailActions(
   }, [displayProvider, handleHealthKitConnect, isSyncing, serverUrl, sessionToken, trpcUtils]);
 
   const handleSync = useCallback(
-    async (sinceDays: number | undefined) => {
+    async (syncWindow: SyncWindowInput) => {
       if (!providerId || isSyncing) return;
 
       setIsSyncing(true);
@@ -243,33 +298,8 @@ export function useProviderDetailActions(
 
       try {
         if (providerId === "apple_health") {
-          const syncClient: SyncTrpcClient = {
-            healthKitSync: {
-              pushQuantitySamples: {
-                mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
-              },
-              pushWorkouts: {
-                mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
-              },
-              pushWorkoutRoutes: {
-                mutate: (input) => trpcClient.healthKitSync.pushWorkoutRoutes.mutate(input),
-              },
-              pushSleepSamples: {
-                mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
-              },
-            },
-          };
-
-          const result = await syncHealthKitToServer({
-            trpcClient: syncClient,
-            healthKit: {
-              queryDailyStatistics,
-              queryQuantitySamples,
-              queryWorkouts,
-              querySleepSamples,
-              queryWorkoutRoutes,
-            },
-            syncRangeDays: sinceDays ?? null,
+          const result = await appleHealth.sync({
+            syncRangeDays: syncWindow.sinceDays ?? null,
             onProgress: setSyncMessage,
           });
 
@@ -280,37 +310,99 @@ export function useProviderDetailActions(
           return;
         }
 
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays,
+          ...syncWindow,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown" || providerResult?.status === "failed") {
+          setIsSyncing(false);
+          setSyncProgress(null);
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
+        if (!jobId) return;
         await pollSyncJob(jobId);
       } catch (error: unknown) {
-        captureException(error, {
-          context: providerId === "apple_health" ? "healthkit-manual-sync" : "provider-sync-start",
-        });
         setIsSyncing(false);
-        setSyncMessage("Failed to start sync");
+        if (!isHealthKitDatabaseInaccessible(error)) {
+          captureException(error, {
+            context:
+              providerId === "apple_health" ? "healthkit-manual-sync" : "provider-sync-start",
+          });
+          setSyncMessage("Failed to start sync");
+          return;
+        }
+        setSyncMessage(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
       }
     },
-    [invalidateProviderData, isSyncing, pollSyncJob, providerId, syncMutation, trpcClient],
+    [appleHealth, invalidateProviderData, isSyncing, pollSyncJob, providerId, syncMutation],
   );
 
   const handlePrimaryAction = useCallback(async () => {
-    if (isConnected) {
-      await handleSync(7);
+    if (isConnected && !needsReauth) {
+      if (providerId === "whoop") {
+        if (rangeSinceDate > rangeUntilDate) {
+          setSyncMessage('"From" date must be on or before "To" date');
+          return;
+        }
+        await handleSync({
+          sinceDate: rangeSinceDate,
+          untilDate: rangeUntilDate,
+        });
+        return;
+      }
+      await handleSync({ sinceDays: 7 });
       return;
     }
 
     await handleConnect();
-  }, [handleConnect, handleSync, isConnected]);
+  }, [
+    handleConnect,
+    handleSync,
+    isConnected,
+    needsReauth,
+    providerId,
+    rangeSinceDate,
+    rangeUntilDate,
+  ]);
 
   const handleFullSync = useCallback(async () => {
-    await handleSync(undefined);
+    await handleSync({ sinceDays: undefined });
   }, [handleSync]);
+
+  const handleRangeSinceDateChange = useCallback(
+    (date: string) => {
+      setRangeSinceDate(date);
+      if (date <= rangeUntilDate) {
+        setSyncMessage(null);
+      }
+    },
+    [rangeUntilDate],
+  );
+
+  const handleRangeUntilDateChange = useCallback(
+    (date: string) => {
+      setRangeUntilDate(date);
+      if (rangeSinceDate <= date) {
+        setSyncMessage(null);
+      }
+    },
+    [rangeSinceDate],
+  );
 
   const closeCredentialAuth = useCallback(() => {
     setCredentialAuthProvider(null);
+  }, []);
+
+  const closeTokenAuth = useCallback(() => {
+    setTokenAuthProvider(null);
   }, []);
 
   const closeWhoopAuth = useCallback(() => {
@@ -323,6 +415,11 @@ export function useProviderDetailActions(
 
   const handleCredentialSuccess = useCallback(() => {
     setCredentialAuthProvider(null);
+    trpcUtils.sync.providers.invalidate();
+  }, [trpcUtils]);
+
+  const handleTokenSuccess = useCallback(() => {
+    setTokenAuthProvider(null);
     trpcUtils.sync.providers.invalidate();
   }, [trpcUtils]);
 
@@ -340,28 +437,44 @@ export function useProviderDetailActions(
     provider,
     displayProvider,
     isLoading: providers.isLoading,
+    inventoryError: providers.error,
     isConnected,
-    primaryActionLabel: isConnected ? "Sync" : "Connect",
+    primaryActionLabel: needsReauth ? "Reconnect" : isConnected ? "Sync" : "Connect",
     isSyncing,
     syncMessage,
     syncProgress,
-    shouldShowActions: Boolean(displayProvider && !displayProvider.importOnly),
-    shouldShowFullSync: isConnected,
+    syncDateRange:
+      providerId === "whoop" && isConnected && !needsReauth
+        ? {
+            sinceDate: rangeSinceDate,
+            untilDate: rangeUntilDate,
+            onSinceDateChange: handleRangeSinceDateChange,
+            onUntilDateChange: handleRangeUntilDateChange,
+          }
+        : null,
+    shouldShowActions: Boolean(
+      displayProvider && !displayProvider.importOnly && !displayProvider.pushOnly,
+    ),
+    shouldShowFullSync:
+      isConnected &&
+      !needsReauth &&
+      displayProvider?.pushOnly !== true &&
+      displayProvider?.id !== "whoop",
     shouldShowAppleHealthPermissionBanner:
-      providerId === "apple_health" &&
-      healthKitAvailable &&
-      healthKitEverAuthorized &&
-      healthKitPermissionStatus === "shouldRequest",
+      providerId === "apple_health" && appleHealth.model.shouldShowPermissionBanner(),
     handlePrimaryAction,
     handleFullSync,
     modals: {
       credentialAuthProvider,
+      tokenAuthProvider,
       whoopAuthOpen,
       garminAuthOpen,
       closeCredentialAuth,
+      closeTokenAuth,
       closeWhoopAuth,
       closeGarminAuth,
       handleCredentialSuccess,
+      handleTokenSuccess,
       handleWhoopSuccess,
       handleGarminSuccess,
     },

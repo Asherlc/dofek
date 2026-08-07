@@ -2,10 +2,15 @@ import { execSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as schema from "../../db/schema.ts";
+import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { runWithTokenUser } from "../../db/token-user-context.ts";
+import type { MetricStreamRowInput } from "../../metric-stream/events.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "../test-helpers.ts";
 import {
   buildPanelMap,
   type FhirDiagnosticReport,
@@ -16,6 +21,18 @@ import { extractExportXml, importAppleHealthFile, importClinicalRecords } from "
 import { AppleHealthProvider } from "./provider.ts";
 import { streamHealthExport } from "./streaming.ts";
 import { enrichWorkoutFromStats, type HealthWorkout } from "./workouts.ts";
+
+const APPLE_HEALTH_PROVIDER_ID = "apple_health";
+
+type PublishedMetricStreamRow = MetricStreamRowInput;
+
+function numericScalar(row: PublishedMetricStreamRow | undefined): number {
+  const value = row?.scalar;
+  if (typeof value !== "number") {
+    throw new Error("Expected metric stream row with numeric scalar");
+  }
+  return value;
+}
 
 // ============================================================
 // streamHealthExport — tests with minimal XML files
@@ -129,7 +146,7 @@ describe("streamHealthExport", () => {
 
     expect(result.workoutCount).toBe(1);
     expect(workouts).toHaveLength(1);
-    expect(workouts[0]?.activityType).toBe("running");
+    expect(workouts[0]?.activityType.canonicalType).toBe("running");
     // WorkoutStatistics should have been applied via enrichWorkoutFromStats
     expect(workouts[0]?.avgHeartRate).toBe(150);
     expect(workouts[0]?.maxHeartRate).toBe(180);
@@ -280,7 +297,7 @@ describe("streamHealthExport", () => {
     });
 
     expect(result.workoutCount).toBe(1);
-    expect(workouts[0]?.activityType).toBe("cycling");
+    expect(workouts[0]?.activityType.canonicalType).toBe("cycling");
   });
 });
 
@@ -289,9 +306,13 @@ describe("streamHealthExport", () => {
 // ============================================================
 
 describe("enrichWorkoutFromStats — additional scenarios", () => {
-  it("enriches both HR and calories together", () => {
+  it("enriches heart rate statistics", () => {
     const workout: HealthWorkout = {
-      activityType: "running",
+      activityType: {
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
+      },
       sourceName: "Watch",
       durationSeconds: 1800,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -305,21 +326,19 @@ describe("enrichWorkoutFromStats — additional scenarios", () => {
         maximum: 185.3,
         unit: "count/min",
       },
-      {
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        sum: 299.6,
-        unit: "kcal",
-      },
     ]);
 
     expect(workout.avgHeartRate).toBe(156);
     expect(workout.maxHeartRate).toBe(185);
-    expect(workout.calories).toBe(300);
   });
 
   it("does not set avgHeartRate without average", () => {
     const workout: HealthWorkout = {
-      activityType: "cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "HKWorkoutActivityTypeCycling",
+        modality: null,
+      },
       sourceName: "Watch",
       durationSeconds: 3600,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -375,14 +394,19 @@ describe("AppleHealthProvider", () => {
     process.env.APPLE_HEALTH_IMPORT_DIR = emptyDir;
 
     const provider = new AppleHealthProvider();
-    const mockDb = Object.create(null);
-    const result = await provider.sync(mockDb, new Date());
+    const testContext = await setupTestDatabase();
+    try {
+      const result = await provider.sync(
+        new SyncRun({ db: testContext.db, window: SyncWindow.fromSince({ since: new Date() }) }),
+      );
 
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No Apple Health export found");
-
-    rmSync(emptyDir, { recursive: true, force: true });
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.message).toContain("No Apple Health export found");
+    } finally {
+      await testContext.cleanup();
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -690,7 +714,6 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning"
   duration="30.5" durationUnit="min"
   totalDistance="5200" totalDistanceUnit="m"
-  totalEnergyBurned="320" totalEnergyBurnedUnit="kcal"
   sourceName="Apple Watch"
   creationDate="2024-03-01 18:30:00 -0500"
   startDate="2024-03-01 18:00:00 -0500"
@@ -740,7 +763,8 @@ describe("importAppleHealthFile — full DB integration", () => {
   let ctx: TestContext;
   let tmpDir: string;
   let zipPath: string;
-  let importResult: Awaited<ReturnType<typeof importAppleHealthFile>>;
+  let publishedMetricStreamRows: PublishedMetricStreamRow[];
+  const metricStreamCapture = createCapturingMetricStreamPublisher();
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
@@ -752,7 +776,6 @@ describe("importAppleHealthFile — full DB integration", () => {
     writeFileSync(xmlPath, IMPORT_XML);
     zipPath = join(tmpDir, "export.zip");
     execSync(`cd "${tmpDir}" && zip "${zipPath}" export.xml`);
-    importResult = await importAppleHealthFile(ctx.db, zipPath, new Date("2024-01-01"), () => {});
   }, 120_000);
 
   afterAll(async () => {
@@ -764,44 +787,65 @@ describe("importAppleHealthFile — full DB integration", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("imports from a .zip and inserts into all tables", () => {
-    expect(importResult.provider).toBe("apple_health");
-    expect(importResult.recordsSynced).toBeGreaterThan(0);
-    expect(importResult.errors).toHaveLength(0);
-  });
+  it("imports from a .zip and publishes metric stream events", async () => {
+    const since = new Date("2024-01-01");
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
 
-  it("creates metric_stream rows for HR, SpO2, and blood glucose", async () => {
-    const rows = await ctx.db.select().from(schema.metricStream);
-    const hrRows = rows.filter((r) => r.channel === "heart_rate" && r.activityId === null);
+    const result = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      importAppleHealthFile(ctx.db, zipPath, since, () => {}, metricStreamCapture.publisher),
+    );
+    publishedMetricStreamRows = metricStreamCapture.publishedMetricStreamRows;
+
+    expect(result.provider).toBe("apple_health");
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(result.errors.map((error) => error.message)).toEqual([]);
+    expect(publishedMetricStreamRows.length).toBeGreaterThan(0);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "apple_health",
+      recordedAtStart: since,
+    });
+  }, 60_000);
+
+  it("publishes metric stream events for heart rate, oxygen saturation, and blood glucose", async () => {
+    const rows = publishedMetricStreamRows;
+    const hrRows = rows.filter(
+      (row) =>
+        row.channel === "heart_rate" && (row.activityId === null || row.activityId === undefined),
+    );
     expect(hrRows.length).toBeGreaterThanOrEqual(2);
     expect(hrRows.some((r) => r.scalar === 72)).toBe(true);
     expect(hrRows.some((r) => r.scalar === 85)).toBe(true);
 
     const spo2Rows = rows.filter((r) => r.channel === "spo2");
     expect(spo2Rows.length).toBeGreaterThanOrEqual(1);
-    expect(spo2Rows[0]?.scalar).toBeCloseTo(0.97);
+    expect(numericScalar(spo2Rows[0])).toBeCloseTo(0.97);
 
     const bgRows = rows.filter((r) => r.channel === "blood_glucose");
     expect(bgRows.length).toBeGreaterThanOrEqual(1);
-    expect(bgRows[0]?.scalar).toBeCloseTo(5.4);
+    expect(numericScalar(bgRows[0])).toBeCloseTo(5.4);
   });
 
-  it("creates body_measurement rows with weight, body fat, and BP", async () => {
-    const rows = await ctx.db.select().from(schema.bodyMeasurement);
+  it("publishes body measurement metric stream channels", async () => {
+    const rows = publishedMetricStreamRows;
     // Weight+body fat share a timestamp so should be grouped
-    const weightRow = rows.find((r) => r.weightKg !== null);
+    const weightRow = rows.find((row) => row.channel === "body_weight");
     expect(weightRow).toBeDefined();
-    expect(weightRow?.weightKg).toBeCloseTo(72.5);
-    expect(weightRow?.bodyFatPct).toBeCloseTo(21.5); // 0.215 * 100
+    expect(numericScalar(weightRow)).toBeCloseTo(72.5);
+    const bodyFatRow = rows.find((row) => row.channel === "body_fat_percentage");
+    expect(numericScalar(bodyFatRow)).toBeCloseTo(21.5); // 0.215 * 100
+    expect(bodyFatRow?.externalId).toBe(weightRow?.externalId);
 
     // BP at 09:00
-    const bpRow = rows.find((r) => r.systolicBp !== null);
-    expect(bpRow).toBeDefined();
-    expect(bpRow?.systolicBp).toBe(120);
-    expect(bpRow?.diastolicBp).toBe(80);
+    const systolicRow = rows.find((row) => row.channel === "systolic_blood_pressure");
+    expect(numericScalar(systolicRow)).toBe(120);
+    const diastolicRow = rows.find((row) => row.channel === "diastolic_blood_pressure");
+    expect(numericScalar(diastolicRow)).toBe(80);
+    expect(diastolicRow?.externalId).toBe(systolicRow?.externalId);
   });
 
-  it("creates per-source daily_metrics rows with steps, distance, resting HR", async () => {
+  it("creates per-source daily_metrics rows with steps and distance", async () => {
     const rows = await ctx.db.select().from(schema.dailyMetrics);
     const dayRows = rows.filter((r) => r.date === "2024-03-01");
     expect(dayRows.length).toBeGreaterThanOrEqual(1);
@@ -809,28 +853,33 @@ describe("importAppleHealthFile — full DB integration", () => {
     // With per-source rows, different sources get separate rows.
     // Find values across all sources for the day.
     const iPhoneRow = dayRows.find((r) => r.sourceName === "iPhone");
-    const watchRow = dayRows.find((r) => r.sourceName === "Apple Watch");
 
     // Steps come from iPhone source in the test fixture: 1250 + 800 = 2050
     expect(iPhoneRow?.steps).toBe(2050);
-    // Resting HR comes from Apple Watch source
-    expect(watchRow?.restingHr).toBe(52);
     // Flights come from iPhone source (same as steps)
     expect(iPhoneRow?.flightsClimbed).toBe(3);
     // Distance from iPhone: 523.7 m → 0.5237 km
     expect(iPhoneRow?.distanceKm).toBeCloseTo(0.5237);
-    // Active energy from Apple Watch: 300 + 223.4 = 523.4
-    expect(watchRow?.activeEnergyKcal).toBeCloseTo(523.4);
   });
 
-  it("creates nutrition_daily rows with aggregated nutrition", async () => {
-    const rows = await ctx.db.select().from(schema.nutritionDaily);
+  it("derives daily nutrition from food entry nutrition rows", async () => {
+    const rows = await ctx.db.execute<{
+      date: string;
+      calories: number | null;
+      protein_g: number | null;
+    }>(
+      sql`
+        SELECT date, calories, protein_g
+        FROM fitness.v_nutrition_provider_daily
+        WHERE provider_id = ${APPLE_HEALTH_PROVIDER_ID}
+      `,
+    );
     expect(rows.length).toBeGreaterThanOrEqual(1);
     // Nutrition rows should use the source calendar day from Apple Health.
     const day = rows.find((r) => r.date === "2024-03-01");
     expect(day).toBeDefined();
     expect(day?.calories).toBe(650);
-    expect(day?.proteinG).toBeCloseTo(45.5);
+    expect(day?.protein_g).toBeCloseTo(45.5);
   });
 
   it("creates a sleep_session from inBed + stage records", async () => {
@@ -847,28 +896,33 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(session?.sleepType).toBeNull();
   });
 
-  it("creates activity rows for workouts with GPS in metric_stream", async () => {
+  it("creates activity rows for workouts and publishes GPS metric stream events", async () => {
     const activities = await ctx.db.select().from(schema.activity);
-    const run = activities.find((a) => a.activityType === "running");
+    const run = activities.find((a) => a.canonicalType === "running");
     expect(run).toBeDefined();
     expect(run?.externalId).toContain("ah:workout:");
     expect(run?.raw).toMatchObject({
       durationSeconds: 1830,
       distanceMeters: 5200,
-      calories: 320,
       avgHeartRate: 148,
       maxHeartRate: 175,
     });
 
-    // Check GPS metric_stream rows linked to the activity
-    const allMetrics = await ctx.db.select().from(schema.metricStream);
-    const gpsRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "lat");
-    expect(gpsRows.length).toBe(2);
-    expect(gpsRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 40.7128) < 0.001)).toBe(
-      true,
+    const allMetrics = publishedMetricStreamRows;
+    const gpsRows = allMetrics.filter(
+      (metricRow) => metricRow.activityId === run?.id && metricRow.channel === "location",
     );
-    const speedRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "speed");
-    expect(speedRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 3.5) < 0.1)).toBe(true);
+    expect(gpsRows.length).toBe(2);
+    expect(gpsRows.every((metricRow) => metricRow.point !== null)).toBe(true);
+    const speedRows = allMetrics.filter(
+      (metricRow) => metricRow.activityId === run?.id && metricRow.channel === "speed",
+    );
+    expect(
+      speedRows.some(
+        (metricRow) =>
+          typeof metricRow.scalar === "number" && Math.abs(metricRow.scalar - 3.5) < 0.1,
+      ),
+    ).toBe(true);
   });
 
   it("imports Hang Ten workouts with their activity intervals", async () => {
@@ -884,7 +938,7 @@ describe("importAppleHealthFile — full DB integration", () => {
           .orderBy(asc(schema.activityInterval.intervalIndex))
       : [];
 
-    expect(hangboard?.activityType).toBe("hangboard");
+    expect(hangboard?.canonicalType).toBe("hangboard");
     expect(hangboard?.name).toBe("7/3 Repeaters");
     expect(hangboard?.sourceName).toBe("Hang Ten");
     expect(hangboard?.externalId).toBe("ah:workout:11111111-1111-4111-8111-111111111111");
@@ -934,20 +988,19 @@ describe("importAppleHealthFile — full DB integration", () => {
     // Count before
     const sleepBefore = await ctx.db.select().from(schema.sleepSession);
     const activitiesBefore = await ctx.db.select().from(schema.activity);
-    const bodyBefore = await ctx.db.select().from(schema.bodyMeasurement);
 
     // Re-import with an XML file (non-zip path to avoid clinical records branch)
     const xmlPath = join(tmpDir, "export.xml");
-    await importAppleHealthFile(ctx.db, xmlPath, since, () => {});
+    await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      importAppleHealthFile(ctx.db, xmlPath, since, () => {}, metricStreamCapture.publisher),
+    );
 
     // Count after — should be same due to upsert/conflict handling
     const sleepAfter = await ctx.db.select().from(schema.sleepSession);
     const activitiesAfter = await ctx.db.select().from(schema.activity);
-    const bodyAfter = await ctx.db.select().from(schema.bodyMeasurement);
 
     expect(sleepAfter.length).toBe(sleepBefore.length);
     expect(activitiesAfter.length).toBe(activitiesBefore.length);
-    expect(bodyAfter.length).toBe(bodyBefore.length);
   }, 60_000);
 });
 
@@ -1015,7 +1068,9 @@ describe("extractExportXml", () => {
     const zipPath = join(tmpDir, "no-export.zip");
     execSync(`cd "${tmpDir}" && zip "${zipPath}" other.txt`);
 
-    await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml");
+    await expect(extractExportXml(zipPath)).rejects.toThrow(
+      "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    );
   });
 });
 

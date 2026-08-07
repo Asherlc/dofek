@@ -1,5 +1,9 @@
-const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
+import { z } from "zod";
+import { TEST_USER_ID } from "../support/test-user";
+import { formatLocalDate } from "./test-helpers";
+
 const E2E_PROVIDER_ID = "e2e-test-provider";
+const dailyMetricsRowSchema = z.object({ steps: z.number().nullable() });
 
 describe("Dashboard", () => {
   beforeEach(() => {
@@ -11,10 +15,15 @@ describe("Dashboard", () => {
   });
 
   it("loads the dashboard when authenticated", () => {
+    cy.intercept("POST", "**/api/trpc/*processing.alerts*").as("processingAlerts");
     cy.visit("/dashboard");
+    cy.wait("@processingAlerts").then(({ response }) => {
+      expect(response?.statusCode).to.eq(200);
+      expect(JSON.stringify(response?.body)).not.to.include("Invalid UUID");
+    });
     cy.url().should("include", "/dashboard");
     // The dashboard should render without redirecting to login
-    cy.contains("Sign in to view your health data").should("not.exist");
+    cy.contains("Sign in to Dofek").should("not.exist");
   });
 
   it("shows the user identity via /api/auth/me", () => {
@@ -26,7 +35,7 @@ describe("Dashboard", () => {
   });
 });
 
-describe("Dashboard – Daily Steps chart", () => {
+describe("Dashboard – Daily Steps health monitor", () => {
   beforeEach(() => {
     cy.login();
 
@@ -35,7 +44,7 @@ describe("Dashboard – Daily Steps chart", () => {
     const rows = Array.from({ length: 7 }, (_, index) => {
       const date = new Date(today);
       date.setDate(today.getDate() - (6 - index));
-      return { date: date.toISOString().slice(0, 10), steps: 8000 + index * 200 };
+      return { date: formatLocalDate(date), steps: 8000 + index * 200 };
     });
 
     cy.task("seedDailyMetricsWithSteps", {
@@ -43,33 +52,39 @@ describe("Dashboard – Daily Steps chart", () => {
       providerId: E2E_PROVIDER_ID,
       rows,
     });
-
-    cy.task("refreshDailyMetricsView");
   });
 
   afterEach(() => {
     cy.cleanTestData();
   });
 
-  it("renders the Daily Steps chart when step data is present", () => {
-    // Intercept the tRPC dailyMetrics.list call so we can wait for it to resolve.
-    // We match POST because the tRPC client uses methodOverride: "POST" for batching.
-    cy.intercept("POST", "**/api/trpc/**dailyMetrics.list**").as("dailyMetricsList");
+  it("renders the Steps health metric when step data is present", () => {
+    const startDateValue = new Date();
+    startDateValue.setDate(startDateValue.getDate() - 6);
+    const startDate = formatLocalDate(startDateValue);
+    const endDate = formatLocalDate(new Date());
+
+    cy.task("runQuery", {
+      query: `
+        SELECT steps
+        FROM fitness.v_daily_metrics
+        WHERE user_id = '${TEST_USER_ID}'
+          AND date BETWEEN '${startDate}' AND '${endDate}'
+        ORDER BY date ASC
+      `,
+    }).then((res) => {
+      const rows = z.array(dailyMetricsRowSchema).parse(res);
+      expect(rows.some((row) => (row.steps ?? 0) > 0)).to.eq(true);
+    });
 
     cy.visit("/dashboard");
 
-    // Wait for the API response to arrive
-    cy.wait("@dailyMetricsList");
-
-    // The "Daily Steps" section heading must be present
-    cy.contains("h2", "Daily Steps").should("exist");
-
-    // ECharts renders a <canvas> inside the chart — it must exist (not "No data available")
-    cy.contains("h2", "Daily Steps").closest("section").find("canvas").should("exist");
-
-    // The empty-state message must NOT appear inside the steps section
-    cy.contains("h2", "Daily Steps")
-      .closest("section")
-      .should("not.contain.text", "No data available");
+    // Steps now surface in the dashboard health monitor rather than a standalone chart.
+    cy.contains("Health monitor").should("be.visible");
+    cy.contains("span", "Steps")
+      .parents(".card")
+      .first()
+      .should("be.visible")
+      .and("contain.text", "9,200");
   });
 });

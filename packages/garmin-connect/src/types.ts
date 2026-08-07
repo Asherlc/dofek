@@ -29,6 +29,7 @@ export interface OAuth2Token {
 export interface GarminTokens {
   oauth1: OAuth1Token;
   oauth2: OAuth2Token;
+  displayName?: string;
 }
 
 // ============================================================
@@ -324,6 +325,7 @@ export interface ConnectActivitySummary {
   startTimeGMT: string;
   startTimeLocal: string;
   distance?: number;
+  /** Activity duration in seconds. */
   duration: number;
   elapsedDuration?: number;
   movingDuration?: number;

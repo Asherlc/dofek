@@ -1,3 +1,4 @@
+import { formatCalories } from "@dofek/format/format";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 import type { FoodEntry } from "./FoodEntryCard";
@@ -7,6 +8,7 @@ interface MealSectionProps {
   mealName: string;
   mealKey: string;
   entries: FoodEntry[];
+  totalCalories: number | null;
   onAddFood: (mealKey: string) => void;
   onDeleteFood: (id: string) => void;
   deleting: boolean;
@@ -16,17 +18,18 @@ export function MealSection({
   mealName,
   mealKey,
   entries,
+  totalCalories,
   onAddFood,
   onDeleteFood,
   deleting,
 }: MealSectionProps) {
-  const totalCalories = entries.reduce((sum, entry) => sum + (entry.calories ?? 0), 0);
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.mealName}>{mealName}</Text>
-        <Text style={styles.totalCalories}>{totalCalories > 0 ? `${totalCalories} cal` : ""}</Text>
+        <Text style={styles.totalCalories}>
+          {totalCalories != null && totalCalories > 0 ? formatCalories(totalCalories) : ""}
+        </Text>
       </View>
 
       {entries.length > 0 ? (
@@ -41,6 +44,8 @@ export function MealSection({
         style={styles.addButton}
         onPress={() => onAddFood(mealKey)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`Add food to ${mealName}`}
       >
         <Text style={styles.addButtonText}>+ Add food</Text>
       </TouchableOpacity>

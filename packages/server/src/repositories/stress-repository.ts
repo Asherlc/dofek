@@ -6,12 +6,16 @@ import {
 } from "@dofek/recovery/stress";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStart } from "../lib/date-window.ts";
-import { sleepDedupCte, vitalsBaselineCte } from "../lib/sql-fragments.ts";
+import {
+  clickHouseWindowStartPredicate,
+  dateWindowStartStringOrUndefined,
+  type RangeDays,
+} from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 export type { WeeklyStressRow };
 
@@ -40,12 +44,8 @@ export interface StressResult {
 
 const rawRowSchema = z.object({
   date: dateStringSchema,
-  hrv: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number().nullable(),
-  hrv_mean_60d: z.coerce.number().nullable(),
-  hrv_sd_60d: z.coerce.number().nullable(),
-  rhr_mean_60d: z.coerce.number().nullable(),
-  rhr_sd_60d: z.coerce.number().nullable(),
+  hrv_z_score: z.coerce.number().nullable(),
+  resting_hr_z_score: z.coerce.number().nullable(),
   efficiency_pct: z.coerce.number().nullable(),
 });
 
@@ -55,36 +55,12 @@ type RawRow = z.infer<typeof rawRowSchema>;
 // Helpers
 // ---------------------------------------------------------------------------
 
-const BASELINE_LOOKBACK_DAYS = 60;
-
 function computeHrvDeviation(row: RawRow): number | null {
-  if (
-    row.hrv == null ||
-    row.hrv_mean_60d == null ||
-    row.hrv_sd_60d == null ||
-    Number(row.hrv_sd_60d) <= 0
-  ) {
-    return null;
-  }
-  return (
-    Math.round(((Number(row.hrv) - Number(row.hrv_mean_60d)) / Number(row.hrv_sd_60d)) * 100) / 100
-  );
+  return row.hrv_z_score == null ? null : Math.round(row.hrv_z_score * 100) / 100;
 }
 
 function computeRestingHrDeviation(row: RawRow): number | null {
-  if (
-    row.resting_hr == null ||
-    row.rhr_mean_60d == null ||
-    row.rhr_sd_60d == null ||
-    Number(row.rhr_sd_60d) <= 0
-  ) {
-    return null;
-  }
-  return (
-    Math.round(
-      ((Number(row.resting_hr) - Number(row.rhr_mean_60d)) / Number(row.rhr_sd_60d)) * 100,
-    ) / 100
-  );
+  return row.resting_hr_z_score == null ? null : Math.round(row.resting_hr_z_score * 100) / 100;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,27 +69,62 @@ function computeRestingHrDeviation(row: RawRow): number | null {
 
 /** Data access and stress computation for daily/weekly physiological stress. */
 export class StressRepository extends BaseRepository {
-  async getStressScores(days: number, endDate: string): Promise<StressResult> {
-    const queryDays = days + BASELINE_LOOKBACK_DAYS;
+  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
 
-    const rows = await this.query(
+  constructor(
+    db: Pick<import("dofek/db").Database, "execute">,
+    userId: string,
+    timezone = "UTC",
+    sensorStore?: Pick<ActivitySensorStore, "query">,
+    accessWindow?: AccessWindow,
+  ) {
+    super(db, userId, timezone, accessWindow);
+    this.#sensorStore = sensorStore;
+  }
+
+  async getStressScores(
+    days: RangeDays,
+    endDate: string,
+    queryOptions?: ActivitySensorQueryOptions,
+  ): Promise<StressResult> {
+    const sensorStore = this.#requireSensorStore();
+    const accessWindowClause =
+      this.accessWindow.kind === "full"
+        ? ""
+        : `
+          AND recovery_inputs.date >= toDate({accessStartDate:String})
+          AND recovery_inputs.date < toDate({accessEndDateExclusive:String})`;
+    const rows = await sensorStore.query(
       rawRowSchema,
-      sql`WITH ${vitalsBaselineCte(this.userId, endDate, days, 60)},
-          ${sleepDedupCte(this.userId, this.timezone, endDate, queryDays)}
-          SELECT
-            m.date::text,
-            m.hrv,
-            m.resting_hr,
-            m.hrv_mean_60d,
-            m.hrv_stddev_60d AS hrv_sd_60d,
-            m.resting_hr_mean_60d AS rhr_mean_60d,
-            m.resting_hr_stddev_60d AS rhr_sd_60d,
-            sd.efficiency_pct
-          FROM vitals_baseline m
-          LEFT JOIN sleep_deduped sd ON sd.sleep_date = m.date
-          WHERE m.date > ${dateWindowStart(endDate, days)}
-            ${this.dateAccessPredicate(sql`m.date`)}
-          ORDER BY m.date ASC`,
+      `SELECT
+        toString(recovery_inputs.date) AS date,
+        hrv_z_score,
+        resting_hr_z_score,
+        efficiency_pct
+      FROM analytics.daily_recovery AS recovery_inputs FINAL
+      WHERE recovery_inputs.user_id = {userId:UUID}
+        AND recovery_inputs.is_deleted = 0
+        ${clickHouseWindowStartPredicate({
+          expression: "recovery_inputs.date",
+          days,
+        })}
+        AND recovery_inputs.date <= toDate({endDate:String})
+        ${accessWindowClause}
+      ORDER BY recovery_inputs.date ASC`,
+      {
+        userId: this.userId,
+        ...(dateWindowStartStringOrUndefined(endDate, days) !== undefined
+          ? { windowStart: dateWindowStartStringOrUndefined(endDate, days) }
+          : {}),
+        endDate,
+        ...(this.accessWindow.kind === "full"
+          ? {}
+          : {
+              accessStartDate: this.accessWindow.startDate,
+              accessEndDateExclusive: this.accessWindow.endDateExclusive,
+            }),
+      },
+      queryOptions,
     );
 
     const storedParams = await loadPersonalizedParams(this.db, this.userId);
@@ -143,5 +154,12 @@ export class StressRepository extends BaseRepository {
     const trend = computeStressTrend(daily);
 
     return { daily, weekly, latestScore, trend };
+  }
+
+  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for stress scores");
+    }
+    return this.#sensorStore;
   }
 }

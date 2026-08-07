@@ -9,6 +9,7 @@ vi.mock("../trpc.ts", async () => {
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
   return {
@@ -51,28 +52,37 @@ const createCaller = createTestCallerFactory(stressRouter);
 function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     date: "2026-03-20",
-    hrv: null,
-    resting_hr: null,
-    hrv_mean_60d: null,
-    hrv_sd_60d: null,
-    rhr_mean_60d: null,
-    rhr_sd_60d: null,
+    hrv_z_score: null,
+    resting_hr_z_score: null,
     efficiency_pct: null,
     ...overrides,
   };
 }
 
-function makeCaller(rows: unknown[]) {
-  return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
+function makeCaller(rows: unknown[], query = vi.fn().mockResolvedValue(rows)) {
+  const caller = createCaller({
+    db: { execute: vi.fn().mockResolvedValue([]) },
     userId: "user-1",
     timezone: "UTC",
+    sensorStore: {
+      query,
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    },
   });
+  return { caller, query };
 }
 
 describe("Router transformation logic", () => {
   it("returns empty result when no rows", async () => {
-    const caller = makeCaller([]);
+    const { caller } = makeCaller([]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily).toEqual([]);
     expect(result.weekly).toEqual([]);
@@ -80,150 +90,187 @@ describe("Router transformation logic", () => {
     expect(result.trend).toBe("stable");
   });
 
-  it("computes HRV z-score deviation when all values present and sd > 0", async () => {
-    // hrv=40, mean=60, sd=10 → z = (40-60)/10 = -2.0
-    const row = makeRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 });
-    const caller = makeCaller([row]);
+  it("reads daily recovery inputs from the ClickHouse read model", async () => {
+    const { caller, query } = makeCaller([]);
+
+    await caller.scores({ days: 30, endDate: "2026-03-24" });
+
+    const queryText = query.mock.calls.find(
+      ([, sqlText]) => typeof sqlText === "string" && sqlText.includes("analytics.daily_recovery"),
+    )?.[1];
+    expect(queryText).toEqual(expect.any(String));
+    expect(queryText).toContain("hrv_z_score");
+    expect(queryText).toContain("resting_hr_z_score");
+    expect(queryText).toContain("recovery_inputs.is_deleted = 0");
+    expect(queryText).not.toContain("fitness.v_daily_metrics");
+    expect(queryText).not.toContain("analytics.v_sleep");
+  });
+
+  it("uses a lower date bound for finite selected ranges", async () => {
+    const { caller, query } = makeCaller([]);
+
+    await caller.scores({ days: 30, endDate: "2026-03-24" });
+
+    const queryText = query.mock.calls[0]?.[1];
+    const queryParams = query.mock.calls[0]?.[2];
+    expect(queryText).toContain("recovery_inputs.date > toDate({windowStart:String})");
+    expect(queryParams).toMatchObject({ windowStart: "2026-02-22", endDate: "2026-03-24" });
+  });
+
+  it("omits the lower date bound when days is null", async () => {
+    const { caller, query } = makeCaller([]);
+
+    await caller.scores({ days: null, endDate: "2026-03-24" });
+
+    const queryText = query.mock.calls[0]?.[1];
+    const queryParams = query.mock.calls[0]?.[2];
+    expect(queryText).toContain("recovery_inputs.user_id = {userId:UUID}");
+    expect(queryText).not.toContain("windowStart");
+    expect(queryParams).toMatchObject({ userId: "user-1", endDate: "2026-03-24" });
+    expect(queryParams).not.toHaveProperty("windowStart");
+  });
+
+  it("rejects unbounded day windows", async () => {
+    const { caller } = makeCaller([]);
+    await expect(caller.scores({ days: 366, endDate: "2026-03-24" })).rejects.toThrow();
+  });
+
+  it("returns the canonical HRV z-score deviation", async () => {
+    const row = makeRow({ hrv_z_score: -2 });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBe(-2.0);
   });
 
-  it("returns null HRV deviation when hrv is null", async () => {
-    const row = makeRow({ hrv: null, hrv_mean_60d: 60, hrv_sd_60d: 10 });
-    const caller = makeCaller([row]);
+  it("returns null HRV deviation when its canonical z-score is null", async () => {
+    const row = makeRow({ hrv_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
 
-  it("returns null HRV deviation when hrv_mean_60d is null", async () => {
-    const row = makeRow({ hrv: 40, hrv_mean_60d: null, hrv_sd_60d: 10 });
-    const caller = makeCaller([row]);
+  it("returns null HRV deviation when the canonical z-score is null", async () => {
+    const row = makeRow({ hrv_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
 
-  it("returns null HRV deviation when hrv_sd_60d is null", async () => {
-    const row = makeRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: null });
-    const caller = makeCaller([row]);
+  it("keeps a missing canonical HRV z-score null", async () => {
+    const row = makeRow({ hrv_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
 
-  it("returns null HRV deviation when hrv_sd_60d is 0 (avoids division by zero)", async () => {
-    const row = makeRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 0 });
-    const caller = makeCaller([row]);
+  it("does not derive HRV deviation from raw inputs", async () => {
+    const row = makeRow({ hrv_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
 
   it("rounds HRV deviation to 2 decimal places", async () => {
-    // hrv=45, mean=60, sd=7 → z = (45-60)/7 = -2.14285... → -2.14
-    const row = makeRow({ hrv: 45, hrv_mean_60d: 60, hrv_sd_60d: 7 });
-    const caller = makeCaller([row]);
+    const row = makeRow({ hrv_z_score: -2.142857 });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBe(-2.14);
   });
 
-  it("computes RHR z-score deviation when all values present and sd > 0", async () => {
-    // resting_hr=70, mean=60, sd=5 → z = (70-60)/5 = 2.0
-    const row = makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: 5 });
-    const caller = makeCaller([row]);
+  it("returns the canonical RHR z-score deviation", async () => {
+    const row = makeRow({ resting_hr_z_score: 2 });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBe(2.0);
   });
 
-  it("returns null RHR deviation when resting_hr is null", async () => {
-    const row = makeRow({ resting_hr: null, rhr_mean_60d: 60, rhr_sd_60d: 5 });
-    const caller = makeCaller([row]);
+  it("returns null RHR deviation when its canonical z-score is null", async () => {
+    const row = makeRow({ resting_hr_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
 
-  it("returns null RHR deviation when rhr_mean_60d is null", async () => {
-    const row = makeRow({ resting_hr: 70, rhr_mean_60d: null, rhr_sd_60d: 5 });
-    const caller = makeCaller([row]);
+  it("returns null RHR deviation when the canonical z-score is null", async () => {
+    const row = makeRow({ resting_hr_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
 
-  it("returns null RHR deviation when rhr_sd_60d is null", async () => {
-    const row = makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: null });
-    const caller = makeCaller([row]);
+  it("keeps a missing canonical RHR z-score null", async () => {
+    const row = makeRow({ resting_hr_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
 
-  it("returns null RHR deviation when rhr_sd_60d is 0", async () => {
-    const row = makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: 0 });
-    const caller = makeCaller([row]);
+  it("does not derive RHR deviation from raw inputs", async () => {
+    const row = makeRow({ resting_hr_z_score: null });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
 
   it("rounds RHR deviation to 2 decimal places", async () => {
-    // resting_hr=67, mean=60, sd=3 → z = (67-60)/3 = 2.33333... → 2.33
-    const row = makeRow({ resting_hr: 67, rhr_mean_60d: 60, rhr_sd_60d: 3 });
-    const caller = makeCaller([row]);
+    const row = makeRow({ resting_hr_z_score: 2.333333 });
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBe(2.33);
   });
 
   it("converts efficiency_pct to sleepEfficiency and rounds to 1 decimal", async () => {
     const row = makeRow({ efficiency_pct: 87.654 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.sleepEfficiency).toBe(87.7);
   });
 
   it("returns null sleepEfficiency when efficiency_pct is null", async () => {
     const row = makeRow({ efficiency_pct: null });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.sleepEfficiency).toBeNull();
   });
 
   it("returns latestScore from the last daily entry", async () => {
     const rows = [
-      makeRow({ date: "2026-03-19", hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
-      makeRow({ date: "2026-03-20", hrv: 55, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+      makeRow({ date: "2026-03-19", hrv_z_score: -2 }),
+      makeRow({ date: "2026-03-20", hrv_z_score: -0.5 }),
     ];
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily).toHaveLength(2);
     expect(result.latestScore).toBe(result.daily[1]?.stressScore);
   });
 
   it("returns null latestScore when daily is empty", async () => {
-    const caller = makeCaller([]);
+    const { caller } = makeCaller([]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.latestScore).toBeNull();
   });
 
   it("passes correct stressScore from computeDailyStress", async () => {
-    // HRV deviation = (40-60)/10 = -2.0 → hrvStress = 1.5 (default: < -2.0)
+    // HRV z-score -2.0 → hrvStress = 1.5 (default: < -2.0)
     // Actually with default thresholds: hrvThresholds = [-2.0, -1.5, -1.0]
     // -2.0 < -2.0 is false, -2.0 < -1.5 is true → hrvStress = 1.2
-    // RHR deviation = (70-60)/5 = 2.0 → rhrThresholds = [2.0, 1.5, 1.0]
+    // RHR z-score 2.0 → rhrThresholds = [2.0, 1.5, 1.0]
     // 2.0 > 2.0 is false, 2.0 > 1.5 is true → rhrStress = 0.8
     // sleepEff = 75 → < 80 → sleepStress = 0.3
     // total = 1.2 + 0.8 + 0.3 = 2.3
     const row = makeRow({
-      hrv: 40,
-      hrv_mean_60d: 60,
-      hrv_sd_60d: 10,
-      resting_hr: 70,
-      rhr_mean_60d: 60,
-      rhr_sd_60d: 5,
+      hrv_z_score: -2,
+      resting_hr_z_score: 2,
       efficiency_pct: 75,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.stressScore).toBe(2.3);
   });
 
   it("includes date from the row", async () => {
     const row = makeRow({ date: "2026-03-15" });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.date).toBe("2026-03-15");
   });
@@ -233,12 +280,10 @@ describe("Router transformation logic", () => {
     const rows = Array.from({ length: 7 }, (_, index) =>
       makeRow({
         date: `2026-03-${String(17 + index).padStart(2, "0")}`,
-        hrv: 30,
-        hrv_mean_60d: 60,
-        hrv_sd_60d: 10,
+        hrv_z_score: -3,
       }),
     );
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.weekly.length).toBeGreaterThan(0);
     expect(result.weekly[0]).toHaveProperty("weekStart");
@@ -251,7 +296,7 @@ describe("Router transformation logic", () => {
     const rows = Array.from({ length: 5 }, (_, index) =>
       makeRow({ date: `2026-03-${String(16 + index).padStart(2, "0")}` }),
     );
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.trend).toBe("stable");
   });
@@ -264,12 +309,8 @@ describe("Router transformation logic", () => {
       ...Array.from({ length: 7 }, (_, index) =>
         makeRow({
           date: `2026-03-${String(4 + index).padStart(2, "0")}`,
-          hrv: 20,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 10,
-          resting_hr: 80,
-          rhr_mean_60d: 60,
-          rhr_sd_60d: 5,
+          hrv_z_score: -4,
+          resting_hr_z_score: 4,
           efficiency_pct: 60,
         }),
       ),
@@ -279,14 +320,14 @@ describe("Router transformation logic", () => {
         }),
       ),
     ];
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.trend).toBe("improving");
   });
 
   it("handles all-null metrics (zero stress score)", async () => {
     const row = makeRow();
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.stressScore).toBe(0);
     expect(result.daily[0]?.hrvDeviation).toBeNull();
@@ -297,19 +338,15 @@ describe("Router transformation logic", () => {
   it("uses Number() coercion on string-like db values", async () => {
     // Drizzle may return string values from raw SQL
     const row = makeRow({
-      hrv: "45",
-      hrv_mean_60d: "60",
-      hrv_sd_60d: "10",
-      resting_hr: "65",
-      rhr_mean_60d: "60",
-      rhr_sd_60d: "5",
+      hrv_z_score: "-1.5",
+      resting_hr_z_score: "1",
       efficiency_pct: "85.5",
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
-    // (45-60)/10 = -1.5 → rounds to -1.5
+    // Canonical HRV z-score -1.5 is preserved.
     expect(result.daily[0]?.hrvDeviation).toBe(-1.5);
-    // (65-60)/5 = 1.0 → rounds to 1.0
+    // Canonical RHR z-score 1.0 is preserved.
     expect(result.daily[0]?.restingHrDeviation).toBe(1.0);
     expect(result.daily[0]?.sleepEfficiency).toBe(85.5);
   });
@@ -318,44 +355,36 @@ describe("Router transformation logic", () => {
     // Very low HRV → 1.5, very high RHR → 1.0, very poor sleep → 0.5 = 3.0
     // Even more extreme wouldn't go above 3.0
     const row = makeRow({
-      hrv: 10,
-      hrv_mean_60d: 60,
-      hrv_sd_60d: 10,
-      resting_hr: 90,
-      rhr_mean_60d: 60,
-      rhr_sd_60d: 5,
+      hrv_z_score: -5,
+      resting_hr_z_score: 6,
       efficiency_pct: 50,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
-    // (10-60)/10 = -5.0 → < -2.0 → 1.5
-    // (90-60)/5 = 6.0 → > 2.0 → 1.0
+    // HRV z-score -5.0 → < -2.0 → 1.5
+    // RHR z-score 6.0 → > 2.0 → 1.0
     // 50 < 70 → 0.5
     // Total = 3.0, capped at 3.0
     expect(result.daily[0]?.stressScore).toBe(3);
   });
 
   it("positive HRV deviation produces zero HRV stress", async () => {
-    // hrv above baseline: (70-60)/10 = 1.0 → not < 0 → hrvStress = 0
+    // Positive HRV z-score → hrvStress = 0
     const row = makeRow({
-      hrv: 70,
-      hrv_mean_60d: 60,
-      hrv_sd_60d: 10,
+      hrv_z_score: 1,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBe(1.0);
     expect(result.daily[0]?.stressScore).toBe(0);
   });
 
   it("negative RHR deviation produces zero RHR stress", async () => {
-    // resting_hr below baseline: (55-60)/5 = -1.0 → not > 0 → rhrStress = 0
+    // Negative RHR z-score → rhrStress = 0
     const row = makeRow({
-      resting_hr: 55,
-      rhr_mean_60d: 60,
-      rhr_sd_60d: 5,
+      resting_hr_z_score: -1,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBe(-1.0);
     expect(result.daily[0]?.stressScore).toBe(0);
@@ -364,7 +393,7 @@ describe("Router transformation logic", () => {
   it("good sleep efficiency produces zero sleep stress", async () => {
     // 90% > 85% → sleepStress = 0
     const row = makeRow({ efficiency_pct: 90 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.sleepEfficiency).toBe(90);
     expect(result.daily[0]?.stressScore).toBe(0);
@@ -382,17 +411,13 @@ describe("Router transformation logic", () => {
       ...Array.from({ length: 7 }, (_, index) =>
         makeRow({
           date: `2026-03-${String(11 + index).padStart(2, "0")}`,
-          hrv: 20,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 10,
-          resting_hr: 80,
-          rhr_mean_60d: 60,
-          rhr_sd_60d: 5,
+          hrv_z_score: -4,
+          resting_hr_z_score: 4,
           efficiency_pct: 60,
         }),
       ),
     ];
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.trend).toBe("worsening");
   });
@@ -401,10 +426,23 @@ describe("Router transformation logic", () => {
 describe("stressRouter access window gating", () => {
   it("scores passes accessWindow to query (limited window returns empty)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
+    const sensorStore = {
+      query: vi.fn().mockResolvedValue([]),
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    };
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore,
       accessWindow: {
         kind: "limited",
         paid: false,
@@ -416,5 +454,13 @@ describe("stressRouter access window gating", () => {
     const result = await caller.scores({ days: 30, endDate: "2026-04-20" });
     expect(result.daily).toEqual([]);
     expect(result.latestScore).toBeNull();
+    const queryText = sensorStore.query.mock.calls[0]?.[1];
+    const queryParams = sensorStore.query.mock.calls[0]?.[2];
+    expect(queryText).toContain("accessStartDate");
+    expect(queryText).toContain("accessEndDateExclusive");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-04-10",
+      accessEndDateExclusive: "2026-04-17",
+    });
   });
 });

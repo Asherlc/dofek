@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type {
   TrainingPeaksCalendarNote,
   TrainingPeaksPersonalRecord,
@@ -35,7 +36,8 @@ async function exchangeCookieForToken(
   cookie: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<{ accessToken: string; expiresIn: number }> {
-  const response = await fetchFn(`${TP_API_BASE}/users/v3/token`, {
+  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainingpeaks" });
+  const response = await rateLimitFetchFn(`${TP_API_BASE}/users/v3/token`, {
     headers: {
       Cookie: `Production_tpAuth=${cookie}`,
     },
@@ -65,7 +67,8 @@ async function refreshCookie(
   cookie: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<string> {
-  const response = await fetchFn(`${TP_HOME_BASE}/refresh`, {
+  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainingpeaks" });
+  const response = await rateLimitFetchFn(`${TP_HOME_BASE}/refresh`, {
     headers: {
       Cookie: `Production_tpAuth=${cookie}`,
     },
@@ -98,7 +101,7 @@ export class TrainingPeaksConnectClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainingpeaks" });
   }
 
   // ---- Static auth methods ----

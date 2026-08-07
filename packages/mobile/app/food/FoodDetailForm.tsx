@@ -77,6 +77,9 @@ export function FoodDetailForm({
               style={[styles.mealChip, selectedMeal === value && styles.mealChipSelected]}
               onPress={() => onMealChange(value)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected: selectedMeal === value }}
             >
               <Text
                 style={[styles.mealChipText, selectedMeal === value && styles.mealChipTextSelected]}
@@ -140,7 +143,13 @@ export function FoodDetailForm({
 
         {/* Action buttons */}
         <View style={styles.formButtons}>
-          <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onBack}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
             <Text style={styles.backButtonText}>Back</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -148,6 +157,9 @@ export function FoodDetailForm({
             onPress={onSave}
             activeOpacity={0.8}
             disabled={isSaving}
+            accessibilityRole="button"
+            accessibilityLabel="Log Food"
+            accessibilityState={{ busy: isSaving, disabled: isSaving }}
           >
             <Text style={styles.saveButtonText}>{isSaving ? "Saving..." : "Log Food"}</Text>
           </TouchableOpacity>

@@ -1,11 +1,11 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import type { NextWorkoutRecommendation } from "../repositories/training-repository.ts";
+import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 import type { SleepNeedResult } from "./sleep-need.ts";
 
 /**
@@ -38,10 +38,10 @@ describe("mobile-dashboard router integration", () => {
       const dateStr = date.toISOString().slice(0, 10);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, user_id, provider_id, resting_hr, hrv, respiratory_rate_avg
+              date, user_id, provider_id, hrv, respiratory_rate_avg
             ) VALUES (
               ${dateStr}, ${TEST_USER_ID}, 'test_provider',
-              ${60 + i}, ${42 + i * 0.5}, ${14 + i * 0.1}
+              ${42 + i * 0.5}, ${14 + i * 0.1}
             )
             ON CONFLICT DO NOTHING`,
       );
@@ -52,20 +52,19 @@ describe("mobile-dashboard router integration", () => {
       sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-              sleep_type
+              staging_available, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               NOW() - INTERVAL '8 hours', NOW(),
-              480, 120, 96, 240, 24, 'sleep'
+              480, 120, 96, 240, 24, true, 'sleep'
             )
             ON CONFLICT DO NOTHING`,
     );
 
-    // Refresh materialized views so dashboard queries pick up the data
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+    // Refresh sleep materialized view so dashboard queries pick up the data
 
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -114,10 +113,11 @@ describe("mobile-dashboard router integration", () => {
         lastNight: {
           date: string;
           durationMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          stagingAvailable: boolean;
         } | null;
         sleepDebt: number;
       } | null;
@@ -128,7 +128,6 @@ describe("mobile-dashboard router integration", () => {
         workloadRatio: number | null;
         date: string | null;
       } | null;
-      nextWorkout: NextWorkoutRecommendation | null;
       sleepNeed: SleepNeedResult | null;
       anomalies: { needsAttention: boolean } | null;
       latestDate: string | null;
@@ -150,19 +149,5 @@ describe("mobile-dashboard router integration", () => {
 
     // Should have strain data
     expect(result.strain).not.toBeNull();
-  });
-
-  it("includes nextWorkout recommendation when data exists", async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const result = await query<{
-      nextWorkout: NextWorkoutRecommendation | null;
-    }>({ endDate: today });
-
-    // With 30 days of metrics, there should be training data for a recommendation
-    if (result.nextWorkout) {
-      expect(result.nextWorkout.generatedAt).toBeTypeOf("string");
-      expect(result.nextWorkout.recommendationType).toBeDefined();
-      expect(result.nextWorkout.title).toBeTypeOf("string");
-    }
   });
 });

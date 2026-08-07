@@ -2,26 +2,22 @@
 -- This precomputes per-provider record counts so sync.providerStats can do a
 -- fast user-scoped lookup instead of scanning many tables on demand.
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS
+CREATE OR REPLACE VIEW fitness.provider_stats AS
 WITH providers AS (
   SELECT DISTINCT user_id, provider_id
   FROM fitness.oauth_token
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.activity
+  SELECT DISTINCT user_id, provider_id FROM fitness.activity WHERE provider_absent_at IS NULL AND deleted_at IS NULL
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.daily_metrics
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.sleep_session
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.body_measurement
-  UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.food_entry
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.health_event
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.metric_stream
-  UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.nutrition_daily
+  SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_provider_daily
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.lab_panel
   UNION
@@ -35,10 +31,10 @@ SELECT
   COALESCE(a.cnt, 0)::bigint AS activities,
   COALESCE(dm.cnt, 0)::bigint AS daily_metrics,
   COALESCE(ss.cnt, 0)::bigint AS sleep_sessions,
-  COALESCE(bm.cnt, 0)::bigint AS body_measurements,
+  0::bigint AS body_measurements,
   COALESCE(fe.cnt, 0)::bigint AS food_entries,
   COALESCE(he.cnt, 0)::bigint AS health_events,
-  COALESCE(ms.cnt, 0)::bigint AS metric_stream,
+  0::bigint AS metric_stream,
   COALESCE(nd.cnt, 0)::bigint AS nutrition_daily,
   COALESCE(lp.cnt, 0)::bigint AS lab_panels,
   COALESCE(lr.cnt, 0)::bigint AS lab_results,
@@ -47,6 +43,8 @@ FROM providers p
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
   FROM fitness.activity
+  WHERE provider_absent_at IS NULL
+    AND deleted_at IS NULL
   GROUP BY user_id, provider_id
 ) a ON a.user_id = p.user_id AND a.provider_id = p.provider_id
 LEFT JOIN (
@@ -61,11 +59,6 @@ LEFT JOIN (
 ) ss ON ss.user_id = p.user_id AND ss.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.body_measurement
-  GROUP BY user_id, provider_id
-) bm ON bm.user_id = p.user_id AND bm.provider_id = p.provider_id
-LEFT JOIN (
-  SELECT user_id, provider_id, count(*) AS cnt
   FROM fitness.food_entry
   WHERE confirmed = true
   GROUP BY user_id, provider_id
@@ -77,12 +70,7 @@ LEFT JOIN (
 ) he ON he.user_id = p.user_id AND he.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.metric_stream
-  GROUP BY user_id, provider_id
-) ms ON ms.user_id = p.user_id AND ms.provider_id = p.provider_id
-LEFT JOIN (
-  SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.nutrition_daily
+  FROM fitness.v_nutrition_provider_daily
   GROUP BY user_id, provider_id
 ) nd ON nd.user_id = p.user_id AND nd.provider_id = p.provider_id
 LEFT JOIN (
@@ -102,6 +90,3 @@ LEFT JOIN (
 ) je ON je.user_id = p.user_id AND je.provider_id = p.provider_id;
 
 --> statement-breakpoint
-
-CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx
-ON fitness.provider_stats (user_id, provider_id);

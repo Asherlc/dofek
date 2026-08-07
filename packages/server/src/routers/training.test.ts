@@ -13,7 +13,6 @@ import {
   pickCardioFocus,
   pickStrengthSplit,
   shouldDoStrengthToday,
-  shouldPreferRest,
   uniqueStrings,
 } from "./training.ts";
 
@@ -510,36 +509,46 @@ describe("cardioPlan", () => {
 });
 
 describe("computeZonePercentages", () => {
-  it("sums all five zones for totalZoneSamples", () => {
+  it("sums zone 0 plus the five training zones for totalZoneSamples", () => {
     const result = computeZonePercentages({
+      zone0: 5,
       zone1: 10,
       zone2: 20,
       zone3: 30,
       zone4: 25,
       zone5: 15,
     });
-    expect(result.totalZoneSamples).toBe(100);
+    expect(result.totalZoneSamples).toBe(105);
   });
 
   it("computes high intensity as zone4 + zone5 (not zone3)", () => {
-    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 50, zone4: 30, zone5: 20 });
+    const result = computeZonePercentages({
+      zone0: 0,
+      zone1: 0,
+      zone2: 0,
+      zone3: 50,
+      zone4: 30,
+      zone5: 20,
+    });
     expect(result.highIntensityPct).toBeCloseTo(0.5, 5);
     // If mutation changed to zone3+zone4 or zone4+zone5+zone3, would be wrong
   });
 
-  it("computes low intensity as zone1 + zone2 (not zone3)", () => {
+  it("computes low intensity as zone0 + zone1 + zone2 (not zone3)", () => {
     const result = computeZonePercentages({
+      zone0: 20,
       zone1: 40,
       zone2: 30,
       zone3: 10,
       zone4: 10,
       zone5: 10,
     });
-    expect(result.lowIntensityPct).toBeCloseTo(0.7, 5);
+    expect(result.lowIntensityPct).toBeCloseTo(0.75, 5);
   });
 
   it("computes moderate intensity as zone3 only", () => {
     const result = computeZonePercentages({
+      zone0: 0,
       zone1: 20,
       zone2: 30,
       zone3: 25,
@@ -550,7 +559,14 @@ describe("computeZonePercentages", () => {
   });
 
   it("returns 0 percentages when totalZoneSamples is 0", () => {
-    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 });
+    const result = computeZonePercentages({
+      zone0: 0,
+      zone1: 0,
+      zone2: 0,
+      zone3: 0,
+      zone4: 0,
+      zone5: 0,
+    });
     expect(result.totalZoneSamples).toBe(0);
     expect(result.highIntensityPct).toBe(0);
     expect(result.lowIntensityPct).toBe(0);
@@ -558,7 +574,14 @@ describe("computeZonePercentages", () => {
   });
 
   it("divides by total (not multiplies)", () => {
-    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 0, zone4: 50, zone5: 50 });
+    const result = computeZonePercentages({
+      zone0: 0,
+      zone1: 0,
+      zone2: 0,
+      zone3: 0,
+      zone4: 50,
+      zone5: 50,
+    });
     // Division: 100/100 = 1.0; Multiplication would give 100*100 = 10000
     expect(result.highIntensityPct).toBe(1);
     expect(result.highIntensityPct).not.toBeGreaterThan(1);
@@ -566,7 +589,14 @@ describe("computeZonePercentages", () => {
 
   it("uses > 0 not >= 0 for division guard (avoids divide by zero)", () => {
     // With all zeros, should return 0 not NaN/Infinity
-    const result = computeZonePercentages({ zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 });
+    const result = computeZonePercentages({
+      zone0: 0,
+      zone1: 0,
+      zone2: 0,
+      zone3: 0,
+      zone4: 0,
+      zone5: 0,
+    });
     expect(Number.isFinite(result.highIntensityPct)).toBe(true);
     expect(Number.isFinite(result.lowIntensityPct)).toBe(true);
     expect(Number.isFinite(result.moderateIntensityPct)).toBe(true);
@@ -807,49 +837,6 @@ describe("computeReadinessScore", () => {
     const result = computeReadinessScore(scores, heavyHrv, true);
     // 80*0.7 + 60*0.1 + 70*0.1 + 50*0.1 = 56 + 6 + 7 + 5 = 74
     expect(result).toBe(74);
-  });
-});
-
-describe("shouldPreferRest", () => {
-  it("returns true for low readiness", () => {
-    expect(shouldPreferRest("low", 0, null)).toBe(true);
-  });
-
-  it("returns true for consecutive training >= 6", () => {
-    expect(shouldPreferRest("high", 6, null)).toBe(true);
-  });
-
-  it("returns false for consecutive training of 5", () => {
-    expect(shouldPreferRest("high", 5, null)).toBe(false);
-  });
-
-  it("returns true for ACWR > 1.5", () => {
-    expect(shouldPreferRest("high", 0, 1.6)).toBe(true);
-  });
-
-  it("returns false for ACWR exactly 1.5 (uses > not >=)", () => {
-    expect(shouldPreferRest("high", 0, 1.5)).toBe(false);
-  });
-
-  it("returns false for ACWR just below threshold", () => {
-    expect(shouldPreferRest("high", 0, 1.4)).toBe(false);
-  });
-
-  it("returns false for null ACWR", () => {
-    expect(shouldPreferRest("high", 0, null)).toBe(false);
-  });
-
-  it("returns false for moderate readiness with no other triggers", () => {
-    expect(shouldPreferRest("moderate", 0, null)).toBe(false);
-  });
-
-  it("uses || not && (any single trigger is enough)", () => {
-    // Low readiness alone should trigger rest
-    expect(shouldPreferRest("low", 0, null)).toBe(true);
-    // High streak alone should trigger rest
-    expect(shouldPreferRest("high", 7, null)).toBe(true);
-    // High ACWR alone should trigger rest
-    expect(shouldPreferRest("high", 0, 2.0)).toBe(true);
   });
 });
 

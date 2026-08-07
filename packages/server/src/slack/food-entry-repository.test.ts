@@ -1,11 +1,15 @@
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+} from "dofek/db/account-erasure";
 import { describe, expect, it, vi } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 import {
   extractLatestConfirmFromThread,
+  FALLBACK_TIMEZONE,
   FoodEntryRepository,
-  slackTimestampToDateString,
-  slackTimestampToLocalTime,
 } from "./food-entry-repository.ts";
+import { slackTimestampToDateString, slackTimestampToLocalTime } from "./formatting.ts";
 import type { PendingSlackEntry } from "./pending-entry-store.ts";
 import { InMemoryPendingEntryStore } from "./pending-entry-store.ts";
 
@@ -197,6 +201,93 @@ describe("slackTimestampToLocalTime", () => {
 });
 
 describe("FoodEntryRepository", () => {
+  describe("withInboundNutritionWriteFence", () => {
+    function slackClient() {
+      return {
+        users: {
+          info: vi.fn(async () => ({ user: {} })),
+        },
+      };
+    }
+
+    it("runs the operation with the fenced repository and resolved identity", async () => {
+      const execute = vi.fn().mockResolvedValue([{ user_id: "user-1" }]);
+      const transaction = {
+        execute: vi.fn().mockResolvedValue([{ fenced: false, user_id: "user-1" }]),
+      };
+      const transactionCall = vi.fn(
+        async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction),
+      );
+      const operation = vi.fn(async (context: { userId: string; timezone: string }) => context);
+      const repository = new FoodEntryRepository(asMock({ execute, transaction: transactionCall }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          operation,
+        ),
+      ).resolves.toMatchObject({ userId: "user-1", timezone: FALLBACK_TIMEZONE });
+      expect(operation).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "user-1", timezone: FALLBACK_TIMEZONE }),
+      );
+    });
+
+    it("rejects when the mapping changes while the transaction is being prepared", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ user_id: "user-1" }])
+        .mockResolvedValue([{ user_id: "user-2" }]);
+      const transaction = {
+        execute: vi.fn().mockResolvedValue([{ fenced: false, user_id: "user-2" }]),
+      };
+      const transactionCall = vi.fn(
+        async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction),
+      );
+      const repository = new FoodEntryRepository(asMock({ execute, transaction: transactionCall }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          vi.fn(),
+        ),
+      ).rejects.toThrow("Slack account mapping changed while the message was being processed");
+    });
+
+    it.each([
+      new AccountErasureIdentityFencedError(),
+      new AccountErasureUserFencedError(),
+      { code: "55000", message: "Account erasure is active for this user" },
+      {
+        cause: { code: "55000", message: "Account erasure is active for this user" },
+      },
+    ])("converts account-erasure fence errors into a user fence", async (error) => {
+      const execute = vi.fn().mockResolvedValue([{ user_id: "user-1" }]);
+      const transaction = vi.fn().mockRejectedValue(error);
+      const repository = new FoodEntryRepository(asMock({ execute, transaction }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          vi.fn(),
+        ),
+      ).rejects.toBeInstanceOf(AccountErasureUserFencedError);
+    });
+
+    it("rethrows unexpected transaction errors", async () => {
+      const error = new Error("database unavailable");
+      const execute = vi.fn().mockResolvedValue([{ user_id: "user-1" }]);
+      const transaction = vi.fn().mockRejectedValue(error);
+      const repository = new FoodEntryRepository(asMock({ execute, transaction }));
+
+      await expect(
+        repository.withInboundNutritionWriteFence(
+          { slackClient: slackClient(), slackUserId: "U1" },
+          vi.fn(),
+        ),
+      ).rejects.toBe(error);
+    });
+  });
+
   describe("confirm", () => {
     it("returns empty result immediately for empty input", async () => {
       const store = new InMemoryPendingEntryStore();
@@ -355,21 +446,88 @@ describe("FoodEntryRepository", () => {
         throw new Error("Expected second execute() call to receive a SQL query with queryChunks");
       }
 
-      const scalarBindValues = queryChunksCandidate
-        .filter(
-          (chunk): chunk is number | string | null =>
-            typeof chunk === "number" || typeof chunk === "string" || chunk === null,
-        )
-        .filter((chunk) => typeof chunk === "number");
-
       const expectedMicronutrientValues = [
         11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
         34, 35, 36, 37, 38, 39,
       ];
+      const insertQueryJson = JSON.stringify(insertQuery);
 
       for (const expectedValue of expectedMicronutrientValues) {
-        expect(scalarBindValues).toContain(expectedValue);
+        expect(insertQueryJson).toContain(String(expectedValue));
       }
+    });
+  });
+
+  describe("loadDailyCalorieProgress", () => {
+    it("returns zero progress when no canonical daily row exists", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2100 }])
+        .mockResolvedValueOnce([]);
+      const repo = new FoodEntryRepository(
+        asMock({ execute: mockExecute }),
+        new InMemoryPendingEntryStore(),
+      );
+
+      const result = await repo.loadDailyCalorieProgress("user-1", "2024-06-15");
+
+      expect(result).toEqual({
+        status: "available",
+        calorieGoal: 2100,
+        caloriesConsumed: 0,
+      });
+    });
+
+    it("returns explicit provenance when canonical totals have a source conflict", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2100 }])
+        .mockResolvedValueOnce([
+          {
+            calories_consumed: null,
+            resolution_status: "source_conflict",
+            resolution_message: "Nutrition sources overlap.",
+            source_labels: ["Apple Health", "Cronometer"],
+          },
+        ]);
+      const repo = new FoodEntryRepository(
+        asMock({ execute: mockExecute }),
+        new InMemoryPendingEntryStore(),
+      );
+
+      const result = await repo.loadDailyCalorieProgress("user-1", "2024-06-15");
+
+      expect(result).toEqual({
+        status: "source_conflict",
+        message: "Nutrition sources overlap.",
+        sourceLabels: ["Apple Health", "Cronometer"],
+      });
+    });
+
+    it("rounds available canonical calories", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 2100 }])
+        .mockResolvedValueOnce([
+          {
+            calories_consumed: 1800.6,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_labels: ["Cronometer"],
+          },
+        ]);
+      const repo = new FoodEntryRepository(
+        asMock({ execute: mockExecute }),
+        new InMemoryPendingEntryStore(),
+      );
+
+      const result = await repo.loadDailyCalorieProgress("user-1", "2024-06-15");
+
+      expect(result).toEqual({
+        status: "available",
+        calorieGoal: 2100,
+        caloriesConsumed: 1801,
+      });
     });
   });
 

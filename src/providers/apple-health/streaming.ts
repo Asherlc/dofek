@@ -220,11 +220,8 @@ export function streamHealthExport(
         const loc = parseRouteLocation(attrs);
         if (loc) currentRouteLocations.push(loc);
       } else if (node.name === "ActivitySummary") {
-        // ActivitySummary contains daily ring totals (activeEnergyBurned, etc.)
-        // but individual Record elements with the same types already exist in the
-        // export. Creating records from ActivitySummary would double-count them.
-        // We intentionally skip these — the individual records are summed by the
-        // daily metrics pipeline instead.
+        // ActivitySummary contains provider-derived ring totals. Dofek does not
+        // ingest those opaque estimates.
       }
     });
 

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { DailyTotals, FoodEntry, FoodRepository, FoodSearchResult } from "./food-repository.ts";
+import {
+  DailyNutritionSummary,
+  DailyTotals,
+  FoodEntry,
+  FoodRepository,
+  FoodSearchResult,
+} from "./food-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +75,19 @@ function makeFoodEntryRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const availableResolutionRow = {
+  resolution_status: "available",
+  resolution_message: "Totals use the only available nutrition source.",
+  source_providers: ["dofek"],
+  contributing_providers: ["dofek"],
+  excluded_providers: [],
+  source_labels: ["dofek"],
+  contributing_source_labels: ["dofek"],
+  excluded_source_labels: [],
+  contribution_grain: "itemized",
+  contribution_source_label: "dofek",
+};
+
 function makeDailyTotalsRow(overrides: Record<string, unknown> = {}) {
   return {
     date: "2024-06-15",
@@ -77,6 +96,7 @@ function makeDailyTotalsRow(overrides: Record<string, unknown> = {}) {
     carbs_g: 200,
     fat_g: 80,
     fiber_g: 25,
+    ...availableResolutionRow,
     ...overrides,
   };
 }
@@ -208,6 +228,7 @@ describe("DailyTotals", () => {
       carbs_g: 200,
       fat_g: 80,
       fiber_g: 25,
+      ...availableResolutionRow,
     });
   });
 
@@ -378,6 +399,244 @@ describe("FoodRepository", () => {
       const result = await repo.byDate("2024-06-15");
       expect(result).toEqual([]);
     });
+
+    it("queries the display surface that excludes aggregate-only rows", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.byDate("2024-06-15");
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain(
+        "fitness.v_nutrition_display_entry",
+      );
+    });
+  });
+
+  describe("nutritionSummaryByDate", () => {
+    it("returns an explicit empty available summary when no source reported data", async () => {
+      const { repo } = makeRepository([]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result).toEqual({
+        summary: {
+          calories: 0,
+          mealCalories: {
+            breakfast: 0,
+            lunch: 0,
+            dinner: 0,
+            snack: 0,
+            other: 0,
+          },
+          calorieGoal: {
+            target: 2000,
+            remaining: 2000,
+            over: 0,
+            progressPercentage: 0,
+          },
+          macros: {
+            protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+            carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+            fat: { grams: 0, calories: 0, energySharePercentage: 0 },
+          },
+        },
+        resolution: {
+          status: "available",
+          message: "No nutrition sources have reported data for this date.",
+          sourceProviders: [],
+          contributingProviders: [],
+          excludedProviders: [],
+          sourceLabels: [],
+          contributingSourceLabels: [],
+          excludedSourceLabels: [],
+          contributionGrain: null,
+          contributionLabel: null,
+        },
+      });
+    });
+
+    it("returns server-computed daily, meal, goal, and macro metrics", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: "1000",
+          protein_g: "55",
+          carbs_g: "105",
+          fat_g: "40",
+          breakfast_calories: "400",
+          lunch_calories: "500",
+          dinner_calories: "0",
+          snack_calories: "0",
+          other_calories: "100",
+        },
+      ]);
+
+      const result = await repo.nutritionSummaryByDate("2024-06-15", 1600);
+
+      expect(result).toEqual({
+        calories: 1000,
+        mealCalories: {
+          breakfast: 400,
+          lunch: 500,
+          dinner: 0,
+          snack: 0,
+          other: 100,
+        },
+        calorieGoal: {
+          target: 1600,
+          remaining: 600,
+          over: 0,
+          progressPercentage: 62.5,
+        },
+        macros: {
+          protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+          carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+          fat: { grams: 40, calories: 360, energySharePercentage: 36 },
+        },
+      });
+    });
+
+    it("labels a provider daily aggregate from server-owned provenance", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 1800,
+          protein_g: 90,
+          carbs_g: 220,
+          fat_g: 60,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 1800,
+          source_providers: ["apple_health"],
+          contributing_providers: ["apple_health"],
+          source_labels: ["Cronometer (via Apple Health)"],
+          contributing_source_labels: ["Cronometer (via Apple Health)"],
+          contribution_grain: "daily_aggregate",
+          contribution_source_label: "Cronometer (via Apple Health)",
+        },
+      ]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result.resolution).toMatchObject({
+        contributionGrain: "daily_aggregate",
+        contributionLabel: "Cronometer (via Apple Health) daily total",
+      });
+    });
+
+    it.each([
+      {
+        contributionGrain: "itemized",
+        contributionLabel: "Cronometer (via Apple Health) itemized entries",
+      },
+      {
+        contributionGrain: "ambiguous",
+        contributionLabel: "Cronometer (via Apple Health) nutrition data",
+      },
+      {
+        contributionGrain: null,
+        contributionLabel: null,
+      },
+    ])("labels $contributionGrain contribution provenance without changing its grain", async ({
+      contributionGrain,
+      contributionLabel,
+    }) => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 1800,
+          protein_g: 90,
+          carbs_g: 220,
+          fat_g: 60,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 1800,
+          source_labels: ["Cronometer (via Apple Health)"],
+          contributing_source_labels: ["Cronometer (via Apple Health)"],
+          contribution_grain: contributionGrain,
+          contribution_source_label: "Cronometer (via Apple Health)",
+        },
+      ]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result.resolution).toMatchObject({
+        contributionGrain,
+        contributionLabel,
+      });
+    });
+
+    it("caps goal progress and reports calories over the target", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 1000,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 0,
+        },
+      ]);
+
+      const result = await repo.nutritionSummaryByDate("2024-06-15", 800);
+
+      expect(result.calorieGoal).toEqual({
+        target: 800,
+        remaining: 0,
+        over: 200,
+        progressPercentage: 100,
+      });
+    });
+
+    it("returns null totals with explicit provenance for a source conflict", async () => {
+      const conflictResolution = {
+        resolution_status: "source_conflict",
+        resolution_message: "Totals are unavailable because nutrition sources overlap.",
+        source_providers: ["apple-health", "cronometer"],
+        contributing_providers: [],
+        excluded_providers: ["apple-health", "cronometer"],
+        source_labels: ["Apple Health", "Cronometer"],
+        contributing_source_labels: [],
+        excluded_source_labels: ["Apple Health", "Cronometer"],
+        contribution_grain: null,
+        contribution_source_label: null,
+      };
+      const { repo } = makeRepository([
+        {
+          ...conflictResolution,
+          calories: null,
+          protein_g: null,
+          carbs_g: null,
+          fat_g: null,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 0,
+        },
+      ]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result.summary).toBeNull();
+      expect(result.resolution).toEqual({
+        status: "source_conflict",
+        message: conflictResolution.resolution_message,
+        sourceProviders: conflictResolution.source_providers,
+        contributingProviders: [],
+        excludedProviders: conflictResolution.excluded_providers,
+        sourceLabels: conflictResolution.source_labels,
+        contributingSourceLabels: [],
+        excludedSourceLabels: conflictResolution.excluded_source_labels,
+        contributionGrain: null,
+        contributionLabel: null,
+      });
+    });
   });
 
   describe("dailyTotals", () => {
@@ -393,6 +652,46 @@ describe("FoodRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.dailyTotals(30);
       expect(result).toEqual([]);
+    });
+
+    it("queries canonical resolved daily totals", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.dailyTotals(30);
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("fitness.v_nutrition_daily");
+    });
+  });
+
+  describe("dailyTotalsRange", () => {
+    it("returns exact-range totals with meal counts and provider provenance", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          date: "2024-06-15",
+          calories: "2450",
+          protein_g: "165",
+          carbs_g: "280",
+          fat_g: "85",
+          fiber_g: "32",
+          meal_count: "4",
+          source_providers: ["fatsecret"],
+        },
+      ]);
+
+      const result = await repo.dailyTotalsRange("2024-06-15", "2024-06-15");
+
+      expect(result[0]).toBeInstanceOf(DailyNutritionSummary);
+      expect(result[0]?.date).toBe("2024-06-15");
+      expect(result[0]?.calories).toBe(2450);
+      expect(result[0]?.proteinGrams).toBe(165);
+      expect(result[0]?.carbsGrams).toBe(280);
+      expect(result[0]?.fatGrams).toBe(85);
+      expect(result[0]?.fiberGrams).toBe(32);
+      expect(result[0]?.mealCount).toBe(4);
+      expect(result[0]?.sourceProviders).toEqual(["fatsecret"]);
+      expect(result[0]?.resolutionStatus).toBe("available");
+      expect(result[0]?.resolutionMessage).toBe(availableResolutionRow.resolution_message);
+      expect(result[0]?.contributingProviders).toEqual(["dofek"]);
+      expect(result[0]?.excludedProviders).toEqual([]);
     });
   });
 
@@ -462,7 +761,7 @@ describe("FoodRepository", () => {
       });
 
       expect(result.nutrients).toEqual({ "vitamin-c": 25 });
-      expect(execute).toHaveBeenCalledTimes(4);
+      expect(execute).toHaveBeenCalledTimes(3);
     });
 
     it("throws when insert returns no row", async () => {
@@ -512,8 +811,7 @@ describe("FoodRepository", () => {
         .fn()
         .mockResolvedValueOnce([]) // ensureDofekProvider
         .mockResolvedValueOnce([{ id: "entry-1" }]) // insert CTE
-        .mockResolvedValueOnce([foodRow]) // select from view
-        .mockResolvedValueOnce([]); // junction table insert
+        .mockResolvedValueOnce([foodRow]); // select from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
@@ -523,8 +821,8 @@ describe("FoodRepository", () => {
         nutrients: { "vitamin-c": 25, iron: 8, zinc: 3 },
       });
 
-      // 4 calls: ensureProvider, insert CTE, select view, junction insert
-      expect(execute).toHaveBeenCalledTimes(4);
+      // 3 calls: ensureProvider, insert CTE with nutrient rows, select view
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(result.nutrients).toEqual({ "vitamin-c": 25, iron: 8, zinc: 3 });
     });
   });
@@ -542,28 +840,25 @@ describe("FoodRepository", () => {
       expect(result).toBeNull();
     });
 
-    it("processes nutrient updates with existing nutrition_data_id", async () => {
+    it("processes nutrient updates in food_entry_nutrient rows", async () => {
       const foodRow = makeFoodEntryRow({ calories: 500 });
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", calories: 500 });
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
-    it("creates food_entry_nutrition when entry has no nutrition_data_id", async () => {
+    it("creates a food_entry_nutrient row when updating a nutrient", async () => {
       const foodRow = makeFoodEntryRow({ calories: 300 });
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
-        .mockResolvedValueOnce([]) // INSERT food_entry_nutrition (on conflict do nothing)
-        .mockResolvedValueOnce([]) // UPDATE food_entry_nutrition set values
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
@@ -759,23 +1054,21 @@ describe("FoodRepository", () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([]) // DELETE food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", calories: null });
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("does NOT return null when nutrientClauses > 0 even if foodEntryClauses=0 and no nutrients", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
@@ -1139,6 +1432,13 @@ describe("FoodRepository", () => {
       expect(insertQuery).toContain("350"); // calories
       expect(insertQuery).toContain("10"); // proteinG
       expect(insertQuery).toContain("45"); // carbsG
+      const query = execute.mock.calls[1]?.[0];
+      const queryChunks =
+        typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
+      expect(Array.isArray(queryChunks)).toBe(true);
+      if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
+      expect(queryChunks).toContain("grain");
+      expect(queryChunks).toContain(2);
       expect(result).not.toBeNull();
     });
 
@@ -1181,6 +1481,32 @@ describe("FoodRepository", () => {
   });
 
   describe("create — optional field null coalescing", () => {
+    it("preserves provided optional values when no nutrient rows are inserted", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "Food",
+        category: "grain",
+        numberOfUnits: 2,
+        nutrients: {},
+      });
+
+      const query = execute.mock.calls[1]?.[0];
+      const queryChunks =
+        typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
+      expect(Array.isArray(queryChunks)).toBe(true);
+      if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
+      expect(queryChunks).toContain("grain");
+      expect(queryChunks).toContain(2);
+    });
+
     it("passes explicit null for meal when set to null", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
@@ -1243,50 +1569,44 @@ describe("FoodRepository", () => {
     });
   });
 
-  describe("update — nutrient field with null creates food_entry_nutrition when ndId is null", () => {
-    it("creates food_entry_nutrition when existing ndId is null", async () => {
+  describe("update — nutrient fields use food_entry_nutrient rows", () => {
+    it("upserts food_entry_nutrient when updating a nutrient", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
-        .mockResolvedValueOnce([]) // INSERT food_entry_nutrition (on conflict do nothing)
-        .mockResolvedValueOnce([]) // UPDATE food_entry_nutrition set values
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", calories: 200 });
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(4);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
-    it("skips creating nutrition_data when ndIdRows is empty (entry not found)", async () => {
+    it("returns null when the final view select is empty", async () => {
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([]) // SELECT returns empty — no entry found
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient targets no owned row
         .mockResolvedValueOnce([]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", calories: 200 });
-      // ndIdRows.length is 0, so neither the existing-nd nor new-nd branch runs
-      // Only 2 calls: SELECT nutrition_data_id + SELECT from view
       expect(execute).toHaveBeenCalledTimes(2);
       expect(result).toBeNull();
     });
 
-    it("returns null when create/update path runs but final select is empty", async () => {
+    it("returns null when update path runs but final select is empty", async () => {
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
-        .mockResolvedValueOnce([]) // INSERT food_entry_nutrition (on conflict do nothing)
-        .mockResolvedValueOnce([]) // UPDATE food_entry_nutrition
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", calories: 200 });
-      expect(execute).toHaveBeenCalledTimes(4);
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(result).toBeNull();
     });
   });
@@ -1296,8 +1616,7 @@ describe("FoodRepository", () => {
       const foodRow = makeFoodEntryRow({ food_name: "Updated", calories: 500 });
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([]) // UPDATE food_entry
         .mockResolvedValueOnce([]) // DELETE from junction table
         .mockResolvedValueOnce([]) // INSERT into junction table
@@ -1313,22 +1632,21 @@ describe("FoodRepository", () => {
       });
       expect(result).not.toBeNull();
       expect(result?.food_name).toBe("Updated");
-      expect(execute).toHaveBeenCalledTimes(6);
+      expect(execute).toHaveBeenCalledTimes(5);
     });
 
     it("handles nutrient column with non-null value (sets value)", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", proteinG: 42 });
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1651,12 +1969,11 @@ describe("FoodRepository", () => {
   });
 
   describe("update — multiple nutrient fields at once", () => {
-    it("builds multiple SET clauses for nutrition_data when multiple nutrient fields change", async () => {
+    it("upserts multiple food_entry_nutrient rows when multiple nutrient fields change", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([]) // UPSERT food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
@@ -1668,7 +1985,7 @@ describe("FoodRepository", () => {
         fatG: 20,
       });
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1677,15 +1994,14 @@ describe("FoodRepository", () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([{ nutrition_data_id: "nd-1" }]) // SELECT nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data
+        .mockResolvedValueOnce([]) // DELETE food_entry_nutrient
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", proteinG: null });
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 

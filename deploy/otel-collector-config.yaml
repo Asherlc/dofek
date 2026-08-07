@@ -43,6 +43,25 @@ processors:
     timeout: 5s
     send_batch_size: 1024
 
+  # Drop Winston console lines from Docker logs. App services already ship
+  # structured logs via OTLP, so keeping both roughly doubles log ingest.
+  filter/drop-app-console-logs:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'IsMatch(body, "^(\\\\x1b\\\\[[0-9;]*m)?(info|warn|error|debug):")'
+
+  # Drop debug-level OTLP logs to reduce volume while keeping info+.
+  filter/drop-debug-logs:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'severity_number < SEVERITY_NUMBER_INFO'
+
+  # Sample infra-only Docker logs. App duplicates are already filtered above.
+  probabilistic_sampler/docker-logs:
+    sampling_percentage: 50
+
   # Add resource attributes to filelog entries
   resource/docker:
     attributes:
@@ -75,18 +94,6 @@ exporters:
       enabled: true
       num_consumers: 4
       queue_size: 5000
-  otlphttp/metrics:
-    endpoint: https://api.axiom.co
-    headers:
-      authorization: "Bearer ${env:AXIOM_API_TOKEN}"
-      x-axiom-dataset: dofek-metrics
-    retry_on_failure:
-      enabled: true
-      max_elapsed_time: 300s
-    sending_queue:
-      enabled: true
-      num_consumers: 4
-      queue_size: 5000
 
 service:
   extensions: [health_check]
@@ -97,13 +104,9 @@ service:
       exporters: [otlphttp/traces]
     logs/app:
       receivers: [otlp]
-      processors: [batch]
+      processors: [filter/drop-debug-logs, batch]
       exporters: [otlphttp/logs]
     logs/docker:
       receivers: [filelog]
-      processors: [resource/docker, batch]
+      processors: [filter/drop-app-console-logs, resource/docker, probabilistic_sampler/docker-logs, batch]
       exporters: [otlphttp/logs]
-    metrics:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [otlphttp/metrics]

@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+
+import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -39,70 +41,90 @@ const sampleData: SmoothedWeightRow[] = [
   {
     date: "2026-03-01",
     rawWeight: 84.0,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 84.0,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-02",
     rawWeight: 83.8,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.98,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-03",
     rawWeight: 84.2,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 84.0,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-04",
     rawWeight: 83.7,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.97,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-05",
     rawWeight: 84.1,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.98,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-06",
     rawWeight: 83.9,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.97,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-07",
     rawWeight: 84.0,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.98,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-08",
     rawWeight: 83.6,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.94,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: -0.06,
     interpolated: false,
   },
   {
     date: "2026-03-09",
     rawWeight: 83.5,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.9,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: -0.08,
     interpolated: false,
   },
   {
     date: "2026-03-10",
     rawWeight: 83.4,
+    rawWeightStatus: { kind: "observed", label: "Observed" },
     smoothedWeight: 83.85,
+    smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
     weeklyChange: -0.15,
     interpolated: false,
   },
@@ -112,6 +134,14 @@ describe("SmoothedWeightChart", () => {
   it("renders chart with data", () => {
     render(<SmoothedWeightChart data={sampleData} />);
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
+  });
+
+  it("shows the latest Trend Weight and scale reading", () => {
+    render(<SmoothedWeightChart data={sampleData} />);
+
+    expect(screen.getByText("Estimated Trend Weight")).toBeDefined();
+    expect(screen.getByText("83.9 kg")).toBeDefined();
+    expect(screen.getByText("Observed: 83.4 kg")).toBeDefined();
   });
 
   it("renders loading state", () => {
@@ -124,9 +154,47 @@ describe("SmoothedWeightChart", () => {
     expect(screen.getByText("No weight data available")).toBeDefined();
   });
 
-  it("shows weekly change when available", () => {
-    render(<SmoothedWeightChart data={sampleData} />);
-    expect(screen.getByText(/\/week/)).toBeDefined();
+  it("shows headline rate from prediction when available", () => {
+    render(
+      <SmoothedWeightChart
+        data={sampleData}
+        prediction={{
+          ratePerWeek: -0.3,
+          rateConfidence: 0.92,
+          impliedDailyCalories: -330,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        }}
+      />,
+    );
+    expect(screen.getByText("-0.3 kg/week")).toBeDefined();
+    expect(screen.queryByText("-0.15 kg/week")).toBeNull();
+  });
+
+  it("uses neutral text for weight-rate direction", () => {
+    render(
+      <SmoothedWeightChart
+        data={sampleData}
+        prediction={{
+          ratePerWeek: -0.3,
+          rateConfidence: 0.92,
+          impliedDailyCalories: -330,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("-0.3 kg/week").style.color).toBe(
+      `rgb(${Number.parseInt(textColors.secondary.slice(1, 3), 16)}, ${Number.parseInt(textColors.secondary.slice(3, 5), 16)}, ${Number.parseInt(textColors.secondary.slice(5, 7), 16)})`,
+    );
+  });
+
+  it("does not show headline rate when prediction is missing", () => {
+    const { container } = render(<SmoothedWeightChart data={sampleData} />);
+    expect(container.textContent).not.toMatch(/\/week/);
   });
 
   it("y-axis min rounds down floating-point values to nearest even integer", () => {
@@ -152,21 +220,27 @@ describe("SmoothedWeightChart", () => {
       {
         date: "2026-03-01",
         rawWeight: 84.0,
+        rawWeightStatus: { kind: "observed", label: "Observed" },
         smoothedWeight: 84.0,
+        smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
         weeklyChange: null,
         interpolated: false,
       },
       {
         date: "2026-03-02",
         rawWeight: null,
+        rawWeightStatus: null,
         smoothedWeight: 83.9,
+        smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
         weeklyChange: null,
         interpolated: true,
       },
       {
         date: "2026-03-03",
         rawWeight: 83.8,
+        rawWeightStatus: { kind: "observed", label: "Observed" },
         smoothedWeight: 83.89,
+        smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
         weeklyChange: null,
         interpolated: false,
       },
@@ -180,6 +254,36 @@ describe("SmoothedWeightChart", () => {
     const scatterSeries = series.find((s) => s.name === "Raw Weight");
     // Should only have 2 data points (interpolated point filtered out)
     expect(scatterSeries?.data).toHaveLength(2);
+  });
+
+  it("rounds converted chart weights to 1 decimal place", () => {
+    render(
+      <SmoothedWeightChart
+        data={[
+          {
+            date: "2026-03-01",
+            rawWeight: 72.36123,
+            rawWeightStatus: { kind: "observed", label: "Observed" },
+            smoothedWeight: 72.36091,
+            smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+            weeklyChange: -15.51971,
+            interpolated: false,
+          },
+        ]}
+      />,
+    );
+    expect(capturedOption).not.toBeNull();
+
+    const series = z
+      .array(z.object({ name: z.string(), data: z.array(z.tuple([z.string(), z.number()])) }))
+      .parse(capturedOption?.series);
+
+    for (const chartSeries of series) {
+      for (const dataPoint of chartSeries.data) {
+        const decimals = String(dataPoint[1]).split(".")[1]?.length ?? 0;
+        expect(decimals).toBeLessThanOrEqual(1);
+      }
+    }
   });
 
   it("renders goal markLine when prediction has goal", () => {
@@ -206,7 +310,7 @@ describe("SmoothedWeightChart", () => {
     const series = z
       .array(z.object({ name: z.string() }).passthrough())
       .parse(capturedOption?.series);
-    const trendSeries = series.find((s) => s.name === "Trend");
+    const trendSeries = series.find((s) => s.name === "Trend Weight");
     expect(trendSeries).toBeDefined();
     expect("markLine" in (trendSeries ?? {})).toBe(true);
   });

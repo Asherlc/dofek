@@ -1,0 +1,28 @@
+dofek:
+  target: "{{ env_var('DBT_TARGET', 'prod') }}"
+  outputs:
+    dev:
+      type: clickhouse
+      schema: "{{ env_var('DBT_CLICKHOUSE_SCHEMA', 'analytics') }}"
+      host: "{{ env_var('DBT_CLICKHOUSE_HOST', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[-1].split('/')[0].split(':')[0]) }}"
+      port: "{{ env_var('DBT_CLICKHOUSE_PORT', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[-1].split('/')[0].split(':')[-1]) | int }}"
+      user: "{{ env_var('DBT_CLICKHOUSE_USER', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[0]) }}"
+      password: "{{ env_var('DBT_CLICKHOUSE_PASSWORD', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[-1]) }}"
+      secure: "{{ env_var('DBT_CLICKHOUSE_SECURE', 'false') | lower == 'true' }}"
+    prod:
+      type: clickhouse
+      schema: "{{ env_var('DBT_CLICKHOUSE_SCHEMA', 'analytics') }}"
+      host: "{{ env_var('DBT_CLICKHOUSE_HOST', 'clickhouse') }}"
+      port: "{{ env_var('DBT_CLICKHOUSE_PORT', '8123') | int }}"
+      user: "{{ env_var('DBT_CLICKHOUSE_USER', 'default') }}"
+      password: "{{ env_var('DBT_CLICKHOUSE_PASSWORD', env_var('CLICKHOUSE_PASSWORD')) }}"
+      secure: "{{ env_var('DBT_CLICKHOUSE_SECURE', 'false') | lower == 'true' }}"
+      send_receive_timeout: 300
+    lint:
+      type: clickhouse
+      schema: "{{ env_var('DBT_CLICKHOUSE_SCHEMA', 'analytics') }}"
+      host: "{{ env_var('DBT_CLICKHOUSE_HOST', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[-1].split('/')[0].split(':')[0]) }}"
+      port: "{{ env_var('DBT_CLICKHOUSE_PORT', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[-1].split('/')[0].split(':')[-1]) | int }}"
+      user: "{{ env_var('DBT_CLICKHOUSE_USER', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[0]) }}"
+      password: "{{ env_var('DBT_CLICKHOUSE_PASSWORD', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[-1]) }}"
+      secure: "{{ env_var('DBT_CLICKHOUSE_SECURE', 'false') | lower == 'true' }}"

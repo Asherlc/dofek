@@ -1,10 +1,13 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { TRPCError } from "@trpc/server";
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
+import { authFailureReasonFromError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
+import type { TokenSet } from "dofek/providers/types";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
-import { ensureProvidersRegistered } from "./sync.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export const credentialAuthRouter = router({
   /** Generic credential sign-in for any provider with automatedLogin */
@@ -35,7 +38,28 @@ export const credentialAuthRouter = router({
         });
       }
 
-      const tokens = await setup.automatedLogin(input.username, input.password);
+      let tokens: TokenSet;
+      try {
+        tokens = await setup.automatedLogin(input.username, input.password);
+      } catch (error) {
+        if (error instanceof ProviderRateLimitError) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: error.message,
+            cause: error,
+          });
+        }
+
+        if (authFailureReasonFromError(error)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Provider authentication failed.",
+            cause: error,
+          });
+        }
+
+        throw error;
+      }
       await ensureProvider(ctx.db, provider.id, provider.name, setup.apiBaseUrl, ctx.userId);
       await saveTokens(ctx.db, provider.id, tokens, ctx.userId);
       await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);

@@ -195,24 +195,6 @@ final class HealthKitQueriesTests: XCTestCase {
         XCTAssertEqual(unit, .meter())
     }
 
-    func testPreferredUnitDistanceCycling() {
-        let type = HKQuantityType.quantityType(forIdentifier: .distanceCycling)!
-        let unit = HealthKitQueries.preferredUnit(for: type)
-        XCTAssertEqual(unit, .meter())
-    }
-
-    func testPreferredUnitActiveEnergyBurned() {
-        let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
-        let unit = HealthKitQueries.preferredUnit(for: type)
-        XCTAssertEqual(unit, .kilocalorie())
-    }
-
-    func testPreferredUnitBasalEnergyBurned() {
-        let type = HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned)!
-        let unit = HealthKitQueries.preferredUnit(for: type)
-        XCTAssertEqual(unit, .kilocalorie())
-    }
-
     func testPreferredUnitDietaryEnergyConsumed() {
         let type = HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed)!
         let unit = HealthKitQueries.preferredUnit(for: type)
@@ -323,6 +305,12 @@ final class HealthKitQueriesTests: XCTestCase {
 
     func testPreferredUnitWalkingAsymmetryPercentage() {
         let type = HKQuantityType.quantityType(forIdentifier: .walkingAsymmetryPercentage)!
+        let unit = HealthKitQueries.preferredUnit(for: type)
+        XCTAssertEqual(unit, .percent())
+    }
+
+    func testPreferredUnitAppleWalkingSteadiness() {
+        let type = HKQuantityType.quantityType(forIdentifier: .appleWalkingSteadiness)!
         let unit = HealthKitQueries.preferredUnit(for: type)
         XCTAssertEqual(unit, .percent())
     }

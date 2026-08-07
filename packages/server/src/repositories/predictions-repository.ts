@@ -3,6 +3,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { joinByDate } from "../insights/data-join.ts";
 import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/types.ts";
+import {
+  clickHouseDateRangeLowerBound,
+  clickHouseRangeLowerBound,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,
@@ -16,6 +21,10 @@ import type { PredictionTarget } from "../ml/features.ts";
 import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
+import { fetchBodyCompRows } from "./body-clickhouse.ts";
+import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
+import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -74,7 +83,6 @@ const dailyRowSchema = z.object({
   hrv: coerceNum,
   spo2_avg: coerceNum,
   steps: coerceNum,
-  active_energy_kcal: coerceNum,
   skin_temp_c: coerceNum,
 });
 
@@ -92,7 +100,7 @@ const sleepRowSchema = z.object({
 const activityRowSchema = z.object({
   started_at: z.string(),
   ended_at: z.string().nullable(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
 });
 
 const nutritionRowSchema = z.object({
@@ -105,15 +113,9 @@ const nutritionRowSchema = z.object({
   water_ml: coerceNum,
 });
 
-const bodyCompRowSchema = z.object({
-  recorded_at: z.string(),
-  weight_kg: coerceNum,
-  body_fat_pct: coerceNum,
-});
-
 const activitySummaryRowSchema = z.object({
   activity_id: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   started_at: z.string(),
   avg_hr: coerceNum,
   avg_power: coerceNum,
@@ -149,9 +151,18 @@ type ExerciseMinutesRow = z.infer<typeof exerciseMinutesRowSchema>;
 export class PredictionsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
-  constructor(db: Pick<Database, "execute">, userId: string, _timezone: string) {
+  readonly #timezone: string;
+  readonly #sensorStore: ActivitySensorStore;
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
+    this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** All available prediction targets (daily + activity-level). */
@@ -257,24 +268,35 @@ export class PredictionsRepository {
     target: ActivityPredictionTarget,
     dailyContext: DailyContext[],
   ): Promise<PredictionResult | null> {
-    const activityRows = await executeWithSchema(
-      this.#db,
+    const activityRows = await this.#sensorStore.query(
       activitySummaryRowSchema,
-      sql`SELECT
-            a.activity_id, a.activity_type, a.started_at,
-            a.avg_hr, a.avg_power, a.avg_speed, a.total_distance,
-            a.elevation_gain_m, a.avg_cadence,
-            EXTRACT(EPOCH FROM (a.last_sample_at - a.first_sample_at)) / 60 AS duration_min
-          FROM fitness.activity_summary a
-          WHERE a.user_id = ${this.#userId}
-            AND a.started_at > CURRENT_DATE - ${days}::int
-            AND a.avg_power IS NOT NULL
-          ORDER BY a.started_at ASC`,
+      `SELECT
+        toString(activity_summary.activity_id) AS activity_id,
+        canonical_type,
+        formatDateTime(activity_summary.started_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
+        avg_hr,
+        avg_power,
+        avg_speed,
+        total_distance,
+        elevation_gain_m,
+        avg_cadence,
+        dateDiff('second', first_sample_at, last_sample_at) / 60 AS duration_min
+      FROM analytics.activity_summary AS activity_summary
+      WHERE activity_summary.user_id = {userId:UUID}
+        ${clickHouseRangeLowerBound(days, "activity_summary.started_at")}
+        AND avg_power IS NOT NULL
+      ORDER BY activity_summary.started_at ASC`,
+      { userId: this.#userId, ...rangeDaysParams(days) },
     );
 
-    const cardioActivities: CardioActivityRow[] = activityRows.map((row) => ({
+    const visibleActivityRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(activityRows, (row) => row.activity_id);
+
+    const cardioActivities: CardioActivityRow[] = visibleActivityRows.map((row) => ({
       date: new Date(row.started_at).toISOString().slice(0, 10),
-      activityType: row.activity_type,
+      activityType: row.canonical_type,
       durationMin: row.duration_min ?? 0,
       avgHr: row.avg_hr,
       avgPower: row.avg_power,
@@ -298,17 +320,18 @@ export class PredictionsRepository {
       this.#db,
       strengthVolumeRowSchema,
       sql`SELECT
-            w.id AS workout_id, w.started_at,
+            a.id AS workout_id, a.started_at,
             SUM(s.weight_kg * s.reps) FILTER (WHERE s.set_type = 'working') AS total_volume,
             COUNT(*) FILTER (WHERE s.set_type = 'working') AS working_set_count,
             MAX(s.weight_kg) FILTER (WHERE s.set_type = 'working') AS max_weight,
             AVG(s.rpe) FILTER (WHERE s.set_type = 'working') AS avg_rpe
-          FROM fitness.strength_workout w
-          JOIN fitness.strength_set s ON s.workout_id = w.id
-          WHERE w.user_id = ${this.#userId}
-            AND w.started_at > CURRENT_DATE - ${days}::int
-          GROUP BY w.id, w.started_at
-          ORDER BY w.started_at ASC`,
+          FROM fitness.v_activity a
+          JOIN fitness.strength_set s ON s.activity_id = ANY(a.member_activity_ids)
+          WHERE a.user_id = ${this.#userId}
+            AND a.canonical_type = 'strength'
+            AND a.started_at > CURRENT_DATE - ${days}::int
+          GROUP BY a.id, a.started_at
+          ORDER BY a.started_at ASC`,
     );
 
     const strengthWorkouts: StrengthWorkoutRow[] = workoutRows
@@ -329,27 +352,66 @@ export class PredictionsRepository {
   // ── Private: shared data fetchers ─────────────────────────────────────
 
   async #fetchDailyMetrics(days: number): Promise<DailyRow[]> {
+    const endDate = localDateString(new Date(), this.#timezone);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days,
+    });
     return executeWithSchema(
       this.#db,
       dailyRowSchema,
-      sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${this.#userId}
-            AND date > CURRENT_DATE - ${days}::int
-          ORDER BY date ASC`,
+      sql`WITH ${restingHeartRateCte},
+          metric_dates AS (
+		            SELECT dm.date
+		            FROM fitness.v_daily_metrics dm
+		            WHERE dm.user_id = ${this.#userId}
+		              AND dm.date > ${endDate}::date - ${days}::int
+		              AND dm.date <= ${endDate}::date
+		            UNION
+	            SELECT drhr.date
+	            FROM resting_heart_rate drhr
+	          )
+          SELECT
+            dates.date,
+            drhr.resting_hr,
+            dm.hrv,
+            dm.spo2_avg,
+            dm.steps,
+            dm.skin_temp_c
+          FROM metric_dates dates
+          LEFT JOIN fitness.v_daily_metrics dm
+            ON dm.user_id = ${this.#userId}
+           AND dm.date = dates.date
+	          LEFT JOIN resting_heart_rate drhr
+	            ON drhr.date = dates.date
+          ORDER BY dates.date ASC`,
     );
   }
 
   async #fetchSleep(days: number): Promise<SleepRow[]> {
-    return executeWithSchema(
-      this.#db,
-      sleepRowSchema,
-      sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
-                 light_minutes, awake_minutes, efficiency_pct, is_nap
-          FROM fitness.v_sleep
-          WHERE user_id = ${this.#userId}
-            AND started_at > CURRENT_DATE - ${days}::int
-          ORDER BY started_at ASC`,
+    const endDate = localDateString(new Date(), this.#timezone);
+    const rows = await fetchSleepNights({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days,
+      order: "asc",
+    });
+    return rows.map((row) =>
+      sleepRowSchema.parse({
+        started_at: row.started_at,
+        duration_minutes: row.duration_minutes,
+        deep_minutes: row.deep_minutes,
+        rem_minutes: row.rem_minutes,
+        light_minutes: row.light_minutes,
+        awake_minutes: row.awake_minutes,
+        efficiency_pct: row.efficiency_pct,
+        is_nap: false,
+      }),
     );
   }
 
@@ -357,7 +419,7 @@ export class PredictionsRepository {
     return executeWithSchema(
       this.#db,
       activityRowSchema,
-      sql`SELECT started_at, ended_at, activity_type
+      sql`SELECT started_at, ended_at, canonical_type
           FROM fitness.v_activity
           WHERE user_id = ${this.#userId}
             AND started_at > CURRENT_DATE - ${days}::int
@@ -370,36 +432,33 @@ export class PredictionsRepository {
       this.#db,
       nutritionRowSchema,
       sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
-          FROM fitness.nutrition_daily
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
+            AND resolution_status = 'available'
             AND date > CURRENT_DATE - ${days}::int
           ORDER BY date ASC`,
     );
   }
 
   async #fetchBodyComp(days: number): Promise<BodyCompRow[]> {
-    return executeWithSchema(
-      this.#db,
-      bodyCompRowSchema,
-      sql`SELECT recorded_at, weight_kg, body_fat_pct
-          FROM fitness.v_body_measurement
-          WHERE user_id = ${this.#userId}
-            AND recorded_at > CURRENT_DATE - ${days}::int
-          ORDER BY recorded_at ASC`,
-    );
+    return fetchBodyCompRows(this.#sensorStore, this.#userId, this.#timezone, "now", days);
   }
 
   async #fetchExerciseMinutes(days: number): Promise<ExerciseMinutesRow[]> {
-    return executeWithSchema(
-      this.#db,
+    return this.#sensorStore.query(
       exerciseMinutesRowSchema,
-      sql`SELECT DATE(started_at) AS date,
-                 SUM(EXTRACT(EPOCH FROM (last_sample_at - first_sample_at)) / 60) AS exercise_minutes
-          FROM fitness.activity_summary
-          WHERE user_id = ${this.#userId}
-            AND started_at > CURRENT_DATE - ${days}::int
-          GROUP BY DATE(started_at)
-          ORDER BY DATE(started_at) ASC`,
+      `SELECT
+        toString(toDate(asum.started_at)) AS date,
+        sum(dateDiff('second', asum.first_sample_at, asum.last_sample_at) / 60) AS exercise_minutes
+      FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
+      WHERE asum.user_id = {userId:UUID}
+        ${clickHouseDateRangeLowerBound(days, "asum.started_at")}
+      GROUP BY toDate(asum.started_at)
+      ORDER BY toDate(asum.started_at) ASC`,
+      { userId: this.#userId, ...rangeDaysParams(days) },
     );
   }
 }

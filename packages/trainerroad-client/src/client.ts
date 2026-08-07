@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { TrainerRoadActivity, TrainerRoadCareer, TrainerRoadMemberInfo } from "./types.ts";
 
 const TRAINERROAD_BASE = "https://www.trainerroad.com";
@@ -8,7 +9,7 @@ export class TrainerRoadClient {
 
   constructor(authCookie: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#authCookie = authCookie;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainerroad" });
   }
 
   async #get<T>(path: string): Promise<T> {
@@ -51,8 +52,9 @@ export class TrainerRoadClient {
     password: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<{ authCookie: string; username: string }> {
+    const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainerroad" });
     // First, get the CSRF token from the login page
-    const loginPageResponse = await fetchFn(`${TRAINERROAD_BASE}/app/login`, {
+    const loginPageResponse = await rateLimitFetchFn(`${TRAINERROAD_BASE}/app/login`, {
       redirect: "manual",
     });
     const loginPageHtml = await loginPageResponse.text();
@@ -66,7 +68,7 @@ export class TrainerRoadClient {
     const cookieHeader = pageCookies.map((c) => c.split(";")[0]).join("; ");
 
     // Submit login form
-    const loginResponse = await fetchFn(`${TRAINERROAD_BASE}/app/login`, {
+    const loginResponse = await rateLimitFetchFn(`${TRAINERROAD_BASE}/app/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -87,7 +89,11 @@ export class TrainerRoadClient {
       throw new Error("TrainerRoad login failed — no auth cookie returned");
     }
 
-    const authCookieValue = authCookieEntry.split("=")[1]?.split(";")[0] ?? "";
+    // authCookieEntry was matched by startsWith("SharedTrainerRoadAuth="), so it
+    // always contains "=" — take everything after the first one (the value may
+    // itself contain "=") up to the first attribute separator.
+    const firstEqualsIndex = authCookieEntry.indexOf("=");
+    const authCookieValue = authCookieEntry.slice(firstEqualsIndex + 1).split(";")[0] ?? "";
 
     // Get username from member info
     const client = new TrainerRoadClient(authCookieValue, fetchFn);

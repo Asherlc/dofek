@@ -7,6 +7,13 @@ const meta = {
   tags: ["autodocs"],
   args: {
     data: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
       displayedStrain: 12.5,
       displayedDate: "2026-03-31",
       timeSeries: [
@@ -36,9 +43,88 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const CurrentStrainFromTarget: Story = {
+  args: {
+    data: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
+      displayedStrain: 8.4,
+      displayedDate: "2026-03-31",
+      timeSeries: [
+        {
+          date: "2026-03-31",
+          dailyLoad: 240,
+          strain: 8.4,
+          acuteLoad: 310,
+          chronicLoad: 390,
+          workloadRatio: 0.79,
+        },
+      ],
+    },
+    strainTarget: {
+      targetStrain: 15.0,
+      currentStrain: 12.5,
+      progressPercent: 83,
+      zone: "Maintain",
+      explanation: "Your readiness is moderate. Aim for a balanced training load.",
+    },
+  },
+};
+
+export const FallbackDisplayedStrain: Story = {
+  args: {
+    data: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
+      displayedStrain: 8.4,
+      displayedDate: "2026-03-31",
+      timeSeries: [
+        {
+          date: "2026-03-31",
+          dailyLoad: 240,
+          strain: 8.4,
+          acuteLoad: 310,
+          chronicLoad: 390,
+          workloadRatio: 0.79,
+        },
+      ],
+    },
+    strainTarget: undefined,
+  },
+};
+
+export const TargetMarker: Story = {
+  args: {
+    strainTarget: {
+      targetStrain: 16.5,
+      currentStrain: 11.2,
+      progressPercent: 68,
+      zone: "Push",
+      explanation: "Recovery is strong. Push for a high-strain day to build fitness.",
+    },
+  },
+};
+
 export const HighStrain: Story = {
   args: {
     data: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
       displayedStrain: 18.2,
       displayedDate: "2026-03-31",
       timeSeries: [
@@ -65,6 +151,13 @@ export const HighStrain: Story = {
 export const LowStrain: Story = {
   args: {
     data: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
       displayedStrain: 4.1,
       displayedDate: "2026-03-31",
       timeSeries: [

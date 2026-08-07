@@ -1,43 +1,73 @@
-import { queryCache } from "dofek/lib/cache";
+import { medicationRemindersSchema } from "@dofek/format/medication-reminders";
+import { PRIMARY_GOAL_SETTINGS_KEY, primaryGoalIds } from "@dofek/onboarding/primary-goal";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { z } from "zod";
+import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
-import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
+
+const dashboardLayoutSchema = z.strictObject({
+  order: z.array(z.string()),
+  hidden: z.array(z.string()),
+  collapsed: z.record(z.string(), z.boolean()),
+});
+
+const settingInputSchema = z.discriminatedUnion("key", [
+  z.strictObject({
+    key: z.literal("dashboardLayout"),
+    value: dashboardLayoutSchema,
+  }),
+  z.strictObject({
+    key: z.literal("unitSystem"),
+    value: z.enum(["metric", "imperial"]),
+  }),
+  z.strictObject({
+    key: z.literal("whoop.wearLocation"),
+    value: z.enum(["wrist", "bicep", "chest", "waist", "calf"]),
+  }),
+  z.strictObject({
+    key: z.literal("medicationReminders"),
+    value: medicationRemindersSchema,
+  }),
+  z.strictObject({
+    key: z.literal(PRIMARY_GOAL_SETTINGS_KEY),
+    value: z.enum(primaryGoalIds),
+  }),
+]);
 
 export const settingsRouter = router({
-  get: cachedProtectedQuery(CacheTTL.LONG)
+  get: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ key: z.string() }))
     .query(async ({ ctx, input }) => {
       const repo = new SettingsRepository(ctx.db, ctx.userId);
       return repo.get(input.key);
     }),
 
-  getAll: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
+  getAll: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     return repo.getAll();
   }),
 
-  set: protectedProcedure
-    .input(z.object({ key: z.string(), value: z.unknown() }))
-    .mutation(async ({ ctx, input }) => {
-      const repo = new SettingsRepository(ctx.db, ctx.userId);
-      const result = await repo.set(input.key, input.value);
+  set: protectedProcedure.input(settingInputSchema).mutation(async ({ ctx, input }) => {
+    const repo = new SettingsRepository(ctx.db, ctx.userId);
+    const result = await repo.set(input.key, input.value);
 
-      // Invalidate server-side cache for settings.get and settings.getAll
-      // so subsequent reads return the updated value, not stale cached data.
-      await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
+    // Invalidate server-side cache for settings.get and settings.getAll
+    // so subsequent reads return the updated value, not stale cached data.
+    await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
 
-      return result;
-    }),
+    return result;
+  }),
 
-  slackStatus: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+  slackStatus: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     return repo.slackStatus();
   }),
 
   deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
-    await repo.deleteAllUserData(DISCONNECT_CHILD_TABLES);
+    await repo.deleteAllUserData(PROVIDER_ACCOUNT_TABLES);
+    await invalidateAllUserQueries(ctx.userId);
     return { success: true };
   }),
 });

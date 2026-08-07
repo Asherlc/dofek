@@ -1,5 +1,7 @@
 # HealthKit Agent Notes
 
+Read [README.md](README.md) before changing this module.
+
 Scope: this directory (`packages/mobile/modules/health-kit`) and its direct app integration points.
 
 ## Expectations
@@ -26,7 +28,12 @@ Scope: this directory (`packages/mobile/modules/health-kit`) and its direct app 
   2. mapping/parsing logic in sync pipeline
   3. tests for new type behavior
 - Do not swallow native errors that indicate build/config issues.
-- Preserve `hasEverAuthorized` behavior; it gates UX and background sync initialization.
+- Preserve `hasEverAuthorized` for UX/re-authorization prompting only. Do not use it to gate
+  HealthKit sync execution or background sync initialization; it is a local authorization-flow
+  marker and can be false for users who already granted read access before the marker existed.
+- Treat `getRequestStatus() === "unnecessary"` as authoritative evidence that the current
+  HealthKit request set has already completed authorization, and keep the local marker aligned
+  with that state.
 
 ## Fast Validation
 

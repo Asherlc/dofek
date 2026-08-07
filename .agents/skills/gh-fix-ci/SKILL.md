@@ -1,3 +1,8 @@
+---
+name: gh-fix-ci
+description: "Root-cause-first workflow for fixing failing GitHub Actions checks."
+---
+
 # gh-fix-ci
 
 Root-cause-first workflow for fixing failing GitHub Actions checks.

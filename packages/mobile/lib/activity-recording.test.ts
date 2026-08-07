@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecordingTrpcClient } from "./activity-recording.ts";
 import {
   type ActivityRecorder,
@@ -14,6 +14,10 @@ const mockCaptureException = vi.fn();
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function makeMockLocationAdapter(): LocationAdapter & {
   emitSample(sample: GpsSample): void;
@@ -128,6 +132,23 @@ describe("createActivityRecorder", () => {
     expect(snap.error).toContain("permissions");
   });
 
+  it("transitions to error and cleans up when location updates fail to start", async () => {
+    const locationError = new Error("Core Location unavailable");
+    vi.mocked(location.startUpdates).mockRejectedValueOnce(locationError);
+
+    await expect(recorder.start("running")).rejects.toThrow("Core Location unavailable");
+
+    const snap = recorder.getSnapshot();
+    expect(snap.state).toBe("error");
+    expect(snap.error).toBe("Core Location unavailable");
+    expect(snap.elapsedMs).toBe(0);
+    expect(location.stopUpdates).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(locationError, {
+      source: "activity-recording.startUpdates",
+      phase: "start",
+    });
+  });
+
   it("collects GPS samples during recording", async () => {
     await recorder.start("cycling");
 
@@ -156,6 +177,46 @@ describe("createActivityRecorder", () => {
     expect(location.startUpdates).toHaveBeenCalledTimes(2);
   });
 
+  it("stays paused and excludes failed resume time when location updates fail", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2024-06-15T08:00:00.000Z");
+    await recorder.start("running");
+
+    vi.setSystemTime("2024-06-15T08:01:00.000Z");
+    recorder.pause();
+
+    const locationError = new Error("Location service interrupted");
+    vi.mocked(location.startUpdates).mockRejectedValueOnce(locationError);
+    vi.setSystemTime("2024-06-15T08:03:00.000Z");
+
+    await expect(recorder.resume()).rejects.toThrow("Location service interrupted");
+
+    expect(recorder.getSnapshot()).toEqual(
+      expect.objectContaining({
+        state: "paused",
+        error: "Location service interrupted",
+        elapsedMs: 60 * 1000,
+      }),
+    );
+    expect(location.stopUpdates).toHaveBeenCalledTimes(2);
+    expect(mockCaptureException).toHaveBeenCalledWith(locationError, {
+      source: "activity-recording.startUpdates",
+      phase: "resume",
+    });
+
+    vi.setSystemTime("2024-06-15T08:08:00.000Z");
+    expect(recorder.getSnapshot().elapsedMs).toBe(60 * 1000);
+
+    await recorder.resume();
+    expect(recorder.getSnapshot()).toEqual(
+      expect.objectContaining({
+        state: "recording",
+        error: null,
+        elapsedMs: 60 * 1000,
+      }),
+    );
+  });
+
   it("stops recording and transitions to saving", async () => {
     await recorder.start("hiking");
     location.emitSample(makeSample());
@@ -166,6 +227,19 @@ describe("createActivityRecorder", () => {
     expect(snap.state).toBe("saving");
     expect(location.stopUpdates).toHaveBeenCalled();
     expect(snap.samples).toHaveLength(1); // samples preserved
+  });
+
+  it("freezes active elapsed time when recording stops", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2024-06-15T08:00:00.000Z");
+
+    await recorder.start("running");
+    vi.setSystemTime("2024-06-15T08:01:00.000Z");
+    recorder.stop();
+
+    vi.setSystemTime("2024-06-15T08:06:00.000Z");
+
+    expect(recorder.getSnapshot().elapsedMs).toBe(60 * 1000);
   });
 
   it("saves the activity via tRPC", async () => {
@@ -194,6 +268,24 @@ describe("createActivityRecorder", () => {
     // Resets to idle after save
     expect(recorder.getSnapshot().state).toBe("idle");
     expect(recorder.getSnapshot().samples).toHaveLength(0);
+  });
+
+  it("saves a recording that starts at the Unix epoch", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    await recorder.start("running");
+    vi.setSystemTime(1000);
+    recorder.stop();
+
+    await recorder.save(null, null);
+
+    expect(trpc.activityRecording.save.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: "1970-01-01T00:00:00.000Z",
+        endedAt: "1970-01-01T00:00:01.000Z",
+      }),
+    );
   });
 
   it("transitions to error on save failure", async () => {
@@ -318,8 +410,44 @@ describe("createActivityRecorder with IMU service", () => {
     );
   });
 
+  it("keeps the saved end and sensor window on the wall-clock timeline after a pause", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2024-06-15T08:00:00.000Z");
+
+    await recorder.start("running");
+    vi.setSystemTime("2024-06-15T08:01:00.000Z");
+    location.emitSample(makeSample({ recordedAt: "2024-06-15T08:01:00.000Z" }));
+
+    recorder.pause();
+    vi.setSystemTime("2024-06-15T08:03:00.000Z");
+    await recorder.resume();
+
+    vi.setSystemTime("2024-06-15T08:04:00.000Z");
+    location.emitSample(makeSample({ recordedAt: "2024-06-15T08:04:00.000Z" }));
+    recorder.stop();
+
+    expect(recorder.getSnapshot().elapsedMs).toBe(2 * 60 * 1000);
+
+    await recorder.save("Paused run", null);
+
+    expect(trpcClient.activityRecording.save.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: "2024-06-15T08:00:00.000Z",
+        endedAt: "2024-06-15T08:04:00.000Z",
+        samples: expect.arrayContaining([
+          expect.objectContaining({ recordedAt: "2024-06-15T08:04:00.000Z" }),
+        ]),
+      }),
+    );
+    expect(imuService.syncForTimeRange).toHaveBeenCalledWith(
+      "2024-06-15T08:00:00.000Z",
+      "2024-06-15T08:04:00.000Z",
+    );
+  });
+
   it("saves activity successfully even when IMU sync fails", async () => {
-    vi.mocked(imuService.syncForTimeRange).mockRejectedValue(new Error("Sync failed"));
+    const syncError = new Error("Sync failed");
+    vi.mocked(imuService.syncForTimeRange).mockRejectedValue(syncError);
 
     await recorder.start("cycling");
     location.emitSample(makeSample());
@@ -329,6 +457,10 @@ describe("createActivityRecorder with IMU service", () => {
 
     expect(activityId).toBe("activity-123");
     expect(recorder.getSnapshot().state).toBe("idle");
+    // Best-effort, but the failure must still reach telemetry (not be swallowed).
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      source: "activity-recording.syncForTimeRange",
+    });
   });
 
   it("works without IMU service (backwards compatible)", async () => {

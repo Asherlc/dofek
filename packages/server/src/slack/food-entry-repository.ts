@@ -1,10 +1,20 @@
+import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
-import { NUTRIENT_SQL_COLUMNS } from "dofek/db/nutrient-columns";
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+  lockAndAssertAccountErasureIdentityWriteFence,
+} from "dofek/db/account-erasure";
+import { nutrientAmountEntriesFromLegacyFields } from "dofek/db/nutrient-columns";
+import { ensureProvider } from "dofek/db/tokens";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { SettingsRepository } from "../repositories/settings-repository.ts";
+import { SlackInstallationRepository } from "../repositories/slack-installation-repository.ts";
 import { createPendingEntryStore, type PendingEntryStore } from "./pending-entry-store.ts";
 
 const slackBlockSchema = z.object({
@@ -49,25 +59,29 @@ export interface SlackEntryContext {
   slackUserId: string;
 }
 
-/** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
-export function slackTimestampToLocalTime(slackTs: string, timezone: string): string {
-  const epochSeconds = Number.parseFloat(slackTs);
-  const date = new Date(epochSeconds * 1000);
-  return date.toLocaleString("en-US", {
-    timeZone: timezone,
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
+export type DailyCalorieProgress =
+  | {
+      status?: "available";
+      calorieGoal: number;
+      caloriesConsumed: number;
+    }
+  | {
+      status: "source_conflict";
+      message: string;
+      sourceLabels: string[];
+    };
 
-/** Convert a Slack epoch timestamp to YYYY-MM-DD date string in the user's timezone */
-export function slackTimestampToDateString(slackTs: string, timezone: string): string {
-  const epochSeconds = Number.parseFloat(slackTs);
-  const date = new Date(epochSeconds * 1000);
-  return date.toLocaleDateString("en-CA", { timeZone: timezone });
-}
+const dailyCaloriesRowSchema = z.object({
+  calories_consumed: z.coerce.number().nullable(),
+  resolution_status: z.enum(["available", "source_conflict"]),
+  resolution_message: z.string(),
+  source_labels: z.array(z.string()),
+});
+const confirmedSummaryRowSchema = z.object({
+  food_name: z.string(),
+  calories: z.coerce.number().nullable(),
+  date: dateStringSchema,
+});
 
 /**
  * Extract the latest confirm button context from thread messages returned by
@@ -111,21 +125,70 @@ export interface SlackClient {
   };
 }
 
+export interface InboundSlackNutritionFenceInput {
+  slackClient: SlackClient;
+  slackUserId: string;
+  teamId?: string;
+}
+
+export interface InboundSlackNutritionContext extends SlackUserInfo {
+  repository: FoodEntryRepository;
+}
+
+interface SlackProfile {
+  email: string | null;
+  name: string;
+  timezone: string;
+}
+
+interface SlackUserResolution {
+  existingUserId: string | null;
+  userId: string;
+}
+
+type FoodEntryDatabase = Pick<Database, "execute" | "transaction">;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function isAccountErasureDatabaseFenceError(error: unknown): boolean {
+  let candidate: unknown = error;
+  while (isRecord(candidate)) {
+    if (
+      candidate.code === "55000" &&
+      typeof candidate.message === "string" &&
+      candidate.message.includes("Account erasure is active")
+    ) {
+      return true;
+    }
+    candidate = candidate.cause;
+  }
+  return false;
+}
+
 /**
  * Encapsulates all database operations for the Slack bot's food tracking workflow:
  * user resolution, food entry CRUD, and cache invalidation.
  */
 export class FoodEntryRepository {
-  readonly #db: Database;
+  readonly #db: FoodEntryDatabase;
   readonly #pendingEntryStore: PendingEntryStore;
 
-  constructor(db: Database, pendingEntryStore: PendingEntryStore = createPendingEntryStore()) {
+  constructor(
+    db: FoodEntryDatabase,
+    pendingEntryStore: PendingEntryStore = createPendingEntryStore(),
+  ) {
     this.#db = db;
     this.#pendingEntryStore = pendingEntryStore;
   }
 
   /** Find an existing user by email. Throws if no match is found. */
   async resolveUserByEmail(email: string | null): Promise<string> {
+    return this.#resolveUserByEmail(email, true);
+  }
+
+  async #resolveUserByEmail(email: string | null, logMatch: boolean): Promise<string> {
     if (email) {
       const existingByAuthEmail = await executeWithSchema(
         this.#db,
@@ -136,9 +199,11 @@ export class FoodEntryRepository {
       );
       const authRow = existingByAuthEmail[0];
       if (authRow) {
-        logger.info(
-          `[slack] Found existing user ${authRow.user_id} via auth_account email ${email}`,
-        );
+        if (logMatch) {
+          logger.info(
+            `[slack] Found existing user ${authRow.user_id} via auth_account email ${email}`,
+          );
+        }
         return authRow.user_id;
       }
 
@@ -151,7 +216,11 @@ export class FoodEntryRepository {
       );
       const profileRow = existingByProfileEmail[0];
       if (profileRow) {
-        logger.info(`[slack] Found existing user ${profileRow.id} via user_profile email ${email}`);
+        if (logMatch) {
+          logger.info(
+            `[slack] Found existing user ${profileRow.id} via user_profile email ${email}`,
+          );
+        }
         return profileRow.id;
       }
     }
@@ -163,12 +232,7 @@ export class FoodEntryRepository {
     );
   }
 
-  /** Look up the dofek user ID for a Slack user, or create a new user + link if none exists.
-   *  Also returns the user's IANA timezone from their Slack profile. */
-  async lookupOrCreateUserId(
-    slackUserId: string,
-    slackClient: SlackClient,
-  ): Promise<SlackUserInfo> {
+  async #loadSlackProfile(slackUserId: string, slackClient: SlackClient): Promise<SlackProfile> {
     let name = "Slack User";
     let email: string | null = null;
     let timezone = FALLBACK_TIMEZONE;
@@ -177,11 +241,22 @@ export class FoodEntryRepository {
       if (info.user?.real_name) name = info.user.real_name;
       if (info.user?.profile?.email) email = info.user.profile.email;
       if (info.user?.tz) timezone = info.user.tz;
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}: ${detail}`);
+    } catch {
+      logger.warn("[slack] Could not fetch Slack profile; using fallback identity data");
+      const sanitizedError = new Error("Slack profile lookup failed");
+      sanitizedError.name = "SlackProfileLookupError";
+      Sentry.captureException(sanitizedError, {
+        tags: { slack_operation: "profile_lookup" },
+      });
     }
+    return { email, name, timezone };
+  }
 
+  async #findSlackUserResolution(
+    slackUserId: string,
+    email: string | null,
+    logEmailMatch: boolean,
+  ): Promise<SlackUserResolution> {
     const existing = await executeWithSchema(
       this.#db,
       z.object({ user_id: z.string() }),
@@ -190,7 +265,7 @@ export class FoodEntryRepository {
           LIMIT 1`,
     );
     const existingRow = existing[0];
-    if (existing.length > 0 && existingRow) {
+    if (existingRow) {
       if (email) {
         const canonical = await executeWithSchema(
           this.#db,
@@ -200,50 +275,180 @@ export class FoodEntryRepository {
               LIMIT 1`,
         );
         const canonicalRow = canonical[0];
-        if (canonicalRow && canonicalRow.user_id !== existingRow.user_id) {
-          const orphanId = existingRow.user_id;
-          const correctId = canonicalRow.user_id;
-          logger.info(
-            `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
-          );
-          await this.#db.execute(
-            sql`UPDATE fitness.auth_account
-                SET user_id = ${correctId}
-                WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
-          );
-          await this.#db.execute(
-            sql`UPDATE fitness.food_entry
-                SET user_id = ${correctId}
-                WHERE user_id = ${orphanId}`,
-          );
-          return { userId: correctId, timezone };
+        if (canonicalRow) {
+          return {
+            existingUserId: existingRow.user_id,
+            userId: canonicalRow.user_id,
+          };
         }
       }
-
-      logger.info(
-        `[slack] Using existing Slack link for ${slackUserId} → user ${existingRow.user_id}`,
-      );
-      return { userId: existingRow.user_id, timezone };
+      return {
+        existingUserId: existingRow.user_id,
+        userId: existingRow.user_id,
+      };
     }
 
-    const userId = await this.resolveUserByEmail(email);
+    return {
+      existingUserId: null,
+      userId: await this.#resolveUserByEmail(email, logEmailMatch),
+    };
+  }
+
+  async #applySlackUserResolution(
+    slackUserId: string,
+    profile: SlackProfile,
+    resolution: SlackUserResolution,
+  ): Promise<void> {
+    if (resolution.existingUserId && resolution.existingUserId !== resolution.userId) {
+      logger.info(
+        `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${resolution.existingUserId} → ${resolution.userId}`,
+      );
+      await this.#db.execute(
+        sql`UPDATE fitness.auth_account
+            SET user_id = ${resolution.userId}
+            WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
+      );
+      await this.#db.execute(
+        sql`UPDATE fitness.food_entry
+            SET user_id = ${resolution.userId}
+            WHERE user_id = ${resolution.existingUserId}`,
+      );
+      await Promise.all([
+        invalidateAllUserQueries(resolution.existingUserId),
+        invalidateAllUserQueries(resolution.userId),
+      ]);
+      return;
+    }
+
+    if (resolution.existingUserId) {
+      logger.info(
+        `[slack] Using existing Slack link for ${slackUserId} → user ${resolution.userId}`,
+      );
+      return;
+    }
 
     await this.#db.execute(
       sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name, email)
-          VALUES (${userId}, 'slack', ${slackUserId}, ${name}, ${email})`,
+          VALUES (
+            ${resolution.userId},
+            'slack',
+            ${slackUserId},
+            ${profile.name},
+            ${profile.email}
+          )`,
+    );
+    await invalidateAllUserQueries(resolution.userId);
+    logger.info(
+      `[slack] Linked Slack user ${slackUserId} to user ${resolution.userId} (${profile.name})`,
+    );
+  }
+
+  /** Look up the dofek user ID for a Slack user, or create a new user + link if none exists.
+   *  Also returns the user's IANA timezone from their Slack profile. */
+  async lookupOrCreateUserId(
+    slackUserId: string,
+    slackClient: SlackClient,
+  ): Promise<SlackUserInfo> {
+    const profile = await this.#loadSlackProfile(slackUserId, slackClient);
+    const resolution = await this.#findSlackUserResolution(slackUserId, profile.email, true);
+    await this.#applySlackUserResolution(slackUserId, profile, resolution);
+    return { userId: resolution.userId, timezone: profile.timezone };
+  }
+
+  /**
+   * Resolve the inbound Slack identity and hold the user, identity, and team
+   * locks until the nutrition processor and pending-entry write finish.
+   */
+  async withInboundNutritionWriteFence<T>(
+    input: InboundSlackNutritionFenceInput,
+    operation: (context: InboundSlackNutritionContext) => Promise<T>,
+  ): Promise<T> {
+    const profile = await this.#loadSlackProfile(input.slackUserId, input.slackClient);
+    const expectedResolution = await this.#findSlackUserResolution(
+      input.slackUserId,
+      profile.email,
+      false,
     );
 
-    logger.info(`[slack] Linked Slack user ${slackUserId} to user ${userId} (${name})`);
-    return { userId, timezone };
+    try {
+      return await this.#db.transaction(async (transaction) => {
+        const userIds = [
+          ...new Set(
+            [expectedResolution.existingUserId, expectedResolution.userId].filter(
+              (userId): userId is string => userId !== null,
+            ),
+          ),
+        ].sort();
+        for (const userId of userIds) {
+          await transaction.execute(
+            sql`SELECT fitness.lock_and_reject_account_erasure_write(${userId}::uuid)`,
+          );
+        }
+        await lockAndAssertAccountErasureIdentityWriteFence(transaction, [
+          {
+            authProvider: "slack",
+            kind: "provider_account",
+            providerAccountId: input.slackUserId,
+          },
+        ]);
+
+        const fencedRepository = new FoodEntryRepository(transaction, this.#pendingEntryStore);
+        const currentResolution = await fencedRepository.#findSlackUserResolution(
+          input.slackUserId,
+          profile.email,
+          false,
+        );
+        if (
+          currentResolution.existingUserId !== expectedResolution.existingUserId ||
+          currentResolution.userId !== expectedResolution.userId
+        ) {
+          throw new Error(
+            "Slack account mapping changed while the message was being processed. Please retry.",
+          );
+        }
+
+        if (input.teamId) {
+          await transaction.execute(
+            sql`SELECT pg_advisory_xact_lock(
+                  hashtextextended(
+                    'account-erasure-slack-team:' || ${input.teamId},
+                    0
+                  )
+                )`,
+          );
+          await new SlackInstallationRepository(transaction).upsertTeamMembership({
+            slackUserId: input.slackUserId,
+            teamId: input.teamId,
+            userId: currentResolution.userId,
+          });
+        }
+
+        await fencedRepository.#applySlackUserResolution(
+          input.slackUserId,
+          profile,
+          currentResolution,
+        );
+        return operation({
+          repository: fencedRepository,
+          userId: currentResolution.userId,
+          timezone: profile.timezone,
+        });
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof AccountErasureIdentityFencedError ||
+        error instanceof AccountErasureUserFencedError ||
+        isAccountErasureDatabaseFenceError(error)
+      ) {
+        throw new AccountErasureUserFencedError();
+      }
+      throw error;
+    }
   }
 
   /** Ensure the 'dofek' provider row exists (for self-created entries) */
   async ensureDofekProvider(userId: string): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensureProvider(this.#db, DOFEK_PROVIDER_ID, "Dofek App", undefined, userId);
   }
 
   /** Save parsed food items to the database as unconfirmed. Returns the entry IDs. */
@@ -297,44 +502,27 @@ export class FoodEntryRepository {
     const confirmedEntryIds: string[] = [];
     for (const pendingEntry of pendingEntries) {
       const item = pendingEntry.item;
+      const nutrientEntries = nutrientAmountEntriesFromLegacyFields(item);
+      const nutrientValuesClauses = nutrientEntries.map(
+        (nutrientEntry) =>
+          sql`(${pendingEntry.id}::uuid, ${nutrientEntry.nutrientId}::text, ${nutrientEntry.amount}::real)`,
+      );
       const rows = await executeWithSchema(
         this.#db,
         z.object({ id: z.string() }),
         sql`WITH new_entry AS (
             INSERT INTO fitness.food_entry (
               id, user_id, provider_id, date, meal, food_name, food_description,
-              category, confirmed
+              category, nutrition_grain, confirmed
             ) VALUES (
               ${pendingEntry.id}, ${pendingEntry.userId}, ${DOFEK_PROVIDER_ID}, ${pendingEntry.date}::date,
               ${item.meal}, ${item.foodName}, ${item.foodDescription},
-              ${item.category}, true
+              ${item.category}, 'itemized', true
             ) RETURNING id
           ),
           new_nutrition AS (
-            INSERT INTO fitness.food_entry_nutrition (
-              food_entry_id, ${sql.raw(NUTRIENT_SQL_COLUMNS)}
-            )
-            SELECT id, ${item.calories}, ${item.proteinG},
-                   ${item.carbsG}, ${item.fatG},
-                   ${item.saturatedFatG}, ${item.polyunsaturatedFatG ?? null},
-                   ${item.monounsaturatedFatG ?? null}, ${item.transFatG ?? null},
-                   ${item.cholesterolMg ?? null}, ${item.sodiumMg},
-                   ${item.potassiumMg ?? null}, ${item.fiberG}, ${item.sugarG},
-                   ${item.vitaminAMcg ?? null}, ${item.vitaminCMg ?? null},
-                   ${item.vitaminDMcg ?? null}, ${item.vitaminEMg ?? null},
-                   ${item.vitaminKMcg ?? null},
-                   ${item.vitaminB1Mg ?? null}, ${item.vitaminB2Mg ?? null},
-                   ${item.vitaminB3Mg ?? null}, ${item.vitaminB5Mg ?? null},
-                   ${item.vitaminB6Mg ?? null},
-                   ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
-                   ${item.vitaminB12Mcg ?? null},
-                   ${item.calciumMg ?? null}, ${item.ironMg ?? null},
-                   ${item.magnesiumMg ?? null}, ${item.zincMg ?? null},
-                   ${item.seleniumMcg ?? null},
-                   ${item.copperMg ?? null}, ${item.manganeseMg ?? null},
-                   ${item.chromiumMcg ?? null}, ${item.iodineMcg ?? null},
-                   ${item.omega3Mg ?? null}, ${item.omega6Mg ?? null}
-            FROM new_entry
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            VALUES ${sql.join(nutrientValuesClauses, sql`, `)}
           )
           SELECT id FROM new_entry`,
       );
@@ -365,15 +553,49 @@ export class FoodEntryRepository {
   /** Load food entries by IDs for display after confirmation */
   async loadConfirmedSummary(
     entryIds: string[],
-  ): Promise<Array<{ food_name: string; calories: number | null }>> {
+  ): Promise<Array<{ food_name: string; calories: number | null; date: string }>> {
     return executeWithSchema(
       this.#db,
-      z.object({ food_name: z.string(), calories: z.coerce.number().nullable() }),
-      sql`SELECT fe.food_name, nd.calories
-          FROM fitness.food_entry fe
-          LEFT JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
-          WHERE fe.id IN (${sqlIdList(entryIds)})`,
+      confirmedSummaryRowSchema,
+      sql`SELECT food_name, calories, date
+          FROM fitness.v_food_entry_with_nutrition
+          WHERE id IN (${sqlIdList(entryIds)})
+          ORDER BY date, food_name`,
     );
+  }
+
+  async loadDailyCalorieProgress(userId: string, date: string): Promise<DailyCalorieProgress> {
+    const calorieGoal = await new SettingsRepository(this.#db, userId).getCalorieGoal();
+
+    const dailyCaloriesRows = await executeWithSchema(
+      this.#db,
+      dailyCaloriesRowSchema,
+      sql`SELECT
+            calories AS calories_consumed,
+            resolution_status,
+            resolution_message,
+            source_labels
+          FROM fitness.v_nutrition_daily
+          WHERE user_id = ${userId}
+            AND date = ${date}::date`,
+    );
+
+    const dailyCalories = dailyCaloriesRows[0];
+    if (!dailyCalories) {
+      return { status: "available", calorieGoal, caloriesConsumed: 0 };
+    }
+    if (dailyCalories.resolution_status === "source_conflict") {
+      return {
+        status: "source_conflict",
+        message: dailyCalories.resolution_message,
+        sourceLabels: dailyCalories.source_labels,
+      };
+    }
+    return {
+      status: "available",
+      calorieGoal,
+      caloriesConsumed: Math.round(dailyCalories.calories_consumed ?? 0),
+    };
   }
 
   /** Load food entries for refinement (thread follow-up messages) */

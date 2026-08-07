@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 describe("Food router", () => {
   const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -17,7 +18,7 @@ describe("Food router", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, makeMockSensorStore());
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -105,7 +106,100 @@ describe("Food router", () => {
       expect(result.result.data).toBeDefined();
       const data = result.result.data;
       // Should contain the entries we created above
-      expect(data.length).toBeGreaterThanOrEqual(2);
+      expect(data.entries.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("aggregates nutrient rows into canonical daily, meal, goal, and macro metrics", async () => {
+      const date = "2025-04-12";
+      const uniqueSuffix = crypto.randomUUID();
+      const breakfastId = crypto.randomUUID();
+      const lunchId = crypto.randomUUID();
+      const otherId = crypto.randomUUID();
+      const unconfirmedId = crypto.randomUUID();
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.user_settings (user_id, key, value)
+        VALUES (${TEST_USER_ID}, 'calorieGoal', '1600'::jsonb)
+        ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
+      `);
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.food_entry (
+          id, user_id, provider_id, external_id, date, meal, food_name, confirmed
+        )
+        VALUES
+          (${breakfastId}, ${TEST_USER_ID}, 'dofek', ${`summary-breakfast-${uniqueSuffix}`}, ${date}::date, 'breakfast', 'Summary breakfast', true),
+          (${lunchId}, ${TEST_USER_ID}, 'dofek', ${`summary-lunch-${uniqueSuffix}`}, ${date}::date, 'lunch', 'Summary lunch', true),
+          (${otherId}, ${TEST_USER_ID}, 'dofek', ${`summary-other-${uniqueSuffix}`}, ${date}::date, NULL, 'Summary other', true),
+          (${unconfirmedId}, ${TEST_USER_ID}, 'dofek', ${`summary-unconfirmed-${uniqueSuffix}`}, ${date}::date, 'dinner', 'Unconfirmed summary dinner', false)
+      `);
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        VALUES
+          (${breakfastId}, 'calories', 400),
+          (${breakfastId}, 'protein', 25),
+          (${breakfastId}, 'carbohydrate', 35),
+          (${breakfastId}, 'fat', 18),
+          (${lunchId}, 'calories', 500),
+          (${lunchId}, 'protein', 25),
+          (${lunchId}, 'carbohydrate', 60),
+          (${lunchId}, 'fat', 18),
+          (${otherId}, 'calories', 100),
+          (${otherId}, 'protein', 5),
+          (${otherId}, 'carbohydrate', 10),
+          (${otherId}, 'fat', 4),
+          (${unconfirmedId}, 'calories', 900),
+          (${unconfirmedId}, 'protein', 90),
+          (${unconfirmedId}, 'carbohydrate', 90),
+          (${unconfirmedId}, 'fat', 60)
+      `);
+
+      const result = await query("food.byDate", { date });
+
+      expect(result.result.data.entries).toHaveLength(3);
+      expect(result.result.data.summary).toEqual({
+        calories: 1000,
+        mealCalories: {
+          breakfast: 400,
+          lunch: 500,
+          dinner: 0,
+          snack: 0,
+          other: 100,
+        },
+        calorieGoal: {
+          target: 1600,
+          remaining: 600,
+          over: 0,
+          progressPercentage: 62.5,
+        },
+        macros: {
+          protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+          carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+          fat: { grams: 40, calories: 360, energySharePercentage: 36 },
+        },
+      });
+
+      const v2Result = await query("food.byDateV2", { date });
+
+      expect(v2Result.result.data.intakeContext).toEqual({
+        observedCalories: 1000,
+        target: {
+          calories: 1600,
+          type: "configured",
+          label: "Configured daily logged-intake target",
+        },
+        scale: {
+          maximumCalories: 1600,
+          observedPercentage: 62.5,
+          targetPercentage: 100,
+        },
+        comparison: {
+          status: "below_target",
+          differenceCalories: 600,
+          message:
+            "Observed logged intake is 600 kcal below the configured daily logged-intake target.",
+        },
+        limitation:
+          "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+      });
     });
   });
 
@@ -147,6 +241,86 @@ describe("Food router", () => {
       }> = result.result.data;
       // With an empty-ish DB + our inserts, we should get at least one day
       expect(Array.isArray(data)).toBe(true);
+    });
+  });
+
+  describe("healthKitWriteBackEntries query", () => {
+    it("returns only confirmed Dofek-owned food entries for Apple Health write-back", async () => {
+      const uniqueSuffix = crypto.randomUUID();
+      const direct = await mutate("food.create", {
+        date: "2025-03-10",
+        meal: "lunch",
+        foodName: "Direct Dofek Meal",
+        calories: 610,
+        proteinG: 42,
+        carbsG: 58,
+        fatG: 18,
+      });
+
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.provider (id, name, user_id)
+        VALUES ('cronometer', 'Cronometer', ${TEST_USER_ID})
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await testCtx.db.execute(sql`
+        WITH synced_entry AS (
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, external_id, date, meal, food_name, confirmed
+          )
+          VALUES (
+            ${TEST_USER_ID}, 'cronometer', ${`cron-${uniqueSuffix}`}, '2025-03-10'::date,
+            'lunch', 'Synced Cronometer Meal', true
+          )
+          RETURNING id
+        )
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        SELECT id, nutrient_id, amount
+        FROM synced_entry
+        CROSS JOIN (VALUES
+          ('calories', 700::real),
+          ('protein', 50::real),
+          ('carbohydrate', 60::real),
+          ('fat', 20::real)
+        ) AS nutrient_values(nutrient_id, amount)
+      `);
+      await testCtx.db.execute(sql`
+        WITH unconfirmed_entry AS (
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, external_id, date, meal, food_name, confirmed
+          )
+          VALUES (
+            ${TEST_USER_ID}, 'dofek', ${`draft-${uniqueSuffix}`}, '2025-03-10'::date,
+            'snack', 'Unconfirmed Dofek Meal', false
+          )
+          RETURNING id
+        )
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        SELECT id, nutrient_id, amount
+        FROM unconfirmed_entry
+        CROSS JOIN (VALUES
+          ('calories', 100::real),
+          ('protein', 5::real),
+          ('carbohydrate', 10::real),
+          ('fat', 2::real)
+        ) AS nutrient_values(nutrient_id, amount)
+      `);
+
+      const result = await query("food.healthKitWriteBackEntries", {
+        startDate: "2025-03-10",
+        endDate: "2025-03-10",
+      });
+
+      expect(result.result.data).toEqual([
+        {
+          id: direct.result.data.id,
+          date: "2025-03-10",
+          food_name: "Direct Dofek Meal",
+          calories: 610,
+          protein_g: 42,
+          carbs_g: 58,
+          fat_g: 18,
+        },
+      ]);
     });
   });
 
@@ -200,7 +374,7 @@ describe("Food router", () => {
 
       // Verify it's gone
       const entries = await query("food.byDate", { date: "2025-02-01" });
-      const remaining: Array<{ id: string }> = entries.result.data;
+      const remaining: Array<{ id: string }> = entries.result.data.entries;
       const found = remaining.find((e) => e.id === entryId);
       expect(found).toBeUndefined();
     });
@@ -225,12 +399,33 @@ describe("Food router", () => {
       expect(deleteResult.result.data.success).toBe(true);
 
       const entries = await query("food.byDate", { date: "2025-02-03" });
-      const remaining: Array<{ id: string }> = entries.result.data;
+      const remaining: Array<{ id: string }> = entries.result.data.entries;
       expect(remaining.some((entry) => entry.id === firstId)).toBe(false);
       expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
     });
 
-    it("cascades delete to food_entry_nutrition row", async () => {
+    it("returns fresh byDate data after deleting a previously loaded entry", async () => {
+      const created = await mutate("food.create", {
+        date: "2025-02-05",
+        meal: "lunch",
+        foodName: "Cached Delete Entry",
+        calories: 315,
+      });
+      const cachedEntryId: string = created.result.data.id;
+
+      const beforeDelete = await query("food.byDate", { date: "2025-02-05" });
+      const cachedEntries: Array<{ id: string }> = beforeDelete.result.data.entries;
+      expect(cachedEntries.some((entry) => entry.id === cachedEntryId)).toBe(true);
+
+      const deleteResult = await mutate("food.delete", { id: cachedEntryId });
+      expect(deleteResult.result.data.success).toBe(true);
+
+      const afterDelete = await query("food.byDate", { date: "2025-02-05" });
+      const remainingEntries: Array<{ id: string }> = afterDelete.result.data.entries;
+      expect(remainingEntries.some((entry) => entry.id === cachedEntryId)).toBe(false);
+    });
+
+    it("cascades delete to food_entry_nutrient rows", async () => {
       const created = await mutate("food.create", {
         date: "2025-02-04",
         meal: "lunch",
@@ -242,17 +437,17 @@ describe("Food router", () => {
 
       const beforeRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.food_entry_nutrition
+            FROM fitness.food_entry_nutrient
             WHERE food_entry_id = ${cascadeEntryId}::uuid`,
       );
-      expect(beforeRows[0]?.count).toBe("1");
+      expect(beforeRows[0]?.count).toBe("2");
 
       const deleted = await mutate("food.delete", { id: cascadeEntryId });
       expect(deleted.result.data.success).toBe(true);
 
       const afterRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.food_entry_nutrition
+            FROM fitness.food_entry_nutrient
             WHERE food_entry_id = ${cascadeEntryId}::uuid`,
       );
       expect(afterRows[0]?.count).toBe("0");

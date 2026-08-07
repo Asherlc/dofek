@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
-import { activityInterval } from "../../db/schema.ts";
+import { activityInterval } from "../../db/schema/activity.ts";
 import type { HangTenActivitySegment, HealthWorkout } from "./workouts.ts";
 
 export function hangTenIntervalLabel(segment: HangTenActivitySegment): string {

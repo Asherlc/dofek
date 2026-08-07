@@ -4,7 +4,7 @@ import { Concept2Provider } from "./concept2.ts";
 import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
 import { DecathlonProvider } from "./decathlon.ts";
 import { FitbitProvider } from "./fitbit/provider.ts";
-import { GarminProvider } from "./garmin.ts";
+import { GarminProvider } from "./garmin/provider.ts";
 import { KomootProvider } from "./komoot.ts";
 import { PelotonProvider } from "./peloton.ts";
 import { PolarProvider } from "./polar/provider.ts";
@@ -36,7 +36,7 @@ describe("activityUrl", () => {
     {
       name: "Wahoo",
       provider: new WahooProvider(),
-      expected: "https://cloud.wahoo.com/workouts/123",
+      expected: "https://systm.wahoofitness.com/history/activity-details/123",
     },
     {
       name: "Peloton",

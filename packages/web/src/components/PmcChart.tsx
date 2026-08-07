@@ -1,4 +1,9 @@
-import { formatNumber } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDateShort,
+  formatNumber,
+  formatTrainingLoad,
+} from "@dofek/format/format";
 import {
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
@@ -7,15 +12,22 @@ import {
   FORM_ZONE_TRANSITION,
   FormZone,
 } from "@dofek/scoring/scoring";
-import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
-import { chartColors, chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
+import type { PmcDataPoint, TrainingChartAvailability, TssModelInfo } from "dofek-server/types";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface PmcChartProps {
   data: PmcDataPoint[];
   model?: TssModelInfo | null;
   loading?: boolean;
+  availability?: TrainingChartAvailability;
 }
 
 /** Colors matching intervals.icu */
@@ -45,9 +57,13 @@ function ModelBadge({ model }: { model: TssModelInfo }) {
   );
 }
 
-export function PmcChart({ data, model, loading }: PmcChartProps) {
+export function PmcChart({ data, model, loading, availability }: PmcChartProps) {
   if (loading) {
     return <ChartLoadingSkeleton height={420} />;
+  }
+
+  if (availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
   }
 
   if (data.length === 0) {
@@ -59,13 +75,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
   }
 
   const lastPoint = data[data.length - 1];
-  const lastDate = lastPoint
-    ? new Date(lastPoint.date).toLocaleDateString("en-US", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      })
-    : "";
+  const lastDate = lastPoint ? formatDateShort(lastPoint.date) : "";
 
   const option = {
     grid: [
@@ -87,12 +97,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         const first = params[0];
         if (!first) return "";
         const date = first.value[0];
-        const label = new Date(date).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const label = formatDateLong(date);
 
         // Find values by series name
         const load = params.find((p) => p.seriesName === "Load")?.value[1] ?? 0;
@@ -101,11 +106,11 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         const form = params.find((p) => p.seriesName === "Form")?.value[1] ?? 0;
 
         return [
-          `<strong>${label}</strong>`,
-          `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${formatNumber(load)}`,
-          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${formatNumber(fitness)}`,
-          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${formatNumber(fatigue)}`,
-          `<span style="color:${new FormZone(form).color}">Form:</span> ${formatNumber(form)}`,
+          `<strong>${escapeTooltipHtml(label)}</strong>`,
+          `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${formatTrainingLoad(load)}`,
+          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${formatTrainingLoad(fitness)}`,
+          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${formatTrainingLoad(fatigue)}`,
+          `<span style="color:${new FormZone(form).color}">Form:</span> ${formatTrainingLoad(form)}`,
         ].join("<br/>");
       },
     }),
@@ -273,13 +278,13 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
               <div className="text-right">
                 <div className="text-subtle text-[10px]">Fitness</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FITNESS }}>
-                  {Math.round(lastPoint.ctl)}
+                  {formatTrainingLoad(lastPoint.ctl)}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-subtle text-[10px]">Fatigue</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FATIGUE }}>
-                  {Math.round(lastPoint.atl)}
+                  {formatTrainingLoad(lastPoint.atl)}
                 </div>
               </div>
               <div className="text-right">
@@ -288,7 +293,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
                   className="text-sm font-semibold"
                   style={{ color: new FormZone(lastPoint.tsb).color }}
                 >
-                  {Math.round(lastPoint.tsb)}
+                  {formatTrainingLoad(lastPoint.tsb)}
                 </div>
               </div>
             </div>

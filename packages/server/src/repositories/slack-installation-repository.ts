@@ -3,6 +3,7 @@ import {
   decryptCredentialValue,
   encryptCredentialValue,
 } from "dofek/security/credential-encryption";
+import { slackCredentialContext } from "dofek/security/slack-credential-context";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -14,23 +15,8 @@ const botCredentialsRowSchema = z.object({
 });
 
 const rawInstallationRowSchema = z.object({
-  raw_installation: z.union([z.string(), z.record(z.unknown())]),
+  raw_installation: z.union([z.string(), z.record(z.string(), z.unknown())]),
 });
-
-function slackCredentialContext(
-  teamId: string,
-  columnName: "bot_token" | "raw_installation",
-): {
-  tableName: string;
-  columnName: string;
-  scopeId: string;
-} {
-  return {
-    tableName: "fitness.slack_installation",
-    columnName,
-    scopeId: teamId,
-  };
-}
 
 export interface SlackInstallationUpsertInput {
   teamId: string;
@@ -43,6 +29,17 @@ export interface SlackInstallationUpsertInput {
   rawInstallation: unknown;
 }
 
+export interface SlackMemberInstallationUpsertInput extends SlackInstallationUpsertInput {
+  slackUserId: string;
+  userId: string;
+}
+
+export interface SlackTeamMembershipUpsertInput {
+  slackUserId: string;
+  teamId: string;
+  userId: string;
+}
+
 export interface SlackBotCredentials {
   botToken: string;
   botId: string | null;
@@ -50,9 +47,9 @@ export interface SlackBotCredentials {
 }
 
 export class SlackInstallationRepository {
-  readonly #db: Pick<Database, "execute">;
+  readonly #db: Pick<Database, "execute" | "transaction">;
 
-  constructor(db: Pick<Database, "execute">) {
+  constructor(db: Pick<Database, "execute" | "transaction">) {
     this.#db = db;
   }
 
@@ -90,6 +87,96 @@ export class SlackInstallationRepository {
             raw_installation = EXCLUDED.raw_installation,
             updated_at = NOW()`,
     );
+  }
+
+  async upsertMemberInstallation(input: SlackMemberInstallationUpsertInput): Promise<void> {
+    const encryptedBotToken = await encryptCredentialValue(
+      input.botToken,
+      slackCredentialContext(input.teamId, "bot_token"),
+    );
+    const encryptedRawInstallation = await encryptCredentialValue(
+      JSON.stringify(input.rawInstallation),
+      slackCredentialContext(input.teamId, "raw_installation"),
+    );
+
+    await this.#db.execute(
+      sql`WITH installed AS (
+            INSERT INTO fitness.slack_installation (
+              team_id, team_name, bot_token, bot_id, bot_user_id, app_id,
+              installer_slack_user_id, raw_installation
+            ) VALUES (
+              ${input.teamId},
+              ${input.teamName},
+              ${encryptedBotToken},
+              ${input.botId},
+              ${input.botUserId},
+              ${input.appId},
+              ${input.installerSlackUserId},
+              to_jsonb(${encryptedRawInstallation}::text)
+            )
+            ON CONFLICT (team_id) DO UPDATE SET
+              team_name = EXCLUDED.team_name,
+              bot_token = EXCLUDED.bot_token,
+              bot_id = EXCLUDED.bot_id,
+              bot_user_id = EXCLUDED.bot_user_id,
+              app_id = EXCLUDED.app_id,
+              installer_slack_user_id = EXCLUDED.installer_slack_user_id,
+              raw_installation = EXCLUDED.raw_installation,
+              updated_at = NOW()
+            RETURNING team_id
+          ),
+          reassigned_identity AS (
+            DELETE FROM fitness.slack_team_membership
+            WHERE team_id = ${input.teamId}
+              AND slack_user_id = ${input.slackUserId}
+              AND user_id <> ${input.userId}::uuid
+            RETURNING user_id
+          )
+          INSERT INTO fitness.slack_team_membership (
+            team_id, user_id, slack_user_id
+          )
+          SELECT
+            installed.team_id,
+            ${input.userId}::uuid,
+            ${input.slackUserId}
+          FROM installed
+          LEFT JOIN reassigned_identity ON true
+          ON CONFLICT (team_id, user_id) DO UPDATE SET
+            slack_user_id = EXCLUDED.slack_user_id,
+            updated_at = NOW()`,
+    );
+  }
+
+  async upsertTeamMembership(input: SlackTeamMembershipUpsertInput): Promise<void> {
+    await this.#db.transaction(async (transaction) => {
+      const installations = await executeWithSchema(
+        transaction,
+        z.object({ team_id: z.string().min(1) }),
+        sql`SELECT team_id
+            FROM fitness.slack_installation
+            WHERE team_id = ${input.teamId}
+            FOR SHARE`,
+      );
+      if (!installations[0]) return;
+
+      await transaction.execute(
+        sql`DELETE FROM fitness.slack_team_membership
+            WHERE team_id = ${input.teamId}
+              AND (
+                slack_user_id = ${input.slackUserId}
+                OR user_id = ${input.userId}::uuid
+              )`,
+      );
+      await transaction.execute(
+        sql`INSERT INTO fitness.slack_team_membership (
+              team_id, user_id, slack_user_id
+            ) VALUES (
+              ${input.teamId},
+              ${input.userId}::uuid,
+              ${input.slackUserId}
+            )`,
+      );
+    });
   }
 
   async getBotCredentialsByTeamId(teamId: string): Promise<SlackBotCredentials | null> {

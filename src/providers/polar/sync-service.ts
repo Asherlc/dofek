@@ -2,13 +2,24 @@ import { eq } from "drizzle-orm";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { refreshAccessToken } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { activity, dailyMetrics, metricStream, sleepSession, sleepStage } from "../../db/schema.ts";
+import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
+import {
+  authFailureReasonFromError,
+  ProviderAuthorizationFailedError,
+  RefreshTokenRevokedError,
+} from "../auth-errors.ts";
+import type { SyncWindow } from "../sync-window.ts";
 import type { SyncError } from "../types.ts";
 import { PolarClient, PolarNotFoundError, PolarUnauthorizedError } from "./client.ts";
 import { POLAR_API_BASE, polarOAuthConfig } from "./oauth.ts";
@@ -26,6 +37,7 @@ interface PolarSyncServiceOptions {
   providerName: string;
   fetchFn: typeof globalThis.fetch;
   userId?: string;
+  metricStreamPublisher?: MetricStreamEventPublisher;
 }
 
 export interface PolarSyncAccumulator {
@@ -39,6 +51,7 @@ export class PolarSyncService {
   readonly #providerName: string;
   readonly #fetchFn: typeof globalThis.fetch;
   readonly #userId?: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
   readonly #errors: SyncError[] = [];
   #recordsSynced = 0;
 
@@ -48,9 +61,10 @@ export class PolarSyncService {
     this.#providerName = options.providerName;
     this.#fetchFn = options.fetchFn;
     this.#userId = options.userId;
+    this.#metricStreamPublisher = options.metricStreamPublisher;
   }
 
-  async run(since: Date): Promise<PolarSyncAccumulator> {
+  async run(window: SyncWindow): Promise<PolarSyncAccumulator> {
     await ensureProvider(this.#db, this.#providerId, this.#providerName, POLAR_API_BASE);
 
     let tokens: TokenSet;
@@ -66,13 +80,13 @@ export class PolarSyncService {
 
     const client = new PolarClient(tokens.accessToken, this.#fetchFn);
 
-    await this.#syncExercises(client, since);
+    await this.#syncExercises(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
-    await this.#syncSleep(client, since);
+    await this.#syncSleep(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
-    await this.#syncDailyActivity(client, since);
+    await this.#syncDailyActivity(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
     return this.#result();
@@ -109,9 +123,9 @@ export class PolarSyncService {
               `User must re-authorize ${this.#providerName}.`,
           );
           await deleteTokens(this.#db, this.#providerId);
-          throw new Error(
-            `${this.#providerName} authorization revoked — re-connect the provider to resume syncing.`,
-          );
+          throw new RefreshTokenRevokedError(this.#providerName, {
+            cause: error instanceof Error ? error : undefined,
+          });
         }
         throw error;
       }
@@ -127,7 +141,10 @@ export class PolarSyncService {
     return tokens;
   }
 
-  async #syncExercises(client: PolarClient, since: Date): Promise<void> {
+  async #syncExercises(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
+    const syncWindowEnd = window.until;
+    const presentActivityExternalIds = new Set<string>();
     try {
       const exerciseCount = await withSyncLog(
         this.#db,
@@ -138,13 +155,16 @@ export class PolarSyncService {
           let count = 0;
 
           for (const exercise of exercises) {
-            if (new Date(exercise.start_time) < since) continue;
+            const exerciseStart = new Date(exercise.start_time);
+            if (exerciseStart < since) continue;
+            if (exerciseStart > syncWindowEnd) continue;
 
             const parsedExercise = parsePolarExercise(exercise);
+            presentActivityExternalIds.add(parsedExercise.externalId);
             try {
-              const [activityRow] = await this.#db
-                .insert(activity)
-                .values({
+              const activityRow = await upsertProviderActivity(
+                this.#db,
+                {
                   providerId: this.#providerId,
                   externalId: parsedExercise.externalId,
                   activityType: parsedExercise.activityType,
@@ -154,28 +174,23 @@ export class PolarSyncService {
                   raw: {
                     durationSeconds: parsedExercise.durationSeconds,
                     distanceMeters: parsedExercise.distanceMeters,
-                    calories: parsedExercise.calories,
                     avgHeartRate: parsedExercise.avgHeartRate,
                     maxHeartRate: parsedExercise.maxHeartRate,
                   },
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsedExercise.activityType,
-                    name: parsedExercise.name,
-                    startedAt: parsedExercise.startedAt,
-                    endedAt: parsedExercise.endedAt,
-                    raw: {
-                      durationSeconds: parsedExercise.durationSeconds,
-                      distanceMeters: parsedExercise.distanceMeters,
-                      calories: parsedExercise.calories,
-                      avgHeartRate: parsedExercise.avgHeartRate,
-                      maxHeartRate: parsedExercise.maxHeartRate,
-                    },
+                },
+                {
+                  activityType: parsedExercise.activityType,
+                  name: parsedExercise.name,
+                  startedAt: parsedExercise.startedAt,
+                  endedAt: parsedExercise.endedAt,
+                  raw: {
+                    durationSeconds: parsedExercise.durationSeconds,
+                    distanceMeters: parsedExercise.distanceMeters,
+                    avgHeartRate: parsedExercise.avgHeartRate,
+                    maxHeartRate: parsedExercise.maxHeartRate,
                   },
-                })
-                .returning({ id: activity.id });
+                },
+              );
 
               const activityId = activityRow?.id;
               if (activityId && exercise.has_route) {
@@ -192,6 +207,13 @@ export class PolarSyncService {
             }
           }
 
+          await finishProviderActivityListSync(this.#db, {
+            providerId: this.#providerId,
+            userId: this.#userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         this.#userId,
@@ -215,8 +237,13 @@ export class PolarSyncService {
 
       if (sampleRows.length === 0) return;
 
-      await this.#db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-      await writeMetricStreamBatch(this.#db, sampleRows, SOURCE_TYPE_API);
+      await replaceMetricStreamBatch(
+        this.#db,
+        { activityId },
+        sampleRows,
+        SOURCE_TYPE_API,
+        this.#metricStreamPublisher,
+      );
       logger.info(
         `[polar] Inserted ${sampleRows.length} metric stream rows for exercise ${exerciseId}`,
       );
@@ -229,7 +256,9 @@ export class PolarSyncService {
     }
   }
 
-  async #syncSleep(client: PolarClient, since: Date): Promise<void> {
+  async #syncSleep(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
+    const until = window.until;
     try {
       const sleepCount = await withSyncLog(
         this.#db,
@@ -240,7 +269,9 @@ export class PolarSyncService {
           let count = 0;
 
           for (const sleepRecord of sleepRecords) {
-            if (new Date(sleepRecord.sleep_start_time) < since) continue;
+            const sleepStart = new Date(sleepRecord.sleep_start_time);
+            if (sleepStart < since) continue;
+            if (sleepStart > until) continue;
 
             const parsedSleep = parsePolarSleep(sleepRecord);
             try {
@@ -256,6 +287,7 @@ export class PolarSyncService {
                   deepMinutes: parsedSleep.deepMinutes,
                   remMinutes: parsedSleep.remMinutes,
                   awakeMinutes: parsedSleep.awakeMinutes,
+                  stagingAvailable: parsedSleep.stagingAvailable,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -267,6 +299,7 @@ export class PolarSyncService {
                     deepMinutes: parsedSleep.deepMinutes,
                     remMinutes: parsedSleep.remMinutes,
                     awakeMinutes: parsedSleep.awakeMinutes,
+                    stagingAvailable: parsedSleep.stagingAvailable,
                   },
                 })
                 .returning({ id: sleepSession.id });
@@ -307,7 +340,9 @@ export class PolarSyncService {
     }
   }
 
-  async #syncDailyActivity(client: PolarClient, since: Date): Promise<void> {
+  async #syncDailyActivity(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
+    const until = window.until;
     try {
       const dailyCount = await withSyncLog(
         this.#db,
@@ -332,9 +367,12 @@ export class PolarSyncService {
           let count = 0;
 
           for (const dailyActivity of dailyActivities) {
-            if (new Date(dailyActivity.date) < since) continue;
+            const activityDate = dailyActivity.start_time.slice(0, 10);
+            const activityDateStart = new Date(`${activityDate}T00:00:00.000Z`);
+            if (activityDateStart < since) continue;
+            if (activityDateStart > until) continue;
 
-            const recharge = rechargeByDate.get(dailyActivity.date) ?? null;
+            const recharge = rechargeByDate.get(activityDate) ?? null;
             const parsedDailyMetrics = parsePolarDailyActivity(dailyActivity, recharge);
 
             try {
@@ -344,8 +382,6 @@ export class PolarSyncService {
                   date: parsedDailyMetrics.date,
                   providerId: this.#providerId,
                   steps: parsedDailyMetrics.steps,
-                  activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
-                  restingHr: parsedDailyMetrics.restingHr,
                   hrv: parsedDailyMetrics.hrv,
                   respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                 })
@@ -358,8 +394,6 @@ export class PolarSyncService {
                   ],
                   set: {
                     steps: parsedDailyMetrics.steps,
-                    activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
-                    restingHr: parsedDailyMetrics.restingHr,
                     hrv: parsedDailyMetrics.hrv,
                     respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                   },
@@ -367,8 +401,8 @@ export class PolarSyncService {
               count++;
             } catch (error) {
               this.#errors.push({
-                message: `Daily ${dailyActivity.date}: ${error instanceof Error ? error.message : String(error)}`,
-                externalId: dailyActivity.date,
+                message: `Daily ${parsedDailyMetrics.date}: ${error instanceof Error ? error.message : String(error)}`,
+                externalId: parsedDailyMetrics.date,
                 cause: error,
               });
             }
@@ -403,12 +437,14 @@ export class PolarSyncService {
    * Returns true if tokens were invalidated (caller should short-circuit).
    */
   async #invalidateTokensIfAuthFailed(): Promise<boolean> {
-    if (!this.#errors.some((error) => error.cause instanceof PolarUnauthorizedError)) {
+    if (
+      !this.#errors.some(
+        (syncError) => authFailureReasonFromError(syncError.cause) === "authorization_failed",
+      )
+    ) {
       return false;
     }
-    logger.warn(
-      `[${this.#providerId}] Authorization failed — deleting stored tokens. Re-connect provider to resume syncing.`,
-    );
+    logger.warn(`[${this.#providerId}] Authorization failed; deleting stored tokens.`);
     try {
       await deleteTokens(this.#db, this.#providerId);
     } catch (deleteError) {
@@ -422,23 +458,22 @@ export class PolarSyncService {
 
   #buildSectionError(section: "exercises" | "sleep" | "daily_activity", error: unknown): SyncError {
     if (error instanceof PolarUnauthorizedError) {
+      const cause = new ProviderAuthorizationFailedError(this.#providerName, { cause: error });
       if (section === "exercises") {
         return {
-          message:
-            "Polar authorization failed while syncing exercises — run: health-data auth polar",
-          cause: error,
+          message: "Polar authorization failed while syncing exercises.",
+          cause,
         };
       }
       if (section === "sleep") {
         return {
-          message: "Polar authorization failed while syncing sleep — run: health-data auth polar",
-          cause: error,
+          message: "Polar authorization failed while syncing sleep.",
+          cause,
         };
       }
       return {
-        message:
-          "Polar authorization failed while syncing daily activity — run: health-data auth polar",
-        cause: error,
+        message: "Polar authorization failed while syncing daily activity.",
+        cause,
       };
     }
 

@@ -7,31 +7,48 @@ on:
 jobs:
   build:
     name: Docker Build & Push
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          config-inline: |
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.image-name.outputs.name }}
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - name: Compute web asset base URL
+        id: web-assets
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          image_tag="sha-$(echo "$SHA" | head -c 7)"
+          echo "base_url=https://assets.dofek.fit/web/${image_tag}/" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           target: server
@@ -39,8 +56,57 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ github.sha }}
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            VITE_ASSET_BASE_URL=${{ steps.web-assets.outputs.base_url }}
+            REQUIRE_SENTRY_RELEASE_UPLOAD=true
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
+          cache-from: |
+            type=gha,scope=server
+            type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache
+          cache-to: |
+            type=gha,mode=max,scope=server
+            type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache,mode=max
+
+  e2e-cache:
+    name: E2E Docker Cache
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: server
+          platforms: linux/amd64
+          push: false
+          tags: e2e-server-cache:latest
+          cache-from: |
+            type=gha,scope=e2e
+            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
+          cache-to: |
+            type=gha,mode=max,scope=e2e
+            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache,mode=max

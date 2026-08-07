@@ -1,9 +1,14 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests for the predictions router.
@@ -36,17 +41,18 @@ describe("Predictions router (integration)", () => {
           WHERE id = ${TEST_USER_ID}`,
     );
 
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+
     // Insert 120 days of daily metrics (HRV, resting HR)
     for (let i = 120; i >= 0; i--) {
       const hrv = 50 + Math.sin(i * 0.3) * 10 + (i % 7) * 0.5;
-      const rhr = 55 - Math.cos(i * 0.3) * 5;
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, hrv
+              date, provider_id, user_id, hrv
             ) VALUES (
               CURRENT_DATE - ${i}::int,
               'test_provider', ${TEST_USER_ID},
-              ${Math.round(rhr)}, ${Math.round(hrv * 10) / 10}
+              ${Math.round(hrv * 10) / 10}
             )`,
       );
     }
@@ -59,6 +65,13 @@ describe("Predictions router (integration)", () => {
       const light = Math.round(duration * 0.45);
       const awake = Math.round(duration * 0.1);
       const efficiency = 82 + Math.sin(i * 0.5) * 6;
+      const startedAt = new Date();
+      startedAt.setHours(0, 0, 0, 0);
+      startedAt.setDate(startedAt.getDate() - i);
+      startedAt.setHours(22, 0, 0, 0);
+      const endedAt = new Date(startedAt);
+      endedAt.setDate(endedAt.getDate() + 1);
+      endedAt.setHours(6, 0, 0, 0);
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sleep_session (
@@ -67,12 +80,24 @@ describe("Predictions router (integration)", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
-              (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours',
-              (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
+              ${startedAt.toISOString()}, ${endedAt.toISOString()},
               ${Math.round(duration)}, ${deep}, ${rem}, ${light},
-              ${awake}, ${Math.round(efficiency * 10) / 10}, 'sleep'
-            )`,
+	              ${awake}, ${Math.round(efficiency * 10) / 10}, 'sleep'
+	            )`,
       );
+      const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
+      const sleepSampleStart = new Date(startedAt.getTime() + 3 * 60 * 60 * 1000);
+      for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+        const recordedAt = new Date(sleepSampleStart.getTime() + sampleIndex * 60_000);
+        metricStreamSeedRows.push({
+          userId: TEST_USER_ID,
+          recordedAt: recordedAt.toISOString(),
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "heart_rate",
+          scalar: restingHeartRate,
+        });
+      }
     }
 
     // Insert 60 cycling activities with metric_stream (for activity predictions)
@@ -85,9 +110,9 @@ describe("Predictions router (integration)", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`pred-ride-${i}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + ${durationMin}::int * INTERVAL '1 minute',
               'Training Ride'
@@ -96,22 +121,32 @@ describe("Predictions router (integration)", () => {
       const actId = actResult[0]?.id;
 
       if (actId) {
-        // Insert metric stream samples (1 per minute)
-        const sensorValues: string[] = [];
+        const activityStartedAt = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
         for (let s = 0; s < durationMin; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.1) * 5);
           const power = avgPower + Math.round(Math.cos(s * 0.1) * 15);
-          const ts = `CURRENT_TIMESTAMP - ${i} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
+          const recordedAt = new Date(activityStartedAt.getTime() + s * 60_000).toISOString();
+          metricStreamSeedRows.push(
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "heart_rate",
+              activityId: actId,
+              scalar: hr,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "power",
+              activityId: actId,
+              scalar: power,
+            },
           );
         }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-        );
       }
     }
 
@@ -122,45 +157,49 @@ describe("Predictions router (integration)", () => {
           RETURNING id`,
     );
     const exerciseId = exerciseResult[0]?.id;
+    if (!exerciseId) {
+      throw new Error("Failed to insert prediction exercise");
+    }
 
     for (let i = 60; i >= 1; i--) {
       if (i % 3 !== 0) continue;
 
       const workoutResult = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.strength_workout (
-              provider_id, user_id, started_at, ended_at, name
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, external_id, started_at, ended_at, name, canonical_type, provider_type
             ) VALUES (
-              'test_provider', ${TEST_USER_ID},
+              'test_provider', ${TEST_USER_ID}, ${`pred-workout-${i}`},
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + INTERVAL '45 minutes',
-              'Upper Body'
+              'Upper Body',
+              'strength',
+              'strength'
             ) RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;
+      if (!workoutId) {
+        throw new Error("Failed to insert prediction strength workout activity");
+      }
 
-      if (workoutId && exerciseId) {
-        const weight = 70 + (60 - i) * 0.5;
-        for (let setIdx = 0; setIdx < 3; setIdx++) {
-          await testCtx.db.execute(
-            sql`INSERT INTO fitness.strength_set (
-                  workout_id, exercise_id, exercise_index, set_index,
+      const weight = 70 + (60 - i) * 0.5;
+      for (let setIdx = 0; setIdx < 3; setIdx++) {
+        await testCtx.db.execute(
+          sql`INSERT INTO fitness.strength_set (
+                  activity_id, exercise_id, exercise_index, set_index,
                   set_type, weight_kg, reps
                 ) VALUES (
                   ${workoutId}, ${exerciseId}, 0, ${setIdx},
                   'working', ${weight}, 8
                 )`,
-          );
-        }
+        );
       }
     }
 
-    // Refresh materialized views
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    // Refresh sleep materialized view
 
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

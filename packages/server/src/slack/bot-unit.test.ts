@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
+import { aiObservabilityMocks } from "../lib/test-helpers.ts";
 
 // Mock @slack/bolt before importing bot.ts
 vi.mock("@slack/bolt", () => {
@@ -43,16 +44,34 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
   refineNutritionItems: vi.fn(),
 }));
 
+vi.mock(
+  "dofek/lib/ai-observability",
+  async () => (await import("../lib/test-helpers.ts")).aiObservabilityMocks,
+);
+
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
-import { queryCache } from "dofek/lib/cache";
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
+import * as Sentry from "@sentry/node";
+import { AccountErasureUserFencedError } from "dofek/db/account-erasure";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { createSlackBot } from "./bot.ts";
-import { FoodEntryRepository, slackTimestampToDateString } from "./food-entry-repository.ts";
+import { FoodEntryRepository } from "./food-entry-repository.ts";
+import { slackTimestampToDateString } from "./formatting.ts";
 
 const mockAnalyze = vi.mocked(analyzeNutritionItems);
 const mockRefine = vi.mocked(refineNutritionItems);
@@ -166,6 +185,12 @@ describe("bot.ts — registerHandlers", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(FoodEntryRepository.prototype, "withInboundNutritionWriteFence").mockImplementation(
+      async function (input, operation) {
+        const user = await this.lookupOrCreateUserId(input.slackUserId, input.slackClient);
+        return operation({ repository: this, ...user });
+      },
+    );
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
     delete process.env.SLACK_SIGNING_SECRET;
@@ -226,6 +251,10 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(mockAnalyze).toHaveBeenCalledWith("Two eggs and toast", expect.any(String));
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-123" },
+        expect.any(Function),
+      );
       expect(client.users.info).toHaveBeenCalledWith({ user: "U123" });
       expect(chatPostMessage).toHaveBeenCalledWith({
         channel: "C123",
@@ -249,7 +278,7 @@ describe("bot.ts — registerHandlers", () => {
           ts: "thinking-ts",
           attachments: [],
           blocks: expect.any(Array),
-          text: expect.stringContaining("Test Food: 200 cal"),
+          text: expect.stringContaining("Test Food: 200 kcal"),
         }),
       );
       saveUnconfirmedSpy.mockRestore();
@@ -258,11 +287,13 @@ describe("bot.ts — registerHandlers", () => {
     it("sends error message when AI analysis fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail = "database state 23505 fitness.food_entry provider_secret=sk-test";
+      const analysisError = new Error(internalErrorDetail);
 
       // lookupOrCreateUserId: existing slack link found
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
 
-      mockAnalyze.mockRejectedValueOnce(new Error("AI provider down"));
+      mockAnalyze.mockRejectedValueOnce(analysisError);
 
       const { messageHandler } = setupHandlers(db);
 
@@ -277,6 +308,7 @@ describe("bot.ts — registerHandlers", () => {
       };
 
       await messageHandler({
+        body: { team_id: "T-message" },
         message: {
           user: "U123",
           text: "mystery food",
@@ -290,9 +322,152 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           ts: "thinking-ts",
-          text: expect.stringContaining("AI provider down"),
+          text: expect.not.stringContaining(internalErrorDetail),
           blocks: [],
         }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
+        }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Try describing what you ate"),
+        }),
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        analysisError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C123",
+              eventType: "message",
+              operation: "nutrition_analysis",
+              teamId: "T-message",
+              threadTimestamp: "1700000000.000000",
+            }),
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "nutrition_analysis",
+          },
+        }),
+      );
+    });
+
+    it("omits Slack identifiers and message content from fence-rejection telemetry", async () => {
+      const db = createMockDb();
+      const sensitiveValues = [
+        "U-FENCE-SECRET",
+        "T-FENCE-SECRET",
+        "C-FENCE-SECRET",
+        "1700000000.123456",
+        "private meal details",
+        "10000000-0000-4000-8000-00000000feed",
+        "raw-provider-payload-secret",
+      ];
+      const fenceError = new AccountErasureUserFencedError(
+        new Error(`${sensitiveValues[5]} ${sensitiveValues[6]}`),
+      );
+      vi.spyOn(
+        FoodEntryRepository.prototype,
+        "withInboundNutritionWriteFence",
+      ).mockRejectedValueOnce(fenceError);
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+
+      await messageHandler({
+        body: { team_id: sensitiveValues[1] },
+        message: {
+          user: sensitiveValues[0],
+          text: sensitiveValues[4],
+          ts: sensitiveValues[3],
+          channel: sensitiveValues[2],
+        },
+        say,
+        client: {
+          users: { info: vi.fn() },
+          chat: { postMessage: vi.fn() },
+        },
+      });
+
+      expect(mockAnalyze).not.toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Inbound Slack nutrition processing rejected by account-erasure fence",
+          name: "AccountErasureFenceRejection",
+        }),
+        {
+          contexts: {
+            slack: {
+              eventType: "message",
+              operation: "account_erasure_fence_rejection",
+            },
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "account_erasure_fence_rejection",
+          },
+        },
+      );
+      const { logger } = await import("../logger.ts");
+      const telemetry = JSON.stringify({
+        logger: {
+          debug: vi.mocked(logger.debug).mock.calls,
+          error: vi.mocked(logger.error).mock.calls,
+          info: vi.mocked(logger.info).mock.calls,
+          warn: vi.mocked(logger.warn).mock.calls,
+        },
+        sentry: vi.mocked(captureException).mock.calls,
+      });
+      for (const sensitiveValue of sensitiveValues) {
+        expect(telemetry).not.toContain(sensitiveValue);
+      }
+      expect(say).toHaveBeenCalledWith({
+        text: expect.stringContaining("Nothing was saved"),
+        thread_ts: sensitiveValues[3],
+      });
+    });
+
+    it("reports a sanitized error when the account-erasure fence reply cannot be sent", async () => {
+      const db = createMockDb();
+      const sensitiveTransportDetail = "reply transport leaked C-FENCE-PRIVATE";
+      vi.spyOn(
+        FoodEntryRepository.prototype,
+        "withInboundNutritionWriteFence",
+      ).mockRejectedValueOnce(new AccountErasureUserFencedError());
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        body: { team_id: "T-FENCE-PRIVATE" },
+        message: {
+          user: "U-FENCE-PRIVATE",
+          text: "private meal details",
+          ts: "1700000000.654321",
+          channel: "C-FENCE-PRIVATE",
+        },
+        say: vi.fn().mockRejectedValueOnce(new Error(sensitiveTransportDetail)),
+        client: {
+          users: { info: vi.fn() },
+          chat: { postMessage: vi.fn() },
+        },
+      });
+
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Slack account-erasure fence reply failed",
+          name: "AccountErasureFenceReplyError",
+        }),
+        expect.objectContaining({
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "account_erasure_fence_reply",
+          },
+        }),
+      );
+      expect(JSON.stringify(vi.mocked(captureException).mock.calls)).not.toContain(
+        sensitiveTransportDetail,
       );
     });
 
@@ -330,21 +505,24 @@ describe("bot.ts — registerHandlers", () => {
     it("replies with error when lookupOrCreateUserId fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail = "redis://cache.internal auth token missing";
+      const lookupError = new Error(internalErrorDetail);
 
       // lookupOrCreateUserId: users.info fails
-      mockExecute.mockRejectedValueOnce(new Error("Slack API unavailable"));
+      mockExecute.mockRejectedValueOnce(lookupError);
 
       const { messageHandler } = setupHandlers(db);
 
       const say = vi.fn();
       const client = {
         users: {
-          info: vi.fn().mockRejectedValue(new Error("Slack API unavailable")),
+          info: vi.fn().mockRejectedValue(lookupError),
         },
         chat: { postMessage: vi.fn() },
       };
 
       await messageHandler({
+        body: { team: { id: "T-nested" } },
         message: {
           user: "U123",
           text: "some food",
@@ -358,8 +536,36 @@ describe("bot.ts — registerHandlers", () => {
       // The top-level catch should send an error reply
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Slack API unavailable"),
+          text: expect.not.stringContaining(internalErrorDetail),
           thread_ts: "1700000000.000000",
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Please try again"),
+        }),
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        lookupError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C123",
+              eventType: "message",
+              operation: "message_processing",
+              teamId: "T-nested",
+              threadTimestamp: "1700000000.000000",
+            }),
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "message_processing",
+          },
         }),
       );
     });
@@ -373,7 +579,8 @@ describe("bot.ts — registerHandlers", () => {
 
       const { messageHandler } = setupHandlers(db);
 
-      const say = vi.fn().mockRejectedValue(new Error("say failed"));
+      const sayError = new Error("say failed");
+      const say = vi.fn().mockRejectedValue(sayError);
       const client = {
         users: { info: vi.fn().mockRejectedValue(new Error("API down")) },
         chat: { postMessage: vi.fn() },
@@ -392,6 +599,15 @@ describe("bot.ts — registerHandlers", () => {
           client,
         }),
       ).resolves.not.toThrow();
+      expect(captureException).toHaveBeenCalledWith(
+        sayError,
+        expect.objectContaining({
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "error_reply",
+          },
+        }),
+      );
     });
 
     it("skips duplicate message events by event_id", async () => {
@@ -460,6 +676,83 @@ describe("bot.ts — registerHandlers", () => {
         lookupUserSpy.mockRestore();
         saveUnconfirmedSpy.mockRestore();
       }
+    });
+
+    it("does not crash when Slack body is absent during successful analysis", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: existing slack link found
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await messageHandler({
+        body: null,
+        message: {
+          user: "U123",
+          text: "eggs",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say: vi.fn(),
+        client: {
+          users: { info: vi.fn().mockResolvedValue({ user: { tz: "America/New_York" } }) },
+          conversations: { replies: vi.fn() },
+          chat: { postMessage: chatPostMessage, update: chatUpdate },
+        },
+      });
+
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Test Food: 200 kcal"),
+        }),
+      );
+    });
+
+    it("falls back from empty team_id to nested team id in error context", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const lookupError = new Error("database lookup failed for dofek-slack");
+
+      mockExecute.mockRejectedValueOnce(lookupError);
+
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+
+      await messageHandler({
+        body: { team_id: "", team: { id: "T-fallback" } },
+        message: {
+          user: "U123",
+          text: "some food",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client: {
+          users: { info: vi.fn() },
+          chat: { postMessage: vi.fn().mockResolvedValue({}) },
+        },
+      });
+
+      expect(captureException).toHaveBeenCalledWith(
+        lookupError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              teamId: "T-fallback",
+            }),
+          },
+        }),
+      );
     });
   });
 
@@ -805,6 +1098,10 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(loadSpy).toHaveBeenCalledWith(["old-id"]);
       expect(mockRefine).toHaveBeenCalled();
+      expect(aiObservabilityMocks.withAiGenerationContext).toHaveBeenCalledWith(
+        { userId: "user-123" },
+        expect.any(Function),
+      );
       expect(deleteSpy).toHaveBeenCalledWith(["old-id"]);
       expect(chatPostMessage).toHaveBeenCalledWith({
         channel: "C1",
@@ -923,9 +1220,72 @@ describe("bot.ts — registerHandlers", () => {
       saveSpy.mockRestore();
     });
 
+    it("reports a failed attempt to retire the previous confirmation", async () => {
+      const db = createMockDb();
+      getMockExecute(db).mockResolvedValueOnce([{ user_id: "user-123" }]);
+      vi.spyOn(FoodEntryRepository.prototype, "loadForRefinement").mockResolvedValueOnce([
+        makeFoodItem(),
+      ]);
+      vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed").mockResolvedValueOnce(undefined);
+      vi.spyOn(FoodEntryRepository.prototype, "saveUnconfirmed").mockResolvedValueOnce([
+        "new-entry-id",
+      ]);
+      mockRefine.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+      const retireError = new Error("Slack update failed");
+      const chatUpdate = vi.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(retireError);
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        body: { team_id: "T1" },
+        message: {
+          user: "U1",
+          text: "actually lower the calories",
+          ts: "2000.000",
+          thread_ts: "1000.000",
+          channel: "C1",
+        },
+        say: vi.fn(),
+        client: {
+          users: { info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }) },
+          conversations: {
+            replies: vi.fn().mockResolvedValue({
+              messages: [
+                {
+                  bot_id: "B123",
+                  ts: "old-confirm-ts",
+                  blocks: [
+                    {
+                      type: "actions",
+                      elements: [{ action_id: "confirm_food", value: "old-id" }],
+                    },
+                  ],
+                },
+              ],
+            }),
+          },
+          chat: {
+            postMessage: vi.fn().mockResolvedValue({ ts: "refine-thinking-ts" }),
+            update: chatUpdate,
+          },
+        },
+      });
+
+      expect(captureException).toHaveBeenCalledWith(
+        retireError,
+        expect.objectContaining({
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "retire_superseded_confirmation",
+          },
+        }),
+      );
+    });
+
     it("sends error via say() when refinement throws", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail = "provider payload included access_token=secret-token";
+      const refinementError = new Error(internalErrorDetail);
 
       // lookupOrCreateUserId
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
@@ -934,7 +1294,7 @@ describe("bot.ts — registerHandlers", () => {
         .spyOn(FoodEntryRepository.prototype, "loadForRefinement")
         .mockResolvedValueOnce([makeFoodItem()]);
 
-      mockRefine.mockRejectedValueOnce(new Error("AI refinement failed"));
+      mockRefine.mockRejectedValueOnce(refinementError);
 
       const { messageHandler } = setupHandlers(db);
 
@@ -974,8 +1334,31 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("AI refinement failed"),
+          text: expect.not.stringContaining(internalErrorDetail),
           thread_ts: "1000.000",
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("The edit was not saved"),
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Please try again"),
+        }),
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        refinementError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C1",
+              eventType: "message",
+              operation: "nutrition_refinement",
+              threadTimestamp: "1000.000",
+            }),
+          },
         }),
       );
 
@@ -1122,6 +1505,18 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 1,
           sodium_mg: 150,
           meal: "breakfast",
+          date: "2024-01-15",
+        },
+      ]);
+      // load calorie goal
+      mockExecute.mockResolvedValueOnce([{ key: "calorieGoal", value: 2000 }]);
+      // load confirmed calories for the entry date
+      mockExecute.mockResolvedValueOnce([
+        {
+          calories_consumed: 80,
+          resolution_status: "available",
+          resolution_message: "Totals use the only available nutrition source.",
+          source_labels: ["dofek"],
         },
       ]);
       const ack = vi.fn();
@@ -1143,11 +1538,109 @@ describe("bot.ts — registerHandlers", () => {
         expect.objectContaining({
           channel: "C123",
           ts: "1700000000.000000",
-          text: expect.stringContaining("Toast: 80 cal"),
+          text: expect.stringContaining("Toast: 80 kcal"),
+        }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("1,920 kcal remaining today"),
         }),
       );
       expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:food.");
       expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:nutrition.");
+    });
+
+    it("keeps the saved response when daily calorie progress loading fails", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+      const progressError = new Error("progress unavailable");
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 1,
+        confirmedEntryIds: ["entry-1"],
+        userId: "user-123",
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
+      const loadProgressSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadDailyCalorieProgress")
+        .mockRejectedValue(progressError);
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalled();
+        expect(chatUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("Toast: 80 kcal"),
+          }),
+        );
+        expect(chatUpdate).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("Failed to save"),
+          }),
+        );
+        expect(captureException).toHaveBeenCalledWith(progressError);
+      } finally {
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+        loadProgressSpy.mockRestore();
+      }
+    });
+
+    it("skips calorie progress when confirmed entries span multiple dates", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 2,
+        confirmedEntryIds: ["entry-1", "entry-2"],
+        userId: "user-123",
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([
+          { food_name: "Toast", calories: 80, date: "2024-01-15" },
+          { food_name: "Eggs", calories: 140, date: "2024-01-16" },
+        ]);
+      const loadProgressSpy = vi.spyOn(FoodEntryRepository.prototype, "loadDailyCalorieProgress");
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            actions: [{ action_id: "confirm_food", value: "entry-1,entry-2" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalled();
+        expect(loadProgressSpy).not.toHaveBeenCalled();
+        expect(chatUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("Toast: 80 kcal"),
+          }),
+        );
+      } finally {
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+        loadProgressSpy.mockRestore();
+      }
     });
 
     it("shows success message when entries were already confirmed (idempotent retry)", async () => {
@@ -1158,7 +1651,7 @@ describe("bot.ts — registerHandlers", () => {
 
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
       // SELECT items still returns data (entries exist, just already confirmed)
-      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1178,7 +1671,7 @@ describe("bot.ts — registerHandlers", () => {
       // Should show success message, not "already saved"
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Toast: 80 cal"),
+          text: expect.stringContaining("Toast: 80 kcal"),
         }),
       );
     });
@@ -1194,7 +1687,7 @@ describe("bot.ts — registerHandlers", () => {
       });
       const loadSummarySpy = vi
         .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
-        .mockResolvedValue([{ food_name: "Toast", calories: 80 }]);
+        .mockResolvedValue([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1248,7 +1741,7 @@ describe("bot.ts — registerHandlers", () => {
       const { confirmHandler } = setupHandlers(db);
 
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1270,7 +1763,7 @@ describe("bot.ts — registerHandlers", () => {
         expect(loadSummarySpy).toHaveBeenCalledWith(["entry-fresh-1"]);
         expect(chatUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            text: expect.stringContaining("Toast: 80 cal"),
+            text: expect.stringContaining("Toast: 80 kcal"),
           }),
         );
       } finally {
@@ -1422,10 +1915,13 @@ describe("bot.ts — registerHandlers", () => {
     it("shows error message when confirm fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail =
+        "duplicate key fitness.food_entry primary key on db-primary.internal";
+      const confirmError = new Error(internalErrorDetail);
 
       const { confirmHandler } = setupHandlers(db);
 
-      mockExecute.mockRejectedValueOnce(new Error("DB connection failed"));
+      mockExecute.mockRejectedValueOnce(confirmError);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1434,6 +1930,7 @@ describe("bot.ts — registerHandlers", () => {
         ack,
         body: {
           type: "block_actions",
+          team: { id: "T123" },
           actions: [{ action_id: "confirm_food", value: "entry-1" }],
           channel: { id: "C123" },
           message: { ts: "1700000000.000000" },
@@ -1443,10 +1940,134 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("DB connection failed"),
+          text: expect.not.stringContaining(internalErrorDetail),
           blocks: [],
         }),
       );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
+        }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Please try confirming"),
+        }),
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        confirmError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C123",
+              eventType: "action",
+              operation: "food_confirmation",
+              teamId: "T123",
+              threadTimestamp: "1700000000.000000",
+            }),
+          },
+          tags: {
+            slack_event_type: "action",
+            slack_operation: "food_confirmation",
+          },
+        }),
+      );
+    });
+
+    it("captures confirm failures without undefined optional Slack context fields", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const confirmError = new Error("database save failed for confirm action");
+
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockRejectedValueOnce(confirmError);
+
+      const ack = vi.fn();
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+        },
+        client: { chat: { update: vi.fn() } },
+      });
+
+      expect(captureException).toHaveBeenCalledWith(confirmError, {
+        contexts: {
+          slack: {
+            eventType: "action",
+            operation: "food_confirmation",
+          },
+        },
+        tags: {
+          slack_event_type: "action",
+          slack_operation: "food_confirmation",
+        },
+      });
+    });
+
+    it("shows saved-but-incomplete message when confirm succeeds before follow-up fails", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+      const updateError = new Error("chat.update failed after database save");
+      const findPendingIdsSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "findPendingIdsByMessage")
+        .mockResolvedValueOnce([]);
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 1,
+        confirmedEntryIds: ["entry-1"],
+        userId: null,
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockRejectedValueOnce(updateError).mockResolvedValueOnce({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            team: { id: "T123" },
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(chatUpdate).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            text: expect.stringContaining("Saved those food entries"),
+            blocks: [],
+          }),
+        );
+        expect(chatUpdate).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            text: expect.not.stringContaining("Nothing was saved"),
+          }),
+        );
+        expect(captureException).toHaveBeenCalledWith(
+          updateError,
+          expect.objectContaining({
+            contexts: {
+              slack: expect.objectContaining({
+                operation: "food_confirmation",
+                teamId: "T123",
+              }),
+            },
+          }),
+        );
+      } finally {
+        findPendingIdsSpy.mockRestore();
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+      }
     });
 
     it("does not update already-saved message when channel exists but message.ts is missing", async () => {
@@ -1511,7 +2132,7 @@ describe("bot.ts — registerHandlers", () => {
       const { confirmHandler } = setupHandlers(db);
 
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn();
@@ -1781,6 +2402,8 @@ describe("bot.ts — registerHandlers", () => {
 
       // Verify the orphan repair happened: UPDATE auth_account + UPDATE food_entry
       expect(mockExecute).toHaveBeenCalled();
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("orphan-user");
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("correct-user");
       expect(chatUpdate).toHaveBeenCalled();
     });
 
@@ -1931,8 +2554,10 @@ describe("bot.ts — registerHandlers", () => {
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
           text: expect.stringContaining("Could not match your Slack account"),
+          thread_ts: "1700000000.000000",
         }),
       );
+      expect(captureException).not.toHaveBeenCalled();
     });
 
     it("finds user by user_profile email", async () => {
@@ -2186,6 +2811,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -2335,6 +2961,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: null,
           sodium_mg: null,
           meal: null,
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -2469,8 +3096,13 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).not.toHaveBeenCalled();
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("AI down"),
+          text: expect.not.stringContaining("AI down"),
           thread_ts: "1700000000.000000",
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
         }),
       );
     });
@@ -2693,6 +3325,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -3498,6 +4131,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -3541,6 +4175,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 0,
           sodium_mg: 120,
           meal: "breakfast",
+          date: "2024-01-15",
         },
         {
           food_name: "Toast",
@@ -3555,6 +4190,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 1,
           sodium_mg: 150,
           meal: "breakfast",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -3633,6 +4269,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -3652,7 +4289,7 @@ describe("bot.ts — registerHandlers", () => {
       expect(ack).toHaveBeenCalled();
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Logged: Apple: 95 cal"),
+          text: expect.stringContaining("Logged: Apple: 95 kcal"),
         }),
       );
       // Cache invalidation should not have been called because no user row was found
@@ -4240,7 +4877,16 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("[slack] Could not fetch Slack profile for U1: 42"),
+        "[slack] Could not fetch Slack profile; using fallback identity data",
+      );
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Slack profile lookup failed",
+          name: "SlackProfileLookupError",
+        }),
+        {
+          tags: { slack_operation: "profile_lookup" },
+        },
       );
     });
   });
@@ -4268,6 +4914,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 0.2,
           sodium_mg: 75,
           meal: "dinner",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -4291,10 +4938,10 @@ describe("bot.ts — registerHandlers", () => {
           text: expect.stringContaining("Grilled Chicken"),
         }),
       );
-      // The text should contain 250 cal (from calories: 250)
+      // The text should contain 250 kcal (from calories: 250)
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("250 cal"),
+          text: expect.stringContaining("250 kcal"),
         }),
       );
     });
@@ -4582,6 +5229,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 0.5,
           sodium_mg: 65,
           meal: "dinner",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -4602,15 +5250,15 @@ describe("bot.ts — registerHandlers", () => {
       const updateArgs = chatUpdate.mock.calls[0]?.[0];
       expect(updateArgs).toBeDefined();
 
-      // "Steak: 600 cal" should be in the text (not "0 cal" from && mutation)
-      // formatSavedMessage produces text: "Logged: Steak: 600 cal"
+      // "Steak: 600 kcal" should be in the text (not "0 kcal" from && mutation)
+      // formatSavedMessage produces text: "Logged: Steak: 600 kcal"
       expect(updateArgs.text).toContain("Steak");
-      expect(updateArgs.text).toContain("600 cal");
+      expect(updateArgs.text).toContain("600 kcal");
 
-      // The blocks should contain "Steak — *600 cal*"
+      // The blocks should contain "Steak — *600 kcal*"
       const blockText = JSON.stringify(updateArgs.blocks);
       expect(blockText).toContain("Steak");
-      expect(blockText).toContain("600 cal");
+      expect(blockText).toContain("600 kcal");
     });
   });
 

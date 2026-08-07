@@ -1,6 +1,14 @@
 # Metric Stream Timescale Runbook
 
-This runbook converts `fitness.metric_stream` from a regular table to a Timescale hypertable, then enables compression.
+> **Historical record — do not run these commands.** Postgres
+> `fitness.metric_stream` and the training-export worker have been retired.
+> Current metric-stream durability lives in Redpanda, the R2 archive, and
+> ClickHouse `ingest.metric_stream`. Use
+> [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md)
+> for current operations.
+
+The original runbook converted `fitness.metric_stream` from a regular table to a
+Timescale hypertable, then enabled compression.
 
 Use this during a planned maintenance window. Do not run this as an automatic deploy migration while app traffic is writing to `metric_stream`.
 
@@ -16,7 +24,7 @@ Use this during a planned maintenance window. Do not run this as an automatic de
 2. Ensure **free disk headroom** before migration (target at least 20GB free).
 3. Ensure sufficient DB memory headroom for conversion. On current production data volume (~77M rows in `metric_stream`), `create_hypertable(... migrate_data => TRUE)` can be OOM-killed on low-memory hosts.
 4. If host memory is constrained, use a staged-copy conversion (new empty hypertable + batched inserts + table swap) instead of direct `migrate_data`.
-5. Ensure Terraform-managed data volume is provisioned (`data_volume_size_gb`, default `100`) and applied.
+5. Ensure the OCI host data volume is provisioned and mounted at `/mnt/dofek-data`.
 6. Plan a write pause for app services that insert into `metric_stream` (`web`, `worker`, `training-export-worker`).
 
 ## 1) Verify current state
@@ -30,6 +38,19 @@ SELECT hypertable_schema, hypertable_name
 FROM timescaledb_information.hypertables
 WHERE hypertable_schema = 'fitness'
   AND hypertable_name = 'metric_stream';
+
+SELECT hypertable_schema, hypertable_name, dimension_number, column_name, time_interval
+FROM timescaledb_information.dimensions
+WHERE hypertable_schema = 'fitness'
+  AND hypertable_name = 'metric_stream';
+
+SELECT chunk_schema, chunk_name, range_start, range_end, is_compressed,
+       pg_size_pretty(pg_total_relation_size(format('%I.%I', chunk_schema, chunk_name)::regclass)) AS total_size
+FROM timescaledb_information.chunks
+WHERE hypertable_schema = 'fitness'
+  AND hypertable_name = 'metric_stream'
+ORDER BY pg_total_relation_size(format('%I.%I', chunk_schema, chunk_name)::regclass) DESC
+LIMIT 20;
 ```
 
 ## 2) Pause writers
@@ -69,6 +90,16 @@ That migration configures:
 - segment by: `user_id,provider_id,channel`
 - order by: `recorded_at DESC`
 - compression policy: compress chunks older than `7 days`
+
+For existing environments, forward migration
+`drizzle/0011_metric_stream_storage_controls.sql` enforces the `1 day` chunk
+interval and removes storage-heavy indexes that are not part of the current
+read model. If production reports a larger `time_interval`, run pending
+migrations before compression work.
+
+Timescale expands hypertable indexes across chunks, so `DROP INDEX CONCURRENTLY`
+is not reliable for these index removals. Drop obsolete hypertable indexes
+during the maintenance window after app services are scaled down.
 
 ## 5) Backfill compression for old chunks
 
@@ -175,6 +206,21 @@ SELECT pg_size_pretty(hypertable_size('fitness.metric_stream')) AS hypertable_si
 Record resistant chunks in `.context/metric-stream-compression-YYYY-MM-DD.md`
 with the error, elapsed time, and whether inserts were blocked.
 
+If online compression repeatedly fails with lock timeouts while app traffic or
+materialized-view refreshes are active, use a maintenance window:
+
+1. Confirm the latest `dofek-db-backups` object or Databasus backup metadata is
+   less than 24 hours old.
+2. Scale down writers and read-heavy app services:
+   ```bash
+   docker service scale dofek_web=0 dofek_worker=0 dofek_training-export-worker=0
+   ```
+3. Cancel active `metric_stream`, `deduped_sensor`, `activity_summary`, or
+   `provider_stats` maintenance queries with `pg_cancel_backend`.
+4. Run `compress_chunk` for closed chunks only.
+5. Reconcile chunk compression metadata and disk usage before resuming
+   services.
+
 ## 6) Resume services
 
 ```bash
@@ -199,6 +245,19 @@ Check app health:
 
 ```bash
 curl -fsS https://dofek.asherlc.com/healthz
+```
+
+Check for future-dated chunks after any incident involving unexpected chunk
+fanout:
+
+```sql
+SELECT chunk_name, range_start, range_end, is_compressed,
+       pg_size_pretty(pg_total_relation_size(format('%I.%I', chunk_schema, chunk_name)::regclass)) AS total_size
+FROM timescaledb_information.chunks
+WHERE hypertable_schema = 'fitness'
+  AND hypertable_name = 'metric_stream'
+  AND range_start > now() + INTERVAL '30 days'
+ORDER BY range_start;
 ```
 
 ## Optional next step: retention

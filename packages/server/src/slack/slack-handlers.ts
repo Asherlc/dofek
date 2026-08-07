@@ -1,18 +1,30 @@
 import type { App as AppType, SayFn } from "@slack/bolt";
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+} from "dofek/db/account-erasure";
+import { withAiGenerationContext } from "dofek/lib/ai-observability";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { createSlackDedupeStore, type SlackDedupeStore } from "./dedupe-store.ts";
 import {
   extractLatestConfirmFromThread,
   type FoodEntryRepository,
+} from "./food-entry-repository.ts";
+import {
+  type DailyCalorieProgress,
+  formatConfirmationMessage,
+  formatSavedMessage,
   slackTimestampToDateString,
   slackTimestampToLocalTime,
-} from "./food-entry-repository.ts";
-import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
+} from "./formatting.ts";
 
 type SayFunction = SayFn;
 const DEDUPE_TTL_MS = 10 * 60 * 1000;
+const UNMATCHED_SLACK_ACCOUNT_MESSAGE_PREFIX =
+  "Could not match your Slack account to a Dofek user.";
 
 interface ParsedMessageArgs {
   say: SayFunction;
@@ -40,6 +52,103 @@ interface ParsedMessageArgs {
   msgTs: string;
   msgChannel: string;
   msgThreadTs?: string;
+  msgTeamId?: string;
+}
+
+interface SlackExceptionContext {
+  operation: string;
+  eventType: "action" | "message";
+  teamId?: string;
+  channelId?: string;
+  threadTimestamp?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildSlackExceptionContext(context: SlackExceptionContext): Record<string, string> {
+  const sentryContext: Record<string, string> = {
+    eventType: context.eventType,
+    operation: context.operation,
+  };
+  if (context.teamId) sentryContext.teamId = context.teamId;
+  if (context.channelId) sentryContext.channelId = context.channelId;
+  if (context.threadTimestamp) sentryContext.threadTimestamp = context.threadTimestamp;
+  return sentryContext;
+}
+
+function captureSlackException(error: unknown, context: SlackExceptionContext): void {
+  captureException(error, {
+    contexts: {
+      slack: buildSlackExceptionContext(context),
+    },
+    tags: {
+      slack_event_type: context.eventType,
+      slack_operation: context.operation,
+    },
+  });
+}
+
+function isUserSafeSlackMessage(errorMessage: string): boolean {
+  return errorMessage.startsWith(UNMATCHED_SLACK_ACCOUNT_MESSAGE_PREFIX);
+}
+
+function isAccountErasureFenceRejection(error: unknown): boolean {
+  return (
+    error instanceof AccountErasureIdentityFencedError ||
+    error instanceof AccountErasureUserFencedError
+  );
+}
+
+function captureAccountErasureFenceRejection(): void {
+  const sanitizedError = new Error(
+    "Inbound Slack nutrition processing rejected by account-erasure fence",
+  );
+  sanitizedError.name = "AccountErasureFenceRejection";
+  captureSlackException(sanitizedError, {
+    eventType: "message",
+    operation: "account_erasure_fence_rejection",
+  });
+}
+
+function captureAccountErasureFenceReplyFailure(): void {
+  const sanitizedError = new Error("Slack account-erasure fence reply failed");
+  sanitizedError.name = "AccountErasureFenceReplyError";
+  captureSlackException(sanitizedError, {
+    eventType: "message",
+    operation: "account_erasure_fence_reply",
+  });
+}
+
+function extractSlackTeamId(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  if ("team_id" in body && typeof body.team_id === "string" && body.team_id.length > 0) {
+    return body.team_id;
+  }
+  if (
+    "team" in body &&
+    body.team &&
+    typeof body.team === "object" &&
+    "id" in body.team &&
+    typeof body.team.id === "string" &&
+    body.team.id.length > 0
+  ) {
+    return body.team.id;
+  }
+  return undefined;
+}
+
+function findSingleConfirmedDate(rows: Array<{ date: string }>): string | null {
+  const confirmedDates = new Set(rows.map((row) => row.date));
+  const confirmedDate = rows[0]?.date ?? null;
+  if (confirmedDates.size === 1) {
+    return confirmedDate;
+  }
+  logger.warn(
+    `[slack] confirm_food: skipping daily calorie progress for mixed confirmed dates: ${Array.from(confirmedDates).join(", ")}`,
+  );
+  return null;
 }
 
 function splitEntryIds(rawValue: string): string[] {
@@ -187,154 +296,221 @@ async function handleParsedMessage(
     msgTs,
     msgChannel,
     msgThreadTs,
+    msgTeamId,
   } = args;
   try {
-    const { userId, timezone: userTimezone } = await repository.lookupOrCreateUserId(msgUser, {
-      users: {
-        info: ({ user }) => getUserInfo(user),
+    await repository.withInboundNutritionWriteFence(
+      {
+        slackClient: {
+          users: {
+            info: ({ user }) => getUserInfo(user),
+          },
+        },
+        slackUserId: msgUser,
+        teamId: msgTeamId,
       },
-    });
+      async ({ repository, userId, timezone: userTimezone }) => {
+        const date = slackTimestampToDateString(msgTs, userTimezone);
 
-    const date = slackTimestampToDateString(msgTs, userTimezone);
+        // Thread reply — look for previous items to refine
+        if (msgThreadTs && msgThreadTs !== msgTs) {
+          logger.info(`[slack] Thread reply from ${msgUser}: "${msgText}"`);
 
-    // Thread reply — look for previous items to refine
-    if (msgThreadTs && msgThreadTs !== msgTs) {
-      logger.info(`[slack] Thread reply from ${msgUser}: "${msgText}"`);
+          try {
+            const thread = await getThreadReplies(msgChannel, msgThreadTs);
+            const previousConfirmContext = extractLatestConfirmFromThread(thread.messages ?? []);
+            const previousEntryIds = previousConfirmContext?.entryIds ?? null;
 
-      try {
-        const thread = await getThreadReplies(msgChannel, msgThreadTs);
-        const previousConfirmContext = extractLatestConfirmFromThread(thread.messages ?? []);
-        const previousEntryIds = previousConfirmContext?.entryIds ?? null;
+            if (previousEntryIds) {
+              const previousItems = await repository.loadForRefinement(previousEntryIds);
 
-        if (previousEntryIds) {
-          const previousItems = await repository.loadForRefinement(previousEntryIds);
+              if (previousItems.length > 0) {
+                logger.info(`[slack] Refining ${previousItems.length} items with: "${msgText}"`);
 
-          if (previousItems.length > 0) {
-            logger.info(`[slack] Refining ${previousItems.length} items with: "${msgText}"`);
-
-            const thinkingMsg = await postMessage({
-              channel: msgChannel,
-              thread_ts: msgThreadTs,
-              text: "Updating your entries...",
-            });
-
-            const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-            const result = await refineNutritionItems(previousItems, msgText, localTime);
-
-            await repository.deleteUnconfirmed(previousEntryIds);
-            const confirmationMessageTs =
-              thinkingMsg.ts ?? `fallback-refine-${msgThreadTs}-${Date.now()}`;
-            const newEntryIds = await repository.saveUnconfirmed(userId, date, result.items, {
-              channelId: msgChannel,
-              confirmationMessageTs,
-              threadTs: msgThreadTs,
-              sourceMessageTs: msgTs,
-              slackUserId: msgUser,
-            });
-
-            const entryIdsValue = newEntryIds.join(",");
-            const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
-
-            if (thinkingMsg.ts) {
-              await updateMessage({
-                channel: msgChannel,
-                ts: thinkingMsg.ts,
-                ...confirmation,
-              });
-            } else {
-              await say({ ...confirmation, thread_ts: msgThreadTs });
-            }
-
-            // Retire the previous confirmation message so users don't click stale
-            // buttons that reference now-deleted unconfirmed entry IDs.
-            if (previousConfirmContext?.messageTs) {
-              try {
-                await updateMessage({
+                const thinkingMsg = await postMessage({
                   channel: msgChannel,
-                  ts: previousConfirmContext.messageTs,
-                  text: "Superseded by a newer edit below.",
-                  blocks: [],
+                  thread_ts: msgThreadTs,
+                  text: "Updating your entries...",
                 });
-              } catch (updateError) {
-                logger.warn(
-                  `[slack] Failed to retire prior confirmation: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
+
+                const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
+                const result = await withAiGenerationContext({ userId }, () =>
+                  refineNutritionItems(previousItems, msgText, localTime),
                 );
+
+                await repository.deleteUnconfirmed(previousEntryIds);
+                const confirmationMessageTs =
+                  thinkingMsg.ts ?? `fallback-refine-${msgThreadTs}-${Date.now()}`;
+                const newEntryIds = await repository.saveUnconfirmed(userId, date, result.items, {
+                  channelId: msgChannel,
+                  confirmationMessageTs,
+                  threadTs: msgThreadTs,
+                  sourceMessageTs: msgTs,
+                  slackUserId: msgUser,
+                });
+
+                const entryIdsValue = newEntryIds.join(",");
+                const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
+
+                if (thinkingMsg.ts) {
+                  await updateMessage({
+                    channel: msgChannel,
+                    ts: thinkingMsg.ts,
+                    ...confirmation,
+                  });
+                } else {
+                  await say({ ...confirmation, thread_ts: msgThreadTs });
+                }
+
+                // Retire the previous confirmation message so users don't click stale
+                // buttons that reference now-deleted unconfirmed entry IDs.
+                if (previousConfirmContext?.messageTs) {
+                  try {
+                    await updateMessage({
+                      channel: msgChannel,
+                      ts: previousConfirmContext.messageTs,
+                      text: "Superseded by a newer edit below.",
+                      blocks: [],
+                    });
+                  } catch (updateError) {
+                    captureSlackException(updateError, {
+                      channelId: msgChannel,
+                      eventType: "message",
+                      operation: "retire_superseded_confirmation",
+                      teamId: msgTeamId,
+                      threadTimestamp: msgThreadTs,
+                    });
+                    logger.warn(
+                      `[slack] Failed to retire prior confirmation: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
+                    );
+                  }
+                }
+                return;
               }
             }
+          } catch (error) {
+            const errorMessage = getErrorMessage(error);
+            logger.error(`[slack] Refinement failed: ${errorMessage}`);
+            captureSlackException(error, {
+              channelId: msgChannel,
+              eventType: "message",
+              operation: "nutrition_refinement",
+              teamId: msgTeamId,
+              threadTimestamp: msgThreadTs ?? msgTs,
+            });
+            await say({
+              text: "Sorry, I couldn't update those food entries. The edit was not saved. Please try again, or contact support if it keeps happening.",
+              thread_ts: msgThreadTs,
+            });
             return;
           }
         }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error(`[slack] Refinement failed: ${errorMessage}`);
-        await say({
-          text: `Sorry, I couldn't refine that.\n\`${errorMessage}\``,
-          thread_ts: msgThreadTs,
-        });
-        return;
-      }
-    }
 
-    // Top-level message — fresh analysis (reply in thread so user can refine)
-    logger.info(`[slack] Parsing food from ${msgUser}: "${msgText}"`);
+        // Top-level message — fresh analysis (reply in thread so user can refine)
+        logger.info(`[slack] Parsing food from ${msgUser}: "${msgText}"`);
 
-    const thinkingMsg = await postMessage({
-      channel: msgChannel,
-      thread_ts: msgTs,
-      text: "Analyzing what you ate...",
-    });
-
-    try {
-      const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-      const result = await analyzeNutritionItems(msgText, localTime);
-      const confirmationMessageTs = thinkingMsg.ts ?? `fallback-parse-${msgTs}-${Date.now()}`;
-      const entryIds = await repository.saveUnconfirmed(userId, date, result.items, {
-        channelId: msgChannel,
-        confirmationMessageTs,
-        threadTs: msgTs,
-        sourceMessageTs: msgTs,
-        slackUserId: msgUser,
-      });
-      const entryIdsValue = entryIds.join(",");
-      const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
-
-      if (thinkingMsg.ts) {
-        await updateMessage({
+        const thinkingMsg = await postMessage({
           channel: msgChannel,
-          ts: thinkingMsg.ts,
-          ...confirmation,
+          thread_ts: msgTs,
+          text: "Analyzing what you ate...",
         });
-      } else {
-        await say({ ...confirmation, thread_ts: msgTs });
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[slack] AI analysis failed: ${errorMessage}`);
 
-      const errorText = `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``;
-      if (thinkingMsg.ts) {
-        await updateMessage({
-          channel: msgChannel,
-          ts: thinkingMsg.ts,
-          text: errorText,
-          blocks: [],
-        });
-      } else {
-        await say({ text: errorText, thread_ts: msgTs });
-      }
-    }
+        try {
+          const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
+          const result = await withAiGenerationContext({ userId }, () =>
+            analyzeNutritionItems(msgText, localTime),
+          );
+          const confirmationMessageTs = thinkingMsg.ts ?? `fallback-parse-${msgTs}-${Date.now()}`;
+          const entryIds = await repository.saveUnconfirmed(userId, date, result.items, {
+            channelId: msgChannel,
+            confirmationMessageTs,
+            threadTs: msgTs,
+            sourceMessageTs: msgTs,
+            slackUserId: msgUser,
+          });
+          const entryIdsValue = entryIds.join(",");
+          const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
+
+          if (thinkingMsg.ts) {
+            await updateMessage({
+              channel: msgChannel,
+              ts: thinkingMsg.ts,
+              ...confirmation,
+            });
+          } else {
+            await say({ ...confirmation, thread_ts: msgTs });
+          }
+        } catch (error) {
+          const errorMessage = getErrorMessage(error);
+          logger.error(`[slack] AI analysis failed: ${errorMessage}`);
+          captureSlackException(error, {
+            channelId: msgChannel,
+            eventType: "message",
+            operation: "nutrition_analysis",
+            teamId: msgTeamId,
+            threadTimestamp: msgTs,
+          });
+
+          const errorText =
+            "Sorry, I couldn't parse that. Nothing was saved. Try describing what you ate with amounts, or contact support if it keeps happening.";
+          if (thinkingMsg.ts) {
+            await updateMessage({
+              channel: msgChannel,
+              ts: thinkingMsg.ts,
+              text: errorText,
+              blocks: [],
+            });
+          } else {
+            await say({ text: errorText, thread_ts: msgTs });
+          }
+        }
+      },
+    );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (isAccountErasureFenceRejection(error)) {
+      logger.error("[slack] Message processing rejected by account-erasure fence");
+      captureAccountErasureFenceRejection();
+      try {
+        await say({
+          text: "Sorry, I couldn't process that message. Nothing was saved. Please try again after account deletion completes.",
+          thread_ts: msgThreadTs ?? msgTs,
+        });
+      } catch {
+        logger.error("[slack] Failed to send account-erasure fence reply");
+        captureAccountErasureFenceReplyFailure();
+      }
+      return;
+    }
+    const errorMessage = getErrorMessage(error);
     logger.error(`[slack] Message handler failed: ${errorMessage}`);
+    if (isUserSafeSlackMessage(errorMessage)) {
+      await say({
+        text: errorMessage,
+        thread_ts: msgThreadTs ?? msgTs,
+      });
+      return;
+    }
+    captureSlackException(error, {
+      channelId: msgChannel,
+      eventType: "message",
+      operation: "message_processing",
+      teamId: msgTeamId,
+      threadTimestamp: msgThreadTs ?? msgTs,
+    });
     try {
       await say({
-        text: `Sorry, something went wrong.\n\`${errorMessage}\``,
+        text: "Sorry, I couldn't process that message. Nothing was saved. Please try again in a minute, or contact support if it keeps happening.",
         thread_ts: msgThreadTs ?? msgTs,
       });
     } catch (sayError) {
-      logger.error(
-        `[slack] Failed to send error reply: ${sayError instanceof Error ? sayError.message : String(sayError)}`,
-      );
+      logger.error(`[slack] Failed to send error reply: ${getErrorMessage(sayError)}`);
+      captureSlackException(sayError, {
+        channelId: msgChannel,
+        eventType: "message",
+        operation: "error_reply",
+        teamId: msgTeamId,
+        threadTimestamp: msgThreadTs ?? msgTs,
+      });
     }
   }
 }
@@ -407,6 +583,7 @@ export function registerHandlers(
       msgTs,
       msgChannel,
       msgThreadTs,
+      msgTeamId: extractSlackTeamId(body),
     });
   });
 
@@ -454,6 +631,7 @@ export function registerHandlers(
       msgTs: event.ts,
       msgChannel: event.channel,
       msgThreadTs: event.thread_ts,
+      msgTeamId: extractSlackTeamId(body),
     });
   });
 
@@ -493,8 +671,10 @@ export function registerHandlers(
       return;
     }
 
+    let confirmedEntriesSaved = false;
     try {
       const confirmation = await repository.confirm(entryIds);
+      confirmedEntriesSaved = true;
       const confirmedCount = confirmation.confirmedCount;
       logger.info(`[slack] confirmFoodEntries updated ${confirmedCount} rows`);
 
@@ -519,7 +699,25 @@ export function registerHandlers(
         calories: row.calories ?? 0,
       }));
 
-      const savedMessage = formatSavedMessage(items);
+      const confirmedDate = findSingleConfirmedDate(rows);
+      let dailyCalorieProgress: DailyCalorieProgress | null = null;
+      if (confirmation.userId && confirmedDate) {
+        try {
+          dailyCalorieProgress = await repository.loadDailyCalorieProgress(
+            confirmation.userId,
+            confirmedDate,
+          );
+        } catch (progressError) {
+          const progressErrorMessage = getErrorMessage(progressError);
+          logger.error(
+            `[slack] Failed to load daily calorie progress after confirm: ${progressErrorMessage}`,
+          );
+          captureException(
+            progressError instanceof Error ? progressError : new Error(progressErrorMessage),
+          );
+        }
+      }
+      const savedMessage = formatSavedMessage(items, dailyCalorieProgress);
 
       if (body.channel?.id && body.message?.ts) {
         await client.chat.update({
@@ -534,14 +732,23 @@ export function registerHandlers(
 
       logger.info(`[slack] Confirmed ${confirmedCount} food entries (${rows.length} total)`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       logger.error(`[slack] Failed to confirm food entries: ${errorMessage}`);
+      captureSlackException(error, {
+        channelId,
+        eventType: "action",
+        operation: "food_confirmation",
+        teamId: body.team?.id,
+        threadTimestamp: messageTs,
+      });
 
       if (body.channel?.id && body.message?.ts) {
         await client.chat.update({
           channel: body.channel.id,
           ts: body.message.ts,
-          text: `Failed to save: ${errorMessage}`,
+          text: confirmedEntriesSaved
+            ? "Saved those food entries, but I couldn't finish the follow-up update. Please refresh Dofek, or contact support if it looks wrong."
+            : "Failed to save those food entries. Nothing was saved. Please try confirming the latest parsed message again, or contact support if it keeps happening.",
           blocks: [],
         });
       }
@@ -596,7 +803,7 @@ export function registerHandlers(
         },
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       logger.error(`[slack] Failed to publish Home Tab: ${errorMessage}`);
     }
   });

@@ -1,3 +1,5 @@
+import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
+import { Link } from "@tanstack/react-router";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -9,19 +11,20 @@ type Tab =
   | "users"
   | "syncLogs"
   | "syncHealth"
+  | "rateLimits"
   | "activities"
   | "sleep"
   | "sessions"
   | "food"
   | "body"
   | "dailyMetrics"
-  | "tokens"
-  | "trainingExport";
+  | "tokens";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "users", label: "Users" },
   { id: "syncHealth", label: "Sync Health" },
+  { id: "rateLimits", label: "Rate Limits" },
   { id: "syncLogs", label: "Sync Logs" },
   { id: "activities", label: "Activities" },
   { id: "sleep", label: "Sleep" },
@@ -30,7 +33,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dailyMetrics", label: "Daily Metrics" },
   { id: "sessions", label: "Sessions" },
   { id: "tokens", label: "OAuth Tokens" },
-  { id: "trainingExport", label: "Training Export" },
 ];
 
 export function AdminPage() {
@@ -69,6 +71,7 @@ export function AdminPage() {
       {activeTab === "overview" && <OverviewTab />}
       {activeTab === "users" && <UsersTab />}
       {activeTab === "syncHealth" && <SyncHealthTab />}
+      {activeTab === "rateLimits" && <RateLimitsTab />}
       {activeTab === "syncLogs" && <SyncLogsTab />}
       {activeTab === "activities" && <ActivitiesTab />}
       {activeTab === "sleep" && <SleepTab />}
@@ -77,7 +80,6 @@ export function AdminPage() {
       {activeTab === "dailyMetrics" && <DailyMetricsTab />}
       {activeTab === "sessions" && <SessionsTab />}
       {activeTab === "tokens" && <TokensTab />}
-      {activeTab === "trainingExport" && <TrainingExportTab />}
     </PageLayout>
   );
 }
@@ -206,14 +208,30 @@ function ErrorState({ message }: { message: string }) {
 // ── Helper to format timestamps ──
 function formatTimestamp(timestamp: string | null | undefined): string {
   if (!timestamp) return "\u2014";
-  const date = new Date(timestamp);
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(timestamp);
+}
+
+function formatDurationMs(ms: number | null | undefined): string {
+  if (ms == null) return "\u2014";
+  if (ms < 1_000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  return `${(ms / 3_600_000).toFixed(1)}h`;
+}
+
+function formatQueueLimiter(max: number | null, durationMs: number | null): string {
+  if (max == null || durationMs == null) return "\u2014";
+  return `${max} / ${formatDurationMs(durationMs)}`;
+}
+
+function formatOptionalNumber(value: number | null | undefined): string {
+  if (value == null) return "\u2014";
+  return value.toLocaleString();
+}
+
+function formatStravaQuota(usage: number | null, limit: number | null): string {
+  if (usage == null || limit == null) return "\u2014";
+  return `${usage.toLocaleString()} / ${limit.toLocaleString()}`;
 }
 
 function ShortId({ id }: { id: string }) {
@@ -226,16 +244,13 @@ function ShortId({ id }: { id: string }) {
 
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return "\u2014";
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  return formatDurationSeconds(seconds);
 }
 
 // ── Tab: Overview ──
 
 function OverviewTab() {
   const { data, isLoading, error } = trpc.admin.overview.useQuery();
-  const refreshViews = trpc.admin.refreshViews.useMutation();
 
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message={error.message} />;
@@ -254,54 +269,6 @@ function OverviewTab() {
           ))}
         </div>
       </AdminCard>
-
-      <AdminCard title="Materialized Views">
-        <div className="p-4 space-y-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              disabled={refreshViews.isPending}
-              onClick={() => refreshViews.mutate()}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-accent/15 text-foreground hover:bg-accent/25 disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
-            >
-              {refreshViews.isPending ? "Refreshing..." : "Refresh All Views"}
-            </button>
-            {refreshViews.isSuccess && (
-              <span
-                className={`text-xs ${refreshViews.data.failed.length > 0 ? "text-amber-400" : "text-green-400"}`}
-              >
-                Refreshed {refreshViews.data.refreshed.length} views
-                {refreshViews.data.failed.length > 0 &&
-                  `, ${refreshViews.data.failed.length} failed`}
-              </span>
-            )}
-            {refreshViews.isError && (
-              <span className="text-xs text-red-400">{refreshViews.error.message}</span>
-            )}
-          </div>
-          {refreshViews.isSuccess && (
-            <div className="flex flex-wrap gap-1.5">
-              {refreshViews.data.refreshed.map((view) => (
-                <span
-                  key={view}
-                  className="px-2 py-0.5 rounded bg-green-500/10 text-green-400 text-xs font-mono"
-                >
-                  {view}
-                </span>
-              ))}
-              {refreshViews.data.failed.map(({ view, error }) => (
-                <span
-                  key={view}
-                  title={error}
-                  className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 text-xs font-mono"
-                >
-                  {view}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </AdminCard>
     </div>
   );
 }
@@ -310,7 +277,6 @@ function OverviewTab() {
 
 function UsersTab() {
   const { data, isLoading, error } = trpc.admin.users.useQuery();
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const trpcUtils = trpc.useUtils();
   const setAdminMutation = trpc.admin.setAdmin.useMutation({
     onSuccess: () => trpcUtils.admin.users.invalidate(),
@@ -319,7 +285,19 @@ function UsersTab() {
   const columns = useMemo<ColumnDef<NonNullable<typeof data>[number], unknown>[]>(
     () => [
       { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
-      { accessorKey: "name", header: "Name" },
+      {
+        id: "name",
+        header: "Name",
+        cell: ({ row }) => (
+          <Link
+            to="/admin/users/$userId"
+            params={{ userId: row.original.id }}
+            className="text-accent hover:underline"
+          >
+            {row.original.name}
+          </Link>
+        ),
+      },
       { id: "email", header: "Email", cell: ({ row }) => row.original.email ?? "\u2014" },
       {
         id: "is_admin",
@@ -347,19 +325,17 @@ function UsersTab() {
         id: "actions",
         header: "",
         cell: ({ row }) => (
-          <button
-            type="button"
-            onClick={() =>
-              setExpandedUserId(expandedUserId === row.original.id ? null : row.original.id)
-            }
-            className="text-accent hover:underline cursor-pointer"
+          <Link
+            to="/admin/users/$userId"
+            params={{ userId: row.original.id }}
+            className="text-accent hover:underline"
           >
-            {expandedUserId === row.original.id ? "Hide" : "Details"}
-          </button>
+            Details
+          </Link>
         ),
       },
     ],
-    [expandedUserId, setAdminMutation],
+    [setAdminMutation],
   );
 
   if (isLoading) return <LoadingState />;
@@ -369,66 +345,6 @@ function UsersTab() {
     <div className="space-y-4">
       <AdminCard title="All Users">
         <DataTable columns={columns} data={data ?? []} />
-      </AdminCard>
-      {expandedUserId && <UserDetailPanel userId={expandedUserId} />}
-    </div>
-  );
-}
-
-function UserDetailPanel({ userId }: { userId: string }) {
-  const { data, isLoading, error } = trpc.admin.userDetail.useQuery({ userId });
-
-  if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <AdminCard title="Auth Accounts">
-        {data?.accounts.length === 0 ? (
-          <p className="p-3 text-xs text-muted">No accounts</p>
-        ) : (
-          <div className="divide-y divide-border/50">
-            {data?.accounts.map((account) => (
-              <div key={account.id} className="p-3 text-xs space-y-1">
-                <div className="font-medium text-foreground">{account.auth_provider}</div>
-                <div className="text-muted">{account.email ?? account.provider_account_id}</div>
-                <div className="text-dim">{formatTimestamp(account.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </AdminCard>
-      <AdminCard title="Data Providers">
-        {data?.providers.length === 0 ? (
-          <p className="p-3 text-xs text-muted">No providers</p>
-        ) : (
-          <div className="divide-y divide-border/50">
-            {data?.providers.map((provider) => (
-              <div key={provider.id} className="p-3 text-xs space-y-1">
-                <div className="font-medium text-foreground">{provider.name}</div>
-                <div className="text-muted font-mono">{provider.id}</div>
-                <div className="text-dim">{formatTimestamp(provider.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </AdminCard>
-      <AdminCard title="Recent Sessions">
-        {data?.sessions.length === 0 ? (
-          <p className="p-3 text-xs text-muted">No sessions</p>
-        ) : (
-          <div className="divide-y divide-border/50">
-            {data?.sessions.map((session) => (
-              <div key={session.id} className="p-3 text-xs space-y-1">
-                <div className="font-mono text-muted">{session.id.slice(0, 16)}...</div>
-                <div className="text-dim">
-                  Created: {formatTimestamp(session.created_at)} — Expires:{" "}
-                  {formatTimestamp(session.expires_at)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </AdminCard>
     </div>
   );
@@ -485,6 +401,109 @@ function SyncHealthTab() {
     <AdminCard title="Sync Health (Last 7 Days)">
       <DataTable columns={columns} data={data ?? []} />
     </AdminCard>
+  );
+}
+
+// ── Tab: Rate Limits ──
+
+function RateLimitsTab() {
+  const { data, isLoading, error } = trpc.admin.rateLimits.useQuery(undefined, {
+    refetchInterval: 30_000,
+  });
+
+  if (isLoading) return <LoadingState />;
+  if (error) return <ErrorState message={error.message} />;
+
+  const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
+    { accessorKey: "providerId", header: "Provider" },
+    { accessorKey: "scope", header: "Scope" },
+    {
+      id: "userId",
+      header: "User",
+      cell: ({ row }) => {
+        const userId = row.original.userId;
+        if (!userId) return "\u2014";
+        return userId.length > 8 ? `${userId.slice(0, 8)}…` : userId;
+      },
+    },
+    {
+      id: "queueLimiter",
+      header: "Queue Limiter",
+      cell: ({ row }) =>
+        formatQueueLimiter(row.original.queueLimiterMax, row.original.queueLimiterDurationMs),
+    },
+    { accessorKey: "syncTier", header: "Sync Tier" },
+    {
+      id: "throttleMs",
+      header: "Throttle",
+      cell: ({ row }) => {
+        const throttleMs = row.original.throttleMs ?? row.original.defaultThrottleMs;
+        const isAdaptive = row.original.throttleMs != null;
+        return (
+          <span className={isAdaptive ? "text-amber-400" : "text-muted"}>
+            {formatDurationMs(throttleMs)}
+          </span>
+        );
+      },
+    },
+    {
+      id: "inferredBudget",
+      header: "Inferred Budget",
+      cell: ({ row }) => formatOptionalNumber(row.original.inferredBudget),
+    },
+    {
+      id: "requestCount",
+      header: "Requests (5m)",
+      cell: ({ row }) => formatOptionalNumber(row.original.requestCount),
+    },
+    {
+      id: "observedCooldownSeconds",
+      header: "Observed Cooldown",
+      cell: ({ row }) =>
+        row.original.observedCooldownSeconds == null
+          ? "\u2014"
+          : formatDurationSeconds(row.original.observedCooldownSeconds),
+    },
+    {
+      id: "cooldownExpiresAt",
+      header: "Active Cooldown",
+      cell: ({ row }) => {
+        const expiresAt = row.original.cooldownExpiresAt;
+        if (!expiresAt) return "\u2014";
+        return (
+          <span className="text-red-400 font-medium">
+            {formatTimestamp(expiresAt)}
+            {row.original.consecutiveHits != null && row.original.consecutiveHits > 1
+              ? ` (${row.original.consecutiveHits}x)`
+              : ""}
+          </span>
+        );
+      },
+    },
+    {
+      id: "stravaShort",
+      header: "Strava 15m",
+      cell: ({ row }) =>
+        formatStravaQuota(row.original.stravaShortUsage, row.original.stravaShortLimit),
+    },
+    {
+      id: "stravaDaily",
+      header: "Strava Daily",
+      cell: ({ row }) =>
+        formatStravaQuota(row.original.stravaDailyUsage, row.original.stravaDailyLimit),
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <AdminCard title="Provider Rate Limit Estimations">
+        <DataTable columns={columns} data={data ?? []} />
+      </AdminCard>
+      <p className="text-xs text-muted px-1">
+        Shows static queue limits plus live adaptive estimates from Redis. Refreshes every 30
+        seconds. User-scoped rows appear when adaptive state or an active cooldown exists.
+      </p>
+    </div>
   );
 }
 
@@ -567,9 +586,9 @@ function ActivitiesTab() {
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
     {
-      id: "activity_type",
+      id: "canonical_type",
       header: "Type",
-      cell: ({ row }) => row.original.activity_type ?? "\u2014",
+      cell: ({ row }) => row.original.canonical_type ?? "\u2014",
     },
     {
       id: "name",
@@ -906,70 +925,6 @@ function TokensTab() {
   return (
     <AdminCard title="OAuth Tokens (No Secrets)">
       <DataTable columns={columns} data={data ?? []} />
-    </AdminCard>
-  );
-}
-
-function TrainingExportTab() {
-  const { data: status, isLoading, error } = trpc.admin.trainingExportStatus.useQuery();
-  const trpcUtils = trpc.useUtils();
-  const triggerExport = trpc.admin.triggerTrainingExport.useMutation({
-    onSuccess: () => {
-      trpcUtils.admin.trainingExportStatus.invalidate();
-    },
-  });
-
-  if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
-
-  return (
-    <AdminCard title="Training Data Export">
-      <div className="space-y-4">
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            disabled={triggerExport.isPending}
-            onClick={() => triggerExport.mutate({})}
-          >
-            {triggerExport.isPending ? "Triggering..." : "Trigger Export"}
-          </button>
-          {triggerExport.isSuccess && (
-            <span className="text-sm text-green-600">
-              Export job queued (ID: {triggerExport.data.jobId})
-            </span>
-          )}
-          {triggerExport.isError && (
-            <span className="text-sm text-red-600">{triggerExport.error.message}</span>
-          )}
-        </div>
-
-        <h3 className="text-sm font-medium text-gray-700">Watermarks</h3>
-        {status?.watermarks.length === 0 ? (
-          <p className="text-sm text-gray-500">No exports yet</p>
-        ) : (
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-gray-500">
-                <th className="pb-2 pr-4">Table</th>
-                <th className="pb-2 pr-4">Last Exported</th>
-                <th className="pb-2 pr-4">Rows</th>
-                <th className="pb-2">Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status?.watermarks.map((watermark) => (
-                <tr key={watermark.table_name} className="border-b">
-                  <td className="py-2 pr-4 font-mono">{watermark.table_name}</td>
-                  <td className="py-2 pr-4">{watermark.last_exported_at}</td>
-                  <td className="py-2 pr-4">{watermark.row_count.toLocaleString()}</td>
-                  <td className="py-2">{watermark.updated_at}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
     </AdminCard>
   );
 }

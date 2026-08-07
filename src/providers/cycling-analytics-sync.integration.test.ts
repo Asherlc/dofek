@@ -2,11 +2,14 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Fake Cycling Analytics API responses
@@ -59,7 +62,10 @@ function fakeRide(overrides: FakeRideOverrides = {}) {
   };
 }
 
-function cyclingAnalyticsHandlers(pages: Array<Array<ReturnType<typeof fakeRide>>>) {
+function cyclingAnalyticsHandlers(
+  pages: Array<Array<ReturnType<typeof fakeRide>>>,
+  opts?: { onRideRequest?: (page: number) => void },
+) {
   let pageIndex = 0;
 
   return [
@@ -73,7 +79,9 @@ function cyclingAnalyticsHandlers(pages: Array<Array<ReturnType<typeof fakeRide>
     }),
 
     // Rides list (paginated)
-    http.get("https://www.cyclinganalytics.com/api/me/rides", () => {
+    http.get("https://www.cyclinganalytics.com/api/me/rides", ({ request }) => {
+      const url = new URL(request.url);
+      opts?.onRideRequest?.(Number.parseInt(url.searchParams.get("page") ?? "0", 10));
       const rides = pages[pageIndex] ?? [];
       pageIndex++;
       return HttpResponse.json({ rides });
@@ -124,7 +132,12 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([rides]));
 
     const provider = new CyclingAnalyticsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("cycling_analytics");
     expect(result.recordsSynced).toBe(2);
@@ -139,7 +152,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
 
     const ride1 = rows.find((r) => r.externalId === "5001");
     if (!ride1) throw new Error("expected ride 5001");
-    expect(ride1.activityType).toBe("cycling");
+    expect(ride1.canonicalType).toBe("cycling");
     expect(ride1.name).toBe("Morning Ride");
 
     const ride2 = rows.find((r) => r.externalId === "5002");
@@ -160,14 +173,24 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([rides]));
 
     const provider = new CyclingAnalyticsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again — should upsert, not duplicate
     server.resetHandlers();
     server.use(...cyclingAnalyticsHandlers([rides]));
 
     const provider2 = new CyclingAnalyticsProvider();
-    await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider2.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db
       .select()
@@ -196,10 +219,50 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([page1, page2, page3]));
 
     const provider = new CyclingAnalyticsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(3);
     expect(result.errors).toHaveLength(0);
+    expect(result.degradations).toEqual([]);
+  });
+
+  it("reports max-page degradation at the exact page guard", async () => {
+    await saveTokens(ctx.db, "cycling_analytics", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const requestedPages: number[] = [];
+    const pages = Array.from({ length: 101 }, (_, index) => [
+      fakeRide({ id: 6100 + index, date: "2026-04-01T08:00:00Z" }),
+    ]);
+
+    server.use(
+      ...cyclingAnalyticsHandlers(pages, {
+        onRideRequest: (page) => requestedPages.push(page),
+      }),
+    );
+
+    const provider = new CyclingAnalyticsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(100);
+    expect(result.degradations?.[0]?.kind).toBe("pagination_max_pages_exceeded");
+    expect(requestedPages).toHaveLength(100);
+    expect(requestedPages[0]).toBe(0);
+    expect(requestedPages.at(-1)).toBe(99);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {
@@ -213,7 +276,12 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([[]]));
 
     const provider = new CyclingAnalyticsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "cycling_analytics");
@@ -224,7 +292,12 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "cycling_analytics"));
 
     const provider = new CyclingAnalyticsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");

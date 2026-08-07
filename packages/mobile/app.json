@@ -9,7 +9,7 @@
       "url": "https://ota.dofek.asherlc.com/manifest",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 5000,
+      "fallbackToCacheTimeout": 0,
       "codeSigningCertificate": "./certs/certificate.pem",
       "codeSigningMetadata": {
         "keyid": "main",
@@ -22,23 +22,19 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dofek.app",
       "usesAppleSignIn": true,
-      "deploymentTarget": "16.0",
+      "deploymentTarget": "16.4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "Dofek reads your health data to sync workouts, heart rate, sleep, and body metrics to your personal dashboard.",
         "NSHealthUpdateUsageDescription": "Dofek writes dietary data back to Apple Health so your nutrition is tracked alongside activity data.",
         "NSHealthClinicalHealthRecordsShareUsageDescription": "Dofek reads your clinical health records (like lab results) to provide a complete picture of your health.",
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
-        "NSBluetoothAlwaysUsageDescription": "Dofek connects to your WHOOP strap via Bluetooth to record accelerometer data during workouts.",
+        "NSBluetoothAlwaysUsageDescription": "Dofek connects to Bluetooth heart-rate monitors to record your heart rate during workouts.",
+        "NSUserNotificationsUsageDescription": "Dofek sends optional local medication reminders you enable in Settings.",
         "UIBackgroundModes": ["bluetooth-central", "fetch", "location"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
         "LSSupportsOpeningDocumentsInPlace": false,
@@ -65,6 +61,17 @@
     "plugins": [
       "expo-router",
       [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1a2e1a",
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "ios": {
+            "enableFullScreenImage_legacy": true
+          }
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Dofek uses the camera to scan food barcodes."
@@ -75,7 +82,13 @@
         {
           "locationWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance.",
           "locationAlwaysAndWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance, even when the app is in the background.",
-          "isIosBackgroundLocationEnabled": false
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": false
         }
       ],
       [
@@ -85,7 +98,6 @@
           "project": "dofek-mobile",
           "useNativeInit": true,
           "options": {
-            "dsn": "https://42c67c5933a945408e9e164e045c2811@ebsoftware.bugsink.com/3",
             "enableMetricKit": true,
             "enableMetricKitRawPayload": true
           }
@@ -95,7 +107,7 @@
         "expo-build-properties",
         {
           "ios": {
-            "deploymentTarget": "16.0",
+            "deploymentTarget": "16.4",
             "extraPods": [
               {
                 "name": "ExpoHealthKit",
@@ -112,13 +124,19 @@
               {
                 "name": "ExpoWhoopBle",
                 "path": "../modules/whoop-ble/ios"
+              },
+              {
+                "name": "ExpoBleHeartRate",
+                "path": "../modules/ble-heart-rate/ios"
               }
             ]
           }
         }
       ],
+      "expo-sharing",
+      "expo-web-browser",
       "@bacons/apple-targets",
-      "./plugins/with-podfile-post-install"
+      "./plugins/with-ios-pod-settings"
     ]
   }
 }

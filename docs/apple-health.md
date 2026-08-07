@@ -19,7 +19,7 @@ The `export.xml` can be 1GB+ for users with years of data. We use a SAX streamin
 
 **Date format**: `"2024-03-01 10:30:00 -0500"` (not ISO 8601). Parse with `new Date(str)` which handles this format.
 
-**Daily aggregation boundary**: For `daily_metrics` and `nutrition_daily`, always use the source calendar day from the raw Apple Health timestamp string (`YYYY-MM-DD`) rather than `toISOString().slice(0, 10)`. Converting through UTC can shift near-midnight local records into the next/previous day and make dashboard daily charts appear empty or delayed.
+**Daily aggregation boundary**: For `daily_metrics` and unnamed nutrition `food_entry` rows, always use the source calendar day from the raw Apple Health timestamp string (`YYYY-MM-DD`) rather than `toISOString().slice(0, 10)`. Converting through UTC can shift near-midnight local records into the next/previous day and make dashboard daily charts appear empty or delayed.
 
 ### Record Elements
 
@@ -30,9 +30,13 @@ The `export.xml` can be 1GB+ for users with years of data. We use a SAX streamin
 ```
 
 We parse records into:
-- **body_measurement**: Weight, body fat, BMI, blood pressure, temperature
-- **metric_stream**: Heart rate, respiratory rate, SpO2, HRV
+- **metric_stream**: Heart rate, respiratory rate, SpO2, HRV, weight, body fat, BMI, blood pressure, temperature
 - **daily_metrics**: Steps, active/basal energy, resting HR, VO2max
+
+Heart-rate rows are not backfilled with `metric_stream.activity_id` after
+insert. Activity sensor read models associate Apple Health samples to workouts
+by user and workout time window. This avoids mutating Timescale chunks for a
+derived relationship while preserving the raw sensor rows.
 
 ### ClinicalRecord Elements
 
@@ -100,6 +104,25 @@ A single export may contain records from multiple health systems (e.g., UCSF Hea
 
 As of migration `0037`, the `apple_health_kit` provider ID (iOS HealthKit live sync) was consolidated into `apple_health` (XML export import). Both are ingestion paths for the same Apple Watch data, so they now share a single provider ID. The migration merges overlapping `daily_metrics` rows with `COALESCE`, preferring XML export values.
 
+## Mobile Nutrition Write-Back
+
+The iOS app writes direct Dofek food entries back to Apple Health as dietary energy, protein, carbohydrates, and total fat. The server endpoint filters this export to confirmed `provider_id = 'dofek'` rows, so nutrition imported or synced from Apple Health, Cronometer, Slack, and other providers is never written back to Apple Health.
+
+Mobile stores a local fingerprint ledger for each written food entry. If a direct Dofek entry changes, the app deletes prior Dofek-written HealthKit samples by their HealthKit sync identifiers before writing the replacement samples.
+
+Apple Health nutrition imports store each dietary quantity sample as an unnamed
+`daily_aggregate` `fitness.food_entry` with source/timestamp metadata plus one
+`fitness.food_entry_nutrient` row. Apple documents quantity samples as numeric
+values with units and sample timestamps/source metadata:
+[`HKQuantitySample`](https://developer.apple.com/documentation/healthkit/hkquantitysample),
+[`HKSample`](https://developer.apple.com/documentation/healthkit/hksample), and
+[`HKSourceRevision`](https://developer.apple.com/documentation/healthkit/hksourcerevision).
+Raw per-provider totals remain available through
+`fitness.v_nutrition_provider_daily`; application totals use
+`fitness.v_nutrition_daily`, which excludes an overlapping aggregate when one
+clear itemized source exists and reports other ambiguous overlaps instead of
+summing them.
+
 ## Workout Source Attribution
 
 Apple Health workouts can preserve the upstream app name inside the workout JSON (`raw.sourceName`) even when the canonical `source_name` column is null. In production this is how workouts imported through Apple Health can still identify apps like Strong or WHOOP on the activity detail page.
@@ -117,7 +140,7 @@ To avoid this inflation, both ingestion paths (XML import and iOS HealthKit sync
 ### CLI
 
 ```bash
-./scripts/with-env.sh tsx src/index.ts import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]
+pnpm tsx scripts/with-env.ts -- tsx src/index.ts import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]
 ```
 
 ### Backpressure

@@ -1,16 +1,15 @@
-import { TrainerRoadClient } from "trainerroad-client/client";
-import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
-import type { SyncDatabase } from "../db/index.ts";
-import { activity } from "../db/schema.ts";
+import { TrainerRoadClient } from "@dofek/trainerroad/client";
+import { parseTrainerRoadActivity } from "@dofek/trainerroad/parsing";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { ProviderSessionExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 const TRAINERROAD_BASE = "https://www.trainerroad.com";
 
@@ -32,7 +31,7 @@ export class TrainerRoadProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("trainerroad", fetchFn);
   }
 
   validate(): string | null {
@@ -46,13 +45,6 @@ export class TrainerRoadProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: "",
-        authorizeUrl: `${TRAINERROAD_BASE}/app/login`,
-        tokenUrl: `${TRAINERROAD_BASE}/app/login`,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await TrainerRoadClient.signIn(email, password, fetchFn);
         return {
@@ -63,13 +55,11 @@ export class TrainerRoadProvider implements SyncProvider {
           scopes: `username:${result.username}`,
         };
       },
-      exchangeCode: async () => {
-        throw new Error("TrainerRoad uses automated login, not OAuth code exchange");
-      },
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -84,15 +74,16 @@ export class TrainerRoadProvider implements SyncProvider {
         throw new Error("TrainerRoad not connected — authenticate via the web UI");
       }
 
-      const usernameMatch = stored.scopes?.match(/username:(\S+)/);
-      username = usernameMatch?.[1] ?? "";
+      const usernamePrefix = "username:";
+      const scope = stored.scopes ?? "";
+      username = scope.startsWith(usernamePrefix) ? scope.slice(usernamePrefix.length) : "";
       if (!username) {
-        throw new Error("TrainerRoad username not found — re-authenticate");
+        throw new ProviderStoredIdentityMissingError("TrainerRoad", "username");
       }
 
       // TrainerRoad cookies expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error("TrainerRoad session expired — please re-authenticate via Settings");
+        throw new ProviderSessionExpiredError("TrainerRoad");
       }
       client = new TrainerRoadClient(stored.accessToken, this.#fetchFn);
     } catch (err) {
@@ -101,6 +92,9 @@ export class TrainerRoadProvider implements SyncProvider {
     }
 
     // Sync activities
+    const since = window.since;
+    const syncWindowEnd = window.until;
+    const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
         db,
@@ -109,16 +103,17 @@ export class TrainerRoadProvider implements SyncProvider {
         async () => {
           let count = 0;
           const sinceDate = formatDate(since);
-          const toDate = formatDate(new Date());
+          const toDate = formatDate(syncWindowEnd);
 
           const activities = await client.getActivities(username, sinceDate, toDate);
 
           for (const raw of activities) {
             const parsed = parseTrainerRoadActivity(raw);
+            presentActivityExternalIds.add(parsed.externalId);
             try {
-              await db
-                .insert(activity)
-                .values({
+              await upsertProviderActivity(
+                db,
+                {
                   providerId: this.id,
                   externalId: parsed.externalId,
                   activityType: parsed.activityType,
@@ -126,17 +121,15 @@ export class TrainerRoadProvider implements SyncProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                });
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
               count++;
             } catch (err) {
               errors.push({
@@ -147,6 +140,13 @@ export class TrainerRoadProvider implements SyncProvider {
             }
           }
 
+          await finishProviderActivityListSync(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

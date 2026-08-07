@@ -1,0 +1,52 @@
+min_version = "2026.7.15"
+
+[tools]
+node = "26.5.0"
+"npm:pnpm" = "11.17.0"
+python = "3.12.13"
+uv = "0.11.32" # Keep in sync with uv.toml required-version.
+infisical = "0.43.114"
+cmake = "4.4.0"
+ninja = "1.13.2"
+gh = "2.96.0"
+jq = "1.8.2"
+"github:colbymchenry/codegraph" = "1.5.0"
+"github:rtk-ai/rtk" = "0.44.0"
+
+[tasks.dependencies]
+description = "Install frozen pnpm dependencies"
+hide = true
+run = "pnpm install --frozen-lockfile"
+
+[tasks."cloud:prebuild"]
+description = "Install dependencies and initialize agent tooling"
+depends = ["dependencies"]
+run = "pnpm tsx scripts/dev-environment.ts prebuild"
+
+[tasks."cloud:start"]
+description = "Start local services and initialize databases"
+depends = ["cloud:prebuild"]
+run = "pnpm tsx scripts/dev-environment.ts start"
+
+[tasks."cloud:init"]
+description = "Prepare a complete cloud development environment"
+run = [
+  { task = "cloud:prebuild" },
+  { task = "cloud:start" },
+]
+
+[tasks."test:sandbox"]
+description = "Run the checks that need no Docker-backed services"
+run = [
+  "pnpm --recursive --include-workspace-root --if-present typecheck",
+  "pnpm lint:sandbox",
+  "pnpm test",
+]
+
+[tasks.doctor]
+description = "Verify the complete development environment"
+run = "pnpm tsx scripts/dev-environment.ts doctor"
+
+[tasks."agent:codex"]
+description = "Enable RTK instructions for Codex in the current environment"
+run = "rtk init --global --codex"

@@ -1,16 +1,104 @@
 {
   "name": "@dofek/scoring",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.1",
+  "description": "Platform-agnostic health scoring models, labels, colors, and design tokens",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/scoring"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/scoring#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "health",
+    "fitness",
+    "scoring",
+    "recovery",
+    "strain",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     "./scoring": "./src/scoring.ts",
     "./colors": "./src/colors.ts",
     "./tokens": "./src/tokens.ts",
     "./strain-target": "./src/strain-target.ts",
+    "./today-plan": "./src/today-plan.ts",
+    "./epistemic-status": "./src/epistemic-status.ts",
     "./sleep-performance": "./src/sleep-performance.ts",
     "./healthspan-years": "./src/healthspan-years.ts",
     "./menstrual-cycle": "./src/menstrual-cycle.ts",
-    "./breathwork": "./src/breathwork.ts"
+    "./breathwork": "./src/breathwork.ts",
+    "./loading-policy": "./src/loading-policy.ts",
+    "./query-cache": "./src/query-cache.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./scoring": {
+        "types": "./dist/scoring.d.ts",
+        "import": "./dist/scoring.js"
+      },
+      "./colors": {
+        "types": "./dist/colors.d.ts",
+        "import": "./dist/colors.js"
+      },
+      "./tokens": {
+        "types": "./dist/tokens.d.ts",
+        "import": "./dist/tokens.js"
+      },
+      "./strain-target": {
+        "types": "./dist/strain-target.d.ts",
+        "import": "./dist/strain-target.js"
+      },
+      "./today-plan": {
+        "types": "./dist/today-plan.d.ts",
+        "import": "./dist/today-plan.js"
+      },
+      "./epistemic-status": {
+        "types": "./dist/epistemic-status.d.ts",
+        "import": "./dist/epistemic-status.js"
+      },
+      "./sleep-performance": {
+        "types": "./dist/sleep-performance.d.ts",
+        "import": "./dist/sleep-performance.js"
+      },
+      "./healthspan-years": {
+        "types": "./dist/healthspan-years.d.ts",
+        "import": "./dist/healthspan-years.js"
+      },
+      "./menstrual-cycle": {
+        "types": "./dist/menstrual-cycle.d.ts",
+        "import": "./dist/menstrual-cycle.js"
+      },
+      "./breathwork": {
+        "types": "./dist/breathwork.d.ts",
+        "import": "./dist/breathwork.js"
+      },
+      "./loading-policy": {
+        "types": "./dist/loading-policy.d.ts",
+        "import": "./dist/loading-policy.js"
+      },
+      "./query-cache": {
+        "types": "./dist/query-cache.d.ts",
+        "import": "./dist/query-cache.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit"
   }
 }

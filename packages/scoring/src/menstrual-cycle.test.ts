@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { type CyclePhase, computePhase } from "./menstrual-cycle.ts";
+import { CYCLE_TRACKING_SAFETY_NOTICE, type CyclePhase, computePhase } from "./menstrual-cycle.ts";
+
+describe("CYCLE_TRACKING_SAFETY_NOTICE", () => {
+  it("defines the shared tracking-only boundary", () => {
+    expect(CYCLE_TRACKING_SAFETY_NOTICE).toBe(
+      "Tracking estimates only. Do not use for birth control or diagnosis.",
+    );
+  });
+});
 
 describe("computePhase", () => {
   it("returns menstrual phase for days 1-5", () => {

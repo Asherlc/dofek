@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { parseHealthDate } from "./dates.ts";
+import { extractCalendarDay, parseHealthDate } from "./dates.ts";
 import { parseCategoryRecord, parseRecord, parseRouteLocation } from "./records.ts";
 import { parseSleepAnalysis } from "./sleep.ts";
 import {
   enrichWorkoutFromStats,
   type HealthWorkout,
-  parseActivitySummary,
   parseWorkout,
   parseWorkoutStatistics,
+  type WorkoutStatistics,
 } from "./workouts.ts";
 
 // ============================================================
@@ -198,8 +198,6 @@ const workoutAttrs: Record<string, string> = {
   durationUnit: "min",
   totalDistance: "5200",
   totalDistanceUnit: "m",
-  totalEnergyBurned: "320.5",
-  totalEnergyBurnedUnit: "kcal",
   sourceName: "Apple Watch",
   sourceVersion: "11.0",
   creationDate: "2024-03-01 18:30:00 -0500",
@@ -284,8 +282,8 @@ describe("Apple Health Provider -- parsing", () => {
 
     it("parses Apple Health date format with timezone", () => {
       const result = parseRecord(heartRateAttrs);
-      // "2024-03-01 10:30:00 -0500" should parse correctly
       expect(result?.startDate.getTime()).not.toBeNaN();
+      expect(result?.startDateCalendarDay).toBe("2024-03-01");
     });
   });
 
@@ -345,7 +343,11 @@ describe("Apple Health Provider -- parsing", () => {
         },
       );
 
-      expect(result.activityType).toBe("hangboard");
+      expect(result.activityType).toEqual({
+        canonicalType: "hangboard",
+        providerType: "Hang Ten",
+        modality: null,
+      });
       expect(result.sourceName).toBe("Hang Ten");
       expect(result.hangTen).toMatchObject({
         sessionId: "11111111-1111-4111-8111-111111111111",
@@ -366,12 +368,133 @@ describe("Apple Health Provider -- parsing", () => {
       ]);
     });
 
+    it("ignores Hang Ten metadata for non-functional-strength workouts", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeRunning",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+        },
+      );
+
+      expect(result.activityType.canonicalType).toBe("running");
+      expect(result.hangTen).toBeUndefined();
+    });
+
+    it.each([undefined, "", "   "])("ignores Hang Ten metadata when PlanName is %s", (planName) => {
+      const metadata: Record<string, string> = {
+        HKMetadataKeyWorkoutBrandName: "Hang Ten",
+      };
+      if (planName !== undefined) metadata["HangTen.PlanName"] = planName;
+
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        metadata,
+      );
+
+      expect(result.activityType).toEqual({
+        canonicalType: "strength",
+        providerType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+        modality: "functional",
+      });
+      expect(result.hangTen).toBeUndefined();
+    });
+
+    it("reports malformed Hang Ten activity segment JSON", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          duration: "10",
+          durationUnit: "min",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": "{not json",
+        },
+      );
+
+      expect(result.activityType.canonicalType).toBe("hangboard");
+      expect(result.hangTen?.rawActivitySegments).toBe("{not json");
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toContain(
+        "Invalid Hang Ten activity segments JSON",
+      );
+    });
+
+    it("reports empty Hang Ten activity segment JSON", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": "",
+        },
+      );
+
+      expect(result.hangTen?.rawActivitySegments).toBe("");
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toContain(
+        "Invalid Hang Ten activity segments JSON",
+      );
+    });
+
+    it("reports structurally invalid Hang Ten activity segment JSON", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": '{"segments":[{"stepID":"step-1"}]}',
+        },
+      );
+
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toBe(
+        "Invalid Hang Ten activity segments JSON: segment metadata has invalid fields",
+      );
+    });
+
+    it("requires the exact Hang Ten brand metadata value", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: " Hang Ten ",
+          "HangTen.PlanName": "Max Hangs",
+        },
+      );
+
+      expect(result.activityType.canonicalType).toBe("strength");
+      expect(result.hangTen).toBeUndefined();
+    });
+
     it("parses workout attributes", () => {
       const result = parseWorkout(workoutAttrs);
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.durationSeconds).toBeCloseTo(1830); // 30.5 min
       expect(result.distanceMeters).toBe(5200);
-      expect(result.calories).toBe(321); // rounded
       expect(result.sourceName).toBe("Apple Watch");
       expect(result.startDate).toBeInstanceOf(Date);
       expect(result.endDate).toBeInstanceOf(Date);
@@ -382,25 +505,72 @@ describe("Apple Health Provider -- parsing", () => {
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeRunning",
       });
-      expect(running.activityType).toBe("running");
+      expect(running.activityType.canonicalType).toBe("running");
 
       const cycling = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeCycling",
       });
-      expect(cycling.activityType).toBe("cycling");
+      expect(cycling.activityType.canonicalType).toBe("cycling");
 
       const swimming = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeSwimming",
       });
-      expect(swimming.activityType).toBe("swimming");
+      expect(swimming.activityType.canonicalType).toBe("swimming");
 
       const hiking = parseWorkout({
         ...workoutAttrs,
         workoutActivityType: "HKWorkoutActivityTypeHiking",
       });
-      expect(hiking.activityType).toBe("hiking");
+      expect(hiking.activityType.canonicalType).toBe("hiking");
+
+      const yoga = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeYoga",
+      });
+      expect(yoga.activityType.canonicalType).toBe("yoga");
+
+      const rowing = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeRowing",
+      });
+      expect(rowing.activityType.canonicalType).toBe("rowing");
+
+      const elliptical = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeElliptical",
+      });
+      expect(elliptical.activityType.canonicalType).toBe("elliptical");
+
+      const hiit = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeHighIntensityIntervalTraining",
+      });
+      expect(hiit.activityType.canonicalType).toBe("hiit");
+
+      const strength = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeTraditionalStrengthTraining",
+      });
+      expect(strength.activityType.canonicalType).toBe("strength");
+    });
+
+    it("parses a cycling workout with unit conversions", () => {
+      const workout = parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeCycling",
+        sourceName: "Apple Watch",
+        duration: "60",
+        durationUnit: "min",
+        totalDistance: "30",
+        totalDistanceUnit: "km",
+        startDate: "2024-03-01 08:00:00 -0500",
+        endDate: "2024-03-01 09:00:00 -0500",
+      });
+      expect(workout.activityType.canonicalType).toBe("cycling");
+      expect(workout.durationSeconds).toBe(3600);
+      expect(workout.distanceMeters).toBe(30000);
+      expect(workout.sourceName).toBe("Apple Watch");
     });
 
     it("handles missing optional fields", () => {
@@ -414,41 +584,8 @@ describe("Apple Health Provider -- parsing", () => {
         endDate: "2024-03-01 18:10:00 -0500",
       };
       const result = parseWorkout(minimal);
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.distanceMeters).toBeUndefined();
-      expect(result.calories).toBeUndefined();
-    });
-  });
-
-  describe("parseActivitySummary", () => {
-    it("parses daily activity ring data", () => {
-      const attrs: Record<string, string> = {
-        dateComponents: "2024-03-01",
-        activeEnergyBurned: "523.4",
-        activeEnergyBurnedGoal: "600",
-        activeEnergyBurnedUnit: "kcal",
-        appleExerciseTime: "45",
-        appleExerciseTimeGoal: "30",
-        appleStandHours: "12",
-        appleStandHoursGoal: "12",
-      };
-      const result = parseActivitySummary(attrs);
-      expect(result).not.toBeNull();
-      expect(result?.date).toBe("2024-03-01");
-      expect(result?.activeEnergyBurned).toBeCloseTo(523.4);
-      expect(result?.appleExerciseMinutes).toBe(45);
-      expect(result?.appleStandHours).toBe(12);
-    });
-
-    it("returns null without dateComponents", () => {
-      const result = parseActivitySummary({});
-      expect(result).toBeNull();
-    });
-
-    it("handles missing optional fields", () => {
-      const result = parseActivitySummary({ dateComponents: "2024-03-01" });
-      expect(result?.activeEnergyBurned).toBeUndefined();
-      expect(result?.appleExerciseMinutes).toBeUndefined();
     });
   });
 
@@ -458,6 +595,7 @@ describe("Apple Health Provider -- parsing", () => {
         type: "HKQuantityTypeIdentifierHeartRate",
         startDate: "2024-03-01 18:00:00 -0500",
         endDate: "2024-03-01 18:30:00 -0500",
+        sum: "14400",
         average: "145",
         minimum: "120",
         maximum: "175",
@@ -466,6 +604,7 @@ describe("Apple Health Provider -- parsing", () => {
       const result = parseWorkoutStatistics(attrs);
       expect(result).not.toBeNull();
       expect(result?.type).toBe("HKQuantityTypeIdentifierHeartRate");
+      expect(result?.sum).toBe(14400);
       expect(result?.average).toBe(145);
       expect(result?.minimum).toBe(120);
       expect(result?.maximum).toBe(175);
@@ -489,43 +628,20 @@ describe("Apple Health Provider -- parsing", () => {
       expect(workout.maxHeartRate).toBe(182);
     });
 
-    it("enriches workout calories from ActiveEnergyBurned", () => {
-      const minimal: Record<string, string> = {
-        workoutActivityType: "HKWorkoutActivityTypeRunning",
-        duration: "30",
-        durationUnit: "min",
-        sourceName: "Apple Watch",
-        creationDate: "2024-03-01 18:00:00 -0500",
-        startDate: "2024-03-01 18:00:00 -0500",
-        endDate: "2024-03-01 18:30:00 -0500",
-      };
-      const workout = parseWorkout(minimal);
-      expect(workout.calories).toBeUndefined();
+    it("enriches workout with heart rate stats using typed statistics", () => {
+      const workout = parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeCycling",
+        startDate: "2024-03-01 08:00:00 -0500",
+        endDate: "2024-03-01 09:00:00 -0500",
+      });
 
-      enrichWorkoutFromStats(workout, [
-        {
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          sum: 312.7,
-          unit: "kcal",
-        },
-      ]);
+      const stats: WorkoutStatistics[] = [
+        { type: "HKQuantityTypeIdentifierHeartRate", average: 150.4, maximum: 185.7 },
+      ];
 
-      expect(workout.calories).toBe(313);
-    });
-
-    it("does not overwrite existing calories from workout attributes", () => {
-      const workout = parseWorkout(workoutAttrs);
-      const originalCalories = workout.calories;
-
-      enrichWorkoutFromStats(workout, [
-        {
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          sum: 999,
-          unit: "kcal",
-        },
-      ]);
-
-      expect(workout.calories).toBe(originalCalories);
+      enrichWorkoutFromStats(workout, stats);
+      expect(workout.avgHeartRate).toBe(150);
+      expect(workout.maxHeartRate).toBe(186);
     });
   });
 
@@ -749,13 +865,13 @@ describe("parseHealthDate -- edge cases", () => {
   it("parses standard Apple Health format", () => {
     const date = parseHealthDate("2024-03-01 10:30:00 -0500");
     expect(date).toBeInstanceOf(Date);
-    expect(date.getTime()).not.toBeNaN();
+    expect(date.toISOString()).toBe("2024-03-01T15:30:00.000Z");
   });
 
   it("falls back to Date constructor for non-standard format", () => {
     const date = parseHealthDate("2024-03-01T10:30:00Z");
     expect(date).toBeInstanceOf(Date);
-    expect(date.getTime()).not.toBeNaN();
+    expect(date.toISOString()).toBe("2024-03-01T10:30:00.000Z");
   });
 
   it("handles positive timezone offset", () => {
@@ -764,9 +880,28 @@ describe("parseHealthDate -- edge cases", () => {
     expect(date.getTime()).not.toBeNaN();
   });
 
+  it("parses positive timezone offset with exact UTC conversion", () => {
+    const date = parseHealthDate("2024-06-15 14:00:00 +0200");
+    expect(date.toISOString()).toBe("2024-06-15T12:00:00.000Z");
+  });
+
   it("handles empty string gracefully", () => {
     const date = parseHealthDate("");
     expect(date).toBeInstanceOf(Date);
+  });
+});
+
+describe("extractCalendarDay", () => {
+  it("extracts day from Apple Health date format", () => {
+    expect(extractCalendarDay("2024-03-01 23:30:00 -0800")).toBe("2024-03-01");
+  });
+
+  it("extracts day from ISO timestamp", () => {
+    expect(extractCalendarDay("2024-03-01T23:30:00-08:00")).toBe("2024-03-01");
+  });
+
+  it("returns null for invalid date strings", () => {
+    expect(extractCalendarDay("not-a-date")).toBeNull();
   });
 });
 
@@ -947,7 +1082,7 @@ describe("parseWorkout -- distance and duration unit conversions", () => {
       startDate: "2024-03-01 18:00:00 -0500",
       endDate: "2024-03-01 18:30:00 -0500",
     });
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 
   it("defaults to 'other' for HKWorkoutActivityTypeOther", () => {
@@ -959,7 +1094,7 @@ describe("parseWorkout -- distance and duration unit conversions", () => {
       startDate: "2024-03-01 18:00:00 -0500",
       endDate: "2024-03-01 18:30:00 -0500",
     });
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 
   it("defaults to 'other' when workoutActivityType is missing", () => {
@@ -970,7 +1105,7 @@ describe("parseWorkout -- distance and duration unit conversions", () => {
       startDate: "2024-03-01 18:00:00 -0500",
       endDate: "2024-03-01 18:30:00 -0500",
     });
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 });
 
@@ -1000,7 +1135,11 @@ describe("parseWorkoutStatistics -- edge cases", () => {
 describe("enrichWorkoutFromStats -- edge cases", () => {
   it("does not modify workout for unrecognized stat types", () => {
     const workout: HealthWorkout = {
-      activityType: "running",
+      activityType: {
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
+      },
       sourceName: "Apple Watch",
       durationSeconds: 1800,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -1017,12 +1156,15 @@ describe("enrichWorkoutFromStats -- edge cases", () => {
 
     expect(workout.avgHeartRate).toBeUndefined();
     expect(workout.maxHeartRate).toBeUndefined();
-    expect(workout.calories).toBeUndefined();
   });
 
   it("handles empty stats array", () => {
     const workout: HealthWorkout = {
-      activityType: "running",
+      activityType: {
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
+      },
       sourceName: "Apple Watch",
       durationSeconds: 1800,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -1033,22 +1175,6 @@ describe("enrichWorkoutFromStats -- edge cases", () => {
 
     expect(workout.avgHeartRate).toBeUndefined();
     expect(workout.maxHeartRate).toBeUndefined();
-    expect(workout.calories).toBeUndefined();
-  });
-});
-
-describe("parseActivitySummary -- additional edge cases", () => {
-  it("handles zero values", () => {
-    const result = parseActivitySummary({
-      dateComponents: "2024-03-01",
-      activeEnergyBurned: "0",
-      appleExerciseTime: "0",
-      appleStandHours: "0",
-    });
-    expect(result).not.toBeNull();
-    expect(result?.activeEnergyBurned).toBe(0);
-    expect(result?.appleExerciseMinutes).toBe(0);
-    expect(result?.appleStandHours).toBe(0);
   });
 });
 

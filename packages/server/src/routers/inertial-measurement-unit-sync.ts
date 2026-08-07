@@ -1,16 +1,15 @@
-import { sql } from "drizzle-orm";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
-import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
+import { InertialMeasurementUnitSyncRepository } from "../repositories/inertial-measurement-unit-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
+import { filterFutureSamples } from "./sample-validation.ts";
 
-const PROVIDER_ID = "apple_motion";
-const INSERT_BATCH_SIZE = 5000;
-
-// ── Zod schemas ──
+const tracer = trace.getTracer("dofek-server");
 
 const inertialMeasurementUnitSampleSchema = z.object({
-  timestamp: z.string(), // ISO 8601 with millisecond precision
+  timestamp: z.string(),
   x: z.number(),
   y: z.number(),
   z: z.number(),
@@ -25,67 +24,16 @@ const pushSamplesInput = z.object({
   samples: z.array(inertialMeasurementUnitSampleSchema),
 });
 
-export type InertialMeasurementUnitSample = z.infer<typeof inertialMeasurementUnitSampleSchema>;
-
-type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
-
-/** Ensure the apple_motion provider row exists */
-async function ensureProvider(db: Database, userId: string) {
-  await db.execute(
-    sql`INSERT INTO fitness.provider (id, name, user_id)
-        VALUES (${PROVIDER_ID}, 'Apple Motion', ${userId})
-        ON CONFLICT (id) DO NOTHING`,
-  );
-}
-
-/**
- * Bulk-insert IMU samples using multi-row VALUES.
- * At 50 Hz, a 12-hour sync produces ~2.16M samples.
- * Single-row inserts would be unacceptably slow — multi-row is critical.
- */
-async function insertBatch(
-  db: Database,
-  userId: string,
-  deviceId: string,
-  _deviceType: string,
-  samples: InertialMeasurementUnitSample[],
-): Promise<number> {
-  if (samples.length === 0) return 0;
-
-  let totalInserted = 0;
-
-  for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
-    const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
-
-    // Write IMU vectors directly to metric_stream: accel-only as 'accel', 6-axis as 'imu'.
-    const sensorValuesClauses = batch.map((sample) => {
-      const sampleHasGyro =
-        sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;
-      const channel = sampleHasGyro ? "imu" : "accel";
-      const vector = sampleHasGyro
-        ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
-        : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;
-      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${SOURCE_TYPE_API}, ${channel}, ${vector})`;
-    });
-    await db.execute(
-      sql`INSERT INTO fitness.metric_stream
-          (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
-          VALUES ${sql.join(sensorValuesClauses, sql`, `)}`,
-    );
-
-    totalInserted += batch.length;
-  }
-
-  return totalInserted;
-}
-
-// ── Router ──
-
 export const inertialMeasurementUnitSyncRouter = router({
   pushSamples: protectedProcedure.input(pushSamplesInput).mutation(async ({ ctx, input }) => {
-    await ensureProvider(ctx.db, ctx.userId);
+    const repository = new InertialMeasurementUnitSyncRepository(
+      ctx.db,
+      ctx.userId,
+      ctx.metricStreamPublisher,
+    );
 
     if (input.samples.length === 0) {
+      await repository.ensureProvider();
       logger.info("IMU push with 0 samples", {
         userId: ctx.userId,
         deviceId: input.deviceId,
@@ -94,29 +42,74 @@ export const inertialMeasurementUnitSyncRouter = router({
       return { inserted: 0 };
     }
 
-    // Log timestamp range to detect stale/future data
-    const firstTimestamp = input.samples[0]?.timestamp;
-    const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
-    const nowIso = new Date().toISOString();
+    return tracer.startActiveSpan(
+      "imu.pushSamples",
+      {
+        attributes: {
+          "imu.sampleCount": input.samples.length,
+          "imu.deviceId": input.deviceId,
+        },
+      },
+      async (span) => {
+        const now = new Date();
+        const validSamples = filterFutureSamples(input.samples, now, "IMU");
 
-    const inserted = await insertBatch(
-      ctx.db,
-      ctx.userId,
-      input.deviceId,
-      input.deviceType,
-      input.samples,
+        const firstTimestamp = validSamples[0]?.timestamp;
+        const lastTimestamp = validSamples[validSamples.length - 1]?.timestamp;
+        const nowIso = now.toISOString();
+
+        try {
+          const t0 = performance.now();
+          await repository.ensureProvider();
+          const ensureProviderMs = performance.now() - t0;
+
+          const t1 = performance.now();
+          const inserted = await repository.insertBatch(
+            input.deviceId,
+            input.deviceType,
+            validSamples,
+          );
+          const insertBatchMs = performance.now() - t1;
+          const totalMs = ensureProviderMs + insertBatchMs;
+
+          span.setAttributes({
+            "imu.ensureProviderMs": ensureProviderMs,
+            "imu.insertBatchMs": insertBatchMs,
+            "imu.totalMs": totalMs,
+            "imu.sampleCount": inserted,
+            "imu.filteredCount": input.samples.length - validSamples.length,
+          });
+
+          logger.info("IMU samples pushed", {
+            userId: ctx.userId,
+            deviceId: input.deviceId,
+            deviceType: input.deviceType,
+            sampleCount: inserted,
+            filteredCount: input.samples.length - validSamples.length,
+            firstTimestamp,
+            lastTimestamp,
+            serverTime: nowIso,
+            ensureProviderMs,
+            insertBatchMs,
+            totalMs,
+          });
+
+          span.setStatus({ code: SpanStatusCode.OK });
+          return { inserted };
+        } catch (error) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          if (error instanceof Error) {
+            span.recordException(error);
+          }
+          captureException(error, { tags: { source: "imu-push-samples" } });
+          throw error;
+        } finally {
+          span.end();
+        }
+      },
     );
-
-    logger.info("IMU samples pushed", {
-      userId: ctx.userId,
-      deviceId: input.deviceId,
-      deviceType: input.deviceType,
-      sampleCount: inserted,
-      firstTimestamp,
-      lastTimestamp,
-      serverTime: nowIso,
-    });
-
-    return { inserted };
   }),
 });

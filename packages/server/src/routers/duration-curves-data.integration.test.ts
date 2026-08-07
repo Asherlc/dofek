@@ -1,13 +1,14 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 /**
- * Integration tests for the duration-curves router with actual metric_stream data.
- * Inserts HR and speed samples, then verifies the HR curve and pace curve endpoints.
+ * Integration tests for the duration-curves router with explicit deduped
+ * ClickHouse sensor-store fixtures.
  */
 describe("Duration curves router — data tests", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -28,80 +29,42 @@ describe("Duration curves router — data tests", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // Insert a running activity (60 minutes)
-    const actResult = await testCtx.db.execute<{ id: string }>(
+    await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'running',
+            'test_provider', ${TEST_USER_ID}, 'duration-test-run', 'running', 'running',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '60 minutes',
             'Test Run'
-          ) RETURNING id`,
+          )`,
     );
-    const runId = actResult[0]?.id;
 
-    if (runId) {
-      // Insert 3600 samples (1 per second for 60 minutes)
-      // HR starts at 130 and rises to 180 over the run
-      // Speed is ~3.5 m/s (about 4:45/km pace)
-      const batchSize = 300;
-      for (let batch = 0; batch < 3600; batch += batchSize) {
-        const sensorValues: string[] = [];
-        for (let s = batch; s < Math.min(batch + batchSize, 3600); s++) {
-          const hr = 130 + Math.round((s / 3600) * 50 + Math.sin(s * 0.02) * 5);
-          const speed = 3.2 + Math.sin(s * 0.01) * 0.5; // ~3.2 m/s with variation
-          const ts = `CURRENT_TIMESTAMP - INTERVAL '2 days' + ${s} * INTERVAL '1 second'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed.toFixed(3)}, NULL)`,
-          );
-        }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-        );
-      }
-    }
-
-    // Insert a cycling activity (45 minutes) with HR and power
-    const cycleResult = await testCtx.db.execute<{ id: string }>(
+    await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'duration-test-ride', 'cycling', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '5 days',
             CURRENT_TIMESTAMP - INTERVAL '5 days' + INTERVAL '45 minutes',
             'Test Ride'
-          ) RETURNING id`,
+          )`,
     );
-    const cycleId = cycleResult[0]?.id;
 
-    if (cycleId) {
-      const batchSize = 300;
-      for (let batch = 0; batch < 2700; batch += batchSize) {
-        const sensorValues: string[] = [];
-        for (let s = batch; s < Math.min(batch + batchSize, 2700); s++) {
-          const hr = 140 + Math.round((s / 2700) * 40 + Math.sin(s * 0.015) * 8);
-          const ts = `CURRENT_TIMESTAMP - INTERVAL '5 days' + ${s} * INTERVAL '1 second'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${cycleId}', ${hr}, NULL)`,
-          );
-        }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-        );
-      }
-    }
+    const sensorStore = makeMockSensorStore();
+    sensorStore.getHeartRateCurveRows = async () => [
+      { duration_seconds: 5, best_hr: 180, activity_date: "2026-04-29" },
+      { duration_seconds: 60, best_hr: 174, activity_date: "2026-04-29" },
+      { duration_seconds: 300, best_hr: 166, activity_date: "2026-04-29" },
+      { duration_seconds: 600, best_hr: 158, activity_date: "2026-04-26" },
+    ];
+    sensorStore.getPaceCurveRows = async () => [
+      { duration_seconds: 5, best_pace: 265, activity_date: "2026-04-29" },
+      { duration_seconds: 60, best_pace: 275, activity_date: "2026-04-29" },
+      { duration_seconds: 300, best_pace: 292, activity_date: "2026-04-29" },
+    ];
 
-    // Refresh materialized views so the queries can join against them
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -137,7 +100,7 @@ describe("Duration curves router — data tests", () => {
   }
 
   describe("hrCurve", () => {
-    it("returns HR duration curve points from metric_stream data", async () => {
+    it("returns HR duration curve points from deduped ClickHouse data", async () => {
       const result = await query<{
         points: {
           durationSeconds: number;
@@ -192,7 +155,7 @@ describe("Duration curves router — data tests", () => {
   });
 
   describe("paceCurve", () => {
-    it("returns pace duration curve points from speed data", async () => {
+    it("returns pace duration curve points from deduped ClickHouse data", async () => {
       const result = await query<{
         points: {
           durationSeconds: number;

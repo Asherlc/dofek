@@ -8,6 +8,7 @@ import {
   BRAND_COLORS,
   PROVIDER_LABELS,
   providerLabel,
+  providerLogoId,
   providerLogoType,
 } from "@dofek/providers/providers";
 export { providerLabel };
@@ -22,7 +23,7 @@ interface ProviderLogoProps {
 
 function logoUrl(provider: string): string | null {
   const type = providerLogoType(provider);
-  if (type) return `/logos/${provider}.${type}`;
+  if (type) return `/logos/${providerLogoId(provider)}.${type}`;
   return null;
 }
 

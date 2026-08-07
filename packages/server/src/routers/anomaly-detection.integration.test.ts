@@ -1,10 +1,19 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { dailyMetrics } from "../../../../src/db/schema/activity.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { type AnomalyRow, checkAnomalies, sendAnomalyAlertToSlack } from "./anomaly-detection.ts";
 
 const mswServer = setupServer();
+
+function makeSensorStore() {
+  return {
+    query: async () => [],
+  };
+}
 
 /**
  * Unit tests for the anomaly detection logic (checkAnomalies)
@@ -33,11 +42,66 @@ describe("Anomaly detection", () => {
 
   describe("checkAnomalies", () => {
     it("returns empty anomalies and checkedMetrics on empty database", async () => {
-      const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
-      const result = await checkAnomalies(testCtx.db, TEST_USER_ID, "UTC", "2026-03-13");
+      const result = await checkAnomalies(
+        testCtx.db,
+        TEST_USER_ID,
+        "UTC",
+        "2026-03-13",
+        makeSensorStore(),
+      );
 
       expect(result.anomalies).toEqual([]);
       expect(result.checkedMetrics).toEqual([]);
+    });
+
+    it("does not compare Apple Health HRV against a WHOOP baseline", async () => {
+      const { sql } = await import("drizzle-orm");
+      await ensureProvider(testCtx.db, "whoop", "WHOOP", undefined, TEST_USER_ID);
+      await ensureProvider(testCtx.db, "apple_health", "Apple Health", undefined, TEST_USER_ID);
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider_priority (provider_id, priority, recovery_priority)
+            VALUES ('whoop', 10, 10), ('apple_health', 20, 20)
+            ON CONFLICT (provider_id) DO UPDATE SET
+              priority = EXCLUDED.priority,
+              recovery_priority = EXCLUDED.recovery_priority`,
+      );
+
+      const rows: Array<typeof dailyMetrics.$inferInsert> = [];
+      for (let day = 1; day <= 30; day++) {
+        const date = `2026-01-${String(day).padStart(2, "0")}`;
+        rows.push({
+          date,
+          providerId: "whoop",
+          userId: TEST_USER_ID,
+          hrv: 57 + (day % 7),
+        });
+        rows.push({
+          date,
+          providerId: "apple_health",
+          userId: TEST_USER_ID,
+          sourceName: "Apple Watch",
+          hrv: 39 + (day % 7),
+        });
+      }
+      rows.push({
+        date: "2026-02-02",
+        providerId: "apple_health",
+        userId: TEST_USER_ID,
+        sourceName: "Apple Watch",
+        hrv: 42,
+      });
+      await testCtx.db.insert(dailyMetrics).values(rows).onConflictDoNothing();
+
+      const result = await checkAnomalies(
+        testCtx.db,
+        TEST_USER_ID,
+        "UTC",
+        "2026-02-02",
+        makeSensorStore(),
+      );
+
+      expect(result.checkedMetrics).toContain("hrv");
+      expect(result.anomalies).toEqual([]);
     });
   });
 

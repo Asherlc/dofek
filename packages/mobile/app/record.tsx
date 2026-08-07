@@ -12,30 +12,43 @@ import {
   View,
 } from "react-native";
 import {
+  type HeartRateConnectionState,
+  HeartRateDeviceCard,
+} from "../components/HeartRateDeviceCard";
+import {
   type ActivityRecorder,
   createActivityRecorder,
   type RecordingSnapshot,
 } from "../lib/activity-recording";
+import { createHeartRateRecordingService } from "../lib/heart-rate-recording-service";
 import { createInertialMeasurementUnitService } from "../lib/inertial-measurement-unit-service";
 import { createLocationAdapter } from "../lib/location-service";
+import { combineRecordingSensorServices } from "../lib/recording-sensor-service";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
+import { syncWatchAltitudeFiles } from "../lib/watch-altitude-file-sync";
+import { syncWatchAccelerometerFiles } from "../lib/watch-file-sync";
+import {
+  addConnectionStateListener as addHeartRateConnectionListener,
+  addHeartRateListener,
+  type BleHeartRateDevice,
+  confirmSamplesDrain as confirmHeartRateDrain,
+  disconnect as disconnectHeartRate,
+  isBluetoothAvailable as isHeartRateBluetoothAvailable,
+  peekBufferedSamples as peekHeartRateSamples,
+  scanAndConnect as scanAndConnectHeartRate,
+} from "../modules/ble-heart-rate";
 import {
   isAccelerometerRecordingAvailable,
   queryRecordedData,
   startRecording,
 } from "../modules/core-motion";
+import { isWatchAppInstalled, isWatchPaired, requestWatchSync } from "../modules/watch-motion";
 import {
-  acknowledgeWatchSamples,
-  getPendingWatchSamples,
-  isWatchAppInstalled,
-  isWatchPaired,
-  requestWatchSync,
-} from "../modules/watch-motion";
-import {
+  confirmSamplesDrain as confirmWhoopSamplesDrain,
   findWhoop,
-  getBufferedSamples as getWhoopSamples,
   isBluetoothAvailable,
+  peekBufferedSamples as peekWhoopSamples,
   startImuStreaming,
   stopImuStreaming,
   connect as whoopConnect,
@@ -91,6 +104,15 @@ export default function RecordScreen() {
   const [activityName, setActivityName] = useState("");
   const [activityNotes, setActivityNotes] = useState("");
 
+  // Bluetooth heart-rate monitor state. The connected device is kept in a ref so
+  // the recorder's sensor service (created once) can read the current device ID
+  // without being rebuilt when the device changes.
+  const heartRateDeviceRef = useRef<BleHeartRateDevice | null>(null);
+  const [heartRateDevice, setHeartRateDevice] = useState<BleHeartRateDevice | null>(null);
+  const [heartRateConnecting, setHeartRateConnecting] = useState(false);
+  const [liveBpm, setLiveBpm] = useState<number | null>(null);
+  const [bluetoothAvailable, setBluetoothAvailable] = useState(false);
+
   // Create recorder once (with IMU service for phone + watch)
   const recorder = useMemo(() => {
     if (!recorderRef.current) {
@@ -103,8 +125,10 @@ export default function RecordScreen() {
         watch: {
           isAvailable: () => isWatchPaired() && isWatchAppInstalled(),
           requestSync: requestWatchSync,
-          getPendingSamples: getPendingWatchSamples,
-          acknowledgeSamples: acknowledgeWatchSamples,
+          syncPendingFiles: async () => {
+            await syncWatchAccelerometerFiles(trpcClient);
+            await syncWatchAltitudeFiles(trpcClient);
+          },
         },
         whoopBle: {
           isAvailable: isBluetoothAvailable,
@@ -115,32 +139,90 @@ export default function RecordScreen() {
           },
           startStreaming: startImuStreaming,
           stopStreaming: stopImuStreaming,
-          getBufferedSamples: async () => {
-            const samples = await getWhoopSamples();
-            return samples.map((sample) => ({
-              timestamp: sample.timestamp,
-              x: sample.accelerometerX,
-              y: sample.accelerometerY,
-              z: sample.accelerometerZ,
-              gyroscopeX: sample.gyroscopeX,
-              gyroscopeY: sample.gyroscopeY,
-              gyroscopeZ: sample.gyroscopeZ,
-            }));
-          },
+          peekBufferedSamples: () => peekWhoopSamples(),
+          confirmSamplesDrain: confirmWhoopSamplesDrain,
         },
         trpcClient,
         deviceId: `iPhone (${Platform.OS} ${Platform.Version})`,
+      });
+
+      const heartRateService = createHeartRateRecordingService({
+        ble: {
+          getDeviceId: () => heartRateDeviceRef.current?.id ?? null,
+          peekBufferedSamples: () => peekHeartRateSamples(),
+          confirmSamplesDrain: confirmHeartRateDrain,
+        },
+        trpcClient,
       });
 
       recorderRef.current = createActivityRecorder(
         createLocationAdapter(),
         trpcClient,
         "Dofek iOS",
-        imuService,
+        combineRecordingSensorServices([imuService, heartRateService]),
       );
     }
     return recorderRef.current;
   }, [trpcClient]);
+
+  // Track Bluetooth availability + live heart-rate measurements for the UI.
+  useEffect(() => {
+    // CoreBluetooth reports its state asynchronously — the central is `.unknown`
+    // for a moment after launch — so poll until it settles rather than reading
+    // a single (usually stale-false) value on mount.
+    setBluetoothAvailable(isHeartRateBluetoothAvailable());
+    const availabilityInterval = setInterval(() => {
+      setBluetoothAvailable(isHeartRateBluetoothAvailable());
+    }, 2000);
+
+    const measurementSubscription = addHeartRateListener((event) => {
+      setLiveBpm(event.heartRateBpm);
+    });
+    const connectionSubscription = addHeartRateConnectionListener((event) => {
+      if (event.state === "disconnected") {
+        // Keep heartRateDeviceRef so samples captured before the drop still
+        // upload under their device on save; only reset the visible state.
+        setHeartRateDevice(null);
+        setLiveBpm(null);
+      }
+    });
+
+    return () => {
+      clearInterval(availabilityInterval);
+      measurementSubscription.remove();
+      connectionSubscription.remove();
+    };
+  }, []);
+
+  const handleConnectHeartRate = useCallback(async () => {
+    setHeartRateConnecting(true);
+    try {
+      const device = await scanAndConnectHeartRate();
+      heartRateDeviceRef.current = device;
+      setHeartRateDevice(device);
+    } catch (error: unknown) {
+      captureException(error, { context: "record-connect-heart-rate" });
+      Alert.alert(
+        "No heart-rate monitor found",
+        "Make sure your monitor is on, worn, and nearby, then try again.",
+      );
+    } finally {
+      setHeartRateConnecting(false);
+    }
+  }, []);
+
+  const handleDisconnectHeartRate = useCallback(() => {
+    disconnectHeartRate();
+    // Keep heartRateDeviceRef so any buffered samples still upload on save.
+    setHeartRateDevice(null);
+    setLiveBpm(null);
+  }, []);
+
+  const heartRateConnectionState: HeartRateConnectionState = heartRateDevice
+    ? "connected"
+    : heartRateConnecting
+      ? "connecting"
+      : "disconnected";
 
   // Subscribe to recorder updates
   useEffect(() => {
@@ -211,6 +293,17 @@ export default function RecordScreen() {
 
   const state = snapshot?.state ?? "idle";
 
+  const heartRateCard = (
+    <HeartRateDeviceCard
+      bluetoothAvailable={bluetoothAvailable}
+      connectionState={heartRateConnectionState}
+      deviceName={heartRateDevice?.name}
+      liveBpm={liveBpm}
+      onConnect={handleConnectHeartRate}
+      onDisconnect={handleDisconnectHeartRate}
+    />
+  );
+
   // Activity type picker
   if (state === "idle") {
     return (
@@ -231,6 +324,7 @@ export default function RecordScreen() {
             </Pressable>
           ))}
         </View>
+        {heartRateCard}
       </ScrollView>
     );
   }
@@ -271,13 +365,19 @@ export default function RecordScreen() {
         />
 
         <View style={styles.saveActions}>
-          <Pressable style={styles.saveButton} onPress={handleSave} accessibilityRole="button">
+          <Pressable
+            style={styles.saveButton}
+            onPress={handleSave}
+            accessibilityRole="button"
+            accessibilityLabel="Save activity"
+          >
             <Text style={styles.saveButtonText}>Save</Text>
           </Pressable>
           <Pressable
             style={styles.discardButton}
             onPress={handleDiscard}
             accessibilityRole="button"
+            accessibilityLabel="Discard activity"
           >
             <Text style={styles.discardButtonText}>Discard</Text>
           </Pressable>
@@ -298,6 +398,7 @@ export default function RecordScreen() {
             router.back();
           }}
           accessibilityRole="button"
+          accessibilityLabel="Go Back"
         >
           <Text style={styles.discardButtonText}>Go Back</Text>
         </Pressable>
@@ -349,17 +450,34 @@ export default function RecordScreen() {
         </View>
       </View>
 
+      {heartRateCard}
+
       <View style={styles.controls}>
         {isPaused ? (
-          <Pressable style={styles.resumeButton} onPress={handleResume} accessibilityRole="button">
+          <Pressable
+            style={styles.resumeButton}
+            onPress={handleResume}
+            accessibilityRole="button"
+            accessibilityLabel="Resume activity"
+          >
             <Text style={styles.controlButtonText}>Resume</Text>
           </Pressable>
         ) : (
-          <Pressable style={styles.pauseButton} onPress={handlePause} accessibilityRole="button">
+          <Pressable
+            style={styles.pauseButton}
+            onPress={handlePause}
+            accessibilityRole="button"
+            accessibilityLabel="Pause activity"
+          >
             <Text style={styles.controlButtonText}>Pause</Text>
           </Pressable>
         )}
-        <Pressable style={styles.stopButton} onPress={handleStop} accessibilityRole="button">
+        <Pressable
+          style={styles.stopButton}
+          onPress={handleStop}
+          accessibilityRole="button"
+          accessibilityLabel="Stop activity"
+        >
           <Text style={styles.stopButtonText}>Stop</Text>
         </Pressable>
       </View>

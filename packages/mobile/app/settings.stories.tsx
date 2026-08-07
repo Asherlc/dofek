@@ -1,7 +1,43 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
+import { within } from "storybook/test";
+import { AuthProvider } from "../lib/auth-context";
+import { trpc } from "../lib/trpc";
 import SettingsScreen from "./settings";
+
+const settingsModelCards = [
+  ["exponentialMovingAverage", "Training Load Windows", "Past 365 days"],
+  [
+    "readinessWeights",
+    "Readiness Score Weights",
+    "Past 365 days after a 60-day rolling-baseline warm-up",
+  ],
+  [
+    "sleepTarget",
+    "Sleep Target",
+    "Past 365 days; next-day recovery uses up to 60 days of baseline history",
+  ],
+  ["stressThresholds", "Stress Sensitivity", "Past 425 days, including rolling-baseline warm-up"],
+  [
+    "trainingImpulseConstants",
+    "Heart Rate Effort Model",
+    "All qualifying activities; the power reference uses the past 365 days",
+  ],
+].map(([key, title, dataWindow]) => ({
+  key,
+  title,
+  description: `${title} personalization settings`,
+  status: "default",
+  lastSuccessfulFitAt: null,
+  lastFitSummary: "No accepted personalized fit",
+  dataWindow,
+  dataSufficiency: "No accepted fit; more qualifying data is required",
+  fitEvidence: "No accepted fit statistic is available.",
+  uncertainty: "No calibrated uncertainty interval is available.",
+  excludedData: ["Records without required inputs"],
+}));
 
 function createSeededProviders() {
   const queryClient = new QueryClient({
@@ -61,6 +97,10 @@ function createSeededProviders() {
     ],
   );
 
+  queryClient.setQueryData([["auth", "passwordCredentialStatus"], { type: "query" }], {
+    hasPassword: true,
+  });
+
   // settings.get (unitSystem)
   queryClient.setQueryData([["settings", "get"], { input: { key: "unitSystem" }, type: "query" }], {
     key: "unitSystem",
@@ -69,20 +109,26 @@ function createSeededProviders() {
 
   // personalization.status (used by PersonalizationPanel)
   queryClient.setQueryData([["personalization", "status"], { type: "query" }], {
-    isPersonalized: true,
-    fittedAt: "2026-04-03T08:00:00Z",
+    isPersonalized: false,
+    fittedAt: null,
     effective: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
       readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       sleepTarget: { minutes: 480 },
-      stressThresholds: { hrvThresholds: [30.0, 50.0, 70.0] },
+      stressThresholds: {
+        hrvThresholds: [-2.0, -1.5, -1.0],
+        rhrThresholds: [2.0, 1.5, 1.0],
+      },
       trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
       readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       sleepTarget: { minutes: 480 },
-      stressThresholds: { hrvThresholds: [30.0, 50.0, 70.0] },
+      stressThresholds: {
+        hrvThresholds: [-2.0, -1.5, -1.0],
+        rhrThresholds: [2.0, 1.5, 1.0],
+      },
       trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     parameters: {
@@ -92,6 +138,7 @@ function createSeededProviders() {
       stressThresholds: null,
       trainingImpulseConstants: null,
     },
+    modelCards: settingsModelCards,
   });
 
   // settings.slackStatus (used by SlackIntegrationPanel)
@@ -118,12 +165,25 @@ function createSeededProviders() {
 
 function MockProviders({ children }: { children: React.ReactNode }) {
   const { queryClient } = createSeededProviders();
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  const trpcClient = trpc.createClient({
+    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
+  });
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
 }
 
 const meta = {
   title: "Pages/Settings",
   component: SettingsScreen,
+  parameters: {
+    layout: "fullscreen",
+  },
   decorators: [
     (Story) => (
       <MockProviders>
@@ -140,3 +200,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const AccountPassword: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Account" }));
+  },
+};

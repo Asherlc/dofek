@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { mapCronometerMeal, parseCronometerCsv, parseOptionalNumber } from "./cronometer-csv.ts";
+import {
+  CRONOMETER_PROVIDER_ID,
+  CronometerCsvProvider,
+  mapCronometerMeal,
+  parseCronometerCsv,
+  parseOptionalNumber,
+} from "./cronometer-csv.ts";
 
 describe("parseOptionalNumber", () => {
   it("parses a valid integer", () => {
@@ -60,6 +66,7 @@ describe("mapCronometerMeal", () => {
   it("returns other for unknown meal", () => {
     expect(mapCronometerMeal("Brunch")).toBe("other");
     expect(mapCronometerMeal("")).toBe("other");
+    expect(mapCronometerMeal("dessert")).toBe("other");
   });
 });
 
@@ -451,6 +458,97 @@ describe("parseCronometerCsv", () => {
   });
 });
 
+describe("parseCronometerCsv — abbreviated export header", () => {
+  const header =
+    "Day,Meal,Food Name,Amount,Unit,Category,Energy (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g),Sat Fat (g),Poly Fat (g),Mono Fat (g),Trans Fat (g),Cholesterol (mg),Sodium (mg),Potassium (mg),Sugar (g),Vit A (mcg),Vit C (mg),Vit D (mcg),Vit E (mg),Vit K (mcg),Thiamin (mg),Riboflavin (mg),Niacin (mg),Pant Acid (mg),B6 (mg),Biotin (mcg),Folate (mcg),B12 (mcg),Calcium (mg),Iron (mg),Magnesium (mg),Zinc (mg),Selenium (mcg),Copper (mg),Manganese (mg),Chromium (mcg),Iodine (mcg),Omega 3 (g),Omega 6 (g),Water (g),Caffeine (mg)";
+
+  it("parses a single data row with all fields", () => {
+    const row =
+      "2026-03-01,Breakfast,Oatmeal,1,cup,Grains,300,10,50,5,8,1,1.5,2,0,0,5,200,3,100,10,5,2,10,0.5,0.3,3,1,0.5,5,50,1,200,3,100,5,20,0.5,2,5,50,0.5,2,250,50";
+    const csv = `${header}\n${row}`;
+
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(1);
+
+    const entry = entries[0];
+    expect(entry?.date).toBe("2026-03-01");
+    expect(entry?.meal).toBe("breakfast");
+    expect(entry?.foodName).toBe("Oatmeal");
+    expect(entry?.amount).toBe(1);
+    expect(entry?.unit).toBe("cup");
+    expect(entry?.category).toBe("Grains");
+    expect(entry?.calories).toBe(300);
+    expect(entry?.proteinG).toBe(10);
+    expect(entry?.carbsG).toBe(50);
+    expect(entry?.fatG).toBe(5);
+    expect(entry?.fiberG).toBe(8);
+    expect(entry?.omega3Mg).toBe(500);
+    expect(entry?.omega6Mg).toBe(2000);
+    expect(entry?.waterG).toBe(250);
+    expect(entry?.caffeineMg).toBe(50);
+  });
+
+  it("handles BOM-prefixed CSV", () => {
+    const csv = `\uFEFF${header}\n2026-03-01,Lunch,Rice,1,cup,Grains,200,4,45,0.5,1,0,0,0,0,0,1,50,0.5,,,,,,,,,,,,,,,,,,,,,,,,,`;
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.date).toBe("2026-03-01");
+  });
+
+  it("handles quoted fields with commas", () => {
+    const csv = `${header}\n2026-03-01,Dinner,"Chicken, grilled",200,g,Protein,250,30,0,12,0,3,2,5,0,80,70,300,0,,,,,,,,,,,,,,,,,,,,,,,,,`;
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.foodName).toBe("Chicken, grilled");
+  });
+
+  it("handles multiple data rows", () => {
+    const rows = [
+      "2026-03-01,Breakfast,Eggs,2,large,Protein,140,12,1,10,0,3,1.5,4,0,370,140,130,1,,,,,,,,,,,,,,,,,,,,,,,,,",
+      "2026-03-01,Lunch,Salad,1,bowl,Vegetables,100,3,10,5,3,0.5,1,2,0,0,50,400,3,,,,,,,,,,,,,,,,,,,,,,,,,",
+    ];
+    const csv = `${header}\n${rows.join("\n")}`;
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.foodName).toBe("Eggs");
+    expect(entries[1]?.foodName).toBe("Salad");
+  });
+
+  it("handles missing optional fields gracefully", () => {
+    const csv = `${header}\n2026-03-01,Snack,Apple,1,medium,Fruit`;
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.calories).toBeNull();
+    expect(entries[0]?.omega3Mg).toBeNull();
+  });
+
+  it("handles empty unit and category", () => {
+    const csv = `${header}\n2026-03-01,Lunch,Water,1,,,0,0,0,0,0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,`;
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.unit).toBeNull();
+    expect(entries[0]?.category).toBeNull();
+  });
+});
+
+describe("CronometerCsvProvider", () => {
+  it("has correct id and name", () => {
+    const provider = new CronometerCsvProvider();
+    expect(provider.id).toBe(CRONOMETER_PROVIDER_ID);
+    expect(provider.name).toBe("Cronometer");
+  });
+
+  it("validate always returns null", () => {
+    const provider = new CronometerCsvProvider();
+    expect(provider.validate()).toBeNull();
+  });
+
+  it("is an import-only provider", () => {
+    const provider = new CronometerCsvProvider();
+    expect(provider.importOnly).toBe(true);
+  });
+});
+
 describe("parseOptionalNumber — mutation-killing edge cases", () => {
   it("returns null for tab-only input", () => {
     expect(parseOptionalNumber("\t")).toBeNull();
@@ -471,5 +569,10 @@ describe("parseOptionalNumber — mutation-killing edge cases", () => {
 
   it("returns null for mixed whitespace", () => {
     expect(parseOptionalNumber("  \t  ")).toBeNull();
+  });
+
+  it("parses negative numbers", () => {
+    expect(parseOptionalNumber("-10")).toBe(-10);
+    expect(parseOptionalNumber("-1.5")).toBe(-1.5);
   });
 });

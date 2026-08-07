@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockWithUserWriteFence } = vi.hoisted(() => ({
+  mockWithUserWriteFence: vi.fn(),
+}));
+
 vi.mock("../auth/cookies.ts", () => ({
   getSessionIdFromRequest: vi.fn(),
 }));
@@ -8,18 +12,18 @@ vi.mock("../auth/session.ts", () => ({
   validateSession: vi.fn(() => Promise.resolve(null)),
 }));
 
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
-}));
-
 vi.mock("../logger.ts", () => ({
   logger: { error: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: mockWithUserWriteFence,
 }));
 
 const mockCreateSignedExportDownloadUrl = vi.fn();
 
 import type { AddressInfo } from "node:net";
-import cookieParser from "cookie-parser";
+import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
@@ -35,6 +39,7 @@ type MockQueue = NonNullable<Parameters<typeof createExportRouter>[0]["exportQue
 
 const mockDatabase: MockDatabase = {
   execute: vi.fn(),
+  transaction: vi.fn(),
 };
 
 const mockQueue = {
@@ -47,7 +52,6 @@ function mockExecute() {
 
 function createTestApp() {
   const app = express();
-  app.use(cookieParser());
   app.use(
     "/api/export",
     createExportRouter({
@@ -106,7 +110,14 @@ describe("createExportRouter", () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     mockExecute().mockReset();
-    vi.mocked(mockQueue.add).mockResolvedValue({ id: "job-42" });
+    mockWithUserWriteFence.mockReset();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: MockDatabase) => Promise<unknown>,
+      ) => operation(mockDatabase),
+    );
     mockCreateSignedExportDownloadUrl.mockResolvedValue(
       "https://r2.example.test/signed-export.zip",
     );
@@ -117,25 +128,54 @@ describe("createExportRouter", () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const response = await request(createTestApp(), "post", "/api/export");
       expect(response.status).toBe(401);
+      expect(parseJson(response.text)).toEqual({ error: "Not authenticated" });
+      expect(mockExecute()).not.toHaveBeenCalled();
     });
 
-    it("creates a queued export record and enqueues the export job", async () => {
-      authenticate();
-      mockExecute().mockResolvedValueOnce([{ id: createdExportId }]);
+    it("returns 401 when the session has expired", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("expired-session");
+      vi.mocked(validateSession).mockResolvedValue(null);
 
       const response = await request(createTestApp(), "post", "/api/export");
+
+      expect(response.status).toBe(401);
+      expect(parseJson(response.text)).toEqual({ error: "Session expired" });
+      expect(mockExecute()).not.toHaveBeenCalled();
+    });
+
+    it("commits a queued export record for the durable dispatcher", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([{ id: createdExportId }]);
+      const nowSpy = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(new Date("2026-07-24T00:00:00.000Z").getTime());
+
+      const response = await request(createTestApp(), "post", "/api/export");
+      nowSpy.mockRestore();
 
       expect(response.status).toBe(200);
       expect(parseJson(response.text)).toEqual({ status: "queued", exportId: createdExportId });
       expect(mockExecute()).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(mockQueue.add)).toHaveBeenCalledWith(
-        "export",
-        expect.objectContaining({
-          exportId: createdExportId,
-          userId: exportUserId,
-          outputPath: expect.stringMatching(/dofek-export-\d+-[a-z0-9]{4}\.zip$/),
-        }),
+      const insertQuery = mockExecute().mock.calls[0]?.[0];
+      if (!insertQuery) {
+        throw new Error("Expected the export insert query");
+      }
+      expect(new PgDialect().sqlToQuery(insertQuery).params).toContain("2026-07-31T00:00:00.000Z");
+      expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+        mockDatabase,
+        exportUserId,
+        expect.any(Function),
       );
+    });
+
+    it("does not create an export when the erasure fence rejects the user", async () => {
+      authenticate();
+      mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
+
+      const response = await request(createTestApp(), "post", "/api/export");
+
+      expect(response.status).toBe(500);
+      expect(mockExecute()).not.toHaveBeenCalled();
     });
 
     it("returns 500 when the export row cannot be created", async () => {
@@ -146,7 +186,6 @@ describe("createExportRouter", () => {
 
       expect(response.status).toBe(500);
       expect(parseJson(response.text)).toEqual({ error: "Failed to create export" });
-      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
     });
   });
 
@@ -277,7 +316,7 @@ describe("createExportRouter", () => {
           user_id: exportUserId,
           status: "processing",
           object_key: null,
-          expires_at: "2026-05-03T12:00:00.000Z",
+          expires_at: "2999-05-03T12:00:00.000Z",
         },
       ]);
 

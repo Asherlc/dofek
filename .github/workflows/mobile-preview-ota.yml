@@ -21,7 +21,7 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
@@ -72,11 +72,11 @@ jobs:
           attempt=1
           while [ "$attempt" -le "$max_attempts" ]; do
             set +e
-            publish_output=$(npx eoas@2.3.17 publish \
+            publish_output=$(pnpm dlx eoas@2.3.22 publish \
               --branch "pr-${{ github.event.number }}" \
               --platform ios \
               --nonInteractive \
-              --packageRunner npx 2>&1)
+              --packageRunner pnpm 2>&1)
             publish_exit_code=$?
             set -e
             echo "$publish_output"
@@ -122,7 +122,7 @@ jobs:
           | **Commit** | $COMMIT_SHA |
 
           **To test on device:**
-          1. Build and install the preview client: \`PREVIEW_CHANNEL=pr-$PR_NUMBER npx expo prebuild --clean -p ios\`
+          1. Build and install the preview client: \`PREVIEW_CHANNEL=pr-$PR_NUMBER pnpm expo prebuild --clean -p ios\`
           2. Or tap deep link on an existing preview build: \`$DEEP_LINK\`
 
           > Each PR gets its own channel. Build a preview client with \`PREVIEW_CHANNEL=pr-{N}\` to test.
@@ -130,7 +130,7 @@ jobs:
 
       - name: Comment PR with Mobile Preview Info
         if: steps.mobile-changes.outputs.changed == 'true'
-        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           header: mobile-preview
           path: /tmp/mobile-preview-comment.md

@@ -1,8 +1,11 @@
 import type { MealType } from "@dofek/nutrition/meal";
 import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
+  Linking,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,6 +15,8 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { SupplementDoseEventsPanel } from "../components/SupplementDoseEventsPanel";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -57,6 +62,9 @@ function ChipPicker<T extends string>({
           style={[styles.chip, value === opt.value && styles.chipSelected]}
           onPress={() => onChange(value === opt.value ? "" : opt.value)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={opt.label}
+          accessibilityState={{ selected: value === opt.value }}
         >
           <Text style={[styles.chipText, value === opt.value && styles.chipTextSelected]}>
             {opt.label}
@@ -69,26 +77,63 @@ function ChipPicker<T extends string>({
 
 export default function SupplementsScreen() {
   const [showForm, setShowForm] = useState(false);
+  const [reorderAnnouncement, setReorderAnnouncement] = useState<string | null>(null);
+  const saveInFlightRef = useRef(false);
+  const reorderAnnouncementRef = useRef<string | null>(null);
 
   const utils = trpc.useUtils();
   const stack = trpc.supplements.list.useQuery();
+  const safetyReview = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days: 30 });
   const saveMutation = trpc.supplements.save.useMutation({
-    onSuccess: () => utils.supplements.list.invalidate(),
-    onError: (error) => Alert.alert("Error", error.message),
+    onSuccess: async () => {
+      saveInFlightRef.current = false;
+      const announcement = reorderAnnouncementRef.current;
+      reorderAnnouncementRef.current = null;
+      if (announcement) {
+        setReorderAnnouncement(announcement);
+        if (Platform.OS === "ios") {
+          AccessibilityInfo.announceForAccessibility(announcement);
+        }
+      }
+      await Promise.all([
+        utils.supplements.list.invalidate(),
+        utils.nutritionAnalytics.micronutrientAdequacyV2.invalidate({ days: 30 }),
+      ]);
+    },
+    onError: (error) => {
+      saveInFlightRef.current = false;
+      reorderAnnouncementRef.current = null;
+      setReorderAnnouncement(null);
+      captureException(error, { operation: "supplements.save" });
+      Alert.alert("Error", error.message);
+    },
+    meta: { errorReportedLocally: true },
   });
 
   const supplements = z.array(supplementSchema).parse(stack.data ?? []);
+  const hasCanonicalStack = stack.data !== undefined;
 
-  function handleSave(updated: Supplement[]) {
+  function handleSave(updated: Supplement[], announcement?: string): boolean {
+    if (!hasCanonicalStack || saveMutation.isPending || saveInFlightRef.current) {
+      return false;
+    }
+    saveInFlightRef.current = true;
+    reorderAnnouncementRef.current = announcement ?? null;
+    setReorderAnnouncement(null);
     saveMutation.mutate({ supplements: updated });
+    return true;
   }
 
   function handleAdd(supp: Supplement) {
-    handleSave([...supplements, supp]);
-    setShowForm(false);
+    if (handleSave([...supplements, supp])) {
+      setShowForm(false);
+    }
   }
 
   function handleDelete(index: number) {
+    if (saveMutation.isPending || saveInFlightRef.current) {
+      return;
+    }
     Alert.alert("Remove Supplement", "Are you sure you want to remove this supplement?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -100,10 +145,16 @@ export default function SupplementsScreen() {
   }
 
   function handleReorder(from: number, to: number) {
+    if (!hasCanonicalStack) {
+      return;
+    }
     const updated = [...supplements];
     const [moved] = updated.splice(from, 1);
-    if (moved) updated.splice(to, 0, moved);
-    handleSave(updated);
+    if (!moved) {
+      return;
+    }
+    updated.splice(to, 0, moved);
+    handleSave(updated, `Moved ${moved.name} to position ${to + 1} of ${supplements.length}.`);
   }
 
   const { refreshing, onRefresh } = useRefresh();
@@ -123,21 +174,39 @@ export default function SupplementsScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Supplements</Text>
         <TouchableOpacity
-          style={styles.addButton}
+          style={[
+            styles.addButton,
+            (!hasCanonicalStack || saveMutation.isPending) && styles.buttonDisabled,
+          ]}
           onPress={() => setShowForm(!showForm)}
+          disabled={!hasCanonicalStack || saveMutation.isPending}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={showForm ? "Cancel adding supplement" : "Add Supplement"}
+          accessibilityState={{
+            disabled: !hasCanonicalStack || saveMutation.isPending,
+            expanded: showForm,
+          }}
         >
           <Text style={styles.addButtonText}>{showForm ? "Cancel" : "+ Add Supplement"}</Text>
         </TouchableOpacity>
       </View>
 
-      {showForm && <AddSupplementForm onSubmit={handleAdd} loading={saveMutation.isPending} />}
+      {showForm && hasCanonicalStack && (
+        <AddSupplementForm onSubmit={handleAdd} loading={saveMutation.isPending} />
+      )}
 
-      {stack.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
+      {stack.isLoading && !hasCanonicalStack && <Text style={styles.loadingText}>Loading...</Text>}
 
-      {supplements.length === 0 && !stack.isLoading && (
+      {stack.error && (
+        <Text style={styles.errorText}>
+          {hasCanonicalStack ? `Refresh failed: ${stack.error.message}` : stack.error.message}
+        </Text>
+      )}
+
+      {supplements.length === 0 && !stack.isLoading && !stack.error && (
         <Text style={styles.emptyText}>
-          No supplements configured. Add your daily stack and it will be synced as nutrition data.
+          No supplements configured. Add your daily plan, then record each dose as taken or skipped.
         </Text>
       )}
 
@@ -151,19 +220,31 @@ export default function SupplementsScreen() {
                 {index > 0 && (
                   <TouchableOpacity
                     onPress={() => handleReorder(index, index - 1)}
+                    style={saveMutation.isPending && styles.buttonDisabled}
+                    disabled={saveMutation.isPending}
                     activeOpacity={0.6}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Move ${supp.name} up`}
+                    accessibilityHint="Moves this supplement one position earlier"
+                    accessibilityState={{ disabled: saveMutation.isPending }}
                   >
-                    <Text style={styles.reorderArrow}>{"\u25B2"}</Text>
+                    <Text style={styles.reorderButtonText}>Move up</Text>
                   </TouchableOpacity>
                 )}
                 {index < supplements.length - 1 && (
                   <TouchableOpacity
                     onPress={() => handleReorder(index, index + 1)}
+                    style={saveMutation.isPending && styles.buttonDisabled}
+                    disabled={saveMutation.isPending}
                     activeOpacity={0.6}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Move ${supp.name} down`}
+                    accessibilityHint="Moves this supplement one position later"
+                    accessibilityState={{ disabled: saveMutation.isPending }}
                   >
-                    <Text style={styles.reorderArrow}>{"\u25BC"}</Text>
+                    <Text style={styles.reorderButtonText}>Move down</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -173,9 +254,13 @@ export default function SupplementsScreen() {
                 {mealLabel ? <Text style={styles.cardMeal}>{mealLabel}</Text> : null}
               </View>
               <TouchableOpacity
-                style={styles.deleteButton}
+                style={[styles.deleteButton, saveMutation.isPending && styles.buttonDisabled]}
                 onPress={() => handleDelete(index)}
+                disabled={saveMutation.isPending}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${supp.name}`}
+                accessibilityState={{ disabled: saveMutation.isPending }}
               >
                 <Text style={styles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
@@ -184,9 +269,108 @@ export default function SupplementsScreen() {
         );
       })}
 
+      {reorderAnnouncement ? (
+        <Text accessibilityLiveRegion="polite" style={styles.reorderStatus}>
+          {reorderAnnouncement}
+        </Text>
+      ) : null}
+
       {saveMutation.isError && (
-        <Text style={styles.errorText}>Failed to save: {saveMutation.error.message}</Text>
+        <Text
+          accessibilityLiveRegion="assertive"
+          accessibilityRole="alert"
+          style={styles.errorText}
+        >
+          Failed to save: {saveMutation.error.message}
+        </Text>
       )}
+
+      <View style={styles.safetySection}>
+        <Text style={styles.sectionTitle}>Safety Context</Text>
+        <Text style={styles.sectionSubtitle}>
+          U.S. Food and Drug Administration (FDA) label references, bounded National Institutes of
+          Health (NIH) adult upper limits, and medication-review guidance
+        </Text>
+        {safetyReview.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
+        {safetyReview.error && <Text style={styles.errorText}>{safetyReview.error.message}</Text>}
+        {safetyReview.data && (
+          <>
+            <View
+              style={[
+                styles.safetyCard,
+                safetyReview.data.professionalReview.status === "professional_review_recommended" &&
+                  styles.safetyWarning,
+              ]}
+            >
+              <Text style={styles.safetyTitle}>Medication and supplement review</Text>
+              <Text style={styles.safetyText}>{safetyReview.data.professionalReview.message}</Text>
+              <Text style={styles.safetyLimitation}>
+                {safetyReview.data.professionalReview.limitation}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  void Linking.openURL(safetyReview.data.professionalReview.source.url).catch(
+                    (error: unknown) =>
+                      captureException(error, { operation: "supplements.openFdaSource" }),
+                  );
+                }}
+                accessibilityRole="link"
+                accessibilityLabel="Open FDA source"
+              >
+                <Text style={styles.sourceLink}>FDA source</Text>
+              </TouchableOpacity>
+            </View>
+            {safetyReview.data.nutrients
+              .filter((nutrient) => nutrient.intake.supplementDailyAverage > 0)
+              .map((nutrient) => {
+                const sourceUrl =
+                  nutrient.upperLimit.status === "not_in_ruleset"
+                    ? null
+                    : nutrient.upperLimit.source.url;
+                return (
+                  <View
+                    key={nutrient.nutrientId}
+                    style={[
+                      styles.safetyCard,
+                      nutrient.safetyStatus === "at_or_above_upper_limit" && styles.safetyDanger,
+                      nutrient.safetyStatus === "upper_limit_not_evaluable" && styles.safetyWarning,
+                    ]}
+                  >
+                    <Text style={styles.safetyTitle}>{nutrient.nutrient}</Text>
+                    <Text style={styles.safetyMeta}>
+                      {nutrient.intake.supplementDailyAverage} {nutrient.unit} average from
+                      supplements over {nutrient.intake.daysTracked} recorded days
+                    </Text>
+                    <Text style={styles.safetyText}>{nutrient.upperLimit.message}</Text>
+                    {sourceUrl != null && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          void Linking.openURL(sourceUrl).catch((error: unknown) =>
+                            captureException(error, {
+                              operation: "supplements.openNihSource",
+                            }),
+                          );
+                        }}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open NIH ODS source for ${nutrient.nutrient}`}
+                      >
+                        <Text style={styles.sourceLink}>NIH ODS source</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+          </>
+        )}
+      </View>
+
+      <View style={styles.doseSection}>
+        <Text style={styles.sectionTitle}>Recent Doses</Text>
+        <Text style={styles.sectionSubtitle}>
+          Nutrients count only when you record a dose as taken.
+        </Text>
+        <SupplementDoseEventsPanel />
+      </View>
     </ScrollView>
   );
 }
@@ -283,6 +467,9 @@ function AddSupplementForm({
         onPress={handleSubmit}
         activeOpacity={0.8}
         disabled={loading}
+        accessibilityRole="button"
+        accessibilityLabel="Add Supplement"
+        accessibilityState={{ busy: loading, disabled: loading }}
       >
         <Text style={styles.saveButtonText}>{loading ? "Saving..." : "Add Supplement"}</Text>
       </TouchableOpacity>
@@ -300,6 +487,29 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: { fontSize: 20, fontWeight: "700", color: colors.text },
+  sectionSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  safetySection: { marginTop: 28 },
+  safetyCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.textTertiary,
+    padding: 14,
+    marginBottom: 8,
+  },
+  safetyWarning: { borderColor: colors.warning },
+  safetyDanger: { borderColor: colors.danger },
+  safetyTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
+  safetyText: { fontSize: 13, color: colors.text, marginTop: 6 },
+  safetyMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  safetyLimitation: { fontSize: 12, color: colors.textSecondary, marginTop: 8 },
+  sourceLink: { fontSize: 12, color: colors.accent, textDecorationLine: "underline", marginTop: 8 },
+  doseSection: { marginTop: 28 },
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
   cardRow: { flexDirection: "row", alignItems: "center" },
   cardContent: { flex: 1, marginRight: 8 },
@@ -321,6 +531,7 @@ const styles = StyleSheet.create({
     borderColor: colors.surfaceSecondary,
   },
   addButtonText: { fontSize: 14, fontWeight: "600", color: colors.accent },
+  buttonDisabled: { opacity: 0.5 },
   deleteButton: { paddingHorizontal: 12, paddingVertical: 6 },
   deleteButtonText: { fontSize: 13, color: colors.danger, fontWeight: "500" },
   saveButton: {
@@ -332,8 +543,9 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: { opacity: 0.5 },
   saveButtonText: { color: colors.text, fontSize: 16, fontWeight: "700" },
-  reorderColumn: { marginRight: 10, alignItems: "center", justifyContent: "center", gap: 2 },
-  reorderArrow: { fontSize: 12, color: colors.textTertiary },
+  reorderColumn: { marginRight: 10, alignItems: "flex-start", justifyContent: "center", gap: 2 },
+  reorderButtonText: { fontSize: 12, color: colors.textSecondary },
+  reorderStatus: { fontSize: 13, color: colors.textSecondary, marginBottom: 8 },
   formCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
   formLabel: {
     fontSize: 13,

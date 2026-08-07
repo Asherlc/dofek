@@ -13,11 +13,6 @@ on:
         required: false
         type: string
         default: ""
-      refresh_materialized_views:
-        description: "Trigger materialized-view refresh after app deploy"
-        required: false
-        type: boolean
-        default: false
   workflow_dispatch:
     inputs:
       target:
@@ -27,18 +22,13 @@ on:
           - all
           - web
           - infra
-          - app
+          - web-stack
           - ios
           - ota
       image_tag:
         description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
         required: false
         type: string
-      refresh_materialized_views:
-        description: "Trigger materialized-view refresh after app deploy"
-        required: false
-        default: false
-        type: boolean
 
 env:
   REGISTRY: ghcr.io
@@ -56,7 +46,7 @@ jobs:
 
   docker:
     name: Docker Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -71,27 +61,35 @@ jobs:
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         with:
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - name: Compute web asset base URL
+        id: web-assets
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "base_url=https://assets.dofek.fit/web/${IMAGE_TAG}/" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           target: server
@@ -99,7 +97,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ github.sha }}
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            VITE_ASSET_BASE_URL=${{ steps.web-assets.outputs.base_url }}
+            REQUIRE_SENTRY_RELEASE_UPLOAD=true
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=server
@@ -107,7 +108,7 @@ jobs:
 
   docker_ml:
     name: Docker ML Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -122,27 +123,28 @@ jobs:
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         with:
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-ml
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: packages/ml
           platforms: linux/arm64
@@ -152,21 +154,24 @@ jobs:
           cache-from: type=gha,scope=ml
           cache-to: type=gha,mode=max,scope=ml
 
-  app:
-    name: Deploy App
+  web-stack:
+    name: Deploy Web Stack
     needs: [terraform, docker, docker_ml]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     permissions:
       actions: read
       contents: read
       id-token: write
       packages: read
-    uses: ./.github/workflows/deploy-app.yml
+    uses: ./.github/workflows/deploy-web-stack.yml
     with:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
-      server_host: ${{ needs.terraform.outputs.server_host || '' }}
+      server_host: ${{ vars.ORACLE_SERVER_HOST }}
+      ssh_user: ubuntu
+      stack_override: deploy/stack.oracle.yml
+      public_url: https://dofek.asherlc.com
+      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
       dispatching_run_id: ${{ github.run_id }}
-      refresh_materialized_views: ${{ inputs.refresh_materialized_views }}
     secrets: inherit
 
   ios:

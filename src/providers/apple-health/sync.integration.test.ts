@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as schema from "../../db/schema.ts";
+import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
@@ -126,7 +126,6 @@ const SAMPLE_EXPORT = `<?xml version="1.0" encoding="UTF-8"?>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning"
   duration="30.5" durationUnit="min"
   totalDistance="5200" totalDistanceUnit="m"
-  totalEnergyBurned="320" totalEnergyBurnedUnit="kcal"
   sourceName="Apple Watch"
   creationDate="2024-03-01 18:30:00 -0500"
   startDate="2024-03-01 18:00:00 -0500"
@@ -232,22 +231,15 @@ describe("Apple Health streaming import (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("streams records and inserts into metric_stream", async () => {
-    let metricCount = 0;
+  it("streams metric records to the record batch callback", async () => {
     const since = new Date("2024-01-01");
+    const heartRateValues: number[] = [];
 
     const counts = await streamHealthExport(xmlPath, since, {
       onRecordBatch: async (records) => {
         for (const r of records) {
           if (r.type === "HKQuantityTypeIdentifierHeartRate") {
-            await ctx.db.insert(schema.metricStream).values({
-              providerId: "apple_health",
-              recordedAt: r.startDate,
-              sourceType: "api",
-              channel: "heart_rate",
-              scalar: Math.round(r.value),
-            });
-            metricCount++;
+            heartRateValues.push(Math.round(r.value));
           }
         }
       },
@@ -257,13 +249,9 @@ describe("Apple Health streaming import (integration)", () => {
 
     // Should have 2 HR records from 2024 (the 2023 one is still >= since)
     expect(counts.recordCount).toBeGreaterThanOrEqual(2);
-    expect(metricCount).toBeGreaterThanOrEqual(2);
-
-    const rows = await ctx.db.select().from(schema.metricStream);
-    const hrRows = rows.filter((r) => r.channel === "heart_rate");
-    expect(hrRows.length).toBeGreaterThanOrEqual(2);
-    expect(hrRows.some((r) => r.scalar === 72)).toBe(true);
-    expect(hrRows.some((r) => r.scalar === 74)).toBe(true);
+    expect(heartRateValues.length).toBeGreaterThanOrEqual(2);
+    expect(heartRateValues).toContain(72);
+    expect(heartRateValues).toContain(74);
   }, 30_000);
 
   it("filters records older than since date", async () => {

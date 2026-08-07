@@ -1,5 +1,5 @@
-import type { InertialMeasurementUnitService } from "./inertial-measurement-unit-service.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
+import type { RecordingSensorService } from "./recording-sensor-service.ts";
 import { captureException } from "./telemetry";
 
 export type RecordingState = "idle" | "recording" | "paused" | "saving" | "error";
@@ -78,12 +78,13 @@ export function createActivityRecorder(
   locationAdapter: LocationAdapter,
   trpcClient: RecordingTrpcClient,
   sourceName: string,
-  inertialMeasurementUnitService?: InertialMeasurementUnitService,
+  sensorService?: RecordingSensorService,
 ): ActivityRecorder {
   let state: RecordingState = "idle";
   let activityType: string | null = null;
   let samples: GpsSample[] = [];
   let startTime: number | null = null;
+  let stoppedAt: number | null = null;
   let pauseStart: number | null = null;
   let totalPausedMs = 0;
   let error: string | null = null;
@@ -95,7 +96,7 @@ export function createActivityRecorder(
 
   function getElapsedMs(): number {
     if (startTime === null) return 0;
-    const now = Date.now();
+    const now = stoppedAt ?? Date.now();
     const paused = pauseStart !== null ? now - pauseStart : 0;
     return now - startTime - totalPausedMs - paused;
   }
@@ -103,6 +104,17 @@ export function createActivityRecorder(
   function getCurrentSpeed(): number | null {
     const latest = samples.at(-1);
     return latest?.speed ?? null;
+  }
+
+  async function stopPartialLocationUpdates(phase: "start" | "resume"): Promise<void> {
+    try {
+      await locationAdapter.stopUpdates();
+    } catch (stopError) {
+      captureException(stopError, {
+        source: "activity-recording.stopUpdates",
+        phase,
+      });
+    }
   }
 
   return {
@@ -131,22 +143,38 @@ export function createActivityRecorder(
 
       activityType = type;
       samples = [];
-      startTime = Date.now();
+      stoppedAt = null;
       totalPausedMs = 0;
       pauseStart = null;
       error = null;
+
+      try {
+        await locationAdapter.startUpdates((sample) => {
+          if (state === "recording") {
+            samples.push(sample);
+            notify();
+          }
+        });
+      } catch (startError) {
+        await stopPartialLocationUpdates("start");
+        startTime = null;
+        state = "error";
+        error =
+          startError instanceof Error ? startError.message : "Failed to start location updates";
+        captureException(startError, {
+          source: "activity-recording.startUpdates",
+          phase: "start",
+        });
+        notify();
+        throw startError;
+      }
+
+      startTime = Date.now();
       state = "recording";
       notify();
 
-      await locationAdapter.startUpdates((sample) => {
-        if (state === "recording") {
-          samples.push(sample);
-          notify();
-        }
-      });
-
-      // Ensure accelerometer recording is active (best-effort, non-blocking)
-      inertialMeasurementUnitService?.ensureRecording().catch((error: unknown) => {
+      // Ensure sensor capture is active (best-effort, non-blocking)
+      sensorService?.ensureRecording().catch((error: unknown) => {
         // Best-effort — don't disrupt GPS recording
         captureException(error, { source: "activity-recording" });
       });
@@ -162,25 +190,40 @@ export function createActivityRecorder(
 
     async resume() {
       if (state !== "paused") return;
+
+      try {
+        await locationAdapter.startUpdates((sample) => {
+          if (state === "recording") {
+            samples.push(sample);
+            notify();
+          }
+        });
+      } catch (resumeError) {
+        await stopPartialLocationUpdates("resume");
+        error =
+          resumeError instanceof Error ? resumeError.message : "Failed to resume location updates";
+        captureException(resumeError, {
+          source: "activity-recording.startUpdates",
+          phase: "resume",
+        });
+        notify();
+        throw resumeError;
+      }
+
       if (pauseStart !== null) {
         totalPausedMs += Date.now() - pauseStart;
         pauseStart = null;
       }
+      error = null;
       state = "recording";
       notify();
-
-      await locationAdapter.startUpdates((sample) => {
-        if (state === "recording") {
-          samples.push(sample);
-          notify();
-        }
-      });
     },
 
     stop() {
       if (state !== "recording" && state !== "paused") return;
+      stoppedAt = Date.now();
       if (pauseStart !== null) {
-        totalPausedMs += Date.now() - pauseStart;
+        totalPausedMs += stoppedAt - pauseStart;
         pauseStart = null;
       }
       locationAdapter.stopUpdates();
@@ -191,12 +234,12 @@ export function createActivityRecorder(
     },
 
     async save(name: string | null, notes: string | null): Promise<string> {
-      if (state !== "saving" || !activityType || !startTime) {
+      if (state !== "saving" || !activityType || startTime === null || stoppedAt === null) {
         throw new Error(`Cannot save in state: ${state}`);
       }
 
       const startedAt = new Date(startTime).toISOString();
-      const endedAt = new Date(startTime + getElapsedMs()).toISOString();
+      const endedAt = new Date(stoppedAt).toISOString();
 
       try {
         const result = await trpcClient.activityRecording.save.mutate({
@@ -216,17 +259,19 @@ export function createActivityRecorder(
           })),
         });
 
-        // Sync accelerometer data for the activity window (best-effort)
+        // Sync sensor data for the activity window (best-effort — don't fail
+        // the activity save, but surface the failure to telemetry)
         try {
-          await inertialMeasurementUnitService?.syncForTimeRange(startedAt, endedAt);
-        } catch {
-          // Best-effort — don't fail the activity save
+          await sensorService?.syncForTimeRange(startedAt, endedAt);
+        } catch (error) {
+          captureException(error, { source: "activity-recording.syncForTimeRange" });
         }
 
         state = "idle";
         activityType = null;
         samples = [];
         startTime = null;
+        stoppedAt = null;
         totalPausedMs = 0;
         error = null;
         notify();
@@ -246,6 +291,7 @@ export function createActivityRecorder(
       activityType = null;
       samples = [];
       startTime = null;
+      stoppedAt = null;
       totalPausedMs = 0;
       pauseStart = null;
       error = null;

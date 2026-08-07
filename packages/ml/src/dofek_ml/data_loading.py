@@ -34,11 +34,15 @@ import io
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
+
+from dofek_ml.parquet_io import read_schema
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -69,7 +73,7 @@ REQUIRED_PARQUET_COLUMNS: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 
 
-def validate_parquet_schema(schema: pq.ParquetSchema) -> None:
+def validate_parquet_schema(schema: pa.Schema) -> None:
     """Validate that a Parquet file contains all required columns.
 
     The Parquet file's embedded schema is the contract -- this function
@@ -133,7 +137,7 @@ def read_parquet_local(base_path: Path, filename: str) -> pd.DataFrame:
     if not filepath.exists():
         raise FileNotFoundError(f"Parquet file not found: {filepath}")
 
-    schema: pq.ParquetSchema = pq.read_schema(filepath)
+    schema: pa.Schema = read_schema(filepath)
     validate_parquet_schema(schema)
 
     df: pd.DataFrame = pd.read_parquet(filepath)
@@ -151,7 +155,7 @@ def read_parquet_r2(s3_client: Any, bucket: str, key: str) -> pd.DataFrame:
     body: bytes = response["Body"].read()
     buffer: io.BytesIO = io.BytesIO(body)
 
-    schema: pq.ParquetSchema = pq.read_schema(buffer)
+    schema: pa.Schema = read_schema(buffer)
     validate_parquet_schema(schema)
     buffer.seek(0)
 

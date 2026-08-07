@@ -23,10 +23,22 @@ export function BarcodeScanner({ onScanned, onClose }: BarcodeScannerProps) {
       <View style={styles.container}>
         <View style={styles.permissionCard}>
           <Text style={styles.permissionText}>Camera access is needed to scan barcodes.</Text>
-          <TouchableOpacity style={styles.button} onPress={requestPermission} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={requestPermission}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Grant Camera Access"
+          >
             <Text style={styles.buttonText}>Grant Camera Access</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={onClose}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel barcode scanning"
+          >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -64,7 +76,13 @@ export function BarcodeScanner({ onScanned, onClose }: BarcodeScannerProps) {
         </View>
         <View style={styles.overlayBottom}>
           <Text style={styles.instructionText}>Point at a barcode</Text>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel barcode scanning"
+          >
             <Text style={styles.closeButtonText}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -75,7 +93,7 @@ export function BarcodeScanner({ onScanned, onClose }: BarcodeScannerProps) {
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "#000",
     zIndex: 100,
   },
@@ -83,7 +101,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   overlayTop: {
     flex: 1,

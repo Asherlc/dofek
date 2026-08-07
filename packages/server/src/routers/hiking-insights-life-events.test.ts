@@ -4,7 +4,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -13,6 +18,31 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function makeSensorStore(rows: unknown[] = []): SensorStore {
+  return {
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (
+        query.includes("analytics.daily_sleep") ||
+        query.includes("analytics.v_body_measurement")
+      ) {
+        return [];
+      }
+      return rows;
+    }),
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -48,10 +78,23 @@ describe("hikingRouter", () => {
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
   }
 
   describe("gradeAdjustedPace", () => {
+    it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.gradeAdjustedPace({ days: 90 })).rejects.toThrow(
+        "hiking.gradeAdjustedPace requires the ClickHouse activity analytics store",
+      );
+    });
+
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
       const result = await caller.gradeAdjustedPace({ days: 90 });
@@ -64,7 +107,7 @@ describe("hikingRouter", () => {
           activity_id: "hike-1",
           date: "2024-01-15",
           activity_name: "Morning Hike",
-          activity_type: "hiking",
+          canonical_type: "hiking",
           distance_m: 5000,
           duration_seconds: 3600,
           elevation_gain_m: 300,
@@ -91,7 +134,7 @@ describe("hikingRouter", () => {
           activity_id: "hike-2",
           date: "2024-01-15",
           activity_name: "Downhill Walk",
-          activity_type: "walking",
+          canonical_type: "walking",
           distance_m: 5000,
           duration_seconds: 3000,
           elevation_gain_m: 50,
@@ -216,12 +259,13 @@ describe("insightsRouter", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.compute({ days: 90, endDate: "2026-03-15" });
 
     expect(result).toEqual({ insights: ["test-insight"] });
-    // Should call execute 5 times (metrics, sleep, activities, nutrition, bodyComp)
-    expect(execute).toHaveBeenCalledTimes(5);
+    // Activities and nutrition stay in Postgres; metrics, resting HR, sleep, and body comp come from ClickHouse.
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -233,6 +277,7 @@ describe("lifeEventsRouter", () => {
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
   }
 
@@ -325,6 +370,7 @@ describe("lifeEventsRouter", () => {
         db: { execute },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([{ date: "2024-05-31", resting_hr: 52 }]),
       });
       const result = await caller.analyze({
         id: "00000000-0000-0000-0000-000000000001",

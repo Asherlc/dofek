@@ -1,3 +1,4 @@
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { fitCriticalHeartRate } from "../repositories/duration-curves-repository.ts";
 
@@ -51,15 +52,20 @@ describe("fitCriticalHeartRate", () => {
 // Router procedure tests (kill delegation mutations in duration-curves.ts)
 // ---------------------------------------------------------------------------
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -84,19 +90,38 @@ const { createTestCallerFactory } = await import("./test-helpers.ts");
 const createCaller = createTestCallerFactory(durationCurvesRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
+  const sensorStore = {
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue(rows),
+    getPaceCurveRows: vi.fn().mockResolvedValue(rows),
+  };
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
+    sensorStore,
     userId: "user-1",
     timezone: "UTC",
   });
 }
 
 describe("durationCurvesRouter", () => {
+  it("versions the pace curve availability response cache contract", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 3_600_000,
+      keyVersion: "pace-curve-availability-v1",
+    });
+  });
+
   describe("hrCurve", () => {
     it("returns heart rate curve data", async () => {
       const rows = [
-        { duration_seconds: 300, best_heart_rate: 185 },
-        { duration_seconds: 600, best_heart_rate: 180 },
+        { duration_seconds: 300, best_hr: 185, activity_date: "2026-04-01" },
+        { duration_seconds: 600, best_hr: 180, activity_date: "2026-04-02" },
       ];
       const caller = makeCaller(rows);
       const result = await caller.hrCurve({ days: 90 });
@@ -119,18 +144,58 @@ describe("durationCurvesRouter", () => {
   describe("paceCurve", () => {
     it("returns pace curve data", async () => {
       const rows = [
-        { duration_seconds: 300, best_pace_s_per_km: 240 },
-        { duration_seconds: 600, best_pace_s_per_km: 260 },
+        { duration_seconds: 300, best_pace: 240, activity_date: "2026-04-01" },
+        { duration_seconds: 600, best_pace: 260, activity_date: "2026-04-02" },
       ];
       const caller = makeCaller(rows);
       const result = await caller.paceCurve({ days: 90 });
       expect(result.points).toHaveLength(2);
+      expect(result.availability).toMatchObject({
+        status: "available",
+        observedCount: 2,
+        minimumCount: 1,
+        message:
+          "Running pace duration data is available from the running pace duration-curve read model.",
+      });
     });
 
     it("uses default days (90) when not specified", async () => {
       const caller = makeCaller([]);
       const result = await caller.paceCurve({});
       expect(result.points).toEqual([]);
+      expect(result.availability).toMatchObject({
+        status: "insufficient_data",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No running pace duration data is available from the running pace duration-curve read model. Record at least 1 running activity with pace data to show this chart.",
+      });
+    });
+  });
+
+  it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.hrCurve({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "PRECONDITION_FAILED",
+    });
+  });
+
+  it("throws PRECONDITION_FAILED for paceCurve when sensor store is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.paceCurve({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "PRECONDITION_FAILED",
+      message:
+        "ClickHouse activity analytics store is required for duration curves. Set CLICKHOUSE_URL and retry.",
     });
   });
 });

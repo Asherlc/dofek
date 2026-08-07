@@ -21,6 +21,22 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 
 See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
 
+## Offline behavior
+
+Production builds precache the application shell and hashed static assets with
+`vite-plugin-pwa` and Workbox. The service worker does not cache API, auth, or
+callback responses. This follows the plugin's
+[generated service worker](https://vite-pwa-org.netlify.app/workbox/generate-sw.html)
+model without adding runtime caching for health data.
+
+Already-rendered query data remains in memory for five minutes after a route
+unmounts, so route-away/back navigation can render the last available value
+while TanStack Query checks for fresher data. TanStack documents this
+stale-while-revalidate cache lifecycle in its
+[caching guide](https://tanstack.com/query/latest/docs/framework/react/guides/caching).
+The cache is intentionally not persisted to browser storage and is cleared
+when the authenticated user changes.
+
 ## Development
 
 ```bash

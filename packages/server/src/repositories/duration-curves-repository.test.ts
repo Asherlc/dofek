@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ChartRange } from "../lib/chart-range.ts";
 import { DurationCurvesRepository, fitCriticalHeartRate } from "./duration-curves-repository.ts";
 
 // ── fitCriticalHeartRate ─────────────────────────────────────
@@ -325,15 +326,25 @@ describe("fitCriticalHeartRate", () => {
 
 describe("DurationCurvesRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new DurationCurvesRepository({ execute }, "user-1", "UTC");
-    return { repo, execute };
+    const sensorStore = {
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue(rows),
+      getPaceCurveRows: vi.fn().mockResolvedValue(rows),
+    } satisfies ConstructorParameters<typeof DurationCurvesRepository>[2];
+    const repo = new DurationCurvesRepository("user-1", "UTC", sensorStore);
+    return { repo, sensorStore };
   }
 
   describe("getHrCurve", () => {
     it("returns empty points and null model when no data", async () => {
       const { repo } = makeRepository([]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(result.points).toEqual([]);
       expect(result.model).toBeNull();
     });
@@ -343,7 +354,7 @@ describe("DurationCurvesRepository", () => {
         { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
         { duration_seconds: "600", best_hr: "165", activity_date: "2025-06-14" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(result.points).toHaveLength(2);
       expect(result.points[0]).toEqual({
         durationSeconds: 300,
@@ -363,24 +374,24 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "7200", best_hr: "155", activity_date: "2025-06-10" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       // 7200 may or may not be in DURATION_LABELS; if not, uses fallback "7200s"
       expect(result.points[0]?.label).toBeDefined();
       expect(typeof result.points[0]?.label).toBe("string");
       expect(result.points[0]?.label.length).toBeGreaterThan(0);
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
-      await repo.getHrCurve(30);
-      expect(execute).toHaveBeenCalledTimes(1);
+    it("reads heart-rate duration rows from the ClickHouse analytics store", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getHrCurve(ChartRange.fromDays(30));
+      expect(sensorStore.getHeartRateCurveRows).toHaveBeenCalledWith(30, "user-1", "UTC");
     });
   });
 
   describe("getPaceCurve", () => {
     it("returns empty points when no data", async () => {
       const { repo } = makeRepository([]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       expect(result.points).toEqual([]);
     });
 
@@ -389,7 +400,7 @@ describe("DurationCurvesRepository", () => {
         { duration_seconds: "1800", best_pace: "240.5", activity_date: "2025-06-15" },
         { duration_seconds: "3600", best_pace: "250.0", activity_date: "2025-06-14" },
       ]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       expect(result.points).toHaveLength(2);
       expect(result.points[0]).toEqual({
         durationSeconds: 1800,
@@ -405,17 +416,29 @@ describe("DurationCurvesRepository", () => {
       });
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
-      await repo.getPaceCurve(30);
-      expect(execute).toHaveBeenCalledTimes(1);
+    it("reads pace duration rows from the ClickHouse analytics store", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getPaceCurve(ChartRange.fromDays(30));
+      expect(sensorStore.getPaceCurveRows).toHaveBeenCalledWith(30, "user-1", "UTC");
+    });
+
+    it("passes null days through for unbounded selected ranges", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getPaceCurve(ChartRange.fromDays(null));
+      expect(sensorStore.getPaceCurveRows).toHaveBeenCalledWith(null, "user-1", "UTC");
+    });
+
+    it("passes null days through to heart rate rows for unbounded selected ranges", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getHrCurve(ChartRange.fromDays(null));
+      expect(sensorStore.getHeartRateCurveRows).toHaveBeenCalledWith(null, "user-1", "UTC");
     });
 
     it("converts numeric string fields to proper numbers", async () => {
       const { repo } = makeRepository([
         { duration_seconds: "60", best_pace: "300.0", activity_date: "2025-06-15" },
       ]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       expect(typeof result.points[0]?.durationSeconds).toBe("number");
       expect(typeof result.points[0]?.bestPaceSecondsPerKm).toBe("number");
       expect(result.points[0]?.durationSeconds).toBe(60);
@@ -427,7 +450,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "300", best_pace: "250", activity_date: "2025-06-15" },
       ]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       expect(typeof result.points[0]?.activityDate).toBe("string");
       expect(result.points[0]?.activityDate).toBe("2025-06-15");
     });
@@ -438,7 +461,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "120", best_hr: "175", activity_date: "2025-06-10" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(typeof result.points[0]?.durationSeconds).toBe("number");
       expect(typeof result.points[0]?.bestHeartRate).toBe("number");
       expect(result.points[0]?.durationSeconds).toBe(120);
@@ -449,7 +472,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(typeof result.points[0]?.activityDate).toBe("string");
       expect(result.points[0]?.activityDate).toBe("2025-06-15");
     });
@@ -458,7 +481,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "99999", best_hr: "155", activity_date: "2025-06-10" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       // Unknown duration falls back to "99999s" format
       expect(result.points[0]?.label).toBe("99999s");
     });
@@ -470,7 +493,7 @@ describe("DurationCurvesRepository", () => {
         { duration_seconds: "600", best_hr: "168", activity_date: "2025-06-01" },
         { duration_seconds: "1200", best_hr: "164", activity_date: "2025-06-01" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(result.model).not.toBeNull();
       expect(result.model?.thresholdHr).toBeGreaterThan(100);
       expect(result.model?.r2).toBeGreaterThan(0);
@@ -482,7 +505,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "88888", best_pace: "300", activity_date: "2025-06-10" },
       ]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       expect(result.points[0]?.label).toBe("88888s");
     });
   });
@@ -490,7 +513,7 @@ describe("DurationCurvesRepository", () => {
   describe("getHrCurve — result object shape", () => {
     it("returns an object with exactly points and model keys", async () => {
       const { repo } = makeRepository([]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(Object.keys(result).sort()).toStrictEqual(["model", "points"]);
     });
 
@@ -499,7 +522,7 @@ describe("DurationCurvesRepository", () => {
         { duration_seconds: "5", best_hr: "190", activity_date: "2025-06-01" },
         { duration_seconds: "15", best_hr: "185", activity_date: "2025-06-01" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(result.model).toBeNull();
     });
   });
@@ -507,7 +530,7 @@ describe("DurationCurvesRepository", () => {
   describe("getPaceCurve — result object shape", () => {
     it("returns an object with exactly a points key", async () => {
       const { repo } = makeRepository([]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       expect(Object.keys(result)).toStrictEqual(["points"]);
     });
   });
@@ -517,7 +540,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "1200", best_hr: "162", activity_date: "2025-06-20" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       const point = result.points[0];
       expect(point).toStrictEqual({
         durationSeconds: 1200,
@@ -533,7 +556,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "1200", best_pace: "275.3", activity_date: "2025-06-20" },
       ]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       const point = result.points[0];
       expect(point).toStrictEqual({
         durationSeconds: 1200,
@@ -554,7 +577,7 @@ describe("DurationCurvesRepository", () => {
         { duration_seconds: "600", best_hr: "168", activity_date: "2025-06-01" },
         { duration_seconds: "1200", best_hr: "164", activity_date: "2025-06-01" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       // The model should be non-null since we have 4 valid points >= 120s
       expect(result.model).not.toBeNull();
       expect(result.model?.thresholdHr).toBeGreaterThan(0);
@@ -567,7 +590,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       // Number("300") === 300, String("300") === "300"
       expect(result.points[0]?.durationSeconds).toStrictEqual(300);
       expect(result.points[0]?.durationSeconds).not.toStrictEqual("300");
@@ -577,7 +600,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(result.points[0]?.bestHeartRate).toStrictEqual(170);
       expect(result.points[0]?.bestHeartRate).not.toStrictEqual("170");
     });
@@ -586,7 +609,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "300", best_hr: "170", activity_date: "2025-06-15" },
       ]);
-      const result = await repo.getHrCurve(90);
+      const result = await repo.getHrCurve(ChartRange.fromDays(90));
       expect(result.points[0]?.activityDate).toStrictEqual("2025-06-15");
     });
   });
@@ -596,7 +619,7 @@ describe("DurationCurvesRepository", () => {
       const { repo } = makeRepository([
         { duration_seconds: "300", best_pace: "245.3", activity_date: "2025-06-15" },
       ]);
-      const result = await repo.getPaceCurve(90);
+      const result = await repo.getPaceCurve(ChartRange.fromDays(90));
       expect(result.points[0]?.bestPaceSecondsPerKm).toStrictEqual(245.3);
       expect(result.points[0]?.bestPaceSecondsPerKm).not.toStrictEqual("245.3");
     });

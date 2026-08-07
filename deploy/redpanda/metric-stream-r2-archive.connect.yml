@@ -1,0 +1,45 @@
+input:
+  redpanda:
+    seed_brokers:
+      - ${REDPANDA_BROKERS}
+    topics:
+      - ${METRIC_STREAM_TOPIC}
+    consumer_group: metric-stream-r2-archive
+    # The redpanda input is a batched input: each yielded batch becomes one R2
+    # object via the archive processor below. The default max_yield_batch_bytes
+    # is 32KB (~90 events), producing tiny objects and ~one PUT per ~90 events,
+    # which cannot keep up with ingest. Enlarge the yielded batch so each object
+    # holds thousands of events and PUT volume drops ~50x.
+    fetch_max_partition_bytes: 8MiB
+    partition_buffer_bytes: 16MB
+    max_yield_batch_bytes: 4MB
+    fetch_max_wait: 1s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        meta archive_topic = meta("kafka_topic").from(0)
+        meta archive_partition = meta("kafka_partition").from(0)
+        meta archive_first_offset = meta("kafka_offset").from(0)
+        meta archive_last_offset = meta("kafka_offset").from(batch_size() - 1)
+        meta archive_recorded_at = json("recordedAt").from(0)
+    - archive:
+        format: lines
+    - compress:
+        algorithm: gzip
+
+output:
+  aws_s3:
+    bucket: ${METRIC_STREAM_R2_BUCKET}
+    region: auto
+    endpoint: ${R2_ENDPOINT}
+    force_path_style_urls: true
+    # Write multiple objects concurrently so S3 PUT latency does not serialize
+    # the drain.
+    max_in_flight: 8
+    path: >-
+      metric-stream/v1/date=${! meta("archive_recorded_at").string().slice(0, 10) }/hour=${! meta("archive_recorded_at").string().slice(11, 13) }/${! meta("archive_topic") }-${! meta("archive_partition") }-${! meta("archive_first_offset") }-${! meta("archive_last_offset") }.jsonl.gz
+    credentials:
+      id: ${R2_ACCESS_KEY_ID}
+      secret: ${R2_SECRET_ACCESS_KEY}

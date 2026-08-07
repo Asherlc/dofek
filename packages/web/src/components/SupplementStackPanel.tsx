@@ -1,5 +1,9 @@
-import { useState } from "react";
+import { formatNutritionAmount } from "@dofek/format/format";
+import { useRef, useState } from "react";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface Supplement {
   name: string;
@@ -98,7 +102,7 @@ const NUTRIENT_FIELDS: { key: keyof Supplement; label: string; unit: string }[] 
 function formatDose(supp: Supplement): string {
   const parts: string[] = [];
   if (supp.amount != null && supp.unit) {
-    parts.push(`${supp.amount}${supp.unit}`);
+    parts.push(formatNutritionAmount(supp.amount, supp.unit));
   }
   if (supp.form) {
     parts.push(supp.form);
@@ -112,53 +116,99 @@ function formatDose(supp: Supplement): string {
 export function SupplementStackPanel() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [reorderAnnouncement, setReorderAnnouncement] = useState<string | null>(null);
+  const saveInFlightRef = useRef(false);
+  const reorderAnnouncementRef = useRef<string | null>(null);
 
   const utils = trpc.useUtils();
   const stack = trpc.supplements.list.useQuery();
   const saveMutation = trpc.supplements.save.useMutation({
-    onSuccess: () => utils.supplements.list.invalidate(),
+    onSuccess: async () => {
+      saveInFlightRef.current = false;
+      const announcement = reorderAnnouncementRef.current;
+      reorderAnnouncementRef.current = null;
+      if (announcement) {
+        setReorderAnnouncement(announcement);
+      }
+      await Promise.all([
+        utils.supplements.list.invalidate(),
+        utils.nutritionAnalytics.micronutrientAdequacyV2.invalidate({ days: 30 }),
+      ]);
+    },
+    onError: (error) => {
+      saveInFlightRef.current = false;
+      reorderAnnouncementRef.current = null;
+      setReorderAnnouncement(null);
+      captureException(error, { operation: "supplements.save" });
+    },
+    meta: locallyReportedErrorMeta,
   });
 
   const supplements: Supplement[] = stack.data ?? [];
+  const hasCanonicalStack = stack.data !== undefined;
 
-  const handleSave = (updated: Supplement[]) => {
+  const handleSave = (updated: Supplement[], announcement?: string): boolean => {
+    if (!hasCanonicalStack || saveMutation.isPending || saveInFlightRef.current) {
+      return false;
+    }
+    saveInFlightRef.current = true;
+    reorderAnnouncementRef.current = announcement ?? null;
+    setReorderAnnouncement(null);
     saveMutation.mutate({ supplements: updated });
+    return true;
   };
 
   const handleAdd = (supp: Supplement) => {
-    handleSave([...supplements, supp]);
-    setShowAdd(false);
+    if (handleSave([...supplements, supp])) {
+      setShowAdd(false);
+    }
   };
 
   const handleUpdate = (index: number, supp: Supplement) => {
     const updated = [...supplements];
     updated[index] = supp;
-    handleSave(updated);
-    setEditingIndex(null);
+    if (handleSave(updated)) {
+      setEditingIndex(null);
+    }
   };
 
   const handleRemove = (index: number) => {
-    handleSave(supplements.filter((_, i) => i !== index));
-    setEditingIndex(null);
+    if (handleSave(supplements.filter((_, i) => i !== index))) {
+      setEditingIndex(null);
+    }
   };
 
   const handleReorder = (from: number, to: number) => {
+    if (!hasCanonicalStack) {
+      return;
+    }
     const updated = [...supplements];
     const [moved] = updated.splice(from, 1);
-    if (moved) updated.splice(to, 0, moved);
-    handleSave(updated);
+    if (!moved) {
+      return;
+    }
+    updated.splice(to, 0, moved);
+    handleSave(updated, `Moved ${moved.name} to position ${to + 1} of ${supplements.length}.`);
   };
 
-  if (stack.isLoading) {
-    return <div className="h-20 rounded-lg bg-skeleton animate-pulse" />;
+  if (stack.isLoading && !hasCanonicalStack) {
+    return <QueryStatePanel variant="loading" height={80} />;
+  }
+
+  if (stack.error && !hasCanonicalStack) {
+    return <QueryStatePanel error={stack.error} height={120} />;
   }
 
   return (
     <div className="space-y-3">
+      {stack.error ? <QueryStatePanel error={stack.error} height={72} /> : null}
+
       {supplements.length === 0 && !showAdd && (
-        <p className="text-xs text-dim">
-          No supplements configured. Add your daily stack and it will be synced as nutrition data.
-        </p>
+        <QueryStatePanel
+          variant="empty"
+          message="No supplements configured. Add your daily plan, then record each dose as taken or skipped."
+          height={72}
+        />
       )}
 
       {supplements.map((supp, i) => (
@@ -179,10 +229,17 @@ export function SupplementStackPanel() {
               onEdit={() => setEditingIndex(i)}
               onMoveUp={i > 0 ? () => handleReorder(i, i - 1) : undefined}
               onMoveDown={i < supplements.length - 1 ? () => handleReorder(i, i + 1) : undefined}
+              saving={saveMutation.isPending}
             />
           )}
         </div>
       ))}
+
+      {reorderAnnouncement ? (
+        <output aria-live="polite" aria-atomic="true" className="sr-only">
+          {reorderAnnouncement}
+        </output>
+      ) : null}
 
       {showAdd ? (
         <SupplementForm
@@ -194,14 +251,17 @@ export function SupplementStackPanel() {
         <button
           type="button"
           onClick={() => setShowAdd(true)}
-          className="text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors"
+          disabled={saveMutation.isPending}
+          className="text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           + Add supplement
         </button>
       )}
 
       {saveMutation.isError && (
-        <p className="text-xs text-red-500">Failed to save: {saveMutation.error.message}</p>
+        <p role="alert" className="text-xs text-red-500">
+          Failed to save: {saveMutation.error.message}
+        </p>
       )}
     </div>
   );
@@ -212,34 +272,40 @@ function SupplementRow({
   onEdit,
   onMoveUp,
   onMoveDown,
+  saving,
 }: {
   supp: Supplement;
   onEdit: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  saving: boolean;
 }) {
   const dose = formatDose(supp);
   const nutrients = NUTRIENT_FIELDS.filter((f) => supp[f.key] != null && supp[f.key] !== 0);
 
   return (
     <div className="flex items-center gap-3 rounded border border-border bg-page px-3 py-2 group">
-      <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex shrink-0 flex-col gap-1">
         {onMoveUp && (
           <button
             type="button"
             onClick={onMoveUp}
-            className="text-[10px] text-dim hover:text-muted"
+            disabled={saving}
+            aria-label={`Move ${supp.name} up`}
+            className="text-xs text-dim hover:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            ▲
+            Move up
           </button>
         )}
         {onMoveDown && (
           <button
             type="button"
             onClick={onMoveDown}
-            className="text-[10px] text-dim hover:text-muted"
+            disabled={saving}
+            aria-label={`Move ${supp.name} down`}
+            className="text-xs text-dim hover:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            ▼
+            Move down
           </button>
         )}
       </div>
@@ -253,8 +319,7 @@ function SupplementRow({
           <div className="flex flex-wrap gap-x-3 gap-y-0 mt-0.5">
             {nutrients.map((f) => (
               <span key={f.key} className="text-[10px] text-dim">
-                {f.label}: {supp[f.key]}
-                {f.unit}
+                {f.label}: {formatNutritionAmount(Number(supp[f.key]), f.unit)}
               </span>
             ))}
           </div>
@@ -263,7 +328,8 @@ function SupplementRow({
       <button
         type="button"
         onClick={onEdit}
-        className="text-xs text-dim hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+        disabled={saving}
+        className="text-xs text-dim hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 transition-colors opacity-0 group-hover:opacity-100"
       >
         Edit
       </button>
@@ -464,7 +530,8 @@ function SupplementForm({
             <button
               type="button"
               onClick={onDelete}
-              className="text-xs text-red-800 hover:text-red-500 transition-colors"
+              disabled={saving}
+              className="text-xs text-red-800 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
             >
               Remove
             </button>

@@ -2,12 +2,12 @@
  * Heart rate and power zone models and utilities.
  *
  * Three models are supported:
- * 1. **Karvonen 5-zone** HR (%HRR) — standard 5-zone model for activity analysis
+ * 1. **Karvonen HR zones** (%HRR) — zone 0 plus the standard 5 training zones
  * 2. **Treff 3-zone** HR (%HRmax) — simplified model for polarization index
  * 3. **7-zone** cycling power (%FTP) — standard model for power analysis
  */
 
-import { chartColors, statusColors } from "@dofek/scoring/colors";
+import { chartColors, statusColors, textColors } from "@dofek/scoring/colors";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -37,6 +37,25 @@ export interface ActivityHrZone {
   /** Upper bound as integer percentage of HRR (e.g. 60) */
   maxPct: number;
   seconds: number;
+  /** Percentage of activity zone time spent in this zone. */
+  percent: number;
+}
+
+export interface ZoneDistributionDatum {
+  zone: number;
+  label: string;
+  seconds: number;
+  percent: number;
+}
+
+export interface ZoneDistributionRow<ZoneItem extends ZoneDistributionDatum> {
+  key: string;
+  primaryLabel: string;
+  subordinateLabel: string | null;
+  axisLabel: string;
+  percentLabel: string;
+  color: string;
+  zone: ZoneItem;
 }
 
 export interface PolarizationZoneDefinition {
@@ -48,15 +67,16 @@ export interface PolarizationZoneDefinition {
   maxPctHrmax: number;
 }
 
-// ── Karvonen 5-Zone Model ────────────────────────────────────────────
+// ── Karvonen Heart Rate Zones ────────────────────────────────────────
 
 /**
- * Standard 5-zone Karvonen model using % Heart Rate Reserve.
+ * Karvonen model using % Heart Rate Reserve.
  *
  * HRR = maxHr - restingHr
  * Zone boundary = restingHr + HRR * fraction
  */
 export const HEART_RATE_ZONES: HeartRateZoneDefinition[] = [
+  { zone: 0, label: "Below Zone 1", minPctHrr: 0, maxPctHrr: 0.5, color: textColors.neutral },
   { zone: 1, label: "Recovery", minPctHrr: 0.5, maxPctHrr: 0.6, color: statusColors.info },
   { zone: 2, label: "Aerobic", minPctHrr: 0.6, maxPctHrr: 0.7, color: statusColors.positive },
   { zone: 3, label: "Tempo", minPctHrr: 0.7, maxPctHrr: 0.8, color: statusColors.warning },
@@ -64,18 +84,64 @@ export const HEART_RATE_ZONES: HeartRateZoneDefinition[] = [
   { zone: 5, label: "VO2max", minPctHrr: 0.9, maxPctHrr: 1.0, color: statusColors.danger },
 ];
 
-/** Ordered array of zone colors for chart series (indexed 0-4 for zones 1-5). */
+/** Ordered array of zone colors for chart series (indexed 0-5 for zones 0-5). */
 export const HEART_RATE_ZONE_COLORS: string[] = HEART_RATE_ZONES.map((z) => z.color);
 
 /**
  * Zone boundary fractions for SQL interpolation.
  * These are the upper bounds of each zone (as %HRR fractions):
- * [0.6, 0.7, 0.8, 0.9] — the boundary between zone N and zone N+1.
+ * [0.5, 0.6, 0.7, 0.8, 0.9] — the boundary between zone N and zone N+1.
  *
- * Use these instead of hardcoding 0.6, 0.7, 0.8, 0.9 in SQL queries
+ * Use these instead of hardcoding HRR thresholds in SQL queries
  * so zone definitions stay in sync across the codebase.
  */
 export const ZONE_BOUNDARIES_HRR = HEART_RATE_ZONES.slice(0, -1).map((z) => z.maxPctHrr);
+
+export function formatZoneDistributionAxisLabel(zoneItem: ZoneDistributionDatum): string {
+  const primaryLabel = formatZoneDistributionPrimaryLabel(zoneItem);
+  const subordinateLabel = formatZoneDistributionSubordinateLabel(zoneItem);
+  return subordinateLabel == null ? primaryLabel : `${primaryLabel}\n${subordinateLabel}`;
+}
+
+export function formatZoneDistributionPrimaryLabel(zoneItem: ZoneDistributionDatum): string {
+  if (zoneItem.zone === 0) return zoneItem.label;
+  return `Zone ${zoneItem.zone}`;
+}
+
+export function formatZoneDistributionSubordinateLabel(
+  zoneItem: ZoneDistributionDatum,
+): string | null {
+  if (zoneItem.zone === 0) return null;
+  return zoneItem.label;
+}
+
+export function formatZoneDistributionPercentLabel(zoneItem: ZoneDistributionDatum): string {
+  return `${Math.round(zoneItem.percent)}%`;
+}
+
+export function hasZoneDistributionData(zones: ZoneDistributionDatum[]): boolean {
+  return zones.some((zoneItem) => zoneItem.percent > 0);
+}
+
+export function createZoneDistributionRows<ZoneItem extends ZoneDistributionDatum>(
+  zones: ZoneItem[],
+  zoneColors: string[],
+  fallbackColor: string = textColors.neutral,
+): ZoneDistributionRow<ZoneItem>[] {
+  return zones.map((zoneItem, zoneIndex) => ({
+    key: String(zoneItem.zone),
+    primaryLabel: formatZoneDistributionPrimaryLabel(zoneItem),
+    subordinateLabel: formatZoneDistributionSubordinateLabel(zoneItem),
+    axisLabel: formatZoneDistributionAxisLabel(zoneItem),
+    percentLabel: formatZoneDistributionPercentLabel(zoneItem),
+    color: zoneColors[zoneIndex] ?? fallbackColor,
+    zone: zoneItem,
+  }));
+}
+
+export function formatHeartRateZoneRangeLabel(zoneItem: ActivityHrZone): string {
+  return `${zoneItem.minPct}-${zoneItem.maxPct}% Heart Rate Reserve`;
+}
 
 /**
  * Compute absolute BPM boundaries for each zone given a user's max HR and resting HR.
@@ -92,8 +158,7 @@ export function heartRateZoneBoundaries(maxHr: number, restingHr: number): Heart
 }
 
 /**
- * Classify a heart rate reading into zone 1-5.
- * Returns 0 if the heart rate is below zone 1 (< 50% HRR).
+ * Classify a heart rate reading into zone 0-5.
  */
 export function classifyHeartRateZone(heartRate: number, maxHr: number, restingHr: number): number {
   const reserve = maxHr - restingHr;
@@ -108,7 +173,7 @@ export function classifyHeartRateZone(heartRate: number, maxHr: number, restingH
 }
 
 /**
- * Compute the absolute BPM range for a specific zone number (1-5).
+ * Compute the absolute BPM range for a specific zone number (0-5).
  * Returns null if maxHr or restingHr is null.
  */
 export function computeHrRange(
@@ -127,18 +192,21 @@ export function computeHrRange(
 }
 
 /**
- * Map raw DB zone rows to the full 5-zone structure.
+ * Map raw DB zone rows to the full heart-rate zone structure.
  * Missing zones get 0 seconds. Used by activity and training routers.
  */
 export function mapHrZones(rows: { zone: number; seconds: number }[]): ActivityHrZone[] {
-  return HEART_RATE_ZONES.map((z) => {
-    const row = rows.find((r) => Number(r.zone) === z.zone);
+  const totalSeconds = rows.reduce((sum, row) => sum + Number(row.seconds), 0);
+  return HEART_RATE_ZONES.map((zoneDefinition) => {
+    const row = rows.find((candidateRow) => Number(candidateRow.zone) === zoneDefinition.zone);
+    const seconds = row ? Number(row.seconds) : 0;
     return {
-      zone: z.zone,
-      label: z.label,
-      minPct: Math.round(z.minPctHrr * 100),
-      maxPct: Math.round(z.maxPctHrr * 100),
-      seconds: row ? Number(row.seconds) : 0,
+      zone: zoneDefinition.zone,
+      label: zoneDefinition.label,
+      minPct: Math.round(zoneDefinition.minPctHrr * 100),
+      maxPct: Math.round(zoneDefinition.maxPctHrr * 100),
+      seconds,
+      percent: totalSeconds > 0 ? Math.round((seconds / totalSeconds) * 1000) / 10 : 0,
     };
   });
 }
@@ -158,25 +226,24 @@ export const POLARIZATION_ZONES: PolarizationZoneDefinition[] = [
 /**
  * Compute the Treff Polarization Index from zone time distribution.
  *
- * PI = log10((f1 / (f2 * f3)) * 100)
+ * PI = log10((f1 / f2) * f3 * 100)
  * where f = fraction of total training time in each zone.
  *
- * PI > 2.0 indicates a well-polarized training distribution.
- * Returns null if any zone has zero time.
+ * PI > 2.0 matches Treff's descriptive polarized-distribution heuristic.
+ * Returns null if any zone has zero time or Zone 3 exceeds Zone 1.
  */
 export function computePolarizationIndex(
   z1Seconds: number,
   z2Seconds: number,
   z3Seconds: number,
 ): number | null {
-  if (z1Seconds <= 0 || z2Seconds <= 0 || z3Seconds <= 0) return null;
+  if (z2Seconds <= 0 || z3Seconds <= 0 || z3Seconds > z1Seconds) return null;
   const total = z1Seconds + z2Seconds + z3Seconds;
-  if (total <= 0) return null;
 
   const f1 = z1Seconds / total;
   const f2 = z2Seconds / total;
   const f3 = z3Seconds / total;
-  const ratio = (f1 / (f2 * f3)) * 100;
+  const ratio = (f1 / f2) * f3 * 100;
   return Math.round(Math.log10(ratio) * 1000) / 1000;
 }
 
@@ -209,6 +276,8 @@ export interface ActivityPowerZone {
   /** Upper bound as integer percentage of FTP. null for Z7 (open-ended). */
   maxPct: number | null;
   seconds: number;
+  /** Percentage of activity zone time spent in this zone. */
+  percent: number;
 }
 
 /**
@@ -242,6 +311,17 @@ export const POWER_ZONE_COLORS: string[] = POWER_ZONES.map((z) => z.color);
  */
 export const ZONE_BOUNDARIES_FTP = POWER_ZONES.slice(0, -1).map((z) => z.maxPctFtp);
 
+export function formatPowerZoneRangeLabel(zoneItem: ActivityPowerZone, ftp: number): string {
+  const minWatts = Math.round((zoneItem.minPct / 100) * ftp);
+  const maxWatts = zoneItem.maxPct != null ? Math.round((zoneItem.maxPct / 100) * ftp) : null;
+  const percentLabel =
+    zoneItem.maxPct != null
+      ? `${zoneItem.minPct}-${zoneItem.maxPct}% Threshold Power`
+      : `>${zoneItem.minPct}% Threshold Power`;
+  const wattLabel = maxWatts != null ? `${minWatts}-${maxWatts} W` : `>${minWatts} W`;
+  return `${percentLabel} (${wattLabel})`;
+}
+
 /**
  * Compute absolute wattage boundaries for each zone given an FTP value.
  */
@@ -272,14 +352,19 @@ export function classifyPowerZone(power: number, ftp: number): number {
  * Missing zones get 0 seconds.
  */
 export function mapPowerZones(rows: { zone: number; seconds: number }[]): ActivityPowerZone[] {
-  return POWER_ZONES.map((z) => {
-    const row = rows.find((r) => Number(r.zone) === z.zone);
+  const totalSeconds = rows.reduce((sum, row) => sum + Number(row.seconds), 0);
+  return POWER_ZONES.map((zoneDefinition) => {
+    const row = rows.find((candidateRow) => Number(candidateRow.zone) === zoneDefinition.zone);
+    const seconds = row ? Number(row.seconds) : 0;
     return {
-      zone: z.zone,
-      label: z.label,
-      minPct: Math.round(z.minPctFtp * 100),
-      maxPct: Number.isFinite(z.maxPctFtp) ? Math.round(z.maxPctFtp * 100) : null,
-      seconds: row ? Number(row.seconds) : 0,
+      zone: zoneDefinition.zone,
+      label: zoneDefinition.label,
+      minPct: Math.round(zoneDefinition.minPctFtp * 100),
+      maxPct: Number.isFinite(zoneDefinition.maxPctFtp)
+        ? Math.round(zoneDefinition.maxPctFtp * 100)
+        : null,
+      seconds,
+      percent: totalSeconds > 0 ? Math.round((seconds / totalSeconds) * 1000) / 10 : 0,
     };
   });
 }

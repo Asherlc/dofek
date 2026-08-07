@@ -4,13 +4,20 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./body-measurements": "./src/body-measurements.ts",
     "./daily-metrics": "./src/daily-metrics.ts",
+    "./food-entry-nutrition": "./src/food-entry-nutrition.ts",
     "./meal": "./src/meal.ts",
+    "./nutrition-data-quality": "./src/nutrition-data-quality.ts",
+    "./nutrient-safety": "./src/nutrient-safety.ts",
     "./nutrients": "./src/nutrients.ts",
-    "./open-food-facts": "./src/open-food-facts.ts"
+    "./open-food-facts": "./src/open-food-facts.ts",
+    "./selected-date-summary": "./src/selected-date-summary.ts"
   },
   "dependencies": {
-    "zod": "3.25.76"
+    "@dofek/format": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }

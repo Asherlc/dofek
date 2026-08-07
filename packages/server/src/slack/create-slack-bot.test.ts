@@ -45,7 +45,7 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -55,13 +55,14 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
 }));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
-import * as Sentry from "@sentry/node";
 import bolt from "@slack/bolt";
+import { captureException } from "dofek/lib/error-reporting";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
 /** Mock fetch for verifyBotConfiguration — returns successful auth.test response with scopes in headers */
@@ -688,7 +689,7 @@ describe("createSlackBot — logger messages", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "[slack] Bolt processEvent error: authorization failed",
     );
-    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+    expect(captureException).toHaveBeenCalledWith(testError);
   });
 
   it("processEventErrorHandler wraps non-Error values in Error", async () => {
@@ -708,7 +709,7 @@ describe("createSlackBot — logger messages", () => {
       event: mockAs({}),
     });
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it("wraps processEvent with logging", async () => {
@@ -806,7 +807,7 @@ describe("createSlackBot — logger messages", () => {
     await errorHandler(testError);
 
     expect(logger.error).toHaveBeenCalledWith("[slack] Unhandled Bolt error: http mode error");
-    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+    expect(captureException).toHaveBeenCalledWith(testError);
   });
 
   it("Socket mode error handler reports to Sentry", async () => {
@@ -826,7 +827,7 @@ describe("createSlackBot — logger messages", () => {
     await errorHandler(testError);
 
     expect(logger.error).toHaveBeenCalledWith("[slack] Unhandled Bolt error: socket mode error");
-    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+    expect(captureException).toHaveBeenCalledWith(testError);
   });
 
   it("registers slack_event diagnostic listener on socket mode client", () => {

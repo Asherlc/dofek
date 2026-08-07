@@ -1,8 +1,8 @@
 import {
-  type CanonicalActivityType,
-  createActivityTypeMapper,
-  POLAR_SPORT_MAP,
-} from "@dofek/training/training";
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { POLAR_SPORT_MAP } from "@dofek/training/training";
 import type {
   ParsedPolarActivity,
   ParsedPolarDailyMetrics,
@@ -14,10 +14,8 @@ import type {
   PolarSleep,
 } from "./types.ts";
 
-const mapPolarType = createActivityTypeMapper(POLAR_SPORT_MAP);
-
-export function mapPolarSport(sport: string): CanonicalActivityType {
-  return mapPolarType(sport.toLowerCase());
+export function mapPolarSport(sport: string): ProviderActivityType {
+  return resolveProviderActivityType(sport, POLAR_SPORT_MAP[sport.toLowerCase()] ?? "other");
 }
 
 export function parsePolarDuration(isoDuration: string): number {
@@ -45,7 +43,6 @@ export function parsePolarExercise(exercise: PolarExercise): ParsedPolarActivity
     endedAt,
     durationSeconds,
     distanceMeters: exercise.distance,
-    calories: exercise.calories,
     avgHeartRate: exercise.heart_rate?.average,
     maxHeartRate: exercise.heart_rate?.maximum,
   };
@@ -66,6 +63,7 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
     deepMinutes,
     remMinutes,
     awakeMinutes,
+    stagingAvailable: true,
   };
 }
 
@@ -132,9 +130,8 @@ export function parsePolarDailyActivity(
   nightlyRecharge: PolarNightlyRecharge | null,
 ): ParsedPolarDailyMetrics {
   return {
-    date: dailyActivity.date,
-    steps: dailyActivity.active_steps,
-    activeEnergyKcal: dailyActivity.active_calories,
+    date: dailyActivity.start_time.slice(0, 10),
+    steps: dailyActivity.steps,
     restingHr: nightlyRecharge?.heart_rate_avg,
     hrv: nightlyRecharge?.heart_rate_variability_avg,
     respiratoryRateAvg: nightlyRecharge?.breathing_rate_avg,

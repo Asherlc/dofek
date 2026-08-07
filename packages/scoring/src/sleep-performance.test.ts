@@ -42,6 +42,31 @@ describe("computeSleepPerformance", () => {
     expect(highSuffLowEff.score).toBeGreaterThan(lowSuffHighEff.score);
   });
 
+  it("averages hours, consistency, efficiency, and low stress when all components exist", () => {
+    const result = computeSleepPerformance(465, 480, 72, {
+      consistency: 56,
+      lowStress: 15,
+    });
+
+    expect(result.score).toBe(60);
+    expect(result.components).toEqual({
+      hours: 97,
+      efficiency: 72,
+      consistency: 56,
+      lowStress: 15,
+    });
+  });
+
+  it("uses the 70/30 blend when no extra components are present", () => {
+    // Empty and all-null component inputs must behave like the no-component path,
+    // not switch to a 50/50 hours+efficiency average.
+    const baseline = computeSleepPerformance(465, 480, 72);
+    expect(computeSleepPerformance(465, 480, 72, {}).score).toBe(baseline.score);
+    expect(
+      computeSleepPerformance(465, 480, 72, { consistency: null, lowStress: null }).score,
+    ).toBe(baseline.score);
+  });
+
   it("handles zero needed minutes", () => {
     const result = computeSleepPerformance(420, 0, 90);
     expect(result.score).toBeGreaterThanOrEqual(0);

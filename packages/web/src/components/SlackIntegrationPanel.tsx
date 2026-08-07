@@ -1,45 +1,63 @@
 import { trpc } from "../lib/trpc.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 export function SlackIntegrationPanel() {
-  const { data, isLoading } = trpc.settings.slackStatus.useQuery();
+  const { data, error, isLoading } = trpc.settings.slackStatus.useQuery();
 
   if (isLoading) {
     return <div className="text-xs text-subtle">Checking Slack status...</div>;
   }
 
+  if (error && data === undefined) {
+    return <QueryStatePanel error={error} height={72} />;
+  }
+
+  const refreshWarning = error ? <QueryStatePanel error={error} height={72} /> : null;
+
   if (!data?.configured) {
     return (
-      <div className="text-xs text-subtle">Slack integration is not configured on this server.</div>
+      <div className="space-y-3">
+        {refreshWarning}
+        <div className="text-xs text-subtle">
+          Slack integration is not configured on this server.
+        </div>
+      </div>
     );
   }
 
   if (data.connected) {
     return (
-      <div className="flex items-center gap-3">
-        <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-400" />
-        <div>
-          <div className="text-sm text-foreground">Connected</div>
-          <div className="text-xs text-subtle">DM the bot in Slack to log what you ate</div>
+      <div className="space-y-3">
+        {refreshWarning}
+        <div className="flex items-center gap-3">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-400" />
+          <div>
+            <div className="text-sm text-foreground">Connected</div>
+            <div className="text-xs text-subtle">DM the bot in Slack to log what you ate</div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <div className="text-sm text-foreground">Log food via Slack</div>
-        <div className="text-xs text-subtle">
-          Add the bot to your workspace, then DM it what you ate
+    <div className="space-y-3">
+      {refreshWarning}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm text-foreground">Log food via Slack</div>
+          <div className="text-xs text-subtle">
+            Add the bot to your workspace, then DM it what you ate
+          </div>
         </div>
+        <a
+          href="/auth/provider/slack"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-[#4A154B] text-white hover:bg-[#5B2D5C] transition-colors"
+        >
+          <SlackIcon />
+          Add to Slack
+        </a>
       </div>
-      <a
-        href="/auth/provider/slack"
-        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-[#4A154B] text-white hover:bg-[#5B2D5C] transition-colors"
-      >
-        <SlackIcon />
-        Add to Slack
-      </a>
     </div>
   );
 }

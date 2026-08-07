@@ -1,3 +1,4 @@
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { describe, expect, it } from "vitest";
 import { buildHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthWorkout } from "./workouts.ts";
@@ -6,7 +7,7 @@ describe("buildHangTenIntervals", () => {
   it("keeps later intervals at the last known time after a missing duration", () => {
     const start = new Date("2026-08-07T14:00:00Z");
     const workout: HealthWorkout = {
-      activityType: "hangboard",
+      activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
       sourceName: "Hang Ten",
       durationSeconds: 60,
       startDate: start,

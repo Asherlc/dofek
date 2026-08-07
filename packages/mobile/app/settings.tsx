@@ -1,98 +1,176 @@
-import { File as ExpoFile, Paths } from "expo-file-system";
-import { useRouter } from "expo-router";
-import * as Sharing from "expo-sharing";
+import {
+  getNewPasswordValidationError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENT_TEXT,
+} from "@dofek/auth/auth";
+import { formatDateMedium, formatDateTime } from "@dofek/format/format";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Linking,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
+  type TextInputProps,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from "react-native";
-import { z } from "zod";
+import { AccountErasurePanel } from "../components/AccountErasurePanel";
+import { DataExportSection } from "../components/DataExportSection";
+import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
+import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
+import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
+import {
+  clearMobileBillingCheckoutOperation,
+  getOrCreateMobileBillingCheckoutOperationId,
+} from "../lib/billing-checkout-operation";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
+import { styles } from "./settings.styles";
+import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
+type SettingsCategory =
+  | "account"
+  | "data-sources"
+  | "goals-models"
+  | "privacy-export"
+  | "notifications"
+  | "billing"
+  | "advanced";
 
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: "metric", label: "Metric", description: "kg, km, °C" },
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
 ];
+const SETTINGS_CATEGORIES: readonly {
+  id: SettingsCategory;
+  label: string;
+  searchText: string;
+}[] = [
+  {
+    id: "account",
+    label: "Account",
+    searchText: "account linked accounts password help support",
+  },
+  {
+    id: "data-sources",
+    label: "Data Sources",
+    searchText: "data sources providers Zepp integrations",
+  },
+  {
+    id: "goals-models",
+    label: "Goals & Models",
+    searchText:
+      "goals models primary goal units cycle tracking journal trends health reports goal weight algorithm personalization",
+  },
+  {
+    id: "privacy-export",
+    label: "Privacy/Export",
+    searchText: "privacy export data export download delete danger zone",
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    searchText: "notifications medication reminders medication doses",
+  },
+  {
+    id: "billing",
+    label: "Billing",
+    searchText: "billing subscription access checkout",
+  },
+  {
+    id: "advanced",
+    label: "Advanced",
+    searchText: "advanced dashboard layout developer tools diagnostics",
+  },
+];
+const reportedUnitReadErrors = new WeakSet<object>();
+const IOS_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_LENGTH}; maxlength: ${PASSWORD_MAX_LENGTH};`;
 
-type ExportState = "idle" | "processing" | "done" | "error";
+interface SettingsPasswordInputProps {
+  autoComplete: NonNullable<TextInputProps["autoComplete"]>;
+  label: string;
+  maxLength?: number;
+  onChangeText: (value: string) => void;
+  passwordRules?: string;
+  value: string;
+}
 
-const ExportTriggerSchema = z.object({
-  exportId: z.string(),
-  status: z.literal("queued"),
-});
+function SettingsPasswordInput({
+  autoComplete,
+  label,
+  maxLength,
+  onChangeText,
+  passwordRules,
+  value,
+}: SettingsPasswordInputProps) {
+  const [isVisible, setIsVisible] = useState(false);
 
-const DataExportSchema = z.object({
-  completedAt: z.string().nullable(),
-  createdAt: z.string(),
-  errorMessage: z.string().nullable(),
-  expiresAt: z.string(),
-  filename: z.string(),
-  id: z.string(),
-  sizeBytes: z.number().nullable(),
-  startedAt: z.string().nullable(),
-  status: z.enum(["queued", "processing", "completed", "failed"]),
-});
+  return (
+    <View style={styles.passwordInputContainer}>
+      <TextInput
+        accessibilityLabel={label}
+        style={styles.passwordInput}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={label}
+        placeholderTextColor={colors.textSecondary}
+        secureTextEntry={!isVisible}
+        autoComplete={autoComplete}
+        passwordRules={passwordRules}
+        maxLength={maxLength}
+      />
+      <TouchableOpacity
+        onPress={() => setIsVisible((visible) => !visible)}
+        accessibilityRole="button"
+        accessibilityLabel={`${isVisible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+        style={styles.passwordVisibilityButton}
+      >
+        <Text style={styles.passwordVisibilityText}>{isVisible ? "Hide" : "Show"}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
-const ExportListSchema = z.object({ exports: z.array(DataExportSchema) });
-type DataExport = z.infer<typeof DataExportSchema>;
+function isSettingsCategory(value: unknown): value is SettingsCategory {
+  return SETTINGS_CATEGORIES.some((category) => category.id === value);
+}
+
+const LEGACY_SETTINGS_CATEGORY_MAP: Readonly<Record<string, SettingsCategory>> = {
+  connections: "data-sources",
+  general: "goals-models",
+  health: "goals-models",
+};
+
+function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined {
+  if (isSettingsCategory(value)) return value;
+  return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
+}
 
 function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
-  return date.toLocaleString();
+  return formatDateTime(date);
 }
-
-function formatExportSize(sizeBytes: number | null): string {
-  if (sizeBytes == null) return "Size pending";
-  if (sizeBytes < 1024) return `${sizeBytes} B`;
-  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatExportDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-const freeAccessWindowFormatter = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
 function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  const endExclusive = new Date(`${endDateExclusive}T00:00:00.000Z`);
-  const endInclusive = new Date(endExclusive);
+  const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
-
-  const startValue = Number.isNaN(start.getTime())
-    ? startDate
-    : freeAccessWindowFormatter.format(start);
-  const endValue = Number.isNaN(endInclusive.getTime())
-    ? endDateExclusive
-    : freeAccessWindowFormatter.format(endInclusive);
+  const startValue = formatDateMedium(startDate);
+  const endValue = formatDateMedium(endInclusive);
 
   return `${startValue} to ${endValue}`;
 }
@@ -100,6 +178,34 @@ function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: strin
 export default function SettingsScreen() {
   const auth = useAuth();
   const router = useRouter();
+  const searchParams = useLocalSearchParams<{
+    focus?: string;
+    reminderId?: string;
+    tab?: string;
+  }>();
+  const focusedReminderId =
+    typeof searchParams.reminderId === "string" ? searchParams.reminderId : null;
+  const normalizedRequestedCategory = normalizeSettingsCategory(searchParams.tab);
+  const requestedCategory: SettingsCategory = normalizedRequestedCategory
+    ? normalizedRequestedCategory
+    : searchParams.focus === "medicationReminders"
+      ? "notifications"
+      : "account";
+  const [categorySearch, setCategorySearch] = useState("");
+  const normalizedCategorySearch = categorySearch.trim().toLowerCase();
+  const visibleCategories = SETTINGS_CATEGORIES.filter(
+    (category) =>
+      normalizedCategorySearch.length === 0 ||
+      `${category.label} ${category.searchText}`.toLowerCase().includes(normalizedCategorySearch),
+  );
+  const [selectedCategory, setSelectedCategory] = useState<SettingsCategory>(requestedCategory);
+  useEffect(() => {
+    setSelectedCategory(requestedCategory);
+  }, [requestedCategory]);
+  const activeCategory =
+    visibleCategories.find((category) => category.id === selectedCategory)?.id ??
+    visibleCategories[0]?.id ??
+    null;
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
@@ -107,26 +213,40 @@ export default function SettingsScreen() {
   // ── Data Sources ──
   const providers = trpc.sync.providers.useQuery();
 
-  // ── Data Export ──
-  const [exportState, setExportState] = useState<ExportState>("idle");
-  const [exportMessage, setExportMessage] = useState("");
-  const [dataExports, setDataExports] = useState<DataExport[]>([]);
-  const [exportsLoading, setExportsLoading] = useState(true);
-  const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
+  // ── Password ──
+  const passwordStatus = trpc.auth.passwordCredentialStatus.useQuery();
+  const setPasswordMutation = trpc.auth.setPassword.useMutation({
+    onSuccess: async () => {
+      if (passwordStatus.data?.hasPassword) {
+        Alert.alert("Password Updated", "Please sign in again.", [
+          { text: "OK", onPress: () => void auth.logout() },
+        ]);
+        return;
+      }
+      await trpcUtils.auth.passwordCredentialStatus.invalidate();
+      Alert.alert("Password Updated", "Your password has been saved.");
+    },
+    onError: (error) => Alert.alert("Error", error.message),
+  });
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordFormError, setPasswordFormError] = useState<string | null>(null);
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
   const setSettingMutation = trpc.settings.set.useMutation();
-  const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
-    onSuccess: async () => {
-      await trpcUtils.invalidate();
-      Alert.alert("Data Deleted", "All synced and manually-entered data has been deleted.");
-    },
-    onError: (error) => Alert.alert("Error", error.message),
-  });
+  const lastUnitReadError = useRef<unknown>(null);
   const billingStatus = trpc.billing.status.useQuery();
+  const medicationDoseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
+  const [checkoutClientError, setCheckoutClientError] = useState<string | null>(null);
   const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
-    onSuccess: ({ url }) => {
+    onSuccess: async ({ url }, { operationId }) => {
+      try {
+        await clearMobileBillingCheckoutOperation(operationId);
+      } catch (error: unknown) {
+        captureException(error, { context: "billing-checkout-operation-clear" });
+      }
       void Linking.openURL(url);
     },
   });
@@ -139,30 +259,68 @@ export default function SettingsScreen() {
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
 
-  // ── Goal Weight ──
-  const goalWeightSetting = trpc.settings.get.useQuery({ key: "goalWeight" });
-  const goalWeightMutation = trpc.bodyAnalytics.setGoalWeight.useMutation({
-    onSuccess: () => {
-      goalWeightSetting.refetch();
-      trpcUtils.bodyAnalytics.weightPrediction.invalidate();
-    },
-  });
-  const currentGoalKg =
-    goalWeightSetting.data?.value != null ? Number(goalWeightSetting.data.value) : null;
-  const [goalInput, setGoalInput] = useState("");
-  const [editingGoal, setEditingGoal] = useState(false);
-  const isImperial = currentUnitSystem === "imperial";
-  const kgToLbs = 2.20462;
+  async function startCheckout(): Promise<void> {
+    setCheckoutClientError(null);
+    try {
+      const operationId = await getOrCreateMobileBillingCheckoutOperationId();
+      checkoutSessionMutation.mutate({ operationId });
+    } catch (error: unknown) {
+      captureException(error, { context: "billing-checkout-operation-create" });
+      setCheckoutClientError(
+        error instanceof Error ? error.message : "Checkout could not be started on this device.",
+      );
+    }
+  }
+
+  useEffect(() => {
+    if (
+      unitSetting.error &&
+      lastUnitReadError.current !== unitSetting.error &&
+      !reportedUnitReadErrors.has(unitSetting.error)
+    ) {
+      lastUnitReadError.current = unitSetting.error;
+      reportedUnitReadErrors.add(unitSetting.error);
+      captureException(unitSetting.error, { context: "unit-system-read" });
+    }
+  }, [unitSetting.error]);
 
   function handleUnitChange(value: UnitSystem) {
+    const previousSetting = trpcUtils.settings.get.getData({ key: "unitSystem" });
     trpcUtils.settings.get.setData({ key: "unitSystem" }, { key: "unitSystem", value });
     setSettingMutation.mutate(
       { key: "unitSystem", value },
       {
-        onSuccess: () => unitSetting.refetch(),
-        onError: () => unitSetting.refetch(),
+        onError: (error) => {
+          trpcUtils.settings.get.setData({ key: "unitSystem" }, previousSetting);
+          captureException(error, { context: "unit-system-write" });
+          Alert.alert("Error", error.message);
+        },
+        onSettled: () => {
+          void trpcUtils.settings.get.invalidate({ key: "unitSystem" });
+        },
       },
     );
+  }
+
+  function handleSetPassword() {
+    if (passwordStatus.data?.hasPassword && !currentPassword) {
+      setPasswordFormError("Enter your current password.");
+      return;
+    }
+    const passwordError = getNewPasswordValidationError(newPassword);
+    if (passwordError) {
+      setPasswordFormError(passwordError);
+      return;
+    }
+    setPasswordFormError(null);
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "Passwords do not match");
+      return;
+    }
+    setPasswordMutation.mutate({
+      currentPassword: passwordStatus.data?.hasPassword ? currentPassword : undefined,
+      newPassword,
+    });
   }
 
   function handleLogout() {
@@ -176,107 +334,13 @@ export default function SettingsScreen() {
     ]);
   }
 
-  const loadExports = useCallback(async () => {
-    try {
-      const response = await fetch(`${auth.serverUrl}/api/export`, {
-        headers: { Authorization: `Bearer ${auth.sessionToken}` },
-      });
-      if (!response.ok) {
-        throw new Error("Failed to load exports");
-      }
-      const parsed = ExportListSchema.parse(await response.json());
-      setDataExports(parsed.exports);
-      setExportMessage("");
-    } catch (error: unknown) {
-      captureException(error, { context: "data-export-list" });
-      setExportMessage(error instanceof Error ? error.message : "Failed to load exports");
-    } finally {
-      setExportsLoading(false);
-    }
-  }, [auth.serverUrl, auth.sessionToken]);
-
-  useEffect(() => {
-    loadExports();
-  }, [loadExports]);
-
-  async function handleExport() {
-    setExportState("processing");
-    setExportMessage("Starting export...");
-
-    try {
-      const triggerRes = await fetch(`${auth.serverUrl}/api/export`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${auth.sessionToken}` },
-      });
-
-      if (!triggerRes.ok) {
-        setExportState("error");
-        setExportMessage("Failed to start export");
-        return;
-      }
-
-      ExportTriggerSchema.parse(await triggerRes.json());
-      setExportState("done");
-      await loadExports();
-    } catch (error: unknown) {
-      captureException(error, { context: "data-export" });
-      setExportState("error");
-      setExportMessage("Network error during export");
-    }
-  }
-
-  async function handleDownloadExport(dataExport: DataExport) {
-    setDownloadingExportId(dataExport.id);
-    setExportMessage("Downloading...");
-    try {
-      const downloadRes = await fetch(`${auth.serverUrl}/api/export/download/${dataExport.id}`, {
-        headers: { Authorization: `Bearer ${auth.sessionToken}` },
-      });
-      if (!downloadRes.ok) {
-        throw new Error("Failed to download export");
-      }
-      const blob = await downloadRes.blob();
-      const file = new ExpoFile(Paths.cache, "health-export.zip");
-      const arrayBuffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      file.write(bytes);
-      setExportState("done");
-      setExportMessage("Export ready");
-      await Sharing.shareAsync(file.uri, {
-        mimeType: "application/zip",
-        dialogTitle: "Save Health Data Export",
-      });
-    } catch (error: unknown) {
-      captureException(error, { context: "data-export-download" });
-      setExportState("error");
-      setExportMessage(error instanceof Error ? error.message : "Failed to download export");
-    } finally {
-      setDownloadingExportId(null);
-    }
-  }
-
-  function handleDeleteAllUserData() {
-    Alert.alert(
-      "Delete All User Data",
-      "Delete all synced and manually-entered data? This action cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteAllDataMutation.mutate(),
-        },
-      ],
-    );
+  function handleCategoryChange(category: SettingsCategory) {
+    setCategorySearch("");
+    setSelectedCategory(category);
+    router.setParams({ tab: category });
   }
 
   const { refreshing, onRefresh } = useRefresh();
-  const activeExports = dataExports.filter(
-    (dataExport) => dataExport.status === "queued" || dataExport.status === "processing",
-  );
-  const completedExports = dataExports.filter((dataExport) => dataExport.status === "completed");
-  const hasActiveExport = activeExports.length > 0;
-
   return (
     <ScrollView
       style={styles.container}
@@ -289,750 +353,547 @@ export default function SettingsScreen() {
         />
       }
     >
-      {/* ── Data Sources ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Data Sources</Text>
-        <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push("/providers")}
-          activeOpacity={0.7}
-        >
-          <View style={styles.dataSourcesRow}>
-            <View style={styles.dataSourcesInfo}>
-              {providers.isLoading ? (
-                <ActivityIndicator color={colors.accent} size="small" />
-              ) : (
-                <>
-                  <View style={styles.providerLogos}>
-                    {(providers.data ?? [])
-                      .filter((provider) => provider.authorized)
-                      .slice(0, 5)
-                      .map((provider) => (
-                        <ProviderLogo
-                          key={provider.id}
-                          provider={provider.id}
-                          serverUrl={auth.serverUrl}
-                          size={20}
-                        />
-                      ))}
-                  </View>
-                  <Text style={styles.dataSourcesCount}>
-                    {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
-                    connected
-                  </Text>
-                </>
-              )}
-            </View>
-            <Text style={styles.devToolChevron}>›</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Units ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Units</Text>
-        <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
-        <View style={styles.unitRow}>
-          {UNIT_OPTIONS.map((option) => {
-            const isSelected = currentUnitSystem === option.value;
-            return (
-              <TouchableOpacity
-                key={option.value}
-                style={[styles.unitButton, isSelected && styles.unitButtonSelected]}
-                onPress={() => handleUnitChange(option.value)}
-                activeOpacity={0.7}
-                disabled={setSettingMutation.isPending}
-              >
-                <Text style={[styles.unitLabel, isSelected && styles.unitLabelSelected]}>
-                  {option.label}
-                </Text>
-                <Text style={styles.unitDescription}>{option.description}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ── Billing ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Billing</Text>
-        <Text style={styles.sectionDescription}>Manage subscription and data access</Text>
-        <View style={styles.card}>
-          {billingStatus.isLoading ? (
-            <ActivityIndicator color={colors.accent} size="small" />
-          ) : billingStatus.error ? (
-            <Text style={styles.billingErrorText}>{billingStatus.error.message}</Text>
-          ) : billingStatus.data ? (
-            <>
-              <Text style={styles.billingStatusText}>
-                {billingStatus.data.access.kind === "limited"
-                  ? `Access limited to your signup week (${formatDateRangeForSignupWeek(
-                      billingStatus.data.access.startDate,
-                      billingStatus.data.access.endDateExclusive,
-                    )}).`
-                  : "Full access is enabled for this account."}
+      <TextInput
+        accessibilityLabel="Search settings"
+        value={categorySearch}
+        onChangeText={setCategorySearch}
+        placeholder="Search settings"
+        placeholderTextColor={colors.textSecondary}
+        style={styles.searchInput}
+        returnKeyType="search"
+      />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScrollView}
+        contentContainerStyle={styles.tabs}
+      >
+        {visibleCategories.map((category) => {
+          const isActive = activeCategory === category.id;
+          return (
+            <TouchableOpacity
+              key={category.id}
+              style={[styles.tab, isActive && styles.tabSelected]}
+              onPress={() => handleCategoryChange(category.id)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={category.label}
+              accessibilityState={{ selected: isActive }}
+              aria-selected={isActive}
+            >
+              <Text style={[styles.tabText, isActive && styles.tabTextSelected]}>
+                {category.label}
               </Text>
-              {billingStatus.data.access.kind === "full" &&
-              billingStatus.data.access.reason === "paid_grant" ? (
-                <Text style={styles.billingDetailText}>
-                  Existing account access is already granted.
-                </Text>
-              ) : null}
-              {billingStatus.data.access.kind === "full" &&
-              billingStatus.data.access.reason === "stripe_subscription" &&
-              billingStatus.data.stripeSubscriptionStatus ? (
-                <Text style={styles.billingDetailText}>
-                  Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
-                </Text>
-              ) : null}
-              {checkoutSessionMutation.error ? (
-                <Text style={styles.billingErrorText}>{checkoutSessionMutation.error.message}</Text>
-              ) : null}
-              {portalSessionMutation.error ? (
-                <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
-              ) : null}
-              <View style={styles.billingActionRow}>
-                {!billingStatus.data.hasFullAccess && (
-                  <TouchableOpacity
-                    style={[
-                      styles.billingPrimaryButton,
-                      checkoutSessionMutation.isPending && styles.buttonDisabled,
-                    ]}
-                    onPress={() => checkoutSessionMutation.mutate()}
-                    activeOpacity={0.7}
-                    disabled={checkoutSessionMutation.isPending}
-                  >
-                    <Text style={styles.billingButtonText}>
-                      {checkoutSessionMutation.isPending
-                        ? "Opening checkout..."
-                        : "Upgrade to Full Access"}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+      {visibleCategories.length === 0 ? (
+        <Text style={styles.noSearchResults}>No settings categories match “{categorySearch}”.</Text>
+      ) : null}
+
+      {/* ── Data Sources ── */}
+      {activeCategory === "data-sources" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data Sources</Text>
+          <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/providers")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Data Sources"
+            accessibilityState={{ busy: providers.isLoading }}
+          >
+            <View style={styles.dataSourcesRow}>
+              <View style={styles.dataSourcesInfo}>
+                {providers.isLoading ? (
+                  <ActivityIndicator color={colors.accent} size="small" />
+                ) : providers.error && providers.data === undefined ? (
+                  <QueryStatePanel
+                    variant="error"
+                    title="Could not load data sources"
+                    message={getQueryErrorMessage(providers.error)}
+                    minHeight={96}
+                  />
+                ) : (
+                  <>
+                    <View style={styles.providerLogos}>
+                      {(providers.data ?? [])
+                        .filter((provider) => provider.authorized)
+                        .slice(0, 5)
+                        .map((provider) => (
+                          <ProviderLogo
+                            key={provider.id}
+                            provider={provider.id}
+                            serverUrl={auth.serverUrl}
+                            size={20}
+                          />
+                        ))}
+                    </View>
+                    <Text style={styles.dataSourcesCount}>
+                      {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
+                      connected
                     </Text>
-                  </TouchableOpacity>
-                )}
-                {billingStatus.data.canManageBilling && (
-                  <TouchableOpacity
-                    style={[
-                      styles.billingSecondaryButton,
-                      portalSessionMutation.isPending && styles.buttonDisabled,
-                    ]}
-                    onPress={() => portalSessionMutation.mutate()}
-                    activeOpacity={0.7}
-                    disabled={portalSessionMutation.isPending}
-                  >
-                    <Text style={styles.billingButtonText}>
-                      {portalSessionMutation.isPending
-                        ? "Opening billing portal..."
-                        : "Manage Billing"}
-                    </Text>
-                  </TouchableOpacity>
+                  </>
                 )}
               </View>
-            </>
+              <Text style={styles.devToolChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+          {providers.error && providers.data !== undefined ? (
+            <QueryStatePanel
+              variant="error"
+              title="Could not refresh data sources"
+              message={getQueryErrorMessage(providers.error)}
+              minHeight={96}
+            />
           ) : null}
         </View>
-      </View>
+      ) : null}
 
-      {/* ── Goal Weight ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Goal Weight</Text>
-        <Text style={styles.sectionDescription}>
-          Set a target weight to see projected completion dates
-        </Text>
-        <View style={styles.card}>
-          {editingGoal ? (
-            <View style={styles.goalEditRow}>
-              <TextInput
-                style={styles.goalInput}
-                value={goalInput}
-                onChangeText={setGoalInput}
-                keyboardType="decimal-pad"
-                placeholder={isImperial ? "lbs" : "kg"}
-                placeholderTextColor={colors.textSecondary}
-              />
-              <TouchableOpacity
-                style={styles.goalSaveButton}
-                onPress={() => {
-                  const parsed = Number.parseFloat(goalInput);
-                  if (!Number.isNaN(parsed) && parsed > 0) {
-                    const weightKg = isImperial ? parsed / kgToLbs : parsed;
-                    goalWeightMutation.mutate({ weightKg });
-                  }
-                  setEditingGoal(false);
-                }}
-              >
-                <Text style={styles.goalSaveText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setEditingGoal(false)}>
-                <Text style={styles.goalCancelText}>Cancel</Text>
-              </TouchableOpacity>
+      {/* ── Health Tracking ── */}
+      {activeCategory === "goals-models" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Tracking</Text>
+          <Text style={styles.sectionDescription}>Log and review personal health events</Text>
+          <View style={styles.healthTrackingCards}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/cycle")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Cycle Tracking"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.devToolLabel}>Cycle Tracking</Text>
+                <Text style={styles.devToolChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/tracking")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Journal Trends"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.devToolLabel}>Journal Trends</Text>
+                <Text style={styles.devToolChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {/* ── Health Reports ── */}
+      {activeCategory === "goals-models" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Reports</Text>
+          <Text style={styles.sectionDescription}>
+            Review and share weekly or monthly health snapshots
+          </Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/reports")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Health Reports"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.devToolLabel}>Open Health Reports</Text>
+              <Text style={styles.devToolChevron}>›</Text>
             </View>
-          ) : currentGoalKg != null ? (
-            <View style={styles.goalDisplayRow}>
-              <Text style={styles.goalDisplayText}>
-                {(isImperial ? currentGoalKg * kgToLbs : currentGoalKg).toFixed(1)}{" "}
-                {isImperial ? "lbs" : "kg"}
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* ── Password ── */}
+      {activeCategory === "account" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Password</Text>
+          <Text style={styles.sectionDescription}>Set or change your email login password</Text>
+          {passwordStatus.isLoading ? (
+            <ActivityIndicator color={colors.accent} size="small" />
+          ) : passwordStatus.error ? (
+            <Text style={styles.passwordErrorText}>{passwordStatus.error.message}</Text>
+          ) : (
+            <View style={styles.card}>
+              {passwordStatus.data?.hasPassword ? (
+                <SettingsPasswordInput
+                  label="Current password"
+                  value={currentPassword}
+                  onChangeText={(value) => {
+                    setCurrentPassword(value);
+                    setPasswordFormError(null);
+                  }}
+                  autoComplete="current-password"
+                />
+              ) : null}
+              <SettingsPasswordInput
+                label="New password"
+                value={newPassword}
+                onChangeText={(value) => {
+                  setNewPassword(value);
+                  setPasswordFormError(null);
+                }}
+                autoComplete="new-password"
+                passwordRules={IOS_PASSWORD_RULES}
+                maxLength={PASSWORD_MAX_LENGTH}
+              />
+              <SettingsPasswordInput
+                label="Confirm password"
+                value={confirmPassword}
+                onChangeText={(value) => {
+                  setConfirmPassword(value);
+                  setPasswordFormError(null);
+                }}
+                autoComplete="new-password"
+                passwordRules={IOS_PASSWORD_RULES}
+                maxLength={PASSWORD_MAX_LENGTH}
+              />
+              <Text
+                style={
+                  passwordFormError ? styles.passwordErrorText : styles.passwordRequirementText
+                }
+                accessibilityLiveRegion="polite"
+                accessibilityRole={passwordFormError ? "alert" : undefined}
+              >
+                {passwordFormError ?? PASSWORD_REQUIREMENT_TEXT}
               </Text>
               <TouchableOpacity
-                onPress={() => {
-                  setGoalInput(
-                    String(
-                      Math.round((isImperial ? currentGoalKg * kgToLbs : currentGoalKg) * 10) / 10,
-                    ),
-                  );
-                  setEditingGoal(true);
+                style={[
+                  styles.passwordButton,
+                  setPasswordMutation.isPending && styles.buttonDisabled,
+                ]}
+                onPress={handleSetPassword}
+                disabled={setPasswordMutation.isPending}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"
+                }
+                accessibilityState={{
+                  busy: setPasswordMutation.isPending,
+                  disabled: setPasswordMutation.isPending,
                 }}
               >
-                <Text style={styles.goalEditText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => goalWeightMutation.mutate({ weightKg: null })}>
-                <Text style={styles.goalCancelText}>Clear</Text>
+                <Text style={styles.passwordButtonText}>
+                  {passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"}
+                </Text>
               </TouchableOpacity>
             </View>
-          ) : (
-            <TouchableOpacity
-              onPress={() => {
-                setGoalInput("");
-                setEditingGoal(true);
-              }}
-            >
-              <Text style={styles.goalEditText}>Set Goal Weight</Text>
-            </TouchableOpacity>
           )}
         </View>
-      </View>
+      ) : null}
+
+      {activeCategory === "data-sources" ? <ZeppPairingCard /> : null}
+
+      {/* ── Primary Goal ── */}
+      {activeCategory === "goals-models" ? (
+        <View style={styles.section}>
+          <PrimaryGoalSelector />
+        </View>
+      ) : null}
+
+      {/* ── Units ── */}
+      {activeCategory === "goals-models" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Units</Text>
+          <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
+          {unitSetting.error && (
+            <Text style={styles.unitErrorText}>{unitSetting.error.message}</Text>
+          )}
+          <View style={styles.unitRow}>
+            {UNIT_OPTIONS.map((option) => {
+              const isSelected = currentUnitSystem === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.unitButton, isSelected && styles.unitButtonSelected]}
+                  onPress={() => handleUnitChange(option.value)}
+                  activeOpacity={0.7}
+                  disabled={setSettingMutation.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel={option.label}
+                  accessibilityState={{
+                    busy: setSettingMutation.isPending,
+                    disabled: setSettingMutation.isPending,
+                    selected: isSelected,
+                  }}
+                >
+                  <Text style={[styles.unitLabel, isSelected && styles.unitLabelSelected]}>
+                    {option.label}
+                  </Text>
+                  <Text style={styles.unitDescription}>{option.description}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {activeCategory === "notifications" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Medication Reminders</Text>
+          <Text style={styles.sectionDescription}>
+            Optional daily reminders with imported logging state
+          </Text>
+          <View style={styles.card}>
+            <MedicationRemindersPanel focusedReminderId={focusedReminderId} />
+          </View>
+        </View>
+      ) : null}
+
+      {activeCategory === "notifications" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Medication Doses</Text>
+          <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
+          <View style={styles.card}>
+            <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
+          </View>
+        </View>
+      ) : null}
+
+      {/* ── Billing ── */}
+      {activeCategory === "billing" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Billing</Text>
+          <Text style={styles.sectionDescription}>Manage subscription and data access</Text>
+          <View style={styles.card}>
+            {billingStatus.isLoading ? (
+              <ActivityIndicator color={colors.accent} size="small" />
+            ) : billingStatus.error ? (
+              <Text style={styles.billingErrorText}>{billingStatus.error.message}</Text>
+            ) : billingStatus.data ? (
+              <>
+                <Text style={styles.billingStatusText}>
+                  {billingStatus.data.access.kind === "limited"
+                    ? `Access limited to your signup week (${formatDateRangeForSignupWeek(
+                        billingStatus.data.access.startDate,
+                        billingStatus.data.access.endDateExclusive,
+                      )}).`
+                    : "Full access is enabled for this account."}
+                </Text>
+                {billingStatus.data.access.kind === "full" &&
+                billingStatus.data.access.reason === "paid_grant" ? (
+                  <Text style={styles.billingDetailText}>
+                    Existing account access is already granted.
+                  </Text>
+                ) : null}
+                {billingStatus.data.access.kind === "full" &&
+                billingStatus.data.access.reason === "stripe_subscription" &&
+                billingStatus.data.stripeSubscriptionStatus ? (
+                  <Text style={styles.billingDetailText}>
+                    Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
+                  </Text>
+                ) : null}
+                {checkoutSessionMutation.error ? (
+                  <Text style={styles.billingErrorText}>
+                    {checkoutSessionMutation.error.message}
+                  </Text>
+                ) : null}
+                {checkoutClientError ? (
+                  <Text style={styles.billingErrorText}>{checkoutClientError}</Text>
+                ) : null}
+                {portalSessionMutation.error ? (
+                  <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
+                ) : null}
+                <View style={styles.billingActionRow}>
+                  {!billingStatus.data.hasFullAccess && (
+                    <TouchableOpacity
+                      style={[
+                        styles.billingPrimaryButton,
+                        checkoutSessionMutation.isPending && styles.buttonDisabled,
+                      ]}
+                      onPress={() => void startCheckout()}
+                      activeOpacity={0.7}
+                      disabled={checkoutSessionMutation.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel="Upgrade to Full Access"
+                      accessibilityState={{
+                        busy: checkoutSessionMutation.isPending,
+                        disabled: checkoutSessionMutation.isPending,
+                      }}
+                    >
+                      <Text style={styles.billingButtonText}>
+                        {checkoutSessionMutation.isPending
+                          ? "Opening checkout..."
+                          : "Upgrade to Full Access"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {billingStatus.data.canManageBilling && (
+                    <TouchableOpacity
+                      style={[
+                        styles.billingSecondaryButton,
+                        portalSessionMutation.isPending && styles.buttonDisabled,
+                      ]}
+                      onPress={() => portalSessionMutation.mutate()}
+                      activeOpacity={0.7}
+                      disabled={portalSessionMutation.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel="Manage Billing"
+                      accessibilityState={{
+                        busy: portalSessionMutation.isPending,
+                        disabled: portalSessionMutation.isPending,
+                      }}
+                    >
+                      <Text style={styles.billingButtonText}>
+                        {portalSessionMutation.isPending
+                          ? "Opening billing portal..."
+                          : "Manage Billing"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      {activeCategory === "goals-models" ? (
+        <GoalWeightSettingsSection unitSystem={currentUnitSystem} />
+      ) : null}
 
       {/* ── Algorithm Personalization ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
-        <Text style={styles.sectionDescription}>
-          Parameters are automatically learned from your data
-        </Text>
-        <View style={styles.card}>
-          <PersonalizationPanel />
+      {activeCategory === "goals-models" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
+          <Text style={styles.sectionDescription}>
+            Parameters are automatically learned from your data
+          </Text>
+          <View style={styles.card}>
+            <PersonalizationPanel />
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {/* ── Integrations ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Integrations</Text>
-        <Text style={styles.sectionDescription}>Connect external services</Text>
-        <View style={styles.card}>
-          <SlackIntegrationPanel />
-        </View>
-      </View>
-
-      {/* ── Data Export ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Data Export</Text>
-        <Text style={styles.sectionDescription}>
-          Create a ZIP file containing CSV files for your health data
-        </Text>
-        <View style={styles.card}>
-          {hasActiveExport && (
-            <View style={styles.exportStatusContainer}>
-              <Text style={styles.exportStatusTitle}>Export in progress</Text>
-              <Text style={styles.exportMessageText}>We'll email you when it finishes.</Text>
-            </View>
-          )}
-          {exportState === "done" && !hasActiveExport && (
-            <Text style={styles.exportDoneText}>{exportMessage}</Text>
-          )}
-          {exportState === "error" && <Text style={styles.exportErrorText}>{exportMessage}</Text>}
-          <TouchableOpacity
-            style={[
-              styles.exportButton,
-              (exportState === "processing" || hasActiveExport) && styles.exportButtonDisabled,
-            ]}
-            onPress={handleExport}
-            activeOpacity={0.7}
-            disabled={exportState === "processing" || hasActiveExport}
-          >
-            <Text style={styles.exportButtonText}>
-              {exportState === "processing"
-                ? "Starting..."
-                : hasActiveExport
-                  ? "Export Running"
-                  : "Start Export"}
-            </Text>
-          </TouchableOpacity>
-          <View style={styles.exportListContainer}>
-            <Text style={styles.exportListTitle}>Available exports</Text>
-            {exportsLoading ? (
-              <Text style={styles.exportMessageText}>Loading exports...</Text>
-            ) : completedExports.length === 0 ? (
-              <Text style={styles.exportMessageText}>No exports available.</Text>
-            ) : (
-              completedExports.map((dataExport) => (
-                <View key={dataExport.id} style={styles.exportListRow}>
-                  <View style={styles.exportListInfo}>
-                    <Text style={styles.exportFilename}>{dataExport.filename}</Text>
-                    <Text style={styles.exportMessageText}>
-                      {formatExportSize(dataExport.sizeBytes)} - Expires{" "}
-                      {formatExportDate(dataExport.expiresAt)}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => handleDownloadExport(dataExport)}
-                    activeOpacity={0.7}
-                    disabled={downloadingExportId === dataExport.id}
-                  >
-                    <Text style={styles.exportDownloadText}>
-                      {downloadingExportId === dataExport.id
-                        ? "Downloading..."
-                        : `Download ${dataExport.filename}`}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ))
-            )}
+      {activeCategory === "data-sources" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Integrations</Text>
+          <Text style={styles.sectionDescription}>Connect external services</Text>
+          <View style={styles.card}>
+            <SlackIntegrationPanel />
           </View>
         </View>
-      </View>
+      ) : null}
+
+      {activeCategory === "privacy-export" ? (
+        <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
+      ) : null}
+
+      {/* ── Help & Support ── */}
+      {activeCategory === "account" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Help & Support</Text>
+          <Text style={styles.sectionDescription}>Get help from our team</Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/support")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Contact Support"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.devToolLabel}>Contact Support</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* ── Developer Tools ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Developer Tools</Text>
-        <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
-        <View style={styles.card}>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
-              router.push("/ble-probe");
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.devToolLabel}>BLE Probe</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
-              router.push("/inertial-measurement-unit");
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.devToolLabel}>Accelerometer Status</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
-              router.push("/imu-visualization");
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.devToolLabel}>IMU Visualization</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
-              router.push("/heart-rate-visualization");
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <View style={[styles.devToolRow, styles.devToolRowLast]}>
-            <View>
-              <Text style={styles.devToolLabel}>OTA Update</Text>
-              <Text style={styles.devToolDetail}>
-                {Updates.updateId ?? "embedded bundle"}
-                {"\n"}
-                Channel: {Updates.channel ?? "none"}
-                {"\n"}
-                Runtime: {Updates.runtimeVersion ?? "unknown"}
-                {"\n"}
-                Created: {formatLocalizedDateTime(Updates.createdAt)}
-              </Text>
+      {activeCategory === "advanced" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Developer Tools</Text>
+          <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.devToolRow}
+              onPress={() => {
+                const { router } = require("expo-router");
+                router.push("/ble-probe");
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Bluetooth Low Energy probe"
+            >
+              <Text style={styles.devToolLabel}>Bluetooth Low Energy probe</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.devToolRow}
+              onPress={() => {
+                const { router } = require("expo-router");
+                router.push("/imu-visualization");
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Inertial measurement unit visualization"
+            >
+              <Text style={styles.devToolLabel}>Inertial measurement unit visualization</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.devToolRow}
+              onPress={() => {
+                const { router } = require("expo-router");
+                router.push("/heart-rate-visualization");
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Heart Rate Visualization"
+            >
+              <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </TouchableOpacity>
+            <View style={[styles.devToolRow, styles.devToolRowLast]}>
+              <View>
+                <Text style={styles.devToolLabel}>OTA Update</Text>
+                <Text style={styles.devToolDetail}>
+                  {Updates.updateId ?? "embedded bundle"}
+                  {"\n"}
+                  Channel: {Updates.channel ?? "none"}
+                  {"\n"}
+                  Runtime: {Updates.runtimeVersion ?? "unknown"}
+                  {"\n"}
+                  Created: {formatLocalizedDateTime(Updates.createdAt)}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
-      </View>
+      ) : null}
 
       {/* ── Danger Zone ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Danger Zone</Text>
-        <Text style={styles.sectionDescription}>
-          Permanently delete all synced and manually-entered data for your account
-        </Text>
-        <View style={styles.dangerCard}>
-          <TouchableOpacity
-            style={[
-              styles.deleteButton,
-              deleteAllDataMutation.isPending && styles.deleteButtonDisabled,
-            ]}
-            onPress={handleDeleteAllUserData}
-            activeOpacity={0.7}
-            disabled={deleteAllDataMutation.isPending}
-          >
-            <Text style={styles.deleteButtonText}>
-              {deleteAllDataMutation.isPending ? "Deleting..." : "Delete All User Data"}
-            </Text>
-          </TouchableOpacity>
+      {activeCategory === "privacy-export" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Danger Zone</Text>
+          <Text style={styles.sectionDescription}>
+            Permanently close your account and delete Dofek-held account and health data
+          </Text>
+          <View style={styles.dangerCard}>
+            <AccountErasurePanel />
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {/* ── Logout ── */}
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.7}>
-          <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
-      </View>
+      {activeCategory === "privacy-export" ? (
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Log Out"
+          >
+            <Text style={styles.logoutText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
-  contentWide: {
-    maxWidth: 600,
-    alignSelf: "center",
-    width: "100%",
-  },
-
-  // ── Sections ──
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  sectionDescription: {
-    fontSize: 13,
-    color: colors.textTertiary,
-    marginBottom: 10,
-  },
-
-  // ── Billing ──
-  billingStatusText: {
-    color: colors.text,
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  billingDetailText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  billingErrorText: {
-    color: colors.danger,
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  billingActionRow: {
-    flexDirection: "column",
-    gap: 10,
-  },
-  billingPrimaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  billingSecondaryButton: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  billingButtonText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-
-  // ── Card ──
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textTertiary,
-  },
-
-  // ── Data Sources ──
-  dataSourcesRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  dataSourcesInfo: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  providerLogos: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  dataSourcesCount: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-
-  // ── Toggle Row ──
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  toggleInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  toggleLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  toggleDescription: {
-    fontSize: 13,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-
-  // ── Unit System ──
-  unitRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  unitButton: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.surfaceSecondary,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  unitButtonSelected: {
-    borderColor: colors.accent,
-    backgroundColor: `${colors.accent}15`,
-  },
-  unitLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  unitLabelSelected: {
-    color: colors.text,
-  },
-  unitDescription: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-
-  // ── Goal Weight ──
-  goalEditRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  goalInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    color: colors.text,
-    fontSize: 14,
-  },
-  goalSaveButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  goalSaveText: {
-    color: colors.blue,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  goalCancelText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    paddingHorizontal: 8,
-  },
-  goalDisplayRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  goalDisplayText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  goalEditText: {
-    color: colors.blue,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // ── Data Export ──
-  exportStatusContainer: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    gap: 2,
-    marginBottom: 12,
-    padding: 12,
-  },
-  exportStatusTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  exportMessageText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  exportDoneText: {
-    fontSize: 13,
-    color: colors.positive,
-    marginBottom: 12,
-  },
-  exportErrorText: {
-    fontSize: 13,
-    color: colors.danger,
-    marginBottom: 12,
-  },
-  exportButton: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  exportButtonDisabled: {
-    opacity: 0.5,
-  },
-  exportButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  exportListContainer: {
-    gap: 10,
-    marginTop: 16,
-  },
-  exportListTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  exportListRow: {
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingTop: 10,
-  },
-  exportListInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  exportFilename: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  exportDownloadText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.blue,
-  },
-
-  // ── Developer Tools ──
-  devToolRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  devToolRowLast: {
-    borderBottomWidth: 0,
-  },
-  devToolLabel: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: colors.text,
-  },
-  devToolChevron: {
-    fontSize: 18,
-    color: colors.textTertiary,
-  },
-  devToolDetail: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 2,
-    fontVariant: ["tabular-nums"],
-  },
-
-  // ── Danger Zone ──
-  dangerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.danger,
-  },
-  deleteButton: {
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.danger,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  deleteButtonDisabled: {
-    opacity: 0.6,
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.danger,
-  },
-
-  // ── Logout ──
-  logoutButton: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.danger,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.danger,
-  },
-});

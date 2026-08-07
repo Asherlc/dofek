@@ -1,5 +1,5 @@
 import XCTest
-@testable import WhoopBleLib
+@testable import WhoopBLE
 
 final class WhoopBleConstantsTests: XCTestCase {
 

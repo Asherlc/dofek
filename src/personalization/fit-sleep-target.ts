@@ -11,7 +11,7 @@ export interface SleepTargetFitResult {
   sampleCount: number;
 }
 
-const MIN_QUALIFYING_NIGHTS = 14;
+export const MINIMUM_QUALIFYING_SLEEP_NIGHTS = 14;
 
 /**
  * Derive a personalized sleep target from the user's data.
@@ -25,7 +25,7 @@ const MIN_QUALIFYING_NIGHTS = 14;
 export function fitSleepTarget(data: SleepTargetInput[]): SleepTargetFitResult | null {
   const goodNights = data.filter((d) => d.nextDayHrvAboveMedian);
 
-  if (goodNights.length < MIN_QUALIFYING_NIGHTS) return null;
+  if (goodNights.length < MINIMUM_QUALIFYING_SLEEP_NIGHTS) return null;
 
   const totalDuration = goodNights.reduce((sum, night) => sum + night.durationMinutes, 0);
   const avgDuration = totalDuration / goodNights.length;

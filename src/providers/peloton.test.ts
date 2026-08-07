@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { AccessTokenExpiredError } from "./auth-errors.ts";
 import {
   mapFitnessDiscipline,
+  PelotonAuthenticationError,
   PelotonClient,
   type PelotonPerformanceGraph,
   PelotonProvider,
@@ -8,13 +12,63 @@ import {
   parseAuth0FormHtml,
   parsePerformanceGraph,
   parseWorkout,
+  pelotonAutomatedLogin,
   pelotonOAuthConfig,
 } from "./peloton.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
+
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 vi.mock("../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+    replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return {
+        deleted: {
+          version: 1,
+          eventType: "metric_stream_deleted",
+          partitionKey: "test",
+          scope: _scope,
+        },
+        rows: rows.map((row, index) => ({
+          version: 1,
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          recordedAt:
+            row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        })),
+      };
+    },
+  }),
+}));
+
+beforeEach(() => {
+  publishedMetricStreamBatches.length = 0;
+});
 
 // ============================================================
 // Sample API responses
@@ -103,15 +157,15 @@ const samplePerformanceGraph: PelotonPerformanceGraph = {
   is_class_plan_shown: true,
   segment_list: [],
   average_summaries: [
-    { display_name: "Avg Output", value: "200", slug: "avg_output" },
-    { display_name: "Avg Cadence", value: "85", slug: "avg_cadence" },
-    { display_name: "Avg Resistance", value: "45", slug: "avg_resistance" },
-    { display_name: "Avg Speed", value: "18.5", slug: "avg_speed" },
+    { display_name: "Avg Output", value: 200, slug: "avg_output" },
+    { display_name: "Avg Cadence", value: 85, slug: "avg_cadence" },
+    { display_name: "Avg Resistance", value: 45, slug: "avg_resistance" },
+    { display_name: "Avg Speed", value: 18.5, slug: "avg_speed" },
   ],
   summaries: [
-    { display_name: "Total Output", value: "360", slug: "total_output" },
-    { display_name: "Distance", value: "9.25", slug: "distance" },
-    { display_name: "Calories", value: "450", slug: "calories" },
+    { display_name: "Total Output", value: 360, slug: "total_output" },
+    { display_name: "Distance", value: 9.25, slug: "distance" },
+    { display_name: "Calories", value: 450, slug: "calories" },
   ],
   metrics: [
     {
@@ -159,59 +213,59 @@ const samplePerformanceGraph: PelotonPerformanceGraph = {
 describe("Peloton Provider", () => {
   describe("mapFitnessDiscipline", () => {
     it("maps cycling", () => {
-      expect(mapFitnessDiscipline("cycling")).toBe("indoor_cycling");
+      expect(mapFitnessDiscipline("cycling").canonicalType).toBe("cycling");
     });
 
     it("maps running", () => {
-      expect(mapFitnessDiscipline("running")).toBe("running");
+      expect(mapFitnessDiscipline("running").canonicalType).toBe("running");
     });
 
     it("maps walking", () => {
-      expect(mapFitnessDiscipline("walking")).toBe("walking");
+      expect(mapFitnessDiscipline("walking").canonicalType).toBe("walking");
     });
 
     it("maps rowing", () => {
-      expect(mapFitnessDiscipline("rowing")).toBe("rowing");
+      expect(mapFitnessDiscipline("rowing").canonicalType).toBe("rowing");
     });
 
     it("maps strength", () => {
-      expect(mapFitnessDiscipline("strength")).toBe("strength");
+      expect(mapFitnessDiscipline("strength").canonicalType).toBe("strength");
     });
 
     it("maps yoga", () => {
-      expect(mapFitnessDiscipline("yoga")).toBe("yoga");
+      expect(mapFitnessDiscipline("yoga").canonicalType).toBe("yoga");
     });
 
     it("maps meditation", () => {
-      expect(mapFitnessDiscipline("meditation")).toBe("meditation");
+      expect(mapFitnessDiscipline("meditation").canonicalType).toBe("meditation");
     });
 
     it("maps stretching", () => {
-      expect(mapFitnessDiscipline("stretching")).toBe("stretching");
+      expect(mapFitnessDiscipline("stretching").canonicalType).toBe("stretching");
     });
 
     it("maps bike_bootcamp to bootcamp", () => {
-      expect(mapFitnessDiscipline("bike_bootcamp")).toBe("bootcamp");
+      expect(mapFitnessDiscipline("bike_bootcamp").canonicalType).toBe("bootcamp");
     });
 
     it("maps tread_bootcamp to bootcamp", () => {
-      expect(mapFitnessDiscipline("tread_bootcamp")).toBe("bootcamp");
+      expect(mapFitnessDiscipline("tread_bootcamp").canonicalType).toBe("bootcamp");
     });
 
     it("maps caesar (rowing) to rowing", () => {
-      expect(mapFitnessDiscipline("caesar")).toBe("rowing");
+      expect(mapFitnessDiscipline("caesar").canonicalType).toBe("rowing");
     });
 
     it("maps cardio", () => {
-      expect(mapFitnessDiscipline("cardio")).toBe("cardio");
+      expect(mapFitnessDiscipline("cardio").canonicalType).toBe("cardio");
     });
 
     it("maps outdoor to running", () => {
-      expect(mapFitnessDiscipline("outdoor")).toBe("running");
+      expect(mapFitnessDiscipline("outdoor").canonicalType).toBe("running");
     });
 
     it("maps unknown disciplines to other", () => {
-      expect(mapFitnessDiscipline("some_future_class")).toBe("other");
+      expect(mapFitnessDiscipline("some_future_class").canonicalType).toBe("other");
     });
   });
 
@@ -220,7 +274,7 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleCyclingWorkout);
 
       expect(result.externalId).toBe("abc123def456");
-      expect(result.activityType).toBe("indoor_cycling");
+      expect(result.activityType.canonicalType).toBe("cycling");
       expect(result.startedAt).toEqual(new Date(1709280000 * 1000));
       expect(result.endedAt).toEqual(new Date(1709281800 * 1000));
       expect(result.name).toBe("30 min Power Zone Ride");
@@ -273,14 +327,14 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleStrengthWorkout);
 
       expect(result.externalId).toBe("str-789");
-      expect(result.activityType).toBe("strength");
+      expect(result.activityType.canonicalType).toBe("strength");
     });
 
     it("parses a running workout", () => {
       const result = parseWorkout(sampleRunningWorkout);
 
       expect(result.externalId).toBe("run-456");
-      expect(result.activityType).toBe("running");
+      expect(result.activityType.canonicalType).toBe("running");
       expect(result.raw?.instructor).toBe("Becs Gentry");
     });
 
@@ -294,6 +348,17 @@ describe("Peloton Provider", () => {
       expect(result.endedAt).toBeUndefined();
       // Duration falls back to ride duration
       expect(result.name).toBe("30 min Power Zone Ride");
+    });
+
+    it("preserves zero-duration source timestamps", () => {
+      const zeroDuration: PelotonWorkout = {
+        ...sampleWorkout,
+        end_time: sampleWorkout.start_time,
+      };
+
+      const result = parseWorkout(zeroDuration);
+      expect(result.startedAt).toEqual(new Date(sampleWorkout.start_time * 1000));
+      expect(result.endedAt).toEqual(new Date(sampleWorkout.start_time * 1000));
     });
 
     it("computes duration from start/end when both present", () => {
@@ -387,7 +452,7 @@ describe("Peloton Provider", () => {
       };
       const parsed = parseWorkout(workout);
       expect(parsed.raw.fitnessDiscipline).toBe("yoga");
-      expect(parsed.activityType).toBe("yoga");
+      expect(parsed.activityType.canonicalType).toBe("yoga");
     });
 
     it("stores peloton ride ID in raw", () => {
@@ -598,7 +663,7 @@ describe("PelotonProvider.authSetup()", () => {
   it("returns auth setup with OAuth config", () => {
     const provider = new PelotonProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBeDefined();
+    expect(setup.oauthConfig?.clientId).toBeDefined();
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.automatedLogin).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("onepeloton.com");
@@ -621,13 +686,13 @@ describe("PelotonProvider — provider info", () => {
 });
 
 describe("PelotonClient — error handling", () => {
-  it("throws on non-OK response", async () => {
+  it("throws an auth error for unauthorized responses", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
     };
 
     const client = new PelotonClient("bad-token", mockFetch);
-    await expect(client.getUserId()).rejects.toThrow("Peloton API error (401)");
+    await expect(client.getUserId()).rejects.toThrow(PelotonAuthenticationError);
   });
 
   it("caches userId after first call", async () => {
@@ -845,7 +910,12 @@ function makeSyncPerformanceGraph(slugs: string[] = ["heart_rate"]): object {
     metrics: slugs.map((slug) => ({
       display_name: slug,
       slug,
-      values: [130, 145, 160],
+      values:
+        slug === "heart_rate"
+          ? [130, 145, 160]
+          : slug === "output"
+            ? [180, 200, 220]
+            : [80, 85, 90],
       average_value: 145,
       max_value: 160,
     })),
@@ -853,7 +923,7 @@ function makeSyncPerformanceGraph(slugs: string[] = ["heart_rate"]): object {
 }
 
 function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -865,7 +935,7 @@ function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
       values: vi.fn().mockImplementation(() => {
         return Object.assign(Promise.resolve(), {
           onConflictDoUpdate: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([{ id: "act-uuid" }]),
+            returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000001" }]),
           }),
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         });
@@ -873,7 +943,7 @@ function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
     }),
     delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 }
 
 // ============================================================
@@ -894,13 +964,64 @@ describe("PelotonProvider.sync — happy path", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("peloton");
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(mockDb.insert).toHaveBeenCalled();
-    expect(mockDb.delete).toHaveBeenCalled();
+    expect(mockDb.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe("PelotonProvider.sync — authentication failures", () => {
+  it("classifies a rejected workouts request as an expired access token", async () => {
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("Unauthorized", { status: 401 });
+    const provider = new PelotonProvider(mockFetch);
+
+    const error = await provider
+      .sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      )
+      .catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(AccessTokenExpiredError);
+    if (!(error instanceof AccessTokenExpiredError)) {
+      throw new Error("Expected an expired access token error");
+    }
+    expect(error.cause).toBeInstanceOf(PelotonAuthenticationError);
+  });
+
+  it("classifies a rejected performance graph request as an expired access token", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+    const provider = new PelotonProvider(mockFetch);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({
+          since: new Date((workout.start_time - 1000) * 1000),
+        }),
+      }),
+    );
+
+    const performanceError = result.errors[0]?.cause;
+    expect(performanceError).toBeInstanceOf(AccessTokenExpiredError);
+    if (!(performanceError instanceof AccessTokenExpiredError)) {
+      throw new Error("Expected an expired access token error");
+    }
+    expect(performanceError.cause).toBeInstanceOf(PelotonAuthenticationError);
   });
 });
 
@@ -920,7 +1041,9 @@ describe("PelotonProvider.sync — no tokens", () => {
     };
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("peloton");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -940,7 +1063,9 @@ describe("PelotonProvider.sync — workout filtering", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
@@ -961,11 +1086,101 @@ describe("PelotonProvider.sync — workout filtering", () => {
     const mockDb = createMockDb();
 
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("includes workouts exactly at the since boundary", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date(workout.start_time * 1000) }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBeGreaterThan(0);
+  });
+
+  it("continues pagination when an older workout is not COMPLETE", async () => {
+    const since = new Date("2024-03-10T00:00:00.000Z");
+    const incompleteOlderWorkout = makeSyncWorkout({
+      id: "peloton-in-progress-older",
+      status: "IN_PROGRESS",
+      start_time: Math.floor(new Date("2024-03-01T08:00:00.000Z").getTime() / 1000),
+      end_time: Math.floor(new Date("2024-03-01T08:30:00.000Z").getTime() / 1000),
+    });
+    const completeNewerWorkout = makeSyncWorkout({
+      id: "peloton-complete-newer",
+      start_time: Math.floor(new Date("2024-03-12T08:00:00.000Z").getTime() / 1000),
+      end_time: Math.floor(new Date("2024-03-12T08:30:00.000Z").getTime() / 1000),
+    });
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([incompleteOlderWorkout], true)))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([completeNewerWorkout])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+  });
+
+  it("syncs workouts at the window end and skips workouts after it", async () => {
+    const atEnd = makeSyncWorkout({
+      id: "peloton-at-window-end",
+      start_time: 1_709_280_000,
+      end_time: 1_709_281_800,
+    });
+    const afterEnd = makeSyncWorkout({
+      id: "peloton-after-window-end",
+      start_time: 1_709_280_001,
+      end_time: 1_709_281_801,
+    });
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([atEnd, afterEnd])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: new SyncWindow({
+          since: new Date("2024-03-01T00:00:00.000Z"),
+          until: new Date(atEnd.start_time * 1000),
+        }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -986,7 +1201,9 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThan(0);
@@ -1008,7 +1225,9 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -1027,7 +1246,9 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -1064,7 +1285,9 @@ describe("PelotonProvider.sync — onProgress callback", () => {
     const onProgress = vi.fn();
 
     const provider = new PelotonProvider(mockFetch);
-    await provider.sync(mockDb, since, { onProgress });
+    await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }), onProgress }),
+    );
 
     expect(onProgress).toHaveBeenCalledTimes(2);
     expect(onProgress).toHaveBeenNthCalledWith(1, 50, "1/2 workouts");
@@ -1081,7 +1304,13 @@ describe("PelotonProvider.sync — onProgress callback", () => {
     const onProgress = vi.fn();
 
     const provider = new PelotonProvider(mockFetch);
-    await provider.sync(mockDb, new Date("2026-01-01"), { onProgress });
+    await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        onProgress,
+      }),
+    );
 
     expect(onProgress).not.toHaveBeenCalled();
   });
@@ -1101,16 +1330,55 @@ describe("PelotonProvider.sync — performance graph error handling", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Performance graph for workout-123");
+    expect(result.errors[0]?.cause).not.toBeInstanceOf(AccessTokenExpiredError);
     expect(mockDb.delete).not.toHaveBeenCalled();
   });
 });
 
 describe("PelotonProvider.sync — metric stream deletion and insertion", () => {
+  it("maps heart rate, power, cadence, and sample timestamps by slug", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(
+        Response.json(makeSyncPerformanceGraph(["output", "cadence", "heart_rate"])),
+      );
+    const provider = new PelotonProvider(mockFetch);
+    await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1) * 1000) }),
+      }),
+    );
+
+    expect(
+      publishedMetricStreamBatches[0]?.map(({ channel, scalar, recordedAt }) => ({
+        channel,
+        scalar,
+        recordedAt,
+      })),
+    ).toEqual([
+      { channel: "heart_rate", scalar: 130, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "power", scalar: 180, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "cadence", scalar: 80, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "heart_rate", scalar: 145, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "power", scalar: 200, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "cadence", scalar: 85, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "heart_rate", scalar: 160, recordedAt: "2024-03-01T08:00:10.000Z" },
+      { channel: "power", scalar: 220, recordedAt: "2024-03-01T08:00:10.000Z" },
+      { channel: "cadence", scalar: 90, recordedAt: "2024-03-01T08:00:10.000Z" },
+    ]);
+  });
+
   it("deletes existing metric_stream rows and inserts new ones in batches", async () => {
     const workout = makeSyncWorkout();
 
@@ -1142,12 +1410,13 @@ describe("PelotonProvider.sync — metric stream deletion and insertion", () => 
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
-    expect(mockDb.delete).toHaveBeenCalledTimes(1);
-    const insertCalls = mockDb.insert.mock.calls.length;
-    expect(insertCalls).toBeGreaterThanOrEqual(4);
+    expect(mockDb.delete).not.toHaveBeenCalled();
+    expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([600]);
     expect(result.recordsSynced).toBe(601);
   });
 
@@ -1172,7 +1441,9 @@ describe("PelotonProvider.sync — metric stream deletion and insertion", () => 
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(mockDb.delete).not.toHaveBeenCalled();
@@ -1220,7 +1491,9 @@ describe("PelotonProvider.sync — pagination", () => {
 
     const since = new Date((workout2.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const workoutFetchUrls = mockFetch.mock.calls
@@ -1229,6 +1502,56 @@ describe("PelotonProvider.sync — pagination", () => {
     expect(workoutFetchUrls).toHaveLength(2);
     expect(workoutFetchUrls[0]).toContain("page=0");
     expect(workoutFetchUrls[1]).toContain("page=1");
+  });
+
+  it("keeps fetched workouts and skips reconciliation when an empty page claims a next page", async () => {
+    const workout = makeSyncWorkout({ id: "w-degraded", start_time: 1709290000 });
+    const page0Response = {
+      data: [workout],
+      total: 2,
+      count: 1,
+      page: 0,
+      limit: 20,
+      page_count: 2,
+      sort_by: "-created_at",
+      show_next: true,
+      show_previous: false,
+    };
+    const emptyPageResponse = {
+      data: [],
+      total: 2,
+      count: 0,
+      page: 1,
+      limit: 20,
+      page_count: 3,
+      sort_by: "-created_at",
+      show_next: true,
+      show_previous: true,
+    };
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(page0Response))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph()))
+      .mockResolvedValueOnce(Response.json(emptyPageResponse))
+      .mockRejectedValueOnce(new Error("peloton pagination should stop after degraded page"));
+
+    const mockDb = createMockDb();
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2024-03-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const workoutFetchUrls = mockFetch.mock.calls
+      .map((args) => String(args[0]))
+      .filter((url) => url.includes("/workouts"));
+    expect(workoutFetchUrls).toHaveLength(2);
+    expect(mockDb.delete).not.toHaveBeenCalled();
   });
 });
 
@@ -1255,7 +1578,9 @@ describe("PelotonProvider.sync — token refresh", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     const refreshCall = mockFetch.mock.calls.find((args) =>
       String(args[0]).includes("oauth/token"),
@@ -1277,7 +1602,9 @@ describe("PelotonProvider.sync — duration", () => {
     const mockDb = createMockDb();
 
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.duration).toBeGreaterThanOrEqual(0);
   });
@@ -1292,10 +1619,53 @@ describe("PelotonProvider.sync — duration", () => {
 
     const before = Date.now();
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     const after = Date.now();
 
     expect(result.duration).toBeGreaterThanOrEqual(0);
     expect(result.duration).toBeLessThanOrEqual(after - before + 100);
+  });
+});
+
+describe("Peloton — rate-limit aware fetch wiring", () => {
+  const rateLimited429: typeof globalThis.fetch = async () =>
+    new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
+
+  it("PelotonClient surfaces a 429 as a ProviderRateLimitError tagged 'peloton'", async () => {
+    const client = new PelotonClient(
+      "token",
+      createProviderRateLimitFetch("peloton", rateLimited429),
+    );
+    const err = await client.getUserId().catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("peloton");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("provider authSetup.exchangeCode surfaces a 429 tagged 'peloton'", async () => {
+    const setup = new PelotonProvider(rateLimited429).authSetup();
+    const err = await setup.exchangeCode?.("code").catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("peloton");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("pelotonAutomatedLogin surfaces a 429 tagged 'peloton'", async () => {
+    const err = await pelotonAutomatedLogin(
+      "user@test.com",
+      "pass",
+      createProviderRateLimitFetch("peloton", rateLimited429),
+    ).catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("peloton");
+      expect(err.statusCode).toBe(429);
+    }
   });
 });

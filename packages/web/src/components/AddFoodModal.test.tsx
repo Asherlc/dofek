@@ -93,9 +93,9 @@ describe("AddFoodModal", () => {
     const onClose = vi.fn();
     render(<AddFoodModal isOpen onClose={onClose} onSubmit={vi.fn()} />);
 
-    // Focus the food name input and press Escape
+    expect(screen.getByRole("dialog", { name: "Add Food" })).toHaveAttribute("aria-modal", "true");
     const input = screen.getByLabelText(/What did you eat\?/i);
-    input.focus();
+    await waitFor(() => expect(input).toHaveFocus());
     fireEvent.keyDown(input, { key: "Escape" });
 
     expect(onClose).toHaveBeenCalledTimes(1);

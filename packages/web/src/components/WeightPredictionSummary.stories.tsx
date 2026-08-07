@@ -63,6 +63,44 @@ export const WithGoalOnTrack: Story = {
   },
 };
 
+export const WithPeriodDeltasOnly: Story = {
+  args: {
+    prediction: makePrediction({
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      periodDeltas: { days7: -0.4, days14: -0.8, days30: -1.5 },
+    }),
+  },
+};
+
+export const GoalOnlyNoRate: Story = {
+  args: {
+    prediction: makePrediction({
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      goal: {
+        goalWeightKg: 75,
+        remainingKg: -5,
+        estimatedDate: null,
+        daysRemaining: null,
+      },
+    }),
+  },
+};
+
+export const InsufficientData: Story = {
+  args: {
+    prediction: makePrediction({
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      goal: null,
+    }),
+  },
+};
+
 export const WithGoalTrendingAway: Story = {
   args: {
     prediction: makePrediction({

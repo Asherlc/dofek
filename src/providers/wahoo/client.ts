@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import { ProviderHttpClient } from "../http-client.ts";
 
 export const WAHOO_API_BASE = "https://api.wahooligan.com";
@@ -36,7 +37,11 @@ export function createWahooWorkoutSummarySchema() {
     work_accum: wahooNumeric,
     created_at: z.string(),
     updated_at: z.string(),
-    file: z.object({ url: z.string() }).optional(),
+    file: z
+      .object({
+        url: z.preprocess((value) => (value === null ? undefined : value), z.string().optional()),
+      })
+      .optional(),
   });
 }
 
@@ -106,9 +111,62 @@ export const wahooWebhookPayloadSchema = createWahooWebhookPayloadSchema();
 
 // ── Client ──
 
+const maxWahooErrorBodyExcerptLength = 200;
+
+function formatWahooErrorBodyExcerpt(text: string): string {
+  const trimmedText = text.trim();
+  if (trimmedText.length === 0) {
+    return "(empty response body)";
+  }
+  return trimmedText.length > maxWahooErrorBodyExcerptLength
+    ? `${trimmedText.slice(0, maxWahooErrorBodyExcerptLength)}…`
+    : trimmedText;
+}
+
+export class WahooApiError extends Error {
+  readonly statusCode: number;
+  readonly path: string;
+  readonly responseBodyExcerpt: string;
+
+  constructor(statusCode: number, path: string, responseBody: string) {
+    const responseBodyExcerpt = formatWahooErrorBodyExcerpt(responseBody);
+    super(`API error ${statusCode} on ${path}: ${responseBodyExcerpt}`);
+    this.name = "WahooApiError";
+    this.statusCode = statusCode;
+    this.path = path;
+    this.responseBodyExcerpt = responseBodyExcerpt;
+  }
+}
+
+const wahooErrorResponseSchema = z.object({
+  error: z.string().optional(),
+});
+
+function isAccessTokenExpiredResponse(text: string): boolean {
+  try {
+    const parsedJson: unknown = JSON.parse(text);
+    const parsed = wahooErrorResponseSchema.safeParse(parsedJson);
+    return parsed.success && parsed.data.error === "Access token has expired";
+  } catch {
+    return false;
+  }
+}
+
 export class WahooClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, WAHOO_API_BASE, fetchFn);
+    super(accessToken, WAHOO_API_BASE, fetchFn, "wahoo");
+  }
+
+  protected override async handleErrorResponse(response: Response, path: string): Promise<never> {
+    const text = await response.text();
+    const apiError = new WahooApiError(response.status, path, text);
+    if (response.status === 401 && isAccessTokenExpiredResponse(text)) {
+      throw new AccessTokenExpiredError("Wahoo", { cause: apiError });
+    }
+    if (response.status === 401 && text.trim() === "") {
+      throw new ProviderAuthenticationFailedError("Wahoo", { cause: apiError });
+    }
+    throw apiError;
   }
 
   async getWorkouts(page = 1, perPage = 30): Promise<WahooWorkoutListResponse> {

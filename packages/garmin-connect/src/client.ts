@@ -10,6 +10,7 @@
  * 6. All API calls use OAuth2 Bearer token
  */
 
+import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
 import { buildOAuth1Header } from "./oauth1.ts";
 import type {
   BodyBatteryDay,
@@ -40,6 +41,21 @@ const OAUTH_CONSUMER_URL = "https://thegarth.s3.amazonaws.com/oauth_consumer.jso
 const USER_AGENT = "com.garmin.android.apps.connectmobile";
 const API_USER_AGENT = "GCM-iOS-5.19.1.2";
 
+/** Minimum delay between consecutive Connect API requests (ms).
+ *  Garmin's unofficial API rate limits aggressively; 5s keeps bursts under control. */
+export const GARMIN_CONNECT_THROTTLE_MS = 5_000;
+
+/** Cache OAuth consumer by fetch function reference.
+ *  Production always uses globalThis.fetch (same ref → one fetch).
+ *  Tests use fresh vi.fn() per test → natural isolation. */
+const consumerCache = new WeakMap<typeof globalThis.fetch, OAuthConsumer>();
+
+function isOAuthConsumer(data: unknown): data is OAuthConsumer {
+  if (typeof data !== "object" || data === null) return false;
+  if (!("consumer_key" in data) || !("consumer_secret" in data)) return false;
+  return typeof data.consumer_key === "string" && typeof data.consumer_secret === "string";
+}
+
 const CSRF_RE = /name="_csrf"\s+value="(.+?)"/;
 const TITLE_RE = /<title>(.+?)<\/title>/;
 const TICKET_RE = /embed\?ticket=([^"]+)"/;
@@ -51,7 +67,6 @@ export class GarminConnectClient {
   #displayName: string | null = null;
   #domain: string;
   #fetchFn: typeof globalThis.fetch;
-
   constructor(domain: string = "garmin.com", fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#domain = domain;
     this.#fetchFn = fetchFn;
@@ -94,7 +109,7 @@ export class GarminConnectClient {
     });
 
     // Step 1: Set cookies by visiting embed page
-    const embedResponse = await fetchFn(`${ssoEmbed}?${embedParams.toString()}`, {
+    const embedResponse = await client.#fetchFn(`${ssoEmbed}?${embedParams.toString()}`, {
       headers: { "User-Agent": USER_AGENT },
       redirect: "follow",
     });
@@ -103,14 +118,17 @@ export class GarminConnectClient {
     const cookies = extractSetCookies(embedResponse);
 
     // Step 2: Get CSRF token from signin page
-    const signinPageResponse = await fetchFn(`${ssoBase}/signin?${signinParams.toString()}`, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Cookie: cookies,
-        Referer: embedResponse.url,
+    const signinPageResponse = await client.#fetchFn(
+      `${ssoBase}/signin?${signinParams.toString()}`,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Cookie: cookies,
+          Referer: embedResponse.url,
+        },
+        redirect: "follow",
       },
-      redirect: "follow",
-    });
+    );
 
     const signinHtml = await signinPageResponse.text();
     const csrfToken = extractCsrf(signinHtml);
@@ -124,7 +142,7 @@ export class GarminConnectClient {
       _csrf: csrfToken,
     });
 
-    const loginResponse = await fetchFn(`${ssoBase}/signin?${signinParams.toString()}`, {
+    const loginResponse = await client.#fetchFn(`${ssoBase}/signin?${signinParams.toString()}`, {
       method: "POST",
       headers: {
         "User-Agent": USER_AGENT,
@@ -185,7 +203,11 @@ export class GarminConnectClient {
       client.#oauth2Token = refreshed;
     }
 
-    await client.#loadProfile();
+    if (tokens.displayName) {
+      client.#displayName = tokens.displayName;
+    } else {
+      await client.#loadProfile();
+    }
     return client;
   }
 
@@ -194,16 +216,32 @@ export class GarminConnectClient {
    */
   getTokens(): GarminTokens | null {
     if (!this.#oauth1Token || !this.#oauth2Token) return null;
-    return { oauth1: this.#oauth1Token, oauth2: this.#oauth2Token };
+    return {
+      oauth1: this.#oauth1Token,
+      oauth2: this.#oauth2Token,
+      ...(this.#displayName ? { displayName: this.#displayName } : {}),
+    };
   }
 
   async #loadConsumer(): Promise<void> {
+    if (this.#consumer) return;
+
+    const cached = consumerCache.get(this.#fetchFn);
+    if (cached) {
+      this.#consumer = cached;
+      return;
+    }
+
     const response = await this.#fetchFn(OAUTH_CONSUMER_URL);
     if (!response.ok) {
       throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
     }
-    const consumer: OAuthConsumer = await response.json();
-    this.#consumer = consumer;
+    const data = await response.json();
+    if (!isOAuthConsumer(data)) {
+      throw new GarminAuthError("Invalid OAuth consumer response from S3");
+    }
+    this.#consumer = data;
+    consumerCache.set(this.#fetchFn, data);
   }
 
   async #getOAuth1Token(ticket: string): Promise<OAuth1Token> {
@@ -263,6 +301,9 @@ export class GarminConnectClient {
 
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 429) {
+        throw new GarminRateLimitError(`Rate limit exceeded (429): ${text}`);
+      }
       throw new GarminAuthError(`Failed to exchange for OAuth2 (${response.status}): ${text}`);
     }
 
@@ -327,12 +368,15 @@ export class GarminConnectClient {
       throw new GarminAuthError("Authentication failed (401)");
     }
 
-    if (response.status === 429) {
-      throw new GarminRateLimitError("Rate limit exceeded (429)");
-    }
-
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 429) {
+        throw new GarminRateLimitError(
+          `Rate limit exceeded (${response.status}): ${text}`,
+          text,
+          response.headers?.get?.("Retry-After"),
+        );
+      }
       throw new GarminApiError(`API error (${response.status}): ${text}`, response.status);
     }
 
@@ -597,9 +641,22 @@ export class GarminApiError extends Error {
   }
 }
 
-export class GarminRateLimitError extends GarminApiError {
-  constructor(message: string) {
-    super(message, 429);
+export class GarminRateLimitError extends ProviderRateLimitError {
+  constructor(
+    message: string,
+    responseBody = "",
+    retryAfterHeader?: string | null,
+    userId?: string | null,
+  ) {
+    super({
+      message,
+      providerId: "garmin",
+      statusCode: 429,
+      responseBody,
+      retryAfterSeconds: parseRetryAfterHeader(retryAfterHeader),
+      scope: userId != null ? "user" : "provider",
+      userId: userId ?? null,
+    });
     this.name = "GarminRateLimitError";
   }
 }

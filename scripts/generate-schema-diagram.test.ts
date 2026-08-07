@@ -2,12 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   buildPlantUml,
   extractTables,
+  normalizeGeneratedDbml,
   parseColumnLine,
   parseColumns,
   parseRefs,
   parseTables,
   type Table,
 } from "./generate-schema-diagram.ts";
+
+describe("normalizeGeneratedDbml", () => {
+  it("removes generator whitespace while preserving one final newline", () => {
+    expect(normalizeGeneratedDbml("table x {  \n    \n}\n\n")).toBe("table x {\n\n}\n");
+  });
+});
 
 const SINGLE_TABLE_DBML = `table fitness.activity {
   id uuid [pk, not null, default: \`gen_random_uuid()\`]
@@ -89,6 +96,11 @@ describe("parseColumnLine", () => {
   it("converts text[] to text_array", () => {
     const col = parseColumnLine("  groups text[]");
     expect(col).toEqual({ name: "groups", type: "text_array", pk: false, fk: false });
+  });
+
+  it("converts text[] with attributes to text_array", () => {
+    const col = parseColumnLine("  scopes text[] [not null]");
+    expect(col).toEqual({ name: "scopes", type: "text_array", pk: false, fk: false });
   });
 
   it("returns null for empty lines", () => {

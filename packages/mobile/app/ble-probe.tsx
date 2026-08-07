@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { captureException } from "../lib/telemetry";
+import { captureException, logger } from "../lib/telemetry";
 import {
   addNotificationListener,
   type BleNotification,
@@ -36,6 +36,8 @@ export default function BleProbeScreen() {
   const [commandInput, setCommandInput] = useState("");
   const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [helloAndImuBusy, setHelloAndImuBusy] = useState(false);
+  const helloAndImuBusyRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
 
   const addLog = useCallback((text: string, type: LogEntry["type"] = "info") => {
@@ -48,8 +50,8 @@ export default function BleProbeScreen() {
     const subscription = addNotificationListener((notification: BleNotification) => {
       setNotificationCount((count) => count + 1);
       // Stream to Metro console for terminal-side analysis
-      // biome-ignore lint/suspicious/noConsole: intentional debug logging for BLE RE
-      console.log(
+      logger.info(
+        "ble-probe",
         `[BLE] #${notification.index} [${notification.suffix}] ${notification.bytes}B: ${notification.hex}`,
       );
       // Only show first 20 and then every 50th in the UI to avoid flooding
@@ -121,6 +123,7 @@ export default function BleProbeScreen() {
                 break;
               }
             } catch (error) {
+              captureException(error, { source: "ble-probe-whoop-discovery" });
               addLog(`whoop-ble module error: ${error}`, "error");
             }
             // Fall back to ble-probe module's own scan
@@ -148,14 +151,20 @@ export default function BleProbeScreen() {
                 await subscribe("0003");
                 addLog("  0003 subscribed");
               } catch (error: unknown) {
-                captureException(error, { context: "ble-probe-subscribe" });
+                captureException(error, {
+                  source: "ble-probe-subscribe",
+                  characteristic: "0003",
+                });
                 addLog("  0003 failed");
               }
               try {
                 await subscribe("0005");
                 addLog("  0005 subscribed");
               } catch (error: unknown) {
-                captureException(error, { context: "ble-probe-subscribe" });
+                captureException(error, {
+                  source: "ble-probe-subscribe",
+                  characteristic: "0005",
+                });
                 addLog("  0005 failed");
               }
               addLog("Ready!");
@@ -261,7 +270,7 @@ export default function BleProbeScreen() {
               addLog(`whoop-ble isNotifying: ${stats.isNotifying}`);
               addLog(`whoop-ble buffered: ${whoopBle.getBufferedSampleCount()}`);
             } catch (error: unknown) {
-              captureException(error, { context: "ble-probe-whoop" });
+              captureException(error, { source: "ble-probe-whoop-status" });
               addLog("whoop-ble module not available", "error");
             }
             break;
@@ -293,6 +302,7 @@ export default function BleProbeScreen() {
             addLog(`Unknown command: ${cmd}. Type 'help'.`, "error");
         }
       } catch (error) {
+        captureException(error, { source: "ble-probe-command" });
         addLog(`Error: ${error instanceof Error ? error.message : String(error)}`, "error");
       }
     },
@@ -304,8 +314,7 @@ export default function BleProbeScreen() {
   useEffect(() => {
     const autoCommand = ""; // disabled
     if (autoCommand) {
-      // biome-ignore lint/suspicious/noConsole: intentional debug logging
-      console.log(`[BLE-AUTO] executing: ${autoCommand}`);
+      logger.info("ble-probe", `[BLE-AUTO] executing: ${autoCommand}`);
       executeCommand(autoCommand);
     }
   }, [executeCommand]);
@@ -314,6 +323,26 @@ export default function BleProbeScreen() {
     executeCommand(commandInput);
     setCommandInput("");
   }, [commandInput, executeCommand]);
+
+  const handleHelloAndImu = useCallback(async () => {
+    if (helloAndImuBusyRef.current) return;
+    helloAndImuBusyRef.current = true;
+    setHelloAndImuBusy(true);
+    addLog("> Sending GET_HELLO + TOGGLE_IMU_MODE...", "command");
+    try {
+      await writeRaw("0002", "aa0108000001e67123019101363e5c8d", false);
+      addLog("GET_HELLO sent", "info");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await writeRaw("0002", "aa010c000001e74123026a01010000001cc9f7a9", false);
+      addLog("TOGGLE_IMU_MODE sent — watching for response...", "info");
+    } catch (error: unknown) {
+      captureException(error, { source: "ble-probe-hello-imu" });
+      addLog(`Error: ${error}`, "error");
+    } finally {
+      helloAndImuBusyRef.current = false;
+      setHelloAndImuBusy(false);
+    }
+  }, [addLog]);
 
   const renderLogEntry = useCallback(
     ({ item }: { item: LogEntry }) => (
@@ -352,55 +381,79 @@ export default function BleProbeScreen() {
       />
 
       <View style={styles.quickButtons}>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("whoop")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("whoop")}
+          accessibilityRole="button"
+          accessibilityLabel="WHOOP"
+        >
           <Text style={styles.quickButtonText}>WHOOP</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("discover")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("discover")}
+          accessibilityRole="button"
+          accessibilityLabel="Discover"
+        >
           <Text style={styles.quickButtonText}>Discover</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("subscribe 0003")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("subscribe 0003")}
+          accessibilityRole="button"
+          accessibilityLabel="Subscribe 0003"
+        >
           <Text style={styles.quickButtonText}>Sub 0003</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("subscribe 0005")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("subscribe 0005")}
+          accessibilityRole="button"
+          accessibilityLabel="Subscribe 0005"
+        >
           <Text style={styles.quickButtonText}>Sub 0005</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("status")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("status")}
+          accessibilityRole="button"
+          accessibilityLabel="Bluetooth Low Energy (BLE) connection and data status"
+        >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
       </View>
       <View style={styles.quickButtons}>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
-          onPress={async () => {
-            addLog("> Sending GET_HELLO + TOGGLE_IMU_MODE...", "command");
-            try {
-              await writeRaw("0002", "aa0108000001e67123019101363e5c8d", false);
-              addLog("GET_HELLO sent", "info");
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              await writeRaw("0002", "aa010c000001e74123026a01010000001cc9f7a9", false);
-              addLog("TOGGLE_IMU_MODE sent — watching for response...", "info");
-            } catch (error) {
-              addLog(`Error: ${error}`, "error");
-            }
-          }}
+          onPress={handleHelloAndImu}
+          disabled={helloAndImuBusy}
+          accessibilityRole="button"
+          accessibilityLabel="Send hello and toggle inertial measurement unit (IMU) mode"
+          accessibilityState={{ busy: helloAndImuBusy, disabled: helloAndImuBusy }}
         >
           <Text style={styles.quickButtonText}>Hello+IMU</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa010c000001e741236b6a01010000002ac0d9b7")}
+          accessibilityRole="button"
+          accessibilityLabel="Inertial measurement unit (IMU) sequence 6B"
         >
           <Text style={styles.quickButtonText}>IMU seq=6B</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa0102006a01")}
+          accessibilityRole="button"
+          accessibilityLabel="Inertial measurement unit (IMU) version 3"
         >
           <Text style={styles.quickButtonText}>IMU v3</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa0101006a")}
+          accessibilityRole="button"
+          accessibilityLabel="Inertial measurement unit (IMU) version 4"
         >
           <Text style={styles.quickButtonText}>IMU v4</Text>
         </Pressable>
@@ -409,19 +462,33 @@ export default function BleProbeScreen() {
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa010100016a")}
+          accessibilityRole="button"
+          accessibilityLabel="Inertial measurement unit (IMU) version 5"
         >
           <Text style={styles.quickButtonText}>IMU v5</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa01020051016a0101000000")}
+          accessibilityRole="button"
+          accessibilityLabel="Start inertial measurement unit (IMU)"
         >
           <Text style={styles.quickButtonText}>Start+IMU</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("status")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("status")}
+          accessibilityRole="button"
+          accessibilityLabel="WHOOP data status"
+        >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("clear")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("clear")}
+          accessibilityRole="button"
+          accessibilityLabel="Clear logs"
+        >
           <Text style={styles.quickButtonText}>Clear</Text>
         </Pressable>
       </View>
@@ -438,7 +505,14 @@ export default function BleProbeScreen() {
           returnKeyType="send"
           onSubmitEditing={handleSubmit}
         />
-        <Pressable style={styles.sendButton} onPress={handleSubmit}>
+        <Pressable
+          style={styles.sendButton}
+          onPress={handleSubmit}
+          disabled={commandInput.trim().length === 0}
+          accessibilityRole="button"
+          accessibilityLabel="Send command"
+          accessibilityState={{ disabled: commandInput.trim().length === 0 }}
+        >
           <Text style={styles.sendButtonText}>Send</Text>
         </Pressable>
       </View>

@@ -77,6 +77,7 @@ const WHOOP_TO_SLUGS: Record<string, BodySlug[]> = {
   TRAPS: ["trapezius"],
   TRAPEZIUS: ["trapezius"],
   LATS: ["upper-back"],
+  MIDDLE_BACK: ["upper-back"],
   UPPER_BACK: ["upper-back"],
   LOWER_BACK: ["lower-back"],
   DELTOIDS: ["deltoids"],
