@@ -100,7 +100,7 @@ Run the repository's focused workflow/configuration validation available in the 
 
 - [ ] **Step 2: Run an isolated executable Lerna reproduction**
 
-Use a disposable copy or worktree outside the repository's active worktree with a clean git repository, one public package at version `0.1.0`, and an existing `@example/package@0.1.1` tag. Run:
+Use a disposable copy or worktree outside the repository's active worktree with a clean git repository, one public package at version `0.1.0`, and an existing `@example/package@0.1.1` tag. Capture the matching tag list before running the command. Run:
 
 ```bash
 pnpm exec lerna version patch --yes --no-git-tag-version --no-push
@@ -108,7 +108,7 @@ git add --all
 git commit -m "chore(release): version npm packages"
 ```
 
-Verify that the package manifest is `0.1.1`, the explicit commit exists, and `git tag --list '@example/package@0.1.1'` is empty in the reproduction. Remove the disposable copy after verification; do not touch repository or remote tags.
+Verify that the package manifest is `0.1.1`, the explicit commit exists, and the matching tag list is unchanged after the command: the existing tag remains, but no new tag is created. Remove the disposable copy after verification; do not touch repository or remote tags.
 
 - [ ] **Step 3: Run relevant repository checks**
 
