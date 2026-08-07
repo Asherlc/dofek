@@ -164,6 +164,42 @@ describe("parseSleepAnalysis", () => {
 });
 
 describe("parseWorkout", () => {
+  it("ignores Hang Ten metadata for non-functional-strength workouts", () => {
+    const result = parseWorkout(
+      {
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        startDate: "2026-08-07 07:00:00 -0700",
+        endDate: "2026-08-07 07:10:00 -0700",
+      },
+      {
+        HKMetadataKeyWorkoutBrandName: "Hang Ten",
+        "HangTen.PlanName": "Max Hangs",
+      },
+    );
+
+    expect(result.activityType).toBe("running");
+    expect(result.hangTen).toBeUndefined();
+  });
+
+  it.each([undefined, "", "   "])("ignores Hang Ten metadata when PlanName is %s", (planName) => {
+    const metadata: Record<string, string> = {
+      HKMetadataKeyWorkoutBrandName: "Hang Ten",
+    };
+    if (planName !== undefined) metadata["HangTen.PlanName"] = planName;
+
+    const result = parseWorkout(
+      {
+        workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+        startDate: "2026-08-07 07:00:00 -0700",
+        endDate: "2026-08-07 07:10:00 -0700",
+      },
+      metadata,
+    );
+
+    expect(result.activityType).toBe("functional_strength");
+    expect(result.hangTen).toBeUndefined();
+  });
+
   it("reports malformed Hang Ten activity segment JSON", () => {
     const result = parseWorkout(
       {

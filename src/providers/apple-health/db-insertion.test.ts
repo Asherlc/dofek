@@ -1,3 +1,5 @@
+import type { SQLWrapper } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -26,18 +28,25 @@ import type { HealthWorkout } from "./workouts.ts";
 interface MockInsertCapture {
   values: Record<string, unknown>[][];
   conflictUpdates: { set: Record<string, unknown> }[];
+  executions: { sql: string; params: unknown[] }[];
 }
 
-function createMockDb(returningData: Record<string, unknown>[] = []): {
+function createMockDb(
+  returningIds: string[] = [],
+  reverseActivityResults = false,
+): {
   db: SyncDatabase;
   capture: MockInsertCapture;
 } {
-  const capture: MockInsertCapture = { values: [], conflictUpdates: [] };
+  const capture: MockInsertCapture = { values: [], conflictUpdates: [], executions: [] };
+  const dialect = new PgDialect();
+  let latestRows: Record<string, unknown>[] = [];
 
   function makeChainable(): Promise<undefined> {
     return Object.assign(Promise.resolve(undefined), {
       values: vi.fn((rows: Record<string, unknown>[]) => {
         capture.values.push(rows);
+        latestRows = rows;
         return makeChainable();
       }),
       onConflictDoUpdate: vi.fn((config: { set: Record<string, unknown> }) => {
@@ -45,7 +54,16 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
         return makeChainable();
       }),
       onConflictDoNothing: vi.fn(() => makeChainable()),
-      returning: vi.fn(() => Promise.resolve(returningData)),
+      returning: vi.fn(() => {
+        const returned = returningIds.map((id, index) => {
+          const externalId = latestRows[index]?.externalId;
+          if (typeof externalId !== "string") {
+            throw new Error("Expected mocked activity row to include externalId");
+          }
+          return { id, externalId };
+        });
+        return Promise.resolve(reverseActivityResults ? returned.reverse() : returned);
+      }),
     });
   }
 
@@ -66,7 +84,12 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
     select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
     delete: vi.fn().mockReturnValue(deleteChain),
-    execute: vi.fn(),
+    execute: vi.fn((query: SQLWrapper | string) => {
+      const compiled =
+        typeof query === "string" ? { sql: query, params: [] } : dialect.sqlToQuery(query.getSQL());
+      capture.executions.push({ sql: compiled.sql, params: compiled.params });
+      return Promise.resolve([]);
+    }),
   };
 
   return { db, capture };
@@ -1113,7 +1136,7 @@ describe("upsertHealthEventBatch", () => {
 describe("upsertWorkoutBatch", () => {
   it("deduplicates workouts with the same startDate", async () => {
     const sharedStart = new Date("2024-06-01T08:00:00Z");
-    const { db } = createMockDb([{ id: "act-1" }]);
+    const { db } = createMockDb(["act-1"]);
 
     const workouts = [
       makeWorkout({ startDate: sharedStart, sourceName: "Apple Watch" }),
@@ -1125,7 +1148,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("preserves unique workouts while deduplicating", async () => {
-    const { db } = createMockDb([{ id: "act-1" }, { id: "act-2" }]);
+    const { db } = createMockDb(["act-1", "act-2"]);
 
     const workouts = [
       makeWorkout({ startDate: new Date("2024-06-01T08:00:00Z") }),
@@ -1140,7 +1163,7 @@ describe("upsertWorkoutBatch", () => {
   it("builds correct insert row fields", async () => {
     const start = new Date("2024-06-01T08:00:00Z");
     const end = new Date("2024-06-01T08:30:00Z");
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({ startDate: start, endDate: end, activityType: "cycling", sourceName: "Wahoo" }),
@@ -1158,7 +1181,7 @@ describe("upsertWorkoutBatch", () => {
 
   it("uses Hang Ten session metadata for hangboard activity rows", async () => {
     const start = new Date("2026-08-07T14:00:00Z");
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "apple_health", [
       makeWorkout({
@@ -1197,7 +1220,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("updates the activity name from a reimported Hang Ten plan", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "apple_health", [
       makeWorkout({
@@ -1211,7 +1234,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("preserves a Hang Ten segment parse error without inserting intervals", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "apple_health", [
       makeWorkout({
@@ -1236,76 +1259,76 @@ describe("upsertWorkoutBatch", () => {
     });
   });
 
-  it("builds Hang Ten intervals with labels and cumulative times", async () => {
-    const start = new Date("2026-08-07T14:00:00Z");
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+  it("matches returned activity IDs by external ID when RETURNING rows are reversed", async () => {
+    const firstStart = new Date("2026-08-07T14:00:00Z");
+    const secondStart = new Date("2026-08-07T15:00:00Z");
+    const { db, capture } = createMockDb(["act-first", "act-second"], true);
 
     await upsertWorkoutBatch(db, "apple_health", [
       makeWorkout({
         activityType: "hangboard",
         sourceName: "Hang Ten",
-        startDate: start,
-        endDate: new Date("2026-08-07T14:01:00Z"),
+        startDate: firstStart,
         hangTen: {
-          planName: "Repeaters",
+          sessionId: "session-first",
+          planName: "First Plan",
           activitySegments: [
             {
-              stepID: "step-1",
+              stepID: "first-step",
               stepNumber: 1,
               kind: "work",
-              holdIDs: ["edge-19"],
-              holdType: "edge",
-              sizeMillimeters: 19,
-              durationSeconds: 7,
-            },
-            {
-              stepID: "step-1-rest",
-              stepNumber: 1,
-              kind: "rest",
               holdIDs: [],
-              durationSeconds: 3,
-            },
-            {
-              stepID: "step-2",
-              stepNumber: 2,
-              kind: "work",
-              holdIDs: ["jug"],
+              holdType: "first-hold",
+              durationSeconds: 7,
             },
           ],
         },
+        routeLocations: [{ date: firstStart, lat: 11, lng: 12 }],
+      }),
+      makeWorkout({
+        activityType: "hangboard",
+        sourceName: "Hang Ten",
+        startDate: secondStart,
+        hangTen: {
+          sessionId: "session-second",
+          planName: "Second Plan",
+          activitySegments: [
+            {
+              stepID: "second-step",
+              stepNumber: 2,
+              kind: "work",
+              holdIDs: [],
+              holdType: "second-hold",
+              durationSeconds: 8,
+            },
+          ],
+        },
+        routeLocations: [{ date: secondStart, lat: 21, lng: 22 }],
       }),
     ]);
 
-    expect(capture.values[1]).toEqual([
-      expect.objectContaining({
-        activityId: "act-1",
-        intervalIndex: 0,
-        label: "Step 1: 19 mm edge",
-        intervalType: "work",
-        startedAt: start,
-        endedAt: new Date("2026-08-07T14:00:07Z"),
-      }),
-      expect.objectContaining({
-        activityId: "act-1",
-        intervalIndex: 1,
-        label: "Step 1: Rest",
-        intervalType: "rest",
-        startedAt: new Date("2026-08-07T14:00:07Z"),
-        endedAt: new Date("2026-08-07T14:00:10Z"),
-      }),
-      expect.objectContaining({
-        activityId: "act-1",
-        intervalIndex: 2,
-        label: "Step 2: Work",
-        intervalType: "work",
-        startedAt: new Date("2026-08-07T14:00:10Z"),
-        endedAt: undefined,
-      }),
-    ]);
+    const intervalReplacements = capture.executions.filter((execution) =>
+      execution.sql.includes("activity_interval"),
+    );
+    expect(intervalReplacements).toHaveLength(2);
+    expect(intervalReplacements.map((replacement) => replacement.params)).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["act-first", "Step 1: first-hold"]),
+        expect.arrayContaining(["act-second", "Step 2: second-hold"]),
+      ]),
+    );
+
+    const gpsRows = capture.values.flat().filter((row) => row.channel === "lat");
+    expect(gpsRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ activityId: "act-first", scalar: 11 }),
+        expect.objectContaining({ activityId: "act-second", scalar: 21 }),
+      ]),
+    );
   });
 
   it("inserts GPS route locations for workouts", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
     const loc = {
       date: new Date("2024-06-01T08:00:00Z"),
       lat: 40.7128,
@@ -1338,7 +1361,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("skips GPS insert when no route locations", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [] })]);
 
@@ -1347,7 +1370,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("handles undefined horizontalAccuracy in GPS", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
     const loc = {
       date: new Date("2024-06-01T08:00:00Z"),
       lat: 40.7128,
@@ -1361,7 +1384,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("populates raw JSONB with workout metrics", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({
@@ -1385,7 +1408,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("omits undefined optional fields from raw JSONB", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
 
@@ -1400,7 +1423,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("correlates existing HR metric_stream rows with activities by time range", async () => {
-    const { db } = createMockDb([{ id: "act-1" }]);
+    const { db } = createMockDb(["act-1"]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
 

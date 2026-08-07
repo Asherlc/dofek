@@ -8,7 +8,6 @@ import {
 } from "../../db/metric-stream-writer.ts";
 import {
   activity,
-  activityInterval,
   bodyMeasurement,
   dailyMetrics,
   healthEvent,
@@ -19,9 +18,10 @@ import {
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
+import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
-import type { HangTenActivitySegment, HealthWorkout } from "./workouts.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
 
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
@@ -788,30 +788,37 @@ export async function upsertWorkoutBatch(
         set: {
           activityType: sql`excluded.activity_type`,
           endedAt: sql`excluded.ended_at`,
-          name: sql`excluded.name`,
+          name: sql`CASE
+            WHEN excluded.activity_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
+              THEN excluded.name
+            ELSE ${activity.name}
+          END`,
           sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
           raw: sql`excluded.raw`,
         },
       })
-      .returning({ id: activity.id });
+      .returning({ id: activity.id, externalId: activity.externalId });
 
-    for (let j = 0; j < returned.length; j++) {
-      const ret = returned[j];
-      const work = batch[j];
-      if (ret && work) {
-        activityResults.push({ activityId: ret.id, workout: work });
+    const workoutsByExternalId = new Map(
+      batch.map((workout) => [workoutExternalId(workout), workout]),
+    );
+    for (const returnedActivity of returned) {
+      if (!returnedActivity.externalId) {
+        throw new Error("Apple Health activity upsert returned no external ID");
       }
+      const workout = workoutsByExternalId.get(returnedActivity.externalId);
+      if (!workout) {
+        throw new Error(
+          `Apple Health activity upsert returned unknown external ID: ${returnedActivity.externalId}`,
+        );
+      }
+      activityResults.push({ activityId: returnedActivity.id, workout });
     }
   }
 
   for (const { activityId, workout } of activityResults) {
     if (!workout.hangTen) continue;
-
-    await db.delete(activityInterval).where(eq(activityInterval.activityId, activityId));
-    const intervals = buildHangTenIntervals(activityId, workout);
-    if (intervals.length > 0) {
-      await db.insert(activityInterval).values(intervals);
-    }
+    await replaceHangTenIntervals(db, activityId, workout);
   }
 
   // Batch all GPS route locations across all workouts
@@ -853,12 +860,6 @@ export async function upsertWorkoutBatch(
   return activityResults.length;
 }
 
-function workoutExternalId(workout: HealthWorkout): string {
-  return workout.hangTen?.sessionId
-    ? `ah:workout:${workout.hangTen.sessionId}`
-    : `ah:workout:${workout.startDate.toISOString()}`;
-}
-
 function workoutName(workout: HealthWorkout): string {
   return workout.hangTen?.planName ?? workout.activityType;
 }
@@ -871,43 +872,6 @@ function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
   if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
   if (workout.hangTen) raw.hangTen = workout.hangTen;
   return raw;
-}
-
-export function hangTenIntervalLabel(segment: HangTenActivitySegment): string {
-  if (segment.kind === "rest") return `Step ${segment.stepNumber}: Rest`;
-  if (segment.sizeMillimeters !== undefined && segment.holdType) {
-    return `Step ${segment.stepNumber}: ${segment.sizeMillimeters} mm ${segment.holdType}`;
-  }
-  if (segment.holdType) return `Step ${segment.stepNumber}: ${segment.holdType}`;
-  return `Step ${segment.stepNumber}: Work`;
-}
-
-export function buildHangTenIntervals(
-  activityId: string,
-  workout: HealthWorkout,
-): (typeof activityInterval.$inferInsert)[] {
-  const segments = workout.hangTen?.activitySegments;
-  if (!segments || segments.length === 0) return [];
-
-  const rows: (typeof activityInterval.$inferInsert)[] = [];
-  let cursor: Date | null = workout.startDate;
-  for (const [index, segment] of segments.entries()) {
-    const startedAt = cursor ?? workout.startDate;
-    const endedAt: Date | undefined =
-      cursor && segment.durationSeconds !== undefined
-        ? new Date(cursor.getTime() + segment.durationSeconds * 1000)
-        : undefined;
-    rows.push({
-      activityId,
-      intervalIndex: index,
-      label: hangTenIntervalLabel(segment),
-      intervalType: segment.kind,
-      startedAt,
-      endedAt,
-    });
-    cursor = endedAt ?? null;
-  }
-  return rows;
 }
 
 export async function upsertSleepBatch(

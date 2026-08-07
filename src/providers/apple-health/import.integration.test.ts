@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
@@ -875,7 +876,13 @@ describe("importAppleHealthFile — full DB integration", () => {
     const hangboard = activities.find(
       (activityRow) => activityRow.externalId === "ah:workout:11111111-1111-4111-8111-111111111111",
     );
-    const intervals = await ctx.db.select().from(schema.activityInterval);
+    const intervals = hangboard
+      ? await ctx.db
+          .select()
+          .from(schema.activityInterval)
+          .where(eq(schema.activityInterval.activityId, hangboard.id))
+          .orderBy(asc(schema.activityInterval.intervalIndex))
+      : [];
 
     expect(hangboard?.activityType).toBe("hangboard");
     expect(hangboard?.name).toBe("7/3 Repeaters");
@@ -907,11 +914,10 @@ describe("importAppleHealthFile — full DB integration", () => {
         ],
       },
     });
-    expect(
-      intervals
-        .filter((interval) => interval.activityId === hangboard?.id)
-        .map((interval) => interval.label),
-    ).toEqual(["Step 1: 19 mm edge", "Step 1: Rest"]);
+    expect(intervals.map((interval) => interval.label)).toEqual([
+      "Step 1: 19 mm edge",
+      "Step 1: Rest",
+    ]);
   });
 
   it("creates health_event rows for category records (mindful session)", async () => {

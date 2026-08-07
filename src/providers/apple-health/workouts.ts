@@ -41,6 +41,12 @@ export interface HealthWorkout {
   hangTen?: HangTenWorkoutMetadata;
 }
 
+export function workoutExternalId(workout: HealthWorkout): string {
+  return workout.hangTen?.sessionId
+    ? `ah:workout:${workout.hangTen.sessionId}`
+    : `ah:workout:${workout.startDate.toISOString()}`;
+}
+
 // Re-export as WORKOUT_TYPE_MAP for backward compatibility
 export const WORKOUT_TYPE_MAP = APPLE_HEALTH_WORKOUT_TYPE_MAP;
 

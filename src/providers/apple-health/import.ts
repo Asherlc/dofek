@@ -54,7 +54,7 @@ import {
 import type { HealthRecord } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
-import type { HealthWorkout } from "./workouts.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
 
 /**
  * Extract export.xml from an Apple Health export ZIP file.
@@ -125,9 +125,7 @@ function collectWorkoutImportErrors(workouts: HealthWorkout[]): SyncError[] {
     return [
       {
         message,
-        externalId: workout.hangTen?.sessionId
-          ? `ah:workout:${workout.hangTen.sessionId}`
-          : `ah:workout:${workout.startDate.toISOString()}`,
+        externalId: workoutExternalId(workout),
       },
     ];
   });
