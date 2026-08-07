@@ -325,6 +325,47 @@ describe("Apple Health Provider -- parsing", () => {
   });
 
   describe("parseWorkout", () => {
+    it("parses Hang Ten workout metadata", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          duration: "10",
+          durationUnit: "min",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "7/3 Repeaters",
+          "HangTen.SessionID": "11111111-1111-4111-8111-111111111111",
+          "HangTen.BoardID": "metolius-compact-ii",
+          "HangTen.BoardName": "Metolius Compact II",
+          "HangTen.ActivitySegments":
+            '{"segments":[{"stepID":"step-1","stepNumber":1,"kind":"work","holdIDs":["edge-19"],"holdType":"edge","sizeMillimeters":19,"durationSeconds":7}],"version":1}',
+        },
+      );
+
+      expect(result.activityType).toBe("hangboard");
+      expect(result.sourceName).toBe("Hang Ten");
+      expect(result.hangTen).toMatchObject({
+        sessionId: "11111111-1111-4111-8111-111111111111",
+        planName: "7/3 Repeaters",
+        boardId: "metolius-compact-ii",
+        boardName: "Metolius Compact II",
+      });
+      expect(result.hangTen?.activitySegments).toEqual([
+        {
+          stepID: "step-1",
+          stepNumber: 1,
+          kind: "work",
+          holdIDs: ["edge-19"],
+          holdType: "edge",
+          sizeMillimeters: 19,
+          durationSeconds: 7,
+        },
+      ]);
+    });
+
     it("parses workout attributes", () => {
       const result = parseWorkout(workoutAttrs);
       expect(result.activityType).toBe("running");

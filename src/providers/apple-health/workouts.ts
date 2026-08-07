@@ -2,8 +2,29 @@ import {
   APPLE_HEALTH_WORKOUT_TYPE_MAP,
   type CanonicalActivityType,
 } from "@dofek/training/training";
+import { z } from "zod";
 import { parseHealthDate } from "./dates.ts";
 import type { RouteLocation } from "./records.ts";
+
+export interface HangTenActivitySegment {
+  stepID: string;
+  stepNumber: number;
+  kind: "work" | "rest";
+  holdIDs: string[];
+  holdType?: string;
+  sizeMillimeters?: number;
+  durationSeconds?: number;
+}
+
+export interface HangTenWorkoutMetadata {
+  sessionId?: string;
+  planName: string;
+  boardId?: string;
+  boardName?: string;
+  rawActivitySegments?: string;
+  activitySegments?: HangTenActivitySegment[];
+  activitySegmentsError?: string;
+}
 
 export interface HealthWorkout {
   activityType: CanonicalActivityType;
@@ -16,6 +37,8 @@ export interface HealthWorkout {
   startDate: Date;
   endDate: Date;
   routeLocations?: RouteLocation[];
+  metadata?: Record<string, string>;
+  hangTen?: HangTenWorkoutMetadata;
 }
 
 // Re-export as WORKOUT_TYPE_MAP for backward compatibility
@@ -45,7 +68,10 @@ export function normalizeDistance(value: string, unit: string): number {
   }
 }
 
-export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
+export function parseWorkout(
+  attrs: Record<string, string>,
+  metadata: Record<string, string> = {},
+): HealthWorkout {
   const rawType = attrs.workoutActivityType ?? "HKWorkoutActivityTypeOther";
   const activityType: CanonicalActivityType = WORKOUT_TYPE_MAP[rawType] ?? "other";
 
@@ -63,14 +89,100 @@ export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
     calories = Math.round(raw);
   }
 
+  return applyWorkoutMetadata(
+    {
+      activityType,
+      sourceName: attrs.sourceName ?? null,
+      durationSeconds,
+      distanceMeters,
+      calories,
+      startDate: parseHealthDate(attrs.startDate ?? ""),
+      endDate: parseHealthDate(attrs.endDate ?? ""),
+    },
+    metadata,
+  );
+}
+
+function trimmedMetadataValue(metadata: Record<string, string>, key: string): string | undefined {
+  const value = metadata[key]?.trim();
+  return value ? value : undefined;
+}
+
+const hangTenActivityMetadataSchema = z.object({
+  version: z.number().optional(),
+  segments: z.array(
+    z.object({
+      stepID: z.string(),
+      stepNumber: z.number(),
+      kind: z.enum(["work", "rest"]),
+      holdIDs: z.array(z.string()),
+      holdType: z.string().optional(),
+      sizeMillimeters: z.number().optional(),
+      durationSeconds: z.number().optional(),
+    }),
+  ),
+});
+
+function parseHangTenActivitySegments(raw: string): {
+  segments?: HangTenActivitySegment[];
+  error?: string;
+} {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const result = hangTenActivityMetadataSchema.safeParse(parsed);
+    if (!result.success) {
+      return {
+        error: "Invalid Hang Ten activity segments JSON: segment metadata has invalid fields",
+      };
+    }
+    return { segments: result.data.segments };
+  } catch {
+    return { error: "Invalid Hang Ten activity segments JSON: could not parse JSON" };
+  }
+}
+
+function hangTenWorkoutOverrides(
+  activityType: CanonicalActivityType,
+  metadata: Record<string, string>,
+): Partial<HealthWorkout> {
+  if (
+    activityType !== "functional_strength" ||
+    metadata.HKMetadataKeyWorkoutBrandName !== "Hang Ten"
+  ) {
+    return {};
+  }
+
+  const planName = trimmedMetadataValue(metadata, "HangTen.PlanName");
+  if (!planName) return {};
+
+  const rawActivitySegments = metadata["HangTen.ActivitySegments"];
+  const parsedActivitySegments = rawActivitySegments
+    ? parseHangTenActivitySegments(rawActivitySegments)
+    : {};
+
   return {
-    activityType,
-    sourceName: attrs.sourceName ?? null,
-    durationSeconds,
-    distanceMeters,
-    calories,
-    startDate: parseHealthDate(attrs.startDate ?? ""),
-    endDate: parseHealthDate(attrs.endDate ?? ""),
+    activityType: "hangboard",
+    sourceName: "Hang Ten",
+    hangTen: {
+      sessionId: trimmedMetadataValue(metadata, "HangTen.SessionID"),
+      planName,
+      boardId: trimmedMetadataValue(metadata, "HangTen.BoardID"),
+      boardName: trimmedMetadataValue(metadata, "HangTen.BoardName"),
+      rawActivitySegments,
+      activitySegments: parsedActivitySegments.segments,
+      activitySegmentsError: parsedActivitySegments.error,
+    },
+  };
+}
+
+export function applyWorkoutMetadata(
+  workout: HealthWorkout,
+  metadata: Record<string, string>,
+): HealthWorkout {
+  return {
+    ...workout,
+    metadata,
+    ...hangTenWorkoutOverrides(workout.activityType, metadata),
   };
 }
 
