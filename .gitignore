@@ -7,6 +7,7 @@ packages/mobile/certs/public-key.pem
 .claude/*
 !.claude/skills/
 .context/
+.worktrees/
 .DS_Store
 *.swp
 *.swo
