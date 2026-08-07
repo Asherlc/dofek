@@ -5,11 +5,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MISSING_PREVIOUS_NIGHT_MESSAGE } from "dofek-server/sleep-need-contract";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
+import TodayScreen from "../../app/(tabs)/index";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "../../app/(tabs)/_processing-status-story-fixture";
-import TodayScreen from "../../app/(tabs)/index";
+} from "../../app-fixtures/(tabs)/processing-status-story-fixture";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 

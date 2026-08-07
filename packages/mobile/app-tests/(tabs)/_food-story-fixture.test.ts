@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { seedFoodStoryQuery } from "../../app/(tabs)/_food-story-fixture";
+import { seedFoodStoryQuery } from "../../app-fixtures/(tabs)/food-story-fixture";
 import { FoodByDateV2Schema } from "../../types/api";
 
 describe("seedFoodStoryQuery", () => {

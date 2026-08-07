@@ -5,12 +5,12 @@ import { mobileRecoveryFixtureSchema } from "dofek-server/mobile-dashboard-contr
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { createFixtureDates } from "../../app/(tabs)/_fixture-dates";
+import RecoveryScreen from "../../app/(tabs)/recovery";
+import { createFixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "../../app/(tabs)/_processing-status-story-fixture";
-import RecoveryScreen from "../../app/(tabs)/recovery";
+} from "../../app-fixtures/(tabs)/processing-status-story-fixture";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 

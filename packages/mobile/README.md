@@ -16,9 +16,10 @@ See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
 
 ## Project Structure
 
-- `app/`: Expo Router screens (file-based routing). Keep this route-only; tests and stories in `app/` can become accidental screens.
+- `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
 - `app-stories/`: Storybook stories for Expo Router screens.
+- `app-fixtures/`: Shared fixtures for route tests and route stories.
 - `components/`: React Native UI components (SVG-based charts).
 - `modules/`: Native Swift modules:
   - `background-refresh`: iOS background task registration.

@@ -214,7 +214,7 @@
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
     "spellcheck": "cspell --no-progress",
     "check:mobile-update": "tsx scripts/check-ota-manifest.ts",
-    "check:mobile-app-routes": "tsx scripts/check-mobile-app-route-files.ts"
+    "check:mobile-app-routes": "pnpm tsx scripts/check-mobile-app-route-files.ts"
   },
   "dependencies": {
     "@ai-sdk/otel": "1.0.47",

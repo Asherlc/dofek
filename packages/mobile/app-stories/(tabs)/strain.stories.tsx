@@ -5,12 +5,12 @@ import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contr
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { createFixtureDates, type FixtureDates } from "../../app/(tabs)/_fixture-dates";
+import StrainScreen from "../../app/(tabs)/strain";
+import { createFixtureDates, type FixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "../../app/(tabs)/_processing-status-story-fixture";
-import StrainScreen from "../../app/(tabs)/strain";
+} from "../../app-fixtures/(tabs)/processing-status-story-fixture";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {

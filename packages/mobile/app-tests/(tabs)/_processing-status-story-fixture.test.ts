@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
-} from "../../app/(tabs)/_processing-status-story-fixture";
+} from "../../app-fixtures/(tabs)/processing-status-story-fixture";
 
 describe("seedReadyProcessingStatus", () => {
   it("seeds the exact processing status query used by screenshot stories", () => {
