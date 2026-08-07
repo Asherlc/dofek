@@ -10,7 +10,7 @@
 - **Native Modules**: Domain logic for BLE (`WhoopBleModule`) and HealthKit is implemented in Swift. TypeScript only provides the bridge via Expo Modules.
 
 ### UI Development
-- **Storybook**: Every component MUST have a `.stories.tsx` file (lives in `.storybook` and `.rnstorybook`).
+- **Storybook**: `.storybook` and `.rnstorybook` contain Storybook configuration. Route stories live in `app-stories/`; component stories live beside their component under `components/`.
 - **Charts**: Use `react-native-svg` for all chart implementations.
 - **Navigation**: Uses Expo Router. Screen paths map to `app/`.
 - **Expo Router route hygiene**: Never colocate tests, stories, fixtures, or helper-only files under `packages/mobile/app/`. Expo Router's `app` directory is exclusively for routes and attempts to treat non-route files there as routes ([Expo Router core concepts](https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory)), which can create extra iOS tabs/screens. Put route tests under `packages/mobile/app-tests/`, route stories under `packages/mobile/app-stories/`, and shared route fixtures under `packages/mobile/app-fixtures/`. If a file under `app/` is not a real route/layout/special Expo Router file, move it out instead of hiding it with `href: null`.

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createFixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
+import { createFixtureDates } from "./fixture-dates";
 
 describe("createFixtureDates", () => {
   afterEach(() => {
