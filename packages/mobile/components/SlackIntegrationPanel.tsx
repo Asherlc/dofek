@@ -1,21 +1,39 @@
 import * as WebBrowser from "expo-web-browser";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useState } from "react";
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { createProviderHandoffCode } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
 import { SERVER_URL } from "../lib/server";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
+import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
 export function SlackIntegrationPanel() {
-  const { data, isLoading, refetch } = trpc.settings.slackStatus.useQuery();
+  const { data, error, isLoading, refetch } = trpc.settings.slackStatus.useQuery();
   const { sessionToken } = useAuth();
+  const [isConnecting, setIsConnecting] = useState(false);
 
   async function handleConnect() {
-    const url = new URL(`${SERVER_URL}/auth/provider/slack`);
-    if (sessionToken) url.searchParams.set("session", sessionToken);
-    await WebBrowser.openBrowserAsync(url.toString(), {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-    });
-    refetch();
+    if (!sessionToken || isConnecting) return;
+    setIsConnecting(true);
+    try {
+      const handoffCode = await createProviderHandoffCode(SERVER_URL, "slack", sessionToken);
+      const url = new URL(`${SERVER_URL}/auth/provider/slack`);
+      url.searchParams.set("code", handoffCode);
+      await WebBrowser.openBrowserAsync(url.toString(), {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      });
+      await refetch();
+    } catch (error: unknown) {
+      captureException(error, { context: "slack-provider-handoff" });
+      Alert.alert(
+        "Unable to connect Slack",
+        error instanceof Error ? error.message : "Slack connection failed",
+      );
+    } finally {
+      setIsConnecting(false);
+    }
   }
 
   if (isLoading) {
@@ -27,9 +45,30 @@ export function SlackIntegrationPanel() {
     );
   }
 
-  if (!data?.configured) {
+  if (data === undefined) {
+    return (
+      <QueryStatePanel
+        variant="error"
+        title="Could not load Slack status"
+        message={getQueryErrorMessage(error)}
+        minHeight={96}
+      />
+    );
+  }
+
+  const refreshWarning = error ? (
+    <QueryStatePanel
+      variant="error"
+      title="Could not refresh Slack status"
+      message={getQueryErrorMessage(error)}
+      minHeight={72}
+    />
+  ) : null;
+
+  if (!data.configured) {
     return (
       <View style={styles.container}>
+        {refreshWarning}
         <Text style={styles.dimText}>Slack integration is not configured on this server.</Text>
       </View>
     );
@@ -38,6 +77,7 @@ export function SlackIntegrationPanel() {
   if (data.connected) {
     return (
       <View style={styles.container}>
+        {refreshWarning}
         <View style={styles.row}>
           <View style={styles.connectedDot} />
           <View>
@@ -51,12 +91,21 @@ export function SlackIntegrationPanel() {
 
   return (
     <View style={styles.container}>
+      {refreshWarning}
       <View style={styles.connectRow}>
         <View style={styles.connectInfo}>
           <Text style={styles.label}>Log food via Slack</Text>
           <Text style={styles.dimText}>Add the bot to your workspace, then DM it what you ate</Text>
         </View>
-        <TouchableOpacity style={styles.connectButton} onPress={handleConnect} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.connectButton}
+          onPress={handleConnect}
+          activeOpacity={0.7}
+          disabled={isConnecting}
+          accessibilityRole="button"
+          accessibilityLabel="Add to Slack"
+          accessibilityState={{ busy: isConnecting, disabled: isConnecting }}
+        >
           <Text style={styles.connectButtonText}>Add to Slack</Text>
         </TouchableOpacity>
       </View>

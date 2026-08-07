@@ -1,5 +1,3 @@
-import FitParser from "fit-file-parser";
-
 // ============================================================
 // Types
 // ============================================================
@@ -11,7 +9,6 @@ export interface ParsedFitSession {
   totalElapsedTime: number;
   totalTimerTime: number;
   totalDistance: number;
-  totalCalories: number;
   totalAscent?: number;
   totalDescent?: number;
   avgHeartRate?: number;
@@ -50,7 +47,6 @@ export interface ParsedFitRecord {
   temperature?: number;
   distance?: number;
   grade?: number;
-  calories?: number;
   verticalSpeed?: number;
   gpsAccuracy?: number;
   accumulatedPower?: number;
@@ -70,13 +66,6 @@ export interface ParsedFitRecord {
   stanceTimeBalance?: number;
   // Complete raw record — every field, no data loss
   raw: Record<string, unknown>;
-}
-
-export interface ParsedFitActivity {
-  session: ParsedFitSession;
-  records: ParsedFitRecord[];
-  laps: Record<string, unknown>[];
-  events: Record<string, unknown>[];
 }
 
 // ============================================================
@@ -113,7 +102,6 @@ export function parseFitRecord(raw: Record<string, unknown>): ParsedFitRecord {
     temperature: num(raw.temperature),
     distance: num(raw.distance),
     grade: num(raw.grade),
-    calories: intOrUndef(raw.calories),
     verticalSpeed: num(raw.vertical_speed),
     gpsAccuracy: intOrUndef(raw.gps_accuracy),
     accumulatedPower: intOrUndef(raw.accumulated_power),
@@ -145,7 +133,6 @@ export function parseFitSession(raw: Record<string, unknown>): ParsedFitSession 
     totalElapsedTime: num(raw.total_elapsed_time) ?? 0,
     totalTimerTime: num(raw.total_timer_time) ?? 0,
     totalDistance: num(raw.total_distance) ?? 0,
-    totalCalories: intOrUndef(raw.total_calories) ?? 0,
     totalAscent: intOrUndef(raw.total_ascent),
     totalDescent: intOrUndef(raw.total_descent),
     avgHeartRate: intOrUndef(raw.avg_heart_rate),
@@ -170,63 +157,4 @@ export function parseFitSession(raw: Record<string, unknown>): ParsedFitSession 
     avgLeftPedalSmoothness: num(raw.avg_left_pedal_smoothness),
     raw,
   };
-}
-
-// ============================================================
-// Helpers
-// ============================================================
-
-/** Convert a typed library object to Record<string, unknown> with a single assertion. */
-function toRecord(obj: object): Record<string, unknown> {
-  // Spread creates a plain object — safe single cast from index-signature-compatible shape.
-  const record: Record<string, unknown> = { ...obj };
-  return record;
-}
-
-// ============================================================
-// File-level parsing
-// ============================================================
-
-const FIT_PARSE_TIMEOUT_MS = 10_000;
-
-export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error("FIT parser timed out — file may be corrupt or invalid"));
-    }, FIT_PARSE_TIMEOUT_MS);
-
-    const parser = new FitParser({
-      force: true,
-      speedUnit: "m/s",
-      lengthUnit: "m",
-      temperatureUnit: "celsius",
-      elapsedRecordField: true,
-    });
-
-    const buf: Buffer<ArrayBuffer> = Buffer.from(buffer);
-    parser.parse(buf, (err, data) => {
-      clearTimeout(timer);
-      if (err) {
-        reject(new Error(String(err)));
-        return;
-      }
-      if (!data) {
-        reject(new Error("FIT parser returned no data"));
-        return;
-      }
-
-      const sessions = data.sessions ?? [];
-      const rawSession = toRecord(sessions[0] ?? {});
-      const rawRecords = (data.records ?? []).map(toRecord);
-      const rawLaps = (data.laps ?? []).map(toRecord);
-      const rawEvents = (data.events ?? []).map(toRecord);
-
-      resolve({
-        session: parseFitSession(rawSession),
-        records: rawRecords.map(parseFitRecord),
-        laps: rawLaps,
-        events: rawEvents,
-      });
-    });
-  });
 }

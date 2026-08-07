@@ -1,4 +1,15 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatBaselineContext } from "@dofek/format/baseline-context";
+import {
+  formatBodyCompositionNumber,
+  formatDateShort,
+  formatHRV,
+  formatIntensity,
+  formatNumber,
+  formatSpO2,
+} from "@dofek/format/format";
+import { formatHealthspanTrendContext } from "@dofek/format/healthspan-context";
+import { formatMeasurementText } from "@dofek/format/units";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import {
   trendDirection as computeTrend,
   SCORE_ZONES,
@@ -7,7 +18,7 @@ import {
   trendColor,
 } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -19,13 +30,21 @@ import {
   UIManager,
   View,
 } from "react-native";
+import { BodyDecisionContext } from "../../components/BodyDecisionContext";
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
+import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { SubjectiveTrackingPanel } from "../../components/SubjectiveTrackingPanel";
+import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
@@ -47,20 +66,13 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-function trendArrow(trend: string | null): string {
-  if (trend === "improving") return "\u2191";
-  if (trend === "declining") return "\u2193";
-  if (trend === "stable") return "\u2192";
-  return "";
-}
-
 function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
   const color = scoreColor(value);
   return (
     <View style={breakdownStyles.row}>
       <View style={breakdownStyles.labelCol}>
         <Text style={breakdownStyles.label}>{label}</Text>
-        <Text style={breakdownStyles.weight}>{Math.round(weight * 100)}%</Text>
+        <Text style={breakdownStyles.weight}>{formatIntensity(weight * 100)}</Text>
       </View>
       <View style={breakdownStyles.barTrack}>
         <View style={[breakdownStyles.barFill, { width: `${value}%`, backgroundColor: color }]} />
@@ -161,80 +173,103 @@ const breakdownStyles = StyleSheet.create({
 export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
-  const [days, setDays] = useState(30);
+  const utils = trpc.useUtils();
+  const { days, description, isHydrated, setDays } = useTimeRangePreference("recovery");
   const endDate = useTodayQueryDate();
+  const hasCommittedHydratedRange = useRef(false);
+  const preservePreviousRangeData = isHydrated && hasCommittedHydratedRange.current;
+  useEffect(() => {
+    hasCommittedHydratedRange.current = isHydrated;
+  }, [isHydrated]);
 
-  // HRV trend
-  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days });
-  const hrvData = hrvQuery.data ?? [];
-  const latestHrv = hrvData[hrvData.length - 1];
+  const recoveryQuery = trpc.mobileDashboard.recovery.useQuery(
+    { days, endDate },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  const todayPlanQuery = trpc.todayPlan.get.useQuery(
+    { days: 30, endDate },
+    { enabled: isHydrated },
+  );
+  const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
+  const recoveryData = isHydrated ? recoveryQuery.data : undefined;
+
+  const hrvData = recoveryData?.hrvVariability ?? [];
+  const hrvBaselineData = recoveryData?.hrvBaseline ?? [];
+  const baselineRelative = recoveryData?.baselineRelative ?? [];
+  const hrvContext = baselineRelative.find((metric) => metric.metric === "hrv");
+  const restingHeartRateContext = baselineRelative.find(
+    (metric) => metric.metric === "resting_heart_rate",
+  );
+  const respiratoryRateContext = baselineRelative.find(
+    (metric) => metric.metric === "respiratory_rate",
+  );
+  const sleepEfficiencyContext = baselineRelative.find(
+    (metric) => metric.metric === "sleep_efficiency",
+  );
   const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
-  const hrvBaseline = latestHrv?.rollingMean;
+  const restingHeartRateValues = hrvBaselineData.flatMap((d) =>
+    d.resting_hr != null ? [d.resting_hr] : [],
+  );
 
-  // Readiness trend
-  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
-  const readinessData = readinessQuery.data ?? [];
+  const readinessData = recoveryData?.readinessScore ?? [];
   const readinessValues = readinessData.map((d) => d.readinessScore);
   const latestReadiness = readinessData[readinessData.length - 1];
 
-  // Stress trend
-  const stressQuery = trpc.stress.scores.useQuery({ days, endDate });
-  const stressResult = stressQuery.data;
+  const stressResult = recoveryData?.stress;
   const stressDaily = stressResult?.daily ?? [];
   const stressValues = stressDaily.map((d) => d.stressScore);
   const latestStress = stressResult?.latestScore;
   const stressTrend = stressResult?.trend;
 
-  // Daily metrics for SpO2 and skin temp
-  const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days, endDate });
-  const trendsData = trendsQuery.data;
-  const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days, endDate });
-  const dailyMetricsData = dailyMetricsQuery.data ?? [];
+  const trendsData = recoveryData?.trends;
+  const dailyMetricsData = recoveryData?.dailyMetrics ?? [];
 
   const spo2Trend = dailyMetricsData
-    .filter((d: Record<string, unknown>) => d.spo2_avg != null)
-    .map((d: Record<string, unknown>) => Number(d.spo2_avg));
+    .filter((d) => d.spo2_avg != null)
+    .map((d) => Number(d.spo2_avg));
 
   const skinTempTrend = dailyMetricsData
-    .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
-    .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
+    .filter((d) => d.skin_temp_c != null)
+    .map((d) => units.convertTemperature(Number(d.skin_temp_c)));
 
-  // Body weight
-  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
-  const weightData = weightQuery.data ?? [];
+  const weightData = recoveryData?.weight ?? [];
   const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
-  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
+  const weightPrediction = recoveryData?.weightPrediction;
 
-  // Healthspan
-  const healthspanQuery = trpc.healthspan.score.useQuery({
-    weeks: Math.max(Math.ceil(days / 7), 4),
-    endDate,
-  });
-  const healthspan = healthspanQuery.data;
+  const healthspan = recoveryData?.healthspan;
 
-  // Steps
   const latestSteps =
     dailyMetricsData.length > 0 ? dailyMetricsData[dailyMetricsData.length - 1] : null;
   const stepsAvg7d =
     dailyMetricsData.length > 0
       ? Math.round(
-          dailyMetricsData.reduce(
-            (sum: number, d: Record<string, unknown>) => sum + (Number(d.steps) || 0),
-            0,
-          ) / 7,
+          dailyMetricsData.reduce((sum, d) => sum + (Number(d.steps) || 0), 0) /
+            dailyMetricsData.length,
         )
       : null;
 
   const [recoveryExpanded, setRecoveryExpanded] = useState(false);
 
-  const isLoading = hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
-  const { refreshing, onRefresh } = useRefresh();
+  const isLoading = shouldShowBlockingLoading({
+    data: recoveryData,
+    isLoading: recoveryQuery.isLoading,
+    isFetching: recoveryQuery.isFetching,
+  });
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () =>
+      Promise.all([
+        utils.mobileDashboard.recovery.invalidate(),
+        utils.todayPlan.get.invalidate(),
+        utils.processing.status.invalidate(),
+      ]).then(() => undefined),
+  });
+
+  if (!isHydrated) {
+    return <QueryStatePanel variant="loading" minHeight={200} />;
+  }
 
   return (
     <ScrollView
@@ -248,13 +283,78 @@ export default function RecoveryScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      <DaySelector days={days} description={description} onChange={setDays} />
+
+      <SubjectiveTrackingPanel />
+
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+      />
+
+      <TodayPlanCard
+        plan={todayPlanQuery.data}
+        loading={todayPlanQuery.isLoading}
+        error={todayPlanQuery.error}
+      />
+
+      {recoveryQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title={
+            recoveryData == null
+              ? "Recovery data is unavailable"
+              : "Recovery data could not refresh"
+          }
+          message={getQueryErrorMessage(recoveryQuery.error)}
+          minHeight={96}
+          onRetry={() => {
+            void recoveryQuery.refetch();
+          }}
+          retryLabel="Retry recovery data"
+          retrying={recoveryQuery.isFetching}
+        />
+      ) : null}
+
+      {recoveryData != null && (
+        <HealthStatusCards
+          metrics={recoveryData.healthStatus}
+          formatValue={(metric) => {
+            if (metric.metric === "trend_weight") {
+              return formatMeasurementText(units.formatWeight(metric.value));
+            }
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperature(metric.value));
+            }
+            if (metric.metric === "spo2") return formatSpO2(metric.value);
+            if (metric.metric === "respiratory_rate") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)} breaths/min`;
+            }
+            if (metric.metric === "sleep_efficiency") {
+              return metric.value == null ? "—" : `${formatNumber(metric.value)}%`;
+            }
+            if (metric.value == null) return "—";
+            if (metric.metric === "body_fat_percentage") {
+              return `${formatBodyCompositionNumber(metric.value)}%`;
+            }
+            return `${formatNumber(metric.value, 0)} bpm`;
+          }}
+          formatComparisonValue={(metric, value) => {
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperatureDelta(value));
+            }
+            if (metric.metric === "spo2") return formatSpO2(value);
+            if (metric.metric === "hrv") return formatHRV(value);
+            if (metric.metric === "steps") return formatNumber(value, 0);
+            return formatNumber(value);
+          }}
+        />
+      )}
 
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading trends...</Text>
-        </View>
-      ) : (
+        <QueryStatePanel variant="loading" minHeight={200} />
+      ) : recoveryData != null ? (
         <>
           {/* Recovery trend chart */}
           {readinessValues.length >= 2 && (
@@ -264,6 +364,9 @@ export default function RecoveryScreen() {
                 LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setRecoveryExpanded((prev) => !prev);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={`${recoveryExpanded ? "Collapse" : "Expand"} recovery score`}
+              accessibilityState={{ expanded: recoveryExpanded }}
             >
               <Card title="Recovery Score">
                 <View style={styles.chartRow}>
@@ -313,13 +416,10 @@ export default function RecoveryScreen() {
           {/* HRV detail */}
           <MetricCard
             title="Heart Rate Variability"
-            value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
-            unit="ms"
+            value={formatHRV(hrvContext?.value)}
             trend={hrvValues.slice(-14)}
             color={colors.positive}
-            subtitle={
-              hrvBaseline != null ? `7-day baseline: ${Math.round(hrvBaseline)} ms` : undefined
-            }
+            subtitle={hrvContext ? formatBaselineContext(hrvContext, { unit: "ms" }) : undefined}
             trendDirection={
               hrvValues.length >= 2
                 ? computeTrend(
@@ -329,6 +429,61 @@ export default function RecoveryScreen() {
                 : undefined
             }
           />
+
+          <MetricCard
+            title="Resting Heart Rate"
+            value={
+              restingHeartRateContext?.value != null
+                ? formatNumber(restingHeartRateContext.value, 0)
+                : "--"
+            }
+            unit="bpm"
+            trend={restingHeartRateValues.slice(-14)}
+            color={colors.warning}
+            subtitle={
+              restingHeartRateContext
+                ? formatBaselineContext(restingHeartRateContext, { unit: "bpm" })
+                : undefined
+            }
+            trendDirection={
+              restingHeartRateValues.length >= 2
+                ? computeTrend(
+                    restingHeartRateValues[restingHeartRateValues.length - 1] ?? 0,
+                    restingHeartRateValues[restingHeartRateValues.length - 2] ?? 0,
+                  )
+                : undefined
+            }
+            onViewData={() => router.push("/daily-heart-rate")}
+          />
+
+          {respiratoryRateContext ? (
+            <MetricCard
+              title="Respiratory Rate"
+              value={
+                respiratoryRateContext.value != null
+                  ? formatNumber(respiratoryRateContext.value)
+                  : "--"
+              }
+              unit="breaths/min"
+              color={colors.blue}
+              subtitle={formatBaselineContext(respiratoryRateContext, { unit: "breaths/min" })}
+            />
+          ) : null}
+
+          {sleepEfficiencyContext ? (
+            <MetricCard
+              title="Sleep Efficiency"
+              value={
+                sleepEfficiencyContext.value != null
+                  ? formatNumber(sleepEfficiencyContext.value)
+                  : "--"
+              }
+              unit="%"
+              color={colors.teal}
+              subtitle={formatBaselineContext(sleepEfficiencyContext, { unit: "%" })}
+              onViewData={() => router.push("/sleep")}
+            />
+          ) : null}
 
           {/* HRV variability (coefficient of variation) */}
           {hrvData.length >= 2 && (
@@ -341,7 +496,7 @@ export default function RecoveryScreen() {
                 color={colors.teal}
                 showBaseline
                 showYAxis
-                formatYLabel={(value) => `${Math.round(value)}%`}
+                formatYLabel={formatIntensity}
               />
               <Text style={styles.chartSubtitle}>
                 Lower variability = more stable autonomic nervous system
@@ -374,12 +529,7 @@ export default function RecoveryScreen() {
               <View style={styles.weeklyGrid}>
                 {(stressResult?.weekly ?? []).slice(-4).map((week) => (
                   <View key={week.weekStart} style={styles.weeklyItem}>
-                    <Text style={styles.weeklyDate}>
-                      {new Date(week.weekStart).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </Text>
+                    <Text style={styles.weeklyDate}>{formatDateShort(week.weekStart)}</Text>
                     <Text style={styles.weeklyValue}>{formatNumber(week.avgDailyStress)}</Text>
                     <Text style={styles.weeklyLabel}>{week.highStressDays} high days</Text>
                   </View>
@@ -392,8 +542,7 @@ export default function RecoveryScreen() {
           {trendsData?.latest_spo2 != null && (
             <MetricCard
               title="Blood Oxygen"
-              value={String(Math.round(trendsData.latest_spo2))}
-              unit="%"
+              value={formatSpO2(trendsData.latest_spo2)}
               trend={spo2Trend}
               color={colors.blue}
               trendDirection={
@@ -411,8 +560,7 @@ export default function RecoveryScreen() {
           {trendsData?.latest_skin_temp != null && (
             <MetricCard
               title="Skin Temperature"
-              value={formatNumber(units.convertTemperature(trendsData.latest_skin_temp))}
-              unit={units.temperatureLabel}
+              value={formatMeasurementText(units.formatTemperature(trendsData.latest_skin_temp))}
               trend={skinTempTrend}
               color={colors.orange}
               trendDirection={
@@ -427,79 +575,84 @@ export default function RecoveryScreen() {
           )}
 
           {/* Healthspan Score */}
-          {healthspan != null &&
+          {healthspan != null && healthspan.availability.status === "insufficient_data" ? (
+            <Card title="Healthspan Score">
+              <Text style={styles.healthspanAvailabilitySummary}>
+                {healthspan.availability.summary}
+              </Text>
+              {healthspan.availability.nextCondition != null ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  {healthspan.availability.nextCondition}
+                </Text>
+              ) : null}
+              {healthspan.availability.missingMetricLabels.length > 0 ? (
+                <Text style={styles.healthspanAvailabilityDetail}>
+                  Missing supported metrics:{" "}
+                  {healthspan.availability.missingMetricLabels.join(", ")}
+                </Text>
+              ) : null}
+            </Card>
+          ) : healthspan != null &&
             healthspan.healthspanScore != null &&
-            healthspan.metrics.length > 0 && (
-              <Card title="Healthspan Score">
-                <View style={styles.healthspanRow}>
+            healthspan.metrics.length > 0 ? (
+            <Card title="Healthspan Score">
+              <View style={styles.healthspanRow}>
+                <Text
+                  style={[
+                    styles.healthspanScore,
+                    { color: scoreColor(healthspan.healthspanScore) },
+                  ]}
+                >
+                  {healthspan.healthspanScore}
+                </Text>
+                <View style={styles.healthspanMeta}>
                   <Text
                     style={[
-                      styles.healthspanScore,
+                      styles.healthspanStatus,
                       { color: scoreColor(healthspan.healthspanScore) },
                     ]}
                   >
-                    {healthspan.healthspanScore}
+                    {scoreLabel(healthspan.healthspanScore)}
                   </Text>
-                  <View style={styles.healthspanMeta}>
-                    <Text
-                      style={[
-                        styles.healthspanStatus,
-                        { color: scoreColor(healthspan.healthspanScore) },
-                      ]}
-                    >
-                      {scoreLabel(healthspan.healthspanScore)}
+                  {healthspan.trend != null && (
+                    <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
+                      {formatHealthspanTrendContext(healthspan.trend)}
                     </Text>
-                    {healthspan.trend != null && (
-                      <Text
-                        style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}
-                      >
-                        {trendArrow(healthspan.trend)} {healthspan.trend}
-                      </Text>
-                    )}
-                  </View>
+                  )}
                 </View>
-              </Card>
-            )}
+              </View>
+            </Card>
+          ) : null}
 
-          {/* Body Weight */}
+          {/* Trend Weight */}
           {latestWeight != null && (
-            <Card title="Body Weight">
+            <Card title="Trend Weight">
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
+                    {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
                   </Text>
-                  <Text style={styles.weightUnit}>{units.weightLabel}</Text>
-                  {weightPrediction.data?.ratePerWeek != null && (
-                    <Text
-                      style={[
-                        styles.weightRate,
-                        {
-                          color:
-                            Math.abs(weightPrediction.data.ratePerWeek) < 0.05
-                              ? colors.textSecondary
-                              : weightPrediction.data.ratePerWeek > 0
-                                ? colors.positive
-                                : colors.danger,
-                        },
-                      ]}
-                    >
-                      {weightPrediction.data.ratePerWeek > 0 ? "+" : ""}
-                      {formatNumber(units.convertWeight(weightPrediction.data.ratePerWeek))}{" "}
-                      {units.weightLabel}/wk
+                  <Text style={styles.weightScale}>{latestWeight.smoothedWeightStatus?.label}</Text>
+                  {latestWeight.rawWeight != null && latestWeight.rawWeightStatus != null && (
+                    <Text style={styles.weightScale}>
+                      {latestWeight.rawWeightStatus.label}:{" "}
+                      {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
                     </Text>
                   )}
-                  {weightPrediction.data?.goal?.estimatedDate != null && (
+                  {weightPrediction?.ratePerWeek != null && (
+                    <Text style={[styles.weightRate, { color: colors.textSecondary }]}>
+                      {weightPrediction.ratePerWeek > 0 ? "+" : ""}
+                      {formatMeasurementText(units.formatWeight(weightPrediction.ratePerWeek))}
+                      /wk
+                    </Text>
+                  )}
+                  {weightPrediction?.goal?.estimatedDate != null && (
                     <Text style={styles.weightGoal}>
                       Goal:{" "}
-                      {formatNumber(units.convertWeight(weightPrediction.data.goal.goalWeightKg))}{" "}
-                      {units.weightLabel} by ~
-                      {new Date(
-                        `${weightPrediction.data.goal.estimatedDate}T12:00:00`,
-                      ).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {formatMeasurementText(
+                        units.formatWeight(weightPrediction.goal.goalWeightKg),
+                      )}{" "}
+                      by ~{formatDateShort(weightPrediction.goal.estimatedDate)}
                     </Text>
                   )}
                 </View>
@@ -510,11 +663,14 @@ export default function RecoveryScreen() {
                       height={50}
                       color={colors.blue}
                       showYAxis
-                      formatYLabel={(value) => `${Math.round(units.convertWeight(value))}`}
+                      formatYLabel={(value) =>
+                        formatBodyCompositionNumber(units.convertWeight(value))
+                      }
                     />
                   </View>
                 )}
               </View>
+              <BodyDecisionContext context={recoveryData?.decisionContext ?? null} />
             </Card>
           )}
 
@@ -533,8 +689,20 @@ export default function RecoveryScreen() {
           {/* Navigation links */}
           <TouchableOpacity
             style={styles.navLink}
+            onPress={() => router.push("/breathwork")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Breathwork"
+          >
+            <Text style={styles.navLinkText}>Breathwork</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navLink}
             onPress={() => router.push("/sleep")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Sleep Detail"
           >
             <Text style={styles.navLinkText}>Sleep Detail</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
@@ -543,20 +711,44 @@ export default function RecoveryScreen() {
             style={styles.navLink}
             onPress={() => router.push("/correlation")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Correlation Explorer"
           >
             <Text style={styles.navLinkText}>Correlation Explorer</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.navLink}
+            onPress={() => router.push("/behavior-associations")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Behavior Associations"
+          >
+            <Text style={styles.navLinkText}>Behavior Associations</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navLink}
+            onPress={() => router.push("/experiments")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Personal Experiments"
+          >
+            <Text style={styles.navLinkText}>Personal Experiments</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navLink}
             onPress={() => router.push("/daily-heart-rate")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Heart Rate by Source"
           >
             <Text style={styles.navLinkText}>Heart Rate by Source</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
         </>
-      )}
+      ) : null}
     </ScrollView>
   );
 }
@@ -570,16 +762,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
     gap: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 80,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.textTertiary,
   },
   chartRow: {
     flexDirection: "row",
@@ -650,7 +832,17 @@ const styles = StyleSheet.create({
   healthspanTrend: {
     fontSize: 13,
     fontWeight: "500",
-    textTransform: "capitalize",
+  },
+  healthspanAvailabilitySummary: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  healthspanAvailabilityDetail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   weightRow: {
     flexDirection: "row",
@@ -670,6 +862,11 @@ const styles = StyleSheet.create({
   weightRate: {
     fontSize: 13,
     fontWeight: "600",
+    marginTop: 2,
+  },
+  weightScale: {
+    fontSize: 12,
+    color: colors.textSecondary,
     marginTop: 2,
   },
   weightGoal: {

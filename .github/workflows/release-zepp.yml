@@ -1,0 +1,163 @@
+name: Release Dofek Zepp (Zepp Store)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ZAB Package
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      ci_run_id: ${{ steps.resolve-ci-run.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Set up Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="0.0.$(date +%s)"
+          RELEASE_TAG="zepp-v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          IFS='.' read -ra PARTS <<< "$VERSION"
+          MAJOR="${PARTS[0]:-0}"
+          MINOR="${PARTS[1]:-0}"
+          PATCH="${PARTS[2]:-0}"
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve triggering CI run
+        id: resolve-ci-run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write job summary
+        env:
+          CI_RUN_ID: ${{ steps.resolve-ci-run.outputs.run_id }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          {
+            echo "## Zepp ZAB Build v$VERSION"
+            echo ""
+            if [ -n "$CI_RUN_ID" ]; then
+              echo "| | |"
+              echo "|---|---|"
+              echo "| **Triggered by** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Patch version files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: |
+          pnpm tsx packages/zepp/src/patch-release-version.ts "$VERSION" "$CODE"
+
+      - name: Print resolved version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: echo "Building Dofek Zepp v${VERSION} (code ${CODE})"
+
+      - name: Build Zepp watch app ZAB
+        uses: ./.github/actions/build-zepp
+
+      - name: Validate Workout Extension app ID
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: |
+          if ! [[ "$ZEPP_WORKOUT_EXTENSION_APP_ID" =~ ^[1-9][0-9]*$ ]] || [ "$ZEPP_WORKOUT_EXTENSION_APP_ID" -lt 1000000 ]; then
+            echo "::error::Repository variable ZEPP_WORKOUT_EXTENSION_APP_ID must contain the numeric app ID provisioned in the Zepp developer console."
+            exit 1
+          fi
+
+      - name: Build Zepp Workout Extension ZAB
+        working-directory: packages/zepp
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: pnpm build:workout-extension
+
+      - name: Upload watch app ZAB artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dofek-zepp-app-zab
+          path: packages/zepp/dist/
+          retention-days: 90
+
+      - name: Upload Workout Extension ZAB artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dofek-zepp-workout-extension-zab
+          path: packages/zepp/workout-extension/dist/
+          retention-days: 90
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dofek-zepp-app-zab
+          path: dist/watch-app
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dofek-zepp-workout-extension-zab
+          path: dist/workout-extension
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_RUN_ID: ${{ needs.build.outputs.ci_run_id }}
+          VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          WATCH_APP_ZAB=$(find dist/watch-app -name '*.zab' -type f -print -quit)
+          WORKOUT_EXTENSION_ZAB=$(find dist/workout-extension -name '*.zab' -type f -print -quit)
+          if [ -z "$WATCH_APP_ZAB" ] || [ -z "$WORKOUT_EXTENSION_ZAB" ]; then
+            echo "::error::Both the watch app and Workout Extension .zab files are required."
+            find dist -maxdepth 3 -type f -print
+            exit 1
+          fi
+          NOTES_FILE=$(mktemp)
+          echo "Zepp OS mini-program build for Amazfit T-Rex 3." > "$NOTES_FILE"
+          if [ -n "$CI_RUN_ID" ]; then
+            REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            echo "" >> "$NOTES_FILE"
+            echo "Triggered by [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID})" >> "$NOTES_FILE"
+          fi
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "Dofek Zepp v$VERSION" \
+            --notes-file "$NOTES_FILE" \
+            "$WATCH_APP_ZAB" \
+            "$WORKOUT_EXTENSION_ZAB"

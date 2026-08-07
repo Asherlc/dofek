@@ -15,6 +15,7 @@
 - **Navigation**: Uses Expo Router. Screen paths map to `app/`.
 - **Expo Router route hygiene**: Never colocate tests, stories, fixtures, or helper-only files under `packages/mobile/app/`. Expo Router treats files in `app/` as route candidates, which can create extra iOS tabs/screens. Put route tests under `packages/mobile/app-tests/` and route stories under `packages/mobile/app-stories/`. If a file under `app/` is not a real route/layout/special Expo Router file, move it out instead of hiding it with `href: null`.
 - **Query state handling**: Treat loading, error, and empty as separate UI states. Do not use `query.data ?? []` or similar fallbacks when `query.error` exists. Use `components/QueryStatePanel.tsx` for explicit error/empty/loading states on screens and cards.
+- **Loading performance**: Follow `../../docs/performance/loading-performance-runbook.md` for slow screens. Do not blank visible previous/cached data during background refetches; use blocking loading only when no usable data exists, preserve server error messages, and keep sync/refresh invalidation targeted to affected query families.
 
 ### Native Config Consistency
 - **app.json must stay in sync with the filesystem**: When removing or renaming files in `plugins/`, `native/`, or `targets/`, update `app.json` in the same commit. Specifically: plugin paths in `expo.plugins`, pod paths in `expo-build-properties` `extraPods`, and target configs under `@bacons/apple-targets`. A mismatch causes `expo prebuild` to crash, breaking all iOS/watchOS CI jobs.
@@ -25,6 +26,23 @@
 - **Vitest**: Use for component and hook unit tests.
 - **Mocks**: Mock the `tRPC` and native modules in isolation tests. See `test-setup.ts`.
 - **Native Tests**: Run XCTest suites for Swift modules.
+- **Simulator audits**: Prefer XcodeBuildMCP when configured. Build the
+  `Dofek` scheme from `ios/Dofek.xcworkspace` for a booted iOS Simulator,
+  install and launch the `.app`, then capture logs and screenshots while
+  exploring real navigation paths. Do not count a successful compile, process
+  launch, or Expo development-launcher screen as successful app UI execution.
+- **Use the simulator-audit skill**: For a signed Release audit, read
+  [`.agents/skills/ios-simulator-audit/SKILL.md`](../../.agents/skills/ios-simulator-audit/SKILL.md).
+  Do not pass a global `-sdk iphonesimulator` to the multi-platform `Dofek`
+  scheme, disable code signing, or blank `INFOPLIST_FILE`; each creates a false
+  failure in the watch target, SecureStore, or CoreBluetooth path respectively.
+- **Signed development manifests**: Because `app.json` configures an Expo
+  Updates code-signing certificate, start Metro with the matching ignored
+  private key via `--private-key-path`. Never commit or print that key. If the
+  key is unavailable, report the exact manifest-signing blocker and ask before
+  pivoting to a Release simulator build with an embedded bundle.
+- **Simulator scope**: Do not infer BLE, motion-sensor, or background-delivery
+  correctness from the Simulator; exercise those paths on physical hardware.
 
 ### Error Handling
 - **Telemetry**: Every catch block MUST call `captureException` from `./lib/telemetry`.

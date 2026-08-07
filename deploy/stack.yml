@@ -1,11 +1,16 @@
-# Docker Swarm stack for production and staging.
+# Docker Swarm stack for production.
 #
 # Deployed from CI via a remote Docker context:
 #   docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth dofek
 #
-# Secrets come from Infisical, exported by CI to a local .env.<env> file
-# that `docker stack deploy` reads (env_file) and inlines into the service
-# specs. Shell env is also used for compose-style ${VAR} interpolation.
+# Secrets come from Infisical. CI keeps the complete export on the runner for
+# compose-style ${VAR} interpolation and renders least-privilege env_file inputs
+# for the application services that need runtime credentials.
+
+secrets:
+  apple_private_key:
+    name: ${APPLE_PRIVATE_KEY_SECRET_NAME:?APPLE_PRIVATE_KEY_SECRET_NAME is required}
+    external: true
 
 services:
   traefik:
@@ -15,8 +20,6 @@ services:
       - --providers.swarm=true
       - --providers.swarm.exposedbydefault=false
       - --providers.swarm.network=${STACK_NAME:-dofek}_default
-      - --providers.file.directory=/dynamic
-      - --providers.file.watch=true
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
@@ -35,47 +38,55 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
-      - /opt/dofek/traefik-dynamic:/dynamic:ro
     deploy:
       labels:
         - traefik.enable=true
-        - traefik.http.middlewares.authentik-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
-        - traefik.http.middlewares.authentik-auth.forwardAuth.trustForwardHeader=true
-        - traefik.http.middlewares.authentik-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
 
   web:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["web"]
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    env_file: ${WEB_ENV_FILE:?WEB_ENV_FILE is required}
+    secrets:
+      - apple_private_key
     environment:
+      DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
       PORT: "3000"
       JOB_FILES_DIR: /app/job-files
       PUBLIC_URL: ${PUBLIC_URL:-https://dofek.asherlc.com}
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
       REDIS_URL: redis://redis:6379
       OTEL_SERVICE_NAME: dofek-web
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
+      IMPORT_R2_BUCKET: dofek-imports
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
       SLACK_MODE: http
     volumes:
       - job_files:/app/job-files
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz | grep -q ok"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/readyz | grep -q ok"]
       interval: 5s
       timeout: 3s
       retries: 5
       start_period: 60s
     deploy:
       replicas: 2
+      resources:
+        limits:
+          memory: 500M
       update_config:
         order: start-first
         failure_action: rollback
+        monitor: 90s
       labels:
         - traefik.enable=true
-        - traefik.http.routers.web.rule=${WEB_HOST_RULE:-Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)}
+        - traefik.http.routers.web.rule=(${WEB_HOST_RULE:-Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)}) && !PathPrefix(`/readyz`)
         - traefik.http.routers.web.entrypoints=websecure
         - traefik.http.routers.web.tls=true
         - traefik.http.routers.web.tls.certresolver=le
@@ -90,42 +101,134 @@ services:
   worker:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["worker"]
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    stop_grace_period: 30m
+    env_file: ${WORKER_ENV_FILE:?WORKER_ENV_FILE is required}
+    secrets:
+      - apple_private_key
     environment:
+      DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
       JOB_FILES_DIR: /app/job-files
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
       REDIS_URL: redis://redis:6379
       OTEL_SERVICE_NAME: dofek-worker
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
+      IMPORT_R2_BUCKET: dofek-imports
+      DB_BACKUPS_R2_BUCKET: dofek-db-backups
+      METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:?METRIC_STREAM_R2_BUCKET is required}
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
       - job_files:/app/job-files
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f worker || exit 1"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:3001/readyz",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 15s
     deploy:
+      resources:
+        limits:
+          memory: 512M
       update_config:
         order: start-first
         failure_action: rollback
+        monitor: 45s
 
-  training-export-worker:
-    image: ghcr.io/asherlc/dofek-ml:${IMAGE_TAG:-latest}
+  analytics-worker:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["analytics-worker"]
+    env_file: ${ANALYTICS_WORKER_ENV_FILE:?ANALYTICS_WORKER_ENV_FILE is required}
     environment:
+      DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
+      NODE_ENV: production
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
       REDIS_URL: redis://redis:6379
-      JOB_FILES_DIR: /app/job-files
+      ANALYTICS_BUILD_INTERVAL_SECONDS: ${ANALYTICS_BUILD_INTERVAL_SECONDS:?ANALYTICS_BUILD_INTERVAL_SECONDS is required}
+      ANALYTICS_BUILD_RETRY_DELAY_SECONDS: ${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:?ANALYTICS_BUILD_RETRY_DELAY_SECONDS is required}
+      OTEL_SERVICE_NAME: dofek-analytics-worker
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-    volumes:
-      - job_files:/app/job-files
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:3002/readyz",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 400M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  cdc-health:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["cdc-health"]
+    env_file: ${CDC_HEALTH_ENV_FILE:?CDC_HEALTH_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      CDC_HEALTH_INTERVAL_SECONDS: ${CDC_HEALTH_INTERVAL_SECONDS:-300}
+      OTEL_SERVICE_NAME: dofek-cdc-health
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "--experimental-strip-types",
+          "--disable-warning=ExperimentalWarning",
+          "scripts/cdc-health-state.ts",
+          "probe",
+        ]
+      interval: 10s
+      timeout: 15s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 200M
+      update_config:
+        order: stop-first
+        failure_action: rollback
 
   db:
-    image: timescale/timescaledb:2.26.2-pg18
+    image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
     command:
       - postgres
       - -c
@@ -138,6 +241,24 @@ services:
       - work_mem=4MB
       - -c
       - maintenance_work_mem=64MB
+      - -c
+      # Large ClickHouse one-off backfills read the Timescale metric_stream
+      # hypertable through PostgreSQL and can touch thousands of chunks in one
+      # transaction. Size the shared lock table for that operational path.
+      - max_locks_per_transaction=4096
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=6
+      - -c
+      - max_wal_senders=6
+      - -c
+      # Cap WAL retained for any single replication slot at 64GB. This keeps
+      # logical slots from filling the data volume while giving PeerDB enough
+      # catch-up budget for the 43GB lag observed during the 2026-06-05 lost-slot
+      # incident. The extra slots/senders leave room to recreate mirrors during
+      # recovery without first deleting a required production slot.
+      - max_slot_wal_keep_size=64GB
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -158,22 +279,330 @@ services:
         limits:
           memory: 2G
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.6.1.1193-alpine
+    environment:
+      CLICKHOUSE_DB: fitness
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD is required}
+    volumes:
+      - /mnt/dofek-data/clickhouse:/var/lib/clickhouse
+    configs:
+      - source: clickhouse_default_query_guardrails_v2
+        target: /etc/clickhouse-server/users.d/default-query-guardrails.xml
+        mode: 0444
+      - source: clickhouse_system_log_ttl
+        target: /etc/clickhouse-server/config.d/system-log-ttl.xml
+        mode: 0444
+      - source: clickhouse_memory_limits_13g
+        target: /etc/clickhouse-server/config.d/memory-limits.xml
+        mode: 0444
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok && container_ip=$$(hostname -i | awk '{print $$1}') && wget -qO- \"http://$${container_ip}:8123/ping\" | grep -q Ok",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 13G
+
+  redpanda:
+    image: redpandadata/redpanda:v26.1.9
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      # NOTE: cluster properties like kafka_batch_max_bytes are NOT valid
+      # `rpk redpanda start` flags — adding e.g. --kafka-batch-max-bytes here
+      # crash-loops the broker. Set them via `rpk cluster config set` instead.
+      - --kafka-addr=internal://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+    volumes:
+      # Bind to the large /mnt/dofek-data disk, NOT a default named volume (which
+      # lands on the small root disk and fills during a metric-stream backfill).
+      - /mnt/dofek-data/redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
+
+  metric-stream-clickhouse-sink:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["metric-stream-clickhouse-sink"]
+    environment:
+      NODE_ENV: production
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
+      OTEL_SERVICE_NAME: dofek-metric-stream-clickhouse-sink
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f metric-stream-clickhouse-sink || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 300M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  metric-stream-r2-archive:
+    image: docker.redpanda.com/redpandadata/connect:4.99.0
+    command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
+    environment:
+      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
+      METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:?METRIC_STREAM_R2_BUCKET is required}
+      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT is required}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
+    configs:
+      - source: metric_stream_r2_archive_config_v2
+        target: /connect/metric-stream-r2-archive.connect.yml
+        mode: 0444
+    deploy:
+      resources:
+        limits:
+          # gzip compression is CPU-bound and the redpanda input buffers whole
+          # partition batches in memory; under the historical backfill load the
+          # old 0.25 CPU / 256M limits OOM-killed this task (exit 137) in a
+          # crash loop, stalling the archive and growing topic lag. 1 CPU / 1G
+          # sustains the drain rate with headroom on the host.
+          cpus: "1"
+          memory: 1G
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  peerdb-catalog:
+    image: postgres:18-alpine
+    environment:
+      PGUSER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --locale=C.UTF-8
+    volumes:
+      - /mnt/dofek-data/peerdb-catalog:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  peerdb-temporal:
+    image: temporalio/auto-setup:1.29
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_SEEDS: peerdb-catalog
+    healthcheck:
+      test: ["CMD-SHELL", "tctl --address \"$$(hostname -i | awk '{print $$1}'):7233\" workflow list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+
+  peerdb-temporal-admin-tools:
+    image: temporalio/admin-tools:1.29
+    environment:
+      TEMPORAL_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_SHOW_STACKS: "1"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  peerdb-minio:
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    environment:
+      MINIO_ROOT_USER: peerdb
+      MINIO_ROOT_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 15m
+      PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled"}]}'
+    volumes:
+      - /mnt/dofek-data/peerdb-minio:/data
+    entrypoint: >
+      /bin/sh -euc "
+      minio server /data --console-address=:36987 &
+      attempts=0;
+      until mc alias set peerdb-minio http://peerdb-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        attempts=$$((attempts + 1));
+        if [ $$attempts -ge 30 ]; then
+          echo peerdb-minio did not become ready in time >&2;
+          exit 1;
+        fi;
+        sleep 1;
+      done;
+      mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      printf '%s\n' "$$PEERDB_STAGE_LIFECYCLE_CONFIG" |
+        mc ilm rule import peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      wait
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  peerdb-flow-api:
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.19
+    environment: &peerdb-flow-environment
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_CATALOG_DATABASE: postgres
+      TEMPORAL_HOST_PORT: peerdb-temporal:7233
+      TEMPORAL_CLIENT_CERT: ""
+      TEMPORAL_CLIENT_KEY: ""
+      PEERDB_TEMPORAL_NAMESPACE: default
+      PEERDB_ALLOWED_TARGETS: ""
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ACCESS_KEY_ID: peerdb
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_REGION: us-east-1
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ENDPOINT_URL_S3: http://peerdb-minio:9000
+      PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_REGION: ""
+      AWS_ENDPOINT: ""
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  peerdb-flow-snapshot-worker:
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19
+    environment: *peerdb-flow-environment
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  peerdb-flow-worker:
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.19
+    environment: *peerdb-flow-environment
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  peerdb:
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19
+    stop_signal: SIGINT
+    environment:
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_CATALOG_DATABASE: postgres
+      PEERDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_FLOW_SERVER_ADDRESS: grpc://peerdb-flow-api:8112
+      RUST_LOG: info
+      RUST_BACKTRACE: "1"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  peerdb-ui:
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19
+    environment:
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_CATALOG_DATABASE: postgres
+      PEERDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_FLOW_SERVER_HTTP: http://peerdb-flow-api:8113
+      NEXTAUTH_SECRET: ${PEERDB_UI_NEXTAUTH_SECRET:?PEERDB_UI_NEXTAUTH_SECRET is required}
+      NEXTAUTH_URL: ${PEERDB_PUBLIC_URL:-https://peerdb.dofek.asherlc.com}
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.peerdb.rule=${PEERDB_HOST_RULE:-Host(`peerdb.dofek.asherlc.com`)}
+        - traefik.http.routers.peerdb.entrypoints=websecure
+        - traefik.http.routers.peerdb.tls=true
+        - traefik.http.routers.peerdb.tls.certresolver=le
+        - traefik.http.services.peerdb.loadbalancer.server.port=3000
+
   databasus:
     image: databasus/databasus:v3.32.1
     volumes:
       - /mnt/dofek-data/databasus:/databasus-data
     deploy:
+      resources:
+        limits:
+          memory: 200M
       labels:
         - traefik.enable=true
-        - traefik.http.middlewares.databasus-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
-        - traefik.http.middlewares.databasus-auth.forwardAuth.trustForwardHeader=true
-        - traefik.http.middlewares.databasus-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.databasus.rule=${DATABASUS_HOST_RULE:-Host(`databasus.dofek.asherlc.com`)}
         - traefik.http.routers.databasus.entrypoints=websecure
         - traefik.http.routers.databasus.tls=true
         - traefik.http.routers.databasus.tls.certresolver=le
-        - traefik.http.routers.databasus.middlewares=databasus-auth
         - traefik.http.services.databasus.loadbalancer.server.port=4005
+
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4
+    volumes:
+      - /mnt/dofek-data/cloudbeaver:/opt/cloudbeaver/workspace
+    deploy:
+      replicas: 0
+      resources:
+        limits:
+          memory: 300M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.cloudbeaver.rule=${CLOUDBEAVER_HOST_RULE:-Host(`cloudbeaver.dofek.asherlc.com`)}
+        - traefik.http.routers.cloudbeaver.entrypoints=websecure
+        - traefik.http.routers.cloudbeaver.tls=true
+        - traefik.http.routers.cloudbeaver.tls.certresolver=le
+        - traefik.http.services.cloudbeaver.loadbalancer.server.port=8978
 
   pgadmin:
     image: dpage/pgadmin4:9.14.0
@@ -185,40 +614,44 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     deploy:
+      resources:
+        limits:
+          memory: 350M
       labels:
         - traefik.enable=true
-        - traefik.http.middlewares.pgadmin-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
-        - traefik.http.middlewares.pgadmin-auth.forwardAuth.trustForwardHeader=true
-        - traefik.http.middlewares.pgadmin-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.pgadmin.rule=${PGADMIN_HOST_RULE:-Host(`pgadmin.dofek.asherlc.com`)}
         - traefik.http.routers.pgadmin.entrypoints=websecure
         - traefik.http.routers.pgadmin.tls=true
         - traefik.http.routers.pgadmin.tls.certresolver=le
-        - traefik.http.routers.pgadmin.middlewares=pgadmin-auth
         - traefik.http.services.pgadmin.loadbalancer.server.port=80
 
   redis:
     image: redis:7-alpine
     volumes:
-      - redis_data:/data
+      - /mnt/dofek-data/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      update_config:
+        failure_action: rollback
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.149.0
     user: "0:0"
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    env_file: ${COLLECTOR_ENV_FILE:?COLLECTOR_ENV_FILE is required}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    configs:
+      - source: otel_collector_config_v2
+        target: /etc/otelcol-contrib/config.yaml
 
   ota:
     image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
-    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
+      EXPO_APP_ID: ${EXPO_APP_ID:?EXPO_APP_ID is required}
       EXPO_ACCESS_TOKEN: ${EXPO_TOKEN:?EXPO_TOKEN is required}
       BASE_URL: ${OTA_BASE_URL:-https://ota.dofek.asherlc.com}
       STORAGE_MODE: s3
@@ -230,10 +663,10 @@ services:
       CACHE_MODE: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${OTA_JWT_SECRET}
+      JWT_SECRET: ${OTA_JWT_SECRET:?OTA_JWT_SECRET is required}
       KEYS_STORAGE_TYPE: environment
-      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64}
-      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64}
+      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64:?OTA_PRIVATE_KEY_B64 is required}
+      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64:?OTA_PUBLIC_KEY_B64 is required}
       PORT: 3000
     deploy:
       labels:
@@ -252,27 +685,17 @@ services:
     deploy:
       labels:
         - traefik.enable=true
-        - traefik.http.middlewares.portainer-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
-        - traefik.http.middlewares.portainer-auth.forwardAuth.trustForwardHeader=true
-        - traefik.http.middlewares.portainer-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.portainer.rule=${PORTAINER_HOST_RULE:-Host(`portainer.dofek.asherlc.com`)}
         - traefik.http.routers.portainer.entrypoints=websecure
         - traefik.http.routers.portainer.tls=true
         - traefik.http.routers.portainer.tls.certresolver=le
-        - traefik.http.routers.portainer.middlewares=portainer-auth
         - traefik.http.services.portainer.loadbalancer.server.port=9000
-
-  docuum:
-    image: stephanmisc/docuum:0.27.0
-    init: true
-    command: ["--threshold", "10 GB"]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - docuum_data:/root
 
   netdata:
     image: netdata/netdata:v2.5
     pid: host
+    environment:
+      NETDATA_DISABLE_CLOUD: "1"
     cap_add:
       - SYS_PTRACE
       - SYS_ADMIN
@@ -286,26 +709,26 @@ services:
       - /sys:/host/sys:ro
       - /etc/os-release:/host/etc/os-release:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    configs:
+      - source: netdata_db_limits_v2
+        target: /etc/netdata/netdata.conf
     deploy:
+      resources:
+        limits:
+          memory: 768M
       labels:
         - traefik.enable=true
-        - traefik.http.middlewares.netdata-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
-        - traefik.http.middlewares.netdata-auth.forwardAuth.trustForwardHeader=true
-        - traefik.http.middlewares.netdata-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.netdata.rule=${NETDATA_HOST_RULE:-Host(`netdata.dofek.asherlc.com`)}
         - traefik.http.routers.netdata.entrypoints=websecure
         - traefik.http.routers.netdata.tls=true
         - traefik.http.routers.netdata.tls.certresolver=le
-        - traefik.http.routers.netdata.middlewares=netdata-auth
         - traefik.http.services.netdata.loadbalancer.server.port=19999
 
 volumes:
   letsencrypt:
   pgadmin_data:
-  redis_data:
   job_files:
   portainer_data:
-  docuum_data:
   netdata_config:
   netdata_lib:
   netdata_cache:
@@ -315,3 +738,23 @@ networks:
   default:
     driver: overlay
     attachable: true
+
+configs:
+  clickhouse_default_query_guardrails_v2:
+    file: ./clickhouse/users.d/default-query-guardrails.xml
+  clickhouse_system_log_ttl:
+    file: ./clickhouse/config.d/system-log-ttl.xml
+  clickhouse_memory_limits_13g:
+    file: ./clickhouse/config.d/memory-limits-13g.xml
+  netdata_db_limits_v2:
+    file: ./netdata/netdata.conf
+  # Swarm config objects are immutable: when otel-collector-config.yaml changes,
+  # bump this key's version suffix (e.g. _v2) so a new config object is created
+  # and the collector rolls onto it — same convention as netdata_db_limits_v2.
+  otel_collector_config_v2:
+    file: ./otel-collector-config.yaml
+  # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
+  # changes, bump this key's version suffix so a new config object is created and
+  # the service rolls onto it — same convention as netdata_db_limits_v2.
+  metric_stream_r2_archive_config_v2:
+    file: ./redpanda/metric-stream-r2-archive.connect.yml

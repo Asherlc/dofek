@@ -82,7 +82,7 @@ export interface OAuthConfig {
    *  Some providers (e.g. Strava) require "," instead. */
   scopeSeparator?: string;
   /** OAuth 2.0 Token Revocation endpoint (RFC 7009).
-   *  When set, existing tokens can be revoked before exchanging a new authorization code. */
+   *  When set, superseded tokens can be revoked during reconnect. */
   revokeUrl?: string;
 }
 
@@ -102,6 +102,8 @@ export interface TokenSet {
   accessToken: string;
   refreshToken: string | null;
   expiresAt: Date;
+  /** Stable provider-side account identifier tied to this authorization. */
+  providerAccountId?: string;
   scopes: string | null;
 }
 
@@ -136,11 +138,16 @@ const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
 function parseTokenResponse(data: Record<string, unknown>): TokenSet {
   const expiresIn =
     typeof data.expires_in === "number" ? data.expires_in : DEFAULT_EXPIRES_IN_SECONDS;
+  const providerAccountId =
+    typeof data.user_id === "number" || typeof data.user_id === "string"
+      ? String(data.user_id).trim()
+      : null;
   return {
     accessToken: String(data.access_token),
     refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
     expiresAt: new Date(Date.now() + expiresIn * 1000),
     scopes: typeof data.scope === "string" ? data.scope : null,
+    ...(providerAccountId ? { providerAccountId } : {}),
   };
 }
 

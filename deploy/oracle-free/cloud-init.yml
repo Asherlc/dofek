@@ -1,0 +1,139 @@
+#cloud-config
+# Installs Docker CE and initializes a single-node Docker Swarm on a fresh
+# Oracle Cloud Ubuntu 24.04 (aarch64) instance. Deploys happen from CI via a
+# remote Docker context (SSH); there are no deploy scripts or secrets on the
+# instance.
+#
+# Oracle's Ubuntu images ship restrictive instance-level iptables rules
+#      that block everything except SSH, regardless of the VCN security list.
+#      We must explicitly accept 80/443 on the INPUT chain.
+# The attached block volume is formatted and mounted at /mnt/dofek-data so the
+# production stack bind mounts work unchanged.
+
+package_update: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+
+write_files:
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+
+runcmd:
+  # --- Open the host firewall for HTTP/HTTPS (Oracle-specific) ---
+  # OCI Ubuntu images ship a populated INPUT chain ending in a REJECT, so the
+  # VCN security list alone is not enough. Insert at the TOP of INPUT (not the
+  # Oracle-Linux "position 6" folklore, whose index does not match Ubuntu's
+  # layout) so the ACCEPT is guaranteed to precede the trailing REJECT. This
+  # runs before Docker is installed, so persisting here cannot clobber Docker's
+  # own chains; dockerd rebuilds those on start after the boot-time restore.
+  - |
+      iptables -I INPUT 1 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+      iptables -I INPUT 1 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+      if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save
+      elif command -v iptables-save >/dev/null 2>&1; then
+        mkdir -p /etc/iptables
+        iptables-save > /etc/iptables/rules.v4
+      fi
+
+  # --- Install Docker CE ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # --- Let the ubuntu user drive Docker without sudo ---
+  # OCI Ubuntu disables root SSH, so CI deploys connect as ubuntu over the
+  # remote Docker context. The user must be in the docker group to reach
+  # /var/run/docker.sock.
+  - usermod -aG docker ubuntu
+
+  # --- App directory ---
+  - mkdir -p /opt/dofek
+
+%{ if data_volume_enabled ~}
+  # --- Format and mount the attached data volume at /mnt/dofek-data ---
+  # Discover the data disk by excluding the boot disk rather than hardcoding a
+  # path: the /dev/oracleoci/* consistent-path symlinks come from oci-utils,
+  # which ships only on Oracle Linux, so on Ubuntu the volume usually appears
+  # as a plain kernel device (e.g. /dev/sdb). fstab uses the filesystem UUID so
+  # the mount survives any device-name reordering across reboots; nofail keeps
+  # the host bootable if the volume is ever detached.
+  - |
+      # NB: no `set -e` here — cloud-init concatenates all runcmd items into one
+      # script, so `set -e` would leak into later steps (e.g. swarm init) and
+      # abort them. Fail-loud is done with explicit `exit 1` checks below.
+      ROOT_SRC=$(findmnt -no SOURCE /)
+      # Resolve the whole DISK backing root (never a partition): PKNAME gives the
+      # parent disk for a partition; if root is itself a whole disk, PKNAME is
+      # empty and lsblk NAME returns the disk. Using a partition name here would
+      # let grep -vx fail to exclude the boot disk and format it as data.
+      ROOT_DISK=$(lsblk -no PKNAME "$ROOT_SRC" 2>/dev/null | head -1)
+      [ -z "$ROOT_DISK" ] && ROOT_DISK=$(lsblk -ndo NAME "$ROOT_SRC" 2>/dev/null | head -1)
+      DATA_NAME=""
+      for _ in $(seq 1 60); do
+        DATA_NAME=$(lsblk -dn -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -vx "$ROOT_DISK" | head -1)
+        [ -n "$DATA_NAME" ] && break
+        sleep 5
+      done
+      if [ -z "$DATA_NAME" ]; then
+        echo "ERROR: data volume enabled but no data disk found (root disk: $ROOT_DISK)" >&2
+        exit 1
+      fi
+      DEVICE="/dev/$DATA_NAME"
+      blkid "$DEVICE" >/dev/null 2>&1 || mkfs.ext4 -F "$DEVICE"
+      mkdir -p /mnt/dofek-data
+      VOL_UUID=$(blkid -s UUID -o value "$DEVICE")
+      grep -q "$VOL_UUID" /etc/fstab || echo "UUID=$VOL_UUID /mnt/dofek-data ext4 defaults,_netdev,nofail 0 2" >> /etc/fstab
+      mount /mnt/dofek-data
+      # Fail loudly rather than silently placing Postgres/ClickHouse data on the
+      # boot disk if the data volume did not actually mount.
+      if ! mountpoint -q /mnt/dofek-data; then
+        echo "ERROR: data volume enabled but /mnt/dofek-data is not mounted" >&2
+        exit 1
+      fi
+%{ endif ~}
+  # Create every bind-mount source the stack expects under /mnt/dofek-data.
+  # The deploy's "Validate host bind mount paths" step fails fast if any are
+  # missing, even for services scaled to zero by stack.oracle.yml (their bind
+  # mounts are still declared in stack.yml). Keep this list in sync with the
+  # /mnt/dofek-data/* bind mounts in deploy/stack.yml.
+  - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/redis /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio
+
+  # The timescaledb-ha (Postgres) image runs as uid/gid 1000 and cannot chown
+  # its own data directory, so it hangs/fails on a root-owned bind mount with
+  # "initdb: could not change permissions ... Operation not permitted". Pre-own
+  # the data dir to 1000:1000. Other services either
+  # run as root and self-chown (clickhouse, redis, peerdb-catalog) or are scaled
+  # to zero by stack.oracle.yml, so only Postgres needs this.
+  - chown 1000:1000 /mnt/dofek-data/postgres
+
+  # --- Restart Docker to pick up daemon.json log settings ---
+  - systemctl restart docker
+
+  # --- Initialize a single-node swarm (idempotent) ---
+  - |
+      if docker info --format '{{.Swarm.ControlAvailable}}' | grep -q true; then
+        exit 0
+      fi
+      if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active; then
+        docker swarm leave --force
+      fi
+      docker swarm init --advertise-addr "$(hostname -I | awk '{print $1}')"
+
+  # --- Kernel memory tuning for Redis BGSAVE persistence ---
+  - sysctl -w vm.overcommit_memory=1
+  - sh -c 'echo "vm.overcommit_memory=1" > /etc/sysctl.d/99-redis.conf'

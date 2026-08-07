@@ -1,109 +1,29 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { sql } from "drizzle-orm";
-import type { SyncDatabase } from "../db/index.ts";
-import { NUTRIENT_FIELDS, nutrientColumnsToValues } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrition } from "../db/schema.ts";
+import { z } from "zod";
+import { executeWithSchema } from "../db/execute-with-schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
-
-// ============================================================
-// Entry builder
-// ============================================================
-
-/** Slugify a supplement name for use in externalId */
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-/** A supplement row joined with its nutrition data from v_supplement_with_nutrition */
-export interface SupplementWithNutrition {
-  id: string;
-  userId: string;
-  user_id: string;
-  name: string;
-  amount: number | null;
-  unit: string | null;
-  form: string | null;
-  description: string | null;
-  meal: "breakfast" | "lunch" | "dinner" | "snack" | "other" | null;
-  sort_order: number;
-  nutrition_data_id: string | null;
-  // Nutrient fields from the join (snake_case from view)
-  calories: number | null;
-  protein_g: number | null;
-  carbs_g: number | null;
-  fat_g: number | null;
-  [key: string]: unknown;
-}
-
-const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
-
-export interface DailySupplementEntry {
-  providerId: string;
-  externalId: string;
-  userId: string;
-  date: string;
-  meal: (typeof mealValues)[number];
-  foodName: string;
-  foodDescription: string | null;
-  category: "supplement";
-  numberOfUnits: number;
-  nutrients: Record<string, number | null>;
-}
-
-/**
- * Build food_entry rows for each supplement × each date.
- */
-export function buildDailyEntries(
-  supplements: SupplementWithNutrition[],
-  dates: string[],
-): DailySupplementEntry[] {
-  const entries: DailySupplementEntry[] = [];
-
-  for (const date of dates) {
-    for (const supp of supplements) {
-      const nutrients = nutrientColumnsToValues(supp);
-      entries.push({
-        providerId: "auto-supplements",
-        externalId: `auto:${slugify(supp.name)}:${supp.user_id}:${date}`,
-        userId: supp.user_id,
-        date,
-        meal: supp.meal ?? "other",
-        foodName: supp.name,
-        foodDescription: supp.description,
-        category: "supplement",
-        numberOfUnits: 1,
-        nutrients,
-      });
-    }
-  }
-
-  return entries;
-}
-
-// ============================================================
-// Provider
-// ============================================================
+import type { SyncRun } from "./sync-run.ts";
+import type { SyncProvider, SyncResult } from "./types.ts";
 
 const PROVIDER_ID = "auto-supplements";
 const PROVIDER_NAME = "Auto-Supplements";
 
-/** Generate ISO date strings for each day in the range [since, today]. */
-function datesInRange(since: Date): string[] {
-  const dates: string[] = [];
-  const now = new Date();
-  const current = new Date(since);
-  // Start from the date portion
-  current.setUTCHours(0, 0, 0, 0);
+const timezoneRowSchema = z.object({ value: z.unknown() });
+const supplementDefinitionExistsRowSchema = z.object({ id: z.string() });
+const insertedIdRowSchema = z.object({ id: z.string() });
 
-  while (current <= now) {
-    dates.push(current.toISOString().slice(0, 10));
-    current.setUTCDate(current.getUTCDate() + 1);
+function parseStoredTimezone(rows: unknown): string {
+  const parsedRows = z.array(timezoneRowSchema).parse(rows);
+  const value = parsedRows[0]?.value;
+  if (value === undefined) return "UTC";
+  const timezone = z.string().min(1, "Stored timezone must be a non-empty string").parse(value);
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+  } catch {
+    throw new Error(`Invalid stored timezone: ${timezone}`);
   }
-
-  return dates;
+  return timezone;
 }
 
 export class AutoSupplementsProvider implements SyncProvider {
@@ -111,138 +31,147 @@ export class AutoSupplementsProvider implements SyncProvider {
   readonly name = PROVIDER_NAME;
 
   validate(): string | null {
-    // Always valid — supplements are stored in the DB per-user
     return null;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
     const start = Date.now();
-    const errors: SyncError[] = [];
+    const userId = run.options.userId;
+    if (!userId) {
+      throw new Error("auto-supplements sync requires userId");
+    }
 
-    // Query all users' supplements with their nutrition data via the view
-    const allSupplements = await db.execute<SupplementWithNutrition>(
-      sql`SELECT * FROM fitness.v_supplement_with_nutrition ORDER BY user_id ASC, sort_order ASC`,
+    const timezone = parseStoredTimezone(
+      await executeWithSchema(
+        run.db,
+        timezoneRowSchema,
+        sql`SELECT value
+            FROM fitness.user_settings
+            WHERE user_id = ${userId}
+              AND key = 'timezone'
+            LIMIT 1`,
+      ),
+    );
+    const startDate = formatDateYmdInTimeZone(run.window.since, timezone);
+    const endDate = formatDateYmdInTimeZone(run.window.until, timezone);
+    const today = formatDateYmdInTimeZone(new Date(), timezone);
+
+    const definitions = await executeWithSchema(
+      run.db,
+      supplementDefinitionExistsRowSchema,
+      sql`SELECT definition.id
+            FROM fitness.supplement_definition AS definition
+            INNER JOIN fitness.supplement AS supplement
+              ON supplement.id = definition.supplement_id
+            WHERE supplement.user_id = ${userId}
+              AND definition.effective_from <= ${endDate}::date
+              AND (definition.effective_to IS NULL OR definition.effective_to > ${startDate}::date)
+            LIMIT 1`,
+    );
+    if (definitions.length === 0) {
+      return {
+        provider: PROVIDER_ID,
+        recordsSynced: 0,
+        errors: [],
+        duration: Date.now() - start,
+      };
+    }
+
+    await ensureProvider(run.db, PROVIDER_ID, PROVIDER_NAME, undefined, userId);
+
+    const recordedAt = new Date();
+    const inserted = await executeWithSchema(
+      run.db,
+      insertedIdRowSchema,
+      sql`INSERT INTO fitness.supplement_dose_event (
+            user_id,
+            supplement_id,
+            definition_id,
+            provider_id,
+            external_id,
+            scheduled_date,
+            status,
+            recorded_at,
+            source_name
+          )
+          SELECT
+            ${userId},
+            definition.supplement_id,
+            definition.id,
+            ${PROVIDER_ID},
+            'schedule:' || definition.supplement_id::text || ':'
+              || occurrence.scheduled_date::date::text || ':'
+              || CASE
+                WHEN occurrence.scheduled_date::date < ${today}::date THEN 'unknown'
+                ELSE 'planned'
+              END,
+            occurrence.scheduled_date::date,
+            CASE
+              WHEN occurrence.scheduled_date::date < ${today}::date
+                THEN 'unknown'::fitness.supplement_dose_status
+              ELSE 'planned'::fitness.supplement_dose_status
+            END,
+            ${recordedAt},
+            ${PROVIDER_NAME}
+          FROM fitness.supplement_definition AS definition
+          INNER JOIN fitness.supplement AS supplement
+            ON supplement.id = definition.supplement_id
+          CROSS JOIN LATERAL generate_series(
+            ${startDate}::date,
+            ${endDate}::date,
+            INTERVAL '1 day'
+          ) AS occurrence(scheduled_date)
+          WHERE supplement.user_id = ${userId}
+            AND definition.effective_from <= occurrence.scheduled_date::date
+            AND (
+              definition.effective_to IS NULL
+              OR definition.effective_to > occurrence.scheduled_date::date
+            )
+          ON CONFLICT DO NOTHING
+          RETURNING id`,
     );
 
-    if (allSupplements.length === 0) {
-      return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
-    }
-
-    const dates = datesInRange(since);
-    if (dates.length === 0) {
-      return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
-    }
-
-    const firstUser = allSupplements[0];
-    if (!firstUser) {
-      return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
-    }
-    await ensureProvider(db, PROVIDER_ID, PROVIDER_NAME, undefined, firstUser.user_id);
-    const entries = buildDailyEntries(allSupplements, dates);
-
-    let synced = 0;
-    for (const entry of entries) {
-      try {
-        // Check if food_entry already exists so nutrients can be updated in-place.
-        const existing = await db
-          .select({ foodEntryId: foodEntry.id })
-          .from(foodEntry)
-          .where(
-            sql`${foodEntry.userId} = ${entry.userId} AND ${foodEntry.providerId} = ${entry.providerId} AND ${foodEntry.externalId} = ${entry.externalId}`,
-          );
-
-        if (existing.length > 0 && existing[0]?.foodEntryId) {
-          const foodEntryId = existing[0].foodEntryId;
-          const setClauses = NUTRIENT_FIELDS.map(
-            (f) => sql`${sql.identifier(f.column)} = ${entry.nutrients[f.key] ?? null}`,
-          );
-          await db.execute(
-            sql`INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
-                VALUES (${foodEntryId}, NULL)
-                ON CONFLICT (food_entry_id) DO NOTHING`,
-          );
-          await db.execute(
-            sql`UPDATE fitness.food_entry_nutrition
-                SET ${sql.join(setClauses, sql`, `)}
-                WHERE food_entry_id = ${foodEntryId}`,
-          );
-          // Update food_entry metadata
-          await db.execute(
-            sql`UPDATE fitness.food_entry
-                SET food_name = ${entry.foodName}, food_description = ${entry.foodDescription}
-                WHERE user_id = ${entry.userId} AND provider_id = ${entry.providerId} AND external_id = ${entry.externalId}`,
-          );
-        } else {
-          // Insert new food_entry + nutrition row
-          const [foodEntryRow] = await db
-            .insert(foodEntry)
-            .values({
-              providerId: entry.providerId,
-              externalId: entry.externalId,
-              userId: entry.userId,
-              date: entry.date,
-              meal: entry.meal,
-              foodName: entry.foodName,
-              foodDescription: entry.foodDescription,
-              category: "supplement",
-              numberOfUnits: entry.numberOfUnits,
-            })
-            .onConflictDoNothing()
-            .returning({ id: foodEntry.id });
-
-          if (foodEntryRow?.id) {
-            await db.insert(foodEntryNutrition).values({
-              foodEntryId: foodEntryRow.id,
-              calories: entry.nutrients.calories,
-              proteinG: entry.nutrients.proteinG,
-              carbsG: entry.nutrients.carbsG,
-              fatG: entry.nutrients.fatG,
-              saturatedFatG: entry.nutrients.saturatedFatG,
-              polyunsaturatedFatG: entry.nutrients.polyunsaturatedFatG,
-              monounsaturatedFatG: entry.nutrients.monounsaturatedFatG,
-              transFatG: entry.nutrients.transFatG,
-              cholesterolMg: entry.nutrients.cholesterolMg,
-              sodiumMg: entry.nutrients.sodiumMg,
-              potassiumMg: entry.nutrients.potassiumMg,
-              fiberG: entry.nutrients.fiberG,
-              sugarG: entry.nutrients.sugarG,
-              vitaminAMcg: entry.nutrients.vitaminAMcg,
-              vitaminCMg: entry.nutrients.vitaminCMg,
-              vitaminDMcg: entry.nutrients.vitaminDMcg,
-              vitaminEMg: entry.nutrients.vitaminEMg,
-              vitaminKMcg: entry.nutrients.vitaminKMcg,
-              vitaminB1Mg: entry.nutrients.vitaminB1Mg,
-              vitaminB2Mg: entry.nutrients.vitaminB2Mg,
-              vitaminB3Mg: entry.nutrients.vitaminB3Mg,
-              vitaminB5Mg: entry.nutrients.vitaminB5Mg,
-              vitaminB6Mg: entry.nutrients.vitaminB6Mg,
-              vitaminB7Mcg: entry.nutrients.vitaminB7Mcg,
-              vitaminB9Mcg: entry.nutrients.vitaminB9Mcg,
-              vitaminB12Mcg: entry.nutrients.vitaminB12Mcg,
-              calciumMg: entry.nutrients.calciumMg,
-              ironMg: entry.nutrients.ironMg,
-              magnesiumMg: entry.nutrients.magnesiumMg,
-              zincMg: entry.nutrients.zincMg,
-              seleniumMcg: entry.nutrients.seleniumMcg,
-              copperMg: entry.nutrients.copperMg,
-              manganeseMg: entry.nutrients.manganeseMg,
-              chromiumMcg: entry.nutrients.chromiumMcg,
-              iodineMcg: entry.nutrients.iodineMcg,
-              omega3Mg: entry.nutrients.omega3Mg,
-              omega6Mg: entry.nutrients.omega6Mg,
-            });
-          }
-        }
-        synced++;
-      } catch (e) {
-        errors.push({
-          message: `Failed to upsert ${entry.foodName} for ${entry.date}: ${e instanceof Error ? e.message : String(e)}`,
-          externalId: entry.externalId,
-          cause: e,
-        });
-      }
-    }
-
-    return { provider: PROVIDER_ID, recordsSynced: synced, errors, duration: Date.now() - start };
+    const advanced = await executeWithSchema(
+      run.db,
+      insertedIdRowSchema,
+      sql`INSERT INTO fitness.supplement_dose_event (
+              user_id,
+              supplement_id,
+              definition_id,
+              provider_id,
+              external_id,
+              scheduled_date,
+              status,
+              supersedes_event_id,
+              recorded_at,
+              source_name
+            )
+            SELECT
+              current.user_id,
+              current.supplement_id,
+              current.definition_id,
+              ${PROVIDER_ID},
+              'schedule:' || current.supplement_id::text || ':' || current.scheduled_date::text
+                || ':unknown:' || current.id::text,
+              current.scheduled_date,
+              'unknown'::fitness.supplement_dose_status,
+              current.id,
+              ${recordedAt},
+              ${PROVIDER_NAME}
+            FROM fitness.v_supplement_dose_current AS current
+            WHERE current.user_id = ${userId}
+              AND current.status = 'planned'
+              AND current.scheduled_date >= ${startDate}::date
+              AND current.scheduled_date <= ${endDate}::date
+              AND current.scheduled_date < ${today}::date
+            ON CONFLICT DO NOTHING
+            RETURNING id`,
+    );
+    return {
+      provider: PROVIDER_ID,
+      recordsSynced: inserted.length + advanced.length,
+      errors: [],
+      duration: Date.now() - start,
+    };
   }
 }

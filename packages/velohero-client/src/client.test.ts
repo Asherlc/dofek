@@ -1,21 +1,29 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { VeloHeroClient } from "./client.ts";
 import type { VeloHeroSsoResponse, VeloHeroWorkout, VeloHeroWorkoutsResponse } from "./types.ts";
 
-function mockFetch(response: {
-  status: number;
-  ok: boolean;
-  body: unknown;
-}): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue({
-    ok: response.ok,
-    status: response.status,
-    json: () => Promise.resolve(response.body),
-    text: () =>
-      Promise.resolve(
-        typeof response.body === "string" ? response.body : JSON.stringify(response.body),
-      ),
+function rateLimitedFetch(retryAfterSeconds: string): typeof globalThis.fetch {
+  return async () =>
+    new Response("Too Many Requests", {
+      status: 429,
+      headers: { "Retry-After": retryAfterSeconds },
+    });
+}
+
+type TypedMockFetch = ReturnType<typeof vi.fn<typeof globalThis.fetch>> & typeof globalThis.fetch;
+
+function mockFetch(response: { status: number; ok: boolean; body: unknown }): TypedMockFetch {
+  const text = typeof response.body === "string" ? response.body : JSON.stringify(response.body);
+  const mockResponse = new Response(text, { status: response.status });
+  Object.defineProperty(mockResponse, "json", {
+    value: () => Promise.resolve(response.body),
+    configurable: true,
   });
+  Object.defineProperty(mockResponse, "ok", { value: response.ok, configurable: true });
+  const fn = vi.fn<typeof globalThis.fetch>();
+  fn.mockResolvedValue(mockResponse);
+  return fn;
 }
 
 describe("VeloHeroClient.signIn", () => {
@@ -34,12 +42,13 @@ describe("VeloHeroClient.signIn", () => {
       userId: "user-42",
     });
 
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toBe("https://app.velohero.com/sso");
-    expect(options.method).toBe("POST");
-    expect(options.redirect).toBe("manual");
-    const headers: Record<string, string> = options.headers;
-    expect(headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+    expect(options?.method).toBe("POST");
+    expect(options?.redirect).toBe("manual");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Content-Type")).toBe("application/x-www-form-urlencoded");
   });
 
   it("throws on non-200 response", async () => {
@@ -57,6 +66,32 @@ describe("VeloHeroClient.signIn", () => {
     await expect(VeloHeroClient.signIn("testuser", "password123", fetchFn)).rejects.toThrow(
       "VeloHero sign-in did not return a session token",
     );
+  });
+
+  it("throws a velohero-scoped ProviderRateLimitError on 429", async () => {
+    const error = await VeloHeroClient.signIn(
+      "testuser",
+      "password123",
+      rateLimitedFetch("30"),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "velohero");
+    expect(error).toHaveProperty("retryAfterSeconds", 30);
+  });
+});
+
+describe("VeloHeroClient instance rate limit detection", () => {
+  it("throws a velohero-scoped ProviderRateLimitError on 429", async () => {
+    const client = new VeloHeroClient("VeloHero_session=abc123", rateLimitedFetch("15"));
+
+    const error = await client
+      .getWorkouts("2024-01-01", "2024-01-31")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "velohero");
+    expect(error).toHaveProperty("retryAfterSeconds", 15);
   });
 });
 
@@ -85,12 +120,13 @@ describe("VeloHeroClient.getWorkouts", () => {
     const result = await client.getWorkouts("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(workouts);
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toContain("https://app.velohero.com/export/workouts/json");
     expect(url).toContain("date_from=2024-01-01");
     expect(url).toContain("date_to=2024-01-31");
-    const headers: Record<string, string> = options.headers;
-    expect(headers.Cookie).toBe("VeloHero_session=abc123");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Cookie")).toBe("VeloHero_session=abc123");
   });
 
   it("returns empty array when workouts is undefined", async () => {
@@ -130,7 +166,7 @@ describe("VeloHeroClient.getWorkout", () => {
     const result = await client.getWorkout("1001");
 
     expect(result).toEqual(workout);
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
     expect(url).toBe("https://app.velohero.com/export/workouts/json/1001");
   });
 });

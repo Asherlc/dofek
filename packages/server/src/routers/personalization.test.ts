@@ -1,9 +1,28 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+
+const { mockInvalidateUserQueryDomains, mockLoggerError } = vi.hoisted(() => ({
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+  mockLoggerError: vi.fn(),
+}));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: { error: mockLoggerError },
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -12,6 +31,19 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+const fakeSensorStore = {
+  query: vi.fn().mockResolvedValue([]),
+  getActivitySummaries: vi.fn().mockResolvedValue([]),
+  getStream: vi.fn().mockResolvedValue([]),
+  getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+  getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+  getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+  getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+  getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+  getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+  getPaceCurveRows: vi.fn().mockResolvedValue([]),
+} satisfies ActivitySensorStore;
 
 const mockLoadPersonalizedParams = vi.fn();
 vi.mock("dofek/personalization/storage", () => ({
@@ -37,13 +69,36 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 const createCaller = createTestCallerFactory(personalizationRouter);
 
 describe("personalizationRouter", () => {
+  beforeEach(() => {
+    mockInvalidateUserQueryDomains.mockClear();
+    mockLoggerError.mockClear();
+  });
+
   describe("status", () => {
+    it("returns an actionable user-safe error when activity analytics are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.status()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Personalization is unavailable because activity analytics are not configured. Contact your administrator.",
+      });
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "[personalization] personalization.status requires CLICKHOUSE_URL",
+      );
+    });
+
     it("returns not personalized with defaults when no stored params", async () => {
       mockLoadPersonalizedParams.mockResolvedValue(null);
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: fakeSensorStore,
       });
 
       const result = await caller.status();
@@ -57,6 +112,8 @@ describe("personalizationRouter", () => {
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
       expect(result.parameters.trainingImpulseConstants).toBeNull();
+      expect(result.modelCards).toHaveLength(5);
+      expect(result.modelCards.every((card) => card.status === "default")).toBe(true);
     });
 
     it("returns isPersonalized=true when at least one sub-param is non-null", async () => {
@@ -79,6 +136,7 @@ describe("personalizationRouter", () => {
         db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: fakeSensorStore,
       });
 
       const result = await caller.status();
@@ -87,6 +145,12 @@ describe("personalizationRouter", () => {
       expect(result.fittedAt).toBe("2026-03-18T12:00:00Z");
       expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
       expect(result.parameters.exponentialMovingAverage).not.toBeNull();
+      expect(result.modelCards[0]).toMatchObject({
+        key: "exponentialMovingAverage",
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+      });
     });
 
     it("returns isPersonalized=false when all sub-params are null", async () => {
@@ -104,6 +168,7 @@ describe("personalizationRouter", () => {
         db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: fakeSensorStore,
       });
 
       const result = await caller.status();
@@ -115,7 +180,12 @@ describe("personalizationRouter", () => {
     it("passes db and userId to loadPersonalizedParams", async () => {
       mockLoadPersonalizedParams.mockResolvedValue(null);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-42", timezone: "UTC" });
+      const caller = createCaller({
+        db: mockDb,
+        userId: "user-42",
+        timezone: "UTC",
+        sensorStore: fakeSensorStore,
+      });
 
       await caller.status();
 
@@ -142,6 +212,7 @@ describe("personalizationRouter", () => {
         db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: fakeSensorStore,
       });
 
       const result = await caller.status();
@@ -175,14 +246,20 @@ describe("personalizationRouter", () => {
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-1", timezone: "UTC" });
+      const caller = createCaller({
+        db: mockDb,
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: fakeSensorStore,
+      });
 
       const result = await caller.refit();
 
-      expect(mockRefitAllParams).toHaveBeenCalledWith(mockDb, "user-1");
+      expect(mockRefitAllParams).toHaveBeenCalledWith(mockDb, "user-1", fakeSensorStore);
       expect(result.fittedAt).toBe("2026-03-18T14:00:00Z");
       expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
       expect(result.parameters.exponentialMovingAverage).not.toBeNull();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalization"]);
     });
 
     it("returns defaults for null sub-params in effective", async () => {
@@ -200,6 +277,7 @@ describe("personalizationRouter", () => {
         db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: fakeSensorStore,
       });
 
       const result = await caller.refit();
@@ -210,6 +288,7 @@ describe("personalizationRouter", () => {
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
       expect(result.parameters.trainingImpulseConstants).toBeNull();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalization"]);
     });
 
     it("passes db and userId to refitAllParams", async () => {
@@ -224,11 +303,16 @@ describe("personalizationRouter", () => {
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-99", timezone: "UTC" });
+      const caller = createCaller({
+        db: mockDb,
+        userId: "user-99",
+        timezone: "UTC",
+        sensorStore: fakeSensorStore,
+      });
 
       await caller.refit();
 
-      expect(mockRefitAllParams).toHaveBeenCalledWith(mockDb, "user-99");
+      expect(mockRefitAllParams).toHaveBeenCalledWith(mockDb, "user-99", fakeSensorStore);
     });
   });
 
@@ -239,12 +323,14 @@ describe("personalizationRouter", () => {
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: fakeSensorStore,
       });
 
       const result = await caller.reset();
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(result.effective).toEqual(DEFAULT_PARAMS);
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalization"]);
     });
 
     it("calls db.execute to delete the settings row", async () => {
@@ -253,6 +339,7 @@ describe("personalizationRouter", () => {
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: fakeSensorStore,
       });
 
       await caller.reset();

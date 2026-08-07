@@ -1,9 +1,10 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 describe("Activity router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -34,10 +35,12 @@ describe("Activity router", () => {
 
     const insertedActivities = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
             'test_provider',
             ${TEST_USER_ID},
+            'metric-stream-only-activity',
+            'running',
             'running',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 minutes',
@@ -50,13 +53,15 @@ describe("Activity router", () => {
     }
     metricOnlyActivityId = activityId;
 
-    const filteredActivities = await testCtx.db.execute<{ id: string; activity_type: string }>(
+    const filteredActivities = await testCtx.db.execute<{ id: string; canonical_type: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
           (
             'test_provider',
             ${TEST_USER_ID},
+            'filtered-cycling-activity',
+            'cycling',
             'cycling',
             CURRENT_TIMESTAMP - INTERVAL '1 day',
             CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '75 minutes',
@@ -65,18 +70,20 @@ describe("Activity router", () => {
           (
             'test_provider',
             ${TEST_USER_ID},
+            'filtered-walking-activity',
+            'walking',
             'walking',
             CURRENT_TIMESTAMP - INTERVAL '12 hours',
             CURRENT_TIMESTAMP - INTERVAL '12 hours' + INTERVAL '40 minutes',
             'Filtered Walking Activity'
           )
-          RETURNING id, activity_type`,
+          RETURNING id, canonical_type`,
     );
     const cyclingActivity = filteredActivities.find(
-      (activity) => activity.activity_type === "cycling",
+      (activity) => activity.canonical_type === "cycling",
     );
     const walkingActivity = filteredActivities.find(
-      (activity) => activity.activity_type === "walking",
+      (activity) => activity.canonical_type === "walking",
     );
     if (!cyclingActivity || !walkingActivity) {
       throw new Error("Failed to insert filtered test activities");
@@ -84,29 +91,59 @@ describe("Activity router", () => {
     cyclingActivityId = cyclingActivity.id;
     walkingActivityId = walkingActivity.id;
 
-    await testCtx.db.execute(
-      sql`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-          ) VALUES
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 150, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 210, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 3.8, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 88, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 152, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 215, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 3.9, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 89, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 155, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 220, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 4.0, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 90, NULL)`,
-    );
+    const sensorStore = makeMockSensorStore();
+    sensorStore.getActivitySummaries = async (activityIds) =>
+      activityIds.includes(metricOnlyActivityId)
+        ? [
+            {
+              activity_id: metricOnlyActivityId,
+              avg_hr: 152.3333,
+              max_hr: 155,
+              avg_power: 215,
+              max_power: 220,
+              avg_speed: 3.9,
+              max_speed: 4,
+              avg_cadence: 89,
+              total_distance: null,
+              elevation_gain_m: null,
+              elevation_loss_m: null,
+              sample_count: 12,
+            },
+          ]
+        : [];
+    sensorStore.getStream = async (window) =>
+      window.activityId === metricOnlyActivityId
+        ? [
+            {
+              recorded_at: new Date().toISOString(),
+              heart_rate: 150,
+              power: 210,
+              speed: 3.8,
+              cadence: 88,
+              altitude: null,
+              lat: null,
+              lng: null,
+            },
+          ]
+        : [];
+    sensorStore.getHeartRateZoneSeconds = async (window) =>
+      window.activityId === metricOnlyActivityId
+        ? [
+            { zone: 1, seconds: 0 },
+            { zone: 2, seconds: 1 },
+            { zone: 3, seconds: 1 },
+            { zone: 4, seconds: 1 },
+            { zone: 5, seconds: 0 },
+          ]
+        : [
+            { zone: 1, seconds: 0 },
+            { zone: 2, seconds: 0 },
+            { zone: 3, seconds: 0 },
+            { zone: 4, seconds: 0 },
+            { zone: 5, seconds: 0 },
+          ];
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
-
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -153,7 +190,7 @@ describe("Activity router", () => {
   });
 
   describe("list", () => {
-    it("falls back to metric_stream-backed summary when metric_stream rows are not available yet", async () => {
+    it("uses deduped ClickHouse summaries when sensor rows are available", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const result = await query("activity.list", {
         days: 30,
@@ -177,10 +214,10 @@ describe("Activity router", () => {
         activityTypes: ["cycling"],
       });
       expect(result.error).toBeUndefined();
-      const items: Array<{ id: string; activity_type: string }> = result.result?.data?.items ?? [];
+      const items: Array<{ id: string; canonical_type: string }> = result.result?.data?.items ?? [];
       expect(items).toHaveLength(1);
       expect(items[0]?.id).toBe(cyclingActivityId);
-      expect(items[0]?.activity_type).toBe("cycling");
+      expect(items[0]?.canonical_type).toBe("cycling");
       expect(items.some((item) => item.id === metricOnlyActivityId)).toBe(false);
       expect(items.some((item) => item.id === walkingActivityId)).toBe(false);
     });
@@ -213,7 +250,7 @@ describe("Activity router", () => {
       expect(result.error.data.code).toBe("BAD_REQUEST");
     });
 
-    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
+    it("returns deduped ClickHouse stream rows when sensor rows are available", async () => {
       const result = await query("activity.stream", {
         id: metricOnlyActivityId,
         maxPoints: 500,
@@ -227,7 +264,7 @@ describe("Activity router", () => {
   });
 
   describe("hrZones", () => {
-    it("returns 5 zones for a non-existent activity (all zero seconds)", async () => {
+    it("returns zone 0 plus 5 training zones for a non-existent activity (all zero seconds)", async () => {
       const result = await query("activity.hrZones", {
         id: "00000000-0000-0000-0000-000000000099",
       });
@@ -235,7 +272,7 @@ describe("Activity router", () => {
       // May return empty or all-zero depending on user_profile having max_hr
       // Either way it should not error
       if (zones) {
-        expect(zones).toHaveLength(5);
+        expect(zones).toHaveLength(6);
         for (const zone of zones) {
           expect(zone.seconds).toBe(0);
         }
@@ -247,17 +284,20 @@ describe("Activity router", () => {
         id: "00000000-0000-0000-0000-000000000099",
       });
       const zones = result.result?.data;
-      if (zones && zones.length === 5) {
-        expect(zones[0].label).toBe("Recovery");
-        expect(zones[0].minPct).toBe(50);
-        expect(zones[0].maxPct).toBe(60);
-        expect(zones[4].label).toBe("VO2max");
-        expect(zones[4].minPct).toBe(90);
-        expect(zones[4].maxPct).toBe(100);
+      if (zones && zones.length === 6) {
+        expect(zones[0].label).toBe("Below Zone 1");
+        expect(zones[0].minPct).toBe(0);
+        expect(zones[0].maxPct).toBe(50);
+        expect(zones[1].label).toBe("Recovery");
+        expect(zones[1].minPct).toBe(50);
+        expect(zones[1].maxPct).toBe(60);
+        expect(zones[5].label).toBe("VO2max");
+        expect(zones[5].minPct).toBe(90);
+        expect(zones[5].maxPct).toBe(100);
       }
     });
 
-    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
+    it("returns zones from deduped ClickHouse heart-rate rows", async () => {
       const result = await query("activity.hrZones", {
         id: metricOnlyActivityId,
       });

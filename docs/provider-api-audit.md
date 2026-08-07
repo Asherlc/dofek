@@ -2,7 +2,7 @@
 
 An assessment of every provider we considered reverse engineering, documenting what the official API provides, what gaps exist, and whether reverse engineering is feasible or worthwhile.
 
-Last updated: 2026-03-14
+Last updated: 2026-06-23
 
 ---
 
@@ -18,10 +18,13 @@ Last updated: 2026-03-14
 
 ### WHOOP
 - **Package:** `packages/whoop-whoop`
+- **Published API client:** `@dofek/whoop`
+- **Published device client:** `@dofek/whoop-ble`
 - **Official API:** WHOOP Developer API (limited, partner access)
 - **Internal API:** Cognito-based auth, REST endpoints for cycles, recovery, sleep, workouts, weightlifting
+- **Bluetooth protocol:** Native Swift client for pairing, authentication, command transport, historical-data transfer, and IMU streaming
 - **Gaps filled:** Weightlifting service (exercise-level sets/reps/weight), cycle data at higher resolution
-- **Verdict:** HIGH VALUE — weightlifting data only available via internal API
+- **Verdict:** HIGH VALUE — weightlifting data only available via internal API, while BLE exposes direct device access
 
 ### Eight Sleep
 - **Package:** `packages/eight-sleep`
@@ -119,11 +122,21 @@ Last updated: 2026-03-14
 
 ### Zepp (Amazfit/Huami)
 - **Official API:** Exists ([zepp-health/rest-api](https://github.com/zepp-health/rest-api/wiki)) with OAuth 2.0, but registration at dev.huami.com is effectively closed (months of silence, partner prioritization).
-- **Internal API:** Well-documented by community ([hacking-mifit-api](https://github.com/micw/hacking-mifit-api)). Email+password login to `account.huami.com/v2/client/login` → app_token. Data via `api-mifit.huami.com/v1/data/band_data.json`.
-- **Data:** Steps, HR (continuous), sleep (stages), SpO2, stress, workouts (GPS), PAI.
+- **Internal API:** Implemented through `packages/zepp-client` and `src/providers/amazfit-zepp.ts`. The current credential flow uses Zepp US2 encrypted registration (`api-user-us2.zepp.com/v2/registrations/tokens`) followed by token exchange at `api-mifit-us2.zepp.com/v2/client/login`; older `account.huami.com` / `account.zepp.com` token exchange hosts are stale.
+- **Data:** First sync slice stores daily steps, distance, sleep sessions, and minute-level heart rate samples from `band_data.json`.
 - **Auth limitation:** Must use direct Zepp email+password account (not Xiaomi/Google SSO).
 - **Community projects:** [Mi-Fit-and-Zepp-workout-exporter](https://github.com/rolandsz/Mi-Fit-and-Zepp-workout-exporter), [huami-token](https://github.com/argrento/huami-token), [amazfit_pyclient](https://github.com/MyrikLD/amazfit_pyclient).
-- **Verdict:** FEASIBLE RE TARGET — good community docs, straightforward auth, rich data. Best candidate for a future `zepp-client` package.
+- **Verdict:** IMPLEMENTED RE PROVIDER — keep monitoring because the auth and data APIs are private and have changed before.
+
+### Peloton
+- **Implemented access:** `packages/peloton-client` automates Peloton's observed Auth0 Universal Login flow, supports authorization-code exchange with PKCE, refreshes tokens, and validates private workout and performance-graph responses. Auth0 describes Universal Login as a browser flow, so HTML automation remains an unstable boundary ([Auth0 Universal Login](https://auth0.com/docs/authenticate/login/auth0-universal-login), [RFC 7636 PKCE](https://www.rfc-editor.org/rfc/rfc7636), [package source](../packages/peloton-client/src/auth.ts)).
+- **Published package:** [`@dofek/peloton`](../packages/peloton-client/README.md) exposes authentication, token refresh, the standalone API client, Zod response schemas, and pure parsers without Dofek persistence code.
+- **Verdict:** IMPLEMENTED RE PROVIDER — high-value reusable access, with explicit private-API and automated-login stability warnings.
+
+### Xert
+- **Implemented access:** Xert documents password and refresh-token grants using its public client credentials; `packages/xert-client` adds a validated client for the observed paginated activity response ([Xert API documentation](https://www.xertonline.com/API.html), [package source](../packages/xert-client/src/client.ts)).
+- **Published package:** [`@dofek/xert`](../packages/xert-client/README.md) exposes sign-in, refresh, activity paging, Zod schemas, typed errors, and pure parsing while leaving environment loading and database sync in Dofek.
+- **Verdict:** IMPLEMENTED PROVIDER CLIENT — the grants are documented, while the activity-list representation remains an observed compatibility boundary.
 
 ---
 
@@ -138,12 +151,13 @@ Last updated: 2026-03-14
 | TrainerRoad | None | Medium (CSRF cookies) | Essential | Done |
 | VeloHero | None | Easy (SSO) | Essential | Done |
 | TrainingPeaks | Partner-only | Easy (cookie → Bearer) | High | Done |
+| Peloton | Private member API | Medium (Auth0 + PKCE) | High | Done |
+| Xert | Limited | Easy (password grant) | High | Done |
 | Fitbit | Excellent | N/A (no internal API) | None | Skip |
 | Polar | Good | Low (server-rendered) | Low | Skip |
 | Oura | Good | Unknown (undocumented) | Low | Skip |
 | Samsung Health | None (on-device only) | Very hard (no web surface) | N/A | Skip |
 | Rouvy | Partner-only | Hard (Firebase + GraphQL) | Low | Skip — use Strava/Garmin |
 | Hammerhead | None (on-device SDK only) | Fragile (SRAM migration) | Low | Skip — use Strava/Intervals |
-| Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Future candidate |
-| Peloton | Decent | Unknown | Medium | Not investigated |
+| Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Done |
 | Withings | Decent | Unknown | Medium | Not investigated |

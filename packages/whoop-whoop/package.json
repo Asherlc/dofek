@@ -1,22 +1,65 @@
 {
-  "name": "whoop-whoop",
-  "version": "0.1.0",
+  "name": "@dofek/whoop",
+  "version": "0.1.1",
   "description": "Unofficial WHOOP API client using the internal Cognito-based authentication",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/whoop-whoop"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/whoop-whoop#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "whoop",
+    "fitness",
+    "api-client",
+    "cognito",
+    "unofficial"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
-    "./client": "./src/client.ts",
-    "./sports": "./src/sports.ts",
-    "./types": "./src/types.ts",
-    "./utils": "./src/utils.ts"
+    ".": "./src/client.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest --watch",
     "build": "tsc",
-    "lint": "biome check ."
+    "prepack": "pnpm run build",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dofek/provider-http": "workspace:*",
+    "@dofek/training": "workspace:*",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
-    "vitest": "3.2.4"
+    "@types/node": "22.19.15",
+    "typescript": "6.0.3",
+    "vitest": "3.2.6"
   }
 }

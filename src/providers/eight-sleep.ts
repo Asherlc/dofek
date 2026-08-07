@@ -1,27 +1,19 @@
-import {
-  EIGHT_SLEEP_CLIENT_ID,
-  EIGHT_SLEEP_CLIENT_SECRET,
-  EightSleepClient,
-} from "eight-sleep-client/client";
+import { EightSleepClient } from "@dofek/eight-sleep/client";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
-} from "eight-sleep-client/parsing";
-import type { EightSleepTrendDay } from "eight-sleep-client/types";
-import type { SyncDatabase } from "../db/index.ts";
+} from "@dofek/eight-sleep/parsing";
+import type { EightSleepTrendDay } from "@dofek/eight-sleep/types";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { AccessTokenExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Helper: format date as YYYY-MM-DD
@@ -35,15 +27,13 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-const AUTH_API_BASE = "https://auth-api.8slp.net/v1";
-
 export class EightSleepProvider implements SyncProvider {
   readonly id = "eight-sleep";
   readonly name = "Eight Sleep";
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("eight-sleep", fetchFn);
   }
 
   validate(): string | null {
@@ -54,14 +44,6 @@ export class EightSleepProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: EIGHT_SLEEP_CLIENT_ID,
-        clientSecret: EIGHT_SLEEP_CLIENT_SECRET,
-        authorizeUrl: `${AUTH_API_BASE}/tokens`,
-        tokenUrl: `${AUTH_API_BASE}/tokens`,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await EightSleepClient.signIn(email, password, fetchFn);
         return {
@@ -71,16 +53,16 @@ export class EightSleepProvider implements SyncProvider {
           scopes: `userId:${result.userId}`,
         };
       },
-      exchangeCode: async () => {
-        throw new Error("Eight Sleep uses automated login, not OAuth code exchange");
-      },
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
+    const syncOptions = options ?? {};
 
     await ensureProvider(db, this.id, this.name);
 
@@ -95,12 +77,12 @@ export class EightSleepProvider implements SyncProvider {
       const userIdMatch = stored.scopes?.match(/userId:(\S+)/);
       const userId = userIdMatch?.[1];
       if (!userId) {
-        throw new Error("Eight Sleep user ID not found — re-authenticate");
+        throw new ProviderStoredIdentityMissingError("Eight Sleep", "user ID");
       }
 
       // Eight Sleep has no refresh tokens — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error("Eight Sleep token expired — please re-authenticate via Settings");
+        throw new AccessTokenExpiredError("Eight Sleep");
       }
       client = new EightSleepClient(stored.accessToken, userId, this.#fetchFn);
     } catch (err) {
@@ -149,6 +131,7 @@ export class EightSleepProvider implements SyncProvider {
                   remMinutes: parsed.remMinutes,
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
+                  stagingAvailable: parsed.stagingAvailable,
                   sleepType: parsed.sleepType,
                 })
                 .onConflictDoUpdate({
@@ -161,6 +144,7 @@ export class EightSleepProvider implements SyncProvider {
                     remMinutes: parsed.remMinutes,
                     lightMinutes: parsed.lightMinutes,
                     awakeMinutes: parsed.awakeMinutes,
+                    stagingAvailable: parsed.stagingAvailable,
                     sleepType: parsed.sleepType,
                   },
                 });
@@ -175,7 +159,7 @@ export class EightSleepProvider implements SyncProvider {
           }
           return { recordCount: count, result: count };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += sleepCount;
     } catch (err) {
@@ -196,14 +180,14 @@ export class EightSleepProvider implements SyncProvider {
           for (const day of trendDays) {
             const parsed = parseEightSleepDailyMetrics(day);
             // Skip if no quality data
-            if (!parsed.restingHr && !parsed.hrv && !parsed.respiratoryRateAvg) continue;
+            if (parsed.hrv == null && parsed.respiratoryRateAvg == null && parsed.skinTempC == null)
+              continue;
             try {
               await db
                 .insert(dailyMetrics)
                 .values({
                   date: parsed.date,
                   providerId: this.id,
-                  restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                   hrv: parsed.hrv,
                   respiratoryRateAvg: parsed.respiratoryRateAvg,
                   skinTempC: parsed.skinTempC,
@@ -216,7 +200,6 @@ export class EightSleepProvider implements SyncProvider {
                     dailyMetrics.sourceName,
                   ],
                   set: {
-                    restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                     hrv: parsed.hrv,
                     respiratoryRateAvg: parsed.respiratoryRateAvg,
                     skinTempC: parsed.skinTempC,
@@ -232,7 +215,7 @@ export class EightSleepProvider implements SyncProvider {
           }
           return { recordCount: count, result: count };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += dailyCount;
     } catch (err) {
@@ -242,12 +225,12 @@ export class EightSleepProvider implements SyncProvider {
       });
     }
 
-    // 3. Sync body temperature as body measurements
+    // 3. Sync temperature samples to metric stream.
     try {
       const bodyCount = await withSyncLog(
         db,
         this.id,
-        "body_measurement",
+        "metric_stream",
         async () => {
           let count = 0;
           for (const day of trendDays) {
@@ -257,22 +240,20 @@ export class EightSleepProvider implements SyncProvider {
 
             const externalId = `eightsleep-temp-${day.day}`;
             try {
-              await db
-                .insert(bodyMeasurement)
-                .values({
-                  providerId: this.id,
-                  externalId,
-                  recordedAt: new Date(day.presenceStart || `${day.day}T00:00:00Z`),
-                  temperatureC: bedTemp,
-                })
-                .onConflictDoUpdate({
-                  target: [
-                    bodyMeasurement.userId,
-                    bodyMeasurement.providerId,
-                    bodyMeasurement.externalId,
-                  ],
-                  set: { temperatureC: bedTemp },
-                });
+              await writeMetricStreamBatch(
+                db,
+                [
+                  {
+                    providerId: this.id,
+                    externalId,
+                    recordedAt: new Date(day.presenceStart || `${day.day}T00:00:00Z`),
+                    temperatureC: bedTemp,
+                  },
+                ],
+                SOURCE_TYPE_API,
+                undefined,
+                syncOptions.metricStreamPublisher,
+              );
               count++;
             } catch (err) {
               errors.push({
@@ -284,12 +265,12 @@ export class EightSleepProvider implements SyncProvider {
           }
           return { recordCount: count, result: count };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += bodyCount;
     } catch (err) {
       errors.push({
-        message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
+        message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }
@@ -308,18 +289,24 @@ export class EightSleepProvider implements SyncProvider {
             const samples = parseEightSleepHeartRateSamples(day.sessions);
             if (samples.length === 0) continue;
 
-            const metricRows = samples.map((s) => ({
+            const metricRows = samples.map((sample) => ({
               providerId: this.id,
-              recordedAt: s.recordedAt,
-              heartRate: s.heartRate,
+              recordedAt: sample.recordedAt,
+              heartRate: sample.heartRate,
             }));
-            await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+            await writeMetricStreamBatch(
+              db,
+              metricRows,
+              SOURCE_TYPE_API,
+              undefined,
+              syncOptions.metricStreamPublisher,
+            );
             totalRecords += samples.length;
           }
 
           return { recordCount: totalRecords, result: totalRecords };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += hrCount;
     } catch (err) {

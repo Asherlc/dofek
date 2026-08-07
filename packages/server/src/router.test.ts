@@ -14,15 +14,21 @@ vi.mock("./routers/inertial-measurement-unit-sync.ts", () => ({
 vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
 vi.mock("./routers/activity-recording.ts", () => ({ activityRecordingRouter: mockRouter }));
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
+vi.mock("./routers/account-erasure.ts", () => ({ accountErasureRouter: mockRouter }));
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
 vi.mock("./routers/behavior-impact.ts", () => ({ behaviorImpactRouter: mockRouter }));
 vi.mock("./routers/billing.ts", () => ({ billingRouter: mockRouter }));
+vi.mock("./routers/ble-heart-rate-sync.ts", () => ({ bleHeartRateSyncRouter: mockRouter }));
 vi.mock("./routers/breathwork.ts", () => ({ breathworkRouter: mockRouter }));
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
 vi.mock("./routers/calendar.ts", () => ({ calendarRouter: mockRouter }));
+vi.mock("./routers/climbing.ts", () => ({ climbingRouter: mockRouter }));
+vi.mock("./routers/companion-pairing.ts", () => ({ companionPairingRouter: mockRouter }));
 vi.mock("./routers/correlation.ts", () => ({ correlationRouter: mockRouter }));
 vi.mock("./routers/credential-auth.ts", () => ({ credentialAuthRouter: mockRouter }));
+vi.mock("./routers/token-auth.ts", () => ({ tokenAuthRouter: mockRouter }));
+vi.mock("./routers/cycling.ts", () => ({ cyclingRouter: mockRouter }));
 vi.mock("./routers/cycling-advanced.ts", () => ({ cyclingAdvancedRouter: mockRouter }));
 vi.mock("./routers/daily-metrics.ts", () => ({ dailyMetricsRouter: mockRouter }));
 vi.mock("./routers/duration-curves.ts", () => ({ durationCurvesRouter: mockRouter }));
@@ -39,6 +45,8 @@ vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
 vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
 vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
 vi.mock("./routers/menstrual-cycle.ts", () => ({ menstrualCycleRouter: mockRouter }));
+vi.mock("./routers/medication-dose-events.ts", () => ({ medicationDoseEventsRouter: mockRouter }));
+vi.mock("./routers/mcp.ts", () => ({ mcpRouter: mockRouter }));
 vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
 vi.mock("./routers/nutrition.ts", () => ({ nutritionRouter: mockRouter }));
 vi.mock("./routers/nutrition-analytics.ts", () => ({ nutritionAnalyticsRouter: mockRouter }));
@@ -61,9 +69,11 @@ vi.mock("./routers/sync.ts", () => ({ syncRouter: mockRouter }));
 vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
 vi.mock("./routers/weekly-report.ts", () => ({ weeklyReportRouter: mockRouter }));
+vi.mock("./routers/watch-altitude-sync.ts", () => ({ watchAltitudeSyncRouter: mockRouter }));
 vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
 vi.mock("./routers/whoop-ble-sync.ts", () => ({ whoopBleSyncRouter: mockRouter }));
 vi.mock("./routers/admin.ts", () => ({ adminRouter: mockRouter }));
+vi.mock("./routers/support.ts", () => ({ supportRouter: mockRouter }));
 
 // Mock trpc
 vi.mock("./trpc.ts", async () => {
@@ -81,13 +91,21 @@ vi.mock("./trpc.ts", async () => {
 });
 
 import type { AppRouter } from "./router.ts";
-import { appRouter } from "./router.ts";
+import { appRouter, createAppRouter } from "./router.ts";
+import { syncRouter } from "./routers/sync.ts";
 
 describe("appRouter", () => {
   it("is defined and exports AppRouter type", () => {
     expect(appRouter).toBeDefined();
     // Verify the router has _def with router metadata
     expect(appRouter._def).toBeDefined();
+  });
+
+  it("assembles the supplied sync router with the other application routers", () => {
+    const assembledRouter = createAppRouter(syncRouter);
+
+    expect(assembledRouter._def.record.sync).toEqual(syncRouter);
+    expect(assembledRouter._def.record).toHaveProperty("activity");
   });
 
   it("contains all expected sub-routers", () => {
@@ -104,15 +122,20 @@ describe("appRouter", () => {
   it("includes all sub-routers in the definition", () => {
     const expectedRouters = [
       "admin",
-      "inertialMeasurementUnit",
       "inertialMeasurementUnitSync",
+      "watchAltitudeSync",
       "activity",
       "activityRecording",
       "anomalyDetection",
+      "accountErasure",
       "auth",
       "behaviorImpact",
       "billing",
+      "bleHeartRateSync",
       "breathwork",
+      "companionPairing",
+      "companionToken",
+      "personalExperiments",
       "sleep",
       "sleepNeed",
       "dailyMetrics",
@@ -125,17 +148,21 @@ describe("appRouter", () => {
       "lifeEvents",
       "supplements",
       "providerDetail",
+      "processing",
       "providerGuide",
       "sync",
       "training",
       "trends",
       "calendar",
+      "climbing",
       "correlation",
       "credentialAuth",
+      "tokenAuth",
       "pmc",
       "power",
       "durationCurves",
       "efficiency",
+      "fileUpload",
       "food",
       "garminAuth",
       "heartRate",
@@ -145,19 +172,26 @@ describe("appRouter", () => {
       "whoopBleSync",
       "strength",
       "cyclingAdvanced",
+      "cycling",
       "hiking",
       "predictions",
       "recovery",
       "running",
       "settings",
       "stress",
+      "todayPlan",
       "healthspan",
       "menstrualCycle",
+      "medicationDoseEvents",
+      "mcp",
+      "mobileDashboard",
       "monthlyReport",
       "weeklyReport",
       "sportSettings",
       "intervals",
       "journal",
+      "support",
+      "subjective",
     ];
 
     // The router definition record should have entries for each sub-router
@@ -165,5 +199,6 @@ describe("appRouter", () => {
     for (const key of expectedRouters) {
       expect(record).toHaveProperty(key);
     }
+    expect(Object.keys(record)).toHaveLength(expectedRouters.length);
   });
 });

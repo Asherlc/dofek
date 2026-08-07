@@ -9,6 +9,7 @@ vi.mock("../trpc.ts", async () => {
       userId: string | null;
       timezone?: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
   return {
@@ -18,6 +19,168 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
+  return rows.length > 0 && Array.isArray(rows[0]);
+}
+
+function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
+  const queryMock = isMatrix(rows)
+    ? (() => {
+        const fn = vi.fn();
+        for (const batch of rows) {
+          fn.mockResolvedValueOnce(batch);
+        }
+        fn.mockResolvedValue([]);
+        return fn;
+      })()
+    : vi.fn().mockResolvedValue(rows);
+  return {
+    query: queryMock,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
+
+type SleepNightTestRow = {
+  date: string;
+  provider_id: string;
+  source_name?: string | null;
+  source_providers?: string[];
+  selected_session_id?: string | null;
+  overlapping_sessions?: {
+    session_id: string;
+    provider_id: string;
+    source_name: string | null;
+    source_providers: string[];
+    timezone: string | null;
+    start_utc_offset_minutes: number | null;
+    end_utc_offset_minutes: number | null;
+    local_time_source: SleepNightTestRow["local_time_source"];
+    started_at: string;
+    ended_at: string | null;
+    duration_minutes: number | null;
+  }[];
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source:
+    | "provider_timezone"
+    | "provider_offset"
+    | "device_timezone"
+    | "device_offset"
+    | "unknown";
+  started_at: string;
+  ended_at: string | null;
+  duration_minutes: number | null;
+  deep_minutes: number | null;
+  rem_minutes: number | null;
+  light_minutes: number | null;
+  awake_minutes: number | null;
+  efficiency_pct: number | null;
+  staging_available: boolean;
+};
+
+function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTestRow {
+  const date = overrides.date ?? "2026-03-01";
+  return {
+    date,
+    provider_id: "apple_health",
+    source_name: null,
+    source_providers: [],
+    selected_session_id: null,
+    overlapping_sessions: [],
+    timezone: null,
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "device_offset",
+    started_at: `${date}T22:00:00Z`,
+    ended_at: `${addDays(date, 1)}T06:00:00Z`,
+    duration_minutes: 480,
+    deep_minutes: 90,
+    rem_minutes: 105,
+    light_minutes: 255,
+    awake_minutes: 30,
+    efficiency_pct: 93.75,
+    staging_available: true,
+    ...overrides,
+  };
+}
+
+function sleepScheduleRow(
+  date: string,
+  bedtimeHour: number,
+  waketimeHour: number,
+): SleepNightTestRow {
+  return sleepNightRow({
+    date,
+    started_at: `${date}T${hourString(bedtimeHour)}Z`,
+    ended_at: `${addDays(date, 1)}T${hourString(waketimeHour)}Z`,
+  });
+}
+
+function sleepAnalyticsRow({
+  date,
+  durationMinutes,
+  deepPct,
+  remPct,
+  lightPct,
+  awakePct,
+  efficiency,
+}: {
+  date: string;
+  durationMinutes: number;
+  deepPct: number;
+  remPct: number;
+  lightPct: number;
+  awakePct: number;
+  efficiency: number;
+}): SleepNightTestRow {
+  return sleepNightRow({
+    date,
+    duration_minutes: durationMinutes,
+    deep_minutes: Math.round(durationMinutes * deepPct) / 100,
+    rem_minutes: Math.round(durationMinutes * remPct) / 100,
+    light_minutes: Math.round(durationMinutes * lightPct) / 100,
+    awake_minutes: Math.round(durationMinutes * awakePct) / 100,
+    efficiency_pct: efficiency,
+  });
+}
+
+function sleepDebtRow(date: string, sleepMinutes: number, durationMinutes = sleepMinutes) {
+  return sleepNightRow({
+    date,
+    duration_minutes: durationMinutes,
+    deep_minutes: 0,
+    rem_minutes: 0,
+    light_minutes: sleepMinutes,
+    awake_minutes: Math.max(0, durationMinutes - sleepMinutes),
+    efficiency_pct: durationMinutes > 0 ? (sleepMinutes / durationMinutes) * 100 : null,
+  });
+}
+
+function hourString(hourValue: number): string {
+  const hour = Math.floor(hourValue);
+  const totalSeconds = Math.round((hourValue - hour) * 3600);
+  const minute = Math.floor(totalSeconds / 60);
+  const second = totalSeconds % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -44,30 +207,31 @@ const createCaller = createTestCallerFactory(recoveryRouter);
 // ── sleepConsistency ────────────────────────────────────────────
 
 describe("recoveryRouter.sleepConsistency", () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-01"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
   it("returns empty array when no data", async () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.sleepConsistency({});
     expect(result).toEqual([]);
   });
 
-  it("maps SQL rows to SleepConsistencyRow format with rounding", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22.567,
-        waketime_hour: 6.789,
-        rolling_bedtime_stddev: 0.4567,
-        rolling_waketime_stddev: 0.3456,
-        window_count: 14,
-      },
-    ];
+  it("maps ClickHouse sleep rows to SleepConsistencyRow format with rounding", async () => {
+    const rows = [sleepScheduleRow("2026-03-01", 22.567, 6.789)];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
@@ -75,123 +239,103 @@ describe("recoveryRouter.sleepConsistency", () => {
     expect(result[0]?.date).toBe("2026-03-01");
     // bedtimeHour rounds to 2 decimal places: 22.567 -> 22.57
     expect(result[0]?.bedtimeHour).toBe(22.57);
-    // waketimeHour rounds to 2 decimal places: 6.789 -> 6.79
-    expect(result[0]?.waketimeHour).toBe(6.79);
-    // rollingBedtimeStddev rounds to 2 decimal places: 0.4567 -> 0.46
-    expect(result[0]?.rollingBedtimeStddev).toBe(0.46);
-    // rollingWaketimeStddev rounds to 2 decimal places: 0.3456 -> 0.35
-    expect(result[0]?.rollingWaketimeStddev).toBeCloseTo(0.35, 2);
+    expect(result[0]?.waketimeHour).toBe(6.78);
+    expect(result[0]?.rollingBedtimeStddev).toBe(0);
+    expect(result[0]?.rollingWaketimeStddev).toBe(0);
   });
 
-  it("sets consistencyScore to null when window_count < 7", async () => {
+  it("omits schedule rows when the record local time is unknown", async () => {
     const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 6, // fewer than 7
-      },
+      sleepNightRow({
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+      }),
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(rows),
     });
-    const result = await caller.sleepConsistency({});
 
-    expect(result[0]?.consistencyScore).toBeNull();
+    await expect(caller.sleepConsistency({})).resolves.toEqual([]);
   });
 
-  it("computes consistencyScore when window_count >= 7", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+  it("sets consistencyScore to null when fewer than 7 nights are available", async () => {
+    const rows = Array.from({ length: 6 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
-    // avgStddev = (0.5 + 0.5) / 2 = 0.5
-    // score = max(0, min(100, (1 - (0.5 - 0.5) / 1.0) * 100)) = max(0, min(100, 100)) = 100
-    expect(result[0]?.consistencyScore).toBe(100);
+    expect(result.at(-1)?.consistencyScore).toBeNull();
+  });
+
+  it("computes consistencyScore when at least 7 nights are available", async () => {
+    const rows = Array.from({ length: 7 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepConsistency({});
+
+    expect(result.at(-1)?.consistencyScore).toBe(100);
   });
 
   it("handles null stddev values", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: null,
-        rolling_waketime_stddev: null,
-        window_count: 14,
-      },
-    ];
+    const rows = [sleepNightRow({ date: "2026-03-01", ended_at: null })];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
-    expect(result[0]?.rollingBedtimeStddev).toBeNull();
-    expect(result[0]?.rollingWaketimeStddev).toBeNull();
-    // computeSleepConsistencyScore returns null when either stddev is null
-    expect(result[0]?.consistencyScore).toBeNull();
+    expect(result).toEqual([]);
   });
 
   it("uses default days of 90", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
-      db: { execute: executeMock },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore,
     });
     await caller.sleepConsistency({});
-    expect(executeMock).toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalled();
   });
 
   it("processes multiple rows correctly", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.3,
-        rolling_waketime_stddev: 0.3,
-        window_count: 14,
-      },
-      {
-        date: "2026-03-02",
-        bedtime_hour: 23.5,
-        waketime_hour: 7.5,
-        rolling_bedtime_stddev: 0.8,
-        rolling_waketime_stddev: 0.9,
-        window_count: 14,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7), sleepScheduleRow("2026-03-02", 23.5, 7.5)];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
     expect(result).toHaveLength(2);
     expect(result[0]?.date).toBe("2026-03-01");
     expect(result[1]?.date).toBe("2026-03-02");
-    // First row should have higher consistency (lower stddev)
-    expect(result[0]?.consistencyScore).toBeGreaterThan(result[1]?.consistencyScore ?? 0);
+    expect(result[0]?.consistencyScore).toBeNull();
+    expect(result[1]?.consistencyScore).toBeNull();
   });
 });
 
@@ -202,6 +346,7 @@ describe("recoveryRouter.hrvVariability", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
     expect(result).toEqual([]);
@@ -220,6 +365,7 @@ describe("recoveryRouter.hrvVariability", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
 
@@ -246,6 +392,7 @@ describe("recoveryRouter.hrvVariability", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
 
@@ -265,6 +412,7 @@ describe("recoveryRouter.hrvVariability", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
 
@@ -277,25 +425,99 @@ describe("recoveryRouter.hrvVariability", () => {
     const caller = createCaller({
       db: { execute: executeMock },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     await caller.hrvVariability({});
     expect(executeMock).toHaveBeenCalled();
+  });
+
+  it("anchors the HRV window to the supplied endDate", async () => {
+    const executeMock = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+      sensorStore: makeSensorStore([]),
+    });
+
+    await caller.hrvVariability({ days: 30, endDate: "2026-03-15" });
+
+    const sqlText = JSON.stringify(executeMock.mock.calls[0]?.[0]);
+    expect(sqlText).toContain("2026-03-15");
+    expect(sqlText).not.toContain("CURRENT_DATE");
   });
 });
 
 // ── workloadRatio ───────────────────────────────────────────────
 
 describe("recoveryRouter.workloadRatio", () => {
-  it("returns empty timeSeries and zero strain when no data", async () => {
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
+  function callerWith(rows: unknown[]) {
+    return createCaller({
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+  }
+
+  it("returns empty timeSeries and zero strain when no data", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore,
     });
     const result = await caller.workloadRatio({});
 
     expect(result.timeSeries).toEqual([]);
     expect(result.displayedStrain).toBe(0);
     expect(result.displayedDate).toBeNull();
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
+    expect(queryText).toContain("toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))");
+    expect(queryText).not.toContain("analytics.activity_summary");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
+  });
+
+  it("passes the user timezone when reading strain read-model dates", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ endDate: "2026-03-15" });
+
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+      timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("passes limited access windows to workload ratio strain queries", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-20",
+      },
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ endDate: "2026-03-28" });
+
+    const queryText = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).toContain("strain.date >= toDate({accessStartDate:String})");
+    expect(queryText).toContain("strain.date < toDate({accessEndDateExclusive:String})");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-03-10",
+      accessEndDateExclusive: "2026-03-20",
+    });
   });
 
   it("maps SQL rows to WorkloadRatioRow format with rounding", async () => {
@@ -310,21 +532,18 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
     expect(result.timeSeries).toHaveLength(1);
     const row = result.timeSeries[0];
     expect(row?.date).toBe("2026-03-01");
-    // dailyLoad rounds to 1 decimal: 125.678 -> 125.7
     expect(row?.dailyLoad).toBe(125.7);
-    // acuteLoad rounds to 1 decimal: 500.345 -> 500.3
     expect(row?.acuteLoad).toBeCloseTo(500.3, 1);
-    // chronicLoad rounds to 1 decimal: 400.123 -> 400.1
     expect(row?.chronicLoad).toBe(400.1);
-    // workloadRatio rounds to 2 decimal: 1.25
     expect(row?.workloadRatio).toBe(1.25);
   });
 
@@ -340,15 +559,16 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
     expect(result.timeSeries[0]?.workloadRatio).toBeNull();
   });
 
-  it("computes strain from dailyLoad using StrainScore.fromRawLoad", async () => {
+  it("computes zero strain from zero acute load", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -360,16 +580,16 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
-    // dailyLoad = 0 -> StrainScore.fromRawLoad(0).value = 0
     expect(result.timeSeries[0]?.strain).toBe(0);
   });
 
-  it("computes non-zero strain for positive dailyLoad", async () => {
+  it("computes non-zero strain for positive acute load", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -381,25 +601,44 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
     expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
   });
 
-  it("uses default days of 90", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
-    await caller.workloadRatio({});
-    expect(executeMock).toHaveBeenCalled();
+  it("derives daily strain from the day's load instead of rolling acute load", async () => {
+    const rows = [
+      {
+        date: "2026-03-23",
+        daily_load: 0,
+        acute_load: 500,
+        chronic_load: 400,
+        workload_ratio: 1.25,
+      },
+    ];
+
+    const result = await callerWith(rows).workloadRatio({});
+
+    expect(result.timeSeries[0]?.strain).toBe(0);
+    expect(result.displayedStrain).toBe(0);
   });
 
-  it("displayedStrain and displayedDate always reflect the latest row", async () => {
+  it("uses default days of 90", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore,
+    });
+    await caller.workloadRatio({});
+    expect(sensorStore.query).toHaveBeenCalled();
+  });
+
+  it("displayedStrain and displayedDate reflect latest daily strain", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -418,13 +657,12 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
-    // selectRecentDailyLoad always returns the latest row (today's actual state)
-    // even when daily load is 0 (rest day / no sync yet)
     expect(result.displayedDate).toBe("2026-03-02");
     expect(result.displayedStrain).toBe(0);
   });
@@ -433,35 +671,385 @@ describe("recoveryRouter.workloadRatio", () => {
 // ── sleepAnalytics ──────────────────────────────────────────────
 
 describe("recoveryRouter.sleepAnalytics", () => {
-  it("returns empty nightly and zero sleep debt when no data", async () => {
+  it("returns unavailable summary metrics when no sleep data exists", async () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.sleepAnalytics({});
 
     expect(result.nightly).toEqual([]);
-    expect(result.sleepDebt).toBe(0);
+    expect(result.sleepDebt).toBeNull();
+    expect(result.averageSleepMinutes).toBeNull();
+    expect(result.averageEfficiencyPercent).toBeNull();
   });
 
-  it("maps SQL rows to SleepNightlyRow format with rounding", async () => {
+  it("preserves missing sleep values while keeping measured zeroes available", async () => {
     const rows = [
-      {
+      sleepNightRow({
         date: "2026-03-01",
+        duration_minutes: null,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "whoop",
+        duration_minutes: 0,
+        deep_minutes: 0,
+        rem_minutes: 0,
+        light_minutes: 0,
+        awake_minutes: 0,
+        efficiency_pct: 0,
+        staging_available: true,
+      }),
+      sleepNightRow({
+        date: "2026-03-03",
         duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 18.567,
-        rem_pct: 22.345,
-        light_pct: 50.123,
-        awake_pct: 8.965,
-        efficiency: 93.456,
-        rolling_avg_duration: 455.789,
-      },
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: true,
+      }),
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: null,
+      sleepMinutes: null,
+      rollingAvgDuration: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+    expect(result.nightly[1]).toMatchObject({
+      durationMinutes: 0,
+      sleepMinutes: 0,
+      rollingAvgDuration: 0,
+      durationState: { status: "available" },
+      sleepState: { status: "available" },
+      stageState: { status: "available" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.nightly[2]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      durationState: { status: "available" },
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.averageSleepMinutes).toBe(0);
+    expect(result.averageEfficiencyPercent).toBe(0);
+    expect(result.sleepDebt).toBe(480);
+  });
+
+  it.each([
+    "deep_minutes",
+    "rem_minutes",
+    "light_minutes",
+    "awake_minutes",
+  ] as const)("withholds every stage percentage when %s is missing", async (missingStage) => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          [missingStage]: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+  });
+
+  it("withholds stage percentages when staging is unavailable despite complete stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          staging_available: false,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("derives Apple Health sleep minutes from complete stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: 90,
+          rem_minutes: 105,
+          light_minutes: 255,
+          awake_minutes: 30,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: 450,
+      deepPct: 18.8,
+      remPct: 21.9,
+      lightPct: 53.1,
+      awakePct: 6.3,
+      durationState: { status: "available" },
+      sleepState: { status: "available" },
+      stageState: { status: "available" },
+    });
+  });
+
+  it("preserves recorded duration for a non-Apple provider when staging is unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          provider_id: "whoop",
+          staging_available: false,
+          deep_minutes: 30,
+          rem_minutes: 30,
+          light_minutes: 120,
+          awake_minutes: 120,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]?.durationMinutes).toBe(480);
+    expect(result.nightly[0]?.sleepMinutes).toBe(480);
+  });
+
+  it("keeps Apple Health sleep unavailable when staging is unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          provider_id: "apple_health",
+          staging_available: false,
+          deep_minutes: 30,
+          rem_minutes: 30,
+          light_minutes: 120,
+          awake_minutes: 120,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      durationState: { status: "available" },
+      sleepMinutes: null,
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("keeps Apple Health sleep unavailable when staging reports no stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: null,
+          rem_minutes: null,
+          light_minutes: null,
+          awake_minutes: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      durationState: { status: "available" },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+  });
+
+  it.each([
+    ["deep_minutes", 90],
+    ["rem_minutes", 105],
+    ["light_minutes", 255],
+    ["awake_minutes", 30],
+  ] as const)("keeps Apple Health sleep unavailable when only %s is reported", async (presentStage, stageMinutes) => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: null,
+          rem_minutes: null,
+          light_minutes: null,
+          awake_minutes: null,
+          [presentStage]: stageMinutes,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("keeps missing duration null when Apple Health stages provide sleep minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          duration_minutes: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: null,
+      sleepMinutes: 450,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: { status: "available" },
+    });
+  });
+
+  it("filters unavailable nights out of average sleep and debt calculations", async () => {
+    const rows = [
+      sleepNightRow({
+        date: "2026-03-01",
+        provider_id: "whoop",
+        duration_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "whoop",
+        duration_minutes: 0,
+      }),
+      sleepNightRow({
+        date: "2026-03-03",
+        provider_id: "whoop",
+        duration_minutes: 300,
+      }),
+      sleepNightRow({
+        date: "2026-03-04",
+        provider_id: "whoop",
+        duration_minutes: 480,
+      }),
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    // The null night is excluded; the measured values are 0, 300, and 480.
+    expect(result.averageSleepMinutes).toBe(260);
+    expect(result.sleepDebt).toBe(660);
+  });
+
+  it("maps ClickHouse rows to SleepNightlyRow format with rounding", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 480,
+        deepPct: 18.567,
+        remPct: 22.345,
+        lightPct: 50.123,
+        awakePct: 8.965,
+        efficiency: 93.456,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -469,7 +1057,13 @@ describe("recoveryRouter.sleepAnalytics", () => {
     const night = result.nightly[0];
     expect(night?.date).toBe("2026-03-01");
     expect(night?.durationMinutes).toBe(480);
-    expect(night?.sleepMinutes).toBe(450);
+    expect(night?.sleepMinutes).toBeCloseTo(436.97, 1);
+    expect(night?.localTimeContext).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 0,
+      endUtcOffsetMinutes: 0,
+      source: "device_offset",
+    });
     // deepPct rounds to 1 decimal: 18.567 -> 18.6
     expect(night?.deepPct).toBe(18.6);
     // remPct rounds to 1 decimal: 22.345 -> 22.3
@@ -480,52 +1074,169 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.awakePct).toBe(9);
     // efficiency rounds to 1 decimal: 93.456 -> 93.5
     expect(night?.efficiency).toBeCloseTo(93.5, 1);
-    // rollingAvgDuration rounds to 1 decimal: 455.789 -> 455.8
-    expect(night?.rollingAvgDuration).toBe(455.8);
+    expect(night?.rollingAvgDuration).toBeCloseTo(437, 1);
+    expect(result.averageSleepMinutes).toBeCloseTo(437, 1);
+    expect(result.averageEfficiencyPercent).toBe(93.5);
   });
 
-  it("handles null rolling_avg_duration", async () => {
+  it("maps the server-owned nightly selection and overlap evidence", async () => {
+    const selectedSessionId = "00000000-0000-4000-8000-000000001774";
+    const overlappingSessionId = "00000000-0000-4000-8000-000000001775";
     const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 25,
-        light_pct: 45,
-        awake_pct: 10,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
+      sleepNightRow({
+        provider_id: "whoop",
+        source_name: "WHOOP 4.0",
+        source_providers: ["apple_health", "whoop"],
+        selected_session_id: selectedSessionId,
+        overlapping_sessions: [
+          {
+            session_id: overlappingSessionId,
+            provider_id: "oura",
+            source_name: "Oura Ring",
+            source_providers: ["oura"],
+            timezone: "America/Los_Angeles",
+            start_utc_offset_minutes: -420,
+            end_utc_offset_minutes: -420,
+            local_time_source: "provider_timezone",
+            started_at: "2026-03-01T23:30:00Z",
+            ended_at: "2026-03-02T05:00:00Z",
+            duration_minutes: 330,
+          },
+        ],
+      }),
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
-    expect(result.nightly[0]?.rollingAvgDuration).toBeNull();
+    expect(result.nightly[0]).toMatchObject({
+      providerId: "whoop",
+      sourceName: "WHOOP 4.0",
+      sourceProviders: ["apple_health", "whoop"],
+      selectedSessionId,
+      overlappingSessions: [
+        {
+          sessionId: overlappingSessionId,
+          providerId: "oura",
+          sourceName: "Oura Ring",
+          sourceProviders: ["oura"],
+          localTimeContext: {
+            timezone: "America/Los_Angeles",
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_timezone",
+          },
+          startedAt: "2026-03-01T23:30:00.000Z",
+          endedAt: "2026-03-02T05:00:00.000Z",
+          durationMinutes: 330,
+        },
+      ],
+    });
+  });
+
+  it("computes rolling average duration from available sleep rows", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 450, 480)];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]?.rollingAvgDuration).toBe(450);
+  });
+
+  it("computes summary averages across multiple sleep nights", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 400,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 80,
+      }),
+      sleepAnalyticsRow({
+        date: "2026-03-02",
+        durationMinutes: 500,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 90,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.averageSleepMinutes).toBe(405);
+    expect(result.averageEfficiencyPercent).toBe(85);
+  });
+
+  it("excludes an incomplete provider row from stage and efficiency averages", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 90,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "apple_health",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.averageEfficiencyPercent).toBe(90);
+    expect(result.nightly[1]).toMatchObject({
+      stagingAvailable: false,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      efficiency: null,
+    });
   });
 
   it("computes positive sleep debt when sleep is below target", async () => {
     // Default sleep target is 480 min (8 hours)
     // 14 nights all at 420 min = 60 min deficit each = 60 * 14 = 840 total debt
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 420,
-      sleep_minutes: 420,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 87.5,
-      rolling_avg_duration: 420,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 420),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -535,21 +1246,14 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
   it("computes zero sleep debt when sleep meets or exceeds target", async () => {
     // Default sleep target is 480 min
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 500,
-      sleep_minutes: 500,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 90,
-      rolling_avg_duration: 500,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 500),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -561,33 +1265,18 @@ describe("recoveryRouter.sleepAnalytics", () => {
   it("sleep debt uses last 14 nights only", async () => {
     // 20 nights: first 6 at 300 min (large debt), last 14 at 480 min (no debt)
     const rows = [
-      ...Array.from({ length: 6 }, (_, i) => ({
-        date: `2026-02-${String(i + 20).padStart(2, "0")}`,
-        duration_minutes: 300,
-        sleep_minutes: 300,
-        deep_pct: 20,
-        rem_pct: 25,
-        light_pct: 45,
-        awake_pct: 10,
-        efficiency: 85,
-        rolling_avg_duration: 300,
-      })),
-      ...Array.from({ length: 14 }, (_, i) => ({
-        date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-        duration_minutes: 480,
-        sleep_minutes: 480,
-        deep_pct: 20,
-        rem_pct: 25,
-        light_pct: 45,
-        awake_pct: 10,
-        efficiency: 90,
-        rolling_avg_duration: 480,
-      })),
+      ...Array.from({ length: 6 }, (_, index) =>
+        sleepDebtRow(`2026-02-${String(index + 20).padStart(2, "0")}`, 300),
+      ),
+      ...Array.from({ length: 14 }, (_, index) =>
+        sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 480),
+      ),
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -596,13 +1285,14 @@ describe("recoveryRouter.sleepAnalytics", () => {
   });
 
   it("uses default days of 90", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
-      db: { execute: executeMock },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore,
     });
     await caller.sleepAnalytics({});
-    expect(executeMock).toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalled();
   });
 });
 
@@ -610,12 +1300,29 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
 describe("recoveryRouter.readinessScore", () => {
   it("returns empty array when no data", async () => {
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore,
     });
     const result = await caller.readinessScore({});
     expect(result).toEqual([]);
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
+    expect(queryText).toContain("recovery_inputs.is_deleted = 0");
+    expect(queryText).toContain("hrv_z_score");
+    expect(queryText).toContain("resting_hr_z_score");
+    expect(queryText).toContain("respiratory_rate_z_score");
+    expect(queryText).not.toContain("hrv_mean_30d");
+    expect(queryText).not.toContain("fitness.v_daily_metrics");
+    expect(queryText).not.toContain("analytics.v_sleep");
+    expect(queryText).not.toContain("accessStartDate");
+    expect(queryText).not.toContain("accessEndDateExclusive");
+    expect(queryParams).not.toHaveProperty("accessStartDate");
+    expect(queryParams).not.toHaveProperty("accessEndDateExclusive");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("computes readiness score from HRV, RHR, sleep efficiency, and respiratory rate", async () => {
@@ -631,26 +1338,24 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0.5,
+        resting_hr_z_score: -0.4,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 92,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe(dateStr);
-    // HRV: z=(55-50)/10=0.5 → 72, RHR: z=(58-60)/5=-0.4 inverted=0.4 → 70
-    // RR: z=(15-15)/1=0 inverted=0 → 62, Sleep: 92
+    // HRV z=0.5 → 72, RHR z=-0.4 inverted=0.4 → 70
+    // RR z=0 inverted=0 → 62, Sleep: 92
     // Weighted: 72*0.5 + 70*0.2 + 92*0.15 + 62*0.15 = 73.1 → 73
     expect(result[0]?.components.hrvScore).toBe(72);
     expect(result[0]?.components.restingHrScore).toBe(70);
@@ -676,12 +1381,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
       {
@@ -689,19 +1391,17 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 14,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 90,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -710,7 +1410,42 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.date).toBe(recentDateStr);
   });
 
-  it("defaults to 62 for HRV score when hrv_sd_30d is 0", async () => {
+  it("filters out dates after the requested end date", async () => {
+    const rows = [
+      {
+        date: "2026-05-21",
+        hrv: 55,
+        resting_hr: 58,
+        respiratory_rate: 15,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-05-22",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
+        efficiency_pct: null,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.readinessScore({ days: 30, endDate: "2026-05-21" });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.date).toBe("2026-05-21");
+  });
+
+  it("defaults to 62 for HRV score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -722,26 +1457,24 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 0, // zero stddev -> skip z-score, use default 62
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.hrvScore).toBe(62);
   });
 
-  it("defaults to 62 for RHR score when rhr_sd_30d is 0", async () => {
+  it("defaults to 62 for RHR score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -753,26 +1486,24 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 0, // zero stddev -> skip z-score, use default 62
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.restingHrScore).toBe(62);
   });
 
-  it("defaults to 62 for respiratory rate score when rr_sd_30d is 0", async () => {
+  it("defaults to 62 for respiratory rate score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -784,19 +1515,17 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 0, // zero stddev
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -815,19 +1544,17 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -851,19 +1578,17 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 120, // above 100
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -883,26 +1608,24 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: -10, // below 0
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.sleepScore).toBe(0);
   });
 
-  it("defaults to 62 for HRV score when only hrv is null (mean/sd present)", async () => {
+  it("defaults to 62 for HRV score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -914,28 +1637,26 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null, // null hrv but valid stats
         resting_hr: 45, // very low → high score when inverted
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: -3,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.hrvScore).toBe(62);
-    // RHR should compute: z=(45-60)/5=-3, inverted=+3 → high score
+    // RHR z=-3 is inverted to +3, producing a high score.
     expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
   });
 
-  it("defaults to 62 for HRV score when only hrv_mean_30d is null", async () => {
+  it("uses the canonical null HRV z-score even when the raw value is present", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -947,26 +1668,24 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: null, // null mean
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.hrvScore).toBe(62);
   });
 
-  it("defaults to 62 for RHR score when only resting_hr is null", async () => {
+  it("defaults to 62 for RHR score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -978,28 +1697,26 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 80, // far above mean → high HRV score
         resting_hr: null, // null resting HR
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 3,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.restingHrScore).toBe(62);
-    // HRV: z=(80-50)/10=+3 → high score
+    // HRV z=+3 produces a high score.
     expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
   });
 
-  it("defaults to 62 for RHR score when only rhr_mean_30d is null", async () => {
+  it("uses the canonical null RHR z-score even when the raw value is present", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1011,19 +1728,17 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: null, // null mean
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1042,19 +1757,17 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 80, // far above mean → high score
         resting_hr: 45, // far below mean → high score (inverted)
         respiratory_rate: null, // null respiratory rate
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 3,
+        resting_hr_z_score: -3,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1076,23 +1789,21 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 70, // significantly above mean of 50
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 2,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
-    // z = (70-50)/10 = +2, zScoreToRecoveryScore(2) = 92
+    // Canonical z=+2 maps to 92.
     expect(result[0]?.components.hrvScore).toBe(92);
   });
 
@@ -1108,141 +1819,297 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 50,
         resting_hr: 50, // below mean of 60 = good
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: -2,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
-    // z_rhr = (50-60)/5 = -2, inverted: -(-2) = +2, should map to ~93
+    // Canonical RHR z=-2 is inverted to +2.
     expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
   });
 
   it("uses default days of 30", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
-      db: { execute: executeMock },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore,
     });
     await caller.readinessScore({});
-    expect(executeMock).toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalled();
   });
 });
 
 // ── strainTarget ────────────────────────────────────────────────
 
 describe("recoveryRouter.strainTarget", () => {
-  it("returns default values when no metric rows exist", async () => {
-    const executeMock = vi.fn();
-    // First call: readinessRows (empty)
-    executeMock.mockResolvedValueOnce([]);
-    // Second call: loads
-    executeMock.mockResolvedValueOnce([]);
+  const defaultReadinessRows = [
+    {
+      date: "2026-03-22",
+      hrv_score: 62,
+      resting_hr_score: 62,
+      sleep_score: 62,
+      respiratory_rate_score: 62,
+    },
+  ];
 
+  // Sets up a strainTarget caller with recovery and strain read-model rows.
+  function setup({
+    readinessRows = defaultReadinessRows,
+    sleepRows,
+    loads = [],
+  }: {
+    readinessRows?: unknown[];
+    sleepRows?: Partial<SleepNightTestRow>[];
+    loads?: unknown[];
+  }) {
+    const executeMock = vi.fn();
+    executeMock.mockResolvedValueOnce(readinessRows);
+    const sensorRows = [readinessRows, loads, (sleepRows ?? []).map((row) => sleepNightRow(row))];
+    return createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+      sensorStore: makeSensorStore(sensorRows),
+    });
+  }
+
+  it("returns null when no recovery summary exists", async () => {
+    const caller = setup({ readinessRows: [] });
+    const result = await caller.strainTarget({});
+
+    expect(result).toBeNull();
+  });
+
+  it("reads daily loads from the compact activity load read model", async () => {
+    const executeMock = vi.fn().mockResolvedValueOnce([]);
+    const sensorStore = makeSensorStore([[], []]);
     const caller = createCaller({
       db: { execute: executeMock },
       userId: "user-1",
+      sensorStore,
     });
-    const result = await caller.strainTarget({});
 
-    // With no metrics, readinessScore defaults to 50 (Maintain zone)
-    expect(result.zone).toBe("Maintain");
-    expect(result.targetStrain).toBeGreaterThanOrEqual(10);
-    expect(result.targetStrain).toBeLessThanOrEqual(14);
-    expect(result.currentStrain).toBe(0);
-    expect(result.progressPercent).toBe(0);
-    expect(result.explanation).toBeTruthy();
+    await caller.strainTarget({ endDate: "2026-03-28" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+    expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
+    expect(queryText).toContain("toString(strain.date) AS date");
+    expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
+    expect(queryText).not.toContain("analytics.activity_summary");
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[3]).toEqual({ priority: "dashboard" });
   });
 
-  it("computes readiness from daily metrics and returns strain target", async () => {
-    const executeMock = vi.fn();
-    // First call: readinessRows
-    executeMock.mockResolvedValueOnce([
+  it("reads readiness from the daily recovery summary without Postgres metric assembly", async () => {
+    const executeMock = vi.fn().mockResolvedValueOnce([
       {
-        date: "2026-03-22",
+        date: "2026-03-28",
         resting_hr: 55,
         hrv: 60,
         spo2_avg: 98,
         respiratory_rate_avg: 14,
       },
     ]);
-    // Second call: loads
-    executeMock.mockResolvedValueOnce([]);
-    // Third call: sleep efficiency (from strainTarget inner query)
-    executeMock.mockResolvedValueOnce([{ efficiency_pct: 90 }]);
-
+    const queryMock = vi.fn(async (_schema: unknown, queryText: unknown) => {
+      const querySql = String(queryText);
+      if (querySql.includes("analytics.daily_recovery")) {
+        return [
+          {
+            date: "2026-03-28",
+            hrv_score: 82,
+            resting_hr_score: 74,
+            sleep_score: 88,
+            respiratory_rate_score: 80,
+          },
+        ];
+      }
+      if (querySql.includes("analytics.daily_strain")) {
+        return [{ date: "2026-03-28", daily_load: 50 }];
+      }
+      return [];
+    });
+    const sensorStore: SensorStore = {
+      query: queryMock,
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+    };
     const caller = createCaller({
       db: { execute: executeMock },
       userId: "user-1",
+      sensorStore,
+    });
+
+    await caller.strainTarget({ endDate: "2026-03-28" });
+
+    const recoveryQueryCall = queryMock.mock.calls.find((call) =>
+      String(call[1]).includes("analytics.daily_recovery"),
+    );
+    const queryTexts = queryMock.mock.calls.map((call) => String(call[1]));
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(recoveryQueryCall?.[2]).toMatchObject({
+      userId: "user-1",
+      windowStart: "2026-02-26",
+      endDate: "2026-03-28",
+    });
+    expect(String(recoveryQueryCall?.[1])).toContain("recovery.is_deleted = 0");
+    expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessStartDate");
+    expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessEndDateExclusive");
+    expect(queryTexts.some((queryText) => queryText.includes("analytics.daily_recovery"))).toBe(
+      true,
+    );
+    expect(
+      queryTexts.find((queryText) => queryText.includes("analytics.daily_recovery")),
+    ).not.toContain("accessStartDate");
+    expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
+  });
+
+  it("passes limited access windows to strain target daily-load queries", async () => {
+    const executeMock = vi.fn().mockResolvedValueOnce([]);
+    const sensorStore = makeSensorStore([[], []]);
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+      accessWindow: {
+        kind: "limited",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-20",
+      },
+      sensorStore,
+    });
+
+    await caller.strainTarget({ endDate: "2026-03-28" });
+
+    const recoveryQueryText = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    const recoveryQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(recoveryQueryText).toContain("recovery.date >= toDate({accessStartDate:String})");
+    expect(recoveryQueryText).toContain("recovery.date < toDate({accessEndDateExclusive:String})");
+    expect(recoveryQueryParams).toMatchObject({
+      accessStartDate: "2026-03-10",
+      accessEndDateExclusive: "2026-03-20",
+    });
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
+
+    const queryText = String(vi.mocked(sensorStore.query).mock.calls[1]?.[1]);
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
+    expect(queryText).toContain("strain.date >= toDate({accessStartDate:String})");
+    expect(queryText).toContain("strain.date < toDate({accessEndDateExclusive:String})");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-03-10",
+      accessEndDateExclusive: "2026-03-20",
+    });
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[3]).toEqual({ priority: "dashboard" });
+  });
+
+  it("computes readiness from daily recovery component scores", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        [
+          {
+            date: "2026-03-22",
+            hrv_score: 82,
+            resting_hr_score: 74,
+            sleep_score: 88,
+            respiratory_rate_score: 80,
+          },
+        ],
+        [],
+      ]),
     });
     const result = await caller.strainTarget({});
 
+    expect(result.readinessScore).toBe(81);
     expect(typeof result.targetStrain).toBe("number");
     expect(typeof result.currentStrain).toBe("number");
     expect(typeof result.progressPercent).toBe("number");
     expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
   });
 
-  it("computes current strain from today's load", async () => {
+  it("returns zero current strain when today has no activity load", async () => {
     const today = "2026-03-23";
-    const executeMock = vi.fn();
-    // First call: readinessRows
-    executeMock.mockResolvedValueOnce([]);
-    // Second call: loads (one with today's date)
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 100 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: "2026-03-22", daily_load: 100 },
+        { date: today, daily_load: 0 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    // currentStrain should be derived from today's load
-    expect(result.currentStrain).toBeGreaterThan(0);
+    expect(result.currentStrain).toBe(0);
+    expect(result.currentStrainSource).toBe("none");
+    expect(result.currentPhysiologyLoad).toBeNull();
+  });
+
+  it("does not count earlier acute-window load as today's current strain", async () => {
+    const today = "2026-03-23";
+    const caller = setup({
+      loads: [
+        { date: "2026-03-17", daily_load: 180 },
+        { date: "2026-03-18", daily_load: 170 },
+        { date: "2026-03-19", daily_load: 160 },
+        { date: "2026-03-20", daily_load: 150 },
+        { date: "2026-03-21", daily_load: 140 },
+        { date: "2026-03-22", daily_load: 130 },
+        { date: today, daily_load: 0 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.currentStrain).toBe(0);
+    expect(result.progressPercent).toBe(0);
+    expect(result.dailyLoad).toBe(0);
+    expect(result.acuteLoad).toBeCloseTo(930 / 7, 1);
+    expect(result.chronicLoad).toBeCloseTo(930 / 28, 1);
+    expect(result.workloadRatio).toBe(4);
+    expect(result.readinessScore).toBe(62);
   });
 
   it("computes progressPercent as ratio of current to target", async () => {
     const today = "2026-03-23";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 50 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [{ date: today, daily_load: 50 }],
     });
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.progressPercent).toBeGreaterThan(0);
-    // progressPercent = round(currentStrain / targetStrain * 100)
     const expectedPercent = Math.round((result.currentStrain / result.targetStrain) * 100);
     expect(result.progressPercent).toBe(expectedPercent);
   });
 
-  it("returns 0 progressPercent when targetStrain is 0", async () => {
-    // This edge case is unlikely but the code handles it
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+  it("computes current strain from activity load instead of provider strain", async () => {
+    const today = "2026-03-23";
+    const caller = setup({
+      loads: [{ date: today, daily_load: 39.9, whoop_strain: 2 }],
     });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.currentStrain).toBe(10.3);
+    expect(result.currentStrainSource).toBe("activity");
+    expect(result.progressPercent).toBe(Math.round((10.3 / result.targetStrain) * 100));
+  });
+
+  it("returns 0 progressPercent when targetStrain is 0", async () => {
+    const caller = setup({});
     const result = await caller.strainTarget({});
 
-    // Default readiness = 50, target > 0 so this won't be 0
-    // But we verify the formula: if target > 0 then progress = round(current/target*100)
     if (result.targetStrain > 0) {
       expect(result.progressPercent).toBe(
         Math.round((result.currentStrain / result.targetStrain) * 100),
@@ -1253,23 +2120,17 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("uses readiness metrics with null sleep efficiency", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: 80,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    // Sleep rows empty -> efficiency = null -> sleepScore = 62
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: 80,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
@@ -1277,46 +2138,35 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("handles null resting_hr in readiness metrics", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: null,
-        hrv: 60,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: null,
+          hrv: 60,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
-    // Should not crash; null resting_hr defaults to score 62
     expect(typeof result.targetStrain).toBe("number");
   });
 
   it("handles null hrv in readiness metrics", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: null,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: null,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
@@ -1327,37 +2177,21 @@ describe("recoveryRouter.strainTarget", () => {
     const today = "2026-03-23";
     const yesterday = "2026-03-22";
     const twoDaysAgo = "2026-03-21";
-
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([
-      { date: twoDaysAgo, daily_load: 100 },
-      { date: yesterday, daily_load: 150 },
-      { date: today, daily_load: 80 },
-    ]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: twoDaysAgo, daily_load: 100 },
+        { date: yesterday, daily_load: 150 },
+        { date: today, daily_load: 80 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    // All three days are within the 7-day acute window
-    // acuteLoad = (100 + 150 + 80) / 7
-    // chronicLoad = (100 + 150 + 80) / 28
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("rounds currentStrain to 1 decimal place", async () => {
     const today = "2026-03-23";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 75.3 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads: [{ date: today, daily_load: 75.3 }] });
     const result = await caller.strainTarget({ endDate: today });
 
     const decimals = result.currentStrain.toString().split(".")[1];
@@ -1365,80 +2199,53 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("clamps hrvScore to 0-100 range in strainTarget readiness components", async () => {
-    const executeMock = vi.fn();
-    // HRV of 150 → Math.round(150) = 150 → clamped to 100
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: 150,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: 150,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
-    // With high HRV score (100) and moderate other scores, should still
-    // produce a valid zone
     expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("clamps restingHrScore using 120 - resting_hr formula", async () => {
-    const executeMock = vi.fn();
-    // resting_hr = 55 → 120 - 55 = 65, clamped to [0, 100] → 65
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: null,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: null,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
-    // Should complete without error and return valid zone
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("does not include loads from days outside the acute window", async () => {
-    // Load from 10 days ago (outside 7-day acute window)
     const today = "2026-03-23";
     const tenDaysAgo = "2026-03-13";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: tenDaysAgo, daily_load: 500 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads: [{ date: tenDaysAgo, daily_load: 500 }] });
     const result = await caller.strainTarget({ endDate: today });
 
-    // tenDaysAgo is outside the 7-day acute window,
-    // but inside the 28-day chronic window
-    // so currentStrain should be 0 (no load on today)
     expect(result.currentStrain).toBe(0);
   });
 
   it("uses sleep efficiency for sleepScore in strainTarget when available", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
+    const readinessRows = [
       {
         date: "2026-03-22",
         resting_hr: 55,
@@ -1446,51 +2253,19 @@ describe("recoveryRouter.strainTarget", () => {
         spo2_avg: null,
         respiratory_rate_avg: null,
       },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    // High sleep efficiency
-    executeMock.mockResolvedValueOnce([{ efficiency_pct: 95 }]);
-
-    const callerHigh = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    ];
+    const callerHigh = setup({ readinessRows, sleepRows: [{ efficiency_pct: 95 }] });
     const resultHigh = await callerHigh.strainTarget({});
 
-    const executeMock2 = vi.fn();
-    executeMock2.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: 60,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock2.mockResolvedValueOnce([]);
-    // Low sleep efficiency
-    executeMock2.mockResolvedValueOnce([{ efficiency_pct: 40 }]);
-
-    const callerLow = createCaller({
-      db: { execute: executeMock2 },
-      userId: "user-1",
-    });
+    const callerLow = setup({ readinessRows, sleepRows: [{ efficiency_pct: 40 }] });
     const resultLow = await callerLow.strainTarget({});
 
-    // Higher sleep efficiency → higher readiness → higher or equal target strain
     expect(resultHigh.targetStrain).toBeGreaterThanOrEqual(resultLow.targetStrain);
   });
 
   it("computes progressPercent as 0 when targetStrain is 0", async () => {
     const today = new Date().toISOString().split("T")[0] ?? "";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness metrics
-    executeMock.mockResolvedValueOnce([]); // no loads
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({});
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.progressPercent).toBe(0);
@@ -1498,248 +2273,244 @@ describe("recoveryRouter.strainTarget", () => {
 
   it("averages acute load over 7-day window", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // 7 days of loads, all within acute window
     const loads = Array.from({ length: 7 }, (_, index) => {
       const date = new Date("2026-03-22");
       date.setDate(date.getDate() + index);
       return { date: date.toISOString().split("T")[0], daily_load: 100 };
     });
-    executeMock.mockResolvedValueOnce(loads);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads });
     const result = await caller.strainTarget({ endDate: today });
 
-    // With readiness default 50 and chronic/acute both ~100, should get a reasonable target
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("separates acute from chronic loads by day window", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // Only loads in chronic window (8-27 days ago), none in acute (0-6 days)
     const loads = Array.from({ length: 20 }, (_, index) => {
       const date = new Date("2026-03-01");
       date.setDate(date.getDate() + index);
       return { date: date.toISOString().split("T")[0], daily_load: 200 };
     });
-    executeMock.mockResolvedValueOnce(loads);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads });
     const result = await caller.strainTarget({ endDate: today });
 
-    // Acute load should be low (few recent days), chronic moderate
     expect(result.targetStrain).toBeGreaterThan(0);
-    expect(result.currentStrain).toBe(0); // no load on today
+    expect(result.currentStrain).toBe(0);
   });
 
   it("excludes loads at exactly 7 days ago from acute window", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // Load at exactly 7 days ago (boundary — should be excluded from acute)
-    // and load at 6 days ago (should be included in acute)
-    executeMock.mockResolvedValueOnce([
-      { date: "2026-03-21", daily_load: 1000 }, // 7 days ago — chronic only
-      { date: "2026-03-22", daily_load: 70 }, // 6 days ago — both acute + chronic
-    ]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: "2026-03-21", daily_load: 1000 },
+        { date: "2026-03-22", daily_load: 70 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    // If mutation changes < to <=, the 1000 load enters acute and target changes dramatically
-    // With correct logic: acute ≈ 70/7 = 10, chronic ≈ 1070/28 ≈ 38.2
     expect(result.targetStrain).toBeGreaterThan(0);
-    // Verify that today has no strain since no load on today
     expect(result.currentStrain).toBe(0);
   });
 
   it("progressPercent reflects currentStrain relative to targetStrain", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // Load on today + recent history
-    executeMock.mockResolvedValueOnce([
-      { date: today, daily_load: 100 },
-      { date: "2026-03-27", daily_load: 100 },
-      { date: "2026-03-26", daily_load: 100 },
-    ]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: today, daily_load: 100 },
+        { date: "2026-03-27", daily_load: 100 },
+        { date: "2026-03-26", daily_load: 100 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.currentStrain).toBeGreaterThan(0);
     expect(result.progressPercent).toBeGreaterThan(0);
-    expect(result.progressPercent).toBeLessThanOrEqual(200); // sanity
+    expect(result.progressPercent).toBeLessThanOrEqual(200);
   });
 
-  it("computes currentStrain from today's load", async () => {
+  it("computes currentStrain from acute load when today has load", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 150 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads: [{ date: today, daily_load: 150 }] });
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.currentStrain).toBeGreaterThan(0);
+  });
+
+  it("acuteLoad excludes loads at exactly 7 days ago (kills < vs <= mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({
+      loads: [
+        { date: "2026-03-24", daily_load: 100 },
+        { date: "2026-03-21", daily_load: 500 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.acuteLoad).toBeCloseTo(100 / 7, 1);
+  });
+
+  it("chronicLoad excludes loads at exactly 28 days ago (kills < vs <= mutation)", async () => {
+    const today = "2026-04-15";
+    const caller = setup({
+      loads: [
+        { date: "2026-04-14", daily_load: 100 },
+        { date: "2026-03-18", daily_load: 200 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.chronicLoad).toBeCloseTo(100 / 28, 1);
+  });
+
+  it("acuteLoad excludes loads outside acute window (kills condition->true mutation)", async () => {
+    const today = "2026-04-01";
+    const caller = setup({
+      loads: [
+        { date: "2026-04-01", daily_load: 100 },
+        { date: "2026-03-10", daily_load: 999 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.acuteLoad).toBeCloseTo(100 / 7, 1);
+  });
+
+  it("chronicLoad excludes loads outside chronic window (kills condition->true mutation)", async () => {
+    const today = "2026-05-01";
+    const caller = setup({
+      loads: [
+        { date: "2026-05-01", daily_load: 100 },
+        { date: "2026-03-01", daily_load: 999 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.chronicLoad).toBeCloseTo(100 / 28, 1);
+  });
+
+  it("workloadRatio is null when chronicLoad is 0 (kills >0 -> true mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({ loads: [] });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.workloadRatio).toBeNull();
+  });
+
+  it("dailyLoad rounds correctly (kills *10 -> /10 and /10 -> *10 mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({
+      loads: [{ date: today, daily_load: 123.456 }],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.dailyLoad).toBe(123.5);
   });
 });
 
 // ── Mutation-killing tests for sleepConsistency ────────────────
 
 describe("recoveryRouter.sleepConsistency - mutation killers", () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-01"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
   it("window_count exactly 7 produces non-null consistencyScore", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+    const rows = Array.from({ length: 7 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.consistencyScore).not.toBeNull();
-    expect(result[0]?.consistencyScore).toBeTypeOf("number");
+    expect(result.at(-1)?.consistencyScore).not.toBeNull();
+    expect(result.at(-1)?.consistencyScore).toBeTypeOf("number");
   });
 
   it("window_count 6 produces null consistencyScore (boundary)", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 6,
-      },
-    ];
+    const rows = Array.from({ length: 6 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.consistencyScore).toBeNull();
+    expect(result.at(-1)?.consistencyScore).toBeNull();
   });
 
   it("bedtimeHour rounds correctly (kills *10/10 vs *100/100 mutation)", async () => {
     // 22.567 * 100 / 100 = 22.57 (correct, 2 decimals)
     // 22.567 * 10 / 10 = 22.6 (wrong, 1 decimal)
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22.567,
-        waketime_hour: 6.0,
-        rolling_bedtime_stddev: null,
-        rolling_waketime_stddev: null,
-        window_count: 3,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22.567, 6)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
     expect(result[0]?.bedtimeHour).toBe(22.57);
   });
 
   it("waketimeHour rounds to 2 decimals not 1", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22.0,
-        waketime_hour: 6.789,
-        rolling_bedtime_stddev: null,
-        rolling_waketime_stddev: null,
-        window_count: 3,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 6.789)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.waketimeHour).toBe(6.79);
+    expect(result[0]?.waketimeHour).toBe(6.78);
   });
 
   it("rollingBedtimeStddev rounds to 2 decimals", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 1.456,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7), sleepScheduleRow("2026-03-02", 19.088, 7)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.rollingBedtimeStddev).toBe(1.46);
+    expect(result.at(-1)?.rollingBedtimeStddev).toBe(1.46);
   });
 
   it("rollingWaketimeStddev rounds to 2 decimals", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.789,
-        window_count: 7,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7), sleepScheduleRow("2026-03-02", 22, 8.59)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.rollingWaketimeStddev).toBe(0.79);
+    expect(result.at(-1)?.rollingWaketimeStddev).toBe(0.79);
   });
 
   it("only null bedtime stddev produces null rollingBedtimeStddev", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
     // 0 is a valid value, not null
+    expect(result[0]?.rollingBedtimeStddev).toBe(0);
+  });
+
+  it("includes row exactly on cutoffDate boundary (kills > vs >= mutation)", async () => {
+    const rows = [sleepScheduleRow("2026-01-31", 22, 7)];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result).toHaveLength(1);
     expect(result[0]?.rollingBedtimeStddev).toBe(0);
   });
 });
@@ -1761,6 +2532,7 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
     expect(result[0]?.hrv).toBe(52.7);
@@ -1778,6 +2550,7 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
     expect(result[0]?.rollingMean).toBeCloseTo(48.3, 1);
@@ -1795,6 +2568,7 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
     expect(result[0]?.rollingCoefficientOfVariation).toBe(12.57);
@@ -1812,6 +2586,7 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
     expect(result[0]?.hrv).toBe(0);
@@ -1829,6 +2604,7 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
     expect(result[0]?.rollingMean).toBe(0);
@@ -1846,6 +2622,7 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.hrvVariability({});
     expect(result[0]?.date).toBe("2026-03-15");
@@ -1855,8 +2632,16 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
 // ── Mutation-killing tests for workloadRatio ───────────────────
 
 describe("recoveryRouter.workloadRatio - mutation killers", () => {
+  function callerWith(rows: unknown[]) {
+    return createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+  }
+
   it("dailyLoad rounds to 1 decimal (not 2)", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 125.678,
@@ -1864,17 +2649,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400,
         workload_ratio: null,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.dailyLoad).toBe(125.7);
   });
 
   it("acuteLoad rounds to 1 decimal", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 100,
@@ -1882,17 +2662,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400,
         workload_ratio: null,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.acuteLoad).toBeCloseTo(500.3, 1);
   });
 
   it("chronicLoad rounds to 1 decimal", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 100,
@@ -1900,17 +2675,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400.789,
         workload_ratio: null,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.chronicLoad).toBe(400.8);
   });
 
   it("workloadRatio rounds to 2 decimals", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 100,
@@ -1918,17 +2688,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400,
         workload_ratio: 1.2567,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.workloadRatio).toBe(1.26);
   });
 
   it("date is passed through to each timeSeries entry", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-15",
         daily_load: 50,
@@ -1936,50 +2701,64 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 300,
         workload_ratio: 0.67,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.date).toBe("2026-03-15");
   });
 
   it("strain is derived from rounded dailyLoad", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
-        daily_load: 200,
+        daily_load: 50,
         acute_load: 500,
         chronic_load: 400,
         workload_ratio: 1.25,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
-    expect(result.timeSeries[0]?.strain).toBeTypeOf("number");
-    expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
+    ]).workloadRatio({});
+    expect(result.timeSeries[0]?.strain).toBe(10.9);
+  });
+
+  it("computes strain from activity load instead of provider strain", async () => {
+    const result = await callerWith([
+      {
+        date: "2026-03-01",
+        daily_load: 39.9,
+        acute_load: 500,
+        chronic_load: 400,
+        workload_ratio: 1.25,
+        whoop_strain: 2,
+      },
+    ]).workloadRatio({});
+
+    expect(result.timeSeries[0]?.strain).toBe(10.3);
+    expect(result.displayedStrain).toBe(10.3);
   });
 
   it("displayedStrain defaults to 0 when timeSeries is empty", async () => {
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    const result = await callerWith([]).workloadRatio({});
     expect(result.displayedStrain).toBe(0);
   });
 
   it("displayedDate defaults to null when timeSeries is empty", async () => {
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    const result = await callerWith([]).workloadRatio({});
     expect(result.displayedDate).toBeNull();
+  });
+
+  it("omits outputWindowStart when workloadRatio requests all history", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ days: null, endDate: "2026-03-31" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).not.toContain("outputWindowStart");
+    expect(queryParams).not.toHaveProperty("outputWindowStart");
   });
 });
 
@@ -1988,21 +2767,21 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
 describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
   it("deepPct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 18.567,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 9,
+        durationMinutes: 480,
+        deepPct: 18.567,
+        remPct: 22,
+        lightPct: 50,
+        awakePct: 9,
         efficiency: 90,
-        rolling_avg_duration: 455,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.deepPct).toBe(18.6);
@@ -2010,21 +2789,20 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("remPct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22.345,
-        light_pct: 50,
-        awake_pct: 8,
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 22.345,
+        lightPct: 50,
+        awakePct: 8,
         efficiency: 90,
-        rolling_avg_duration: 455,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.remPct).toBeCloseTo(22.3, 1);
@@ -2032,21 +2810,20 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("lightPct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50.789,
-        awake_pct: 7,
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 22,
+        lightPct: 50.789,
+        awakePct: 7,
         efficiency: 90,
-        rolling_avg_duration: null,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.lightPct).toBe(50.8);
@@ -2054,109 +2831,79 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("awakePct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8.965,
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 22,
+        lightPct: 50,
+        awakePct: 8.965,
         efficiency: 90,
-        rolling_avg_duration: null,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.awakePct).toBe(9);
   });
 
   it("efficiency rounds to 1 decimal", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 93.456,
-        rolling_avg_duration: null,
-      },
-    ];
+    const rows = [sleepNightRow({ date: "2026-03-01", efficiency_pct: 93.456 })];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.efficiency).toBeCloseTo(93.5, 1);
   });
 
-  it("rollingAvgDuration rounds to 1 decimal when non-null", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: 455.789,
-      },
-    ];
+  it("rollingAvgDuration rounds to 1 decimal", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 455.789, 480)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.rollingAvgDuration).toBe(455.8);
   });
 
-  it("durationMinutes preserves the numeric value", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
-    ];
+  it("rollingAvgDuration averages multiple available nights", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 400, 430), sleepDebtRow("2026-03-02", 500, 530)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]?.sleepMinutes).toBe(400);
+    expect(result.nightly[1]?.sleepMinutes).toBe(500);
+    expect(result.nightly[1]?.rollingAvgDuration).toBe(450);
+  });
+
+  it("durationMinutes preserves the numeric value", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 450, 480)];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.durationMinutes).toBe(480);
   });
 
   it("sleepMinutes preserves the numeric value", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
-    ];
+    const rows = [sleepDebtRow("2026-03-01", 450, 480)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.sleepMinutes).toBe(450);
@@ -2164,21 +2911,14 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("sleep debt is rounded to integer", async () => {
     // 14 nights at 470 min → deficit = (480 - 470) * 14 = 140
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 470,
-      sleep_minutes: 470,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 90,
-      rolling_avg_duration: 470,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 470),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.sleepDebt).toBe(140);
@@ -2186,22 +2926,11 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
   });
 
   it("date is passed through to nightly entries", async () => {
-    const rows = [
-      {
-        date: "2026-03-15",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
-    ];
+    const rows = [sleepDebtRow("2026-03-15", 450, 480)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.date).toBe("2026-03-15");
@@ -2210,21 +2939,14 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
   it("sleepDebt uses sleepMinutes not durationMinutes", async () => {
     // durationMinutes = 500 (would produce surplus of -280 over 14 nights)
     // sleepMinutes = 400 (produces debt of 80*14 = 1120)
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 500,
-      sleep_minutes: 400,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 90,
-      rolling_avg_duration: 400,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 400, 500),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     // 480 - 400 = 80 per night * 14 = 1120
@@ -2250,21 +2972,19 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 30, // significantly below mean of 50
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: -2,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z = (30-50)/10 = -2, should map to low score
+    // Canonical z=-2 maps to a low score.
     expect(result[0]?.components.hrvScore).toBeLessThan(50);
   });
 
@@ -2276,21 +2996,19 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 70, // above mean of 60 = bad
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 2,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rhr = (70-60)/5 = +2, inverted: -2, should map to low score
+    // Canonical RHR z=+2 is inverted to -2.
     expect(result[0]?.components.restingHrScore).toBeLessThan(50);
   });
 
@@ -2302,21 +3020,19 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 13, // below mean of 15 = good
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: -2,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rr = (13-15)/1 = -2, inverted: +2, maps to high score
+    // Canonical respiratory z=-2 is inverted to +2.
     expect(result[0]?.components.respiratoryRateScore).toBeGreaterThan(80);
   });
 
@@ -2328,21 +3044,19 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 17, // above mean of 15 = bad
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 2,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rr = (17-15)/1 = +2, inverted: -2, maps to low score
+    // Canonical respiratory z=+2 is inverted to -2.
     expect(result[0]?.components.respiratoryRateScore).toBeLessThan(50);
   });
 
@@ -2354,18 +3068,16 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.sleepScore).toBe(85);
@@ -2379,18 +3091,16 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     // All defaults: 62 * 0.5 + 62 * 0.2 + 62 * 0.15 + 62 * 0.15 = 62
@@ -2405,18 +3115,16 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.hrvScore).toBe(62);
@@ -2430,18 +3138,16 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: null,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.restingHrScore).toBe(62);
@@ -2455,18 +3161,16 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: null,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.respiratoryRateScore).toBe(62);
@@ -2480,18 +3184,16 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0.5,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(Number.isInteger(result[0]?.components.hrvScore)).toBe(true);
@@ -2507,21 +3209,70 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.date).toBe(dateStr);
+  });
+
+  it("excludes the exact selected-range cutoff date after warmup loading", async () => {
+    const rows = [
+      {
+        date: "2026-04-01",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-04-02",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
+        efficiency_pct: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    const result = await caller.readinessScore({ days: 30, endDate: "2026-05-01" });
+
+    expect(result.map((row) => row.date)).toEqual(["2026-04-02"]);
+  });
+
+  it("omits windowStart when readinessScore requests all history", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.readinessScore({ days: null, endDate: "2026-05-01" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).not.toContain("windowStart");
+    expect(queryParams).not.toHaveProperty("windowStart");
   });
 });
 
@@ -2531,6 +3282,7 @@ describe("recoveryRouter access window gating", () => {
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
+      timezone: "UTC",
       accessWindow: {
         kind: "limited",
         paid: false,
@@ -2538,8 +3290,36 @@ describe("recoveryRouter access window gating", () => {
         startDate: "2026-04-10",
         endDateExclusive: "2026-04-17",
       },
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.sleepConsistency({});
     expect(result).toEqual([]);
+  });
+
+  it("readinessScore passes accessWindow to query", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      },
+      sensorStore,
+    });
+    const result = await caller.readinessScore({ days: 30, endDate: "2026-04-20" });
+    expect(result).toEqual([]);
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).toContain("accessStartDate");
+    expect(queryText).toContain("accessEndDateExclusive");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-04-10",
+      accessEndDateExclusive: "2026-04-17",
+    });
   });
 });

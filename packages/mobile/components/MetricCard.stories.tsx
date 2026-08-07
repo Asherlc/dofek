@@ -48,3 +48,9 @@ export const Simple: Story = {
     subtitle: undefined,
   },
 };
+
+export const WithDataAction: Story = {
+  args: {
+    onViewData: () => undefined,
+  },
+};

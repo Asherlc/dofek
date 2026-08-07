@@ -1,21 +1,51 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  formatAssociationEstimateLabel,
+  formatBodyCompositionNumber,
+  formatBodyCompositionPercent,
+  formatCalories,
+  formatCaloriesMeasurement,
+  formatClimbingAttemptResult,
   formatDateForDisplay,
+  formatDateLong,
+  formatDateMedium,
+  formatDateShort,
+  formatDateTime,
   formatDateYmd,
+  formatDateYmdInTimeZone,
   formatDurationMinutes,
   formatDurationRange,
+  formatDurationSeconds,
+  formatGrams,
   formatHour,
+  formatHRV,
+  formatHRVMeasurement,
+  formatIntensity,
+  formatMonthYear,
   formatNumber,
+  formatNutritionAmount,
+  formatNutritionNumber,
   formatPace,
   formatPercent,
+  formatReadinessDifference,
   formatRelativeTime,
   formatSigned,
   formatSleepDebt,
   formatSleepDebtInline,
+  formatSpO2,
+  formatSpO2Measurement,
+  formatStandardDeviation,
+  formatSteps,
+  formatTableCellValue,
   formatTime,
+  formatTimeOnly,
+  formatTrainingLoad,
+  formatWeekdayShort,
+  formatWeekdayTime,
   isToday,
   isYesterday,
   parseValidDate,
+  shiftDateYmd,
 } from "./format.ts";
 
 describe("formatDateYmd", () => {
@@ -35,6 +65,118 @@ describe("formatDateYmd", () => {
     const now = new Date();
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     expect(formatDateYmd()).toBe(expected);
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("shiftDateYmd", () => {
+  it("shifts a date-only value by calendar days", () => {
+    expect(shiftDateYmd("2026-03-01", -1)).toBe("2026-02-28");
+    expect(shiftDateYmd("2026-12-31", 1)).toBe("2027-01-01");
+  });
+
+  it("preserves the four-digit date contract across the year 100 boundary", () => {
+    expect(shiftDateYmd("0100-01-01", -1)).toBe("0099-12-31");
+  });
+
+  it("rejects malformed dates, invalid calendar dates, and non-integer offsets", () => {
+    expect(() => shiftDateYmd("not-a-date", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("prefix-2026-03-01", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("2026-03-01-suffix", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("2026-02-30", 1)).toThrow("Expected a valid YYYY-MM-DD date");
+    expect(() => shiftDateYmd("2026-03-01", 0.5)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+
+  it("normalizes the parsed date clock to local midnight before shifting", () => {
+    const setHours = vi.spyOn(Date.prototype, "setHours");
+
+    expect(shiftDateYmd("2026-03-01", 0)).toBe("2026-03-01");
+    expect(setHours).toHaveBeenCalledWith(0, 0, 0, 0);
+  });
+
+  it("rejects a parsed date with a mismatched year", () => {
+    vi.spyOn(Date.prototype, "getFullYear").mockReturnValueOnce(2025);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects a parsed date with a mismatched month", () => {
+    vi.spyOn(Date.prototype, "getMonth").mockReturnValueOnce(1);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects a parsed date with a mismatched day", () => {
+    vi.spyOn(Date.prototype, "getDate").mockReturnValueOnce(2);
+
+    expect(() => shiftDateYmd("2026-03-01", 0)).toThrow("Expected a valid YYYY-MM-DD date");
+  });
+
+  it("rejects offsets that produce an invalid date", () => {
+    expect(() => shiftDateYmd("2026-01-01", Number.MAX_SAFE_INTEGER)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+
+  it("accepts years 0000 and 9999 but rejects shifts outside the YYYY range", () => {
+    expect(shiftDateYmd("0000-01-01", 0)).toBe("0000-01-01");
+    expect(shiftDateYmd("9999-12-31", 0)).toBe("9999-12-31");
+    expect(() => shiftDateYmd("0000-01-01", -1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+    expect(() => shiftDateYmd("9999-12-31", 1)).toThrow(
+      "Expected a valid YYYY-MM-DD date and an integer day offset",
+    );
+  });
+});
+
+describe("date and time formatters", () => {
+  it("formats short, medium, long, month, and weekday date labels", () => {
+    const date = new Date(2026, 0, 5, 14, 30);
+
+    expect(formatDateShort(date)).toBe("Jan 5");
+    expect(formatDateMedium(date)).toBe("Jan 5, 2026");
+    expect(formatDateLong(date)).toBe("Mon, Jan 5, 2026");
+    expect(formatMonthYear(date)).toBe("January 2026");
+    expect(formatWeekdayShort(date)).toBe("Mon");
+  });
+
+  it("formats date-only strings as local calendar days", () => {
+    expect(formatDateMedium("2026-01-05")).toBe("Jan 5, 2026");
+  });
+
+  it("formats human date-time and time-only labels", () => {
+    const date = new Date(2026, 0, 5, 14, 30);
+
+    expect(formatDateTime(date)).toBe("Jan 5, 2026, 2:30 PM");
+    expect(formatTimeOnly(date)).toBe("2:30 PM");
+    expect(formatWeekdayTime(date)).toBe("Monday 2:30 PM");
+  });
+
+  it("supports timezone-aware date labels", () => {
+    expect(formatDateLong("2026-01-01T05:00:00.000Z", { timeZone: "America/Los_Angeles" })).toBe(
+      "Wed, Dec 31, 2025",
+    );
+    expect(formatDateYmdInTimeZone("2026-01-01T05:00:00.000Z", "America/Los_Angeles")).toBe(
+      "2025-12-31",
+    );
+  });
+
+  it("returns placeholders for invalid date labels", () => {
+    expect(formatDateShort("not-a-date")).toBe("--");
+    expect(formatDateTime("not-a-date")).toBe("--");
+    expect(formatTimeOnly("not-a-date")).toBe("--");
   });
 });
 
@@ -95,6 +237,67 @@ describe("formatDurationRange", () => {
 
   it("returns -- when end is before start (negative duration)", () => {
     expect(formatDurationRange("2024-01-01T11:00:00Z", "2024-01-01T10:00:00Z")).toBe("--");
+  });
+});
+
+describe("formatDurationSeconds", () => {
+  it("formats short durations as seconds", () => {
+    expect(formatDurationSeconds(12)).toBe("12s");
+    expect(formatDurationSeconds(1.24)).toBe("1.2s");
+  });
+
+  it("formats longer durations as minutes and hours", () => {
+    expect(formatDurationSeconds(5410)).toBe("1h 30m");
+  });
+
+  it("returns placeholder for non-finite values", () => {
+    expect(formatDurationSeconds(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatClimbingAttemptResult", () => {
+  it("formats sent and attempted climbs with singular and plural counts", () => {
+    expect(formatClimbingAttemptResult(true, 1)).toBe("Sent in 1 attempt");
+    expect(formatClimbingAttemptResult(true, 7)).toBe("Sent in 7 attempts");
+    expect(formatClimbingAttemptResult(false, 1)).toBe("Attempted 1 time");
+    expect(formatClimbingAttemptResult(false, 3)).toBe("Attempted 3 times");
+  });
+});
+
+describe("formatReadinessDifference", () => {
+  it("uses neutral direction labels for positive, negative, and zero differences", () => {
+    expect(formatReadinessDifference(18.6)).toBe("18.6% higher");
+    expect(formatReadinessDifference(-12.4)).toBe("12.4% lower");
+    expect(formatReadinessDifference(0)).toBe("0.0% difference");
+  });
+
+  it("returns a placeholder for a non-finite difference", () => {
+    expect(formatReadinessDifference(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatAssociationEstimateLabel", () => {
+  it("keeps the server-authored unavailable label intact", () => {
+    expect(formatAssociationEstimateLabel("Estimate unavailable")).toBe("Estimate unavailable");
+  });
+
+  it("keeps a bare Estimate label from gaining a duplicate prefix", () => {
+    expect(formatAssociationEstimateLabel("Estimate")).toBe("Estimate");
+  });
+
+  it("adds the estimate prefix to numeric server labels", () => {
+    expect(formatAssociationEstimateLabel("18.6% higher")).toBe("Estimate: 18.6% higher");
+  });
+
+  it("normalizes surrounding whitespace without duplicating a server prefix", () => {
+    expect(formatAssociationEstimateLabel("  Estimate unavailable  ")).toBe("Estimate unavailable");
+    expect(formatAssociationEstimateLabel(" 18.6% higher ")).toBe("Estimate: 18.6% higher");
+  });
+
+  it("prefixes labels that mention Estimate away from the start", () => {
+    expect(formatAssociationEstimateLabel("relative Estimate effect")).toBe(
+      "Estimate: relative Estimate effect",
+    );
   });
 });
 
@@ -381,6 +584,39 @@ describe("formatTime", () => {
   });
 });
 
+describe("formatTableCellValue", () => {
+  it("returns em dash for null and undefined", () => {
+    expect(formatTableCellValue(null)).toBe("—");
+    expect(formatTableCellValue(undefined)).toBe("—");
+  });
+
+  it("formats booleans and objects", () => {
+    expect(formatTableCellValue(true)).toBe("Yes");
+    expect(formatTableCellValue(false)).toBe("No");
+    expect(formatTableCellValue({ foo: 1 })).toBe('{"foo":1}');
+  });
+
+  it("formats YYYY-MM-DD date strings", () => {
+    expect(formatTableCellValue("2024-03-15")).toBe("Mar 15, 2024");
+  });
+
+  it("formats ISO and postgres timestamp strings", () => {
+    const iso = formatTableCellValue("2024-03-15T10:30:00Z");
+    expect(iso).not.toBe("2024-03-15T10:30:00Z");
+    expect(iso).toContain("Mar");
+    expect(iso).toContain("15");
+
+    const postgres = formatTableCellValue("2024-03-15 10:30:00+00");
+    expect(postgres).not.toBe("2024-03-15 10:30:00+00");
+    expect(postgres).toContain("Mar");
+  });
+
+  it("returns plain strings and numbers unchanged", () => {
+    expect(formatTableCellValue("hello")).toBe("hello");
+    expect(formatTableCellValue(42)).toBe("42");
+  });
+});
+
 describe("formatNumber", () => {
   it("formats with default 1 decimal", () => {
     expect(formatNumber(Math.PI)).toBe("3.1");
@@ -475,6 +711,93 @@ describe("formatSigned", () => {
   it("prepends + for small positive values", () => {
     expect(formatSigned(0.1, 1)).toBe("+0.1");
     expect(formatSigned(0.1, 1)[0]).toBe("+");
+  });
+});
+
+describe("domain metric formatters", () => {
+  it("formats nutrition values with 0 decimals", () => {
+    expect(formatNutritionNumber(12.4)).toBe("12");
+    expect(formatNutritionNumber(12.5)).toBe("13");
+    expect(formatCalories(1999.6)).toBe("2,000 kcal");
+    expect(formatCaloriesMeasurement(1999.6)).toEqual({
+      text: "2,000 kcal",
+      parts: [
+        { type: "integer", value: "2" },
+        { type: "group", value: "," },
+        { type: "integer", value: "000" },
+        { type: "literal", value: " " },
+        { type: "unit", value: "kcal" },
+      ],
+    });
+    expect(formatGrams(41.5)).toBe("42 g");
+    expect(formatNutritionAmount(680.4, "mg")).toBe("680 mg");
+  });
+
+  it("formats body composition values with 1 decimal", () => {
+    expect(formatBodyCompositionNumber(82.44)).toBe("82.4");
+    expect(formatBodyCompositionNumber(82.45)).toBe("82.5");
+    expect(formatBodyCompositionPercent(18.24)).toBe("18.2%");
+  });
+
+  it("formats oxygen saturation with 0 decimals", () => {
+    expect(formatSpO2(96.4)).toBe("96%");
+    expect(formatSpO2(96.5)).toBe("97%");
+    expect(formatSpO2Measurement(96.5)).toEqual({
+      text: "97%",
+      parts: [
+        { type: "integer", value: "97" },
+        { type: "unit", value: "%" },
+      ],
+    });
+  });
+
+  it("formats heart rate variability with 0 decimals", () => {
+    expect(formatHRV(51.4)).toBe("51 ms");
+    expect(formatHRV(51.5)).toBe("52 ms");
+    expect(formatHRVMeasurement(51.5)).toEqual({
+      text: "52 ms",
+      parts: [
+        { type: "integer", value: "52" },
+        { type: "literal", value: " " },
+        { type: "unit", value: "ms" },
+      ],
+    });
+  });
+
+  it("formats steps as a grouped integer", () => {
+    expect(formatSteps(7639.6)).toBe("7,640");
+  });
+
+  it("formats standard deviations with up to 2 decimals and no unit", () => {
+    expect(formatStandardDeviation(-2)).toBe("-2");
+    expect(formatStandardDeviation(-1.5)).toBe("-1.5");
+    expect(formatStandardDeviation(-1.25)).toBe("-1.25");
+    expect(formatStandardDeviation(1.91)).toBe("1.91");
+  });
+
+  it("formats intensity with 0 decimals", () => {
+    expect(formatIntensity(82.4)).toBe("82%");
+    expect(formatIntensity(82.5)).toBe("83%");
+  });
+
+  it("formats training load with 0 decimals", () => {
+    expect(formatTrainingLoad(84.4)).toBe("84");
+    expect(formatTrainingLoad(84.5)).toBe("85");
+  });
+
+  it("returns -- for absent or non-finite domain metric values", () => {
+    expect(formatNutritionNumber(null)).toBe("--");
+    expect(formatBodyCompositionNumber(undefined)).toBe("--");
+    expect(formatSpO2(Number.NaN)).toBe("--");
+    expect(formatSpO2Measurement(Number.NaN)).toEqual({
+      text: "--",
+      parts: [{ type: "nan", value: "--" }],
+    });
+    expect(formatHRV(Number.POSITIVE_INFINITY)).toBe("--");
+    expect(formatStandardDeviation(null)).toBe("--");
+    expect(formatStandardDeviation(Number.NaN)).toBe("--");
+    expect(formatStandardDeviation(Number.POSITIVE_INFINITY)).toBe("--");
+    expect(formatIntensity(Number.NEGATIVE_INFINITY)).toBe("--");
   });
 });
 

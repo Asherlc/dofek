@@ -1,10 +1,16 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseActivityPolarizationZone,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests covering uncovered transformation logic in tRPC router endpoints.
@@ -14,7 +20,7 @@ import { createApp } from "../index.ts";
  * - cycling-advanced (pedalDynamics)
  * - power (powerCurve, eftpTrend)
  * - supplements (list, save)
- * - trends (daily, weekly — via continuous aggregates)
+ * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
  * - food (search, quickAdd, update, delete, list with meal filter)
@@ -31,6 +37,8 @@ describe("Router data coverage", () => {
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -56,17 +64,16 @@ describe("Router data coverage", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // ── Insert daily metrics for 90 days (needed for resting_hr lookups, steps, hrv) ──
+    // ── Insert daily metrics for 90 days (needed for steps and hrv) ──
     for (let i = 90; i >= 0; i--) {
-      const rhr = 52 + Math.round(Math.cos(i * 0.3) * 3);
       const hrv = 55 + Math.round(Math.sin(i * 0.3) * 5);
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, hrv, steps, vo2max
+              date, provider_id, user_id, hrv, steps
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${TEST_USER_ID}, ${rhr}, ${hrv}, ${steps}, 45
+              'test_provider', ${TEST_USER_ID}, ${hrv}, ${steps}
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -78,6 +85,7 @@ describe("Router data coverage", () => {
     //
     // We insert 6 activities with 1-second data (1800 samples each = 30 min).
     // Batch insert (100 rows at a time) for speed.
+    let polarizationActivity: { id: string; startedAt: string } | null = null;
     for (let actIdx = 0; actIdx < 6; actIdx++) {
       const daysAgo = 5 + actIdx * 7;
       const durationSec = 1800; // 30 minutes
@@ -87,9 +95,9 @@ describe("Router data coverage", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`training-ride-${actIdx}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
@@ -99,43 +107,121 @@ describe("Router data coverage", () => {
 
       if (actId) {
         activityIds.push(actId);
-        for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
-          const batchEnd = Math.min(batchStart + 100, durationSec);
-          const sensorValues: string[] = [];
-          for (let s = batchStart; s < batchEnd; s++) {
-            const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
-            const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
-            const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
-            const alt = hasAltitude ? `${300 + (s / durationSec) * 200}` : "NULL";
-            const grd = hasAltitude ? `${4 + (s % 7) * 0.5}` : "NULL";
-            const balance = 49.5 + (s % 10) * 0.1;
-            const lte = 75 + (s % 5);
-            const rte = 74 + (s % 5);
-            const lps = 18 + (s % 4);
-            const rps = 17 + (s % 4);
-            const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
-            sensorValues.push(
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_right_balance', '${actId}', ${balance}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_torque_effectiveness', '${actId}', ${lte}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'right_torque_effectiveness', '${actId}', ${rte}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_pedal_smoothness', '${actId}', ${lps}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'right_pedal_smoothness', '${actId}', ${rps}, NULL)`,
-            );
-            if (hasAltitude) {
-              sensorValues.push(
-                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${actId}', ${alt}, NULL)`,
-                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${actId}', ${grd}, NULL)`,
-              );
-            }
-          }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-              recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-            ) VALUES ${sensorValues.join(",\n")}`),
+        const activityStartedAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+        if (actIdx === 0) {
+          polarizationActivity = {
+            id: actId,
+            startedAt: activityStartedAt.toISOString(),
+          };
+        }
+        for (let s = 0; s < durationSec; s++) {
+          const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
+          const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
+          const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
+          const alt = hasAltitude ? 300 + (s / durationSec) * 200 : null;
+          const grd = hasAltitude ? 4 + (s % 7) * 0.5 : null;
+          const balance = 49.5 + (s % 10) * 0.1;
+          const lte = 75 + (s % 5);
+          const rte = 74 + (s % 5);
+          const lps = 18 + (s % 4);
+          const rps = 17 + (s % 4);
+          const recordedAt = new Date(activityStartedAt.getTime() + s * 1000).toISOString();
+          metricStreamSeedRows.push(
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "heart_rate",
+              activityId: actId,
+              scalar: hr,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "power",
+              activityId: actId,
+              scalar: power,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "speed",
+              activityId: actId,
+              scalar: speed,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "left_right_balance",
+              activityId: actId,
+              scalar: balance,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "left_torque_effectiveness",
+              activityId: actId,
+              scalar: lte,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "right_torque_effectiveness",
+              activityId: actId,
+              scalar: rte,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "left_pedal_smoothness",
+              activityId: actId,
+              scalar: lps,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "right_pedal_smoothness",
+              activityId: actId,
+              scalar: rps,
+            },
           );
+          if (hasAltitude && alt !== null && grd !== null) {
+            metricStreamSeedRows.push(
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test_provider",
+                sourceType: "api",
+                channel: "altitude",
+                activityId: actId,
+                scalar: alt,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test_provider",
+                sourceType: "api",
+                channel: "grade",
+                activityId: actId,
+                scalar: grd,
+              },
+            );
+          }
         }
       }
     }
@@ -144,9 +230,9 @@ describe("Router data coverage", () => {
     const runDurationSec = 1200; // 20 minutes
     const runResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'running',
+            'test_provider', ${TEST_USER_ID}, 'router-data-morning-run', 'running', 'running',
             CURRENT_TIMESTAMP - INTERVAL '3 days',
             CURRENT_TIMESTAMP - INTERVAL '3 days' + ${runDurationSec}::int * INTERVAL '1 second',
             'Morning Run'
@@ -154,22 +240,30 @@ describe("Router data coverage", () => {
     );
     const runId = runResult[0]?.id;
     if (runId) {
-      for (let batchStart = 0; batchStart < runDurationSec; batchStart += 100) {
-        const batchEnd = Math.min(batchStart + 100, runDurationSec);
-        const sensorValues: string[] = [];
-        for (let s = batchStart; s < batchEnd; s++) {
-          const speed = 3.0 + Math.sin(s * 0.005) * 0.5;
-          const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
-          const ts = `CURRENT_TIMESTAMP - INTERVAL '3 days' + ${s} * INTERVAL '1 second'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed}, NULL)`,
-          );
-        }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-          ) VALUES ${sensorValues.join(",\n")}`),
+      const runStartedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      for (let s = 0; s < runDurationSec; s++) {
+        const speed = 3.0 + Math.sin(s * 0.005) * 0.5;
+        const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
+        const recordedAt = new Date(runStartedAt.getTime() + s * 1000).toISOString();
+        metricStreamSeedRows.push(
+          {
+            userId: TEST_USER_ID,
+            recordedAt,
+            providerId: "test_provider",
+            sourceType: "api",
+            channel: "heart_rate",
+            activityId: runId,
+            scalar: hr,
+          },
+          {
+            userId: TEST_USER_ID,
+            recordedAt,
+            providerId: "test_provider",
+            sourceType: "api",
+            channel: "speed",
+            activityId: runId,
+            scalar: speed,
+          },
         );
       }
     }
@@ -186,28 +280,57 @@ describe("Router data coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-              efficiency_pct, sleep_type
+              efficiency_pct, staging_available, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${duration}, ${deep}, ${rem}, ${light}, ${awake},
-              ${efficiency}, 'sleep'
-            )`,
+	              ${efficiency}, true, 'sleep'
+	            )`,
       );
+      const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
+      for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+        const recordedAt = new Date();
+        recordedAt.setHours(0, 0, 0, 0);
+        recordedAt.setDate(recordedAt.getDate() - i + 1);
+        recordedAt.setHours(1, sampleIndex, 0, 0);
+        metricStreamSeedRows.push({
+          userId: TEST_USER_ID,
+          recordedAt: recordedAt.toISOString(),
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "heart_rate",
+          scalar: restingHeartRate,
+        });
+      }
     }
 
-    // ── Insert body measurements for 35 days (needed for body-analytics branches) ──
+    // ── Insert body metrics for 35 days (needed for body-analytics branches) ──
     // Slight upward trend to cover "gaining" branch in weightTrend
     for (let i = 34; i >= 0; i--) {
       const weight = 73 + (34 - i) * 0.08 + Math.sin(i) * 0.3; // upward trend ~0.08 kg/day
       const bodyFat = 17 + (34 - i) * 0.02;
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.body_measurement (
-              recorded_at, provider_id, user_id, weight_kg, body_fat_pct
-            ) VALUES (
-              NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, ${weight}, ${bodyFat}
-            )`,
+      const recordedAt = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString();
+      metricStreamSeedRows.push(
+        {
+          userId: TEST_USER_ID,
+          recordedAt,
+          providerId: "test_provider",
+          externalId: `test-body-${i}`,
+          sourceType: "api",
+          channel: "body_weight",
+          scalar: weight,
+        },
+        {
+          userId: TEST_USER_ID,
+          recordedAt,
+          providerId: "test_provider",
+          externalId: `test-body-${i}`,
+          sourceType: "api",
+          channel: "body_fat_percentage",
+          scalar: bodyFat,
+        },
       );
     }
 
@@ -221,11 +344,11 @@ describe("Router data coverage", () => {
 
     for (let i = 0; i < 8; i++) {
       const workoutResult = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.strength_workout (
-              provider_id, user_id, external_id, started_at, name
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, external_id, started_at, name, canonical_type, provider_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID}, ${`sw-${i}`},
-              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session'
+              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session', 'strength', 'strength'
             ) ON CONFLICT DO NOTHING RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;
@@ -234,7 +357,7 @@ describe("Router data coverage", () => {
         for (let s = 0; s < 3; s++) {
           await testCtx.db.execute(
             sql`INSERT INTO fitness.strength_set (
-                  workout_id, exercise_id, exercise_index, set_index, set_type,
+                  activity_id, exercise_id, exercise_index, set_index, set_type,
                   weight_kg, reps, rpe
                 ) VALUES (
                   ${workoutId}, '00000000-0000-0000-0000-000000000099',
@@ -252,74 +375,101 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, food_description, confirmed
+                user_id, provider_id, date, meal, food_name, food_description, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
                 'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
-                true
+                true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_c_mg, calcium_mg, iron_mg
-              )
-              SELECT id,
-                350, 12, 55, 8, 6,
-                15, 200, 4
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 350),
+                ('protein', 12),
+                ('carbohydrate', 55),
+                ('fat', 8),
+                ('fiber', 6),
+                ('vitamin_c', 15),
+                ('calcium', 200),
+                ('iron', 4)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, meal, food_name, confirmed, nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
-                'lunch', ${`Chicken Salad ${i}`}, true
+                'lunch', ${`Chicken Salad ${i}`}, true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g
-              )
-              SELECT id, 500, 35, 20, 25
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 500),
+                ('protein', 35),
+                ('carbohydrate', 20),
+                ('fat', 25)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
     }
 
-    // ── Insert nutrition_daily for caloric balance ──
+    // ── Insert unnamed food-entry nutrition rows for caloric balance ──
     for (let i = 0; i < 10; i++) {
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.nutrition_daily (
-              user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              2200, 120, 250, 80
-            ) ON CONFLICT DO NOTHING`,
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed,
+                nutrition_grain
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true, 'daily_aggregate'
+              ) RETURNING id
+            )
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, nutrient_id, amount
+            FROM new_entry
+            CROSS JOIN (VALUES
+              ('calories', 2200::real),
+              ('protein', 120::real),
+              ('carbohydrate', 250::real),
+              ('fat', 80::real)
+            ) AS nutrient_values(nutrient_id, amount)
+            ON CONFLICT DO NOTHING`,
       );
     }
 
-    // ── Refresh materialized views ──
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(
-      sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement`,
-    );
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    // ── Refresh Postgres sleep materialized view ──
 
     // Start server
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    if (!polarizationActivity) {
+      throw new Error("Polarization activity fixture was not created");
+    }
+    await seedClickHouseActivityPolarizationZone(testCtx, {
+      activityId: polarizationActivity.id,
+      userId: TEST_USER_ID,
+      startedAt: polarizationActivity.startedAt,
+      maxHr: 190,
+      z1Seconds: 900,
+      z2Seconds: 300,
+      z3Seconds: 600,
+    });
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -465,6 +615,8 @@ describe("Router data coverage", () => {
     });
 
     it("polarizationTrend returns weekly zone distribution", async () => {
+      await queryCache.invalidateByPrefix(`${TEST_USER_ID}:efficiency.polarizationTrend`);
+
       const result = await query<{
         maxHr: number | null;
         weeks: {
@@ -477,20 +629,14 @@ describe("Router data coverage", () => {
       }>("efficiency.polarizationTrend", { days: 90 });
 
       expect(result.maxHr).toBe(190);
-      expect(Array.isArray(result.weeks)).toBe(true);
-
-      for (const week of result.weeks) {
-        expect(week.week).toBeTruthy();
-        expect(week.z1Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z2Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z3Seconds).toBeGreaterThanOrEqual(0);
-
-        // If all three zones have time, PI should be computed
-        if (week.z1Seconds > 0 && week.z2Seconds > 0 && week.z3Seconds > 0) {
-          expect(week.polarizationIndex).not.toBeNull();
-          expect(typeof week.polarizationIndex).toBe("number");
-        }
-      }
+      expect(result.weeks).toHaveLength(1);
+      expect(result.weeks[0]).toMatchObject({
+        z1Seconds: 900,
+        z2Seconds: 300,
+        z3Seconds: 600,
+      });
+      expect(result.weeks[0]?.week).toBeTruthy();
+      expect(result.weeks[0]?.polarizationIndex).not.toBeNull();
     });
   });
 
@@ -510,7 +656,7 @@ describe("Router data coverage", () => {
       >("cyclingAdvanced.pedalDynamics", { days: 90 });
 
       // We inserted pedal dynamics data (left_right_balance, torque_eff, pedal_smooth)
-      // into metric_stream, but pedalDynamics reads from activity_summary which
+      // into metric stream, but pedalDynamics reads from activity_summary which
       // aggregates these. The activity_summary view should have them.
       expect(Array.isArray(result)).toBe(true);
 
@@ -528,9 +674,10 @@ describe("Router data coverage", () => {
         {
           date: string;
           activityName: string;
+          activityType: string;
           verticalAscentRate: number;
           elevationGainMeters: number;
-          climbingMinutes: number;
+          elapsedMinutes: number;
         }[]
       >("cyclingAdvanced.verticalAscentRate", { days: 90 });
 
@@ -539,112 +686,13 @@ describe("Router data coverage", () => {
 
       for (const row of result) {
         expect(row.date).toBeTruthy();
+        expect(row.activityType).toBeTruthy();
         expect(typeof row.verticalAscentRate).toBe("number");
         expect(row.verticalAscentRate).toBeGreaterThanOrEqual(0);
         expect(typeof row.elevationGainMeters).toBe("number");
-        expect(typeof row.climbingMinutes).toBe("number");
-        expect(row.climbingMinutes).toBeGreaterThan(0);
+        expect(typeof row.elapsedMinutes).toBe("number");
+        expect(row.elapsedMinutes).toBeGreaterThan(0);
       }
-    });
-
-    it("verticalAscentRate uses nearby grade when present and altitude fallback otherwise", async () => {
-      async function createActivity(name: string, startedAt: Date, endedAt: Date): Promise<string> {
-        const activityRows = await testCtx.db.execute<{ id: string }>(
-          sql`INSERT INTO fitness.activity (
-                provider_id, user_id, activity_type, started_at, ended_at, name
-              ) VALUES (
-                'test_provider', ${TEST_USER_ID}, 'cycling', ${startedAt.toISOString()},
-                ${endedAt.toISOString()}, ${name}
-              )
-              RETURNING id`,
-        );
-        const activityId = activityRows[0]?.id;
-
-        if (!activityId) {
-          throw new Error(`Failed to create ${name} activity`);
-        }
-
-        return activityId;
-      }
-
-      const startedAt = new Date();
-      startedAt.setDate(startedAt.getDate() - 2);
-      startedAt.setMinutes(0, 0, 0);
-      const endedAt = new Date(startedAt.getTime() + 10 * 60 * 1000);
-
-      const offsetGradeClimbId = await createActivity("Offset Grade Climb", startedAt, endedAt);
-      const lowGradeDriftId = await createActivity(
-        "Low Grade Drift",
-        new Date(startedAt.getTime() + 20 * 60 * 1000),
-        new Date(endedAt.getTime() + 20 * 60 * 1000),
-      );
-      const altitudeOnlyClimbId = await createActivity(
-        "Altitude Only Climb",
-        new Date(startedAt.getTime() + 40 * 60 * 1000),
-        new Date(endedAt.getTime() + 40 * 60 * 1000),
-      );
-
-      const sensorValues: string[] = [];
-      for (let second = 0; second <= 600; second += 5) {
-        const offsetAltitudeTimestamp = new Date(startedAt.getTime() + second * 1000).toISOString();
-        const offsetGradeTimestamp = new Date(
-          startedAt.getTime() + second * 1000 + 2000,
-        ).toISOString();
-        const driftAltitudeTimestamp = new Date(
-          startedAt.getTime() + 20 * 60 * 1000 + second * 1000,
-        ).toISOString();
-        const driftGradeTimestamp = new Date(
-          startedAt.getTime() + 20 * 60 * 1000 + second * 1000 + 2000,
-        ).toISOString();
-        const altitudeOnlyTimestamp = new Date(
-          startedAt.getTime() + 40 * 60 * 1000 + second * 1000,
-        ).toISOString();
-        const altitude = 400 + second * 0.6;
-
-        sensorValues.push(
-          `('${offsetAltitudeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${offsetGradeClimbId}', ${altitude}, NULL)`,
-          `('${offsetGradeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${offsetGradeClimbId}', 6, NULL)`,
-          `('${driftAltitudeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${lowGradeDriftId}', ${altitude}, NULL)`,
-          `('${driftGradeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${lowGradeDriftId}', 0.5, NULL)`,
-          `('${altitudeOnlyTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${altitudeOnlyClimbId}', ${altitude}, NULL)`,
-        );
-      }
-
-      await testCtx.db.execute(
-        sql.raw(`INSERT INTO fitness.metric_stream (
-          recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-        ) VALUES ${sensorValues.join(",\n")}`),
-      );
-
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
-      await queryCache.invalidateAll();
-
-      const result = await query<
-        {
-          date: string;
-          activityName: string;
-          verticalAscentRate: number;
-          elevationGainMeters: number;
-          climbingMinutes: number;
-        }[]
-      >("cyclingAdvanced.verticalAscentRate", { days: 90 });
-
-      const offsetRow = result.find((row) => row.activityName === "Offset Grade Climb");
-      const altitudeOnlyRow = result.find((row) => row.activityName === "Altitude Only Climb");
-      const lowGradeRow = result.find((row) => row.activityName === "Low Grade Drift");
-
-      expect(offsetRow).toBeDefined();
-      expect(offsetRow?.elevationGainMeters).toBeGreaterThan(0);
-      expect(offsetRow?.climbingMinutes).toBeGreaterThan(5);
-      expect(offsetRow?.verticalAscentRate).toBeGreaterThan(0);
-
-      expect(altitudeOnlyRow).toBeDefined();
-      expect(altitudeOnlyRow?.elevationGainMeters).toBeGreaterThan(0);
-      expect(altitudeOnlyRow?.verticalAscentRate).toBeGreaterThan(0);
-
-      expect(lowGradeRow).toBeUndefined();
     });
 
     it("activityVariability returns NP, VI, IF per activity", async () => {
@@ -746,8 +794,8 @@ describe("Router data coverage", () => {
 
     it("save stores supplements and list retrieves them", async () => {
       const supplements = [
-        { name: "Vitamin D3", amount: 5000, unit: "IU", form: "softgel" },
-        { name: "Magnesium Glycinate", amount: 400, unit: "mg" },
+        { name: "Vitamin D3", amount: 5000, unit: "IU", form: "softgel", vitaminDMcg: 125 },
+        { name: "Magnesium Glycinate", amount: 400, unit: "mg", magnesiumMg: 400 },
       ];
       const saveResult = await mutate<{ success: boolean; count: number }>("supplements.save", {
         supplements,
@@ -765,16 +813,19 @@ describe("Router data coverage", () => {
 
       const nutritionRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.supplement_nutrition sn
-            JOIN fitness.supplement s ON s.id = sn.supplement_id
-            WHERE s.user_id = ${TEST_USER_ID}`,
+            FROM fitness.supplement_definition_nutrient AS nutrient
+            JOIN fitness.supplement_definition AS definition
+              ON definition.id = nutrient.definition_id
+            JOIN fitness.supplement AS supplement
+              ON supplement.id = definition.supplement_id
+            WHERE supplement.user_id = ${TEST_USER_ID}`,
       );
       expect(nutritionRows[0]?.count).toBe("2");
     });
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Trends — daily and weekly from continuous aggregates
+  // Trends — daily and weekly from ClickHouse read models
   // ══════════════════════════════════════════════════════════════
   describe("trends", () => {
     it("daily returns aggregated metric data per day", async () => {
@@ -833,29 +884,29 @@ describe("Router data coverage", () => {
   describe("settings", () => {
     it("set creates a setting and get retrieves it", async () => {
       const setResult = await mutate<{ key: string; value: unknown }>("settings.set", {
-        key: "theme",
-        value: "dark",
+        key: "unitSystem",
+        value: "metric",
       });
-      expect(setResult.key).toBe("theme");
+      expect(setResult.key).toBe("unitSystem");
 
       await queryCache.invalidateAll();
 
       const getResult = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
       expect(getResult).not.toBeNull();
-      expect(getResult?.key).toBe("theme");
-      expect(getResult?.value).toBe("dark");
+      expect(getResult?.key).toBe("unitSystem");
+      expect(getResult?.value).toBe("metric");
     });
 
     it("set upserts an existing setting", async () => {
-      await mutate("settings.set", { key: "theme", value: "light" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
-      expect(result?.value).toBe("light");
+      expect(result?.value).toBe("imperial");
     });
 
     it("get returns null for missing key", async () => {
@@ -865,15 +916,15 @@ describe("Router data coverage", () => {
 
     it("getAll returns all settings", async () => {
       // Set a second setting
-      await mutate("settings.set", { key: "locale", value: "en-US" });
+      await mutate("settings.set", { key: "whoop.wearLocation", value: "wrist" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown }[]>("settings.getAll");
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeGreaterThanOrEqual(2);
       const keys = result.map((r) => r.key);
-      expect(keys).toContain("theme");
-      expect(keys).toContain("locale");
+      expect(keys).toContain("unitSystem");
+      expect(keys).toContain("whoop.wearLocation");
     });
 
     it("slackStatus returns configured and connected booleans", async () => {
@@ -902,7 +953,6 @@ describe("Router data coverage", () => {
             bodyMeasurements: number;
             foodEntries: number;
             healthEvents: number;
-            metricStream: number;
             nutritionDaily: number;
             labPanels: number;
             labResults: number;
@@ -917,7 +967,6 @@ describe("Router data coverage", () => {
         expect(testProvider.activities).toBeGreaterThan(0);
         expect(testProvider.dailyMetrics).toBeGreaterThan(0);
         expect(testProvider.sleepSessions).toBeGreaterThan(0);
-        expect(testProvider.metricStream).toBeGreaterThan(0);
       }
     });
 
@@ -978,9 +1027,9 @@ describe("Router data coverage", () => {
     it("update modifies a food entry", async () => {
       // Get a food entry id
       const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      expect(entries.length).toBeGreaterThan(0);
-      const entryId = entries[0]?.id;
+      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      expect(result.entries.length).toBeGreaterThan(0);
+      const entryId = result.entries[0]?.id;
       expect(entryId).toBeTruthy();
 
       const updated = await mutate<{ id: string; calories: number } | null>("food.update", {
@@ -993,8 +1042,8 @@ describe("Router data coverage", () => {
 
     it("update with date field modification", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      const entryId = entries[0]?.id;
+      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      const entryId = result.entries[0]?.id;
 
       // Update date and set some fields to null (covers null-clearing branches)
       const updated = await mutate<{ id: string } | null>("food.update", {
@@ -1008,25 +1057,27 @@ describe("Router data coverage", () => {
 
     it("update with no fields returns null", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      const entryId = entries[0]?.id;
+      const selectedDate = await query<{ entries: { id: string }[] }>("food.byDate", {
+        date: today,
+      });
+      const entryId = selectedDate.entries[0]?.id;
       const result = await mutate<null>("food.update", { id: entryId });
       expect(result).toBeNull();
     });
 
     it("delete removes a food entry", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const before = await query<{ id: string }[]>("food.byDate", { date: today });
-      const countBefore = before.length;
+      const before = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      const countBefore = before.entries.length;
       expect(countBefore).toBeGreaterThan(0);
 
-      const entryId = before[0]?.id;
+      const entryId = before.entries[0]?.id;
       const deleteResult = await mutate<{ success: boolean }>("food.delete", { id: entryId });
       expect(deleteResult.success).toBe(true);
 
       await queryCache.invalidateAll();
-      const after = await query<{ id: string }[]>("food.byDate", { date: today });
-      expect(after.length).toBe(countBefore - 1);
+      const after = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      expect(after.entries.length).toBe(countBefore - 1);
     });
 
     it("dailyTotals aggregates calories and macros by day", async () => {
@@ -1175,20 +1226,6 @@ describe("Router data coverage", () => {
         }
       }
     });
-
-    it("caloricBalance returns daily calorie balance with rolling avg", async () => {
-      const result = await query<
-        {
-          date: string;
-          caloriesIn: number;
-          balance: number;
-          rollingAvgBalance: number | null;
-        }[]
-      >("nutritionAnalytics.caloricBalance", { days: 30 });
-
-      // May be empty if nutrition_daily and daily_metrics don't overlap on dates
-      expect(Array.isArray(result)).toBe(true);
-    });
   });
 
   // ── Body Analytics ──
@@ -1302,15 +1339,19 @@ describe("Router data coverage", () => {
       expect(withHr.length).toBeGreaterThan(0);
     });
 
-    it("hrZones returns 5-zone distribution", async () => {
+    it("hrZones returns zone 0 plus 5 training zones", async () => {
       if (activityIds.length === 0) return;
+      const highestHeartRateActivityId = activityIds[activityIds.length - 1];
+      if (!highestHeartRateActivityId) {
+        throw new Error("Missing seeded activity ID for activity.hrZones test");
+      }
       const result = await query<
         { zone: number; label: string; minPct: number; maxPct: number; seconds: number }[]
-      >("activity.hrZones", { id: activityIds[0] });
+      >("activity.hrZones", { id: highestHeartRateActivityId });
 
-      expect(result).toHaveLength(5);
-      expect(result[0]?.zone).toBe(1);
-      expect(result[4]?.zone).toBe(5);
+      expect(result).toHaveLength(6);
+      expect(result[0]?.zone).toBe(0);
+      expect(result[5]?.zone).toBe(5);
       // With 1800 HR samples, at least some zones should have data
       const totalSeconds = result.reduce((sum, z) => sum + z.seconds, 0);
       expect(totalSeconds).toBeGreaterThan(0);
@@ -1363,9 +1404,9 @@ describe("Router data coverage", () => {
     });
   });
 
-  // ── Trends (covers roundOrNull non-null branch with continuous aggregate data) ──
+  // ── Trends (covers roundOrNull non-null branch with ClickHouse trend data) ──
   describe("trends with data", () => {
-    it("daily returns aggregated metrics from continuous aggregate", async () => {
+    it("daily returns aggregated metrics from the ClickHouse trend read model", async () => {
       await queryCache.invalidateAll();
       const result = await query<
         {
@@ -1390,18 +1431,31 @@ describe("Router data coverage", () => {
         maxHr: number | null;
         weeks: {
           week: string;
+          zone0: number;
           zone1: number;
           zone2: number;
           zone3: number;
           zone4: number;
           zone5: number;
         }[];
+        intensityDistribution: {
+          model: "karvonen-five-zone";
+          activityScope: "endurance";
+          totalSeconds: number;
+          zones: Array<{ zone: number; seconds: number; percent: number }>;
+          explanation: string;
+        };
       }>("training.hrZones", { days: 90 });
 
       // User profile has max_hr = 190, so maxHr should be set
       if (result.maxHr) {
         expect(result.maxHr).toBe(190);
         expect(Array.isArray(result.weeks)).toBe(true);
+        expect(result.intensityDistribution).toMatchObject({
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+        });
+        expect(result.intensityDistribution.totalSeconds).toBeGreaterThanOrEqual(0);
       }
     });
   });
@@ -1414,11 +1468,12 @@ describe("Router data coverage", () => {
         nightly: {
           date: string;
           durationMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
-          efficiency: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          efficiency: number | null;
+          stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
         sleepDebt: number;
@@ -1439,7 +1494,7 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns acute/chronic ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
@@ -1449,6 +1504,12 @@ describe("Router data coverage", () => {
           chronicLoad: number;
           workloadRatio: number | null;
         }[];
+        context: {
+          label: "Recent-to-baseline workload ratio";
+          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.";
+          recentDays: 7;
+          baselineDays: 28;
+        };
         displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });

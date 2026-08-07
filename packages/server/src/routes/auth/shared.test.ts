@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const redisClient = vi.hoisted(() => ({
+  set: vi.fn(),
+  sendCommand: vi.fn(),
+}));
+
+vi.mock("bullmq", () => ({
+  RedisConnection: vi.fn(() => ({ client: Promise.resolve(redisClient) })),
+}));
+
+vi.mock("dofek/jobs/queues", () => ({
+  getRedisConnection: vi.fn(),
+}));
+
 // Minimal mocks for shared.ts dependencies
 vi.mock("../../lib/oauth-state-store.ts", () => ({
   getOAuthStateStore: vi.fn(() => ({
@@ -51,13 +64,17 @@ vi.mock("../webhooks.ts", () => ({
 
 import { createDatabaseFromEnv } from "dofek/db";
 import {
-  deletePendingEmailSignup,
-  getPendingEmailSignup,
+  InMemoryMobileAuthExchangeStore,
+  RedisMobileAuthExchangeStore,
+} from "../../lib/mobile-auth-exchange-store.ts";
+import { InMemoryPendingEmailSignupStore } from "../../lib/pending-email-signup-store.ts";
+import {
+  getMobileAuthExchangeStoreRef,
+  getPendingEmailSignupStoreRef,
   initAuthStores,
-  type PendingEmailSignupEntry,
+  isSafeRelativeRedirect,
   sanitizeReturnTo,
   storeIdentityFlow,
-  storePendingEmailSignup,
 } from "./shared.ts";
 
 describe("shared auth helpers", () => {
@@ -68,6 +85,7 @@ describe("shared auth helpers", () => {
     });
 
     it("rejects paths that don't start with /", () => {
+      expect(sanitizeReturnTo("dashboard")).toBeUndefined();
       expect(sanitizeReturnTo("https://evil.com")).toBeUndefined();
       expect(sanitizeReturnTo("javascript:alert(1)")).toBeUndefined();
     });
@@ -79,54 +97,29 @@ describe("shared auth helpers", () => {
     it("accepts valid relative paths", () => {
       expect(sanitizeReturnTo("/dashboard")).toBe("/dashboard");
       expect(sanitizeReturnTo("/settings/profile")).toBe("/settings/profile");
+      expect(sanitizeReturnTo("/?newUser=true")).toBe("/?newUser=true");
     });
   });
 
-  describe("storePendingEmailSignup / getPendingEmailSignup / deletePendingEmailSignup", () => {
-    const entry: PendingEmailSignupEntry = {
-      providerId: "strava",
-      providerName: "Strava",
-      identity: {
-        providerAccountId: "123",
-        email: null,
-        name: "Test User",
-      },
-      tokens: {
-        accessToken: "access",
-        refreshToken: "refresh",
-        expiresAt: new Date("2027-01-01"),
-        scopes: "read",
-      },
-    };
-
-    beforeEach(() => {
-      vi.useFakeTimers();
+  describe("isSafeRelativeRedirect", () => {
+    it("accepts same-origin relative paths", () => {
+      expect(isSafeRelativeRedirect("/dashboard")).toBe(true);
+      expect(isSafeRelativeRedirect("/?newUser=true")).toBe(true);
     });
 
-    afterEach(() => {
-      vi.useRealTimers();
+    it("rejects external and protocol-relative URLs", () => {
+      expect(isSafeRelativeRedirect("dashboard")).toBe(false);
+      expect(isSafeRelativeRedirect("https://evil.com")).toBe(false);
+      expect(isSafeRelativeRedirect("//evil.com")).toBe(false);
+      expect(isSafeRelativeRedirect("javascript:alert(1)")).toBe(false);
     });
+  });
 
-    it("stores and retrieves a pending signup", () => {
-      const token = storePendingEmailSignup(entry);
-      expect(token).toBeTruthy();
-      expect(getPendingEmailSignup(token)).toBe(entry);
-    });
+  describe("initAuthStores pending email signup store", () => {
+    it("uses the in-memory pending signup store in tests", () => {
+      initAuthStores(createDatabaseFromEnv());
 
-    it("deletes a pending signup", () => {
-      const token = storePendingEmailSignup(entry);
-      deletePendingEmailSignup(token);
-      expect(getPendingEmailSignup(token)).toBeUndefined();
-    });
-
-    it("returns undefined for unknown token", () => {
-      expect(getPendingEmailSignup("nonexistent")).toBeUndefined();
-    });
-
-    it("expires after 10 minutes", () => {
-      const token = storePendingEmailSignup(entry);
-      vi.advanceTimersByTime(10 * 60 * 1000 + 1);
-      expect(getPendingEmailSignup(token)).toBeUndefined();
+      expect(getPendingEmailSignupStoreRef()).toBeInstanceOf(InMemoryPendingEmailSignupStore);
     });
   });
 
@@ -149,6 +142,34 @@ describe("shared auth helpers", () => {
       await expect(
         storeIdentityFlow("apple:state-456", { codeVerifier: "verifier" }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("initAuthStores mobile exchange store", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    });
+
+    it("uses the in-memory exchange store in tests", () => {
+      process.env.NODE_ENV = "test";
+
+      initAuthStores(createDatabaseFromEnv());
+
+      expect(getMobileAuthExchangeStoreRef()).toBeInstanceOf(InMemoryMobileAuthExchangeStore);
+    });
+
+    it("uses the Redis exchange store outside tests", () => {
+      process.env.NODE_ENV = "production";
+
+      initAuthStores(createDatabaseFromEnv());
+
+      expect(getMobileAuthExchangeStoreRef()).toBeInstanceOf(RedisMobileAuthExchangeStore);
     });
   });
 });

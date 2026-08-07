@@ -8,6 +8,10 @@ const httpBatchLinkMock = vi.fn((options: unknown) => ({
   type: "batch",
   options,
 }));
+const httpLinkMock = vi.fn((options: unknown) => ({
+  type: "http",
+  options,
+}));
 const splitLinkMock = vi.fn((options: unknown) => ({
   type: "split",
   options,
@@ -37,6 +41,7 @@ vi.mock("@trpc/client", async (importOriginal) => {
     ...original,
     httpBatchStreamLink: httpBatchStreamLinkMock,
     httpBatchLink: httpBatchLinkMock,
+    httpLink: httpLinkMock,
     splitLink: splitLinkMock,
   };
 });
@@ -53,6 +58,7 @@ describe("createTRPCClient", () => {
   beforeEach(() => {
     httpBatchStreamLinkMock.mockClear();
     httpBatchLinkMock.mockClear();
+    httpLinkMock.mockClear();
     splitLinkMock.mockClear();
     createClientMock.mockClear();
     vi.unstubAllGlobals();
@@ -64,28 +70,46 @@ describe("createTRPCClient", () => {
 
     createTRPCClient();
 
-    expect(httpBatchStreamLinkMock).toHaveBeenCalledTimes(1);
     expect(httpBatchLinkMock).toHaveBeenCalledTimes(1);
-    expect(splitLinkMock).toHaveBeenCalledTimes(1);
+    expect(httpLinkMock).toHaveBeenCalledTimes(1);
+    expect(httpBatchStreamLinkMock).toHaveBeenCalledTimes(1);
+    expect(splitLinkMock).toHaveBeenCalledTimes(2);
     expect(createClientMock).toHaveBeenCalledTimes(1);
 
-    const splitOptions = splitLinkMock.mock.calls[0]?.[0];
-    expect(splitOptions).toMatchObject({
+    const mutationSplitOptions = splitLinkMock.mock.calls[1]?.[0];
+    const querySplitOptions = splitLinkMock.mock.calls[0]?.[0];
+    expect(mutationSplitOptions).toMatchObject({
       true: { type: "batch" },
+      false: { type: "split" },
+    });
+    expect(querySplitOptions).toMatchObject({
+      true: { type: "http" },
       false: { type: "stream" },
     });
 
-    const condition = readObjectProperty(splitOptions, "condition");
-    expect(typeof condition).toBe("function");
-    if (typeof condition !== "function") {
-      throw new Error("splitLink condition must be a function");
+    const mutationCondition = readObjectProperty(mutationSplitOptions, "condition");
+    const queryCondition = readObjectProperty(querySplitOptions, "condition");
+    expect(typeof mutationCondition).toBe("function");
+    expect(typeof queryCondition).toBe("function");
+    if (!isFunction(mutationCondition) || !isFunction(queryCondition)) {
+      throw new Error("splitLink conditions must be functions");
     }
-    expect(condition({ type: "mutation" })).toBe(true);
-    expect(condition({ type: "query" })).toBe(false);
+    expect(mutationCondition({ type: "mutation" })).toBe(true);
+    expect(mutationCondition({ type: "query" })).toBe(false);
+    expect(queryCondition({ type: "query", path: "recovery.readinessScore" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "recovery.workloadRatio" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "recovery.strainTarget" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "todayPlan.get" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "sleepNeed.performance" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "processing.status" })).toBe(false);
+    expect(queryCondition({ type: "query", path: "insights.compute" })).toBe(false);
+    expect(queryCondition({ type: "query", path: "anomalyDetection.check" })).toBe(false);
+    expect(queryCondition({ type: "mutation", path: "recovery.readinessScore" })).toBe(false);
 
     const batchLinkOptions = httpBatchLinkMock.mock.calls[0]?.[0];
+    const httpLinkOptions = httpLinkMock.mock.calls[0]?.[0];
     const streamLinkOptions = httpBatchStreamLinkMock.mock.calls[0]?.[0];
-    for (const linkOptions of [batchLinkOptions, streamLinkOptions]) {
+    for (const linkOptions of [batchLinkOptions, httpLinkOptions, streamLinkOptions]) {
       expect(readObjectProperty(linkOptions, "url")).toBe("/api/trpc");
       expect(readObjectProperty(linkOptions, "methodOverride")).toBe("POST");
       const headers = readObjectProperty(linkOptions, "headers");
@@ -161,6 +185,43 @@ describe("createTRPCClient", () => {
     expect(readObjectProperty(window.location, "href")).toBe("/dashboard");
 
     await streamFetch("/api/trpc", { method: "POST" });
+    expect(readObjectProperty(window.location, "href")).toBe("/login");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/trpc",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/trpc",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+  });
+
+  it("unbatched dashboard query link fetch uses credentials and redirects only on 401", async () => {
+    const fetchMock = vi
+      .fn<(requestUrl: RequestInfo | URL, requestOptions?: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", { location: { href: "/dashboard" } });
+
+    const { createTRPCClient } = await import("./trpc.ts");
+    createTRPCClient();
+
+    const httpLinkOptions = httpLinkMock.mock.calls[0]?.[0];
+    const httpFetch = readObjectProperty(httpLinkOptions, "fetch");
+    if (!isFunction(httpFetch)) {
+      throw new Error("Expected unbatched query link fetch handler to be a function");
+    }
+
+    const okResponse = await httpFetch("/api/trpc", { method: "POST" });
+    expect(okResponse).toBeInstanceOf(Response);
+    expect(readObjectProperty(window.location, "href")).toBe("/dashboard");
+
+    await httpFetch("/api/trpc", { method: "POST" });
     expect(readObjectProperty(window.location, "href")).toBe("/login");
 
     expect(fetchMock).toHaveBeenNthCalledWith(

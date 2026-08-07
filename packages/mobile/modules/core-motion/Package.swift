@@ -8,7 +8,12 @@ let package = Package(
         .target(
             name: "CoreMotionLib",
             path: "ios",
-            exclude: ["CoreMotionModule.swift", "ExpoCoreMotion.podspec"]
+            exclude: ["ExpoCoreMotion.podspec"]
+        ),
+        .testTarget(
+            name: "CoreMotionLibTests",
+            dependencies: ["CoreMotionLib"],
+            path: "Tests"
         ),
     ]
 )

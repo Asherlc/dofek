@@ -3,7 +3,7 @@ import {
   PROVIDER_GUIDE_CATEGORIES,
   PROVIDER_GUIDE_SETTINGS_KEY,
   shouldShowProviderGuide,
-} from "./provider-guide.ts";
+} from "./provider-guide";
 
 describe("shouldShowProviderGuide", () => {
   it("returns true when no providers connected and not dismissed", () => {
@@ -45,12 +45,19 @@ describe("PROVIDER_GUIDE_CATEGORIES", () => {
     }
   });
 
-  it("all provider IDs use hyphens, not underscores (match registry convention)", () => {
-    for (const category of PROVIDER_GUIDE_CATEGORIES) {
-      for (const providerId of category.providerIds) {
-        expect(providerId).not.toMatch(/_/);
-      }
-    }
+  it("categorizes the canonical Cycling Analytics provider ID", () => {
+    const activityTracking = PROVIDER_GUIDE_CATEGORIES.find(
+      (category) => category.title === "Activity Tracking",
+    );
+    expect(activityTracking?.providerIds).toContain("cycling_analytics");
+    expect(activityTracking?.providerIds).not.toContain("cycling-analytics");
+  });
+
+  it("categorizes BodySpec as a body composition provider", () => {
+    const bodyComposition = PROVIDER_GUIDE_CATEGORIES.find(
+      (category) => category.title === "Body Composition",
+    );
+    expect(bodyComposition?.providerIds).toContain("bodyspec");
   });
 
   it("has no duplicate category titles", () => {

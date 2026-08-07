@@ -281,7 +281,7 @@ describe("streamHealthExport — workout edge cases", () => {
     });
 
     expect(workouts).toHaveLength(1);
-    expect(workouts[0]?.activityType).toBe("cycling");
+    expect(workouts[0]?.activityType.canonicalType).toBe("cycling");
     expect(workouts[0]?.avgHeartRate).toBeUndefined();
     expect(workouts[0]?.routeLocations).toHaveLength(2);
   });
@@ -311,9 +311,9 @@ describe("streamHealthExport — workout edge cases", () => {
 
     expect(result.workoutCount).toBe(2);
     expect(workouts).toHaveLength(2);
-    expect(workouts[0]?.activityType).toBe("running");
+    expect(workouts[0]?.activityType.canonicalType).toBe("running");
     expect(workouts[0]?.avgHeartRate).toBe(155);
-    expect(workouts[1]?.activityType).toBe("yoga");
+    expect(workouts[1]?.activityType.canonicalType).toBe("yoga");
     expect(workouts[1]?.avgHeartRate).toBe(90);
   });
 
@@ -342,7 +342,7 @@ describe("streamHealthExport — workout edge cases", () => {
 
     expect(result.workoutCount).toBe(1);
     expect(workouts).toHaveLength(1);
-    expect(workouts[0]?.activityType).toBe("cycling");
+    expect(workouts[0]?.activityType.canonicalType).toBe("cycling");
     expect(workouts[0]?.avgHeartRate).toBe(140);
   });
 
@@ -684,7 +684,9 @@ describe("extractExportXml", () => {
     const zipPath = join(tmpDir, "no-export.zip");
     execSync(`cd "${zipDir2}" && zip "${zipPath}" other.txt`);
 
-    await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml found");
+    await expect(extractExportXml(zipPath)).rejects.toThrow(
+      "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    );
   });
 
   it("rejects for invalid ZIP file", async () => {

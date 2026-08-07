@@ -2,6 +2,8 @@ import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
 import { z } from "zod";
 
+// cspell:words HGET HVALS HSET ipairs
+
 export const UPLOAD_SESSION_TTL_MS = 30 * 60 * 1000;
 export const UPLOAD_STATUS_TTL_MS = 10 * 60 * 1000;
 
@@ -23,6 +25,12 @@ const uploadStatusSchema = z.object({
 
 export type UploadStatus = z.infer<typeof uploadStatusSchema>;
 
+export interface RecordedChunk {
+  accepted: boolean;
+  receivedCount: number;
+  receivedBytes: number;
+}
+
 interface RedisClient {
   set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<"OK" | null>;
   get(key: string): Promise<string | null>;
@@ -31,6 +39,7 @@ interface RedisClient {
   scard(key: string): Promise<number>;
   smembers(key: string): Promise<string[]>;
   expire(key: string, seconds: number): Promise<number>;
+  eval(script: string, keyCount: number, ...args: Array<string | number>): Promise<unknown>;
 }
 
 export interface UploadStateStore {
@@ -38,6 +47,13 @@ export interface UploadStateStore {
   getUploadSession(uploadId: string): Promise<UploadSession | null>;
   deleteUploadSession(uploadId: string): Promise<void>;
   addReceivedChunk(uploadId: string, chunkIndex: number, timeToLiveMs?: number): Promise<number>;
+  recordReceivedChunk(
+    uploadId: string,
+    chunkIndex: number,
+    byteCount: number,
+    maxBytes: number,
+    timeToLiveMs?: number,
+  ): Promise<RecordedChunk>;
   getReceivedChunkCount(uploadId: string): Promise<number>;
   getReceivedChunks(uploadId: string): Promise<number[]>;
   saveUploadStatus(uploadId: string, status: UploadStatus, timeToLiveMs?: number): Promise<void>;
@@ -53,6 +69,10 @@ function uploadChunksKey(uploadId: string): string {
   return `upload-chunks:${uploadId}`;
 }
 
+function uploadChunkBytesKey(uploadId: string): string {
+  return `upload-chunk-bytes:${uploadId}`;
+}
+
 function uploadStatusKey(uploadId: string): string {
   return `upload-status:${uploadId}`;
 }
@@ -64,6 +84,7 @@ function ttlSeconds(timeToLiveMs: number): number {
 export class InMemoryUploadStateStore implements UploadStateStore {
   #sessions = new Map<string, { value: UploadSession; expiresAt: number }>();
   #chunkSets = new Map<string, { value: Set<number>; expiresAt: number }>();
+  #chunkBytes = new Map<string, { value: Map<number, number>; expiresAt: number }>();
   #statuses = new Map<string, { value: UploadStatus; expiresAt: number }>();
 
   async saveUploadSession(
@@ -81,6 +102,7 @@ export class InMemoryUploadStateStore implements UploadStateStore {
   async deleteUploadSession(uploadId: string): Promise<void> {
     this.#sessions.delete(uploadId);
     this.#chunkSets.delete(uploadId);
+    this.#chunkBytes.delete(uploadId);
   }
 
   async addReceivedChunk(
@@ -93,6 +115,43 @@ export class InMemoryUploadStateStore implements UploadStateStore {
     next.add(chunkIndex);
     this.#chunkSets.set(uploadId, { value: next, expiresAt: Date.now() + timeToLiveMs });
     return next.size;
+  }
+
+  async recordReceivedChunk(
+    uploadId: string,
+    chunkIndex: number,
+    byteCount: number,
+    maxBytes: number,
+    timeToLiveMs = UPLOAD_SESSION_TTL_MS,
+  ): Promise<RecordedChunk> {
+    const existingBytes = this.#getFresh(this.#chunkBytes, uploadId);
+    const chunkBytes = existingBytes?.value ?? new Map<number, number>();
+    const previousBytes = chunkBytes.get(chunkIndex) ?? 0;
+    let receivedBytes = 0;
+    for (const value of chunkBytes.values()) {
+      receivedBytes += value;
+    }
+    const nextReceivedBytes = receivedBytes - previousBytes + byteCount;
+    const existingChunks = this.#getFresh(this.#chunkSets, uploadId);
+    const chunks = existingChunks?.value ?? new Set<number>();
+    if (nextReceivedBytes > maxBytes) {
+      return {
+        accepted: false,
+        receivedCount: chunks.size,
+        receivedBytes,
+      };
+    }
+
+    chunkBytes.set(chunkIndex, byteCount);
+    chunks.add(chunkIndex);
+    const expiresAt = Date.now() + timeToLiveMs;
+    this.#chunkBytes.set(uploadId, { value: chunkBytes, expiresAt });
+    this.#chunkSets.set(uploadId, { value: chunks, expiresAt });
+    return {
+      accepted: true,
+      receivedCount: chunks.size,
+      receivedBytes: nextReceivedBytes,
+    };
   }
 
   async getReceivedChunkCount(uploadId: string): Promise<number> {
@@ -149,6 +208,7 @@ export class RedisUploadStateStore implements UploadStateStore {
     const client = await this.#getRedisClient();
     await client.set(uploadSessionKey(uploadId), JSON.stringify(session), "PX", timeToLiveMs);
     await client.expire(uploadChunksKey(uploadId), ttlSeconds(timeToLiveMs));
+    await client.expire(uploadChunkBytesKey(uploadId), ttlSeconds(timeToLiveMs));
   }
 
   async getUploadSession(uploadId: string): Promise<UploadSession | null> {
@@ -172,7 +232,11 @@ export class RedisUploadStateStore implements UploadStateStore {
 
   async deleteUploadSession(uploadId: string): Promise<void> {
     const client = await this.#getRedisClient();
-    await client.del(uploadSessionKey(uploadId), uploadChunksKey(uploadId));
+    await client.del(
+      uploadSessionKey(uploadId),
+      uploadChunksKey(uploadId),
+      uploadChunkBytesKey(uploadId),
+    );
   }
 
   async addReceivedChunk(
@@ -185,6 +249,57 @@ export class RedisUploadStateStore implements UploadStateStore {
     await client.sadd(key, String(chunkIndex));
     await client.expire(key, ttlSeconds(timeToLiveMs));
     return client.scard(key);
+  }
+
+  async recordReceivedChunk(
+    uploadId: string,
+    chunkIndex: number,
+    byteCount: number,
+    maxBytes: number,
+    timeToLiveMs = UPLOAD_SESSION_TTL_MS,
+  ): Promise<RecordedChunk> {
+    const client = await this.#getRedisClient();
+    const result = await client.eval(
+      `
+      local chunk_bytes_key = KEYS[1]
+      local chunks_key = KEYS[2]
+      local chunk_index = ARGV[1]
+      local byte_count = tonumber(ARGV[2])
+      local max_bytes = tonumber(ARGV[3])
+      local ttl_ms = tonumber(ARGV[4])
+      local ttl_seconds = tonumber(ARGV[5])
+      local previous_bytes = tonumber(redis.call("HGET", chunk_bytes_key, chunk_index) or "0")
+      local current_bytes = 0
+      local all_bytes = redis.call("HVALS", chunk_bytes_key)
+      for _, value in ipairs(all_bytes) do
+        current_bytes = current_bytes + tonumber(value)
+      end
+      local next_bytes = current_bytes - previous_bytes + byte_count
+      local received_count = redis.call("SCARD", chunks_key)
+      if next_bytes > max_bytes then
+        return {0, received_count, current_bytes}
+      end
+      redis.call("HSET", chunk_bytes_key, chunk_index, byte_count)
+      redis.call("SADD", chunks_key, chunk_index)
+      redis.call("PEXPIRE", chunk_bytes_key, ttl_ms)
+      redis.call("EXPIRE", chunks_key, ttl_seconds)
+      return {1, redis.call("SCARD", chunks_key), next_bytes}
+      `,
+      2,
+      uploadChunkBytesKey(uploadId),
+      uploadChunksKey(uploadId),
+      String(chunkIndex),
+      byteCount,
+      maxBytes,
+      timeToLiveMs,
+      ttlSeconds(timeToLiveMs),
+    );
+    const parsed = z.tuple([z.number(), z.number(), z.number()]).parse(result);
+    return {
+      accepted: parsed[0] === 1,
+      receivedCount: parsed[1],
+      receivedBytes: parsed[2],
+    };
   }
 
   async getReceivedChunkCount(uploadId: string): Promise<number> {
@@ -255,6 +370,7 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     scard: async (key) => redisClient.scard(key),
     smembers: async (key) => redisClient.smembers(key),
     expire: async (key, seconds) => redisClient.expire(key, seconds),
+    eval: async (script, keyCount, ...args) => redisClient.eval(script, keyCount, ...args),
   };
 }
 

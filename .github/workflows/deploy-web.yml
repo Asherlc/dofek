@@ -7,16 +7,18 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
       image_tag:
         description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
         required: false
         default: "latest"
         type: string
-      refresh_materialized_views:
-        description: "Trigger materialized-view refresh after stack deploy"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -24,85 +26,60 @@ permissions:
   packages: read
   id-token: write
 
-concurrency:
-  group: deploy-web
-  cancel-in-progress: true
-
 jobs:
-  check:
-    name: Deploy Check
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+  eligibility:
+    name: Check Production Deploy Eligibility
+    runs-on: ubuntu-24.04-arm
     outputs:
-      image_tag: ${{ steps.resolve.outputs.image_tag }}
-      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
     steps:
-      - name: Resolve deploy target
-        id: resolve
+      - name: Reject stale or unsuccessful automatic deploys
+        id: check
         env:
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_TAG: ${{ inputs.image_tag }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -euo pipefail
+
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TAG="${INPUT_TAG:-latest}"
-            echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Deploying image: $TAG"
             exit 0
           fi
 
-          SHA="$WORKFLOW_RUN_SHA"
-          SHORT_SHA=$(echo "$SHA" | head -c 7)
-          TAG="sha-${SHORT_SHA}"
-          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          if [ "$CI_CONCLUSION" != "success" ]; then
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          require_tag() {
-            local package_name="$1"
-            if ! gh api "/users/${OWNER_LOWER}/packages/container/${package_name}/versions" \
-              --jq '.[].metadata.container.tags[]?' 2>/dev/null | grep -Fxq "$TAG"; then
-              echo "::error::Docker image ${package_name}:$TAG not found. CI may not have pushed it."
-              exit 1
-            fi
-          }
+          CURRENT_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq ".sha")
+          if [ "$TRIGGER_SHA" = "$CURRENT_SHA" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          require_tag "dofek"
-          require_tag "dofek-ml"
+          echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          echo "Skipping stale automatic deploy for ${TRIGGER_SHA}; current main is ${CURRENT_SHA}." >> "$GITHUB_STEP_SUMMARY"
 
-          {
-            echo "image_tag=$TAG"
-            echo "should_deploy=true"
-          } >> "$GITHUB_OUTPUT"
-          echo "Deploying CI image tag across stack services: $TAG"
-
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - uses: ./.github/actions/append-dispatcher-run-summary
-        if: always()
-        with:
-          dispatching_run_id: ${{ github.event.workflow_run.id }}
-
-  terraform:
-    name: Deploy Infra
-    needs: [check]
-    if: needs.check.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/deploy-terraform.yml
+  production:
+    name: Deploy Web Production
+    needs: eligibility
+    if: needs.eligibility.outputs.should_deploy == 'true'
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/deploy-web-environment.yml
     with:
-      dispatching_run_id: ${{ github.run_id }}
+      environment_name: production
+      ssh_user: ubuntu
+      stack_override: deploy/stack.oracle.yml
+      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
+      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+      ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
     secrets: inherit
-
-  deploy-app:
-    name: Deploy Stack
-    needs: [check, terraform]
-    if: needs.check.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/deploy-app.yml
-    with:
-      image_tag: ${{ needs.check.outputs.image_tag }}
-      server_host: ${{ needs.terraform.outputs.server_host }}
-      dispatching_run_id: ${{ github.run_id }}
-      refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
-    secrets: inherit
-
-  # Image cleanup runs on the server via docuum (see stack.yml).

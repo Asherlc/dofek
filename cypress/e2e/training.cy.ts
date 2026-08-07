@@ -22,10 +22,49 @@ describe("Training Page", () => {
 
   it("renders sub-tab navigation", () => {
     cy.visit("/training");
-    for (const tab of ["Overview", "Endurance", "Strength", "Hiking", "Recovery"]) {
-      cy.contains(tab).should("be.visible");
-    }
+    cy.get('nav[aria-label="Section navigation"]').within(() => {
+      for (const tab of ["Overview", "Endurance", "Strength", "Hiking", "Recovery"]) {
+        cy.contains("a", tab).should("be.visible");
+      }
+    });
   });
+
+  for (const viewportWidth of [320, 390]) {
+    it(`keeps every subsection reachable without horizontal scrolling at ${viewportWidth}px`, () => {
+      cy.viewport(viewportWidth, 800);
+      cy.visit("/training");
+
+      cy.get('nav[aria-label="Section navigation"]')
+        .should(($navigation) => {
+          const navigation = $navigation[0];
+          expect(navigation.scrollWidth).to.be.at.most(navigation.clientWidth);
+        })
+        .find("a")
+        .should("have.length", 8)
+        .each(($link) =>
+          cy
+            .wrap($link)
+            .should("be.visible")
+            .then(($visibleLink) => {
+              const bounds = $visibleLink[0].getBoundingClientRect();
+              expect(bounds.left).to.be.at.least(0);
+              expect(bounds.right).to.be.at.most(viewportWidth);
+            }),
+        );
+
+      cy.document().should((document) => {
+        expect(document.documentElement.scrollWidth).to.be.at.most(viewportWidth);
+      });
+
+      cy.get('nav[aria-label="Section navigation"] a').first().focus();
+      for (let tabIndex = 1; tabIndex < 8; tabIndex += 1) {
+        cy.press(Cypress.Keyboard.Keys.TAB);
+      }
+      cy.focused().should("have.text", "Recovery");
+      cy.press(Cypress.Keyboard.Keys.ENTER);
+      cy.url().should("include", "/training/recovery");
+    });
+  }
 
   it("navigates to sub-tabs without errors", () => {
     const subtabs = [

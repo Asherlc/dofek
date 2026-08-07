@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -73,7 +73,7 @@ vi.mock("../theme", () => ({
   },
 }));
 
-vi.mock("../app/_layout", () => ({
+vi.mock("../app/_layout-options", () => ({
   rootStackScreenOptions: {},
 }));
 
@@ -100,6 +100,29 @@ describe("HeartRateVisualizationScreen", () => {
     render(<HeartRateVisualizationScreen />);
 
     expect(screen.getByText("Connecting to WHOOP...")).toBeTruthy();
+  });
+
+  it("reports connection failures while preserving the visible error", async () => {
+    const whoopBle = await import("../modules/whoop-ble");
+    const connectionError = new Error("Bluetooth connection failed");
+    vi.spyOn(whoopBle, "findWhoop").mockResolvedValue({
+      id: "whoop-1",
+      name: "WHOOP",
+    });
+    vi.spyOn(whoopBle, "connect").mockRejectedValue(connectionError);
+    const { captureException } = await import("../lib/telemetry");
+    const { default: HeartRateVisualizationScreen } = await import(
+      "../app/heart-rate-visualization"
+    );
+
+    render(<HeartRateVisualizationScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Bluetooth connection failed")).toBeTruthy();
+    });
+    expect(captureException).toHaveBeenCalledWith(connectionError, {
+      source: "heart-rate-visualization-connect",
+    });
   });
 
   it("starts in streaming state when BLE is already connected", async () => {

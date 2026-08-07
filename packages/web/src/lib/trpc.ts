@@ -1,4 +1,4 @@
-import { httpBatchLink, httpBatchStreamLink, splitLink } from "@trpc/client";
+import { httpBatchLink, httpBatchStreamLink, httpLink, splitLink } from "@trpc/client";
 import type { CreateTRPCReact } from "@trpc/react-query";
 import { createTRPCReact } from "@trpc/react-query";
 import type { AppRouter } from "dofek-server/router";
@@ -6,6 +6,14 @@ import type { AppRouter } from "dofek-server/router";
 export const trpc: CreateTRPCReact<AppRouter, unknown> = createTRPCReact<AppRouter>();
 
 const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const unbatchedDashboardQueryPaths = new Set([
+  "recovery.readinessScore",
+  "recovery.workloadRatio",
+  "recovery.strainTarget",
+  "sleepNeed.performance",
+  "todayPlan.get",
+]);
 
 export function createTRPCClient() {
   const buildCommonOptions = () => ({
@@ -28,15 +36,29 @@ export function createTRPCClient() {
             return response;
           },
         }),
-        false: httpBatchStreamLink({
-          ...buildCommonOptions(),
-          fetch: async (url, options) => {
-            const response = await fetch(url, { ...options, credentials: "include" });
-            if (response.status === 401) {
-              window.location.href = "/login";
-            }
-            return response;
-          },
+        false: splitLink({
+          condition: (operation) =>
+            operation.type === "query" && unbatchedDashboardQueryPaths.has(operation.path),
+          true: httpLink({
+            ...buildCommonOptions(),
+            fetch: async (url, options) => {
+              const response = await fetch(url, { ...options, credentials: "include" });
+              if (response.status === 401) {
+                window.location.href = "/login";
+              }
+              return response;
+            },
+          }),
+          false: httpBatchStreamLink({
+            ...buildCommonOptions(),
+            fetch: async (url, options) => {
+              const response = await fetch(url, { ...options, credentials: "include" });
+              if (response.status === 401) {
+                window.location.href = "/login";
+              }
+              return response;
+            },
+          }),
         }),
       }),
     ],

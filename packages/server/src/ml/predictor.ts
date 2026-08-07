@@ -6,6 +6,9 @@
  * feature importances, and model diagnostics.
  */
 
+import { captureException } from "dofek/lib/error-reporting";
+import { predictorLinearFitFallbacksTotal } from "../lib/metrics.ts";
+import { logger } from "../logger.ts";
 import type { DailyFeatureRow, ExtractedDataset, PredictionTarget } from "./features.ts";
 import { buildDataset, PREDICTION_TARGETS } from "./features.ts";
 import { GradientBoostedTrees } from "./gradient-boost.ts";
@@ -65,7 +68,7 @@ export function trainPredictor(
 
   // Linear regression can fail on singular/underdetermined feature matrices.
   // When that happens, keep serving tree-based predictions instead of erroring.
-  const linear = fitLinearSafely(X, y);
+  const linear = fitLinearSafely(X, y, target.id);
 
   // Train gradient-boosted trees
   const tree = new GradientBoostedTrees({
@@ -141,7 +144,7 @@ export function trainFromDataset(
 
   // Activity datasets can be especially collinear (trailing aggregates + sparse
   // imputed columns). Fall back to tree-only predictions if linear fit fails.
-  const linear = fitLinearSafely(X, y);
+  const linear = fitLinearSafely(X, y, targetId);
 
   const tree = new GradientBoostedTrees({
     nEstimators: 100,
@@ -261,12 +264,52 @@ function crossValidate(X: number[][], y: number[], k: number): number {
   return totalSsTot === 0 ? 0 : 1 - totalSsRes / totalSsTot;
 }
 
-function fitLinearSafely(X: number[][], y: number[]): LinearRegression | null {
+function fitLinearSafely(
+  X: number[][],
+  y: number[],
+  predictionTarget: string,
+): LinearRegression | null {
   const linear = new LinearRegression();
   try {
     linear.fit(X, y);
     return linear;
-  } catch {}
+  } catch (error) {
+    const context = {
+      featureCount: X[0]?.length ?? 0,
+      predictionTarget,
+      sampleCount: X.length,
+    };
+    const errorContext =
+      error instanceof Error
+        ? {
+            errorMessage: error.message,
+            errorName: error.name,
+            errorStack: error.stack,
+          }
+        : {
+            errorMessage: String(error),
+            errorName: "UnknownError",
+          };
+    captureException(error, {
+      tags: {
+        component: "predictor",
+        operation: "linear-fit",
+        predictionTarget,
+      },
+      extra: {
+        featureCount: context.featureCount,
+        sampleCount: context.sampleCount,
+      },
+    });
+    logger.error(
+      JSON.stringify({
+        event: "predictor.linear_fit_fallback",
+        ...context,
+        ...errorContext,
+      }),
+    );
+    predictorLinearFitFallbacksTotal.inc({ prediction_target: predictionTarget });
+  }
   return null;
 }
 

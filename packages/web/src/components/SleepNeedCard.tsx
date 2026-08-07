@@ -1,25 +1,24 @@
-import { formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
-import { sleepDebtColor } from "@dofek/scoring/scoring";
-import type { SleepNeedResult } from "dofek-server/types";
+import {
+  formatDateLong,
+  formatDurationMinutes,
+  formatNumber,
+  formatWeekdayShort,
+} from "@dofek/format/format";
+import type { SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import {
   chartThemeColors,
   dofekAxis,
   dofekGrid,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
+import { formatSleepProvenance } from "../lib/sleepSource.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepNeedCardProps {
-  data: SleepNeedResult | undefined;
+  data: SleepNeedV2 | undefined;
   loading?: boolean;
-}
-
-function formatHoursMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = Math.round(minutes % 60);
-  return `${hours}h ${remainingMinutes}m`;
 }
 
 export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
@@ -35,8 +34,18 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     );
   }
 
-  const needHours = Math.round((data.totalNeedMinutes / 60) * 10) / 10;
-  const baselineHours = Math.round((data.baselineMinutes / 60) * 10) / 10;
+  if (data.availability !== "available") {
+    return (
+      <div className="card p-6">
+        <h3 className="text-muted text-sm font-medium mb-2">Sleep Need Tonight</h3>
+        <p className="text-subtle text-xs mb-2">{data.epistemicStatus.label}</p>
+        <p className="text-lg text-dim">{data.message}</p>
+        {data.availability === "insufficient_data" && (
+          <p className="text-subtle text-sm mt-2">{data.nextAction}</p>
+        )}
+      </div>
+    );
+  }
 
   // Recent nights bar chart
   const chartOption = {
@@ -53,27 +62,28 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         if (!params?.[0]) return "";
         const night = data.recentNights[params[0].dataIndex];
         if (!night) return "";
-        const date = new Date(`${night.date}T12:00:00`).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
+        const date = escapeTooltipHtml(formatDateLong(night.date));
         if (night.actualMinutes == null) {
           return `<div style="font-weight:600;margin-bottom:4px">${date}</div><div style="color:#6b7280">No data</div>`;
         }
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
-        html += `<div>Slept: <b>${formatHoursMinutes(night.actualMinutes)}</b></div>`;
-        html += `<div>Needed: <b>${formatHoursMinutes(night.neededMinutes)}</b></div>`;
+        html += `<div>Slept: <b>${formatDurationMinutes(night.actualMinutes)}</b></div>`;
+        html += `<div>${escapeTooltipHtml(data.estimateMetadata.componentLabels.baseline)}: <b>${formatDurationMinutes(night.neededMinutes)}</b></div>`;
         if (night.debtMinutes != null && night.debtMinutes > 0) {
-          html += `<div style="color:${statusColors.danger}">Debt: ${night.debtMinutes}m</div>`;
+          const differenceLabel = `Difference from ${data.estimateMetadata.componentLabels.baseline.toLowerCase()}`;
+          html += `<div style="color:${chartThemeColors.axisLabel}">${escapeTooltipHtml(differenceLabel)}: ${formatDurationMinutes(night.debtMinutes)}</div>`;
+        }
+        if (night.providerId) {
+          const { primary, alsoFrom } = formatSleepProvenance(night);
+          html += `<div style="color:#9ca3af;margin-top:4px">Source: ${escapeTooltipHtml(primary)}${
+            alsoFrom ? ` · also ${escapeTooltipHtml(alsoFrom)}` : ""
+          }</div>`;
         }
         return html;
       },
     }),
     xAxis: dofekAxis.category({
-      data: data.recentNights.map((n) =>
-        new Date(`${n.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }),
-      ),
+      data: data.recentNights.map((n) => formatWeekdayShort(n.date)),
     }),
     yAxis: dofekAxis.value({
       name: "hours",
@@ -84,22 +94,15 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         ...dofekSeries.bar(
           "Actual",
           data.recentNights.map((n) => ({
-            value: n.actualMinutes ?? 0,
-            itemStyle: {
-              color:
-                n.actualMinutes == null
-                  ? "#3a3a3e"
-                  : n.actualMinutes >= n.neededMinutes
-                    ? statusColors.positive
-                    : statusColors.danger,
-            },
+            value: n.actualMinutes,
+            itemStyle: { color: chartThemeColors.axisLabel },
           })),
         ),
         barMaxWidth: 30,
       },
       {
         ...dofekSeries.line(
-          "Need",
+          data.estimateMetadata.componentLabels.baseline,
           data.recentNights.map((n) => n.neededMinutes),
           {
             color: chartThemeColors.axisLabel,
@@ -117,42 +120,57 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     <div className="card p-6">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-muted text-sm font-medium mb-1">Sleep Need Tonight</h3>
-          {data.canRecommend ? (
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-bold text-blue-400">{needHours}h</span>
-              <span className="text-subtle text-sm">recommended</span>
-            </div>
-          ) : (
-            <div className="flex items-baseline gap-2">
-              <span className="text-lg text-dim">Need last night's sleep data</span>
-            </div>
-          )}
+          <h3 className="text-muted text-sm font-medium mb-1">
+            {data.epistemicStatus.label} sleep need tonight
+          </h3>
+          <p className="text-4xl font-bold text-blue-400">
+            {`${data.estimateMetadata.valueQualifier} ${formatDurationMinutes(data.totalNeedMinutes)}`}
+          </p>
+          <p className="text-subtle text-sm">{data.estimateMetadata.summaryLabel}</p>
         </div>
+        <a
+          aria-label="View sleep source data"
+          className="inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
+          href="#sleep-data-sources"
+        >
+          View data <span aria-hidden>→</span>
+        </a>
       </div>
 
       {/* Breakdown */}
       <div className="flex gap-4 mb-4 text-xs">
         <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">Baseline</p>
-          <p className="text-foreground font-medium">{baselineHours}h</p>
-        </div>
-        <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">Strain Debt</p>
-          <p className="text-foreground font-medium">+{data.strainDebtMinutes}m</p>
-        </div>
-        <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">Sleep Debt</p>
-          <p className="font-medium" style={{ color: sleepDebtColor(data.accumulatedDebtMinutes) }}>
-            {formatHoursMinutes(data.accumulatedDebtMinutes)}
+          <p className="text-subtle">{data.estimateMetadata.componentLabels.baseline}</p>
+          <p className="text-foreground font-medium">
+            {formatDurationMinutes(data.baselineMinutes)}
           </p>
         </div>
+        <div className="flex-1 bg-surface-solid rounded-lg p-2">
+          <p className="text-subtle">{data.estimateMetadata.componentLabels.strainDebt}</p>
+          <p className="text-foreground font-medium">
+            +{formatDurationMinutes(data.strainDebtMinutes)}
+          </p>
+        </div>
+        <div className="flex-1 bg-surface-solid rounded-lg p-2">
+          <p className="text-subtle">{data.estimateMetadata.componentLabels.debtRecovery}</p>
+          <p className="text-foreground font-medium">
+            +{formatDurationMinutes(data.debtRecoveryMinutes)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-4 space-y-1 text-xs text-muted">
+        <p>{data.estimateMetadata.basisLabel}</p>
+        <p>{data.estimateMetadata.coverageLabel}</p>
+        <p>{data.estimateMetadata.methodLabel}</p>
+        <p>{data.estimateMetadata.uncertaintyLabel}</p>
+        <p>{data.estimateMetadata.limitationLabel}</p>
       </div>
 
       {/* Recent nights chart */}
       {data.recentNights.length > 0 && (
         <div>
-          <p className="text-subtle text-xs mb-1">Last 7 nights (dashed = need)</p>
+          <p className="text-subtle text-xs mb-1">Last 7 nights (dashed = baseline estimate)</p>
           <DofekChart option={chartOption} height={120} />
         </div>
       )}

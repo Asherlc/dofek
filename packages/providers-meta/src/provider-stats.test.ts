@@ -78,12 +78,28 @@ describe("providerStatsTotal", () => {
   it("returns the single non-zero value for sparse stats", () => {
     expect(providerStatsTotal(SPARSE_STATS)).toBe(42);
   });
+
+  it("uses the API-provided total when present", () => {
+    expect(providerStatsTotal({ ...SPARSE_STATS, totalRecords: 100 })).toBe(100);
+  });
 });
 
 describe("providerStatsBreakdown", () => {
-  it("returns only non-zero entries with labels and counts", () => {
+  it("returns zero-valued entries with labels and counts", () => {
     const breakdown = providerStatsBreakdown(SPARSE_STATS);
-    expect(breakdown).toEqual([{ label: "Activities", count: 42 }]);
+    expect(breakdown).toEqual([
+      { label: "Activities", count: 42 },
+      { label: "Metric Stream", count: 0 },
+      { label: "Daily Metrics", count: 0 },
+      { label: "Sleep", count: 0 },
+      { label: "Body", count: 0 },
+      { label: "Food", count: 0 },
+      { label: "Nutrition", count: 0 },
+      { label: "Events", count: 0 },
+      { label: "Lab Panels", count: 0 },
+      { label: "Lab Results", count: 0 },
+      { label: "Journal", count: 0 },
+    ]);
   });
 
   it("returns all entries for full stats in display order", () => {
@@ -103,7 +119,8 @@ describe("providerStatsBreakdown", () => {
     ]);
   });
 
-  it("returns empty array for empty stats", () => {
-    expect(providerStatsBreakdown(EMPTY_STATS)).toEqual([]);
+  it("returns every entry for empty stats", () => {
+    expect(providerStatsBreakdown(EMPTY_STATS)).toHaveLength(DATA_TYPE_LABELS.length);
+    expect(providerStatsBreakdown(EMPTY_STATS).every(({ count }) => count === 0)).toBe(true);
   });
 });

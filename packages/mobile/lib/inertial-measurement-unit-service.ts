@@ -1,4 +1,5 @@
-import type { InertialMeasurementUnitSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { captureException } from "./telemetry";
 
 const TWELVE_HOURS_SECONDS = 12 * 3600;
 const UPLOAD_BATCH_SIZE = 5000;
@@ -14,8 +15,7 @@ export interface CoreMotionDeps {
 export interface WatchDeps {
   isAvailable(): boolean;
   requestSync(): Promise<boolean>;
-  getPendingSamples(): Promise<InertialMeasurementUnitSample[]>;
-  acknowledgeSamples(): void;
+  syncPendingFiles(): Promise<void>;
 }
 
 /** Abstraction over WHOOP BLE module for IMU streaming during activity recording */
@@ -24,7 +24,8 @@ export interface WhoopBleDeps {
   findAndConnect(): Promise<boolean>;
   startStreaming(): Promise<boolean>;
   stopStreaming(): Promise<boolean>;
-  getBufferedSamples(): Promise<InertialMeasurementUnitSample[]>;
+  peekBufferedSamples(): Promise<InertialMeasurementUnitSample[]>;
+  confirmSamplesDrain(count: number): void;
 }
 
 /** tRPC client interface for IMU sample upload */
@@ -92,7 +93,10 @@ export function createInertialMeasurementUnitService(
       if (coreMotion.isAccelerometerRecordingAvailable()) {
         try {
           await coreMotion.startRecording(TWELVE_HOURS_SECONDS);
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, {
+            source: "activity-recording-core-motion-start",
+          });
           // Best-effort — don't block activity recording
         }
       }
@@ -101,20 +105,30 @@ export function createInertialMeasurementUnitService(
       if (watch.isAvailable()) {
         try {
           await watch.requestSync();
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-recording-watch-sync" });
           // Best-effort — Watch may not be reachable
         }
       }
 
       // Connect to WHOOP strap and start IMU streaming (best-effort)
       if (whoopBle?.isAvailable()) {
+        let connected = false;
         try {
-          const connected = await whoopBle.findAndConnect();
-          if (connected) {
-            await whoopBle.startStreaming();
-          }
-        } catch {
+          connected = await whoopBle.findAndConnect();
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-recording-whoop-connect" });
           // Best-effort — WHOOP may not be nearby or BLE unavailable
+        }
+        if (connected) {
+          try {
+            await whoopBle.startStreaming();
+          } catch (error: unknown) {
+            captureException(error, {
+              source: "activity-recording-whoop-start-streaming",
+            });
+            // Best-effort — WHOOP streaming may be unavailable
+          }
         }
       }
     },
@@ -127,33 +141,40 @@ export function createInertialMeasurementUnitService(
           if (phoneSamples.length > 0) {
             await uploadBatched(deviceId, "iphone", phoneSamples);
           }
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-save-core-motion-sync" });
           // Best-effort — don't fail activity save
         }
       }
 
-      // Sync Watch IMU data
+      // Sync Watch accelerometer and altitude files through their per-file
+      // pipelines so only files whose complete upload succeeded are deleted.
       if (watch.isAvailable()) {
         try {
-          const watchSamples = await watch.getPendingSamples();
-          if (watchSamples.length > 0) {
-            await uploadBatched("Apple Watch", "apple_watch", watchSamples);
-            watch.acknowledgeSamples();
-          }
-        } catch {
+          await watch.syncPendingFiles();
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-save-watch-sync" });
           // Best-effort — don't fail activity save
         }
       }
 
-      // Retrieve and upload WHOOP BLE IMU samples
+      // Peek and upload WHOOP BLE IMU samples, then drain only after the server
+      // acknowledges every batch so failed uploads can be retried.
       if (whoopBle?.isAvailable()) {
+        let bufferedSampleCount = 0;
         try {
-          const whoopSamples = await whoopBle.getBufferedSamples();
+          const whoopSamples = await whoopBle.peekBufferedSamples();
+          bufferedSampleCount = whoopSamples.length;
           if (whoopSamples.length > 0) {
             await uploadBatched("WHOOP Strap", "whoop", whoopSamples);
+            whoopBle.confirmSamplesDrain(whoopSamples.length);
           }
           await whoopBle.stopStreaming();
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, {
+            source: "activity-save-whoop-imu-upload",
+            bufferedSampleCount,
+          });
           // Best-effort — don't fail activity save
         }
       }

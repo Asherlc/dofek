@@ -1,19 +1,16 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  bodyMeasurement,
-  dailyMetrics,
-  metricStream,
-  oauthToken,
-  sleepSession,
-  userProfile,
-} from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { oauthToken, userProfile } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { EightSleepProvider } from "./eight-sleep.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 // ============================================================
 // Fake Eight Sleep API responses
@@ -104,6 +101,21 @@ function eightSleepHandlers(trendDays: FakeTrendDay[]) {
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
+
+async function clearEightSleepRows(ctx: TestContext) {
+  await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
+  await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
+}
+
+async function saveValidEightSleepTokens(ctx: TestContext) {
+  await saveTokens(ctx.db, "eight-sleep", {
+    accessToken: "valid-token",
+    refreshToken: null,
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    scopes: "userId:user-123",
+  });
+}
 
 describe("EightSleepProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -113,6 +125,10 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "eight-sleep", "Eight Sleep");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -155,7 +171,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
     const provider = new EightSleepProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("eight-sleep");
     expect(result.errors).toHaveLength(0);
@@ -175,6 +197,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(sleep1.deepMinutes).toBe(120); // 2 hours
     expect(sleep1.remMinutes).toBe(120);
     expect(sleep1.lightMinutes).toBe(180);
+    expect(sleep1.stagingAvailable).toBe(true);
 
     // Verify daily metrics
     const dailyRows = await ctx.db
@@ -185,28 +208,21 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
     const daily1 = dailyRows.find((r) => r.date === "2026-03-01");
     if (!daily1) throw new Error("expected daily metrics for 2026-03-01");
-    expect(daily1.restingHr).toBe(58);
     expect(daily1.hrv).toBeCloseTo(45);
     expect(daily1.respiratoryRateAvg).toBeCloseTo(15.5);
 
-    // Verify body temperature measurements
-    const bodyRows = await ctx.db
-      .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    expect(bodyRows).toHaveLength(2);
+    const streamRows = metricStreamCapture.publishedMetricStreamRows;
+    const bodyTemperatureRows = streamRows.filter((row) => row.channel === "body_temperature");
+    expect(bodyTemperatureRows).toHaveLength(2);
 
-    const temp1 = bodyRows.find((r) => r.externalId === "eightsleep-temp-2026-03-01");
+    const temp1 = bodyTemperatureRows.find((r) => r.externalId === "eightsleep-temp-2026-03-01");
     if (!temp1) throw new Error("expected body temp for 2026-03-01");
-    expect(temp1.temperatureC).toBeCloseTo(33.5);
+    expect(temp1.scalar).toBeCloseTo(33.5);
 
     // Verify HR metric stream
-    const hrRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "eight-sleep"));
-    expect(hrRows).toHaveLength(5); // 3 from day 1 + 2 from day 2
-    expect(hrRows.every((r) => r.scalar !== null && r.scalar > 0)).toBe(true);
+    const heartRateRows = streamRows.filter((row) => row.channel === "heart_rate");
+    expect(heartRateRows).toHaveLength(5); // 3 from day 1 + 2 from day 2
+    expect(heartRateRows.every((row) => row.scalar != null && row.scalar > 0)).toBe(true);
   });
 
   it("skips processing days", async () => {
@@ -220,8 +236,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Clear existing data
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({ day: "2026-03-10", processing: true }),
@@ -231,7 +245,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.use(...eightSleepHandlers(days));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -253,12 +273,17 @@ describe("EightSleepProvider.sync() (integration)", () => {
     });
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain(
-      "Eight Sleep token expired — please re-authenticate via Settings",
-    );
+    expect(result.errors[0]?.message).toContain("Eight Sleep access token expired.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "access_token_expired" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -266,7 +291,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "eight-sleep"));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -282,10 +313,17 @@ describe("EightSleepProvider.sync() (integration)", () => {
     });
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("user ID not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -300,8 +338,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Clear existing data
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({
@@ -320,7 +356,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.use(...eightSleepHandlers(days));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Sleep session should be skipped (no presenceStart/End)
     const sleepRows = await ctx.db
@@ -330,6 +372,198 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(sleepRows).toHaveLength(0);
 
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("skips sleep when either presence boundary is missing", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-21",
+          presenceStart: "",
+          presenceEnd: "2026-03-21T07:00:00Z",
+          sessions: [],
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const sleepRows = await ctx.db
+      .select()
+      .from(sleepSession)
+      .where(eq(sleepSession.providerId, "eight-sleep"));
+    expect(sleepRows).toHaveLength(0);
+  });
+
+  it("syncs daily metrics when any supported quality metric is present", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-22",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            hrv: { score: 80, current: 44, average: 40 },
+          },
+        }),
+        fakeTrendDay({
+          day: "2026-03-23",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            respiratoryRate: { score: 90, current: 15.4, average: 15.1 },
+          },
+        }),
+        fakeTrendDay({
+          day: "2026-03-24",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            tempBedC: { average: 33.2 },
+          },
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "eight-sleep"));
+    expect(dailyRows).toHaveLength(3);
+    expect(dailyRows.map((row) => row.date).sort()).toEqual([
+      "2026-03-22",
+      "2026-03-23",
+      "2026-03-24",
+    ]);
+  });
+
+  it("skips daily metrics when every supported quality metric is absent", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-25",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: { total: 0 },
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "eight-sleep"));
+    expect(dailyRows).toHaveLength(0);
+  });
+
+  it("syncs bed temperature without room temperature and falls back to the day timestamp", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-26",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            tempBedC: { average: 33.4 },
+          },
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const temperatureRows = metricStreamCapture.publishedMetricStreamRows;
+    expect(temperatureRows).toHaveLength(1);
+    const temperatureRow = temperatureRows[0];
+    if (!temperatureRow) throw new Error("expected temperature row");
+    expect(temperatureRow.channel).toBe("body_temperature");
+    expect(temperatureRow.scalar).toBeCloseTo(33.4);
+    expect(new Date(temperatureRow.recordedAt).toISOString()).toBe("2026-03-26T00:00:00.000Z");
+  });
+
+  it("skips temperature and heart-rate streams when optional source fields are absent", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-27",
+          sessions: undefined,
+          sleepQualityScore: undefined,
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const streamRows = metricStreamCapture.publishedMetricStreamRows;
+    expect(streamRows).toHaveLength(0);
   });
 
   it("does not overwrite another user's rows with matching external identifiers", async () => {
@@ -369,14 +603,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
       date: day,
       steps: 1234,
     });
-    await ctx.db.insert(bodyMeasurement).values({
-      userId: secondUserId,
-      providerId: "eight-sleep",
-      externalId: temperatureExternalId,
-      recordedAt: new Date("2026-03-28T23:00:00Z"),
-      temperatureC: 31.2,
-    });
-
     server.use(
       ...eightSleepHandlers([
         fakeTrendDay({
@@ -388,7 +614,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-20T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-20T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -404,11 +636,9 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(providerDailyRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
     expect(providerDailyRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
 
-    const temperatureRows = await ctx.db
-      .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.externalId, temperatureExternalId));
-    expect(temperatureRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
-    expect(temperatureRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
+    const publishedTemperatureRows = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.externalId === temperatureExternalId,
+    );
+    expect(publishedTemperatureRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
   });
 });

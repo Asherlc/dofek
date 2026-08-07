@@ -1,30 +1,68 @@
 # Dev backing services. Run the app outside Docker for fast iteration.
 #
 # Usage:
-#   docker compose up -d
+#   pnpm compose:up
 #   pnpm dev              # sync runner
 #   cd packages/web && pnpm dev   # Vite dev server
 #   cd packages/server && pnpm dev # Express API server
 
 services:
   db:
-    image: timescale/timescaledb:2.26.2-pg18
+    image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=4
+      - -c
+      - max_wal_senders=4
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-health}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-0}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U health -d health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.7.1.1315-alpine
+    restart: unless-stopped
+    mem_limit: 1536m
+    environment:
+      CLICKHOUSE_DB: fitness
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-health}
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-0}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-0}:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./deploy/clickhouse/users.d/default-query-guardrails.xml:/etc/clickhouse-server/users.d/default-query-guardrails.xml:ro
+      - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ./deploy/clickhouse/config.d/memory-limits.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --password \"$${CLICKHOUSE_PASSWORD:-health}\" --query 'SELECT 1'",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-0}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -33,8 +71,104 @@ services:
       timeout: 3s
       retries: 5
 
+  redpanda:
+    image: redpandadata/redpanda:v26.1.13
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      # NOTE: cluster properties like kafka_batch_max_bytes are NOT valid
+      # `rpk redpanda start` flags — adding e.g. --kafka-batch-max-bytes here
+      # crash-loops the broker. Set them via `rpk cluster config set` instead.
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://127.0.0.1:${REDPANDA_PORT:-19092}
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+    ports:
+      - "127.0.0.1:${REDPANDA_PORT:-19092}:19092"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  metric-stream-minio:
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    profiles: ["metric-stream"]
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${METRIC_STREAM_R2_ACCESS_KEY_ID:-metricstream}
+      MINIO_ROOT_PASSWORD: ${METRIC_STREAM_R2_SECRET_ACCESS_KEY:-metricstreamlocaldev}
+      METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:-dofek-metric-stream-archive}
+    volumes:
+      - metric_stream_minio_data:/data
+    ports:
+      - "127.0.0.1:${METRIC_STREAM_MINIO_PORT:-0}:9000"
+    entrypoint: >
+      /bin/sh -euc "
+      minio server /data --console-address=:36987 &
+      attempts=0;
+      until mc alias set metric-stream-minio http://metric-stream-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        attempts=$$((attempts + 1));
+        if [ $$attempts -ge 30 ]; then
+          echo metric-stream-minio did not become ready in time >&2;
+          exit 1;
+        fi;
+        sleep 1;
+      done;
+      mc mb --ignore-existing metric-stream-minio/$$METRIC_STREAM_R2_BUCKET;
+      wait
+      "
+
+  metric-stream-clickhouse-sink:
+    build:
+      context: .
+      target: server
+    profiles: ["metric-stream"]
+    restart: unless-stopped
+    command: ["metric-stream-clickhouse-sink"]
+    environment:
+      NODE_ENV: production
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD:-health}@clickhouse:8123
+      REDPANDA_BROKERS: redpanda:9092
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:-metric-stream-v1}
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
+  metric-stream-r2-archive:
+    image: docker.redpanda.com/redpandadata/connect:4.99.0
+    profiles: ["metric-stream"]
+    restart: unless-stopped
+    command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:-metric-stream-v1}
+      METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:-dofek-metric-stream-archive}
+      R2_ENDPOINT: http://metric-stream-minio:9000
+      R2_ACCESS_KEY_ID: ${METRIC_STREAM_R2_ACCESS_KEY_ID:-metricstream}
+      R2_SECRET_ACCESS_KEY: ${METRIC_STREAM_R2_SECRET_ACCESS_KEY:-metricstreamlocaldev}
+    volumes:
+      - ./deploy/redpanda/metric-stream-r2-archive.connect.yml:/connect/metric-stream-r2-archive.connect.yml:ro
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      metric-stream-minio:
+        condition: service_started
+
   collector:
-    image: otel/opentelemetry-collector-contrib:0.149.0
+    image: otel/opentelemetry-collector-contrib:0.157.0-386
     restart: unless-stopped
     user: "0:0"
     environment:
@@ -50,4 +184,7 @@ services:
 
 volumes:
   db_data:
+  clickhouse_data:
   redis_data:
+  redpanda_data:
+  metric_stream_minio_data:

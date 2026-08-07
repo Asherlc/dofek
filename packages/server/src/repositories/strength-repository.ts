@@ -1,7 +1,14 @@
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Database } from "../../../../src/db/index.ts";
+import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  ProgressiveOverload,
+  type ProgressiveOverloadObservation,
+} from "./progressive-overload.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -39,6 +46,16 @@ export interface OneRepMaxEntryRow {
   actualReps: number;
 }
 
+export type EstimatedMaxTrendDirection = "increasing" | "decreasing" | "stable";
+
+export interface EstimatedMaxTrendEvidence {
+  direction: EstimatedMaxTrendDirection;
+  summary: string;
+  changeMagnitudeKg: number;
+  firstDate: string;
+  latestDate: string;
+}
+
 /** An exercise with estimated 1RM history over time. */
 export class EstimatedOneRepMax {
   readonly #exerciseName: string;
@@ -49,10 +66,46 @@ export class EstimatedOneRepMax {
     this.#history = history;
   }
 
+  get trend(): EstimatedMaxTrendEvidence {
+    const firstEntry = this.#history[0];
+    const latestEntry = this.#history.at(-1);
+    if (!firstEntry || !latestEntry) {
+      throw new Error("Estimated max history must contain at least one observation.");
+    }
+
+    const changeKg = Math.round((latestEntry.estimatedMax - firstEntry.estimatedMax) * 10) / 10;
+    if (changeKg > 0) {
+      return {
+        direction: "increasing",
+        summary: "Estimated max increased from first to latest estimate.",
+        changeMagnitudeKg: changeKg,
+        firstDate: firstEntry.date,
+        latestDate: latestEntry.date,
+      };
+    }
+    if (changeKg < 0) {
+      return {
+        direction: "decreasing",
+        summary: "Estimated max decreased from first to latest estimate.",
+        changeMagnitudeKg: -changeKg,
+        firstDate: firstEntry.date,
+        latestDate: latestEntry.date,
+      };
+    }
+    return {
+      direction: "stable",
+      summary: "Estimated max did not change from first to latest estimate.",
+      changeMagnitudeKg: 0,
+      firstDate: firstEntry.date,
+      latestDate: latestEntry.date,
+    };
+  }
+
   toDetail() {
     return {
       exerciseName: this.#exerciseName,
       history: this.#history,
+      trend: this.trend,
     };
   }
 }
@@ -76,34 +129,6 @@ export class MuscleGroupVolume {
     return {
       muscleGroup: this.#muscleGroup,
       weeklyData: this.#weeklyData,
-    };
-  }
-}
-
-/** Progressive overload trend for a single exercise. */
-export class ProgressiveOverload {
-  readonly #exerciseName: string;
-  readonly #weeklyVolumes: number[];
-
-  constructor(exerciseName: string, weeklyVolumes: number[]) {
-    this.#exerciseName = exerciseName;
-    this.#weeklyVolumes = weeklyVolumes;
-  }
-
-  get slopeKgPerWeek(): number {
-    return Math.round(linearRegressionSlope(this.#weeklyVolumes) * 100) / 100;
-  }
-
-  get isProgressing(): boolean {
-    return linearRegressionSlope(this.#weeklyVolumes) > 0;
-  }
-
-  toDetail() {
-    return {
-      exerciseName: this.#exerciseName,
-      weeklyVolumes: this.#weeklyVolumes,
-      slopeKgPerWeek: this.slopeKgPerWeek,
-      isProgressing: this.isProgressing,
     };
   }
 }
@@ -257,19 +282,21 @@ export class StrengthRepository {
   }
 
   /** Weekly tonnage: SUM(weight_kg * reps) grouped by week. */
-  async getVolumeOverTime(days: number): Promise<VolumeWeek[]> {
+  async getVolumeOverTime(days: RangeDays): Promise<VolumeWeek[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       volumeRowSchema,
       sql`SELECT
-            date_trunc('week', (sw.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
             COUNT(ss.id)::int AS set_count,
-            COUNT(DISTINCT sw.id)::int AS workout_count
-          FROM fitness.strength_workout sw
-          JOIN fitness.strength_set ss ON ss.workout_id = sw.id
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            COUNT(DISTINCT a.id)::int AS workout_count
+          FROM fitness.v_activity a
+          JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
+          WHERE a.user_id = ${this.#userId}
+            AND a.canonical_type = 'strength'
+            ${rangeFilter}
           GROUP BY 1
           ORDER BY week`,
     );
@@ -286,28 +313,30 @@ export class StrengthRepository {
   }
 
   /** Estimated 1RM using Epley formula, best e1RM per workout per exercise. */
-  async getEstimatedOneRepMax(days: number): Promise<EstimatedOneRepMax[]> {
+  async getEstimatedOneRepMax(days: RangeDays): Promise<EstimatedOneRepMax[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       oneRepMaxRowSchema,
       sql`WITH best_per_workout AS (
             SELECT
               e.name AS exercise_name,
-              (sw.started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
+              (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
               ss.weight_kg * (1 + ss.reps / 30.0) AS e1rm,
               ss.weight_kg AS actual_weight,
               ss.reps AS actual_reps,
               ROW_NUMBER() OVER (
-                PARTITION BY e.id, sw.id
+                PARTITION BY e.id, a.id
                 ORDER BY ss.weight_kg * (1 + ss.reps / 30.0) DESC
               ) AS rn
             FROM fitness.strength_set ss
-            JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
+            JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
             JOIN fitness.exercise e ON e.id = ss.exercise_id
-            WHERE sw.user_id = ${this.#userId}
-              AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ss.set_type = 'working'
-              AND ss.weight_kg > 0
+          WHERE a.user_id = ${this.#userId}
+            AND a.canonical_type = 'strength'
+            ${rangeFilter}
+            AND ss.set_type = 'working'
+            AND ss.weight_kg > 0
               AND ss.reps BETWEEN 1 AND 12
           ),
           qualified_exercises AS (
@@ -347,20 +376,22 @@ export class StrengthRepository {
   }
 
   /** Weekly sets per muscle group. */
-  async getMuscleGroupVolume(days: number): Promise<MuscleGroupVolume[]> {
+  async getMuscleGroupVolume(days: RangeDays): Promise<MuscleGroupVolume[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       muscleGroupRowSchema,
       sql`SELECT
             mg AS muscle_group,
-            date_trunc('week', (sw.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COUNT(ss.id)::int AS sets
           FROM fitness.strength_set ss
-          JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
+          JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          WHERE a.user_id = ${this.#userId}
+            AND a.canonical_type = 'strength'
+            ${rangeFilter}
             AND e.muscle_groups IS NOT NULL
           GROUP BY mg, 2
           ORDER BY mg, week`,
@@ -379,34 +410,36 @@ export class StrengthRepository {
   }
 
   /** Weekly volume per exercise with linear regression slope. */
-  async getProgressiveOverload(days: number): Promise<ProgressiveOverload[]> {
+  async getProgressiveOverload(days: RangeDays): Promise<ProgressiveOverload[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       overloadRowSchema,
       sql`SELECT
             e.name AS exercise_name,
-            date_trunc('week', (sw.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS weekly_volume
           FROM fitness.strength_set ss
-          JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
+          JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          WHERE a.user_id = ${this.#userId}
+            AND a.canonical_type = 'strength'
+            ${rangeFilter}
             AND ss.weight_kg > 0
           GROUP BY e.name, 2
           ORDER BY e.name, week`,
     );
 
-    const exerciseMap = new Map<string, number[]>();
+    const exerciseMap = new Map<string, ProgressiveOverloadObservation[]>();
     for (const row of rows) {
-      const volumes = exerciseMap.get(row.exercise_name) ?? [];
-      volumes.push(row.weekly_volume);
-      exerciseMap.set(row.exercise_name, volumes);
+      const observations = exerciseMap.get(row.exercise_name) ?? [];
+      observations.push({ week: row.week, totalVolumeKg: row.weekly_volume });
+      exerciseMap.set(row.exercise_name, observations);
     }
 
     return Array.from(exerciseMap.entries())
-      .filter(([, volumes]) => volumes.length >= 2)
-      .map(([exerciseName, weeklyVolumes]) => new ProgressiveOverload(exerciseName, weeklyVolumes));
+      .filter(([, observations]) => observations.length >= 2)
+      .map(([exerciseName, observations]) => new ProgressiveOverload(exerciseName, observations));
   }
 
   /** Exercises and sets for a single activity (joins via source_external_ids). */
@@ -428,14 +461,7 @@ export class StrengthRepository {
             ss.rpe,
             ss.notes
           FROM fitness.v_activity a
-          CROSS JOIN LATERAL jsonb_array_elements(
-            COALESCE(a.source_external_ids, '[]'::jsonb)
-          ) AS src
-          JOIN fitness.strength_workout sw
-            ON sw.provider_id = src->>'providerId'
-            AND sw.external_id = src->>'externalId'
-            AND sw.user_id = a.user_id
-          JOIN fitness.strength_set ss ON ss.workout_id = sw.id
+          JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.id = ${activityId}
             AND a.user_id = ${this.#userId}
@@ -458,8 +484,12 @@ export class StrengthRepository {
         exercise = {
           name: row.exercise_name,
           equipment: row.equipment,
-          muscleGroups: row.muscle_groups,
-          exerciseType: row.exercise_type,
+          muscleGroups: resolveExerciseMuscleGroups(row.exercise_name, row.muscle_groups),
+          exerciseType: resolveExerciseType(
+            row.exercise_name,
+            row.muscle_groups,
+            row.exercise_type,
+          ),
           sets: [],
         };
         exerciseMap.set(row.exercise_index, exercise);
@@ -489,24 +519,26 @@ export class StrengthRepository {
   }
 
   /** Recent workout summaries. */
-  async getWorkoutSummaries(days: number): Promise<WorkoutSummary[]> {
+  async getWorkoutSummaries(days: RangeDays): Promise<WorkoutSummary[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       summaryRowSchema,
       sql`SELECT
-            (sw.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
-            sw.name,
+            (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
+            a.name,
             COUNT(DISTINCT ss.exercise_id)::int AS exercise_count,
             COUNT(ss.id)::int AS total_sets,
             COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
-            ROUND(EXTRACT(EPOCH FROM (sw.ended_at - sw.started_at)) / 60)::int AS duration_minutes
-          FROM fitness.strength_workout sw
-          LEFT JOIN fitness.strength_set ss ON ss.workout_id = sw.id
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND sw.ended_at IS NOT NULL
-          GROUP BY sw.id, sw.started_at, sw.ended_at, sw.name
-          ORDER BY sw.started_at DESC`,
+            ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::int AS duration_minutes
+          FROM fitness.v_activity a
+          LEFT JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
+          WHERE a.user_id = ${this.#userId}
+            AND a.canonical_type = 'strength'
+            ${rangeFilter}
+            AND a.ended_at IS NOT NULL
+          GROUP BY a.id, a.started_at, a.ended_at, a.name
+          ORDER BY a.started_at DESC`,
     );
 
     return rows.map(
@@ -523,32 +555,27 @@ export class StrengthRepository {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compute the slope of a simple linear regression (y = a + b*x)
- * where x is the zero-based index (i.e. week number).
- */
-export function linearRegressionSlope(values: number[]): number {
-  const valueCount = values.length;
-  if (valueCount < 2) return 0;
-
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
-
-  for (let index = 0; index < valueCount; index++) {
-    sumX += index;
-    sumY += values[index] ?? 0;
-    sumXY += index * (values[index] ?? 0);
-    sumX2 += index * index;
+function resolveExerciseMuscleGroups(
+  exerciseName: string,
+  storedMuscleGroups: string[] | null,
+): string[] | null {
+  if (storedMuscleGroups && storedMuscleGroups.length > 0 && !isBroadBackOnly(storedMuscleGroups)) {
+    return storedMuscleGroups;
   }
 
-  const denominator = valueCount * sumX2 - sumX * sumX;
-  if (denominator === 0) return 0;
+  return lookupExerciseMuscleGroups(exerciseName) ?? storedMuscleGroups;
+}
 
-  return (valueCount * sumXY - sumX * sumY) / denominator;
+function resolveExerciseType(
+  exerciseName: string,
+  storedMuscleGroups: string[] | null,
+  storedExerciseType: string | null,
+): string | null {
+  if (storedExerciseType) return storedExerciseType;
+  const resolvedMuscleGroups = resolveExerciseMuscleGroups(exerciseName, storedMuscleGroups);
+  return resolvedMuscleGroups && resolvedMuscleGroups.length > 0 ? "STRENGTH" : null;
+}
+
+function isBroadBackOnly(muscleGroups: string[]): boolean {
+  return muscleGroups.length === 1 && muscleGroups[0] === "BACK";
 }

@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { MetricCard } from "./MetricCard";
 
 describe("MetricCard", () => {
@@ -10,7 +10,7 @@ describe("MetricCard", () => {
   });
 
   it("renders unit when provided", () => {
-    render(<MetricCard title="HRV" value="62" unit="ms" />);
+    render(<MetricCard title="Heart Rate Variability" value="62" unit="ms" />);
     expect(screen.getByText("ms")).toBeTruthy();
   });
 
@@ -20,22 +20,22 @@ describe("MetricCard", () => {
   });
 
   it("shows up arrow for upward trend", () => {
-    render(<MetricCard title="HRV" value="62" trendDirection="up" />);
+    render(<MetricCard title="Heart Rate Variability" value="62" trendDirection="up" />);
     expect(screen.getByText("\u2191")).toBeTruthy();
   });
 
   it("shows down arrow for downward trend", () => {
-    render(<MetricCard title="HRV" value="62" trendDirection="down" />);
+    render(<MetricCard title="Heart Rate Variability" value="62" trendDirection="down" />);
     expect(screen.getByText("\u2193")).toBeTruthy();
   });
 
   it("shows stable arrow for stable trend", () => {
-    render(<MetricCard title="HRV" value="62" trendDirection="stable" />);
+    render(<MetricCard title="Heart Rate Variability" value="62" trendDirection="stable" />);
     expect(screen.getByText("\u2192")).toBeTruthy();
   });
 
   it("hides trend arrow when no direction given", () => {
-    render(<MetricCard title="HRV" value="62" />);
+    render(<MetricCard title="Heart Rate Variability" value="62" />);
     expect(screen.queryByText("\u2191")).toBeNull();
     expect(screen.queryByText("\u2193")).toBeNull();
     expect(screen.queryByText("\u2192")).toBeNull();
@@ -43,7 +43,14 @@ describe("MetricCard", () => {
 
   it("renders trend arrow with provided color", () => {
     const customColor = "rgb(255, 0, 255)"; // JSDOM converts hex to rgb in computed style
-    render(<MetricCard title="HRV" value="62" trendDirection="up" color={customColor} />);
+    render(
+      <MetricCard
+        title="Heart Rate Variability"
+        value="62"
+        trendDirection="up"
+        color={customColor}
+      />,
+    );
     // Find the arrow text element
     const arrow = screen.getByText("\u2191");
     expect(arrow.style.color).toBe(customColor);
@@ -61,11 +68,28 @@ describe("MetricCard", () => {
 
   it("shows chart tooltip button when trend chart is rendered", () => {
     render(<MetricCard title="Stress" value="1.2" trend={[1, 2, 3]} />);
-    expect(screen.getByLabelText("Chart info for Stress")).toBeTruthy();
+    expect(screen.getByLabelText("About Stress")).toBeTruthy();
   });
 
   it("hides chart tooltip button when no trend chart is rendered", () => {
     render(<MetricCard title="Stress" value="1.2" />);
-    expect(screen.queryByLabelText("Chart info for Stress")).toBeNull();
+    expect(screen.queryByLabelText("About Stress")).toBeNull();
+  });
+
+  it("hides the data action when no contributor destination is configured", () => {
+    render(<MetricCard title="Heart Rate Variability" value="62" />);
+
+    expect(
+      screen.queryByRole("button", { name: "View data for Heart Rate Variability" }),
+    ).toBeNull();
+  });
+
+  it("opens the configured contributor destination from an accessible data action", () => {
+    const onViewData = vi.fn();
+    render(<MetricCard title="Resting Heart Rate" value="52" onViewData={onViewData} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "View data for Resting Heart Rate" }));
+
+    expect(onViewData).toHaveBeenCalledOnce();
   });
 });

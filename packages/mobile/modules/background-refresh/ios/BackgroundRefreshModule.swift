@@ -10,6 +10,8 @@ import ExpoModulesCore
 public class BackgroundRefreshModule: Module {
 
     static let taskIdentifier = "com.dofek.accelerometer-refresh"
+    static let taskCoordinator = BackgroundRefreshTaskCoordinator()
+    static let taskIdKey = "taskId"
 
     /// NotificationCenter name used by the app delegate subscriber to
     /// relay background refresh events to this module instance.
@@ -22,17 +24,22 @@ public class BackgroundRefreshModule: Module {
 
         Events("onBackgroundRefresh")
 
-        OnStartObserving {
+        OnStartObserving("onBackgroundRefresh") {
             self.notificationObserver = NotificationCenter.default.addObserver(
                 forName: Self.backgroundRefreshNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
-                self?.sendEvent("onBackgroundRefresh", [:])
+            ) { [weak self] notification in
+                guard let taskId = notification.userInfo?[Self.taskIdKey] as? String else {
+                    return
+                }
+                self?.sendEvent("onBackgroundRefresh", [Self.taskIdKey: taskId])
             }
+            Self.taskCoordinator.setHandlerAvailable(true)
         }
 
-        OnStopObserving {
+        OnStopObserving("onBackgroundRefresh") {
+            Self.taskCoordinator.setHandlerAvailable(false)
             if let observer = self.notificationObserver {
                 NotificationCenter.default.removeObserver(observer)
                 self.notificationObserver = nil
@@ -48,6 +55,11 @@ public class BackgroundRefreshModule: Module {
         /// Check if background refresh is available (user may have disabled it).
         Function("isAvailable") { () -> Bool in
             return UIApplication.shared.backgroundRefreshStatus == .available
+        }
+
+        /// Complete the matching native task after JavaScript work settles.
+        Function("completeRefresh") { (taskId: String, success: Bool) in
+            Self.taskCoordinator.completeTask(id: taskId, success: success)
         }
     }
 

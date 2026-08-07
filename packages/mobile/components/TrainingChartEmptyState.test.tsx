@@ -1,0 +1,23 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState";
+
+describe("TrainingChartEmptyState", () => {
+  it("renders the same compact server-authored state on mobile", () => {
+    render(
+      <TrainingChartEmptyState
+        availability={{
+          status: "insufficient_data",
+          sourceLabel: "Running activity sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message:
+            "No running pace data is available from Running activity sensor summaries. Record at least 1 running activity with pace data to show this chart.",
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/No running pace data is available/)).toBeTruthy();
+    expect(screen.getAllByText(/Running activity sensor summaries/).length).toBeGreaterThan(0);
+  });
+});

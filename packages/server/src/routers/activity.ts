@@ -1,8 +1,20 @@
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { isRelationMissingError } from "dofek/db/dedup";
+import {
+  enqueueActivityDeleteAnalyticsRefresh,
+  enqueueActivityRecomputeAnalyticsRefresh,
+  enqueueActivityRestoreAnalyticsRefresh,
+} from "dofek/jobs/queues";
+import { invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
+import {
+  ChartRange,
+  selectedChartCustomRangeQuery,
+  selectedChartRangeSchema,
+} from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
@@ -12,7 +24,53 @@ import {
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
-import { ensureProvidersRegistered } from "./sync.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
+
+const MAX_BULK_DELETE_ACTIVITY_IDS = 500;
+
+async function invalidateActivityListCaches(userId: string): Promise<void> {
+  await Promise.allSettled([
+    queryCache.invalidateByPrefix(`${userId}:activity.`),
+    queryCache.invalidateByPrefix(`${userId}:calendar.`),
+  ]);
+}
+
+async function scheduleActivityAnalyticsRefresh(
+  userId: string,
+  memberActivityIds: string[],
+): Promise<void> {
+  try {
+    await enqueueActivityDeleteAnalyticsRefresh(userId, memberActivityIds);
+  } catch (error) {
+    const { captureException } = await import("@sentry/node");
+    captureException(error, {
+      tags: { phase: "activity-delete-analytics-enqueue" },
+      extra: { userId, activityCount: memberActivityIds.length },
+    });
+  }
+}
+
+async function scheduleActivityRestoreAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+): Promise<void> {
+  try {
+    await enqueueActivityRestoreAnalyticsRefresh(userId, activityIds);
+  } catch (error) {
+    const { captureException } = await import("@sentry/node");
+    captureException(error, {
+      tags: { phase: "activity-restore-analytics-enqueue" },
+      extra: { userId, activityCount: activityIds.length },
+    });
+  }
+}
+
+async function scheduleActivityRecomputeAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+): Promise<void> {
+  await enqueueActivityRecomputeAnalyticsRefresh(userId, activityIds);
+}
 
 export interface StrengthExerciseDetail {
   exerciseIndex: number;
@@ -42,18 +100,24 @@ export interface ActivityPowerZonesResult {
 }
 
 export const activityRouter = router({
-  list: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: z.number().default(30),
-        endDate: endDateSchema,
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        activityTypes: z.array(z.string()).optional(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+  list: selectedChartCustomRangeQuery(
+    "activity.list",
+    CacheTTL.MEDIUM,
+    z.object({
+      days: selectedChartRangeSchema("activity.list"),
+      endDate: endDateSchema,
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+      activityTypes: z.array(z.string()).optional(),
+    }),
+    async ({ ctx, input }) => {
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       try {
         return await repo.list(input);
       } catch (error) {
@@ -61,17 +125,24 @@ export const activityRouter = router({
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message:
-              "Activity data is temporarily unavailable — materialized views are being rebuilt. Try again in a few minutes.",
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
           });
         }
         throw error;
       }
-    }),
+    },
+  ),
 
-  byId: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  byId: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       const row = await repo.findById(input.id);
 
       if (!row) {
@@ -82,58 +153,105 @@ export const activityRouter = router({
       return new Activity(row, getProvider).toDetail();
     }),
 
-  stream: cachedProtectedQuery(CacheTTL.MEDIUM)
+  setPerceivedExertion: protectedProcedure
+    .input(z.object({ id: z.guid(), value: z.number().min(0).max(10).nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const result = await repo.setPerceivedExertion(input.id, input.value);
+      if (!result.found) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      }
+      await invalidateUserQueryDomains(ctx.userId, ["activity"]);
+      return { perceivedExertion: result.perceivedExertion };
+    }),
+
+  stream: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.guid(),
         maxPoints: z.number().int().min(10).max(10000).default(500),
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for activity streams. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       const points = await repo.getStream(input.id, input.maxPoints);
       return points.map((point) => point.toDetail());
     }),
 
-  hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for heart-rate zones. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       return repo.getHrZones(input.id);
     }),
 
-  powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const activity = await activityRepo.findById(input.id);
       if (!activity) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
-      if (!isCyclingActivity(activity.activity_type)) return null;
+      if (!isCyclingActivity(activity.canonical_type)) return null;
       if (activity.avg_power == null && activity.max_power == null) return null;
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
+        });
+      }
 
-      const powerRepo = new PowerRepository(ctx.db, ctx.userId, ctx.timezone);
-      const { currentEftp } = await powerRepo.getEftpTrend(90);
+      const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
+      const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
       if (currentEftp == null) return null;
 
       const zones = await activityRepo.getPowerZones(input.id, currentEftp);
       return { zones, ftp: currentEftp };
     }),
 
-  strengthExercises: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  strengthExercises: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<StrengthExerciseDetail[]> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const activity = await activityRepo.findById(input.id);
       if (!activity) {
@@ -144,12 +262,139 @@ export const activityRouter = router({
       return exercises.map((exercise) => exercise.toDetail());
     }),
 
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+  recompute: protectedProcedure
+    .input(z.object({ id: z.guid() }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      await repo.delete(input.id);
+      try {
+        const memberActivityIds = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            const memberActivityIds = await repo.getActivityMemberIds(input.id);
+            if (!memberActivityIds) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+            }
+            return memberActivityIds;
+          },
+        );
+        await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, memberActivityIds);
+        await invalidateActivityListCaches(ctx.userId);
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
+    }),
+
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    try {
+      const memberActivityIds = await withAccountErasureUserWriteFence(
+        ctx.db,
+        ctx.userId,
+        async (transaction) => {
+          const repo = new ActivityRepository(
+            transaction,
+            ctx.userId,
+            ctx.timezone,
+            ctx.accessWindow,
+          );
+          const { memberActivityIds } = await repo.bulkDelete([input.id]);
+          return memberActivityIds;
+        },
+      );
+      await invalidateActivityListCaches(ctx.userId);
+      await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
       return { success: true };
+    } catch (error) {
+      if (isRelationMissingError(error)) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+        });
+      }
+      throw error;
+    }
+  }),
+
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const deletion = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            return repo.bulkDelete(input.ids);
+          },
+        );
+        await invalidateActivityListCaches(ctx.userId);
+        await scheduleActivityAnalyticsRefresh(ctx.userId, deletion.memberActivityIds);
+        return { success: true, deletedCount: deletion.deletedCount };
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
+    }),
+
+  restoreProviderAbsent: protectedProcedure
+    .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const restoredCount = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
+            return restoredCount;
+          },
+        );
+        await invalidateActivityListCaches(ctx.userId);
+        await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
+        return { success: true, restoredCount };
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
     }),
 });
 

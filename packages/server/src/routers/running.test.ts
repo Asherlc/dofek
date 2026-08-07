@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -33,10 +38,16 @@ import { runningRouter } from "./running.ts";
 const createCaller = createTestCallerFactory(runningRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
+  const execute = vi
+    .fn()
+    .mockImplementation(async () =>
+      rows.flatMap((row) => (row.activity_id != null ? [{ id: String(row.activity_id) }] : [])),
+    );
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
+    db: { execute },
     userId: "user-1",
     timezone: "UTC",
+    sensorStore: makeMockSensorStore(rows),
   });
 }
 
@@ -146,6 +157,7 @@ describe("runningRouter", () => {
     it("returns pace trend data", async () => {
       const rows = [
         {
+          activity_id: "run-pace-1",
           date: "2026-01-15",
           name: "Morning Run",
           avg_speed: 3.5,
@@ -169,6 +181,7 @@ describe("runningRouter", () => {
     it("returns multiple runs", async () => {
       const rows = [
         {
+          activity_id: "run-pace-1",
           date: "2026-01-10",
           name: "Easy",
           avg_speed: 3.0,
@@ -176,6 +189,7 @@ describe("runningRouter", () => {
           duration_seconds: 1667,
         },
         {
+          activity_id: "run-pace-2",
           date: "2026-01-12",
           name: "Tempo",
           avg_speed: 4.0,
@@ -189,6 +203,77 @@ describe("runningRouter", () => {
       expect(result).toHaveLength(2);
       // Faster run should have lower pace (fewer seconds per km)
       expect(result[1]?.paceSecondsPerKm).toBeLessThan(result[0]?.paceSecondsPerKm ?? Infinity);
+    });
+
+    it("returns server-owned availability facts without changing the legacy array endpoint", async () => {
+      const caller = makeCaller([]);
+
+      await expect(caller.paceTrendV2({ days: 90 })).resolves.toMatchObject({
+        data: [],
+        availability: {
+          status: "insufficient_data",
+          sourceLabel: "Running activity sensor summaries",
+          observedCount: 0,
+          minimumCount: 1,
+          message: expect.stringContaining("Record at least 1 running activity"),
+        },
+      });
+      await expect(caller.paceTrend({ days: 90 })).resolves.toEqual([]);
+    });
+  });
+
+  it("returns available dynamics data through the versioned contract", async () => {
+    const caller = makeCaller([
+      {
+        activity_id: "run-1",
+        date: new Date("2026-01-15T00:00:00Z"),
+        name: "Morning Run",
+        avg_cadence: 172,
+        avg_stride_length: 1.15,
+        avg_stance_time: 245,
+        avg_vertical_osc: 8.2,
+        avg_speed: 3.5,
+        total_distance: 8500,
+      },
+    ]);
+
+    await expect(caller.dynamicsV2({ days: 90 })).resolves.toMatchObject({
+      data: [expect.objectContaining({ activityId: "run-1", date: "2026-01-15" })],
+      availability: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message: "running dynamics data is available from Running activity sensor summaries.",
+      },
+    });
+  });
+
+  it("returns available pace trend data through the versioned contract", async () => {
+    const caller = makeCaller([
+      {
+        activity_id: "run-pace-1",
+        date: "2026-01-15",
+        name: "Morning Run",
+        avg_speed: 3.5,
+        total_distance: 8500,
+        duration_seconds: 2400,
+      },
+    ]);
+
+    await expect(caller.paceTrendV2({ days: 90 })).resolves.toMatchObject({
+      data: [
+        {
+          date: "2026-01-15",
+          activityName: "Morning Run",
+          paceSecondsPerKm: 286,
+        },
+      ],
+      availability: {
+        status: "available",
+        observedCount: 1,
+        minimumCount: 1,
+        message: "running pace data is available from Running activity sensor summaries.",
+      },
     });
   });
 });

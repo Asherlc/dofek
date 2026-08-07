@@ -1,7 +1,7 @@
 import type { FoodDatabaseResult } from "@dofek/nutrition/open-food-facts";
 import { z } from "zod";
 
-export type LoggerTab = "search" | "scan" | "quickadd";
+export type LoggerTab = "search" | "scan" | "quickadd" | "ai";
 
 /** Schema for food entries returned from the API */
 export const FoodEntrySchema = z.object({
@@ -17,6 +17,7 @@ export const TABS: { key: LoggerTab; label: string }[] = [
   { key: "search", label: "Search" },
   { key: "scan", label: "Scan" },
   { key: "quickadd", label: "Quick Add" },
+  { key: "ai", label: "AI" },
 ];
 
 /** Parse a numeric string, returning null for empty/invalid input instead of NaN. */

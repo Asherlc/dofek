@@ -1,6 +1,6 @@
--- Canonical definition of the fitness.v_daily_metrics materialized view.
+-- Canonical definition of the fitness.v_daily_metrics view.
 
-CREATE MATERIALIZED VIEW fitness.v_daily_metrics AS
+CREATE OR REPLACE VIEW fitness.v_daily_metrics AS
 WITH ranked AS (
   SELECT
     d.*,
@@ -20,9 +20,7 @@ WITH ranked AS (
 SELECT
   dm.date,
   dm.user_id,
-  (SELECT r.resting_hr FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.resting_hr IS NOT NULL ORDER BY r.recovery_prio ASC LIMIT 1) AS resting_hr,
   (SELECT r.hrv FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.hrv IS NOT NULL ORDER BY r.recovery_prio ASC LIMIT 1) AS hrv,
-  (SELECT r.vo2max FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.vo2max IS NOT NULL ORDER BY r.recovery_prio ASC LIMIT 1) AS vo2max,
   (SELECT r.spo2_avg FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.spo2_avg IS NOT NULL ORDER BY r.recovery_prio ASC LIMIT 1) AS spo2_avg,
   (SELECT r.respiratory_rate_avg FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.respiratory_rate_avg IS NOT NULL ORDER BY r.recovery_prio ASC LIMIT 1) AS respiratory_rate_avg,
   (SELECT r.skin_temp_c FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.skin_temp_c IS NOT NULL ORDER BY r.recovery_prio ASC LIMIT 1) AS skin_temp_c,
@@ -34,10 +32,12 @@ SELECT
   (SELECT r.exercise_minutes FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.exercise_minutes IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS exercise_minutes,
   (SELECT r.stand_hours FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.stand_hours IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS stand_hours,
   (SELECT r.walking_speed FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_speed IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_speed,
+  (SELECT r.walking_step_length FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_step_length IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_step_length,
+  (SELECT r.walking_double_support_pct FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_double_support_pct IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_double_support_pct,
+  (SELECT r.walking_asymmetry_pct FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_asymmetry_pct IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_asymmetry_pct,
+  (SELECT r.walking_steadiness FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_steadiness IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_steadiness,
   array_agg(DISTINCT dm.provider_id ORDER BY dm.provider_id) AS source_providers
 FROM fitness.daily_metrics dm
 GROUP BY dm.date, dm.user_id;
 
 --> statement-breakpoint
-
-CREATE UNIQUE INDEX IF NOT EXISTS v_daily_metrics_date_idx ON fitness.v_daily_metrics (date, user_id);

@@ -1,7 +1,11 @@
+import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { sleepDedupCte } from "../lib/sql-fragments.ts";
+import type { RangeDays } from "../lib/date-window.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchLatestSleepNight, fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -29,19 +33,45 @@ const sleepStageRowSchema = z.object({
 
 /** Data access for sleep session records. */
 export class SleepRepository extends BaseRepository {
+  readonly #sensorStore?: ActivitySensorStore;
+
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone = "UTC",
+    accessWindow?: AccessWindow,
+    sensorStore?: ActivitySensorStore,
+  ) {
+    super(db, userId, timezone, accessWindow);
+    this.#sensorStore = sensorStore;
+  }
+
+  #requireSensorStore(): ActivitySensorStore {
+    if (!this.#sensorStore) {
+      throw new Error("SleepRepository requires the ClickHouse activity analytics store");
+    }
+    return this.#sensorStore;
+  }
+
   /** All sleep sessions within the given day window, deduplicated per calendar date, oldest first. */
-  async list(days: number, endDate: string) {
-    return this.query(
-      sleepListRowSchema,
-      sql`WITH ${sleepDedupCte(this.userId, this.timezone, endDate, days)}
-					SELECT
-						to_char(sleep_date, 'YYYY-MM-DD"T"12:00:00') AS started_at,
-						duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
-					FROM sleep_deduped
-					WHERE 1=1
-					${this.dateAccessPredicate(sql`sleep_date`)}
-					ORDER BY sleep_date ASC`,
-    );
+  async list(days: RangeDays, endDate: string) {
+    return fetchSleepNights({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.userId,
+      timezone: this.timezone,
+      endDate,
+      days,
+      accessWindow: this.accessWindow,
+      order: "asc",
+    });
+  }
+
+  /** Sleep sessions inside an exact inclusive date range. */
+  async listRange(startDate: string, endDate: string) {
+    const start = new Date(`${startDate}T00:00:00Z`);
+    const end = new Date(`${endDate}T00:00:00Z`);
+    const days = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+    return this.list(days, endDate);
   }
 
   /** Sleep stages for a specific session. */
@@ -53,9 +83,9 @@ export class SleepRepository extends BaseRepository {
 						to_char(st.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS started_at,
 						to_char(st.ended_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ended_at
 					FROM fitness.sleep_stage st
-					JOIN fitness.v_sleep vs ON vs.id = st.session_id
-					WHERE vs.id = ${sessionId}
-						AND vs.user_id = ${this.userId}
+					JOIN fitness.sleep_session ss ON ss.id = st.session_id
+					WHERE ss.id = ${sessionId}
+						AND ss.user_id = ${this.userId}
 					ORDER BY st.started_at ASC`,
     );
   }
@@ -71,23 +101,22 @@ export class SleepRepository extends BaseRepository {
    * session windows instead of only comparing start times.
    */
   async getLatestStages() {
+    const latestSleep = await fetchLatestSleepNight({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.userId,
+      timezone: this.timezone,
+      accessWindow: this.accessWindow,
+    });
+    if (!latestSleep) return [];
+
     return this.query(
       sleepStageRowSchema,
-      sql`WITH latest_sleep AS (
-						SELECT
-							started_at,
-							COALESCE(ended_at, started_at + interval '12 hours') AS ended_at
-						FROM fitness.v_sleep
-						WHERE user_id = ${this.userId} AND is_nap = false
-						ORDER BY started_at DESC
-						LIMIT 1
-					),
-					best_stage_session AS (
+      sql`WITH best_stage_session AS (
 						SELECT ss.id
-						FROM fitness.sleep_session ss, latest_sleep ls
+						FROM fitness.sleep_session ss
 						WHERE ss.user_id = ${this.userId}
-							AND ss.started_at <= ls.ended_at
-							AND COALESCE(ss.ended_at, ss.started_at + interval '12 hours') >= ls.started_at
+							AND ss.started_at <= COALESCE(${latestSleep.ended_at}::timestamptz, ${latestSleep.started_at}::timestamptz + interval '12 hours')
+							AND COALESCE(ss.ended_at, ss.started_at + interval '12 hours') >= ${latestSleep.started_at}::timestamptz
 							AND EXISTS (SELECT 1 FROM fitness.sleep_stage s2 WHERE s2.session_id = ss.id)
 						ORDER BY
 							(SELECT count(*) FROM fitness.sleep_stage s3 WHERE s3.session_id = ss.id) DESC,
@@ -106,21 +135,11 @@ export class SleepRepository extends BaseRepository {
 
   /** The most recent non-nap sleep session, or null if none exists. */
   async getLatest() {
-    const rows = await this.query(
-      sleepListRowSchema,
-      sql`SELECT
-						to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS started_at,
-						duration_minutes,
-						deep_minutes,
-						rem_minutes,
-						light_minutes,
-						awake_minutes,
-						efficiency_pct
-					FROM fitness.v_sleep
-					WHERE user_id = ${this.userId}
-						AND is_nap = false
-					ORDER BY started_at DESC LIMIT 1`,
-    );
-    return rows[0] ?? null;
+    return fetchLatestSleepNight({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.userId,
+      timezone: this.timezone,
+      accessWindow: this.accessWindow,
+    });
   }
 }

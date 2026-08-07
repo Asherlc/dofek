@@ -1,11 +1,27 @@
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
-import type { ProviderState } from "./DataSourcesSyncTypes.ts";
-import type { FileImportZoneProps } from "./FileImportZone.tsx";
-import { FileImportZone } from "./FileImportZone.tsx";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "./DataSourcesAuthModals.tsx";
+import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
+import { FileImportProviderCard } from "./FileImportProviderCard.tsx";
+import {
+  appleHealthFileImportConfig,
+  type fileImportConfigs,
+  getFileImportConfig,
+} from "./file-import-configs.ts";
+import { ProcessingStatusWidget } from "./ProcessingStatusWidget.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
+import { SyncAllControls } from "./SyncAllControls.tsx";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
 
 const oauthBroadcastMessage = z.object({
@@ -18,19 +34,41 @@ const oauthPostMessage = z.object({
   providerId: z.string().optional(),
 });
 
+const providerRegionClassName =
+  "h-80 space-y-3 overflow-y-auto overscroll-contain rounded-lg pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-96 lg:h-[28rem]";
+const providerGridClassName = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3";
+
 export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 100 });
-  const syncMutation = trpc.sync.triggerSync.useMutation();
+  const processingStatus = useProcessingStatus({ datasets: ["providers"] });
+  const syncMutation = trpc.sync.triggerSync.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const trpcUtils = trpc.useUtils();
 
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
   const [syncAllMode, setSyncAllMode] = useState<"sync" | "full" | null>(null);
+  const [syncAllError, setSyncAllError] = useState<string>();
 
   // Resume polling for any active sync jobs (e.g. navigated away and back)
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
+  const activeImports = trpc.sync.activeImports.useQuery(undefined, { staleTime: 0 });
   const resumedJobIds = useRef(new Set<string>());
+  const pollAbortControllers = useRef(new Set<AbortController>());
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      for (const controller of pollAbortControllers.current) {
+        controller.abort();
+      }
+      pollAbortControllers.current.clear();
+    };
+  }, []);
 
   // Auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
@@ -39,6 +77,12 @@ export function DataSourcesPanel() {
     id: string;
     name: string;
   } | null>(null);
+  const [tokenAuthProvider, setTokenAuthProvider] = useState<{
+    id: string;
+    name: string;
+    label: string;
+    instructionsUrl: string;
+  } | null>(null);
 
   const updateState = useCallback(
     (id: string, state: ProviderState) => setProviderStates((prev) => ({ ...prev, [id]: state })),
@@ -46,16 +90,41 @@ export function DataSourcesPanel() {
   );
 
   const doPollSyncJob = useCallback(
-    (jobId: string, providerIds: string[]) =>
-      pollSyncJob({
-        jobId,
-        providerIds,
-        fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
-        updateState,
-        onComplete: () => {
-          trpcUtils.invalidate();
-        },
-      }),
+    async (jobId: string, providerIds: string[]) => {
+      const controller = new AbortController();
+      if (isMounted.current) {
+        pollAbortControllers.current.add(controller);
+      } else {
+        controller.abort();
+      }
+      try {
+        await pollSyncJob({
+          jobId,
+          providerIds,
+          fetchStatus: (id) =>
+            trpcUtils.sync.syncStatus.fetch(
+              { jobId: id },
+              { staleTime: 0, meta: locallyReportedErrorMeta },
+            ),
+          updateState,
+          onComplete: () => {
+            trpcUtils.invalidate();
+          },
+          onError: (error) => {
+            const providerId = providerIds.length === 1 ? providerIds[0] : undefined;
+            captureException(
+              error,
+              providerId
+                ? { operation: "sync.syncStatus", providerId }
+                : { operation: "sync.syncStatus" },
+            );
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        pollAbortControllers.current.delete(controller);
+      }
+    },
     [trpcUtils, updateState],
   );
 
@@ -63,12 +132,32 @@ export function DataSourcesPanel() {
     async (providerId: string, fullSync = false) => {
       updateState(providerId, { status: "syncing" });
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: fullSync ? undefined : 7,
+          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown") {
+          updateState(providerId, { status: "done", message: providerResult.message });
+          return;
+        }
+        if (providerResult?.status === "failed") {
+          updateState(providerId, { status: "error", message: providerResult.message });
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
+        if (!jobId) return;
         await doPollSyncJob(jobId, [providerId]);
       } catch (err: unknown) {
+        captureException(err, {
+          operation: "sync.triggerSync",
+          providerId,
+        });
         updateState(providerId, {
           status: "error",
           message: err instanceof Error ? err.message : "Sync failed",
@@ -80,8 +169,11 @@ export function DataSourcesPanel() {
 
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
+      setSyncAllError(undefined);
       setSyncAllMode(fullSync ? "full" : "sync");
-      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
+      const enabled = (providers.data ?? []).filter(
+        (p) => p.authorized && !p.importOnly && !p.pushOnly,
+      );
       const ids = enabled.map((p) => p.id);
       if (ids.length === 0) {
         setSyncAllMode(null);
@@ -92,30 +184,38 @@ export function DataSourcesPanel() {
       }
       try {
         const result = await syncMutation.mutateAsync({
-          sinceDays: fullSync ? undefined : 7,
+          sinceDays: fullSync ? undefined : ROUTINE_SYNC_DAYS,
         });
-        const providerJobMap = new Map(
-          (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
+        const providerResults = result.providerResults;
+        await Promise.all(
+          ids.map(async (providerId) => {
+            const providerResult = providerResults.find((entry) => entry.providerId === providerId);
+            if (providerResult?.status === "skippedCooldown") {
+              updateState(providerId, { status: "done", message: providerResult.message });
+              return;
+            }
+            if (providerResult?.status === "failed") {
+              updateState(providerId, { status: "error", message: providerResult.message });
+              return;
+            }
+            if (
+              providerResult?.status === "started" ||
+              providerResult?.status === "alreadyQueued"
+            ) {
+              await doPollSyncJob(providerResult.jobId, [providerId]);
+              return;
+            }
+            updateState(providerId, { status: "error", message: "Failed to start sync job" });
+          }),
         );
-        if (providerJobMap.size > 0) {
-          await Promise.all(
-            ids.map(async (providerId) => {
-              const jobId = providerJobMap.get(providerId);
-              if (!jobId) {
-                updateState(providerId, { status: "error", message: "Failed to start sync job" });
-                return;
-              }
-              await doPollSyncJob(jobId, [providerId]);
-            }),
-          );
-        } else {
-          await doPollSyncJob(result.jobId, ids);
-        }
       } catch (err: unknown) {
+        captureException(err, { operation: "sync.triggerSync" });
+        const message = err instanceof Error ? err.message : "Sync failed";
+        setSyncAllError(message);
         for (const p of enabled) {
           updateState(p.id, {
             status: "error",
-            message: err instanceof Error ? err.message : "Sync failed",
+            message,
           });
         }
       } finally {
@@ -138,6 +238,7 @@ export function DataSourcesPanel() {
     status: string;
     recordCount: number | null;
     errorMessage: string | null;
+    authFailureReason: string | null;
     durationMs: number | null;
     syncedAt: string;
   }> = logs.data ?? [];
@@ -156,13 +257,23 @@ export function DataSourcesPanel() {
   }, [syncRows]);
 
   const allProviders = providers.data ?? [];
-  const enabledSyncable = allProviders.filter((p) => !p.importOnly);
+  const activeImportByProvider = new Map(
+    (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
+  );
+  const enabledSyncable = allProviders.filter((p) => !p.importOnly && !p.pushOnly);
+  const syncAllBusy =
+    syncMutation.isPending ||
+    syncAllMode !== null ||
+    Object.values(providerStates).some((state) => state.status === "syncing") ||
+    (activeSyncs.data ?? []).some(
+      (activeSync) => activeSync.status === "running" || activeSync.status === "queued",
+    );
 
   // Resume polling for sync jobs that were already running when the page loaded
   useEffect(() => {
     if (!activeSyncs.data) return;
     for (const activeJob of activeSyncs.data) {
-      if (activeJob.status !== "running") continue;
+      if (activeJob.status !== "running" && activeJob.status !== "queued") continue;
       if (resumedJobIds.current.has(activeJob.jobId)) continue;
       resumedJobIds.current.add(activeJob.jobId);
 
@@ -228,21 +339,40 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (
-      p: { id: string; name: string; authType: string; authorized: boolean; needsReauth?: boolean },
-      fullSync = false,
-    ) => {
-      if (p.authorized && !p.needsReauth) {
-        handleSync(p.id, fullSync);
+    (provider: SyncProviderSummary) => {
+      if (provider.authorized && !provider.needsReauth && !provider.pushOnly) {
+        handleSync(provider.id);
         return;
       }
-      switch (p.authType) {
+      if (provider.pushOnly) {
+        return;
+      }
+      switch (provider.authType) {
         case "oauth":
         case "oauth1":
-          window.open(`/auth/provider/${p.id}`, "_blank");
+          window.open(`/auth/provider/${provider.id}`, "_blank");
           break;
         case "credential":
-          setCredentialAuthProvider({ id: p.id, name: p.name });
+          setCredentialAuthProvider({ id: provider.id, name: provider.name });
+          break;
+        case "token":
+          if (provider.tokenAuth) {
+            setTokenAuthProvider({
+              id: provider.id,
+              name: provider.name,
+              label: provider.tokenAuth.label,
+              instructionsUrl: provider.tokenAuth.instructionsUrl,
+            });
+          } else {
+            const error = new Error(
+              `${provider.name} personal-token authentication is unavailable. Refresh and try again.`,
+            );
+            captureException(error, {
+              operation: "connect-provider",
+              providerId: provider.id,
+            });
+            updateState(provider.id, { status: "error", message: error.message });
+          }
           break;
         case "custom:whoop":
           setWhoopAuthOpen(true);
@@ -251,43 +381,16 @@ export function DataSourcesPanel() {
           setGarminAuthOpen(true);
           break;
         default:
-          handleSync(p.id, fullSync);
+          handleSync(provider.id);
       }
     },
-    [handleSync],
+    [handleSync, updateState],
   );
-
-  // File-import config for import-only providers + Apple Health (not a registered sync provider)
-  const appleHealthConfig: FileImportZoneProps = {
-    title: "Apple Health",
-    description: ".zip or .xml from Health app export",
-    accept: ".zip,.xml",
-    uploadUrl: "/api/upload/apple-health?fullSync=true",
-    statusUrl: "/api/upload/apple-health/status",
-    chunked: true,
-  };
-  const fileImportConfigs: Record<string, FileImportZoneProps> = {
-    "apple-health": appleHealthConfig,
-    "strong-csv": {
-      title: "Strong",
-      description: ".csv export from Strong app",
-      accept: ".csv",
-      uploadUrl: "/api/upload/strong-csv?units=kg",
-      statusUrl: "/api/upload/strong-csv/status",
-    },
-    "cronometer-csv": {
-      title: "Cronometer",
-      description: ".csv servings export from Cronometer",
-      accept: ".csv",
-      uploadUrl: "/api/upload/cronometer-csv",
-      statusUrl: "/api/upload/cronometer-csv/status",
-    },
-  };
 
   // Build unified list: server providers + Apple Health (file-import-only, not registered on server)
   const unifiedProviders: Array<
     | { kind: "sync"; provider: (typeof allProviders)[number] }
-    | { kind: "import"; id: string; config: FileImportZoneProps }
+    | { kind: "import"; id: string; config: (typeof fileImportConfigs)[string] }
   > = [];
 
   // Add Apple Health first (always available, not in server provider list)
@@ -295,11 +398,11 @@ export function DataSourcesPanel() {
   unifiedProviders.push({
     kind: "import",
     id: "apple_health",
-    config: appleHealthConfig,
+    config: appleHealthFileImportConfig,
   });
 
   for (const p of allProviders) {
-    const importConfig = fileImportConfigs[p.id];
+    const importConfig = getFileImportConfig(p.id);
     if (importConfig) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
     } else {
@@ -309,87 +412,87 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex min-h-20 items-start justify-between gap-4">
         <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
         {enabledSyncable.length > 1 && (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => handleSyncAll()}
-              disabled={syncMutation.isPending}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
-                syncAllMode === "sync"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50"
-              }`}
-            >
-              {syncAllMode === "sync" ? "Syncing..." : "Sync All"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSyncAll(true)}
-              disabled={syncMutation.isPending}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
-                syncAllMode === "full"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-accent/10 text-muted hover:bg-surface-hover disabled:opacity-50"
-              }`}
-            >
-              {syncAllMode === "full" ? "Full Syncing..." : "Full Sync All"}
-            </button>
-          </div>
+          <SyncAllControls
+            busy={syncAllBusy}
+            errorMessage={syncAllError}
+            onRecentSync={() => void handleSyncAll()}
+            onFullSync={() => void handleSyncAll(true)}
+          />
         )}
       </div>
 
-      {providers.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
-            <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {unifiedProviders.map((entry) => {
-            if (entry.kind === "import") {
-              const providerStats = statsByProvider.get(entry.id);
-              const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
-              return (
-                <FileImportZone
-                  key={entry.id}
-                  providerId={entry.id}
-                  {...entry.config}
-                  stats={providerStats}
-                  recentLogs={recentLogs}
-                />
-              );
-            }
+      <section
+        aria-label="Available data sources"
+        aria-busy={providers.isLoading || processingStatus.isLoading}
+        className={providerRegionClassName}
+      >
+        {activeSyncs.error ? (
+          <p role="alert" className="text-sm text-red-400">
+            {activeSyncs.error.message}
+          </p>
+        ) : null}
 
-            const provider = entry.provider;
-            const state = providerStates[provider.id] ?? { status: "idle" };
-            const needsAuth =
-              provider.authType !== "none" &&
-              provider.authType !== "file-import" &&
-              !provider.authorized;
-            const needsReauth = provider.needsReauth === true;
-            const providerStats = statsByProvider.get(provider.id);
-            const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
+        <ProcessingStatusWidget
+          data={processingStatus.data}
+          error={processingStatus.error}
+          loading={processingStatus.isLoading}
+        />
 
-            return (
-              <SyncProviderCard
-                key={provider.id}
-                provider={provider}
-                state={state}
-                needsAuth={needsAuth}
-                needsReauth={needsReauth}
-                stats={providerStats}
-                recentLogs={recentLogs}
-                onSync={() => handleProviderClick(provider)}
-                onFullSync={() => handleProviderClick(provider, true)}
-              />
-            );
-          })}
+        {providers.error ? <QueryStatePanel error={providers.error} height={72} /> : null}
+        {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}
+        {logs.error ? <QueryStatePanel error={logs.error} height={72} /> : null}
+
+        <div className={providerGridClassName}>
+          {providers.isLoading
+            ? ["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
+                <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
+              ))
+            : unifiedProviders.map((entry) => {
+                if (entry.kind === "import") {
+                  const providerStats = statsByProvider.get(entry.id);
+                  const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
+                  return (
+                    <FileImportProviderCard
+                      key={entry.id}
+                      providerId={entry.id}
+                      {...entry.config}
+                      stats={providerStats}
+                      recentLogs={recentLogs}
+                      activeImport={activeImportByProvider.get(entry.id)}
+                    />
+                  );
+                }
+
+                const provider = entry.provider;
+                const state = providerStates[provider.id] ?? { status: "idle" };
+                const needsAuth =
+                  !provider.pushOnly &&
+                  provider.authType !== "none" &&
+                  provider.authType !== "file-import" &&
+                  !provider.authorized;
+                const needsReauth = provider.needsReauth === true;
+                const providerStats = statsByProvider.get(provider.id);
+                const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
+
+                return (
+                  <SyncProviderCard
+                    key={provider.id}
+                    provider={provider}
+                    state={state}
+                    needsAuth={needsAuth}
+                    needsReauth={needsReauth}
+                    pushOnly={provider.pushOnly === true}
+                    stats={providerStats}
+                    recentLogs={recentLogs}
+                    onSync={() => handleProviderClick(provider)}
+                  />
+                );
+              })}
         </div>
-      )}
+      </section>
 
       {/* WHOOP Auth Modal */}
       {whoopAuthOpen && (
@@ -418,9 +521,30 @@ export function DataSourcesPanel() {
         <CredentialAuthModal
           providerId={credentialAuthProvider.id}
           providerName={credentialAuthProvider.name}
+          description={
+            credentialAuthProvider.id === "amazfit-zepp"
+              ? "Signing in will sign you out of the Zepp app on your phone. " +
+                "Dofek can only pull historical data — new data won\u2019t sync until you sign back into the Zepp app, " +
+                "which will disconnect Dofek."
+              : undefined
+          }
           onClose={() => setCredentialAuthProvider(null)}
           onSuccess={() => {
             setCredentialAuthProvider(null);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
+
+      {tokenAuthProvider && (
+        <TokenAuthModal
+          providerId={tokenAuthProvider.id}
+          providerName={tokenAuthProvider.name}
+          tokenLabel={tokenAuthProvider.label}
+          instructionsUrl={tokenAuthProvider.instructionsUrl}
+          onClose={() => setTokenAuthProvider(null)}
+          onSuccess={() => {
+            setTokenAuthProvider(null);
             trpcUtils.sync.providers.invalidate();
           }}
         />

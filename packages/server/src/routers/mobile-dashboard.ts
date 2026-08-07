@@ -1,382 +1,240 @@
-import { StrainScore } from "@dofek/scoring/scoring";
+import { summaryDateContextSchema } from "@dofek/format/summary-date-context";
+import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import type { AccessWindow } from "../billing/entitlement.ts";
+import { sleepNeedV1Schema, sleepNeedV2Schema } from "../contracts/sleep-need-contract.ts";
+import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
+import { logger } from "../logger.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
+import { ProcessingRepository } from "../repositories/processing-repository.ts";
+import { baselineProcessingStatus } from "../services/baseline-progress.ts";
+import { loadDashboardOverview } from "../services/dashboard-overview.ts";
+import { HEALTH_STATUS_CACHE_KEY_VERSION } from "../services/health-status.ts";
 import {
-  type AnomalyCheckResult,
-  AnomalyDetectionRepository,
-} from "../repositories/anomaly-detection-repository.ts";
+  loadMobileRecoveryTab,
+  mobileRecoveryTabOutputSchema,
+} from "../services/mobile-recovery-tab.ts";
 import {
-  computeComponentScores,
-  computeReadinessScore,
-  type NextWorkoutRecommendation,
-  TrainingRepository,
-} from "../repositories/training-repository.ts";
+  loadMobileTrainingTab,
+  mobileTrainingTabOutputSchema,
+} from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 
-/** Simple date comparison for server-side logic (where @dofek/format is not available). */
-export function isRecent(dateStr: string, anchorDateStr: string): boolean {
-  const date = new Date(`${dateStr}T12:00:00Z`);
-  const anchor = new Date(`${anchorDateStr}T12:00:00Z`);
-  const diffDays = Math.round((anchor.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays >= 0 && diffDays <= 1;
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-activity-states-v2";
+const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
+const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
 }
 
-export interface MobileDashboardResult {
-  readiness: {
-    score: number;
-    date: string;
-    components: {
-      hrvScore: number;
-      restingHrScore: number;
-      sleepScore: number;
-      respiratoryRateScore: number;
-    };
-    weights: {
-      hrv: number;
-      restingHr: number;
-      sleep: number;
-      respiratoryRate: number;
-    };
-  } | null;
-  sleep: {
-    lastNight: {
-      date: string;
-      durationMinutes: number;
-      deepPct: number;
-      remPct: number;
-      lightPct: number;
-      awakePct: number;
-    } | null;
-    sleepDebt: number;
-  } | null;
-  strain: {
-    dailyStrain: number;
-    acuteLoad: number;
-    chronicLoad: number;
-    workloadRatio: number | null;
-    date: string | null;
-  };
-  nextWorkout: NextWorkoutRecommendation | null;
-  sleepNeed: SleepNeedResult | null;
-  anomalies: AnomalyCheckResult | null;
-  latestDate: string | null;
+function requireAccessWindow(
+  accessWindow: AccessWindow | undefined,
+  feature: string,
+): AccessWindow {
+  if (!accessWindow) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires resolved entitlement access window.`,
+    });
+  }
+  return accessWindow;
 }
+
+const anomalyCheckOutputSchema = z.object({
+  anomalies: z.array(
+    z.object({
+      date: z.string(),
+      metric: z.string(),
+      value: z.number(),
+      baselineMean: z.number(),
+      baselineStddev: z.number(),
+      zScore: z.number(),
+      severity: z.enum(["warning", "alert"]),
+    }),
+  ),
+  checkedMetrics: z.array(z.string()),
+}) satisfies z.ZodType<AnomalyCheckResult>;
+
+const mobileDashboardSharedOutputSchema = z.object({
+  summaryDateContext: summaryDateContextSchema,
+  readiness: z
+    .object({
+      score: z.number(),
+      date: z.string(),
+      components: z.object({
+        hrvScore: z.number(),
+        restingHrScore: z.number(),
+        sleepScore: z.number(),
+        respiratoryRateScore: z.number(),
+      }),
+      weights: z.object({
+        hrv: z.number(),
+        restingHr: z.number(),
+        sleep: z.number(),
+        respiratoryRate: z.number(),
+      }),
+    })
+    .nullable(),
+  sleep: z
+    .object({
+      lastNight: z
+        .object({
+          date: z.string(),
+          durationMinutes: z.number(),
+          deepPct: z.number().nullable(),
+          remPct: z.number().nullable(),
+          lightPct: z.number().nullable(),
+          awakePct: z.number().nullable(),
+          stagingAvailable: z.boolean(),
+        })
+        .nullable(),
+      sleepDebt: z.number(),
+    })
+    .nullable(),
+  strain: z.object({
+    dailyStrain: z.number(),
+    acuteLoad: z.number(),
+    chronicLoad: z.number(),
+    workloadRatio: z.number().nullable(),
+    date: z.string().nullable(),
+  }),
+  anomalies: anomalyCheckOutputSchema.nullable(),
+  latestDate: z.string().nullable(),
+});
+
+const mobileDashboardOutputSchema = mobileDashboardSharedOutputSchema.extend({
+  sleepNeed: sleepNeedV1Schema.nullable(),
+});
+
+const mobileDashboardV2OutputSchema = mobileDashboardSharedOutputSchema.extend({
+  sleepNeed: sleepNeedV2Schema,
+});
+
+export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
+export type MobileDashboardV2Result = z.infer<typeof mobileDashboardV2OutputSchema>;
 
 export const mobileDashboardRouter = router({
-  dashboard: cachedProtectedQuery(CacheTTL.SHORT)
+  dashboard: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: MOBILE_DASHBOARD_CACHE_KEY_VERSION,
+  })
     .input(z.object({ endDate: endDateSchema }))
+    .output(mobileDashboardOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
       const { endDate } = input;
-      const tz = ctx.timezone;
-
-      // 1. Fetch Readiness, Strain, and Trends in a consolidated query
-      const readinessSchema = z.object({
-        date: dateStringSchema,
-        hrv: z.coerce.number().nullable(),
-        resting_hr: z.coerce.number().nullable(),
-        respiratory_rate: z.coerce.number().nullable(),
-        efficiency_pct: z.coerce.number().nullable(),
-        hrv_mean_30d: z.coerce.number().nullable(),
-        hrv_sd_30d: z.coerce.number().nullable(),
-        rhr_mean_30d: z.coerce.number().nullable(),
-        rhr_sd_30d: z.coerce.number().nullable(),
-        rr_mean_30d: z.coerce.number().nullable(),
-        rr_sd_30d: z.coerce.number().nullable(),
-        daily_load: z.coerce.number(),
-      });
-
-      const metricsRows = await executeWithSchema(
-        ctx.db,
-        readinessSchema,
-        sql`
-          WITH metrics_base AS (
-            SELECT
-              dm.date AS metric_date,
-              hrv,
-              resting_hr,
-              respiratory_rate_avg AS respiratory_rate
-            FROM fitness.v_daily_metrics dm
-            WHERE dm.user_id = ${ctx.userId}
-              AND dm.date > ${endDate}::date - 60
-              AND dm.date <= ${endDate}
-          ),
-          metrics_with_baselines AS (
-            SELECT
-              metric_date,
-              hrv,
-              resting_hr,
-              respiratory_rate,
-              AVG(hrv) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
-              STDDEV_POP(hrv) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
-              AVG(resting_hr) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
-              STDDEV_POP(resting_hr) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
-              AVG(respiratory_rate) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
-              STDDEV_POP(respiratory_rate) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
-            FROM metrics_base
-          ),
-          daily_loads AS (
-            SELECT
-              (ended_at AT TIME ZONE ${tz})::date AS metric_date,
-              COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0)), 0)
-                AS daily_load
-            FROM fitness.activity_summary
-            WHERE user_id = ${ctx.userId}
-              AND ended_at IS NOT NULL
-              AND avg_hr IS NOT NULL
-              AND (ended_at AT TIME ZONE ${tz})::date > ${endDate}::date - 60
-              AND (ended_at AT TIME ZONE ${tz})::date <= ${endDate}
-            GROUP BY metric_date
-          ),
-          sleep_eff AS (
-            SELECT DISTINCT ON (local_date)
-              local_date::text AS sleep_date,
-              efficiency_pct
-            FROM (
-              SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date AS local_date,
-                     efficiency_pct,
-                     duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > ${endDate}::date - 60
-            ) sleep_sub
-            ORDER BY local_date, duration_minutes DESC NULLS LAST
-          )
-          SELECT
-            m.metric_date::text AS date,
-            m.hrv, m.resting_hr, m.respiratory_rate, s.efficiency_pct,
-            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d,
-            COALESCE(dl.daily_load, 0) AS daily_load
-          FROM metrics_with_baselines m
-          LEFT JOIN sleep_eff s ON s.sleep_date = m.metric_date::text
-          LEFT JOIN daily_loads dl ON dl.metric_date = m.metric_date
-          ORDER BY m.metric_date DESC
-        `,
-      );
-
-      const latestMetric = metricsRows[0];
-      let readinessResult: MobileDashboardResult["readiness"] = null;
-
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboard");
+      const accessWindow = ctx.accessWindow ?? { kind: "full" as const };
+      const dashboardStart = performance.now();
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
-      const weights = getEffectiveParams(storedParams).readinessWeights;
-
-      if (latestMetric && isRecent(latestMetric.date, endDate)) {
-        const scores = computeComponentScores(
-          {
-            date: latestMetric.date,
-            hrv: latestMetric.hrv,
-            resting_hr: latestMetric.resting_hr,
-            respiratory_rate: latestMetric.respiratory_rate,
-            hrv_mean_30d: latestMetric.hrv_mean_30d,
-            hrv_sd_30d: latestMetric.hrv_sd_30d,
-            rhr_mean_30d: latestMetric.rhr_mean_30d,
-            rhr_sd_30d: latestMetric.rhr_sd_30d,
-            rr_mean_30d: latestMetric.rr_mean_30d,
-            rr_sd_30d: latestMetric.rr_sd_30d,
-          },
-          latestMetric.efficiency_pct,
-        );
-        const score = computeReadinessScore(scores, weights, true);
-
-        if (score != null) {
-          readinessResult = {
-            score,
-            date: latestMetric.date,
-            components: scores,
-            weights,
-          };
-        }
-      }
-
-      // 2. Sleep Analytics (Last Night)
-      const sleepRows = await executeWithSchema(
-        ctx.db,
-        z.object({
-          date: dateStringSchema,
-          duration_minutes: z.coerce.number(),
-          deep_pct: z.coerce.number(),
-          rem_pct: z.coerce.number(),
-          light_pct: z.coerce.number(),
-          awake_pct: z.coerce.number(),
-        }),
-        sql`
-          WITH sleep_rows AS (
-            SELECT
-              ${sleepNightDate(tz)} AS sleep_date,
-              duration_minutes,
-              CASE WHEN duration_minutes > 0 THEN deep_minutes::real / duration_minutes * 100 ELSE 0 END AS deep_pct,
-              CASE WHEN duration_minutes > 0 THEN rem_minutes::real / duration_minutes * 100 ELSE 0 END AS rem_pct,
-              CASE WHEN duration_minutes > 0 THEN light_minutes::real / duration_minutes * 100 ELSE 0 END AS light_pct,
-              CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct
-            FROM fitness.v_sleep
-            WHERE user_id = ${ctx.userId}
-              AND is_nap = false
-              AND started_at > ${endDate}::date - 14
-          )
-          SELECT DISTINCT ON (sleep_date)
-            sleep_date::text AS date,
-            duration_minutes, deep_pct, rem_pct, light_pct, awake_pct
-          FROM sleep_rows
-          ORDER BY sleep_date DESC, duration_minutes DESC NULLS LAST
-        `,
+      const result = await loadDashboardOverview({
+        accessWindow,
+        endDate,
+        readinessWeights: getEffectiveParams(storedParams).readinessWeights,
+        sensorStore,
+        timezone: ctx.timezone ?? "UTC",
+        userId: ctx.userId,
+      });
+      logger.info(
+        `[mobile-dashboard] dashboard timings userId=${ctx.userId} endDate=${endDate} total=${Math.round(performance.now() - dashboardStart)}ms`,
       );
+      return result;
+    }),
 
-      const lastNightRow = sleepRows.find((r) => isRecent(r.date, endDate));
-
-      // 3. Sleep Need (90-day baseline)
-      const sleepBaselineRows = await executeWithSchema(
-        ctx.db,
-        z.object({
-          date: dateStringSchema,
-          duration_minutes: z.coerce.number(),
-          hrv: z.coerce.number().nullable(),
-          yesterday_load: z.coerce.number(),
-        }),
-        sql`
-          WITH sleep_nights AS (
-             SELECT DISTINCT ON (sleep_date)
-               ${sleepNightDate(tz)} AS sleep_date,
-               duration_minutes
-             FROM fitness.v_sleep
-             WHERE user_id = ${ctx.userId} AND is_nap = false AND started_at > ${timestampWindowStart(endDate, 90)}
-             ORDER BY sleep_date, duration_minutes DESC NULLS LAST
-          ),
-          daily_hrv AS (
-            SELECT date AS metric_date, hrv
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${ctx.userId} AND date > ${dateWindowStart(endDate, 90)}
-          ),
-          yesterday_load AS (
-            SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0)), 0) AS load
-            FROM fitness.activity_summary
-            WHERE user_id = ${ctx.userId} AND (started_at AT TIME ZONE ${tz})::date = ${endDate}::date - 1
-          )
-          SELECT
-            s.sleep_date::text AS date,
-            s.duration_minutes,
-            h.hrv,
-            yl.load as yesterday_load
-          FROM sleep_nights s
-          LEFT JOIN daily_hrv h ON h.metric_date = s.sleep_date + 1
-          CROSS JOIN yesterday_load yl
-        `,
+  dashboardV2: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION,
+  })
+    .input(z.object({ endDate: endDateSchema }))
+    .output(mobileDashboardV2OutputSchema)
+    .query(async ({ ctx, input }): Promise<MobileDashboardV2Result> => {
+      const { endDate } = input;
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboardV2");
+      const accessWindow = ctx.accessWindow ?? { kind: "full" as const };
+      const dashboardStart = performance.now();
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const result = await loadDashboardOverview({
+        accessWindow,
+        endDate,
+        readinessWeights: getEffectiveParams(storedParams).readinessWeights,
+        sensorStore,
+        timezone: ctx.timezone ?? "UTC",
+        userId: ctx.userId,
+      });
+      logger.info(
+        `[mobile-dashboard] dashboardV2 timings userId=${ctx.userId} endDate=${endDate} total=${Math.round(performance.now() - dashboardStart)}ms`,
       );
-
-      const hrvMedian = (() => {
-        const values = sleepBaselineRows
-          .map((r) => r.hrv)
-          .filter((v): v is number => v != null)
-          .sort((a, b) => a - b);
-        if (values.length === 0) return 50;
-        const mid = Math.floor(values.length / 2);
-        return values.length % 2 !== 0
-          ? (values[mid] ?? 50)
-          : ((values[mid - 1] ?? 50) + (values[mid] ?? 50)) / 2;
-      })();
-
-      const goodNights = sleepBaselineRows.filter(
-        (r) => r.hrv != null && r.hrv >= hrvMedian && r.duration_minutes > 0,
-      );
-      const baselineMinutes =
-        goodNights.length >= 7
-          ? Math.round(goodNights.reduce((s, r) => s + r.duration_minutes, 0) / goodNights.length)
-          : 480;
-
-      const yesterdayLoad = Number(sleepBaselineRows[0]?.yesterday_load ?? 0);
-      const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
-      const accumulatedDebt = sleepBaselineRows
-        .slice(-14)
-        .reduce((acc, r) => acc + Math.max(0, baselineMinutes - r.duration_minutes), 0);
-      const totalNeedMinutes =
-        baselineMinutes + strainDebtMinutes + Math.round(accumulatedDebt * 0.25);
-
-      const nightsByDate = new Map(sleepBaselineRows.map((r) => [r.date, r]));
-      const recentNights: SleepNight[] = [];
-      const anchorDate = new Date(`${endDate}T12:00:00Z`);
-      for (let i = 7; i >= 1; i--) {
-        const nightDate = new Date(anchorDate);
-        nightDate.setUTCDate(nightDate.getUTCDate() - i);
-        const dateStr = nightDate.toISOString().slice(0, 10);
-        const night = nightsByDate.get(dateStr);
-        recentNights.push({
-          date: dateStr,
-          actualMinutes: night ? Math.round(night.duration_minutes) : null,
-          neededMinutes: baselineMinutes,
-          debtMinutes: night
-            ? Math.max(0, Math.round(baselineMinutes - night.duration_minutes))
-            : null,
-        });
-      }
-
-      const yesterdayStr = new Date(anchorDate.getTime() - 86400000).toISOString().slice(0, 10);
-
-      const sleepNeedResult: SleepNeedResult = {
-        baselineMinutes,
-        strainDebtMinutes,
-        accumulatedDebtMinutes: Math.round(accumulatedDebt),
-        totalNeedMinutes,
-        recentNights,
-        canRecommend: nightsByDate.has(yesterdayStr),
-      };
-
-      // 4. Strain (Acute/Chronic)
-      const acuteLoad = metricsRows
-        .slice(0, 7)
-        .reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0);
-      const chronicLoad =
-        metricsRows.slice(0, 28).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0) / 4;
-      const isLatestStrainRecent = metricsRows[0] != null && isRecent(metricsRows[0].date, endDate);
-      const latestStrainDailyLoad = isLatestStrainRecent
-        ? Math.round(Number(metricsRows[0]?.daily_load ?? 0) * 10) / 10
-        : 0;
-      const dailyStrain = isLatestStrainRecent
-        ? StrainScore.fromRawLoad(latestStrainDailyLoad).value
-        : 0;
-      const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
-
-      const strainResult: MobileDashboardResult["strain"] = {
-        dailyStrain: Math.round(dailyStrain * 10) / 10,
-        acuteLoad: Math.round(acuteLoad),
-        chronicLoad: Math.round(chronicLoad),
-        workloadRatio: workloadRatio != null ? Math.round(workloadRatio * 100) / 100 : null,
-        date: metricsRows[0]?.date ?? null,
-      };
-
-      // 5. Next Workout
-      const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz);
-      const workoutData = await trainingRepo.getNextWorkoutData(endDate);
-      const nextWorkout = await trainingRepo.getRecommendation(workoutData, endDate, weights);
-
-      // 6. Anomalies
-      const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz);
-      const anomalies = await anomalyRepo.check(endDate);
-
       return {
-        readiness: readinessResult,
-        sleep: {
-          lastNight: lastNightRow
-            ? {
-                date: lastNightRow.date,
-                durationMinutes: lastNightRow.duration_minutes,
-                deepPct: lastNightRow.deep_pct,
-                remPct: lastNightRow.rem_pct,
-                lightPct: lastNightRow.light_pct,
-                awakePct: lastNightRow.awake_pct,
-              }
-            : null,
-          sleepDebt: Math.round(accumulatedDebt),
-        },
-        strain: strainResult,
-        nextWorkout,
-        sleepNeed: sleepNeedResult,
-        anomalies,
-        latestDate: metricsRows[0]?.date ?? null,
+        ...result,
+        sleepNeed: result.sleepNeedV2,
       };
+    }),
+
+  recovery: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
+  })
+    .input(dateWindowInput)
+    .output(mobileRecoveryTabOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.recovery");
+      const tabStart = performance.now();
+      const processingSnapshot = await new ProcessingRepository(ctx.db, ctx.userId).status({
+        datasets: ["recovery"],
+      });
+      const result = await loadMobileRecoveryTab(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.recovery"),
+          sensorStore,
+          processingStatus: baselineProcessingStatus(processingSnapshot, "recovery"),
+        },
+        input.days,
+        input.endDate,
+      );
+      logger.info(
+        `[mobile-dashboard] recovery timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
+      );
+      return result;
+    }),
+
+  training: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: MOBILE_TRAINING_CACHE_KEY_VERSION,
+  })
+    .input(dateWindowInput)
+    .output(mobileTrainingTabOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.training");
+      const tabStart = performance.now();
+      const result = await loadMobileTrainingTab(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.training"),
+          sensorStore,
+        },
+        input.days,
+        input.endDate,
+      );
+      logger.info(
+        `[mobile-dashboard] training timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
+      );
+      return result;
     }),
 });

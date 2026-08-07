@@ -5,7 +5,7 @@ function PrivacyPage() {
     <div className="min-h-screen bg-page text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-3xl font-bold text-foreground mb-2">Privacy Policy</h1>
-        <p className="text-subtle text-sm mb-10">Last updated: March 12, 2026</p>
+        <p className="text-subtle text-sm mb-10">Last updated: July 29, 2026</p>
 
         <div className="space-y-8 text-sm leading-relaxed">
           <section>
@@ -66,8 +66,10 @@ function PrivacyPage() {
               <li>Provide training load, recovery, and performance analysis</li>
             </ul>
             <p className="mt-3">
-              We do not sell, share, or distribute your data to any third parties. Your data is
-              never used for advertising or marketing purposes.
+              We do not sell your health data or use it for advertising. We disclose data only to
+              service providers needed to operate Dofek, such as infrastructure, observability,
+              product analytics, email, and payment processors, or when required by law. Those
+              providers process data under their own applicable terms and retention obligations.
             </p>
           </section>
 
@@ -76,10 +78,16 @@ function PrivacyPage() {
               4. Data Storage and Security
             </h2>
             <ul className="list-disc pl-6 space-y-1.5">
+              <li>Account data and most health records are stored in PostgreSQL (TimescaleDB)</li>
               <li>
-                All data is stored in an encrypted PostgreSQL (TimescaleDB) database on
-                infrastructure we control
+                High-volume sensor records and derived analytics are stored in ClickHouse; Redpanda
+                buffers sensor events during ingestion
               </li>
+              <li>
+                Cloudflare R2 stores durable sensor archives and files uploaded or generated for
+                imports and exports
+              </li>
+              <li>Redis holds short-lived job-processing and cache data</li>
               <li>The application is served over HTTPS with TLS encryption in transit</li>
               <li>
                 Access to the platform requires authentication — unauthenticated users cannot access
@@ -96,7 +104,7 @@ function PrivacyPage() {
             <h2 className="text-lg font-semibold text-foreground mb-3">5. Third-Party Services</h2>
             <p>
               Dofek connects to third-party fitness platforms (including but not limited to Garmin,
-              Wahoo, WHOOP, Polar, Peloton, Withings, RideWithGPS, and FatSecret) through their
+              Wahoo, WHOOP, Polar, Peloton, Withings, RideWithGPS, and fatsecret) through their
               APIs. Some integrations use official OAuth APIs, while others use unofficial or
               reverse-engineered APIs to access your data on your behalf. When you authorize a
               connection, we access only the data you consent to sharing.
@@ -106,9 +114,9 @@ function PrivacyPage() {
               <p>
                 When you connect your Garmin account, your activity, sleep, daily health, and body
                 composition data is transferred from Garmin to Dofek. By connecting your Garmin
-                account, you expressly consent to this data transfer. Your data is used solely to
-                power your Dofek dashboard and is never sold or shared with third parties. For
-                details on how Garmin handles your data, see the{" "}
+                account, you expressly consent to this data transfer. Garmin data powers Dofek.
+                Garmin data is not sold and is disclosed only to the service providers described
+                above or when required by law. For details on how Garmin handles your data, see the{" "}
                 <a
                   href="https://www.garmin.com/privacy/connect"
                   target="_blank"
@@ -127,10 +135,66 @@ function PrivacyPage() {
               6. Data Retention and Deletion
             </h2>
             <p>
-              Your data is retained for as long as your account is active. You may disconnect any
-              provider at any time, which stops future data syncing from that provider. You may
-              request complete deletion of your account and all associated data by contacting us at
-              the email below.
+              Your data is retained while your account is active. Settings provides a two-step
+              account deletion flow. Confirmation immediately blocks new account writes, revokes the
+              session, and starts a durable deletion request. Dofek deletes active application data
+              as the workflow advances and verifies its active application stores after the
+              seven-day replay window has elapsed. Logs, processor records, and backups then age
+              through a separate retention window. Final retained-data verification is due no later
+              than 30 days after the request. A missed deadline does not cancel the request;
+              deletion continues automatically, support is alerted, and the public status page shows
+              retry or support guidance.
+            </p>
+            <p className="mt-3">
+              To prevent a later database restore from forgetting a deletion request, Dofek retains
+              an immutable encrypted deletion-ledger record indefinitely. That narrow record
+              contains a random deletion-request identifier and timestamp, a keyed pseudonymous
+              account digest, a key identifier, and the encrypted status capability. It does not
+              contain a raw account or provider identifier, email address, health data, or provider
+              credential. Cloudflare documents that its{" "}
+              <a
+                href="https://developers.cloudflare.com/r2/buckets/bucket-locks/"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                R2 bucket locks
+              </a>{" "}
+              can retain protected objects indefinitely.
+            </p>
+            <p className="mt-3">
+              Dofek clears its application caches and deletes nutrition samples that the Dofek app
+              wrote to HealthKit. HealthKit and Core Motion source records remain controlled by iOS,
+              and users manage those records through Apple&apos;s settings and Health app. Apple
+              documents that an app can delete only HealthKit objects it previously saved in the{" "}
+              <a
+                href="https://developer.apple.com/documentation/healthkit/hkhealthstore/delete(_:withcompletion:)-17hzm"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                HealthKit deletion API
+              </a>
+              .
+            </p>
+            <p className="mt-3">
+              Payment providers may retain legally required transaction, fraud-prevention, and
+              compliance records beyond Dofek&apos;s 30-day application-data window. See the{" "}
+              <a
+                href="https://stripe.com/legal/privacy-center"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Stripe Privacy Center
+              </a>{" "}
+              for Stripe&apos;s retention disclosures.
+            </p>
+            <p className="mt-3">
+              <a href="/account-deletion" className="text-accent underline">
+                Track an account deletion request
+              </a>
+              .
             </p>
           </section>
 
@@ -142,7 +206,7 @@ function PrivacyPage() {
               <li>Request correction of inaccurate data</li>
               <li>Request deletion of your data</li>
               <li>Export your data in a portable format</li>
-              <li>Disconnect any third-party provider at any time</li>
+              <li>Disconnect any third-party provider without deleting its imported data</li>
             </ul>
           </section>
 
@@ -160,8 +224,12 @@ function PrivacyPage() {
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-3">9. Contact</h2>
             <p>
-              For questions about this privacy policy or to exercise your data rights, contact the
-              administrator of this instance.
+              For questions about this privacy policy, account deletion, or to exercise your data
+              rights,{" "}
+              <a href="mailto:asherlc@asherlc.com" className="text-accent underline">
+                contact the Dofek administrator
+              </a>
+              .
             </p>
           </section>
         </div>

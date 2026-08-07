@@ -16,8 +16,7 @@ final class GyroscopeRecorder: ObservableObject {
         return queue
     }()
 
-    private var buffer: [[String: Any]] = []
-    private let bufferLock = NSLock()
+    private let sampleBuffer = GyroscopeSampleBuffer()
     private let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -33,9 +32,10 @@ final class GyroscopeRecorder: ObservableObject {
     }
 
     /// Start recording gyroscope data at 50 Hz.
-    /// Buffers samples in memory until `queryNewSamples()` is called.
+    /// Buffers samples in memory until a successful file transfer confirms them.
     func startRecording() {
         guard Self.isAvailable else { return }
+        guard WatchAccountStateStore().isSyncEnabled else { return }
         guard !motionManager.isDeviceMotionActive else { return }
 
         motionManager.deviceMotionUpdateInterval = Self.samplingIntervalSeconds
@@ -50,9 +50,7 @@ final class GyroscopeRecorder: ObservableObject {
                 "gyroscopeZ": motion.rotationRate.z,
             ]
 
-            self.bufferLock.lock()
-            self.buffer.append(sample)
-            self.bufferLock.unlock()
+            self.sampleBuffer.append(sample)
         }
 
         DispatchQueue.main.async {
@@ -68,21 +66,23 @@ final class GyroscopeRecorder: ObservableObject {
         }
     }
 
-    /// Drain the buffer and return all recorded gyroscope samples.
-    /// After calling this, the internal buffer is empty.
-    func queryNewSamples() -> [[String: Any]] {
-        bufferLock.lock()
-        let samples = buffer
-        buffer = []
-        bufferLock.unlock()
-        return samples
+    /// Return a non-destructive snapshot of all buffered gyroscope samples.
+    func copyBufferedSamples() -> [[String: Any]] {
+        sampleBuffer.snapshot()
+    }
+
+    /// Remove the prefix included in a successfully delivered file.
+    func confirmTransferredSamples(count: Int) {
+        sampleBuffer.confirmTransferredSamples(count: count)
     }
 
     /// Number of samples currently buffered.
     var bufferedSampleCount: Int {
-        bufferLock.lock()
-        let count = buffer.count
-        bufferLock.unlock()
-        return count
+        sampleBuffer.count
+    }
+
+    func purgeAccountState() {
+        stopRecording()
+        sampleBuffer.clearAll()
     }
 }

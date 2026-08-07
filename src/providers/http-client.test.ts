@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ProviderHttpClient } from "./http-client.ts";
@@ -53,6 +54,7 @@ describe("ProviderHttpClient", () => {
       expect(result).toEqual({ id: 1, name: "test" });
       expect(mockFetch).toHaveBeenCalledWith("https://api.test.com/v1/items", {
         headers: { Authorization: "Bearer tok" },
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -81,6 +83,26 @@ describe("ProviderHttpClient", () => {
       await expect(client.doGet("/missing", z.object({}))).rejects.toThrow(
         "API error 404 on /missing: Not Found",
       );
+    });
+
+    it("throws ProviderRateLimitError immediately on 429 responses", async () => {
+      const mockFetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+        new Response("Rate Limited", {
+          status: 429,
+          headers: { "Retry-After": "5" },
+        }),
+      );
+      const client = new TestClient("tok", "https://api.test.com", mockFetch);
+
+      const resultPromise = client.doGet("/limited", z.object({})).catch((error: unknown) => error);
+      const error = await resultPromise;
+
+      expect(error).toBeInstanceOf(ProviderRateLimitError);
+      expect(error).toHaveProperty("providerId", "unknown");
+      expect(error).toHaveProperty("statusCode", 429);
+      expect(error).toHaveProperty("responseBody", "Rate Limited");
+      expect(error).toHaveProperty("retryAfterSeconds", 5);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     it("truncates long error messages", async () => {

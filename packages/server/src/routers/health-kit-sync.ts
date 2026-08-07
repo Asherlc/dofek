@@ -1,15 +1,19 @@
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
-import { queryCache } from "dofek/lib/cache";
+import { TRPCError } from "@trpc/server";
+import { ensureProvider as ensureProviderConnection } from "dofek/db/tokens";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import {
+  HealthKitDeletionTombstonesUnsupportedError,
+  HealthKitSyncRepository,
+} from "../repositories/health-kit-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
-  computeBoundsFromIsoTimestamps,
-  linkUnassignedHeartRateToWorkouts,
   processBodyMeasurements,
   processDailyMetrics,
   processHealthEvents,
@@ -23,6 +27,7 @@ import {
   type Database,
   type HealthKitSample,
   healthKitSampleSchema,
+  ignoredCalorieExpenditureTypes,
   metricStreamTypes,
   PROVIDER_ID,
   pointInTimeDailyMetricTypes,
@@ -34,11 +39,7 @@ import { processSleepSamples } from "./health-kit-sync-sleep.ts";
 
 /** Ensure the apple_health provider row exists */
 async function ensureProvider(db: Database, userId: string) {
-  await db.execute(
-    sql`INSERT INTO fitness.provider (id, name, user_id)
-        VALUES (${PROVIDER_ID}, 'Apple Health', ${userId})
-        ON CONFLICT (id) DO NOTHING`,
-  );
+  await ensureProviderConnection(db, PROVIDER_ID, "Apple Health", undefined, userId);
 }
 
 /** Route a sample to its destination category */
@@ -49,7 +50,9 @@ function categorize(
   | "additiveDailyMetric"
   | "pointInTimeDailyMetric"
   | "metricStream"
+  | "ignored"
   | "healthEvent" {
+  if (ignoredCalorieExpenditureTypes.has(type)) return "ignored";
   if (type in bodyMeasurementTypes) return "bodyMeasurement";
   if (type in additiveDailyMetricTypes) return "additiveDailyMetric";
   if (type in pointInTimeDailyMetricTypes) return "pointInTimeDailyMetric";
@@ -60,6 +63,56 @@ function categorize(
 // ── Router ──
 
 export const healthKitSyncRouter = router({
+  deleteQuantitySamples: protectedProcedure
+    .input(
+      z.object({
+        deletedUUIDs: z.array(z.uuid()).max(500),
+        typeIdentifier: z.string().min(1),
+      }),
+    )
+    .output(z.object({ deleted: z.number().int().nonnegative() }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db, ctx.userId);
+      const repository = new HealthKitSyncRepository(ctx.db, ctx.userId, ctx.metricStreamPublisher);
+      let deleted: number;
+      try {
+        deleted = await repository.processDeletedQuantitySamples(
+          input.typeIdentifier,
+          input.deletedUUIDs,
+        );
+      } catch (error) {
+        if (!(error instanceof HealthKitDeletionTombstonesUnsupportedError)) {
+          captureException(error, {
+            tags: { endpoint: "deleteQuantitySamples" },
+            extra: { userId: ctx.userId },
+          });
+          throw error;
+        }
+        captureException(error, {
+          tags: { endpoint: "deleteQuantitySamples" },
+          extra: { userId: ctx.userId },
+        });
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "HealthKit deletion sync is unavailable because metric deletion publishing is not configured. Please try again later.",
+          cause: error,
+        });
+      }
+      if (deleted > 0) {
+        await invalidateAllUserQueries(ctx.userId);
+      }
+      healthKitPushTotal.add(1, {
+        endpoint: "deleteQuantitySamples",
+        status: "success",
+      });
+      healthKitRecordsTotal.add(deleted, {
+        endpoint: "deleteQuantitySamples",
+        category: "deletedQuantitySample",
+      });
+      return { deleted };
+    }),
+
   pushQuantitySamples: protectedProcedure
     .input(z.object({ samples: z.array(healthKitSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
@@ -73,6 +126,8 @@ export const healthKitSyncRouter = router({
       for (const sample of input.samples) {
         const category = categorize(sample.type);
         switch (category) {
+          case "ignored":
+            break;
           case "bodyMeasurement":
             bodyMeasurements.push(sample);
             break;
@@ -90,60 +145,61 @@ export const healthKitSyncRouter = router({
       }
 
       let inserted = 0;
+      let bodyInserted = 0;
       const errors: string[] = [];
-      let needsDailyMetricsRefresh = false;
 
       try {
-        inserted += await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
+        bodyInserted = await processBodyMeasurements(
+          ctx.db,
+          ctx.userId,
+          bodyMeasurements,
+          ctx.metricStreamPublisher,
+        );
+        inserted += bodyInserted;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Body measurements: ${message}`);
       }
 
       try {
-        const dailyInserted = await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
-        inserted += dailyInserted;
-        if (dailyInserted > 0) {
-          needsDailyMetricsRefresh = true;
-        }
+        inserted += await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Daily metrics: ${message}`);
       }
 
       try {
-        inserted += await processMetricStream(ctx.db, ctx.userId, metricStreamSamples);
+        inserted += await processMetricStream(
+          ctx.db,
+          ctx.userId,
+          metricStreamSamples,
+          ctx.metricStreamPublisher,
+        );
         if (metricStreamSamples.length > 0) {
-          const bounds = computeBoundsFromIsoTimestamps(
-            metricStreamSamples.map((s) => s.startDate),
+          const hasSpo2 = metricStreamSamples.some(
+            (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
           );
-          await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
-
-          // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
-          let aggregatedDailyMetrics = false;
-          if (bounds) {
-            const hasSpo2 = metricStreamSamples.some(
-              (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
+          if (hasSpo2) {
+            await aggregateSpO2ToDailyMetrics(
+              ctx.db,
+              ctx.userId,
+              metricStreamSamples,
+              ctx.timezone,
             );
-            if (hasSpo2) {
-              await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
-              aggregatedDailyMetrics = true;
-            }
-            const skinTempSamples = metricStreamSamples.filter(
-              (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
-            );
-            if (skinTempSamples.length > 0) {
-              logger.info(
-                `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
-              );
-              await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
-              aggregatedDailyMetrics = true;
-            }
           }
-
-          // Refresh the daily metrics view so the dashboard picks up new data immediately
-          if (aggregatedDailyMetrics) {
-            needsDailyMetricsRefresh = true;
+          const skinTempSamples = metricStreamSamples.filter(
+            (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+          );
+          if (skinTempSamples.length > 0) {
+            logger.info(
+              `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
+            );
+            await aggregateSkinTempToDailyMetrics(
+              ctx.db,
+              ctx.userId,
+              metricStreamSamples,
+              ctx.timezone,
+            );
           }
         }
       } catch (error: unknown) {
@@ -158,29 +214,21 @@ export const healthKitSyncRouter = router({
         errors.push(`Health events: ${message}`);
       }
 
-      // Refresh materialized views so the dashboard picks up new data immediately
-      if (needsDailyMetricsRefresh) {
+      if (bodyInserted > 0 && ctx.sensorStore) {
         try {
-          await refreshMaterializedView(ctx.db, "fitness.v_daily_metrics", {
-            source: "server.healthkit_push_quantity",
+          await ctx.sensorStore.refreshBodyMeasurements();
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          captureException(error, {
+            tags: { healthKitSyncStep: "refreshBodyMeasurements" },
           });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_daily_metrics: ${error}`);
-        }
-      }
-      if (bodyMeasurements.length > 0) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_body_measurement", {
-            source: "server.healthkit_push_quantity",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_body_measurement: ${error}`);
+          errors.push(`Body measurements refresh: ${message}`);
         }
       }
 
       // Invalidate cached data so queries pick up the newly ingested data
-      if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+      if (inserted > 0 && errors.length === 0) {
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, {
@@ -208,24 +256,31 @@ export const healthKitSyncRouter = router({
     }),
 
   pushWorkouts: protectedProcedure
-    .input(z.object({ workouts: z.array(workoutSampleSchema) }))
+    .input(
+      z
+        .object({
+          workouts: z.array(workoutSampleSchema),
+          windowStart: timestampStringSchema,
+          windowEnd: timestampStringSchema,
+        })
+        .refine(
+          ({ windowStart, windowEnd }) =>
+            new Date(windowStart).getTime() < new Date(windowEnd).getTime(),
+          {
+            message: "windowEnd must be after windowStart",
+            path: ["windowEnd"],
+          },
+        ),
+    )
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, ctx.userId);
-      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
+      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts, {
+        windowStart: input.windowStart,
+        windowEnd: input.windowEnd,
+      });
 
-      // Refresh activity views so dashboard picks up new workouts immediately
       if (inserted > 0) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_activity", {
-            source: "server.healthkit_push_workouts",
-          });
-          await refreshMaterializedView(ctx.db, "fitness.activity_summary", {
-            source: "server.healthkit_push_workouts",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh activity views: ${error}`);
-        }
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
@@ -240,10 +295,15 @@ export const healthKitSyncRouter = router({
     .input(z.object({ routes: z.array(workoutRouteSchema) }))
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, ctx.userId);
-      const inserted = await processWorkoutRoutes(ctx.db, ctx.userId, input.routes);
+      const inserted = await processWorkoutRoutes(
+        ctx.db,
+        ctx.userId,
+        input.routes,
+        ctx.metricStreamPublisher,
+      );
 
       if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushWorkoutRoutes", status: "success" });
@@ -260,16 +320,8 @@ export const healthKitSyncRouter = router({
       await ensureProvider(ctx.db, ctx.userId);
       const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
 
-      // Refresh v_sleep so sleep queries pick up new data immediately
       if (inserted > 0) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_sleep", {
-            source: "server.healthkit_push_sleep",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_sleep: ${error}`);
-        }
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushSleepSamples", status: "success" });

@@ -1,6 +1,10 @@
+import { formatCalories, formatDateLong, formatDateYmd } from "@dofek/format/format";
+import { autoMealType } from "@dofek/nutrition/meal";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,12 +15,15 @@ import {
 } from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
-import { safeParseRows } from "../../lib/safe-parse";
-import { captureException } from "../../lib/telemetry";
+import { NutritionIntakeContext } from "../../components/NutritionIntakeContext";
+import { openExternalUrl } from "../../lib/open-external-url";
+import { safeParseData } from "../../lib/safe-parse";
+import { captureException, logger } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
-import { type FoodEntryRow, FoodEntrySchema } from "../../types/api";
+import { FoodByDateV2Schema, type FoodEntryRow } from "../../types/api";
+import { type LoggerTab, TABS } from "../food/add-types";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
@@ -26,19 +33,14 @@ const MEALS = [
   { key: "other", label: "Other" },
 ] as const;
 
+const FATSECRET_URL = "https://www.fatsecret.com/";
+
 function formatDateForQuery(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatDateYmd(date);
 }
 
 function formatDateForDisplay(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  return formatDateLong(date);
 }
 
 function isToday(date: Date): boolean {
@@ -57,11 +59,15 @@ export default function FoodScreen() {
   const [aiMealInputError, setAiMealInputError] = useState<string | null>(null);
   const dateString = formatDateForQuery(selectedDate);
 
-  const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
-  const calorieGoal =
-    typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
+  useEffect(() => {
+    logger.info("screen-navigation", "Nutrition tab rendered", { route: "food" });
+  }, []);
 
-  const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
+  const trpcUtils = trpc.useUtils();
+  const foodQuery = trpc.food.byDateV2.useQuery(
+    { date: dateString },
+    { placeholderData: (previousData) => previousData },
+  );
   const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
   const createAiEntryMutation = trpc.food.create.useMutation();
   type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
@@ -70,22 +76,25 @@ export default function FoodScreen() {
     onSuccess: () => foodQuery.refetch(),
   });
 
-  const entriesParsed = safeParseRows(FoodEntrySchema, foodQuery.data, "food:byDate");
-  const entries = entriesParsed.data;
-
-  const dailyTotals = useMemo(() => {
-    let totalCalories = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFat = 0;
-    for (const entry of entries) {
-      totalCalories += entry.calories ?? 0;
-      totalProtein += entry.protein_g ?? 0;
-      totalCarbs += entry.carbs_g ?? 0;
-      totalFat += entry.fat_g ?? 0;
-    }
-    return { totalCalories, totalProtein, totalCarbs, totalFat };
-  }, [entries]);
+  const foodResponse =
+    foodQuery.data === undefined && (foodQuery.isLoading || foodQuery.isFetching)
+      ? undefined
+      : foodQuery.data;
+  const selectedDateFood =
+    foodResponse === undefined
+      ? { data: undefined, error: null }
+      : safeParseData(FoodByDateV2Schema, foodResponse, "food:byDateV2");
+  const entries = selectedDateFood.data?.entries ?? [];
+  const summary = selectedDateFood.data?.summary;
+  const resolution = selectedDateFood.data?.resolution;
+  const isFoodBlockingLoading = shouldShowBlockingLoading({
+    data: entries,
+    isFetching: foodQuery.isFetching,
+    isLoading: foodQuery.isLoading,
+  });
+  const foodError = foodQuery.error ?? selectedDateFood.error;
+  const foodErrorMessage =
+    foodError instanceof Error ? foodError.message : "Failed to load food entries.";
 
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntryRow[]>();
@@ -118,8 +127,16 @@ export default function FoodScreen() {
     router.push(`/food/add?meal=${mealKey}&date=${dateString}`);
   }
 
+  function handleOpenFoodInput(mode: LoggerTab) {
+    router.push(`/food/add?meal=${autoMealType()}&date=${dateString}&mode=${mode}`);
+  }
+
   function handleDeleteFood(id: string) {
     deleteMutation.mutate({ id });
+  }
+
+  function handleOpenFatsecretWebsite() {
+    void openExternalUrl(FATSECRET_URL, "food");
   }
 
   async function handleLogAiMeal() {
@@ -168,7 +185,9 @@ export default function FoodScreen() {
     setPendingAiMealItems([]);
   }
 
-  const { refreshing, onRefresh } = useRefresh();
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () => trpcUtils.food.byDateV2.invalidate({ date: dateString }),
+  });
   const aiLoggingInProgress = analyzeItemsMutation.isPending || createAiEntryMutation.isPending;
 
   return (
@@ -186,11 +205,21 @@ export default function FoodScreen() {
       >
         {/* Date navigation */}
         <View style={styles.dateNav}>
-          <TouchableOpacity onPress={goToPreviousDay} style={styles.dateArrow}>
+          <TouchableOpacity
+            onPress={goToPreviousDay}
+            style={styles.dateArrow}
+            accessibilityRole="button"
+            accessibilityLabel="Previous day"
+          >
             <Text style={styles.dateArrowText}>{"\u2039"}</Text>
           </TouchableOpacity>
           <Text style={styles.dateHeader}>{formatDateForDisplay(selectedDate)}</Text>
-          <TouchableOpacity onPress={goToNextDay} style={styles.dateArrow}>
+          <TouchableOpacity
+            onPress={goToNextDay}
+            style={styles.dateArrow}
+            accessibilityRole="button"
+            accessibilityLabel="Next day"
+          >
             <Text style={styles.dateArrowText}>{"\u203A"}</Text>
           </TouchableOpacity>
         </View>
@@ -200,15 +229,102 @@ export default function FoodScreen() {
           <TouchableOpacity
             onPress={() => router.push("/nutrition-analytics")}
             style={styles.sectionLinkButton}
+            accessibilityRole="button"
+            accessibilityLabel="Nutrition Analytics"
           >
             <Text style={styles.sectionLinkText}>Analytics</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push("/supplements")}
             style={styles.sectionLinkButton}
+            accessibilityRole="button"
+            accessibilityLabel="Supplements"
           >
             <Text style={styles.sectionLinkText}>Supplements</Text>
           </TouchableOpacity>
+        </View>
+
+        {!isToday(selectedDate) && (
+          <TouchableOpacity
+            onPress={() => setSelectedDate(new Date())}
+            style={styles.todayButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Today"
+          >
+            <Text style={styles.todayButtonText}>Go to Today</Text>
+          </TouchableOpacity>
+        )}
+
+        {summary && (
+          <>
+            {selectedDateFood.data?.intakeContext && (
+              <NutritionIntakeContext context={selectedDateFood.data.intakeContext} />
+            )}
+            <MacroSummary macros={summary.macros} />
+          </>
+        )}
+
+        {resolution &&
+        resolution.sourceProviders.length > 0 &&
+        resolution.status === "available" ? (
+          <View
+            style={styles.sourceResolution}
+            accessible
+            accessibilityLabel={[
+              "Source coverage",
+              resolution.contributionLabel,
+              resolution.message,
+              resolution.excludedSourceLabels.length > 0
+                ? `Excluded overlapping sources: ${resolution.excludedSourceLabels.join(", ")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(". ")}
+          >
+            <Text style={styles.sourceResolutionHeading}>Source coverage</Text>
+            {resolution.contributionLabel ? (
+              <Text style={styles.sourceResolutionTitle}>{resolution.contributionLabel}</Text>
+            ) : null}
+            <Text style={styles.sourceResolutionMessage}>{resolution.message}</Text>
+            {resolution.excludedSourceLabels.length > 0 ? (
+              <Text style={styles.sourceResolutionSources}>
+                Excluded overlapping sources: {resolution.excludedSourceLabels.join(", ")}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {resolution?.status === "source_conflict" && (
+          <View
+            style={styles.sourceConflict}
+            accessible
+            accessibilityRole="alert"
+            accessibilityLabel={`${resolution.message} Sources: ${resolution.sourceLabels.join(", ")}`}
+          >
+            <Text style={styles.sourceConflictTitle}>Nutrition source conflict</Text>
+            <Text style={styles.sourceConflictMessage}>{resolution.message}</Text>
+            <Text style={styles.sourceConflictSources}>
+              Sources: {resolution.sourceLabels.join(", ")}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.foodInputCard}>
+          <Text style={styles.foodInputTitle}>Food input</Text>
+          <View style={styles.foodInputGrid}>
+            {TABS.map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                onPress={() => handleOpenFoodInput(key)}
+                style={styles.foodInputButton}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+              >
+                <Text style={styles.foodInputButtonText}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.aiInputCard}>
@@ -235,6 +351,12 @@ export default function FoodScreen() {
             onPress={handleLogAiMeal}
             disabled={aiLoggingInProgress || !aiMealInput.trim()}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Log with AI"
+            accessibilityState={{
+              busy: aiLoggingInProgress,
+              disabled: aiLoggingInProgress || !aiMealInput.trim(),
+            }}
           >
             <Text style={styles.aiInputButtonText}>
               {aiLoggingInProgress ? "Logging..." : "Log with AI"}
@@ -252,7 +374,7 @@ export default function FoodScreen() {
                     <Text style={styles.aiReviewFoodName}>{item.foodName}</Text>
                     <Text style={styles.aiReviewDescription}>{item.foodDescription}</Text>
                   </View>
-                  <Text style={styles.aiReviewCalories}>{item.calories} cal</Text>
+                  <Text style={styles.aiReviewCalories}>{formatCalories(item.calories)}</Text>
                 </View>
               ))}
               <View style={styles.aiReviewActions}>
@@ -260,6 +382,8 @@ export default function FoodScreen() {
                   style={styles.aiReviewCancelButton}
                   onPress={() => setPendingAiMealItems([])}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel AI meal"
                 >
                   <Text style={styles.aiReviewCancelText}>Cancel</Text>
                 </TouchableOpacity>
@@ -271,6 +395,12 @@ export default function FoodScreen() {
                   onPress={handleConfirmAiMeal}
                   disabled={createAiEntryMutation.isPending}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Confirm and log AI meal"
+                  accessibilityState={{
+                    busy: createAiEntryMutation.isPending,
+                    disabled: createAiEntryMutation.isPending,
+                  }}
                 >
                   <Text style={styles.aiReviewConfirmText}>
                     {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
@@ -281,24 +411,10 @@ export default function FoodScreen() {
           )}
         </View>
 
-        {!isToday(selectedDate) && (
-          <TouchableOpacity onPress={() => setSelectedDate(new Date())} style={styles.todayButton}>
-            <Text style={styles.todayButtonText}>Go to Today</Text>
-          </TouchableOpacity>
-        )}
-
-        <MacroSummary
-          calories={dailyTotals.totalCalories}
-          caloriesGoal={calorieGoal}
-          proteinGrams={Math.round(dailyTotals.totalProtein)}
-          carbsGrams={Math.round(dailyTotals.totalCarbs)}
-          fatGrams={Math.round(dailyTotals.totalFat)}
-        />
-
-        {foodQuery.isLoading ? (
+        {isFoodBlockingLoading ? (
           <Text style={styles.loadingText}>Loading...</Text>
-        ) : foodQuery.isError || entriesParsed.error ? (
-          <Text style={styles.errorText}>Failed to load food entries.</Text>
+        ) : foodQuery.isError || selectedDateFood.error || !resolution ? (
+          <Text style={styles.errorText}>{foodErrorMessage}</Text>
         ) : (
           MEALS.map(({ key, label }) => (
             <MealSection
@@ -306,12 +422,23 @@ export default function FoodScreen() {
               mealName={label}
               mealKey={key}
               entries={mealGroups.get(key) ?? []}
+              totalCalories={summary?.mealCalories[key] ?? null}
               onAddFood={handleAddFood}
               onDeleteFood={handleDeleteFood}
               deleting={deleteMutation.isPending}
             />
           ))
         )}
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Powered by fatsecret nutrition API (www.fatsecret.com)"
+          onPress={handleOpenFatsecretWebsite}
+          style={styles.fatsecretAttributionLink}
+        >
+          <Text style={styles.fatsecretAttribution}>
+            Powered by fatsecret nutrition API (www.fatsecret.com)
+          </Text>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -322,12 +449,63 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  sourceResolution: {
+    backgroundColor: colors.surface,
+    borderColor: colors.surfaceSecondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    gap: 4,
+  },
+  sourceResolutionTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  sourceResolutionHeading: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  sourceResolutionMessage: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  sourceResolutionSources: {
+    color: colors.textTertiary,
+    fontSize: 12,
+  },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 16,
     paddingBottom: 100,
+  },
+  sourceConflict: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginBottom: 12,
+    gap: 4,
+  },
+  sourceConflictTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  sourceConflictMessage: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  sourceConflictSources: {
+    color: colors.textTertiary,
+    fontSize: 12,
   },
   dateNav: {
     flexDirection: "row",
@@ -380,6 +558,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.accent,
     fontWeight: "600",
+  },
+  foodInputCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginBottom: 12,
+    gap: 10,
+  },
+  foodInputTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  foodInputGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  foodInputButton: {
+    flexGrow: 1,
+    flexBasis: "45%",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    backgroundColor: colors.background,
+  },
+  foodInputButtonText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
   },
   aiInputCard: {
     borderRadius: 16,
@@ -506,5 +719,15 @@ const styles = StyleSheet.create({
     color: "#f87171",
     fontSize: 13,
     paddingVertical: 24,
+  },
+  fatsecretAttribution: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  fatsecretAttributionLink: {
+    alignSelf: "center",
+    marginTop: 10,
   },
 });

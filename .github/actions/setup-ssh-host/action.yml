@@ -22,16 +22,31 @@ runs:
         printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
         chmod 600 ~/.ssh/id_ed25519
 
-        known_hosts_entry=""
-        for attempt in $(seq 1 24); do
-          known_hosts_entry="$(ssh-keyscan -T 5 -H "$SSH_HOST" 2>/dev/null || true)"
+        attempts=24
+        keyscan_timeout=5
+        sleep_between=5
+        keyscan_stderr="$(mktemp)"
+        trap 'rm -f "$keyscan_stderr"' EXIT
+
+        for attempt in $(seq 1 "$attempts"); do
+          known_hosts_entry="$(ssh-keyscan -T "$keyscan_timeout" -H "$SSH_HOST" 2>"$keyscan_stderr" || true)"
           if [ -n "$known_hosts_entry" ]; then
             printf '%s\n' "$known_hosts_entry" >> ~/.ssh/known_hosts
             exit 0
           fi
-          if [ "$attempt" -eq 24 ]; then
-            echo "::error::SSH host key for $SSH_HOST did not become available within 120s"
+          echo "Attempt ${attempt}/${attempts}: ssh-keyscan returned no key for $SSH_HOST"
+          if [ -s "$keyscan_stderr" ]; then
+            sed 's/^/  keyscan: /' "$keyscan_stderr"
+          fi
+          if timeout "$keyscan_timeout" bash -c "exec 3<>/dev/tcp/$SSH_HOST/22" 2>/dev/null; then
+            echo "  tcp/22: reachable (no SSH banner yet)"
+          else
+            echo "  tcp/22: not reachable"
+          fi
+          if [ "$attempt" -eq "$attempts" ]; then
+            total_seconds=$((attempts * keyscan_timeout + (attempts - 1) * sleep_between))
+            echo "::error::SSH host key for $SSH_HOST did not become available within ${total_seconds}s"
             exit 1
           fi
-          sleep 5
+          sleep "$sleep_between"
         done

@@ -1,8 +1,25 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { duration } from "../../theme";
 import { RecoveryRing } from "./RecoveryRing";
 
+const mockWithTiming = vi.hoisted(() => vi.fn((toValue: unknown) => toValue));
+
+vi.mock("react-native-reanimated", () => ({
+  createAnimatedComponent: (component: unknown) => component,
+  Easing: {
+    bezier: vi.fn(() => "bezier"),
+  },
+  useAnimatedProps: (updater: () => Record<string, unknown>) => updater(),
+  useSharedValue: (initial: unknown) => ({ value: initial }),
+  withTiming: mockWithTiming,
+}));
+
 describe("RecoveryRing", () => {
+  afterEach(() => {
+    mockWithTiming.mockClear();
+  });
+
   it("renders the score number", () => {
     render(<RecoveryRing score={72} />);
     expect(screen.getByText("72")).toBeTruthy();
@@ -32,5 +49,14 @@ describe("RecoveryRing", () => {
     render(<RecoveryRing score={80} label="Custom" />);
     expect(screen.getByText("Custom")).toBeTruthy();
     expect(screen.queryByText("Recovered")).toBeNull();
+  });
+
+  it("animates the ring with the standard count-up duration", () => {
+    render(<RecoveryRing score={72} />);
+
+    expect(mockWithTiming).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ duration: duration.countUp }),
+    );
   });
 });

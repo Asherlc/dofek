@@ -3,10 +3,42 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockInvalidate = vi.fn(() => Promise.resolve());
+const mockActivityListInvalidate = vi.fn(() => Promise.resolve());
+const mockCalendarActivityOverviewInvalidate = vi.fn(() => Promise.resolve());
+const mockCalendarWeekListInvalidate = vi.fn(() => Promise.resolve());
+const mockDashboardInvalidate = vi.fn(() => Promise.resolve());
+const mockDataHealthInvalidate = vi.fn(() => Promise.resolve());
+const mockFoodByDateInvalidate = vi.fn(() => Promise.resolve());
+const mockNutritionAnalyticsAdaptiveTdeeInvalidate = vi.fn(() => Promise.resolve());
+const mockNutritionAnalyticsMacroRatiosInvalidate = vi.fn(() => Promise.resolve());
+const mockNutritionAnalyticsMicronutrientAdequacyInvalidate = vi.fn(() => Promise.resolve());
+const mockRecoveryInvalidate = vi.fn(() => Promise.resolve());
+const mockTrainingInvalidate = vi.fn(() => Promise.resolve());
 
 vi.mock("./trpc", () => ({
   trpc: {
-    useUtils: () => ({ invalidate: mockInvalidate }),
+    useUtils: () => ({
+      invalidate: mockInvalidate,
+      mobileDashboard: {
+        dashboard: { invalidate: mockDashboardInvalidate },
+        recovery: { invalidate: mockRecoveryInvalidate },
+        training: { invalidate: mockTrainingInvalidate },
+      },
+      calendar: {
+        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
+      },
+      activity: { list: { invalidate: mockActivityListInvalidate } },
+      food: { byDate: { invalidate: mockFoodByDateInvalidate } },
+      processing: { status: { invalidate: mockDataHealthInvalidate } },
+      nutritionAnalytics: {
+        adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
+        macroRatios: { invalidate: mockNutritionAnalyticsMacroRatiosInvalidate },
+        micronutrientAdequacy: {
+          invalidate: mockNutritionAnalyticsMicronutrientAdequacyInvalidate,
+        },
+      },
+    }),
   },
 }));
 
@@ -40,8 +72,48 @@ describe("useRefresh", () => {
     expect(result.current.refreshing).toBe(false);
   });
 
+  it("stops refreshing after invalidation starts without waiting for refetches", async () => {
+    let resolveInvalidate: () => void = () => {};
+    mockInvalidate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInvalidate = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useRefresh());
+    let refreshCompletion = Promise.resolve();
+
+    await act(async () => {
+      refreshCompletion = Promise.resolve(result.current.onRefresh());
+      await Promise.resolve();
+    });
+
+    expect(mockInvalidate).toHaveBeenCalledOnce();
+    expect(result.current.refreshing).toBe(false);
+
+    resolveInvalidate();
+    await act(async () => {
+      await refreshCompletion;
+    });
+  });
+
+  it("uses a scoped refresh callback without globally invalidating when invalidation is disabled", async () => {
+    const refresh = vi.fn(() => Promise.resolve());
+    const { result } = renderHook(() => useRefresh({ refresh, invalidate: null }));
+
+    await act(async () => {
+      await result.current.onRefresh();
+    });
+
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(result.current.refreshing).toBe(false);
+  });
+
   it("resets refreshing to false even if invalidate rejects", async () => {
-    mockInvalidate.mockRejectedValueOnce(new Error("network error"));
+    const error = new Error("network error");
+    mockInvalidate.mockRejectedValueOnce(error);
 
     const { result } = renderHook(() => useRefresh());
 
@@ -50,6 +122,7 @@ describe("useRefresh", () => {
     });
 
     expect(result.current.refreshing).toBe(false);
+    expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "useRefresh.invalidate" });
   });
 
   it("calls the extra callback alongside invalidate", async () => {

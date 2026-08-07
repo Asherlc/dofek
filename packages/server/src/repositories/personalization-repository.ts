@@ -1,5 +1,9 @@
 import type { Database } from "dofek/db";
 import {
+  buildPersonalizationModelCards,
+  type PersonalizationModelCard,
+} from "dofek/personalization/model-card";
+import {
   DEFAULT_PARAMS,
   type EffectiveParams,
   getEffectiveParams,
@@ -7,6 +11,7 @@ import {
 import { refitAllParams } from "dofek/personalization/refit";
 import { loadPersonalizedParams, SETTINGS_KEY } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -18,6 +23,7 @@ export interface PersonalizationStatus {
   defaults: EffectiveParams;
   effective: EffectiveParams;
   parameters: PersonalizationParameters;
+  modelCards: PersonalizationModelCard[];
 }
 
 export interface PersonalizationParameters {
@@ -67,10 +73,12 @@ export interface ResetResult {
 export class PersonalizationRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, sensorStore: ActivitySensorStore) {
     this.#db = db;
     this.#userId = userId;
+    this.#sensorStore = sensorStore;
   }
 
   /** Load current personalization status including learned and effective params. */
@@ -96,12 +104,13 @@ export class PersonalizationRepository {
         stressThresholds: stored?.stressThresholds ?? null,
         trainingImpulseConstants: stored?.trainingImpulseConstants ?? null,
       },
+      modelCards: buildPersonalizationModelCards(stored),
     };
   }
 
   /** Trigger an immediate refit of personalized parameters. */
   async refit(): Promise<RefitResult> {
-    const params = await refitAllParams(this.#db, this.#userId);
+    const params = await refitAllParams(this.#db, this.#userId, this.#sensorStore);
     const effective = getEffectiveParams(params);
 
     return {

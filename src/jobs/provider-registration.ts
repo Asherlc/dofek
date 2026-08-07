@@ -1,4 +1,5 @@
 import { registerProvider } from "../providers/index.ts";
+import { registerProviderSyncRequestResolver } from "./sync-request-query-registration.ts";
 
 let registrationPromise: Promise<void> | null = null;
 
@@ -14,7 +15,10 @@ async function doRegisterProviders() {
     ["wahoo", () => import("../providers/wahoo/provider.ts").then((m) => new m.WahooProvider())],
     ["withings", () => import("../providers/withings.ts").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("../providers/peloton.ts").then((m) => new m.PelotonProvider())],
-    ["fatsecret", () => import("../providers/fatsecret.ts").then((m) => new m.FatSecretProvider())],
+    [
+      "fatsecret",
+      () => import("../providers/fatsecret/provider.ts").then((m) => new m.FatSecretProvider()),
+    ],
     ["whoop", () => import("../providers/whoop/provider.ts").then((m) => new m.WhoopProvider())],
     [
       "ride-with-gps",
@@ -25,8 +29,12 @@ async function doRegisterProviders() {
       () => import("../providers/strong-csv.ts").then((m) => new m.StrongCsvProvider()),
     ],
     ["polar", () => import("../providers/polar/provider.ts").then((m) => new m.PolarProvider())],
-    ["fitbit", () => import("../providers/fitbit/provider.ts").then((m) => new m.FitbitProvider())],
-    ["garmin", () => import("../providers/garmin.ts").then((m) => new m.GarminProvider())],
+    ["garmin", () => import("../providers/garmin/provider.ts").then((m) => new m.GarminProvider())],
+    [
+      "garmin-dump",
+      () => import("../providers/garmin-dump.ts").then((m) => new m.GarminDumpProvider()),
+    ],
+    ["fit-file", () => import("../providers/fit-file.ts").then((m) => new m.FitFileProvider())],
     ["strava", () => import("../providers/strava.ts").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",
@@ -47,14 +55,7 @@ async function doRegisterProviders() {
       "ultrahuman",
       () => import("../providers/ultrahuman.ts").then((m) => new m.UltrahumanProvider()),
     ],
-    [
-      "mapmyfitness",
-      () => import("../providers/mapmyfitness.ts").then((m) => new m.MapMyFitnessProvider()),
-    ],
-    ["suunto", () => import("../providers/suunto.ts").then((m) => new m.SuuntoProvider())],
-    ["coros", () => import("../providers/coros.ts").then((m) => new m.CorosProvider())],
     ["concept2", () => import("../providers/concept2.ts").then((m) => new m.Concept2Provider())],
-    ["komoot", () => import("../providers/komoot.ts").then((m) => new m.KomootProvider())],
     ["xert", () => import("../providers/xert.ts").then((m) => new m.XertProvider())],
     [
       "cycling-analytics",
@@ -62,17 +63,30 @@ async function doRegisterProviders() {
         import("../providers/cycling-analytics.ts").then((m) => new m.CyclingAnalyticsProvider()),
     ],
     ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
-    ["decathlon", () => import("../providers/decathlon.ts").then((m) => new m.DecathlonProvider())],
     ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
     [
       "auto-supplements",
       () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),
     ],
+    [
+      "amazfit-zepp",
+      () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),
+    ],
+    [
+      "kaya-export",
+      () => import("../providers/kaya/provider.ts").then((m) => new m.KayaProvider()),
+    ],
+    [
+      "zos-app",
+      () => import("../providers/zos-app/provider.ts").then((m) => new m.ZosAppProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {
     try {
-      registerProvider(await loadProvider());
+      const provider = await loadProvider();
+      registerProvider(provider);
+      await registerProviderSyncRequestResolver(provider);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to register ${name} provider: ${message}`);

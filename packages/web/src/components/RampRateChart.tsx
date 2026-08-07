@@ -1,8 +1,8 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
-import { dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { dofekAxis, dofekGrid, dofekTooltip, escapeTooltipHtml } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface RampRateChartProps {
@@ -29,13 +29,9 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         const dataPoint = data[idx];
         if (!dataPoint) return "";
         const color = rampRateColor(dataPoint.rampRate);
-        const dateLabel = new Date(dataPoint.week).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const dateLabel = formatDateMedium(dataPoint.week);
         return [
-          `<strong>${dateLabel}</strong>`,
+          `<strong>${escapeTooltipHtml(dateLabel)}</strong>`,
           `Ramp Rate: <span style="color:${color}">${formatNumber(dataPoint.rampRate, 2)}</span>`,
         ].join("<br/>");
       },

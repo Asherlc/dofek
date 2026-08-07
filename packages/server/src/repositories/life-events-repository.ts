@@ -1,8 +1,11 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchBodyComparisonRows } from "./body-clickhouse.ts";
+import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -16,7 +19,8 @@ const lifeEventRowSchema = z.object({
   category: z.string().nullable(),
   ongoing: z.coerce.boolean(),
   notes: z.string().nullable(),
-  created_at: z.string(),
+  personal_experiment_id: z.string().nullable(),
+  created_at: timestampStringSchema,
 });
 
 /** Schema for life event rows from RETURNING * (includes user_id) */
@@ -30,7 +34,6 @@ const metricsComparisonRowSchema = z.object({
   avg_resting_hr: z.coerce.number().nullable(),
   avg_hrv: z.coerce.number().nullable(),
   avg_steps: z.coerce.number().nullable(),
-  avg_active_energy: z.coerce.number().nullable(),
 });
 
 const sleepComparisonRowSchema = z.object({
@@ -74,6 +77,7 @@ export interface CreateLifeEventInput {
   category: string | null;
   ongoing: boolean;
   notes: string | null;
+  personalExperimentId?: string | null;
 }
 
 export interface UpdateLifeEventInput {
@@ -83,13 +87,59 @@ export interface UpdateLifeEventInput {
   category?: string | null;
   ongoing?: boolean;
   notes?: string | null;
+  personalExperimentId?: string | null;
 }
+
+export class PersonalExperimentAssociationError extends Error {}
 
 export interface AnalyzeResult {
   event: Record<string, unknown>;
   metrics: MetricsComparison[];
   sleep: SleepComparison[];
   bodyComp: BodyComparison[];
+}
+
+function averageNullable(values: (number | null)[]): number | null {
+  const numericValues = values.filter((value): value is number => value != null);
+  if (numericValues.length === 0) return null;
+  return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
+}
+
+function buildSleepComparisonRows(
+  rows: {
+    date: string;
+    duration_minutes: number | null;
+    deep_minutes: number | null;
+    rem_minutes: number | null;
+    efficiency_pct: number | null;
+  }[],
+  startDate: string,
+  endDate: string,
+  windowDays: number,
+): SleepComparison[] {
+  const beforeStartDate = addDays(startDate, -windowDays);
+  const groups = [
+    {
+      period: "before",
+      rows: rows.filter((row) => row.date >= beforeStartDate && row.date < startDate),
+    },
+    {
+      period: "after",
+      rows: rows.filter((row) => row.date >= startDate && row.date <= endDate),
+    },
+  ];
+  return groups
+    .filter((group) => group.rows.length > 0)
+    .map((group) =>
+      sleepComparisonRowSchema.parse({
+        period: group.period,
+        nights: group.rows.length,
+        avg_sleep_min: averageNullable(group.rows.map((row) => row.duration_minutes)),
+        avg_deep_min: averageNullable(group.rows.map((row) => row.deep_minutes)),
+        avg_rem_min: averageNullable(group.rows.map((row) => row.rem_minutes)),
+        avg_efficiency: averageNullable(group.rows.map((row) => row.efficiency_pct)),
+      }),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -101,11 +151,18 @@ export class LifeEventsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore?: Pick<ActivitySensorStore, "query">,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** List all life events for the user, ordered by start date descending. */
@@ -113,7 +170,7 @@ export class LifeEventsRepository {
     return executeWithSchema(
       this.#db,
       lifeEventRowSchema,
-      sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, created_at
+      sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, personal_experiment_id, created_at
 				FROM fitness.life_events
 				WHERE user_id = ${this.#userId}
 				ORDER BY started_at DESC`,
@@ -122,11 +179,17 @@ export class LifeEventsRepository {
 
   /** Create a new life event, returning the full row. */
   async create(input: CreateLifeEventInput): Promise<LifeEventFullRow> {
+    const personalExperimentId = input.personalExperimentId ?? null;
+    await this.#assertPersonalExperimentOwned(personalExperimentId);
     const rows = await executeWithSchema(
       this.#db,
       lifeEventFullRowSchema,
-      sql`INSERT INTO fitness.life_events (user_id, label, started_at, ended_at, category, ongoing, notes)
-				VALUES (${this.#userId}, ${input.label}, ${input.startedAt}::date, ${input.endedAt}::date, ${input.category}, ${input.ongoing}, ${input.notes})
+      sql`INSERT INTO fitness.life_events (
+            user_id, label, started_at, ended_at, category, ongoing, notes, personal_experiment_id
+          ) VALUES (
+            ${this.#userId}, ${input.label}, ${input.startedAt}::date, ${input.endedAt}::date,
+            ${input.category}, ${input.ongoing}, ${input.notes}, ${personalExperimentId}
+          )
 				RETURNING *`,
     );
     const row = rows[0];
@@ -136,6 +199,9 @@ export class LifeEventsRepository {
 
   /** Update an existing life event, returning the updated row or null if not found. */
   async update(id: string, changes: UpdateLifeEventInput): Promise<LifeEventFullRow | null> {
+    if (changes.personalExperimentId !== undefined) {
+      await this.#assertPersonalExperimentOwned(changes.personalExperimentId);
+    }
     const setClauses: ReturnType<typeof sql>[] = [];
     if (changes.label !== undefined) setClauses.push(sql`label = ${changes.label}`);
     if (changes.startedAt !== undefined)
@@ -151,6 +217,8 @@ export class LifeEventsRepository {
     if (changes.ongoing !== undefined) setClauses.push(sql`ongoing = ${changes.ongoing}`);
     if (changes.notes !== undefined)
       setClauses.push(changes.notes ? sql`notes = ${changes.notes}` : sql`notes = NULL`);
+    if (changes.personalExperimentId !== undefined)
+      setClauses.push(sql`personal_experiment_id = ${changes.personalExperimentId}`);
 
     if (setClauses.length === 0) return null;
 
@@ -184,24 +252,63 @@ export class LifeEventsRepository {
     const startDate = event.started_at;
     const endDate = event.ended_at ?? (event.ongoing ? "NOW()" : null);
 
-    const beforeClause = sql`user_id = ${this.#userId} AND date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)`;
-    const afterClause = endDate
-      ? sql`user_id = ${this.#userId} AND date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
-      : sql`user_id = ${this.#userId} AND date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`;
+    const afterEndDate = endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`;
+    const metricsEndDate = endDate ? afterEndDate : sql`(${startDate}::date + ${windowDays}::int)`;
+    const metricsEndDateString =
+      endDate === "NOW()"
+        ? new Date().toISOString().slice(0, 10)
+        : (endDate ?? addDays(startDate, windowDays));
+    const restingHeartRateDays = daysBetween(addDays(startDate, -windowDays), metricsEndDateString);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate: metricsEndDateString,
+      days: restingHeartRateDays,
+    });
 
     const metrics = await executeWithSchema(
       this.#db,
       metricsComparisonRowSchema,
       sql`
-			WITH before_period AS (
-				SELECT 'before' as period, *
-				FROM fitness.v_daily_metrics
-				WHERE ${beforeClause}
+			WITH ${restingHeartRateCte},
+      before_dates AS (
+				SELECT dm.date
+				FROM fitness.v_daily_metrics dm
+				WHERE dm.user_id = ${this.#userId}
+				  AND dm.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
+				UNION
+				SELECT drhr.date
+				FROM resting_heart_rate drhr
+				WHERE drhr.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
+			),
+			after_dates AS (
+				SELECT dm.date
+				FROM fitness.v_daily_metrics dm
+				WHERE dm.user_id = ${this.#userId}
+				  AND dm.date BETWEEN ${startDate}::date AND ${metricsEndDate}
+				UNION
+				SELECT drhr.date
+				FROM resting_heart_rate drhr
+				WHERE drhr.date BETWEEN ${startDate}::date AND ${metricsEndDate}
+			),
+			before_period AS (
+				SELECT 'before' as period, dm.hrv, dm.steps, drhr.resting_hr
+				FROM before_dates dates
+				LEFT JOIN fitness.v_daily_metrics dm
+				  ON dm.user_id = ${this.#userId}
+				 AND dm.date = dates.date
+				LEFT JOIN resting_heart_rate drhr
+				  ON drhr.date = dates.date
 			),
 			after_period AS (
-				SELECT 'after' as period, *
-				FROM fitness.v_daily_metrics
-				WHERE ${afterClause}
+				SELECT 'after' as period, dm.hrv, dm.steps, drhr.resting_hr
+				FROM after_dates dates
+				LEFT JOIN fitness.v_daily_metrics dm
+				  ON dm.user_id = ${this.#userId}
+				 AND dm.date = dates.date
+				LEFT JOIN resting_heart_rate drhr
+				  ON drhr.date = dates.date
 			),
 			combined AS (
 				SELECT * FROM before_period
@@ -213,8 +320,7 @@ export class LifeEventsRepository {
 				COUNT(*) as days,
 				AVG(resting_hr)::numeric(10,1) as avg_resting_hr,
 				AVG(hrv)::numeric(10,1) as avg_hrv,
-				AVG(steps)::numeric(10,0) as avg_steps,
-				AVG(active_energy_kcal)::numeric(10,0) as avg_active_energy
+				AVG(steps)::numeric(10,0) as avg_steps
 			FROM combined
 			GROUP BY period
 			ORDER BY period
@@ -222,100 +328,64 @@ export class LifeEventsRepository {
     );
 
     const [sleep, bodyComp] = await Promise.all([
-      executeWithSchema(
-        this.#db,
-        sleepComparisonRowSchema,
-        sql`
-				WITH before_raw AS (
-					SELECT 'before' as period,
-						${sleepNightDate(this.#timezone)} AS sleep_date,
-						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM fitness.v_sleep
-					WHERE user_id = ${this.#userId}
-						AND ${sleepNightDate(this.#timezone)} BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
-						AND NOT is_nap
-				),
-				before_sleep AS (
-					SELECT DISTINCT ON (sleep_date) period, duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM before_raw
-					ORDER BY sleep_date, duration_minutes DESC NULLS LAST
-				),
-				after_raw AS (
-					SELECT 'after' as period,
-						${sleepNightDate(this.#timezone)} AS sleep_date,
-						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM fitness.v_sleep
-					WHERE user_id = ${this.#userId}
-						AND ${
-              endDate
-                ? endDate === "NOW()"
-                  ? sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND CURRENT_DATE`
-                  : sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND ${endDate}::date`
-                : sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
-            }
-						AND NOT is_nap
-				),
-				after_sleep AS (
-					SELECT DISTINCT ON (sleep_date) period, duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM after_raw
-					ORDER BY sleep_date, duration_minutes DESC NULLS LAST
-				),
-				combined AS (
-					SELECT * FROM before_sleep
-					UNION ALL
-					SELECT * FROM after_sleep
-				)
-				SELECT
-					period,
-					COUNT(*) as nights,
-					AVG(duration_minutes)::numeric(10,0) as avg_sleep_min,
-					AVG(deep_minutes)::numeric(10,0) as avg_deep_min,
-					AVG(rem_minutes)::numeric(10,0) as avg_rem_min,
-					AVG(efficiency_pct)::numeric(10,1) as avg_efficiency
-				FROM combined
-				GROUP BY period
-				ORDER BY period
-				`,
+      fetchSleepNights({
+        sensorStore: this.#requireSensorStore(),
+        userId: this.#userId,
+        timezone: this.#timezone,
+        endDate: metricsEndDateString,
+        days: restingHeartRateDays,
+        order: "asc",
+      }).then((rows) =>
+        buildSleepComparisonRows(rows, startDate, metricsEndDateString, windowDays),
       ),
-      executeWithSchema(
-        this.#db,
-        bodyComparisonRowSchema,
-        sql`
-				WITH before_body AS (
-					SELECT 'before' as period, *
-					FROM fitness.v_body_measurement
-					WHERE user_id = ${this.#userId}
-						AND (recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
-				),
-				after_body AS (
-					SELECT 'after' as period, *
-					FROM fitness.v_body_measurement
-					WHERE user_id = ${this.#userId}
-						AND ${
-              endDate
-                ? endDate === "NOW()"
-                  ? sql`(recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND CURRENT_DATE`
-                  : sql`(recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND ${endDate}::date`
-                : sql`(recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
-            }
-				),
-				combined AS (
-					SELECT * FROM before_body
-					UNION ALL
-					SELECT * FROM after_body
-				)
-				SELECT
-					period,
-					COUNT(*) as measurements,
-					AVG(weight_kg)::numeric(10,2) as avg_weight,
-					AVG(body_fat_pct)::numeric(10,1) as avg_body_fat
-				FROM combined
-				GROUP BY period
-				ORDER BY period
-				`,
+      fetchBodyComparisonRows(
+        this.#requireSensorStore(),
+        this.#userId,
+        this.#timezone,
+        startDate,
+        endDate,
+        windowDays,
       ),
     ]);
 
     return { event, metrics, sleep, bodyComp };
   }
+
+  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for life event analysis");
+    }
+    return this.#sensorStore;
+  }
+
+  async #assertPersonalExperimentOwned(
+    personalExperimentId: string | null | undefined,
+  ): Promise<void> {
+    if (personalExperimentId == null) return;
+    const rows = await executeWithSchema(
+      this.#db,
+      z.object({ id: z.string() }),
+      sql`SELECT id
+          FROM fitness.personal_experiment
+          WHERE id = ${personalExperimentId} AND user_id = ${this.#userId}`,
+    );
+    if (rows[0] === undefined) {
+      throw new PersonalExperimentAssociationError(
+        "Choose one of your own experiments to link this annotation.",
+      );
+    }
+  }
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  const startTime = new Date(`${startDate}T00:00:00.000Z`).getTime();
+  const endTime = new Date(`${endDate}T00:00:00.000Z`).getTime();
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.ceil((endTime - startTime) / millisecondsPerDay));
 }

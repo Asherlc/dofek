@@ -1,7 +1,10 @@
+#if canImport(Sentry)
+import Sentry
+#endif
 import Foundation
 import WatchConnectivity
 
-/// Coordinates querying accelerometer + gyroscope samples and sending them
+/// Coordinates querying accelerometer, gyroscope, and altimeter samples and sending them
 /// to the paired iPhone via WCSession.transferFile().
 /// Files are gzip-compressed JSON arrays.
 ///
@@ -10,8 +13,13 @@ import WatchConnectivity
 final class TransferManager: ObservableObject {
     private let accelerometerRecorder: AccelerometerRecorder
     private let gyroscopeRecorder: GyroscopeRecorder
+    private let altimeterRecorder: AltimeterRecorder
     private let session: WCSession
     private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
+    private let transferStateLock = NSLock()
+    private let pendingAltitudeLock = NSLock()
+    private var pendingAltitudeSampleCounts: [URL: Int] = [:]
+    private let accountStateStore = WatchAccountStateStore()
 
     /// Maximum time difference (in seconds) for merging an accel sample
     /// with a gyro sample into a single 6-axis IMU sample.
@@ -23,11 +31,23 @@ final class TransferManager: ObservableObject {
     init(
         accelerometerRecorder: AccelerometerRecorder,
         gyroscopeRecorder: GyroscopeRecorder,
+        altimeterRecorder: AltimeterRecorder,
         session: WCSession = .default
     ) {
         self.accelerometerRecorder = accelerometerRecorder
         self.gyroscopeRecorder = gyroscopeRecorder
+        self.altimeterRecorder = altimeterRecorder
         self.session = session
+
+        WatchSessionDelegate.shared.onFileTransferFinished = { [weak self] fileTransfer, error in
+            self?.handleFileTransferFinished(fileTransfer, error: error)
+        }
+        WatchSessionDelegate.shared.onPurgeRequested = { [weak self] cutoff in
+            self?.purgeAccountState(at: cutoff)
+        }
+        WatchSessionDelegate.shared.onAccountSyncEnabled = { [weak self] in
+            self?.enableAccountSync()
+        }
     }
 
     /// Query new samples from both recorders, merge by timestamp, serialize
@@ -45,6 +65,10 @@ final class TransferManager: ObservableObject {
         }
 
         guard !isTransferring else { return }
+        guard accountStateStore.isSyncEnabled else {
+            lastTransferStatus = "Account sync disabled"
+            return
+        }
         guard session.activationState == .activated else {
             lastTransferStatus = "Session not active"
             return
@@ -63,16 +87,35 @@ final class TransferManager: ObservableObject {
     }
 
     private func performTransfer() {
-        // Stream samples to a temp JSON file (memory-efficient)
-        guard let result = accelerometerRecorder.streamSamplesToFile() else {
+        guard accountStateStore.isSyncEnabled else {
             DispatchQueue.main.async { [weak self] in
                 self?.isTransferring = false
-                self?.lastTransferStatus = "No new samples"
+            }
+            return
+        }
+        // Stream samples to a temp JSON file (memory-efficient)
+        guard let result = accelerometerRecorder.streamSamplesToFile() else {
+            let altitudeSamples = altimeterRecorder.copyBufferedSamples()
+            transferAltimeterSamples()
+            DispatchQueue.main.async { [weak self] in
+                self?.isTransferring = false
+                if altitudeSamples.isEmpty {
+                    self?.lastTransferStatus = "No new samples"
+                }
             }
             return
         }
 
-        let gyroSamples = gyroscopeRecorder.queryNewSamples()
+        let gyroSamples = gyroscopeRecorder.copyBufferedSamples()
+        processTransfer(result: result, gyroSamples: gyroSamples)
+    }
+
+    private func processTransfer(
+        result: (url: URL, count: Int, through: Date),
+        gyroSamples: [[String: Any]]
+    ) {
+        var tempFilesToCleanup: [URL] = [result.url]
+        var mergedURL: URL?
 
         DispatchQueue.main.async { [weak self] in
             self?.accelerometerRecorder.samplesSinceLastTransfer = result.count
@@ -80,49 +123,77 @@ final class TransferManager: ObservableObject {
         }
 
         do {
-            // If we have gyroscope data, re-read the accel file, merge, and rewrite
             let fileToCompress: URL
             if !gyroSamples.isEmpty {
-                let mergedURL = FileManager.default.temporaryDirectory
+                mergedURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent("imu-merged-\(ISO8601DateFormatter().string(from: Date())).json")
-                try mergeGyroscopeIntoFile(accelFileURL: result.url, gyroSamples: gyroSamples, outputURL: mergedURL)
+                try mergeGyroscopeIntoFile(
+                    accelFileURL: result.url,
+                    gyroSamples: gyroSamples,
+                    outputURL: mergedURL!
+                )
                 try? FileManager.default.removeItem(at: result.url)
-                fileToCompress = mergedURL
+                fileToCompress = mergedURL!
             } else {
                 fileToCompress = result.url
             }
 
-            // Compress the JSON file using streaming compression (memory-mapped read)
             let compressedURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("imu-\(ISO8601DateFormatter().string(from: Date())).json.gz")
             let compressedSize = try Self.compressFile(from: fileToCompress, to: compressedURL)
+            tempFilesToCleanup.append(compressedURL)
 
-            // Clean up the uncompressed temp file
             try? FileManager.default.removeItem(at: fileToCompress)
 
-            // Transfer via WCSession
-            let metadata: [String: Any] = [
-                "type": "accelerometer_samples",
-                "sampleCount": result.count,
-                "hasGyroscope": !gyroSamples.isEmpty,
-                "transferredAt": ISO8601DateFormatter().string(from: Date()),
-            ]
+            var metadata = accelerometerRecorder.transferMetadata(through: result.through)
+            metadata["type"] = "accelerometer_samples"
+            metadata["sampleCount"] = result.count
+            metadata["hasGyroscope"] = !gyroSamples.isEmpty
+            metadata["gyroscopeSampleCount"] = gyroSamples.count
+            metadata["transferredAt"] = ISO8601DateFormatter().string(from: Date())
 
-            session.transferFile(compressedURL, metadata: metadata)
+            guard queueTransferIfSyncEnabled(compressedURL, metadata: metadata) else {
+                for url in tempFilesToCleanup {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.isTransferring = false
+                    self?.lastTransferStatus = "Account sync disabled"
+                }
+                return
+            }
 
             DispatchQueue.main.async { [weak self] in
-                self?.accelerometerRecorder.markTransferComplete()
-                self?.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
-                self?.isTransferring = false
+                self?.lastTransferStatus =
+                    "Queued \(result.count) samples (\(compressedSize / 1024) KB)"
             }
+            transferAltimeterSamples()
         } catch {
-            // Clean up temp files on error
-            try? FileManager.default.removeItem(at: result.url)
+            handleTransferFailure(
+                tempFilesToCleanup: tempFilesToCleanup,
+                mergedURL: mergedURL,
+                error: error
+            )
+        }
+    }
 
-            DispatchQueue.main.async { [weak self] in
-                self?.lastTransferStatus = "Error: \(error.localizedDescription)"
-                self?.isTransferring = false
-            }
+    private func handleTransferFailure(
+        tempFilesToCleanup: [URL],
+        mergedURL: URL?,
+        error: Error
+    ) {
+        reportUnexpectedTransferFailure(error)
+
+        for url in tempFilesToCleanup {
+            try? FileManager.default.removeItem(at: url)
+        }
+        if let mergedURL {
+            try? FileManager.default.removeItem(at: mergedURL)
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.lastTransferStatus = "Error: \(error.localizedDescription)"
+            self?.isTransferring = false
         }
     }
 
@@ -231,21 +302,186 @@ final class TransferManager: ObservableObject {
         return bestIndex
     }
 
-    /// Compress a file using zlib via Foundation's NSData.compressed(using:).
-    ///
-    /// Uses `Data(contentsOf:options:.mappedIfSafe)` to memory-map the source file
-    /// so the OS pages data in on demand rather than loading the entire file into RAM.
-    /// The compressed output is typically 10-15x smaller than the input, so holding
-    /// it in memory is fine even for large recordings.
-    ///
-    /// Uses Foundation (no `import Compression` needed) to avoid framework linking
-    /// issues when CocoaPods manages the DofekWatch target's build settings.
-    ///
-    /// - Returns: The size of the compressed file in bytes.
-    static func compressFile(from sourceURL: URL, to destURL: URL) throws -> Int {
-        let sourceData = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
-        let compressedData = try (sourceData as NSData).compressed(using: .zlib) as Data
-        try compressedData.write(to: destURL)
-        return compressedData.count
+    private func transferAltimeterSamples() {
+        guard accountStateStore.isSyncEnabled else { return }
+        let altitudeSamples = altimeterRecorder.copyBufferedSamples()
+        guard !altitudeSamples.isEmpty else { return }
+
+        var jsonURL: URL?
+        var compressedURL: URL?
+
+        do {
+            jsonURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json")
+            let jsonData = try JSONSerialization.data(withJSONObject: altitudeSamples)
+            try jsonData.write(to: jsonURL!)
+
+            compressedURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json.gz")
+            _ = try Self.compressFile(from: jsonURL!, to: compressedURL!)
+            try? FileManager.default.removeItem(at: jsonURL!)
+            jsonURL = nil
+
+            let metadata: [String: Any] = [
+                "type": "altitude_samples",
+                "sampleCount": altitudeSamples.count,
+                "transferredAt": ISO8601DateFormatter().string(from: Date()),
+            ]
+            guard queueAltitudeTransferIfSyncEnabled(
+                compressedURL!,
+                metadata: metadata,
+                sampleCount: altitudeSamples.count
+            ) else {
+                if let compressedURL {
+                    try? FileManager.default.removeItem(at: compressedURL)
+                }
+                return
+            }
+        } catch {
+            if let jsonURL {
+                try? FileManager.default.removeItem(at: jsonURL)
+            }
+            if let compressedURL {
+                try? FileManager.default.removeItem(at: compressedURL)
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func handleFileTransferFinished(_ fileTransfer: WCSessionFileTransfer, error: Error?) {
+        let transferType = fileTransfer.file.metadata?["type"] as? String
+        if transferType == "accelerometer_samples" {
+            handleAccelerometerTransferFinished(fileTransfer, error: error)
+            return
+        }
+        guard transferType == "altitude_samples" else { return }
+
+        let transferredURL = fileTransfer.file.fileURL
+        pendingAltitudeLock.lock()
+        let sampleCount = pendingAltitudeSampleCounts.removeValue(forKey: transferredURL)
+        pendingAltitudeLock.unlock()
+
+        if let error = error {
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
+            }
+            return
+        }
+
+        guard let sampleCount else { return }
+
+        altimeterRecorder.clearBufferedSamples(count: sampleCount)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.lastTransferStatus = "Sent \(sampleCount) altitude samples"
+        }
+    }
+
+    private func handleAccelerometerTransferFinished(
+        _ fileTransfer: WCSessionFileTransfer,
+        error: Error?
+    ) {
+        let metadata = fileTransfer.file.metadata
+        let sampleCount = metadata?["sampleCount"] as? Int ?? 0
+        let gyroscopeSampleCount = metadata?["gyroscopeSampleCount"] as? Int ?? 0
+
+        switch accelerometerRecorder.completeTransfer(metadata: metadata, error: error) {
+        case .confirmed:
+            DispatchQueue.main.async { [weak self] in
+                self?.gyroscopeRecorder.confirmTransferredSamples(count: gyroscopeSampleCount)
+                self?.accelerometerRecorder.markTransferComplete()
+                self?.lastTransferStatus = "Sent \(sampleCount) samples"
+                self?.isTransferring = false
+            }
+        case let .failed(transferError):
+            reportUnexpectedTransferFailure(transferError)
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus =
+                    "Transfer error: \(transferError.localizedDescription)"
+                self?.isTransferring = false
+            }
+        case .invalidMetadata:
+            let metadataError = NSError(
+                domain: "com.dofek.watch.transfer",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Accelerometer transfer completed without a valid cursor boundary",
+                ]
+            )
+            reportUnexpectedTransferFailure(metadataError)
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Transfer error: Missing accelerometer cursor"
+                self?.isTransferring = false
+            }
+        }
+    }
+
+    private func reportUnexpectedTransferFailure(_ error: Error) {
+        NSLog("[DofekWatch] Transfer failed: %@", error.localizedDescription)
+        #if canImport(Sentry)
+        SentrySDK.capture(error: error)
+        #endif
+    }
+
+    private func purgeAccountState(at cutoff: Date) {
+        transferStateLock.lock()
+        defer { transferStateLock.unlock() }
+        accountStateStore.purge(at: cutoff)
+        gyroscopeRecorder.purgeAccountState()
+        altimeterRecorder.purgeAccountState()
+        accelerometerRecorder.purgeAccountState()
+
+        for transfer in session.outstandingFileTransfers {
+            let fileURL = transfer.file.fileURL
+            transfer.cancel()
+            do {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+            } catch {
+                reportUnexpectedTransferFailure(error)
+            }
+        }
+
+        pendingAltitudeLock.lock()
+        pendingAltitudeSampleCounts.removeAll()
+        pendingAltitudeLock.unlock()
+
+        DispatchQueue.main.async { [weak self] in
+            self?.isTransferring = false
+            self?.lastTransferStatus = "Account data cleared"
+        }
+    }
+
+    private func queueTransferIfSyncEnabled(_ url: URL, metadata: [String: Any]) -> Bool {
+        transferStateLock.lock()
+        defer { transferStateLock.unlock() }
+        guard accountStateStore.isSyncEnabled else { return false }
+        session.transferFile(url, metadata: metadata)
+        return true
+    }
+
+    private func enableAccountSync() {
+        transferStateLock.lock()
+        accountStateStore.enableSync()
+        transferStateLock.unlock()
+    }
+
+    private func queueAltitudeTransferIfSyncEnabled(
+        _ url: URL,
+        metadata: [String: Any],
+        sampleCount: Int
+    ) -> Bool {
+        transferStateLock.lock()
+        defer { transferStateLock.unlock() }
+        guard accountStateStore.isSyncEnabled else { return false }
+        session.transferFile(url, metadata: metadata)
+        pendingAltitudeLock.lock()
+        pendingAltitudeSampleCounts[url] = sampleCount
+        pendingAltitudeLock.unlock()
+        return true
     }
 }

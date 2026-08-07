@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { captureException } from "./telemetry";
 
-const importProviderIds = ["apple-health", "strong-csv", "cronometer-csv"] as const;
+const importProviderIds = [
+  "apple-health",
+  "strong-csv",
+  "cronometer-csv",
+  "garmin-dump",
+  "fit-file",
+  "kaya-export",
+] as const;
 
 export type ImportProviderId = (typeof importProviderIds)[number];
 
@@ -21,6 +28,7 @@ export interface ShareImportProgress {
 
 export interface ImportSharedFileArgs {
   fileUri: string;
+  providerId?: ImportProviderId;
   serverUrl: string;
   sessionToken: string;
   onProgress?: (progress: ShareImportProgress) => void;
@@ -99,6 +107,21 @@ function getUploadTarget(serverUrl: string, providerId: ImportProviderId): Uploa
         uploadUrl: `${baseUrl}/api/upload/cronometer-csv`,
         statusUrl: `${baseUrl}/api/upload/cronometer-csv/status`,
       };
+    case "garmin-dump":
+      return {
+        uploadUrl: `${baseUrl}/api/upload/garmin-dump`,
+        statusUrl: `${baseUrl}/api/upload/garmin-dump/status`,
+      };
+    case "fit-file":
+      return {
+        uploadUrl: `${baseUrl}/api/upload/fit-file`,
+        statusUrl: `${baseUrl}/api/upload/fit-file/status`,
+      };
+    case "kaya-export":
+      return {
+        uploadUrl: `${baseUrl}/api/upload/kaya-export`,
+        statusUrl: `${baseUrl}/api/upload/kaya-export/status`,
+      };
   }
 }
 
@@ -122,11 +145,20 @@ function parseErrorMessage(data: unknown, fallback: string): string {
   return parsed.data.error ?? parsed.data.message ?? fallback;
 }
 
-function getContentTypeForUpload(providerId: ImportProviderId, fileExtension: string): string {
-  if (providerId === "apple-health") {
-    return fileExtension === ".xml" ? "application/xml" : "application/zip";
+async function parseJsonResponse(response: Response, source: string): Promise<unknown> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!response.ok && !contentType.includes("json")) {
+    return {};
   }
-  return "text/csv";
+
+  return response.json().catch((error: unknown) => {
+    captureException(error, {
+      source,
+      url: response.url,
+      status: response.status,
+    });
+    return {};
+  });
 }
 
 function isCsvLike(fileExtension: string, mimeType: string | null): boolean {
@@ -141,6 +173,15 @@ function isAppleHealthLike(fileExtension: string, mimeType: string | null): bool
   return lowerMimeType.includes("zip") || lowerMimeType.includes("xml");
 }
 
+function isGarminDumpLike(fileName: string, fileExtension: string): boolean {
+  if (fileExtension !== ".zip") return false;
+  return (
+    fileName.includes("garmin") ||
+    fileName.includes("di_connect") ||
+    fileName.includes("di-connect")
+  );
+}
+
 export function inferImportProviderFromFile({
   fileName,
   fileExtension,
@@ -149,6 +190,14 @@ export function inferImportProviderFromFile({
 }: InferImportProviderInput): ImportProviderId | null {
   const normalizedExtension = normalizeExtension(fileExtension);
   const normalizedFileName = fileName.trim().toLowerCase();
+
+  if (isGarminDumpLike(normalizedFileName, normalizedExtension)) {
+    return "garmin-dump";
+  }
+
+  if (normalizedExtension === ".fit") {
+    return "fit-file";
+  }
 
   if (isAppleHealthLike(normalizedExtension, mimeType)) {
     return "apple-health";
@@ -168,6 +217,7 @@ export function inferImportProviderFromFile({
 
   if (normalizedFileName.includes("cronometer")) return "cronometer-csv";
   if (normalizedFileName.includes("strong")) return "strong-csv";
+  if (normalizedFileName.includes("kaya")) return "kaya-export";
 
   return null;
 }
@@ -224,14 +274,7 @@ async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob>
 }
 
 async function parseUploadResponse(response: Response): Promise<{ jobId: string }> {
-  const json: unknown = await response.json().catch((error: unknown) => {
-    captureException(error, {
-      source: "share-import-upload-response-json-parse",
-      url: response.url,
-      status: response.status,
-    });
-    return {};
-  });
+  const json = await parseJsonResponse(response, "share-import-upload-response-json-parse");
   const parsed = uploadResponseSchema.safeParse(json);
   if (!response.ok) {
     throw new Error(parseErrorMessage(json, `Upload failed (HTTP ${response.status})`));
@@ -242,10 +285,23 @@ async function parseUploadResponse(response: Response): Promise<{ jobId: string 
   return { jobId: parsed.data.jobId };
 }
 
-async function uploadAppleHealthFile(
+function getChunkedUploadFileExtension(
+  providerId: ImportProviderId,
+  fileExtension: string,
+): string {
+  if (providerId === "apple-health") {
+    return fileExtension === ".xml" ? ".xml" : ".zip";
+  }
+  if (providerId === "garmin-dump") return ".zip";
+  if (providerId === "fit-file") return ".fit";
+  return ".csv";
+}
+
+async function uploadChunkedFile(
   fetchImpl: typeof fetch,
   target: UploadTarget,
   blob: Blob,
+  providerId: ImportProviderId,
   fileExtension: string,
   sessionToken: string,
   onProgress?: (progress: ShareImportProgress) => void,
@@ -254,6 +310,7 @@ async function uploadAppleHealthFile(
   const chunkSize = 50 * 1024 * 1024;
   const totalChunks = Math.max(1, Math.ceil(blob.size / chunkSize));
   const uploadId = `share-${(now ?? Date.now)()}-${Math.random().toString(36).slice(2, 8)}`;
+  const uploadFileExtension = getChunkedUploadFileExtension(providerId, fileExtension);
   let jobId: string | null = null;
 
   for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
@@ -267,7 +324,7 @@ async function uploadAppleHealthFile(
         totalChunks > 1
           ? `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`
           : "Uploading file...",
-      providerId: "apple-health",
+      providerId,
     });
 
     const response = await fetchImpl(target.uploadUrl, {
@@ -278,7 +335,7 @@ async function uploadAppleHealthFile(
         "x-upload-id": uploadId,
         "x-chunk-index": String(chunkIndex),
         "x-chunk-total": String(totalChunks),
-        "x-file-ext": fileExtension === ".xml" ? ".xml" : ".zip",
+        "x-file-ext": uploadFileExtension,
       },
       body: chunk,
     });
@@ -291,35 +348,6 @@ async function uploadAppleHealthFile(
     throw new Error("Upload did not return a job ID");
   }
   return jobId;
-}
-
-async function uploadSingleFile(
-  fetchImpl: typeof fetch,
-  target: UploadTarget,
-  blob: Blob,
-  providerId: ImportProviderId,
-  fileExtension: string,
-  sessionToken: string,
-  onProgress?: (progress: ShareImportProgress) => void,
-): Promise<string> {
-  onProgress?.({
-    status: "uploading",
-    progress: 25,
-    message: "Uploading file...",
-    providerId,
-  });
-
-  const response = await fetchImpl(target.uploadUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${sessionToken}`,
-      "Content-Type": getContentTypeForUpload(providerId, fileExtension),
-    },
-    body: blob,
-  });
-
-  const result = await parseUploadResponse(response);
-  return result.jobId;
 }
 
 async function pollImportStatus(
@@ -338,14 +366,7 @@ async function pollImportStatus(
         Authorization: `Bearer ${sessionToken}`,
       },
     });
-    const json: unknown = await response.json().catch((error: unknown) => {
-      captureException(error, {
-        source: "share-import-status-response-json-parse",
-        url: response.url,
-        status: response.status,
-      });
-      return {};
-    });
+    const json = await parseJsonResponse(response, "share-import-status-response-json-parse");
     if (!response.ok) {
       throw new Error(parseErrorMessage(json, `Status check failed (HTTP ${response.status})`));
     }
@@ -403,6 +424,7 @@ export async function importSharedFile(
     status: "reading",
     progress: 0,
     message: `Preparing ${fileName}...`,
+    providerId: args.providerId,
   });
 
   try {
@@ -415,38 +437,30 @@ export async function importSharedFile(
         ? getCsvHeaderLine(await readBlobText(blob, args.fileUri, fetchImpl))
         : "";
 
-    const providerId = inferImportProviderFromFile({
-      fileName,
-      fileExtension,
-      mimeType,
-      csvHeaderLine,
-    });
+    const providerId =
+      args.providerId ??
+      inferImportProviderFromFile({
+        fileName,
+        fileExtension,
+        mimeType,
+        csvHeaderLine,
+      });
 
     if (!providerId) {
       throw new Error("Unsupported shared file type");
     }
 
     const target = getUploadTarget(args.serverUrl, providerId);
-    const jobId =
-      providerId === "apple-health"
-        ? await uploadAppleHealthFile(
-            fetchImpl,
-            target,
-            blob,
-            fileExtension,
-            args.sessionToken,
-            args.onProgress,
-            deps.now,
-          )
-        : await uploadSingleFile(
-            fetchImpl,
-            target,
-            blob,
-            providerId,
-            fileExtension,
-            args.sessionToken,
-            args.onProgress,
-          );
+    const jobId = await uploadChunkedFile(
+      fetchImpl,
+      target,
+      blob,
+      providerId,
+      fileExtension,
+      args.sessionToken,
+      args.onProgress,
+      deps.now,
+    );
 
     args.onProgress?.({
       status: "processing",

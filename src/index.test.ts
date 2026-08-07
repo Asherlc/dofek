@@ -24,6 +24,17 @@ const mockGetEnabledSyncProviders = vi.fn<() => Array<{ id: string }>>(() => [])
 const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
 const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
 const mockProcessSyncJob = vi.fn();
+const mockProcessFitFileImportJob = vi.fn();
+const mockCloseAccountErasureWorkLockPool = vi.fn(() => Promise.resolve());
+const mockRunQueuedUserWorkUnlessAccountErasing = vi.fn(
+  async (
+    _workLockPool: unknown,
+    _database: unknown,
+    _userId: string,
+    _workKind: string,
+    work: () => Promise<unknown>,
+  ) => work(),
+);
 const mockDbExecute = vi.fn(async () => [{ id: "test-user" }]);
 const mockCreateDatabaseFromEnv = vi.fn(() => ({
   execute: mockDbExecute,
@@ -33,9 +44,9 @@ const mockCreateSyncQueue = vi.fn(() => ({
   add: mockAdd,
   close: mockQueueClose,
 }));
-let capturedWorkerCallback: ((j: unknown) => Promise<unknown>) | undefined;
-const MockWorker = vi.fn((_name: string, callback: (j: unknown) => Promise<unknown>) => {
-  capturedWorkerCallback = callback;
+const capturedWorkerCallbacks = new Map<string, (job: unknown) => Promise<unknown>>();
+const MockWorker = vi.fn((name: string, callback: (job: unknown) => Promise<unknown>) => {
+  capturedWorkerCallbacks.set(name, callback);
   return { close: mockWorkerClose };
 });
 const MockQueueEvents = vi.fn(() => ({ close: mockQueueEventsClose }));
@@ -48,6 +59,7 @@ vi.mock("bullmq", () => ({
 vi.mock("./jobs/queues.ts", () => ({
   getRedisConnection: vi.fn(() => mockRedisConnection),
   createSyncQueue: mockCreateSyncQueue,
+  FIT_FILE_IMPORT_QUEUE: "fit-file-import",
   SYNC_QUEUE: "sync",
 }));
 
@@ -57,6 +69,17 @@ vi.mock("./jobs/provider-registration.ts", () => ({
 
 vi.mock("./jobs/process-sync-job.ts", () => ({
   processSyncJob: mockProcessSyncJob,
+}));
+
+vi.mock("./jobs/process-fit-file-import-job.ts", () => ({
+  processFitFileImportJob: mockProcessFitFileImportJob,
+}));
+
+vi.mock("./jobs/account-erasure-work-guard.ts", () => ({
+  createAccountErasureWorkLockPoolFromEnv: vi.fn(() => ({
+    close: mockCloseAccountErasureWorkLockPool,
+  })),
+  runQueuedUserWorkUnlessAccountErasing: mockRunQueuedUserWorkUnlessAccountErasing,
 }));
 
 vi.mock("./providers/index.ts", () => ({
@@ -69,7 +92,7 @@ vi.mock("./db/index.ts", () => ({
   createDatabaseFromEnv: mockCreateDatabaseFromEnv,
 }));
 
-vi.mock("./db/schema.ts", () => ({
+vi.mock("./db/schema/core.ts", () => ({
   TEST_USER_ID: "test-user",
 }));
 
@@ -99,6 +122,11 @@ vi.mock("./providers/apple-health/import.ts", () => ({
   importAppleHealthFile: mockImportAppleHealthFile,
 }));
 
+const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefined);
+vi.mock("./metric-stream/clickhouse-sink.ts", () => ({
+  runMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
+}));
+
 // Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)
 function noOpExit(): never {
   throw new Error("process.exit called in test");
@@ -112,7 +140,9 @@ process.argv = ["node", "test", "__test_noop__"];
 
 const suppressRejection = () => {};
 process.on("unhandledRejection", suppressRejection);
-const { handleSyncCommand, handleAuthCommand, handleImportCommand } = await import("./index.ts");
+const { handleSyncCommand, handleAuthCommand, handleImportCommand, main } = await import(
+  "./index.ts"
+);
 await new Promise((resolve) => setTimeout(resolve, 0));
 process.off("unhandledRejection", suppressRejection);
 
@@ -126,6 +156,7 @@ beforeEach(() => {
 describe("handleSyncCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedWorkerCallbacks.clear();
     mockAdd.mockResolvedValue({ waitUntilFinished: mockWaitUntilFinished });
     mockWaitUntilFinished.mockResolvedValue(undefined);
   });
@@ -202,10 +233,33 @@ describe("handleSyncCommand", () => {
       connection: mockRedisConnection,
     });
     // Verify the callback calls processSyncJob by invoking the captured callback
+    const capturedWorkerCallback = capturedWorkerCallbacks.get("sync");
     expect(capturedWorkerCallback).toBeDefined();
-    const fakeJob = { id: "123" };
+    const fakeJob = { data: { userId: "test-user" }, id: "123" };
     await capturedWorkerCallback?.(fakeJob);
     expect(mockProcessSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
+  });
+
+  it("runs a temporary FIT import worker for provider sync child jobs", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "wahoo" }]);
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+
+    expect(MockWorker).toHaveBeenCalledWith("fit-file-import", expect.any(Function), {
+      connection: mockRedisConnection,
+    });
+    const capturedFitWorkerCallback = capturedWorkerCallbacks.get("fit-file-import");
+    expect(capturedFitWorkerCallback).toBeDefined();
+    const fakeJob = { data: { userId: "test-user" }, id: "fit-123" };
+    await capturedFitWorkerCallback?.(fakeJob);
+    expect(mockProcessFitFileImportJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
+  });
+
+  it("closes the queued-work lock pool after temporary workers stop", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+
+    expect(mockCloseAccountErasureWorkLockPool).toHaveBeenCalledOnce();
   });
 
   it("creates QueueEvents with connection", async () => {
@@ -294,7 +348,7 @@ describe("handleSyncCommand", () => {
   it("cleans up BullMQ resources on success", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
+    expect(mockWorkerClose).toHaveBeenCalledTimes(2);
     expect(mockQueueEventsClose).toHaveBeenCalledOnce();
     expect(mockQueueClose).toHaveBeenCalledOnce();
   });
@@ -303,7 +357,7 @@ describe("handleSyncCommand", () => {
     mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     mockWaitUntilFinished.mockRejectedValue(new Error("boom"));
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
+    expect(mockWorkerClose).toHaveBeenCalledTimes(2);
     expect(mockQueueEventsClose).toHaveBeenCalledOnce();
     expect(mockQueueClose).toHaveBeenCalledOnce();
   });
@@ -385,6 +439,72 @@ describe("handleAuthCommand", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("STRAVA_CLIENT_ID"));
   });
 
+  it("returns 1 when OAuth 1.0 setup is missing oauthConfig", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "fatsecret",
+        name: "FatSecret",
+        authSetup: () => ({
+          oauth1Flow: {
+            getRequestToken: vi.fn(),
+            exchangeForAccessToken: vi.fn(),
+          },
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "fatsecret"]);
+
+    expect(code).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[auth] Provider fatsecret requires oauthConfig for OAuth 1.0",
+    );
+    expect(mockWaitForAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("returns 1 when OAuth 2.0 setup is missing oauthConfig", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          exchangeCode: vi.fn(),
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+
+    expect(code).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[auth] Provider strava requires oauthConfig and exchangeCode for OAuth 2.0",
+    );
+    expect(mockWaitForAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("returns 1 when OAuth 2.0 setup is missing exchangeCode", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+
+    expect(code).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[auth] Provider strava requires oauthConfig and exchangeCode for OAuth 2.0",
+    );
+    expect(mockWaitForAuthCode).not.toHaveBeenCalled();
+  });
+
   it("handles OAuth 2.0 browser flow and saves tokens", async () => {
     const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
     mockGetAllProviders.mockReturnValue([
@@ -423,6 +543,32 @@ describe("handleAuthCommand", () => {
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("[auth] Authorized!"));
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Tokens saved to database.");
+  });
+
+  it("cleans up OAuth callback server when exchangeCode throws", async () => {
+    const mockExchangeCode = vi.fn().mockRejectedValue(new Error("exchange failed"));
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: {
+            redirectUri: "http://localhost:9876/callback",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    await expect(handleAuthCommand(["node", "index.ts", "auth", "strava"])).rejects.toThrow(
+      "exchange failed",
+    );
+
+    expect(mockExchangeCode).toHaveBeenCalledWith("auth-code-123");
+    expect(mockCleanup).toHaveBeenCalled();
+    expect(mockSaveTokens).not.toHaveBeenCalled();
   });
 
   it("uses buildAuthorizationUrl when setup.authUrl is not provided", async () => {
@@ -902,5 +1048,22 @@ describe("handleImportCommand", () => {
     expect(code).toBe(0);
     // With zero errors, no individual error messages should be logged
     expect(mockLoggerError).not.toHaveBeenCalled();
+  });
+});
+
+describe("main", () => {
+  const savedArgvForMain = process.argv;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("runs the ClickHouse metric stream sink command", async () => {
+    process.argv = ["node", "index.ts", "metric-stream-clickhouse-sink"];
+
+    await main();
+
+    expect(mockRunMetricStreamClickHouseSinkFromEnv).toHaveBeenCalledOnce();
+    process.argv = savedArgvForMain;
   });
 });

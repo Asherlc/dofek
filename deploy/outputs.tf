@@ -1,17 +1,6 @@
 output "server_ip" {
-  value = hcloud_server.dofek.ipv4_address
-}
-
-output "server_ipv6" {
-  value = hcloud_server.dofek.ipv6_address
-}
-
-output "staging_server_ip" {
-  value = hcloud_server.dofek_staging.ipv4_address
-}
-
-output "staging_server_ipv6" {
-  value = hcloud_server.dofek_staging.ipv6_address
+  description = "Oracle Cloud production server IPv4 address for Docker SSH deploys"
+  value       = var.oracle_server_host
 }
 
 output "dofek_fit_nameservers" {

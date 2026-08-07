@@ -1,3 +1,6 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import type { TRPCError } from "@trpc/server";
+import { ProviderAuthenticationFailedError } from "dofek/providers/auth-errors";
 import { describe, expect, it, vi } from "vitest";
 
 const {
@@ -23,7 +26,7 @@ vi.mock("dofek/providers/registry", () => ({
   getAllProviders: mockGetAllProviders,
 }));
 
-vi.mock("../routers/sync.ts", () => ({
+vi.mock("../routers/sync-helpers.ts", () => ({
   ensureProvidersRegistered: mockEnsureProvidersRegistered,
 }));
 
@@ -71,16 +74,6 @@ describe("credentialAuthRouter", () => {
         id: "eight-sleep",
         name: "Eight Sleep",
         authSetup: () => ({
-          oauthConfig: {
-            clientId: "",
-            authorizeUrl: "",
-            tokenUrl: "",
-            redirectUri: "",
-            scopes: [],
-          },
-          exchangeCode: async () => {
-            throw new Error("not supported");
-          },
           automatedLogin: mockAutomatedLogin,
           apiBaseUrl: "https://api.8slp.net",
         }),
@@ -164,22 +157,14 @@ describe("credentialAuthRouter", () => {
       ).rejects.toThrow("does not support credential authentication");
     });
 
-    it("propagates automatedLogin errors", async () => {
+    it("returns a bad request for expected provider auth failures", async () => {
       const provider = stubProvider({
         id: "eight-sleep",
         name: "Eight Sleep",
         authSetup: () => ({
-          oauthConfig: {
-            clientId: "",
-            authorizeUrl: "",
-            tokenUrl: "",
-            redirectUri: "",
-            scopes: [],
-          },
-          exchangeCode: async () => {
-            throw new Error("not supported");
-          },
-          automatedLogin: vi.fn().mockRejectedValue(new Error("Invalid credentials")),
+          automatedLogin: vi
+            .fn()
+            .mockRejectedValue(new ProviderAuthenticationFailedError("Eight Sleep")),
         }),
       });
       mockGetAllProviders.mockReturnValue([provider]);
@@ -193,7 +178,64 @@ describe("credentialAuthRouter", () => {
 
       await expect(
         caller.signIn({ providerId: "eight-sleep", username: "bad", password: "wrong" }),
-      ).rejects.toThrow("Invalid credentials");
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Eight Sleep authentication failed.",
+      } satisfies Partial<TRPCError>);
+    });
+
+    it("returns too many requests for provider login rate limits", async () => {
+      const provider = stubProvider({
+        id: "amazfit-zepp",
+        name: "Amazfit/Zepp",
+        authSetup: () => ({
+          automatedLogin: vi.fn().mockRejectedValue(
+            new ProviderRateLimitError({
+              message: "amazfit-zepp API rate limit exceeded (429): too many requests",
+              providerId: "amazfit-zepp",
+              statusCode: 429,
+              responseBody: "too many requests",
+            }),
+          ),
+        }),
+      });
+      mockGetAllProviders.mockReturnValue([provider]);
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.signIn({ providerId: "amazfit-zepp", username: "bad", password: "wrong" }),
+      ).rejects.toMatchObject({
+        code: "TOO_MANY_REQUESTS",
+        message: "amazfit-zepp API rate limit exceeded (429): too many requests",
+      } satisfies Partial<TRPCError>);
+    });
+
+    it("still propagates unexpected automatedLogin errors", async () => {
+      const provider = stubProvider({
+        id: "eight-sleep",
+        name: "Eight Sleep",
+        authSetup: () => ({
+          automatedLogin: vi.fn().mockRejectedValue(new Error("provider response was malformed")),
+        }),
+      });
+      mockGetAllProviders.mockReturnValue([provider]);
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.signIn({ providerId: "eight-sleep", username: "bad", password: "wrong" }),
+      ).rejects.toThrow("provider response was malformed");
     });
 
     it("throws when provider has no authSetup", async () => {

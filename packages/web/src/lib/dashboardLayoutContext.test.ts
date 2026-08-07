@@ -1,8 +1,11 @@
+import { createElement } from "react";
+import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   DashboardLayoutContext,
   DEFAULT_LAYOUT,
   SECTION_LABELS,
+  useDashboardLayout,
 } from "./dashboardLayoutContext.ts";
 
 describe("DEFAULT_LAYOUT", () => {
@@ -35,11 +38,47 @@ describe("SECTION_LABELS", () => {
     for (const label of Object.values(SECTION_LABELS)) {
       expect(label.length).toBeGreaterThan(2);
     }
+    expect(SECTION_LABELS.spo2Temp).toBe("Blood Oxygen Saturation & Skin Temperature");
   });
 });
 
 describe("DashboardLayoutContext", () => {
   it("exports a React context", () => {
     expect(DashboardLayoutContext).toBeDefined();
+  });
+
+  it("useDashboardLayout returns the nearest dashboard layout context value", () => {
+    const setOrder = () => {};
+    const toggleHidden = () => {};
+    const toggleCollapsed = () => {};
+    const moveSection = () => {};
+    const resetLayout = () => {};
+    const contextValue = {
+      layout: {
+        order: ["sleep"],
+        hidden: ["nutrition"],
+        collapsed: { bodyComp: false },
+      },
+      setOrder,
+      toggleHidden,
+      toggleCollapsed,
+      moveSection,
+      resetLayout,
+    };
+    let capturedContextValue: unknown = null;
+    const Consumer = () => {
+      capturedContextValue = useDashboardLayout();
+      return null;
+    };
+
+    renderToString(
+      createElement(
+        DashboardLayoutContext.Provider,
+        { value: contextValue },
+        createElement(Consumer),
+      ),
+    );
+
+    expect(capturedContextValue).toBe(contextValue);
   });
 });

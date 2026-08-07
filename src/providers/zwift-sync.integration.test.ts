@@ -1,11 +1,15 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { activity, dailyMetrics } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import { ZwiftProvider } from "./zwift.ts";
 
 // ============================================================
@@ -13,13 +17,19 @@ import { ZwiftProvider } from "./zwift.ts";
 // ============================================================
 
 function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
+  const startDate =
+    typeof overrides.startDate === "string" && !Number.isNaN(Date.parse(overrides.startDate))
+      ? overrides.startDate
+      : "2026-03-01T10:00:00Z";
+  const endDate =
+    typeof overrides.endDate === "string"
+      ? overrides.endDate
+      : new Date(new Date(startDate).getTime() + 60 * 60 * 1000).toISOString();
   return {
     id: 100001,
     id_str: "100001",
     profileId: 42,
     name: "Watopia Hilly Route",
-    startDate: "2026-03-01T10:00:00Z",
-    endDate: "2026-03-01T11:00:00Z",
     distanceInMeters: 35000,
     avgHeartRate: 155,
     maxHeartRate: 182,
@@ -34,6 +44,8 @@ function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
     rideOnGiven: 5,
     activityRideOnCount: 12,
     ...overrides,
+    startDate,
+    endDate,
   };
 }
 
@@ -94,6 +106,18 @@ function fakeZwiftPowerCurve(overrides: Record<string, unknown> = {}) {
 const FAKE_JWT_PAYLOAD = Buffer.from(JSON.stringify({ sub: "42" })).toString("base64url");
 const FAKE_ACCESS_TOKEN = `header.${FAKE_JWT_PAYLOAD}.signature`;
 
+describe("fakeZwiftActivitySummary", () => {
+  it("keeps validated dates after applying overrides", () => {
+    const summary = fakeZwiftActivitySummary({
+      startDate: "not-a-date",
+      endDate: undefined,
+    });
+
+    expect(summary.startDate).toBe("2026-03-01T10:00:00Z");
+    expect(summary.endDate).toBe("2026-03-01T11:00:00.000Z");
+  });
+});
+
 // ============================================================
 // MSW handler factory
 // ============================================================
@@ -107,8 +131,11 @@ interface ZwiftMockOptions {
   fitnessDataError?: boolean;
   activityDetailError?: boolean;
   activitiesUnauthorizedOnce?: boolean;
+  activitiesRateLimited?: boolean;
   paginateActivities?: boolean;
   omitRefreshTokenInRefresh?: boolean;
+  noFitnessDataUrl?: boolean;
+  profileId?: number;
 }
 
 function zwiftHandlers(opts: ZwiftMockOptions = {}) {
@@ -144,7 +171,9 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }
       const activityId = Number(params.activityId);
-      const detail = opts.activityDetails?.[activityId] ?? fakeZwiftActivityDetail(activityId);
+      const detail =
+        opts.activityDetails?.[activityId] ??
+        fakeZwiftActivityDetail(activityId, { hasFitnessData: !opts.noFitnessDataUrl });
       return HttpResponse.json(detail);
     }),
 
@@ -160,13 +189,21 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     }),
 
     // Activity list (paginated)
-    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", () => {
+    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", ({ request }) => {
       activityListRequestCount++;
+      if (opts.activitiesRateLimited) {
+        return new HttpResponse("Too Many Requests", {
+          status: 429,
+          headers: { "Retry-After": "120" },
+        });
+      }
       if (opts.activitiesUnauthorizedOnce && activityListRequestCount === 1) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
       pageRequestCount++;
-      if (opts.paginateActivities && pageRequestCount > 1) {
+      // Honor the offset query param so pagination is exercised page by page.
+      const offset = Number(new URL(request.url).searchParams.get("start") ?? "0");
+      if (opts.paginateActivities && (pageRequestCount > 1 || offset > 0)) {
         return HttpResponse.json([]);
       }
       return HttpResponse.json(activities);
@@ -175,7 +212,7 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     // Profile endpoint
     http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId", () => {
       return HttpResponse.json({
-        id: 42,
+        id: opts.profileId ?? 42,
         firstName: "Test",
         lastName: "User",
         ftp: 260,
@@ -187,6 +224,7 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
 // Tests
@@ -200,6 +238,10 @@ describe("ZwiftProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "zwift", "Zwift", "https://us-or-rly101.zwift.com");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -238,11 +280,17 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("zwift");
-    // 2 activities + 1 power curve record
-    expect(result.recordsSynced).toBe(3);
+    // 2 activities; power curve data is raw provider-derived data and is not stored as daily metrics.
+    expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
 
     // Verify activity rows
@@ -254,18 +302,15 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const ride = activityRows.find((r) => r.externalId === "100001");
     if (!ride) throw new Error("expected activity 100001");
-    expect(ride.activityType).toBe("virtual_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Watopia Hilly Route");
 
     const run = activityRows.find((r) => r.externalId === "100002");
     if (!run) throw new Error("expected activity 100002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
-    // Verify metric_stream rows were inserted from fitness data
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "zwift"));
+    // Verify metric stream events were published from fitness data
+    const metrics = metricStreamCapture.publishedMetricStreamRows;
     // 2 activities x 3 heart-rate samples each = 6
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     expect(heartRateSamples.length).toBe(6);
@@ -273,15 +318,12 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
     expect(powerSamples.length).toBeGreaterThan(0);
 
-    // Verify power curve wrote daily metrics (vo2max)
+    // Provider VO2 Max is ignored; canonical VO2 Max is derived from raw activity data.
     const dailyRows = await ctx.db
       .select()
       .from(dailyMetrics)
       .where(eq(dailyMetrics.providerId, "zwift"));
-    expect(dailyRows).toHaveLength(1);
-    const daily = dailyRows[0];
-    if (!daily) throw new Error("expected daily metrics");
-    expect(daily.vo2max).toBeCloseTo(52.3);
+    expect(dailyRows).toHaveLength(0);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -300,12 +342,24 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     server.resetHandlers();
     server.use(...zwiftHandlers({ activities: zwiftActivities, paginateActivities: true }));
 
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -326,7 +380,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     server.use(...zwiftHandlers({ activities: [], paginateActivities: true }));
 
     const provider = new ZwiftProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
@@ -335,11 +395,17 @@ describe("ZwiftProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "zwift"));
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -355,10 +421,17 @@ describe("ZwiftProvider.sync() (integration)", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("athlete ID not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -373,7 +446,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     server.use(...zwiftHandlers({ activities: [], paginateActivities: true }));
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Self-healing should allow sync to proceed without "athlete ID not found" error
     const athleteIdErrors = result.errors.filter((error) =>
@@ -396,10 +475,17 @@ describe("ZwiftProvider.sync() (integration)", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("no refresh token");
+    expect(result.errors[0]?.message).toBe("Zwift authentication failed.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -428,10 +514,15 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
-    // Activity should still be synced (counted)
-    // power curve also synced = at least 1 from activities
+    // Activity should still be synced and counted.
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
     // But there should be a stream error
     expect(result.errors.length).toBeGreaterThanOrEqual(1);
@@ -472,7 +563,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Only the first activity should be synced
     const activityRows = await ctx.db
@@ -511,7 +608,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // No activities, no power curve data → 0 records
     expect(result.recordsSynced).toBe(0);
@@ -549,15 +652,54 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
-    // 1 activity + 1 power-curve metrics row
-    expect(result.recordsSynced).toBe(2);
+    // 1 activity; provider VO2 Max and fixed power-curve daily metrics are ignored.
+    expect(result.recordsSynced).toBe(1);
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "zwift");
     expect(tokens?.accessToken).toBe("refreshed-zwift-token");
+  });
+
+  it("surfaces a ProviderRateLimitError tagged with providerId when activities return 429", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    server.use(...zwiftHandlers({ activitiesRateLimited: true }));
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    if (!(cause instanceof ProviderRateLimitError)) {
+      throw new Error("expected sync error cause to be a ProviderRateLimitError");
+    }
+    expect(cause.providerId).toBe("zwift");
+    expect(cause.statusCode).toBe(429);
+    expect(cause.retryAfterSeconds).toBe(120);
+    // The default error message embeds the providerId, so a `{}` options mutant
+    // would produce "undefined API rate limit exceeded".
+    expect(result.errors[0]?.message).toContain("zwift API rate limit exceeded");
   });
 
   it("preserves existing refresh token when refresh response omits refresh_token", async () => {
@@ -577,7 +719,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "zwift");

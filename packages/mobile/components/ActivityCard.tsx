@@ -1,5 +1,12 @@
-import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
+import {
+  type ActivityDataState,
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
@@ -12,28 +19,13 @@ interface ActivityCardProps {
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
-  distanceKm?: number | null;
+  distanceKm: number | null;
+  distanceState: ActivityDataState;
   units: UnitConverter;
 }
 
-function formatTime(iso: string): string {
-  const date = parseValidDate(iso);
-  if (!date) return "--";
-  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
 function activityIcon(type: string): string {
-  const lower = type.toLowerCase();
-  if (lower.includes("run")) return "\u{1F3C3}";
-  if (lower.includes("cycl") || lower.includes("bike")) return "\u{1F6B4}";
-  if (lower.includes("swim")) return "\u{1F3CA}";
-  if (lower.includes("walk") || lower.includes("hike")) return "\u{1F6B6}";
-  if (lower.includes("strength") || lower.includes("weight")) return "\u{1F3CB}";
-  if (lower.includes("yoga")) return "\u{1F9D8}";
-  if (lower.includes("hiit")) return "\u{1F4A5}";
-  if (lower.includes("elliptical")) return "\u{1F3C3}\u{200D}\u{2642}\u{FE0F}";
-  if (lower.includes("row")) return "\u{1F6A3}";
-  return "\u{26A1}";
+  return getActivityIconInfo(type).emoji;
 }
 
 function Stat({ value, label, unit }: { value: string | number; label: string; unit?: string }) {
@@ -48,6 +40,22 @@ function Stat({ value, label, unit }: { value: string | number; label: string; u
   );
 }
 
+function UnavailableStat({ metric }: { metric: ActivityMetric }) {
+  if (metric.status === "available") return null;
+  return (
+    <View
+      style={styles.unavailableStat}
+      accessible={true}
+      accessibilityLabel={`${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`}
+    >
+      <Text style={styles.statUnavailableTitle}>
+        {metric.label} {activityDataStateLabel(metric.status)}
+      </Text>
+      <Text style={styles.statUnavailableReason}>{metric.reason}</Text>
+    </View>
+  );
+}
+
 export function ActivityCard({
   name,
   activityType,
@@ -57,8 +65,13 @@ export function ActivityCard({
   maxHr,
   avgPower,
   distanceKm,
+  distanceState,
   units,
 }: ActivityCardProps) {
+  const distanceMetric = formatActivityMetric("Distance", distanceKm, distanceState, (value) =>
+    formatNumber(units.convertDistance(value), 2),
+  );
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -68,7 +81,7 @@ export function ActivityCard({
             {name || formatActivityTypeLabel(activityType)}
           </Text>
           <Text style={styles.time}>
-            {formatTime(startedAt)} · {formatDurationRange(startedAt, endedAt)}
+            {formatTimeOnly(startedAt)} · {formatDurationRange(startedAt, endedAt)}
           </Text>
         </View>
       </View>
@@ -76,12 +89,10 @@ export function ActivityCard({
       <View style={styles.separator} />
 
       <View style={styles.stats}>
-        {distanceKm != null && distanceKm > 0 && (
-          <Stat
-            value={formatNumber(units.convertDistance(distanceKm), 2)}
-            label="Distance"
-            unit={units.distanceLabel}
-          />
+        {distanceMetric.status === "available" ? (
+          <Stat value={distanceMetric.value} label="Distance" unit={units.distanceLabel} />
+        ) : (
+          <UnavailableStat metric={distanceMetric} />
         )}
         {avgHr != null && <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />}
         {maxHr != null && <Stat value={Math.round(maxHr)} label="Max HR" unit="bpm" />}
@@ -133,6 +144,10 @@ const styles = StyleSheet.create({
   stat: {
     minWidth: 60,
   },
+  unavailableStat: {
+    minWidth: 120,
+    maxWidth: 190,
+  },
   statValueRow: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -155,6 +170,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     fontWeight: "600",
     letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  statUnavailableTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  statUnavailableReason: {
+    fontSize: 11,
+    color: colors.textSecondary,
     marginTop: 2,
   },
 });

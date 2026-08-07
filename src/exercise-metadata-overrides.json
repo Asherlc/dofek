@@ -1,0 +1,26 @@
+{
+  "bench dip": {
+    "primaryMuscleGroups": ["TRICEPS"],
+    "secondaryMuscleGroups": ["CHEST", "SHOULDERS"]
+  },
+  "bench press": {
+    "primaryMuscleGroups": ["CHEST"],
+    "secondaryMuscleGroups": ["TRICEPS", "SHOULDERS"]
+  },
+  "bulgarian split squat": {
+    "primaryMuscleGroups": ["QUADRICEPS", "GLUTES"],
+    "secondaryMuscleGroups": ["HAMSTRINGS"]
+  },
+  "chin up": {
+    "primaryMuscleGroups": ["LATS", "UPPER_BACK"],
+    "secondaryMuscleGroups": ["BICEPS"]
+  },
+  "pull up": {
+    "primaryMuscleGroups": ["LATS", "UPPER_BACK"],
+    "secondaryMuscleGroups": ["BICEPS"]
+  },
+  "romanian deadlift": {
+    "primaryMuscleGroups": ["HAMSTRINGS", "GLUTES"],
+    "secondaryMuscleGroups": ["LOWER_BACK"]
+  }
+}

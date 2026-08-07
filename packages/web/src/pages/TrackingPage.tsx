@@ -2,6 +2,7 @@ import { JournalPanel } from "../components/JournalPanel.tsx";
 import { LifeEventsPanel } from "../components/LifeEventsPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
+import { SubjectiveTrackingPanel } from "../components/SubjectiveTrackingPanel.tsx";
 
 export function TrackingPage() {
   return (
@@ -11,6 +12,9 @@ export function TrackingPage() {
       </PageSection>
       <PageSection title="Life Events" subtitle="Track changes and see their impact">
         <LifeEventsPanel />
+      </PageSection>
+      <PageSection title="Body State" subtitle="Log soreness, stiffness, tenderness, and niggles">
+        <SubjectiveTrackingPanel />
       </PageSection>
     </PageLayout>
   );

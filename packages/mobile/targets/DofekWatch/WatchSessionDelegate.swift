@@ -1,3 +1,6 @@
+#if canImport(Sentry)
+import Sentry
+#endif
 import Foundation
 import WatchConnectivity
 
@@ -14,6 +17,10 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
     var onSyncRequested: (() -> Void)?
     /// Callback triggered when the iPhone requests recording to start/restart.
     var onRecordingRequested: (() -> Void)?
+    var onPurgeRequested: ((Date) -> Void)?
+    var onAccountSyncEnabled: (() -> Void)?
+    /// Callback triggered when a queued file transfer finishes.
+    var onFileTransferFinished: ((WCSessionFileTransfer, Error?) -> Void)?
 
     override private init() {
         super.init()
@@ -49,25 +56,11 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
         didReceiveMessage message: [String: Any],
         replyHandler: @escaping ([String: Any]) -> Void
     ) {
-        guard let action = message["action"] as? String else {
-            replyHandler(["status": "unknown_action"])
-            return
-        }
+        replyHandler(["status": handle(message)])
+    }
 
-        switch action {
-        case "sync_accelerometer":
-            onSyncRequested?()
-            replyHandler(["status": "sync_started"])
-        case "start_recording":
-            onRecordingRequested?()
-            replyHandler(["status": "recording_started"])
-        case "sync_and_record":
-            onRecordingRequested?()
-            onSyncRequested?()
-            replyHandler(["status": "recording_and_sync_started"])
-        default:
-            replyHandler(["status": "unknown_action"])
-        }
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        _ = handle(userInfo)
     }
 
     func session(
@@ -75,10 +68,65 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
         didFinish fileTransfer: WCSessionFileTransfer,
         error: Error?
     ) {
+        let transferredURL = fileTransfer.file.fileURL
         if let error = error {
-            print("[DofekWatch] File transfer failed: \(error.localizedDescription)")
+            NSLog("[DofekWatch] File transfer failed: %@", error.localizedDescription)
         } else {
-            print("[DofekWatch] File transfer completed successfully")
+            NSLog("[DofekWatch] File transfer completed successfully")
         }
+
+        do {
+            try FileManager.default.removeItem(at: transferredURL)
+        } catch {
+            NSLog("[DofekWatch] Failed to remove transferred file: %@", error.localizedDescription)
+            #if canImport(Sentry)
+            SentrySDK.capture(error: error)
+            #endif
+        }
+
+        onFileTransferFinished?(fileTransfer, error)
+    }
+
+    private func handle(_ message: [String: Any]) -> String {
+        guard let action = message["action"] as? String else {
+            return "unknown_action"
+        }
+
+        switch action {
+        case "sync_accelerometer":
+            onSyncRequested?()
+            return "sync_started"
+        case "start_recording":
+            onRecordingRequested?()
+            return "recording_started"
+        case "sync_and_record":
+            onRecordingRequested?()
+            onSyncRequested?()
+            return "recording_and_sync_started"
+        case "purge_account_state":
+            guard
+                let cutoffString = message["deviceErasureCutoff"] as? String,
+                let cutoff = Self.parseIsoDate(cutoffString)
+            else {
+                return "invalid_erasure_cutoff"
+            }
+            onPurgeRequested?(cutoff)
+            return "account_state_purged"
+        case "enable_account_sync":
+            onAccountSyncEnabled?()
+            return "account_sync_enabled"
+        default:
+            return "unknown_action"
+        }
+    }
+
+    private static func parseIsoDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: value) {
+            return parsed
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }

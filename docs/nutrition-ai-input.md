@@ -16,7 +16,7 @@ User enters meal text (web/iOS)
   -> server analyzeNutritionItems()
   -> parsed items[]
   -> client loops items and calls food.create(...)
-  -> confirmed food_entry + nutrition_data rows
+  -> confirmed food_entry + food_entry_nutrient rows
   -> Nutrition totals/analytics update from existing queries
 ```
 
@@ -34,7 +34,14 @@ User enters meal text (web/iOS)
 
 ## Data model behavior
 
-- Entries are saved as standard `fitness.food_entry` + `fitness.nutrition_data` rows via existing food create flow.
+- Entries are saved as standard `fitness.food_entry` + `fitness.food_entry_nutrient` rows via existing food create flow.
+- Detailed micronutrients, caffeine, hydration, and macronutrients are all stored as nutrient rows, not wide columns.
+- Raw provider totals remain derived through
+  `fitness.v_nutrition_provider_daily`. Application totals use the resolved
+  `fitness.v_nutrition_daily`/`fitness.v_nutrition_canonical_nutrient` views;
+  the AI parser writes itemized raw entries and does not write separate daily
+  nutrient rows. PostgreSQL documents views as query-defined virtual tables:
+  <https://www.postgresql.org/docs/current/sql-createview.html>.
 - No AI-specific columns are added to nutrition tables.
 - Parsed items participate in existing nutrition totals/analytics automatically.
 
@@ -42,6 +49,13 @@ User enters meal text (web/iOS)
 
 - Server validation/API errors are returned to clients as normal error messages.
 - Web and mobile capture unexpected errors to telemetry before showing the message.
+
+## AI observability and privacy
+
+- The server enables the AI SDK's OpenTelemetry-compatible telemetry for each nutrition operation, using stable function IDs for analysis and refinement. See the [AI SDK telemetry documentation](https://ai-sdk.dev/docs/ai-sdk-core/telemetry).
+- When trace observability is enabled, server startup registers the AI SDK's provider-neutral OpenTelemetry integration so those telemetry options emit spans.
+- Input and output recording are disabled, so this AI telemetry path does not export the user's meal description or the model's nutrition response.
+- Production instrumentation forwards AI spans to PostHog's generic OpenTelemetry AI adapter. Nutrition/domain code supplies only standard `user.id` context; the provider-specific export stays in the instrumentation adapter. PostHog documents this [Vercel AI/OpenTelemetry integration](https://posthog.com/docs/ai-observability/installation/vercel-ai) and its [privacy mode](https://posthog.com/docs/ai-observability/privacy-mode).
 
 ## Troubleshooting
 

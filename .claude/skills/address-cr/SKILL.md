@@ -10,7 +10,7 @@ Fetch all review comments on the PR for the current branch, then address each on
 ## Steps
 
 1. **Find the PR**: `gh pr view --json number,url` for the current branch.
-2. **Fetch comments**: Use `gh api repos/Asherlc/dofek/pulls/<PR_NUMBER>/comments` and `gh api repos/Asherlc/dofek/pulls/<PR_NUMBER>/reviews` to get all review comments.
+2. **Fetch comments**: Use `gh api repos/Asherlc/dofek/pulls/<PR_NUMBER>/comments` (inline) and `gh api repos/Asherlc/dofek/pulls/<PR_NUMBER>/reviews` (review bodies). **Read the review-body "Overall Comments" too — not just inline threads.** Sourcery/CodeRabbit/Copilot often put their most important findings in the review *body* (e.g. a sourcery review body has an `## Overall Comments` section, and CodeRabbit summary comments live in `gh api repos/Asherlc/dofek/issues/<PR_NUMBER>/comments`), with zero inline comments. Always parse those bodies for actionable feedback in addition to the inline `comments` endpoint.
 3. **Skip noise**: Ignore bot-only comments with no actionable feedback (Codecov, Storybook preview links, Copilot summary headers, etc.).
 4. **Address each substantive comment** — every comment gets a reply, no exceptions:
 

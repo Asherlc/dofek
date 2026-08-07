@@ -1,3 +1,4 @@
+import type { NutritionCalorieTargetType } from "@dofek/nutrition/selected-date-summary";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -24,6 +25,11 @@ export interface SlackStatus {
   connected: boolean;
 }
 
+export interface CalorieGoalContext {
+  target: number;
+  type: NutritionCalorieTargetType;
+}
+
 // ---------------------------------------------------------------------------
 // Tables deleted during full user data wipe
 // ---------------------------------------------------------------------------
@@ -31,11 +37,24 @@ export interface SlackStatus {
 const USER_SCOPED_DELETE_TABLES = [
   "fitness.user_settings",
   "fitness.life_events",
+  "fitness.menstrual_period",
   "fitness.sport_settings",
+  "fitness.supplement_dose_event",
   "fitness.supplement",
 ];
 
 const GLOBAL_PROVIDER_TABLES = new Set(["fitness.exercise_alias"]);
+export const DEFAULT_CALORIE_GOAL = 2000;
+
+function parseCalorieGoal(value: unknown): CalorieGoalContext {
+  const numericValue =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  const roundedValue = Math.round(numericValue);
+  if (Number.isFinite(roundedValue) && roundedValue > 0) {
+    return { target: roundedValue, type: "configured" };
+  }
+  return { target: DEFAULT_CALORIE_GOAL, type: "default" };
+}
 
 function isUndefinedTableError(error: unknown): boolean {
   if (error instanceof Error) {
@@ -88,6 +107,17 @@ export class SettingsRepository {
     return rows.map((row) => ({ key: row.key, value: row.value }));
   }
 
+  /** Get the user's positive calorie goal, or the canonical default. */
+  async getCalorieGoal(): Promise<number> {
+    return (await this.getCalorieGoalContext()).target;
+  }
+
+  /** Get the user's calorie target and whether it uses the configured or default value. */
+  async getCalorieGoalContext(): Promise<CalorieGoalContext> {
+    const setting = await this.get("calorieGoal");
+    return parseCalorieGoal(setting?.value);
+  }
+
   /** Upsert a setting. Returns the saved setting or throws on failure. */
   async set(key: string, value: unknown): Promise<Setting> {
     const rows = await executeWithSchema(
@@ -127,25 +157,32 @@ export class SettingsRepository {
    */
   async deleteAllUserData(providerChildTables: string[]): Promise<void> {
     await this.#db.transaction(async (transaction) => {
-      for (const table of providerChildTables) {
-        if (GLOBAL_PROVIDER_TABLES.has(table)) {
-          continue;
-        }
+      const deleteTable = async (table: string): Promise<void> => {
+        await transaction.execute(sql`SAVEPOINT dofek_delete_user_data`);
         try {
           await transaction.execute(
             sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
           );
         } catch (error: unknown) {
+          await transaction.execute(sql`ROLLBACK TO SAVEPOINT dofek_delete_user_data`);
+          await transaction.execute(sql`RELEASE SAVEPOINT dofek_delete_user_data`);
           if (!isUndefinedTableError(error)) {
             throw error;
           }
+          return;
         }
+        await transaction.execute(sql`RELEASE SAVEPOINT dofek_delete_user_data`);
+      };
+
+      for (const table of providerChildTables) {
+        if (GLOBAL_PROVIDER_TABLES.has(table)) {
+          continue;
+        }
+        await deleteTable(table);
       }
 
       for (const table of USER_SCOPED_DELETE_TABLES) {
-        await transaction.execute(
-          sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
-        );
+        await deleteTable(table);
       }
     });
   }

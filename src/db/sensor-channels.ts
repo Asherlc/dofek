@@ -1,9 +1,8 @@
 /**
  * Sensor sample channel constants.
  *
- * Each channel name identifies a type of measurement stored in the
- * metric_stream table. Scalar channels use the `scalar` column;
- * vector channels use the `vector` (real[]) column.
+ * Each channel name identifies a type of measurement in the metric stream.
+ * Scalar channels use the `scalar` column; vector channels use `vector`.
  */
 
 // ── Scalar channels (single numeric value) ──────────────────
@@ -16,10 +15,8 @@ export const POWER = "power";
 export const CADENCE = "cadence";
 /** Speed in m/s */
 export const SPEED = "speed";
-/** Latitude in degrees */
-export const LAT = "lat";
-/** Longitude in degrees */
-export const LNG = "lng";
+/** Location point stored in the metric stream `point` field. */
+export const LOCATION = "location";
 /** Altitude in meters */
 export const ALTITUDE = "altitude";
 /** Temperature in celsius */
@@ -32,8 +29,6 @@ export const VERTICAL_SPEED = "vertical_speed";
 export const SPO2 = "spo2";
 /** Respiratory rate in breaths/min */
 export const RESPIRATORY_RATE = "respiratory_rate";
-/** GPS accuracy in meters */
-export const GPS_ACCURACY = "gps_accuracy";
 /** Cumulative power in watts */
 export const ACCUMULATED_POWER = "accumulated_power";
 /** Stress score */
@@ -82,6 +77,30 @@ export const SKIN_TEMPERATURE = "skin_temperature";
 export const ELECTRODERMAL_ACTIVITY = "electrodermal_activity";
 /** R-R interval in milliseconds (beat-to-beat timing from PPG) */
 export const RR_INTERVAL_MS = "rr_interval_ms";
+/** Body weight in kilograms */
+export const BODY_WEIGHT = "body_weight";
+/** Body fat percentage */
+export const BODY_FAT_PERCENTAGE = "body_fat_percentage";
+/** Muscle mass in kilograms */
+export const MUSCLE_MASS = "muscle_mass";
+/** Bone mass in kilograms */
+export const BONE_MASS = "bone_mass";
+/** Body water percentage */
+export const BODY_WATER_PERCENTAGE = "body_water_percentage";
+/** Body Mass Index */
+export const BODY_MASS_INDEX = "body_mass_index";
+/** Height in centimeters */
+export const HEIGHT = "height";
+/** Waist circumference in centimeters */
+export const WAIST_CIRCUMFERENCE = "waist_circumference";
+/** Systolic blood pressure in mmHg */
+export const SYSTOLIC_BLOOD_PRESSURE = "systolic_blood_pressure";
+/** Diastolic blood pressure in mmHg */
+export const DIASTOLIC_BLOOD_PRESSURE = "diastolic_blood_pressure";
+/** Pulse associated with a body measurement in bpm */
+export const HEART_PULSE = "heart_pulse";
+/** Body temperature in celsius */
+export const BODY_TEMPERATURE = "body_temperature";
 
 // ── Source types (informational, not used for dedup priority) ─
 
@@ -89,7 +108,7 @@ export const SOURCE_TYPE_FILE = "file" as const;
 export const SOURCE_TYPE_API = "api" as const;
 
 /**
- * Mapping from Drizzle camelCase field names to metric_stream channel names.
+ * Mapping from Drizzle camelCase field names to metric stream channel names.
  * Used when converting Drizzle insert objects (e.g., from fitRecordsToMetricStream).
  */
 export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {
@@ -97,15 +116,12 @@ export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {
   power: POWER,
   cadence: CADENCE,
   speed: SPEED,
-  lat: LAT,
-  lng: LNG,
   altitude: ALTITUDE,
   temperature: TEMPERATURE,
   grade: GRADE,
   verticalSpeed: VERTICAL_SPEED,
   spo2: SPO2,
   respiratoryRate: RESPIRATORY_RATE,
-  gpsAccuracy: GPS_ACCURACY,
   accumulatedPower: ACCUMULATED_POWER,
   stress: STRESS,
   leftRightBalance: LEFT_RIGHT_BALANCE,
@@ -129,4 +145,31 @@ export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {
   audioExposure: AUDIO_EXPOSURE,
   skinTemperature: SKIN_TEMPERATURE,
   electrodermalActivity: ELECTRODERMAL_ACTIVITY,
+  weightKg: BODY_WEIGHT,
+  bodyFatPct: BODY_FAT_PERCENTAGE,
+  muscleMassKg: MUSCLE_MASS,
+  boneMassKg: BONE_MASS,
+  waterPct: BODY_WATER_PERCENTAGE,
+  bmi: BODY_MASS_INDEX,
+  heightCm: HEIGHT,
+  waistCircumferenceCm: WAIST_CIRCUMFERENCE,
+  systolicBp: SYSTOLIC_BLOOD_PRESSURE,
+  diastolicBp: DIASTOLIC_BLOOD_PRESSURE,
+  heartPulse: HEART_PULSE,
+  temperatureC: BODY_TEMPERATURE,
+};
+
+export const BODY_MEASUREMENT_COLUMN_TO_CHANNEL: Record<string, string> = {
+  weight_kg: BODY_WEIGHT,
+  body_fat_pct: BODY_FAT_PERCENTAGE,
+  muscle_mass_kg: MUSCLE_MASS,
+  bone_mass_kg: BONE_MASS,
+  water_pct: BODY_WATER_PERCENTAGE,
+  bmi: BODY_MASS_INDEX,
+  height_cm: HEIGHT,
+  waist_circumference_cm: WAIST_CIRCUMFERENCE,
+  systolic_bp: SYSTOLIC_BLOOD_PRESSURE,
+  diastolic_bp: DIASTOLIC_BLOOD_PRESSURE,
+  heart_pulse: HEART_PULSE,
+  temperature_c: BODY_TEMPERATURE,
 };

@@ -1,101 +1,180 @@
-import { mapTrainerRoadActivityType, parseTrainerRoadActivity } from "trainerroad-client/parsing";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
-const sampleActivity = {
-  Id: 987654,
-  WorkoutName: "Pettit",
-  CompletedDate: "2026-03-01T19:00:00.000Z",
-  Duration: 3600, // 60 minutes
-  Tss: 52,
-  DistanceInMeters: 0,
-  IsOutside: false,
-  ActivityType: "Ride",
-  IfFactor: 0.72,
-  NormalizedPower: 180,
-  AveragePower: 165,
-  MaxPower: 320,
-  AverageHeartRate: 135,
-  MaxHeartRate: 155,
-  AverageCadence: 88,
-  MaxCadence: 105,
-  Calories: 650,
-  ElevationGainInMeters: 0,
-  AverageSpeed: 0,
-  MaxSpeed: 0,
-};
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
 
-describe("TrainerRoad Provider", () => {
-  describe("mapTrainerRoadActivityType", () => {
-    it("maps indoor rides to virtual_cycling", () => {
-      expect(mapTrainerRoadActivityType("Ride", false)).toBe("virtual_cycling");
-      expect(mapTrainerRoadActivityType("VirtualRide", false)).toBe("virtual_cycling");
-    });
+import { TrainerRoadProvider } from "./trainerroad.ts";
 
-    it("maps outdoor rides to cycling", () => {
-      expect(mapTrainerRoadActivityType("Ride", true)).toBe("cycling");
-    });
-
-    it("maps indoor runs to running", () => {
-      expect(mapTrainerRoadActivityType("Run", false)).toBe("running");
-    });
-
-    it("maps outdoor runs to running", () => {
-      expect(mapTrainerRoadActivityType("Run", true)).toBe("running");
-    });
-
-    it("maps swimming", () => {
-      expect(mapTrainerRoadActivityType("Swim", false)).toBe("swimming");
-      expect(mapTrainerRoadActivityType("Swim", true)).toBe("swimming");
-    });
-
-    it("maps unknown to other", () => {
-      expect(mapTrainerRoadActivityType("Yoga", false)).toBe("other");
-    });
+describe("TrainerRoadProvider", () => {
+  it("validate returns null", () => {
+    expect(new TrainerRoadProvider().validate()).toBeNull();
   });
 
-  describe("parseTrainerRoadActivity", () => {
-    it("maps activity fields correctly", () => {
-      const result = parseTrainerRoadActivity(sampleActivity);
+  it("authSetup returns credential-only configuration", () => {
+    const setup = new TrainerRoadProvider().authSetup();
+    expect(setup.automatedLogin).toBeTypeOf("function");
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
+  });
 
-      expect(result.externalId).toBe("987654");
-      expect(result.activityType).toBe("virtual_cycling");
-      expect(result.name).toBe("Pettit");
-      expect(result.endedAt).toEqual(new Date("2026-03-01T19:00:00.000Z"));
+  it("sync returns error when no tokens stored", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new TrainerRoadProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+    expect(result.provider).toBe("trainerroad");
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("not connected");
+  });
+
+  it("sync returns error when username missing from stored tokens", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "trainerroad",
+                accessToken: "cookie",
+                refreshToken: null,
+                expiresAt: new Date("2099-01-01"),
+                scopes: null, // no username
+              },
+            ]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new TrainerRoadProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+    expect(result.errors[0]?.message).toContain("username not found");
+  });
+
+  it("sync returns error when cookie expired", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "trainerroad",
+                accessToken: "old-cookie",
+                refreshToken: null,
+                expiresAt: new Date("2020-01-01"), // expired
+                scopes: "username:testuser",
+              },
+            ]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new TrainerRoadProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+    expect(result.errors[0]?.message).toContain("TrainerRoad session expired.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "session_expired" });
+  });
+
+  describe("token expiry boundary", () => {
+    afterEach(() => {
+      vi.useRealTimers();
     });
 
-    it("calculates startedAt from completedDate minus duration", () => {
-      const result = parseTrainerRoadActivity(sampleActivity);
-      // completedDate is 19:00, duration is 3600s (1 hour), so start is 18:00
-      expect(result.startedAt).toEqual(new Date("2026-03-01T18:00:00.000Z"));
-    });
-
-    it("stores power/HR/cadence metrics in raw", () => {
-      const result = parseTrainerRoadActivity(sampleActivity);
-
-      expect(result.raw.normalizedPower).toBe(180);
-      expect(result.raw.avgPower).toBe(165);
-      expect(result.raw.maxPower).toBe(320);
-      expect(result.raw.avgHeartRate).toBe(135);
-      expect(result.raw.maxHeartRate).toBe(155);
-      expect(result.raw.avgCadence).toBe(88);
-      expect(result.raw.tss).toBe(52);
-      expect(result.raw.intensityFactor).toBe(0.72);
-      expect(result.raw.isOutside).toBe(false);
-    });
-
-    it("handles outdoor activity", () => {
-      const outdoor = {
-        ...sampleActivity,
-        IsOutside: true,
-        DistanceInMeters: 50000,
-        ElevationGainInMeters: 800,
+    function tokenDb(expiresAt: Date) {
+      return {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  providerId: "trainerroad",
+                  accessToken: "cookie",
+                  refreshToken: null,
+                  expiresAt,
+                  scopes: "username:testuser",
+                },
+              ]),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+            onConflictDoUpdate: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        execute: vi.fn().mockResolvedValue([]),
       };
-      const result = parseTrainerRoadActivity(outdoor);
+    }
 
-      expect(result.activityType).toBe("cycling");
-      expect(result.raw.distanceMeters).toBe(50000);
-      expect(result.raw.elevationGain).toBe(800);
-      expect(result.raw.isOutside).toBe(true);
+    it("treats a token expiring exactly now as expired (boundary: <= not <)", async () => {
+      // Freeze time so `new Date()` inside sync equals the token's expiresAt exactly.
+      const now = new Date("2026-06-01T12:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+
+      const provider = new TrainerRoadProvider();
+      const result = await provider.sync(
+        new SyncRun({
+          db: tokenDb(new Date(now.getTime())),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
+
+      expect(result.errors[0]?.message).toContain("TrainerRoad session expired.");
+      expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "session_expired" });
     });
   });
 });

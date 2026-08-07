@@ -1,0 +1,35 @@
+extends: default
+
+ignore: |
+  node_modules/
+  dist/
+  build/
+  coverage/
+  .next/
+  .turbo/
+  pnpm-lock.yaml
+  packages/**/dist/
+  packages/**/build/
+  docs/whoop-api.openapi.yaml
+  # Terraform template (templatefile) — contains %{ } directives, not valid YAML.
+  deploy/oracle-free/cloud-init.yml
+
+rules:
+  line-length:
+    max: 200
+    level: warning
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+  document-start: disable
+  truthy:
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  braces:
+    max-spaces-inside: 1
+  brackets:
+    max-spaces-inside: 1

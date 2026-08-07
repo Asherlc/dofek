@@ -60,11 +60,18 @@ export function ProviderGuide({ onDismiss, providers }: ProviderGuideProps) {
         style={styles.primaryButton}
         onPress={() => router.push("/providers")}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Set up data sources"
       >
         <Text style={styles.primaryButtonText}>Set up data sources</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={onDismiss} activeOpacity={0.7}>
+      <TouchableOpacity
+        onPress={onDismiss}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Skip for now"
+      >
         <Text style={styles.skipText}>Skip for now</Text>
       </TouchableOpacity>
     </View>

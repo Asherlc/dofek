@@ -1,18 +1,22 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 import type { DailyTrendRow, WeeklyTrendRow } from "./trends.ts";
 
 /**
  * Integration tests for the trends router.
- * Inserts metric_stream data, refreshes the continuous aggregates
- * (cagg_metric_daily, cagg_metric_weekly), and verifies the endpoints
- * return correctly aggregated data.
+ * Inserts metric_stream data and verifies the endpoints return correctly
+ * aggregated data from ClickHouse trend read models.
  */
-describe("Trends router — continuous aggregate data tests", () => {
+describe("Trends router — trend data tests", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
@@ -31,6 +35,8 @@ describe("Trends router — continuous aggregate data tests", () => {
           ON CONFLICT DO NOTHING`,
     );
 
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+
     // Insert activities spanning 30 days, with metric_stream data
     for (let day = 30; day >= 1; day--) {
       // Create an activity every day
@@ -40,9 +46,9 @@ describe("Trends router — continuous aggregate data tests", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`trend-ride-${day}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${day}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${day}::int * INTERVAL '1 day' + ${durationMin}::int * INTERVAL '1 minute',
               'Daily Ride'
@@ -51,44 +57,58 @@ describe("Trends router — continuous aggregate data tests", () => {
       const actId = actResult[0]?.id;
 
       if (actId) {
-        // Insert metric_stream samples (1 per minute)
-        const sensorValues: string[] = [];
+        const activityStartedAt = new Date(Date.now() - day * 24 * 60 * 60 * 1000);
         for (let s = 0; s < durationMin; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.1) * 5);
           const power = avgPower + Math.round(Math.cos(s * 0.1) * 15);
           const cadence = 85 + Math.round(Math.sin(s * 0.05) * 10);
           const speed = 8 + Math.sin(s * 0.08) * 1.5;
-          const ts = `CURRENT_TIMESTAMP - ${day} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed.toFixed(3)}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'cadence', '${actId}', ${cadence}, NULL)`,
+          const recordedAt = new Date(activityStartedAt.getTime() + s * 60_000).toISOString();
+          metricStreamSeedRows.push(
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "heart_rate",
+              activityId: actId,
+              scalar: hr,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "power",
+              activityId: actId,
+              scalar: power,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "speed",
+              activityId: actId,
+              scalar: Number(speed.toFixed(3)),
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "cadence",
+              activityId: actId,
+              scalar: cadence,
+            },
           );
         }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-        );
       }
     }
 
-    // Refresh continuous aggregates
-    // The cagg_metric_daily and cagg_metric_weekly are continuous aggregates in TimescaleDB
-    try {
-      await testCtx.db.execute(
-        sql`CALL refresh_continuous_aggregate('fitness.cagg_metric_daily', NULL, NULL)`,
-      );
-      await testCtx.db.execute(
-        sql`CALL refresh_continuous_aggregate('fitness.cagg_metric_weekly', NULL, NULL)`,
-      );
-    } catch {
-      // If continuous aggregates don't exist (test DB might not have them),
-      // the router queries will just return empty arrays
-    }
-
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -124,10 +144,9 @@ describe("Trends router — continuous aggregate data tests", () => {
   }
 
   describe("daily", () => {
-    it("returns daily aggregated metrics from cagg_metric_daily", async () => {
+    it("returns daily aggregated metrics from the ClickHouse trend read model", async () => {
       const result = await query<DailyTrendRow[]>("trends.daily", { days: 90 });
 
-      // If continuous aggregates are available, we should have data
       if (result.length > 0) {
         for (const row of result) {
           expect(row.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -182,7 +201,7 @@ describe("Trends router — continuous aggregate data tests", () => {
   });
 
   describe("weekly", () => {
-    it("returns weekly aggregated metrics from cagg_metric_weekly", async () => {
+    it("returns weekly aggregated metrics from daily ClickHouse trend rows", async () => {
       const result = await query<WeeklyTrendRow[]>("trends.weekly", { weeks: 52 });
 
       if (result.length > 0) {

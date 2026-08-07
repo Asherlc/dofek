@@ -2,58 +2,24 @@ name: Build Mobile
 
 on:
   workflow_call:
+    inputs:
+      changed:
+        required: true
+        type: boolean
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  check-mobile-changes:
-    name: Check Mobile Changes
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.check.outputs.changed }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 0
-      - id: check
-        run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
-              packages/mobile/ \
-              packages/auth/ \
-              packages/format/ \
-              packages/nutrition/ \
-              packages/onboarding/ \
-              packages/providers-meta/ \
-              packages/scoring/ \
-              packages/training/ \
-              packages/zones/ \
-              packages/server/ \
-              package.json \
-              pnpm-lock.yaml \
-              pnpm-workspace.yaml \
-              tsconfig.json)
-            if [ -n "$CHANGED" ]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "iOS files changed:"
-              echo "$CHANGED"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "No iOS changes detected, skipping native build"
-            fi
-          fi
-
   build-metro-bundle:
     name: Metro Bundle
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: >-
+      inputs.changed &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
@@ -61,9 +27,13 @@ jobs:
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
+      - name: Verify dependencies match Expo SDK
+        run: cd packages/mobile && pnpm expo install --check
       - name: Export iOS bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Validate OTA export path
+        run: cd packages/mobile && pnpm expo export --output-dir /tmp/ota-export-validate --platform ios
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mobile-metro-bundle
           path: packages/mobile/dist/
@@ -71,13 +41,14 @@ jobs:
 
   build-ios-native:
     name: iOS Native Build
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: >-
+      inputs.changed &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-26
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
@@ -92,19 +63,19 @@ jobs:
           cache-key-prefix: ccache-ios
       - name: Generate native project
         working-directory: packages/mobile
-        run: npx expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios --no-install
       - name: Cache CocoaPods
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v8-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts') }}
-          restore-keys: pods-v8-
+          key: pods-v10-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml') }}
+          restore-keys: pods-v10-
       - name: Cache DerivedData
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
-          restore-keys: deriveddata-v1-
+          key: deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          restore-keys: deriveddata-v2-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Set build number
@@ -138,7 +109,7 @@ jobs:
         timeout-minutes: 25
       - name: Upload archive
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ios-xcarchive
           path: ${{ runner.temp }}/Dofek.xcarchive
@@ -149,44 +120,63 @@ jobs:
 
   build-watchos:
     name: watchOS Build
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: inputs.changed
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_PUBLIC_SENTRY_DSN
+      - uses: ./.github/actions/setup-ccache
+        with:
+          cache-key-prefix: ccache-watchos
       - name: Generate native project
         working-directory: packages/mobile
-        run: npx expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios --no-install
       - name: Cache CocoaPods
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/ios/Pods
-          key: pods-watchos-v8-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts') }}
-          restore-keys: pods-watchos-v8-
+          key: pods-watch-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/targets/DofekWatch/pods.rb', 'pnpm-lock.yaml') }}
+          restore-keys: pods-watch-v1-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
+      - name: Validate Watch target
+        run: |
+          set -euo pipefail
+          xcodebuild -list -json -project packages/mobile/ios/Dofek.xcodeproj \
+            | ruby -rjson -e 'targets = JSON.parse(STDIN.read).dig("project", "targets") || []; abort("DofekWatch target not found") unless targets.include?("DofekWatch")'
       - name: Build Watch target for simulator
+        timeout-minutes: 25
         run: |
           set -o pipefail
           BUILD_DIR="$(pwd)/packages/mobile/ios/build"
           xcodebuild build \
             -project packages/mobile/ios/Pods/Pods.xcodeproj \
             -target Pods-DofekWatch \
-            -sdk watchsimulator \
             -configuration Debug \
+            -sdk watchsimulator \
             SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tail -20
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CXX=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
+            2>&1 | tee -a /tmp/watchos-build.log | tail -80
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
             -target DofekWatch \
-            -sdk watchsimulator \
             -configuration Debug \
+            -sdk watchsimulator \
             SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
-            2>&1 | tee /tmp/watchos-build.log | tail -80
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CXX=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
+            2>&1 | tee -a /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
         if: failure()
         run: |
@@ -201,19 +191,21 @@ jobs:
           done
       - name: Upload watchOS build log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: watchos-build-log
           path: /tmp/watchos-build.log
           retention-days: 3
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
   lint-ios-podspecs:
     name: iOS Podspec Lint
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: inputs.changed
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate podspec deployment targets
         run: |
           APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
@@ -231,14 +223,13 @@ jobs:
 
   mobile-gate:
     name: Mobile Build Gate
-    needs: [check-mobile-changes, build-metro-bundle, build-ios-native, build-watchos, lint-ios-podspecs]
+    needs: [build-metro-bundle, build-ios-native, build-watchos, lint-ios-podspecs]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
           for result in \
-            "${{ needs.check-mobile-changes.result }}" \
             "${{ needs.build-metro-bundle.result }}" \
             "${{ needs.build-ios-native.result }}" \
             "${{ needs.build-watchos.result }}" \

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "./schema.ts";
+import { TEST_USER_ID } from "./schema/core.ts";
 import { logSync, withSyncLog } from "./sync-log.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
@@ -71,6 +71,26 @@ describe("Sync Log (integration)", () => {
       expect(rows[0]?.status).toBe("error");
       expect(rows[0]?.error_message).toBe("API rate limit exceeded");
       expect(rows[0]?.record_count).toBe(0); // defaults to 0
+    });
+
+    it("logs an auth failure reason", async () => {
+      await logSync(ctx.db, {
+        providerId: "test-provider",
+        dataType: "sync",
+        status: "error",
+        errorMessage: "Wahoo access token expired.",
+        authFailureReason: "access_token_expired",
+        userId: TEST_USER_ID,
+      });
+
+      const rows = await ctx.db.execute<{ auth_failure_reason: string | null }>(
+        sql`SELECT auth_failure_reason
+            FROM fitness.sync_log
+            WHERE provider_id = 'test-provider' AND data_type = 'sync'
+            ORDER BY synced_at DESC LIMIT 1`,
+      );
+
+      expect(rows[0]?.auth_failure_reason).toBe("access_token_expired");
     });
   });
 

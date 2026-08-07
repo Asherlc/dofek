@@ -2,10 +2,13 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { VeloHeroProvider } from "./velohero.ts";
 
 // ============================================================
@@ -53,10 +56,11 @@ function fakeWorkout(overrides: Partial<FakeVeloHeroWorkout> = {}): FakeVeloHero
   };
 }
 
-function veloheroHandlers(workouts: FakeVeloHeroWorkout[]) {
+function veloheroHandlers(workouts: FakeVeloHeroWorkout[], onRequest?: (url: URL) => void) {
   return [
     // Workouts export
-    http.get("https://app.velohero.com/export/workouts/json", () => {
+    http.get("https://app.velohero.com/export/workouts/json", ({ request }) => {
+      onRequest?.(new URL(request.url));
       return HttpResponse.json({
         workouts,
       });
@@ -105,15 +109,23 @@ describe("VeloHeroProvider.sync() (integration)", () => {
       }),
     ];
 
-    server.use(...veloheroHandlers(workouts));
+    const requestedUrls: URL[] = [];
+    server.use(...veloheroHandlers(workouts, (url) => requestedUrls.push(url)));
 
     const provider = new VeloHeroProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("velohero");
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+    expect(requestedUrls).toHaveLength(1);
+    expect(requestedUrls[0]?.searchParams.get("date_from")).toBe("2026-02-01");
+    expect(requestedUrls[0]?.searchParams.get("date_to")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     // Verify activity rows
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "velohero"));
@@ -141,10 +153,20 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     server.use(...veloheroHandlers(workouts));
 
     const provider = new VeloHeroProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "velohero"));
     const countOf3001 = rows.filter((r) => r.externalId === "3001").length;
@@ -164,12 +186,16 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     });
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain(
-      "VeloHero session expired — please re-authenticate via Settings",
-    );
+    expect(result.errors[0]?.message).toContain("VeloHero session expired.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "session_expired" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -177,7 +203,12 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "velohero"));
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -197,7 +228,12 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     server.use(...veloheroHandlers([]));
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
@@ -225,7 +261,12 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     server.use(...veloheroHandlers(workouts));
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -238,6 +279,5 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     if ("maxPower" in raw) expect(raw.maxPower).toBe(480);
     if ("avgHeartRate" in raw) expect(raw.avgHeartRate).toBe(148);
     if ("ascent" in raw) expect(raw.ascent).toBe(750);
-    if ("calories" in raw) expect(raw.calories).toBe(1100);
   });
 });

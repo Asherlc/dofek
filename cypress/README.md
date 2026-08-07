@@ -1,50 +1,94 @@
 # End-to-End Testing (Cypress)
 
-Automated E2E testing suite for the Dofek web application.
+Cypress exercises the Dofek web application against the isolated E2E stack.
 
 ## Structure
 
-- `e2e/`: Test specifications (written in TypeScript).
-  - `dashboard.cy.ts`: Verifies the main dashboard, including chart rendering (ECharts canvas) and tRPC data fetching.
-  - `login.cy.ts`: Tests authentication redirects and sign-in page visibility.
-  - `training.cy.ts`: Tests the training calendar, fitness/fatigue charts, and sub-tab navigation (`/training/endurance`, etc.).
-  - `nutrition.cy.ts`: Verifies nutrition macro displays and meal entry rendering.
-  - `cycling.cy.ts`: Tests cycling-specific metrics and activity details.
-  - `navigation.cy.ts`: Ensures top-level and side-bar navigation works as expected.
-- `support/`: Custom commands and global configuration.
-  - `commands.ts`: Implements `cy.login()` and `cy.cleanTestData()`.
-  - `e2e.ts`: Entry point for support files.
+- `e2e/`
+  - `activity-recording.cy.ts`: Saves a recorded activity with metric-stream samples through tRPC.
+  - `cycling.cy.ts`: Covers the cycling page's empty states, section headings, and aerobic-efficiency response.
+  - `dark-mode.cy.ts`: Verifies that public and authentication surfaces follow the browser's dark system appearance.
+  - `dashboard.cy.ts`: Covers authenticated loading, `/api/auth/me`, and the step health monitor backed by `fitness.v_daily_metrics`.
+  - `login.cy.ts`: Covers the sign-in page and unauthenticated dashboard redirect.
+  - `navigation.cy.ts`: Smoke-tests the authenticated top-level routes.
+  - `nutrition.cy.ts`: Verifies that food entries with null calories render without crashing.
+  - `provider-detail.cy.ts`: Verifies that a directly opened unavailable provider blocks actions and links back to settings.
+  - `training.cy.ts`: Covers training headings, sub-tabs, routes, and the weekly-volume response.
+  - `test-helpers.ts`: Provides the shared local-date formatter used by dashboard and nutrition specs.
+- `support/`
+  - `commands.ts`: Defines `cy.login()` and `cy.cleanTestData()`.
+  - `e2e.ts`: Loads the custom commands for every spec.
+- `../cypress.config.ts`: Configures Cypress and database-backed Node tasks.
 
-## Testing Strategy
+## Authentication and Isolation
 
-### Authentication & Seeding
-Instead of manual UI login, tests use a custom `cy.login()` command for speed and reliability.
+Authenticated specs normally use this lifecycle:
 
-1. **Seed**: `cy.login()` calls `cy.task("seedTestUser")` and `cy.task("createSession")`.
-2. **Tasks**: These tasks are defined in `cypress.config.ts` and use the `postgres` library to interact directly with the E2E database.
-3. **Cookie**: A session cookie is set (`cy.setCookie("session", TEST_SESSION_ID)`) so all subsequent requests to the API are authenticated.
-4. **Cleanup**: `cy.cleanTestData()` runs in `afterEach()` to remove test records, ensuring test isolation.
+1. `cy.login()` runs `seedTestUser` and `createSession`.
+2. The command sets the E2E session cookie.
+3. The spec exercises the UI or API.
+4. `cy.cleanTestData()` removes the test user's records in `afterEach()`.
 
-### Data Verification
-Tests verify both the UI and the underlying API:
-- **UI**: Uses `cy.contains()` to check for headings and `cy.find("canvas")` to confirm that ECharts has rendered correctly.
-- **API**: Uses `cy.request()` to hit tRPC endpoints directly (e.g., `training.weeklyVolume`) and asserts on the JSON response structure and types.
-- **Interception**: Uses `cy.intercept()` on tRPC calls (matching `POST` due to tRPC method overriding) to wait for data to load before making UI assertions.
+The login-page spec intentionally does not create a session.
 
-## Configuration (`cypress.config.ts`)
+## Node Tasks
 
-- **E2E_DATABASE_URL**: Points to the test database (default: `postgres://health:health@localhost:5436/health`).
-- **E2E_SERVER_URL**: Points to the web server (default: `http://localhost:3100`).
-- **Retries**: Configured for 1 retry in CI to handle minor flakes without excessive noise.
-- **Tasks**:
-  - `seedTestUser`: Inserts into `fitness.user_profile`.
-  - `createSession`: Inserts into `fitness.session`.
-  - `seedDailyMetricsWithSteps`: Inserts test step data and a test provider.
-  - `refreshDailyMetricsView`: Refreshes the `v_daily_metrics` materialized view so the dashboard shows the seeded data.
+`cypress.config.ts` registers these tasks:
+
+- `seedTestUser`: Inserts the fixed E2E user profile.
+- `createSession`: Inserts a session for that user.
+- `cleanTestData`: Deletes the user's session, food, daily-metric, activity, settings, provider, and profile records.
+- `seedDailyMetricsWithSteps`: Inserts a test provider and daily step rows.
+- `runQuery`: Executes trusted, spec-owned SQL for setup or verification that does not have a dedicated task.
+
+Cypress runs `cy.task()` handlers in the Node process rather than in the browser; see the official [task documentation](https://docs.cypress.io/api/commands/task).
+
+## Configuration
+
+- `E2E_DATABASE_URL` defaults to the workspace E2E PostgreSQL service on
+  `localhost:5436`; set it explicitly when using a different isolated test
+  database.
+- `E2E_SERVER_URL` defaults to `http://localhost:3100`.
+- Specs match `cypress/e2e/**/*.cy.ts`; `cypress/support/e2e.ts` is the support file.
+- Headless runs retry a failed test once; interactive runs do not retry. Cypress documents the two retry modes in its [test retries guide](https://docs.cypress.io/app/guides/test-retries).
+- Videos are disabled and the default command timeout is 10 seconds.
+- The isolated Compose stack health-gates database, ClickHouse, Redis, Redpanda, migrations, analytics setup, and server startup. Docker documents health-gated dependencies in its [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
 
 ## Running Tests
 
-- **Bring the stack up**: `pnpm e2e:web:up`
-- **Open Mode**: `pnpm e2e:web:open` (interactive)
-- **Run Mode**: `pnpm e2e:web:run` (CI/headless)
-- **Tear the stack down**: `pnpm e2e:web:down`
+Use the full lifecycle after Dockerfile, migration, analytics-model, or seeded-state changes. It
+creates the deterministic review fixture, copies its relational and sensor inputs into ClickHouse,
+builds the analytics models, and then runs the browser suite:
+
+```bash
+pnpm e2e:web
+```
+
+Run the review-stack canonical-ID smoke test against the existing seeded stack:
+
+```bash
+pnpm e2e:web:reuse -- --spec cypress/e2e/review-stack.cy.ts
+```
+
+This spec intentionally bypasses `cy.login()` and `cy.cleanTestData()` because it
+validates the deterministic user and session created by the review seed. The fixed
+identifiers live in `support/commands.ts` and the spec verifies that session resolves
+to the seeded review user before checking activity routes.
+
+Reuse an existing E2E stack for repeated runs:
+
+```bash
+pnpm e2e:web:reuse
+pnpm e2e:web:reuse -- --spec cypress/e2e/dashboard.cy.ts
+```
+
+For manual control:
+
+```bash
+pnpm e2e:web:up
+pnpm e2e:web:run
+pnpm e2e:web:open
+pnpm e2e:web:down
+```
+
+See [`docs/testing.md`](../docs/testing.md#web-e2e) for stack reuse, workspace isolation, and CI rationale.

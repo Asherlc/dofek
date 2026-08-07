@@ -3,23 +3,24 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { dexaScan, dexaScanRegion } from "../db/schema.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+import { dexaScan, dexaScanRegion } from "../db/schema/events.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
 import { ProviderHttpClient } from "./http-client.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // BodySpec API types & Zod schemas
 // ============================================================
 
 const BODYSPEC_API_BASE = "https://app.bodyspec.com";
+const BODYSPEC_PUBLIC_CLIENT_ID = "bodyspec-api-ext-v1";
+const BODYSPEC_OIDC_BASE = "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect";
 
 const bodyRegionSchema = z.object({
   fat_mass_kg: z.number(),
@@ -65,19 +66,6 @@ const visceralFatResponseSchema = z.object({
 });
 
 export type BodySpecVisceralFatResponse = z.infer<typeof visceralFatResponseSchema>;
-
-const rmrEstimateSchema = z.object({
-  formula: z.string(),
-  kcal_per_day: z.number(),
-});
-
-const rmrResponseSchema = z.object({
-  result_id: z.string(),
-  section_name: z.literal("rmr"),
-  estimates: z.array(rmrEstimateSchema),
-});
-
-export type BodySpecRmrResponse = z.infer<typeof rmrResponseSchema>;
 
 const percentileMetricSchema = z.object({
   percentile: z.number(),
@@ -144,6 +132,7 @@ const resultsListResponseSchema = z.object({
   pagination: paginationSchema,
 });
 
+type BodySpecResultSummary = z.infer<typeof resultSchema>;
 export type BodySpecResultsListResponse = z.infer<typeof resultsListResponseSchema>;
 
 // ============================================================
@@ -199,15 +188,6 @@ export function parseVisceralFat(response: BodySpecVisceralFatResponse) {
   };
 }
 
-export function parseRmr(response: BodySpecRmrResponse) {
-  const tenHaaf = response.estimates.find((e) => e.formula.startsWith("ten Haaf"));
-  const primary = tenHaaf ?? response.estimates[0];
-  return {
-    restingMetabolicRateKcal: primary?.kcal_per_day ?? null,
-    restingMetabolicRateRaw: response.estimates,
-  };
-}
-
 export function parsePercentiles(response: BodySpecPercentilesResponse) {
   return {
     params: response.params,
@@ -237,17 +217,14 @@ export async function catchNotFound<T>(promise: Promise<T>): Promise<T | null> {
 // BodySpec OAuth
 // ============================================================
 
-function bodySpecOAuthConfig(host?: string): OAuthConfig | null {
-  const clientId = process.env.BODYSPEC_CLIENT_ID;
-  const clientSecret = process.env.BODYSPEC_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+function bodySpecOAuthConfig(host?: string): OAuthConfig {
   return {
-    clientId,
-    clientSecret,
-    authorizeUrl: `${BODYSPEC_API_BASE}/oauth/authorize`,
-    tokenUrl: `${BODYSPEC_API_BASE}/oauth/token`,
+    clientId: BODYSPEC_PUBLIC_CLIENT_ID,
+    authorizeUrl: `${BODYSPEC_OIDC_BASE}/auth`,
+    tokenUrl: `${BODYSPEC_OIDC_BASE}/token`,
     redirectUri: getOAuthRedirectUri(host),
-    scopes: ["read:results"],
+    scopes: ["openid", "profile", "email"],
+    usePkce: true,
   };
 }
 
@@ -257,7 +234,14 @@ function bodySpecOAuthConfig(host?: string): OAuthConfig | null {
 
 class BodySpecClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, BODYSPEC_API_BASE, fetchFn);
+    super(accessToken, BODYSPEC_API_BASE, fetchFn, "bodyspec");
+  }
+
+  protected override async handleErrorResponse(response: Response, path: string): Promise<never> {
+    if (response.status === 401 || response.status === 403) {
+      throw new ProviderAuthenticationFailedError("BodySpec");
+    }
+    return super.handleErrorResponse(response, path);
   }
 
   async listResults(page = 1, pageSize = 100): Promise<BodySpecResultsListResponse> {
@@ -288,10 +272,6 @@ class BodySpecClient extends ProviderHttpClient {
     );
   }
 
-  async getRmr(resultId: string): Promise<BodySpecRmrResponse> {
-    return this.get(`/api/v1/users/me/results/${resultId}/dexa/rmr`, rmrResponseSchema);
-  }
-
   async getPercentiles(resultId: string): Promise<BodySpecPercentilesResponse> {
     return this.get(
       `/api/v1/users/me/results/${resultId}/dexa/percentiles`,
@@ -314,21 +294,23 @@ export class BodySpecProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("bodyspec", fetchFn);
   }
 
   validate(): string | null {
-    if (!process.env.BODYSPEC_CLIENT_ID) return "BODYSPEC_CLIENT_ID is not set";
-    if (!process.env.BODYSPEC_CLIENT_SECRET) return "BODYSPEC_CLIENT_SECRET is not set";
     return null;
   }
 
-  authSetup(options?: { host?: string }): ProviderAuthSetup | undefined {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = bodySpecOAuthConfig(options?.host);
-    if (!config) return undefined;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.#fetchFn),
+      exchangeCode: async (code, codeVerifier) => {
+        if (!codeVerifier) {
+          throw new Error("BodySpec PKCE verifier is missing");
+        }
+        return await exchangeCodeForTokens(config, code, this.#fetchFn, { codeVerifier });
+      },
       apiBaseUrl: BODYSPEC_API_BASE,
     };
   }
@@ -343,7 +325,10 @@ export class BodySpecProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const since = window.since;
+    const until = window.until;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -359,6 +344,7 @@ export class BodySpecProvider implements SyncProvider {
     }
 
     const client = new BodySpecClient(tokens.accessToken, this.#fetchFn);
+    const degradations: SyncDegradation[] = [];
 
     try {
       const scanCount = await withSyncLog(
@@ -367,40 +353,59 @@ export class BodySpecProvider implements SyncProvider {
         "dexa_scan",
         async () => {
           let count = 0;
-          let page = 1;
-          let hasMore = true;
 
-          while (hasMore) {
-            const listResponse = await client.listResults(page);
+          try {
+            const pages = await fetchProviderPages<BodySpecResultSummary, number>({
+              providerId: this.id,
+              stepName: "dexa_scan",
+              initialCursor: 1,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 1;
+                const listResponse = await client.listResults(currentPage);
+                return {
+                  items: listResponse.results,
+                  nextCursor: listResponse.pagination.has_more ? currentPage + 1 : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const result of page.items) {
+                  const resultTime = new Date(result.start_time);
+                  if (resultTime < since) continue;
+                  if (resultTime > until) continue;
 
-            for (const result of listResponse.results) {
-              const resultTime = new Date(result.start_time);
-              if (resultTime < since) continue;
-
-              try {
-                count += await this.#syncResult(db, client, result.result_id, resultTime);
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: result.result_id,
-                  cause: err,
-                });
-              }
-            }
-
-            hasMore = listResponse.pagination.has_more;
-            page++;
+                  try {
+                    count += await this.#syncResult(db, client, result.result_id, resultTime);
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: result.result_id,
+                      cause: err,
+                    });
+                  }
+                }
+              },
+            });
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            throw new PartialSyncError(
+              `dexa_scan: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
           }
 
-          return { recordCount: count, result: count };
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
       recordsSynced += scanCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `dexa_scan: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 
@@ -409,6 +414,7 @@ export class BodySpecProvider implements SyncProvider {
       recordsSynced,
       errors,
       duration: Date.now() - start,
+      degradations,
     };
   }
 
@@ -419,12 +425,11 @@ export class BodySpecProvider implements SyncProvider {
     fallbackTime: Date,
   ): Promise<number> {
     // Fetch all sections for this result. Some may not be available (404).
-    const [scanInfo, composition, boneDensity, visceralFat, rmr, percentiles] = await Promise.all([
+    const [scanInfo, composition, boneDensity, visceralFat, percentiles] = await Promise.all([
       catchNotFound(client.getScanInfo(resultId)),
       catchNotFound(client.getComposition(resultId)),
       catchNotFound(client.getBoneDensity(resultId)),
       catchNotFound(client.getVisceralFat(resultId)),
-      catchNotFound(client.getRmr(resultId)),
       catchNotFound(client.getPercentiles(resultId)),
     ]);
 
@@ -434,7 +439,6 @@ export class BodySpecProvider implements SyncProvider {
     const parsedComposition = parseComposition(composition);
     const parsedBoneDensity = boneDensity ? parseBoneDensity(boneDensity) : null;
     const parsedVisceralFat = visceralFat ? parseVisceralFat(visceralFat) : null;
-    const parsedRmr = rmr ? parseRmr(rmr) : null;
     const parsedPercentiles = percentiles ? parsePercentiles(percentiles) : null;
     const parsedScanInfo = scanInfo ? parseScanInfo(scanInfo) : null;
 
@@ -446,8 +450,6 @@ export class BodySpecProvider implements SyncProvider {
       ...parsedComposition,
       ...(parsedBoneDensity ?? {}),
       ...(parsedVisceralFat ?? {}),
-      restingMetabolicRateKcal: parsedRmr?.restingMetabolicRateKcal ?? null,
-      restingMetabolicRateRaw: parsedRmr?.restingMetabolicRateRaw ?? null,
       percentiles: parsedPercentiles ?? null,
       heightInches: parsedScanInfo?.heightInches ?? null,
       weightPounds: parsedScanInfo?.weightPounds ?? null,

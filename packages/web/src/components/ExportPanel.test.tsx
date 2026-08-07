@@ -83,4 +83,33 @@ describe("ExportPanel", () => {
       credentials: "include",
     });
   });
+
+  it("shows the server retry message when export enqueueing is unavailable", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ exports: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: () =>
+          Promise.resolve({
+            error:
+              "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+          }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    render(<ExportPanel />);
+
+    await screen.findByText("No exports available.");
+    fireEvent.click(screen.getByRole("button", { name: "Start Export" }));
+
+    expect(
+      await screen.findByText(
+        "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+      ),
+    ).toBeTruthy();
+  });
 });

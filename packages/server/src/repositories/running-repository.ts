@@ -1,18 +1,18 @@
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  clickHouseIntervalDayLowerBound,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const RUNNING_TYPES = ["running", "trail_running"];
-
-function runningTypeFilter(alias: string) {
-  const list = RUNNING_TYPES.map((type) => `'${type}'`).join(", ");
-  return sql.raw(`${alias}.activity_type IN (${list})`);
-}
+const RUNNING_TYPES = ["running"] as const;
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -158,6 +158,7 @@ const dynamicsRowSchema = z.object({
 });
 
 const paceTrendRowSchema = z.object({
+  activity_id: z.string(),
   date: dateStringSchema,
   name: z.string(),
   avg_speed: z.coerce.number(),
@@ -169,43 +170,65 @@ const paceTrendRowSchema = z.object({
 // Repository
 // ---------------------------------------------------------------------------
 
-/** Data access for running dynamics and pace trend analytics. */
+/**
+ * Data access for running dynamics and pace trend analytics.
+ *
+ * Reads from analytics.activity_summary in ClickHouse via the sensor store.
+ */
 export class RunningRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** Running dynamics per activity: cadence, stride length, stance time, vertical oscillation, pace, distance. */
-  async getDynamics(days: number): Promise<RunningDynamicsActivity[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+  async getDynamics(days: RangeDays): Promise<RunningDynamicsActivity[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "started_at");
+    const rows = await this.#sensorStore.query(
       dynamicsRowSchema,
-      sql`SELECT
-            asum.activity_id,
-            (asum.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-            asum.name,
-            asum.avg_cadence,
-            asum.avg_stride_length,
-            asum.avg_stance_time,
-            asum.avg_vertical_osc,
-            asum.avg_speed,
-            asum.total_distance
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${this.#userId}
-            AND asum.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ${runningTypeFilter("asum")}
-            AND asum.avg_speed > 0
-            AND asum.avg_cadence > 0
-          ORDER BY asum.started_at`,
+      `SELECT
+        toString(activity_id) AS activity_id,
+        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+        name,
+        avg_cadence,
+        avg_stride_length,
+        avg_stance_time,
+        avg_vertical_osc,
+        avg_speed,
+        total_distance
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        ${rangeFilter}
+        AND canonical_type IN {runningTypes:Array(String)}
+        AND avg_speed > 0
+        AND avg_cadence > 0
+      ORDER BY started_at`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        ...rangeDaysParams(days),
+        runningTypes: [...RUNNING_TYPES],
+      },
     );
 
-    return rows.map(
+    const visibleRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(rows, (row) => row.activity_id);
+
+    return visibleRows.map(
       (row) =>
         new RunningDynamicsActivity({
           activityId: row.activity_id,
@@ -222,26 +245,38 @@ export class RunningRepository {
   }
 
   /** Pace trend per running activity: average pace, distance, duration. */
-  async getPaceTrend(days: number): Promise<PaceTrendActivity[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+  async getPaceTrend(days: RangeDays): Promise<PaceTrendActivity[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "started_at");
+    const rows = await this.#sensorStore.query(
       paceTrendRowSchema,
-      sql`SELECT
-            (asum.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-            asum.name,
-            asum.avg_speed,
-            asum.total_distance,
-            EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at))::int AS duration_seconds
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${this.#userId}
-            AND asum.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ${runningTypeFilter("asum")}
-            AND asum.avg_speed > 0
-            AND asum.ended_at IS NOT NULL
-          ORDER BY asum.started_at`,
+      `SELECT
+        toString(activity_id) AS activity_id,
+        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+        name,
+        avg_speed,
+        total_distance,
+        toInt32(dateDiff('second', started_at, ended_at)) AS duration_seconds
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        ${rangeFilter}
+        AND canonical_type IN {runningTypes:Array(String)}
+        AND avg_speed > 0
+        AND ended_at IS NOT NULL
+      ORDER BY started_at`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        ...rangeDaysParams(days),
+        runningTypes: [...RUNNING_TYPES],
+      },
     );
 
-    return rows.map(
+    const visibleRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(rows, (row) => row.activity_id);
+
+    return visibleRows.map(
       (row) =>
         new PaceTrendActivity({
           date: row.date,

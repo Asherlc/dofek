@@ -20,16 +20,16 @@
  *   - Web and mobile dashboard, recovery, strain, nutrition, body, and provider screens
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { runMigrations } from "../src/db/migrate.ts";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { seedBodyHealth } from "./seed/body-health.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
-import { SeedRandom, USER_ID } from "./seed/helpers.ts";
+import { SeedRandom } from "./seed/helpers.ts";
 import { seedNutrition } from "./seed/nutrition.ts";
 import { seedRecovery } from "./seed/recovery.ts";
 import { seedReviewSurfaces } from "./seed/review-surfaces.ts";
 import { seedTraining } from "./seed/training.ts";
+import { verifySeed } from "./seed/verification.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -38,71 +38,14 @@ if (!databaseUrl) {
 }
 
 const sql = createTaggedQueryClient(databaseUrl);
-const drizzleDir = resolve(import.meta.dirname, "../drizzle");
-
-interface CountRow {
-  count: number;
-}
 
 // ---------------------------------------------------------------------------
-// Step 1: Apply all migrations and recreate views (same as setupTestDatabase)
+// Step 1: Apply all migrations
 // ---------------------------------------------------------------------------
 
 async function applyMigrations() {
-  const migrationFiles = readdirSync(drizzleDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .sort();
-
-  let applied = 0;
-  for (const fileName of migrationFiles) {
-    const content = readFileSync(resolve(drizzleDir, fileName), "utf-8");
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    for (const statement of statements) {
-      try {
-        await sql.unsafe(statement);
-      } catch {
-        // Ignore duplicate object errors on re-runs
-      }
-    }
-    applied++;
-  }
+  const applied = await runMigrations(databaseUrl);
   console.log(`Migrations: ${applied} files applied`);
-}
-
-async function recreateMaterializedViews() {
-  const viewsDir = join(drizzleDir, "_views");
-  if (existsSync(viewsDir)) {
-    const viewFiles = readdirSync(viewsDir)
-      .filter((fileName) => fileName.endsWith(".sql"))
-      .sort();
-
-    const parsed = viewFiles.map((fileName) => {
-      const content = readFileSync(join(viewsDir, fileName), "utf-8");
-      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
-      return { content, viewName: match?.[1] };
-    });
-
-    // Drop in reverse order (dependents first)
-    for (const { viewName } of [...parsed].reverse()) {
-      if (!viewName) continue;
-      await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
-    }
-
-    // Create in filename order
-    for (const { content } of parsed) {
-      const statements = content
-        .split("--> statement-breakpoint")
-        .map((statement) => statement.trim())
-        .filter(Boolean);
-      for (const statement of statements) {
-        await sql.unsafe(statement);
-      }
-    }
-    console.log(`Views: ${viewFiles.length} recreated`);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -114,126 +57,10 @@ async function seedData() {
   await seedCore(sql);
   const random = new SeedRandom(42);
   await seedRecovery(sql, random);
-  await seedTraining(sql, random);
+  await seedTraining(sql);
   await seedNutrition(sql, random);
-  await seedBodyHealth(sql, random);
+  await seedBodyHealth(sql);
   await seedReviewSurfaces(sql, random);
-}
-
-// ---------------------------------------------------------------------------
-// Step 3: Refresh materialized views
-// ---------------------------------------------------------------------------
-
-async function refreshViews() {
-  const viewNames = [
-    "v_sleep",
-    "v_daily_metrics",
-    "v_body_measurement",
-    "v_activity",
-    "deduped_sensor",
-    "activity_summary",
-  ];
-  for (const viewName of viewNames) {
-    await sql.unsafe(`REFRESH MATERIALIZED VIEW fitness.${viewName}`);
-  }
-  console.log("Views refreshed");
-}
-
-async function verifySeed() {
-  const minimums = [
-    [
-      "providers",
-      5,
-      `SELECT COUNT(*)::int AS count FROM fitness.provider WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "daily metrics",
-      170,
-      `SELECT COUNT(*)::int AS count FROM fitness.daily_metrics WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "sleep sessions",
-      100,
-      `SELECT COUNT(*)::int AS count FROM fitness.sleep_session WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "activities",
-      90,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "metric stream samples",
-      1_000,
-      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "nutrition days",
-      85,
-      `SELECT COUNT(*)::int AS count FROM fitness.nutrition_daily WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "food entries",
-      20,
-      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "body measurements",
-      50,
-      `SELECT COUNT(*)::int AS count FROM fitness.body_measurement WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "lab results",
-      8,
-      `SELECT COUNT(*)::int AS count FROM fitness.lab_result WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "journal entries",
-      30,
-      `SELECT COUNT(*)::int AS count FROM fitness.journal_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "breathwork sessions",
-      10,
-      `SELECT COUNT(*)::int AS count FROM fitness.breathwork_session WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "cycle periods",
-      4,
-      `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "v_sleep rows",
-      90,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_sleep WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "v_daily_metrics rows",
-      170,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "activity summary rows",
-      80,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity_summary WHERE user_id = '${USER_ID}'`,
-    ],
-  ] as const;
-
-  console.log("\nVerification:");
-  for (const [label, minimum, query] of minimums) {
-    const count = await readCount(query);
-    if (count < minimum) {
-      throw new Error(
-        `Seed verification failed for ${label}: expected at least ${minimum}, got ${count}`,
-      );
-    }
-    console.log(`  ${label}: ${count}`);
-  }
-}
-
-async function readCount(query: string): Promise<number> {
-  const [row] = await sql.unsafe<CountRow[]>(query);
-  if (!row) throw new Error(`Count query returned no rows: ${query}`);
-  return row.count;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,11 +82,8 @@ async function main() {
   } else {
     await applyMigrations();
   }
-  await recreateMaterializedViews();
-
   await seedData();
-  await refreshViews();
-  await verifySeed();
+  await verifySeed(sql);
   console.log(`\nDone. Start the server with:`);
   console.log(`  DATABASE_URL="${databaseUrl}" cd packages/server && pnpm dev`);
   console.log(`\nBrowser cookie for auth: session=dev-session`);

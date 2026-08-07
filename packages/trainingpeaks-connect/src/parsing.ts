@@ -1,4 +1,4 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { mapTrainingPeaksSport } from "./sports.ts";
 import type { TrainingPeaksPmcEntry, TrainingPeaksWorkout } from "./types.ts";
 
@@ -8,7 +8,7 @@ import type { TrainingPeaksPmcEntry, TrainingPeaksWorkout } from "./types.ts";
 
 export interface ParsedWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -21,7 +21,6 @@ export interface ParsedWorkout {
   normalizedPower?: number;
   cadenceAverage?: number;
   elevationGain?: number;
-  calories?: number;
   trainingStressScore?: number;
   intensityFactor?: number;
   feeling?: number;
@@ -75,7 +74,6 @@ export function parseTrainingPeaksWorkout(raw: TrainingPeaksWorkout): ParsedWork
     normalizedPower: raw.normalizedPowerActual,
     cadenceAverage: raw.cadenceAverage,
     elevationGain: raw.elevationGain,
-    calories: raw.calories,
     trainingStressScore: raw.tssActual ?? raw.tssPlanned,
     intensityFactor: raw.if ?? raw.ifPlanned,
     feeling: raw.feeling,

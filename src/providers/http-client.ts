@@ -10,6 +10,7 @@
  */
 
 import type { z } from "zod";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 
 /**
  * Base class for providers that make HTTP requests with bearer token auth.
@@ -35,10 +36,11 @@ export class ProviderHttpClient {
     accessToken: string,
     apiBase: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    providerId = "unknown",
   ) {
     this.accessToken = accessToken;
     this.apiBase = apiBase;
-    this.fetchFn = fetchFn;
+    this.fetchFn = createProviderRateLimitFetch(providerId, fetchFn);
   }
 
   /**

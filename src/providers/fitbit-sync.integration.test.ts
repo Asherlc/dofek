@@ -1,8 +1,10 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -23,6 +25,9 @@ import {
   parseFitbitWeightLog,
 } from "./fitbit/parsers.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./fitbit/provider.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeActivity(overrides: Partial<FitbitActivity> = {}): FitbitActivity {
   return {
@@ -158,6 +163,7 @@ function fitbitHandlers(opts?: {
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("FitbitProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -169,6 +175,11 @@ describe("FitbitProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -209,7 +220,13 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("fitbit");
     expect(result.errors).toHaveLength(0);
@@ -223,12 +240,12 @@ describe("FitbitProvider.sync() (integration)", () => {
 
     const ride = activityRows.find((r) => r.externalId === "5001");
     if (!ride) throw new Error("expected activity 5001");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Outdoor Bike Ride");
 
     const run = activityRows.find((r) => r.externalId === "5002");
     if (!run) throw new Error("expected activity 5002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify sleep
     const sleepRows = await ctx.db
@@ -256,21 +273,63 @@ describe("FitbitProvider.sync() (integration)", () => {
     const firstDaily = dailyRows[0];
     if (!firstDaily) throw new Error("expected daily metrics");
     expect(firstDaily.steps).toBe(10432);
-    expect(firstDaily.restingHr).toBe(58);
     expect(firstDaily.exerciseMinutes).toBe(70); // 25 + 45
     expect(firstDaily.flightsClimbed).toBe(12);
 
     // Verify weight
-    const weightRows = await ctx.db
-      .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.providerId, "fitbit"));
-    expect(weightRows).toHaveLength(1);
+    const weightRows = metricStreamCapture.publishedMetricStreamRows;
+    const bodyRows = weightRows.filter((row) => row.externalId === "7001");
+    expect(bodyRows.length).toBeGreaterThanOrEqual(2);
 
-    const weight = weightRows[0];
+    const weight = bodyRows.find((row) => row.channel === "body_weight");
     if (!weight) throw new Error("expected body measurement");
-    expect(weight.weightKg).toBeCloseTo(82.5);
-    expect(weight.bodyFatPct).toBeCloseTo(18.3);
+    expect(weight.scalar).toBeCloseTo(82.5);
+    expect(bodyRows.find((row) => row.channel === "body_fat_percentage")?.scalar).toBeCloseTo(18.3);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      providerId: "fitbit",
+      externalId: "7001",
+      userId: TEST_USER_ID,
+    });
+  });
+
+  it("publishes webhook body updates through the injected metric stream publisher", async () => {
+    await saveTokens(ctx.db, "fitbit", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "activity heartrate sleep weight",
+    });
+
+    server.use(
+      ...fitbitHandlers({
+        weightLogs: fakeWeightLogs(),
+      }),
+    );
+
+    const provider = new FitbitProvider();
+    const result = await provider.syncWebhookEvent(
+      ctx.db,
+      {
+        ownerExternalId: "fitbit-user-1",
+        eventType: "update",
+        objectType: "body",
+        metadata: { date: "2026-03-01" },
+      },
+      { metricStreamPublisher: metricStreamCapture.publisher },
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(metricStreamCapture.publishedMetricStreamRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: "body_weight", scalar: 82.5 }),
+        expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.3 }),
+      ]),
+    );
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      providerId: "fitbit",
+      externalId: "7001",
+      userId: TEST_USER_ID,
+    });
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -292,8 +351,20 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -321,7 +392,13 @@ describe("FitbitProvider.sync() (integration)", () => {
     server.use(...fitbitHandlers());
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "fitbit");
@@ -329,11 +406,17 @@ describe("FitbitProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fitbit"));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -374,6 +457,8 @@ describe("fitbitOAuthConfig", () => {
     expect(config?.scopes).toContain("activity");
     expect(config?.scopes).toContain("sleep");
     expect(config?.usePkce).toBe(true);
+    expect(config?.revokeUrl).toBe("https://api.fitbit.com/oauth2/revoke");
+    expect(config?.tokenAuthMethod).toBe("basic");
   });
 
   it("uses custom OAUTH_REDIRECT_URI when set", () => {
@@ -426,7 +511,7 @@ describe("FitbitProvider.authSetup()", () => {
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
     const provider = new FitbitProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("fitbit.com");
   });
@@ -441,49 +526,49 @@ describe("FitbitProvider.authSetup()", () => {
 
 describe("mapFitbitActivityType", () => {
   it("maps run/treadmill to running", () => {
-    expect(mapFitbitActivityType("Morning Run", 0)).toBe("running");
-    expect(mapFitbitActivityType("Treadmill Workout", 0)).toBe("running");
+    expect(mapFitbitActivityType("Morning Run", 0).canonicalType).toBe("running");
+    expect(mapFitbitActivityType("Treadmill Workout", 0).canonicalType).toBe("running");
   });
 
   it("maps bike/cycling to cycling", () => {
-    expect(mapFitbitActivityType("Outdoor Bike Ride", 0)).toBe("cycling");
-    expect(mapFitbitActivityType("Indoor Cycling Class", 0)).toBe("cycling");
-    expect(mapFitbitActivityType("Spinning", 0)).toBe("cycling");
+    expect(mapFitbitActivityType("Outdoor Bike Ride", 0).canonicalType).toBe("cycling");
+    expect(mapFitbitActivityType("Indoor Cycling Class", 0).canonicalType).toBe("cycling");
+    expect(mapFitbitActivityType("Spinning", 0).canonicalType).toBe("cycling");
   });
 
   it("maps walk to walking", () => {
-    expect(mapFitbitActivityType("Walk", 0)).toBe("walking");
+    expect(mapFitbitActivityType("Walk", 0).canonicalType).toBe("walking");
   });
 
   it("maps swim to swimming", () => {
-    expect(mapFitbitActivityType("Swimming Laps", 0)).toBe("swimming");
+    expect(mapFitbitActivityType("Swimming Laps", 0).canonicalType).toBe("swimming");
   });
 
   it("maps hike to hiking", () => {
-    expect(mapFitbitActivityType("Hike", 0)).toBe("hiking");
-    expect(mapFitbitActivityType("Hiking Trail", 0)).toBe("hiking");
+    expect(mapFitbitActivityType("Hike", 0).canonicalType).toBe("hiking");
+    expect(mapFitbitActivityType("Hiking Trail", 0).canonicalType).toBe("hiking");
   });
 
   it("maps yoga to yoga", () => {
-    expect(mapFitbitActivityType("Yoga", 0)).toBe("yoga");
+    expect(mapFitbitActivityType("Yoga", 0).canonicalType).toBe("yoga");
   });
 
   it("maps weight/strength to strength", () => {
-    expect(mapFitbitActivityType("Weight Lifting", 0)).toBe("strength");
-    expect(mapFitbitActivityType("Strength Training", 0)).toBe("strength");
+    expect(mapFitbitActivityType("Weight Lifting", 0).canonicalType).toBe("strength");
+    expect(mapFitbitActivityType("Strength Training", 0).canonicalType).toBe("strength");
   });
 
   it("maps elliptical to elliptical", () => {
-    expect(mapFitbitActivityType("Elliptical", 0)).toBe("elliptical");
+    expect(mapFitbitActivityType("Elliptical", 0).canonicalType).toBe("elliptical");
   });
 
   it("maps rowing to rowing", () => {
-    expect(mapFitbitActivityType("Rowing Machine", 0)).toBe("rowing");
+    expect(mapFitbitActivityType("Rowing Machine", 0).canonicalType).toBe("rowing");
   });
 
   it("maps unknown to other", () => {
-    expect(mapFitbitActivityType("Kickboxing Class", 0)).toBe("other");
-    expect(mapFitbitActivityType("Frisbee", 0)).toBe("other");
+    expect(mapFitbitActivityType("Kickboxing Class", 0).canonicalType).toBe("other");
+    expect(mapFitbitActivityType("Frisbee", 0).canonicalType).toBe("other");
   });
 });
 
@@ -636,7 +721,7 @@ describe("parseFitbitActivity — edge cases", () => {
     const parsed = parseFitbitActivity(act);
     expect(parsed.steps).toBeUndefined();
     expect(parsed.distanceKm).toBeUndefined();
-    expect(parsed.activityType).toBe("yoga");
+    expect(parsed.activityType.canonicalType).toBe("yoga");
   });
 });
 
@@ -686,7 +771,12 @@ describe("FitbitClient — error handling", () => {
     );
 
     const client = new FitbitClient("token");
-    await expect(client.getWeightLogs("2026-03-01")).rejects.toThrow("API error 429");
+    const error = await client
+      .getWeightLogs("2026-03-01")
+      .catch((caughtError: unknown) => caughtError);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "fitbit");
+    expect(error).toHaveProperty("responseBody", "Rate Limited");
   });
 
   it("throws on non-OK daily summary response", async () => {
@@ -798,7 +888,13 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
     weightServer.use(...fitbitWeightErrorHandlers({ weightError: true }));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // The weight fetch returns 429, caught at lines 632-636
     const weightError = result.errors.find((e) => e.message.includes("weight"));
@@ -808,55 +904,49 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
 
 describe("FitbitProvider.getUserIdentity()", () => {
   const originalEnv = { ...process.env };
-  const identityServer = setupServer();
-
-  beforeAll(() => {
-    identityServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
-  });
 
   afterEach(() => {
     process.env = { ...originalEnv };
-    identityServer.resetHandlers();
-  });
-
-  afterAll(() => {
-    identityServer.close();
   });
 
   it("returns identity from profile API", async () => {
     process.env.FITBIT_CLIENT_ID = "test-id";
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
 
-    identityServer.use(
-      http.get("https://api.fitbit.com/1/user/-/profile.json", () => {
-        return HttpResponse.json({ user: { encodedId: "ABC123", displayName: "Fit User" } });
-      }),
-    );
+    const fetchProfile: typeof fetch = vi.fn(async (input, init) => {
+      expect(input).toBe("https://api.fitbit.com/1/user/-/profile.json");
+      expect(init?.headers).toEqual({ Authorization: "Bearer test-token" });
+      return Response.json({ user: { encodedId: "ABC123", displayName: "Fit User" } });
+    });
 
-    const provider = new FitbitProvider();
+    const provider = new FitbitProvider(fetchProfile);
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     const identity = await setup.getUserIdentity("test-token");
     expect(identity.providerAccountId).toBe("ABC123");
     expect(identity.email).toBeNull();
+    expect(identity.emailVerified).toBe(false);
     expect(identity.name).toBe("Fit User");
+    expect(fetchProfile).toHaveBeenCalledOnce();
   });
 
   it("throws on API error", async () => {
     process.env.FITBIT_CLIENT_ID = "test-id";
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
 
-    identityServer.use(
-      http.get("https://api.fitbit.com/1/user/-/profile.json", () => {
-        return new HttpResponse("Too Many Requests", { status: 429 });
-      }),
-    );
+    const fetchProfile: typeof fetch = vi.fn(async () => {
+      return new Response("Too Many Requests", { status: 429 });
+    });
 
-    const provider = new FitbitProvider();
+    const provider = new FitbitProvider(fetchProfile);
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
-    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
-      "Fitbit profile API error (429)",
-    );
+    const error = await setup
+      .getUserIdentity("bad-token")
+      .catch((caughtError: unknown) => caughtError);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "fitbit");
+    expect(error).toHaveProperty("responseBody", "Too Many Requests");
+    expect(fetchProfile).toHaveBeenCalledOnce();
   });
 });

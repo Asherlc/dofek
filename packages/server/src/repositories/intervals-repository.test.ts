@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import { average, IntervalsRepository, maxVal, summarizeSegment } from "./intervals-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -160,7 +161,7 @@ function makeDb(rows: Record<string, unknown>[] = []) {
 
 describe("IntervalsRepository", () => {
   describe("getByActivity", () => {
-    it("returns rows from the database", async () => {
+    it("aggregates per-interval metrics from sensor samples", async () => {
       const intervalRows = [
         {
           id: "int-1",
@@ -170,31 +171,133 @@ describe("IntervalsRepository", () => {
           started_at: "2024-01-15T10:00:00Z",
           ended_at: "2024-01-15T10:10:00Z",
           duration_seconds: 600,
-          avg_heart_rate: 145,
-          max_heart_rate: 160,
-          avg_power: 200,
-          max_power: 250,
-          avg_speed: 8.5,
-          max_speed: 9.2,
-          avg_cadence: 90,
-          distance_meters: 5000,
-          elevation_gain: 50,
+        },
+      ];
+      const sensorRows = [
+        {
+          recorded_at: "2024-01-15T10:00:00Z",
+          heart_rate: 140,
+          power: 200,
+          speed: 8.0,
+          cadence: 90,
+          lat: null,
+          lng: null,
+          altitude: null,
+        },
+        {
+          recorded_at: "2024-01-15T10:05:00Z",
+          heart_rate: 150,
+          power: 220,
+          speed: 8.5,
+          cadence: 92,
+          lat: null,
+          lng: null,
+          altitude: null,
         },
       ];
       const db = makeDb(intervalRows);
-      const repo = new IntervalsRepository(db, "user-1");
+      const sensorStore = makeMockSensorStore(sensorRows);
+      const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
-      expect(db.execute).toHaveBeenCalledTimes(1);
       expect(result).toHaveLength(1);
       expect(result[0]?.id).toBe("int-1");
-      expect(result[0]?.avg_power).toBe(200);
+      expect(result[0]?.avg_power).toBe(210);
+      expect(result[0]?.max_power).toBe(220);
+      expect(result[0]?.avg_heart_rate).toBe(145);
+    });
+
+    it("uses only samples inside the interval and computes distance and climbing from GPS samples", async () => {
+      const intervalRows = [
+        {
+          id: "int-gps",
+          interval_index: 0,
+          label: "Hill",
+          interval_type: "climb",
+          started_at: "2024-01-15T10:00:00Z",
+          ended_at: "2024-01-15T10:10:00Z",
+          duration_seconds: 600,
+        },
+      ];
+      const sensorRows = [
+        {
+          recorded_at: "2024-01-15T09:59:00Z",
+          heart_rate: 100,
+          power: 999,
+          speed: 1,
+          cadence: 10,
+          lat: 37,
+          lng: -122,
+          altitude: 100,
+        },
+        {
+          recorded_at: "2024-01-15T10:00:00Z",
+          heart_rate: 140,
+          power: 0,
+          speed: 8,
+          cadence: 0,
+          lat: 37,
+          lng: -122,
+          altitude: 10,
+        },
+        {
+          recorded_at: "2024-01-15T10:05:00Z",
+          heart_rate: null,
+          power: null,
+          speed: null,
+          cadence: null,
+          lat: 37.0009,
+          lng: -122,
+          altitude: 8,
+        },
+        {
+          recorded_at: "2024-01-15T10:10:00Z",
+          heart_rate: 160,
+          power: 240,
+          speed: 10,
+          cadence: 95,
+          lat: 37.0018,
+          lng: -122,
+          altitude: 25,
+        },
+        {
+          recorded_at: "2024-01-15T10:11:00Z",
+          heart_rate: 200,
+          power: 500,
+          speed: 20,
+          cadence: 120,
+          lat: 37.01,
+          lng: -122,
+          altitude: 200,
+        },
+      ];
+      const db = makeDb(intervalRows);
+      const sensorStore = makeMockSensorStore(sensorRows);
+      const repo = new IntervalsRepository(db, "user-1", sensorStore);
+
+      const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: "int-gps",
+        avg_heart_rate: 150,
+        max_heart_rate: 160,
+        avg_power: 240,
+        max_power: 240,
+        avg_speed: 9,
+        max_speed: 10,
+        avg_cadence: 95,
+        elevation_gain: 17,
+      });
+      expect(result[0]?.distance_meters).toBeGreaterThan(190);
+      expect(result[0]?.distance_meters).toBeLessThan(210);
     });
 
     it("returns empty array when no intervals exist", async () => {
       const db = makeDb([]);
-      const repo = new IntervalsRepository(db, "user-1");
+      const sensorStore = makeMockSensorStore([]);
+      const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
@@ -203,9 +306,14 @@ describe("IntervalsRepository", () => {
   });
 
   describe("detect", () => {
+    function makeRepo(rows: Record<string, unknown>[] = []) {
+      const db = { execute: vi.fn() };
+      const sensorStore = makeMockSensorStore(rows);
+      return new IntervalsRepository(db, "user-1", sensorStore);
+    }
+
     it("returns empty array when no metric data", async () => {
-      const db = makeDb([]);
-      const repo = new IntervalsRepository(db, "user-1");
+      const repo = makeRepo([]);
 
       const result = await repo.detect("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
@@ -245,15 +353,14 @@ describe("IntervalsRepository", () => {
           max_speed: 8.4,
         },
       ];
-      const db = makeDb(rows);
-      const repo = new IntervalsRepository(db, "user-1");
+      const repo = makeRepo(rows);
 
       const result = await repo.detect("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
       expect(result).toHaveLength(1);
       expect(result[0]?.intervalIndex).toBe(0);
-      expect(result[0]?.startedAt).toBe("2024-01-15T10:00:00.000Z");
-      expect(result[0]?.endedAt).toBe("2024-01-15T10:02:00.000Z");
+      expect(result[0]?.startedAt).toBe("2024-01-15T10:00:00Z");
+      expect(result[0]?.endedAt).toBe("2024-01-15T10:02:00Z");
     });
 
     it("splits into multiple intervals on large power change", async () => {
@@ -278,7 +385,6 @@ describe("IntervalsRepository", () => {
           max_hr: 148,
           max_speed: 8.6,
         },
-        // Big jump: 205 → 300 = 46% increase (> 15% threshold)
         {
           minute_start: "2024-01-15T10:02:00Z",
           avg_power: 300,
@@ -300,16 +406,15 @@ describe("IntervalsRepository", () => {
           max_speed: 10.2,
         },
       ];
-      const db = makeDb(rows);
-      const repo = new IntervalsRepository(db, "user-1");
+      const repo = makeRepo(rows);
 
       const result = await repo.detect("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
       expect(result).toHaveLength(2);
       expect(result[0]?.intervalIndex).toBe(0);
-      expect(result[0]?.endedAt).toBe("2024-01-15T10:01:00.000Z");
+      expect(result[0]?.endedAt).toBe("2024-01-15T10:01:00Z");
       expect(result[1]?.intervalIndex).toBe(1);
-      expect(result[1]?.startedAt).toBe("2024-01-15T10:02:00.000Z");
+      expect(result[1]?.startedAt).toBe("2024-01-15T10:02:00Z");
     });
 
     it("falls back to heart rate when power is null", async () => {
@@ -334,7 +439,6 @@ describe("IntervalsRepository", () => {
           max_hr: 128,
           max_speed: 8.6,
         },
-        // Big HR jump: 122 → 160 = 31% (> 15%)
         {
           minute_start: "2024-01-15T10:02:00Z",
           avg_power: null,
@@ -346,8 +450,7 @@ describe("IntervalsRepository", () => {
           max_speed: 9.5,
         },
       ];
-      const db = makeDb(rows);
-      const repo = new IntervalsRepository(db, "user-1");
+      const repo = makeRepo(rows);
 
       const result = await repo.detect("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
@@ -367,8 +470,7 @@ describe("IntervalsRepository", () => {
           max_speed: 8.5,
         },
       ];
-      const db = makeDb(rows);
-      const repo = new IntervalsRepository(db, "user-1");
+      const repo = makeRepo(rows);
 
       const result = await repo.detect("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 

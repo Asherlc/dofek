@@ -1,6 +1,4 @@
-import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
-import type { TokenSet } from "dofek/auth/oauth";
 import { queryCache } from "dofek/lib/cache";
 import { escapeAttribute, escapeText } from "entities";
 import rateLimit from "express-rate-limit";
@@ -11,11 +9,20 @@ import {
   type IdentityFlowStore,
 } from "../../lib/identity-flow-store.ts";
 import {
+  InMemoryMobileAuthExchangeStore,
+  type MobileAuthExchangeStore,
+  RedisMobileAuthExchangeStore,
+} from "../../lib/mobile-auth-exchange-store.ts";
+import {
   getOAuth1SecretStore,
   getOAuthStateStore,
   type OAuth1SecretStore,
   type OAuthStateStore,
 } from "../../lib/oauth-state-store.ts";
+import {
+  getPendingEmailSignupStore,
+  type PendingEmailSignupStore,
+} from "../../lib/pending-email-signup-store.ts";
 import { logger } from "../../logger.ts";
 
 function escapeHtml(str: string): string {
@@ -53,6 +60,8 @@ export function oauthSuccessHtml(
 
 let oauthStateStore: OAuthStateStore;
 let oauth1SecretStore: OAuth1SecretStore;
+let mobileAuthExchangeStore: MobileAuthExchangeStore;
+let pendingEmailSignupStore: PendingEmailSignupStore;
 
 /**
  * Server-side state store for identity provider OAuth flows.
@@ -62,22 +71,6 @@ let oauth1SecretStore: OAuth1SecretStore;
  */
 let identityFlowStore: IdentityFlowStore;
 
-export interface PendingEmailSignupEntry {
-  providerId: string;
-  providerName: string;
-  apiBaseUrl?: string;
-  identity: {
-    providerAccountId: string;
-    email: null;
-    name: string | null;
-  };
-  tokens: TokenSet;
-  mobileScheme?: string;
-  returnTo?: string;
-}
-
-const pendingEmailSignupMap = new Map<string, PendingEmailSignupEntry>();
-
 // Module-level db reference, set during router creation
 let db: import("dofek/db").Database;
 
@@ -86,6 +79,11 @@ export function initAuthStores(database: import("dofek/db").Database): void {
   identityFlowStore = getIdentityFlowStore();
   oauthStateStore = getOAuthStateStore();
   oauth1SecretStore = getOAuth1SecretStore();
+  pendingEmailSignupStore = getPendingEmailSignupStore();
+  mobileAuthExchangeStore =
+    process.env.NODE_ENV === "test"
+      ? new InMemoryMobileAuthExchangeStore()
+      : new RedisMobileAuthExchangeStore();
 }
 
 export function getDb(): import("dofek/db").Database {
@@ -104,29 +102,40 @@ export function getIdentityFlowStoreRef(): IdentityFlowStore {
   return identityFlowStore;
 }
 
+export function getMobileAuthExchangeStoreRef(): MobileAuthExchangeStore {
+  return mobileAuthExchangeStore;
+}
+
+export function getPendingEmailSignupStoreRef(): PendingEmailSignupStore {
+  return pendingEmailSignupStore;
+}
+
 export async function storeIdentityFlow(state: string, entry: IdentityFlowEntry): Promise<void> {
   await identityFlowStore.save(state, entry);
 }
 
-export function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {
-  const token = randomBytes(16).toString("hex");
-  pendingEmailSignupMap.set(token, entry);
-  setTimeout(() => pendingEmailSignupMap.delete(token), 10 * 60 * 1000);
-  return token;
-}
-
-export function getPendingEmailSignup(token: string): PendingEmailSignupEntry | undefined {
-  return pendingEmailSignupMap.get(token);
-}
-
-export function deletePendingEmailSignup(token: string): void {
-  pendingEmailSignupMap.delete(token);
-}
-
 export function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
   if (!returnTo) return undefined;
-  if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return undefined;
+  if (!isSafeRelativeRedirect(returnTo)) return undefined;
   return returnTo;
+}
+
+const REDIRECT_BASE_ORIGIN = "https://dofek.local";
+
+/** Validate that a redirect target stays on the app origin (CodeQL-safe open redirect guard). */
+export function isSafeRelativeRedirect(path: string): boolean {
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return false;
+  }
+  try {
+    return new URL(path, REDIRECT_BASE_ORIGIN).origin === REDIRECT_BASE_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
+export function getPostLoginRedirect(returnTo: string | undefined, isNewUser: boolean): string {
+  return sanitizeReturnTo(returnTo) ?? (isNewUser ? "/?newUser=true" : "/");
 }
 
 export function completeSignupHtml(
@@ -145,11 +154,11 @@ export function completeSignupHtml(
 }
 
 export async function persistProviderConnection(params: {
-  db: import("dofek/db").Database;
+  db: import("dofek/db").SyncDatabase;
   provider: import("dofek/providers/types").Provider;
   providerName: string;
   apiBaseUrl?: string;
-  tokens: TokenSet;
+  tokens: import("dofek/auth/oauth").TokenSet;
   userId: string;
 }): Promise<void> {
   const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
@@ -167,15 +176,11 @@ export async function persistProviderConnection(params: {
     `[auth] ${params.provider.id} tokens saved for user ${params.userId}. Expires: ${params.tokens.expiresAt.toISOString()}`,
   );
 
-  try {
-    const { isWebhookProvider } = await import("dofek/providers/types");
-    if (isWebhookProvider(params.provider)) {
-      const { registerWebhookForProvider } = await import("../webhooks.ts");
-      await registerWebhookForProvider(params.db, params.provider);
-      logger.info(`[auth] Webhook registered for ${params.provider.id}`);
-    }
-  } catch (webhookErr: unknown) {
-    logger.warn(`[auth] Failed to register webhook for ${params.provider.id}: ${webhookErr}`);
+  const { isWebhookProvider } = await import("dofek/providers/types");
+  if (isWebhookProvider(params.provider)) {
+    const { registerWebhookForProvider } = await import("../webhooks.ts");
+    await registerWebhookForProvider(params.db, params.provider, params.userId);
+    logger.info(`[auth] Webhook registered for ${params.provider.id}`);
   }
 }
 

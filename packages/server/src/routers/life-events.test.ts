@@ -1,15 +1,36 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const { mockCachedProtectedQuery, mockCaptureException, mockInvalidateUserQueryDomains } =
+  vi.hoisted(() => ({
+    mockCachedProtectedQuery: vi.fn(),
+    mockCaptureException: vi.fn(),
+    mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+  }));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
+
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: mockCaptureException,
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: { query: (...args: unknown[]) => Promise<unknown[]> };
+    }>()
     .create();
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -37,10 +58,55 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
     timezone: "UTC",
+    sensorStore: makeSensorStore(),
   });
 }
 
+function makeSleepRow(
+  date: string,
+  durationMinutes: number,
+  deepMinutes: number,
+  remMinutes: number,
+  efficiencyPct: number,
+) {
+  return {
+    date,
+    started_at: `${date}T04:00:00Z`,
+    ended_at: `${date}T11:00:00Z`,
+    duration_minutes: durationMinutes,
+    deep_minutes: deepMinutes,
+    rem_minutes: remMinutes,
+    light_minutes: durationMinutes - deepMinutes - remMinutes,
+    awake_minutes: 0,
+    efficiency_pct: efficiencyPct,
+    staging_available: true,
+  };
+}
+
+function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: unknown[] = []) {
+  return {
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (query.includes("analytics.v_body_measurement")) return bodyRows;
+      if (query.includes("analytics.daily_sleep")) return sleepRows;
+      return [{ date: "2026-01-01", resting_hr: 52 }];
+    }),
+  };
+}
+
 describe("lifeEventsRouter", () => {
+  beforeEach(() => {
+    mockCaptureException.mockClear();
+    mockInvalidateUserQueryDomains.mockClear();
+  });
+
+  it("uses short caches for life event read queries", () => {
+    const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map(
+      (call) => call[0],
+    );
+
+    expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }, { maxAge: 120_000 }]);
+  });
+
   describe("list", () => {
     it("returns life events from repository", async () => {
       const events = [
@@ -91,6 +157,7 @@ describe("lifeEventsRouter", () => {
 
       expect(result.id).toBe("evt-new");
       expect(result.label).toBe("New job");
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["lifeEvents"]);
     });
 
     it("accepts all optional fields", async () => {
@@ -120,6 +187,31 @@ describe("lifeEventsRouter", () => {
       expect(result.notes).toBe("Knee sprain");
     });
 
+    it("returns a nullable association to the personal experiment that owns an annotation", async () => {
+      const caller = makeCaller([
+        {
+          id: "evt-experiment",
+          label: "Late flight",
+          started_at: "2026-08-08",
+          ended_at: null,
+          category: "lifestyle",
+          ongoing: false,
+          notes: "Arrived after midnight",
+          personal_experiment_id: "11111111-1111-4111-8111-111111111111",
+          created_at: "2026-08-08T10:00:00Z",
+          user_id: "user-1",
+        },
+      ]);
+
+      const result = await caller.create({
+        label: "Late flight",
+        startedAt: "2026-08-08",
+        personalExperimentId: "11111111-1111-4111-8111-111111111111",
+      });
+
+      expect(result.personal_experiment_id).toBe("11111111-1111-4111-8111-111111111111");
+    });
+
     it("uses default values for optional fields", async () => {
       const insertedRow = {
         id: "evt-3",
@@ -145,6 +237,27 @@ describe("lifeEventsRouter", () => {
       expect(result.category).toBeNull();
       expect(result.notes).toBeNull();
     });
+
+    it("returns a precondition error when the linked experiment is unavailable", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.create({
+          label: "Travel",
+          startedAt: "2026-03-15",
+          personalExperimentId: "11111111-1111-4111-8111-111111111111",
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "Choose one of your own experiments to link this annotation.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Choose one of your own experiments to link this annotation.",
+        }),
+        { tags: { trpcPath: "lifeEvents.create" } },
+      );
+    });
   });
 
   describe("update", () => {
@@ -168,6 +281,7 @@ describe("lifeEventsRouter", () => {
       });
 
       expect(result?.label).toBe("Updated label");
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["lifeEvents"]);
     });
 
     it("returns null when no changes provided", async () => {
@@ -177,6 +291,27 @@ describe("lifeEventsRouter", () => {
       });
 
       expect(result).toBeNull();
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
+    });
+
+    it("returns a precondition error when the linked experiment is unavailable", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.update({
+          id: "00000000-0000-0000-0000-000000000001",
+          personalExperimentId: "11111111-1111-4111-8111-111111111111",
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "Choose one of your own experiments to link this annotation.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Choose one of your own experiments to link this annotation.",
+        }),
+        { tags: { trpcPath: "lifeEvents.update" } },
+      );
     });
   });
 
@@ -188,6 +323,7 @@ describe("lifeEventsRouter", () => {
       });
 
       expect(result).toEqual({ success: true });
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["lifeEvents"]);
     });
   });
 
@@ -218,24 +354,6 @@ describe("lifeEventsRouter", () => {
           },
         ])
         .mockResolvedValueOnce([
-          {
-            period: "before",
-            nights: 28,
-            avg_sleep_min: 420,
-            avg_deep_min: 60,
-            avg_rem_min: 90,
-            avg_efficiency: 85,
-          },
-          {
-            period: "after",
-            nights: 30,
-            avg_sleep_min: 450,
-            avg_deep_min: 70,
-            avg_rem_min: 100,
-            avg_efficiency: 88,
-          },
-        ])
-        .mockResolvedValueOnce([
           { period: "before", measurements: 4, avg_weight: 75, avg_body_fat: 15 },
           { period: "after", measurements: 4, avg_weight: 74, avg_body_fat: 14.5 },
         ]);
@@ -244,6 +362,16 @@ describe("lifeEventsRouter", () => {
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(
+          [
+            { period: "before", measurements: 4, avg_weight: 75, avg_body_fat: 15 },
+            { period: "after", measurements: 4, avg_weight: 74, avg_body_fat: 14.5 },
+          ],
+          [
+            makeSleepRow("2026-01-01", 420, 60, 90, 85),
+            makeSleepRow("2026-02-01", 450, 70, 100, 88),
+          ],
+        ),
       });
 
       const result = await caller.analyze({

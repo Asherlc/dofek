@@ -1,0 +1,6 @@
+# Keep the migration-running app worker stopped while the one-shot migration
+# container is the only process allowed to advance the database schema.
+services:
+  worker:
+    deploy:
+      replicas: 0

@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const invalidateNutritionCaches = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const captureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/nutrition-cache.ts", () => ({ invalidateNutritionCaches }));
+vi.mock("@sentry/node", () => ({ captureException }));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -68,11 +74,60 @@ describe("supplementsRouter", () => {
     it("returns result from repository", async () => {
       const { caller } = await makeCaller([]);
       const result = await caller.list();
-      expect(result).toBeDefined();
+      expect(result).toEqual([]);
+    });
+
+    it("preserves the exact installed-client V1 definition shape", async () => {
+      const { caller } = await makeCaller([
+        {
+          definition_id: "supplement-version-1",
+          supplement_id: "schedule-1",
+          user_id: "user-1",
+          schedule_id: "schedule-1",
+          supersedes_definition_id: null,
+          name: "Vitamin D",
+          amount: 50,
+          unit: "mcg",
+          form: null,
+          description: null,
+          meal: "breakfast",
+          sort_order: 0,
+          effective_from: "2026-01-01",
+          effective_to: null,
+          nutrition_data_id: null,
+          created_at: "2026-01-01T00:00:00.000Z",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+
+      expect(await caller.list()).toEqual([
+        {
+          name: "Vitamin D",
+          amount: 50,
+          unit: "mcg",
+          meal: "breakfast",
+        },
+      ]);
     });
   });
 
   describe("save", () => {
+    it("invalidates nutrition analytics after replacing the stack", async () => {
+      const { caller } = await makeCaller([]);
+
+      await caller.save({ supplements: [] });
+
+      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
+    });
+
+    it("preserves the exact installed-client V1 success shape", async () => {
+      const { caller } = await makeCaller([]);
+      expect(await caller.save({ supplements: [] })).toEqual({
+        success: true,
+        count: 0,
+      });
+    });
+
     it("rejects empty supplement name", async () => {
       const { caller } = await makeCaller([]);
       await expect(caller.save({ supplements: [{ name: "" }] })).rejects.toThrow();
@@ -110,6 +165,301 @@ describe("supplementsRouter", () => {
         caller.save({ supplements: [{ name: "Test", unit: "x".repeat(11) }] }),
       ).rejects.toThrow();
     });
+
+    it("requires the supplements input property", async () => {
+      const { caller } = await makeCaller([]);
+
+      await expect(Reflect.apply(caller.save, undefined, [{}])).rejects.toThrow();
+    });
+
+    it("rejects malformed repository output", async () => {
+      const save = vi.spyOn(SupplementsRepository.prototype, "save").mockResolvedValue({
+        success: true,
+        count: -1,
+      });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.save({ supplements: [] })).rejects.toThrow();
+      save.mockRestore();
+    });
+  });
+
+  describe("occurrences", () => {
+    it("returns server-computed statuses and counts", async () => {
+      const { caller } = await makeCaller([
+        {
+          id: "event-1",
+          schedule_id: "schedule-1",
+          supplement_id: "supplement-1",
+          supplement_name: "Vitamin D",
+          scheduled_date: "2026-07-27",
+          status: "planned",
+          supersedes_event_id: null,
+          provider_id: "auto-supplements",
+          source_name: "Auto-Supplements",
+          recorded_at: "2026-07-27T08:00:00.000Z",
+          created_at: "2026-07-27T08:00:00.000Z",
+          is_current: true,
+        },
+      ]);
+
+      expect(await caller.occurrences({ days: 7 })).toEqual({
+        counts: { planned: 1, taken: 0, skipped: 0, unknown: 0 },
+        occurrences: [
+          {
+            currentEventId: "event-1",
+            scheduleId: "schedule-1",
+            supplementId: "supplement-1",
+            supplementName: "Vitamin D",
+            scheduledDate: "2026-07-27",
+            status: "planned",
+            history: [
+              {
+                id: "event-1",
+                providerId: "auto-supplements",
+                recordedAt: "2026-07-27T08:00:00.000Z",
+                sourceName: "Auto-Supplements",
+                status: "planned",
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    it("rejects unbounded history windows", async () => {
+      const { caller } = await makeCaller([]);
+      await expect(caller.occurrences({ days: 31 })).rejects.toThrow();
+    });
+
+    it("applies the default history window when days is omitted", async () => {
+      const occurrences = vi
+        .spyOn(SupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({})).resolves.toEqual({
+        counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+        occurrences: [],
+      });
+      expect(occurrences).toHaveBeenCalledWith(7);
+      occurrences.mockRestore();
+    });
+
+    it("accepts both bounded history-window endpoints", async () => {
+      const occurrences = vi
+        .spyOn(SupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({ days: 1 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 30 })).resolves.toBeDefined();
+      expect(occurrences).toHaveBeenNthCalledWith(1, 1);
+      expect(occurrences).toHaveBeenNthCalledWith(2, 30);
+      occurrences.mockRestore();
+    });
+
+    it("rejects history windows below the lower bound", async () => {
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({ days: 0 })).rejects.toThrow();
+    });
+  });
+
+  describe("recordDose", () => {
+    it("records a correction and invalidates nutrition caches", async () => {
+      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
+        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+        scheduledDate: "2026-07-27",
+        status: "taken",
+      });
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "taken",
+        }),
+      ).resolves.toEqual({
+        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+        scheduledDate: "2026-07-27",
+        status: "taken",
+      });
+      expect(recordDose).toHaveBeenCalledWith("b0ec9f35-fb09-40bb-b536-fd7970ec7c62", "taken");
+      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
+      recordDose.mockRestore();
+    });
+
+    it("maps stale-leaf conflicts to an actionable conflict error", async () => {
+      const recordDose = vi
+        .spyOn(SupplementsRepository.prototype, "recordDose")
+        .mockRejectedValue(new SupplementDoseConflictError());
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "skipped",
+        }),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "Supplement status changed. Reload and try again.",
+      });
+      recordDose.mockRestore();
+    });
+
+    it("maps unexpected persistence failures to a semantic server error", async () => {
+      const failure = new Error("database connection closed");
+      const recordDose = vi
+        .spyOn(SupplementsRepository.prototype, "recordDose")
+        .mockRejectedValue(failure);
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "taken",
+        }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Could not record the supplement dose. Reload and try again.",
+        cause: failure,
+      });
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        tags: { operation: "supplements.recordDose" },
+      });
+      recordDose.mockRestore();
+    });
+
+    it("requires the event id and a supported status", async () => {
+      const { caller } = await makeCaller([]);
+      const validId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
+
+      await expect(Reflect.apply(caller.recordDose, undefined, [{}])).rejects.toThrow();
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
+        ]),
+      ).rejects.toThrow();
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId: validId, status: "unknown" },
+        ]),
+      ).rejects.toThrow();
+    });
+
+    it("accepts both supported statuses", async () => {
+      const recordDose = vi
+        .spyOn(SupplementsRepository.prototype, "recordDose")
+        .mockImplementation(async (_eventId, status) => ({
+          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+          scheduledDate: "2026-07-27",
+          status,
+        }));
+      const { caller } = await makeCaller([]);
+      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
+
+      await expect(
+        caller.recordDose({ expectedCurrentEventId, status: "taken" }),
+      ).resolves.toMatchObject({ status: "taken" });
+      await expect(
+        caller.recordDose({ expectedCurrentEventId, status: "skipped" }),
+      ).resolves.toMatchObject({ status: "skipped" });
+      recordDose.mockRestore();
+    });
+
+    it("rejects malformed repository output", async () => {
+      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
+        id: "not-a-uuid",
+        scheduledDate: "2026-07-27",
+        status: "taken",
+      });
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "taken",
+        }),
+      ).rejects.toThrow();
+      recordDose.mockRestore();
+    });
+  });
+
+  describe("schema initialization", () => {
+    it("enforces the save input and exact output after a fresh module load", async () => {
+      vi.resetModules();
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.save({ supplements: [] })).resolves.toEqual({
+        success: true,
+        count: 0,
+      });
+    });
+
+    it("enforces the occurrence default and inclusive day bounds after a fresh module load", async () => {
+      vi.resetModules();
+      const { SupplementsRepository: FreshSupplementsRepository } = await import(
+        "../repositories/supplements-repository.ts"
+      );
+      const occurrences = vi
+        .spyOn(FreshSupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({})).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 1 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 30 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 0 })).rejects.toThrow();
+      await expect(caller.occurrences({ days: 31 })).rejects.toThrow();
+      expect(occurrences.mock.calls).toEqual([[7], [1], [30]]);
+      occurrences.mockRestore();
+    });
+
+    it("enforces record-dose input and exact output after a fresh module load", async () => {
+      vi.resetModules();
+      const { SupplementsRepository: FreshSupplementsRepository } = await import(
+        "../repositories/supplements-repository.ts"
+      );
+      const recordDose = vi
+        .spyOn(FreshSupplementsRepository.prototype, "recordDose")
+        .mockResolvedValue({
+          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+          scheduledDate: "2026-07-27",
+          status: "taken",
+        });
+      const { caller } = await makeCaller([]);
+      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
+
+      await expect(caller.recordDose({ expectedCurrentEventId, status: "taken" })).resolves.toEqual(
+        {
+          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+          scheduledDate: "2026-07-27",
+          status: "taken",
+        },
+      );
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
+        ]),
+      ).rejects.toThrow();
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId, status: "unknown" },
+        ]),
+      ).rejects.toThrow();
+      expect(recordDose).toHaveBeenCalledTimes(1);
+      recordDose.mockRestore();
+    });
   });
 });
 
@@ -117,7 +467,11 @@ describe("supplementsRouter", () => {
 // toApiSupplement utility tests
 // ---------------------------------------------------------------------------
 
-import { toApiSupplement } from "../repositories/supplements-repository.ts";
+import {
+  SupplementDoseConflictError,
+  SupplementsRepository,
+  toApiSupplement,
+} from "../repositories/supplements-repository.ts";
 
 describe("toApiSupplement()", () => {
   it("maps name from row", () => {

@@ -179,7 +179,7 @@ describe("resolveOAuthTokens", () => {
         providerName: "Polar",
         getOAuthConfig: () => fakeConfig,
       }),
-    ).rejects.toThrow("Polar authorization revoked");
+    ).rejects.toThrow("Polar refresh token was revoked or expired.");
 
     expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "polar");
     expect(mockSaveTokens).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe("resolveOAuthTokens", () => {
         providerName: "Wahoo",
         getOAuthConfig: () => fakeConfig,
       }),
-    ).rejects.toThrow("Wahoo authorization revoked");
+    ).rejects.toThrow("Wahoo refresh token was revoked or expired.");
 
     expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "wahoo");
     expect(mockSaveTokens).not.toHaveBeenCalled();

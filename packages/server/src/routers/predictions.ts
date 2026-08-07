@@ -1,11 +1,27 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { PredictionsRepository } from "../repositories/predictions-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
+
 export const predictionsRouter = router({
   /** Available prediction targets */
-  targets: cachedProtectedQuery(CacheTTL.LONG).query(({ ctx }) => {
-    const repo = new PredictionsRepository(ctx.db, ctx.userId, ctx.timezone);
+  targets: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(({ ctx }) => {
+    const sensorStore = requireSensorStore(ctx.sensorStore, "predictions.targets");
+    const repo = new PredictionsRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
     return repo.getTargets().map((target) => target.toDetail());
   }),
 
@@ -14,7 +30,7 @@ export const predictionsRouter = router({
    * (HRV, resting HR, sleep, weight) and activity-level targets
    * (cardio power, strength volume).
    */
-  predict: cachedProtectedQuery(CacheTTL.LONG)
+  predict: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(
       z.object({
         target: z.string().default("hrv"),
@@ -22,7 +38,8 @@ export const predictionsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new PredictionsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "predictions.predict");
+      const repo = new PredictionsRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       return repo.predict(input.target, input.days);
     }),
 });

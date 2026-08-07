@@ -5,8 +5,53 @@
  * `SyncDatabase` mock — eliminating the need for type suppression
  * comments throughout provider test files.
  */
+import { sql } from "drizzle-orm";
 import { vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import type {
+  ProviderDataGenerationContext,
+  ProviderDataScope,
+} from "../db/provider-data-deletion.ts";
+import type { Database } from "../db/typed-sql.ts";
+import {
+  createMetricStreamDeletedEvent,
+  createMetricStreamEvent,
+  type MetricStreamEventV2,
+  type MetricStreamRowInput,
+} from "../metric-stream/events.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+
+export function fakeJwt(expirationEpochSeconds: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
+    "base64url",
+  );
+  return `${header}.${payload}.signature`;
+}
+
+export async function resolveProviderDataGenerationsForTest(
+  database: Database,
+  scopes: readonly ProviderDataScope[],
+): Promise<ProviderDataGenerationContext> {
+  await database.execute(sql`SELECT 0 AS generation`);
+  return {
+    generations: scopes.map((scope) => ({ ...scope, generation: 0 })),
+    operationRevision: "1000000000000000",
+  };
+}
+
+export function makeTransactionalTestDatabase<TDatabase extends Database>(
+  database: TDatabase,
+): TDatabase & {
+  transaction<TResult>(work: (transaction: TDatabase) => Promise<TResult>): Promise<TResult>;
+} {
+  async function transaction<TResult>(
+    work: (transaction: TDatabase) => Promise<TResult>,
+  ): Promise<TResult> {
+    return work(database);
+  }
+  return Object.assign(database, { transaction });
+}
 
 /**
  * Options for configuring the mock database behavior.
@@ -16,7 +61,7 @@ export interface MockDatabaseOptions {
   tokensResult?: Record<string, unknown>[];
   /** Number of upsert calls to allow before throwing `insertError` */
   insertErrorAfterCalls?: number;
-  /** Error to throw from `onConflictDoUpdate` after `insertErrorAfterCalls` calls */
+  /** Error to throw from conflict insert handlers after `insertErrorAfterCalls` calls */
   insertError?: Error;
   /** Rows returned by `execute()` (default: []) */
   executeResult?: unknown[];
@@ -46,6 +91,39 @@ export interface MockDatabaseResult {
   spies: MockDatabaseSpies;
 }
 
+export interface CapturingMetricStreamPublisher {
+  publisher: MetricStreamEventPublisher;
+  publishedMetricStreamRows: MetricStreamRowInput[];
+  deletedMetricStreamScopes: Parameters<
+    NonNullable<MetricStreamEventPublisher["replaceRows"]>
+  >[0][];
+}
+
+export function createCapturingMetricStreamPublisher(): CapturingMetricStreamPublisher {
+  const publishedMetricStreamRows: MetricStreamRowInput[] = [];
+  const deletedMetricStreamScopes: Parameters<
+    NonNullable<MetricStreamEventPublisher["replaceRows"]>
+  >[0][] = [];
+  return {
+    publishedMetricStreamRows,
+    deletedMetricStreamScopes,
+    publisher: {
+      async publishRows(rows, options): Promise<MetricStreamEventV2[]> {
+        publishedMetricStreamRows.push(...rows);
+        return rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
+      },
+      async replaceRows(scope, rows, operationRevision) {
+        publishedMetricStreamRows.push(...rows);
+        deletedMetricStreamScopes.push(scope);
+        return {
+          deleted: createMetricStreamDeletedEvent(scope, operationRevision),
+          rows: rows.map((row) => createMetricStreamEvent(row, operationRevision)),
+        };
+      },
+    },
+  };
+}
+
 /**
  * Create a mock database that satisfies the `SyncDatabase` interface.
  *
@@ -65,14 +143,20 @@ export function createMockDatabase(options: MockDatabaseOptions = {}): MockDatab
   let upsertCallCount = 0;
 
   const returning = vi.fn().mockResolvedValue([]);
-
-  const onConflictDoUpdate = vi.fn().mockImplementation(() => {
+  const recordInsertAttempt = () => {
     upsertCallCount++;
     if (insertError && upsertCallCount > insertErrorAfterCalls) throw insertError;
+  };
+
+  const onConflictDoUpdate = vi.fn().mockImplementation(() => {
+    recordInsertAttempt();
     return { returning };
   });
 
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+  const onConflictDoNothing = vi.fn().mockImplementation(() => {
+    recordInsertAttempt();
+    return undefined;
+  });
 
   const values = vi.fn().mockReturnValue({
     onConflictDoNothing,
@@ -109,12 +193,12 @@ export function createMockDatabase(options: MockDatabaseOptions = {}): MockDatab
   // Build the db object that structurally satisfies SyncDatabase.
   // We use a function-typed variable so TypeScript infers the mock
   // return values' chain types without needing type assertions.
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase<SyncDatabase>({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return { db, spies };
 }

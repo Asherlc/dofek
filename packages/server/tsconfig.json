@@ -12,6 +12,6 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"],
+  "include": ["src", "../../src/activity-export/garmin-fitsdk.d.ts"],
   "exclude": ["node_modules", "src/**/*.test.ts"]
 }

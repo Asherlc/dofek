@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import type {
   FitbitActivity,
   FitbitDailySummary,
@@ -12,11 +16,10 @@ import type {
 
 export interface ParsedFitbitActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
-  calories: number;
   distanceKm?: number;
   steps?: number;
   averageHeartRate?: number;
@@ -32,6 +35,7 @@ export interface ParsedFitbitSleep {
   lightMinutes?: number;
   remMinutes?: number;
   awakeMinutes?: number;
+  stagingAvailable: boolean;
   efficiencyPct: number;
   sleepType: "main" | "not_main";
   isNap: boolean;
@@ -41,7 +45,6 @@ export interface ParsedFitbitDailyMetrics {
   date: string;
   steps: number;
   restingHr?: number;
-  activeEnergyKcal: number;
   exerciseMinutes: number;
   distanceKm?: number;
   flightsClimbed?: number;
@@ -58,7 +61,7 @@ export interface ParsedFitbitBodyMeasurement {
 // Activity type mapping
 // ============================================================
 
-const ACTIVITY_NAME_PATTERNS: Array<[RegExp, CanonicalActivityType]> = [
+const ACTIVITY_NAME_PATTERNS: Array<[RegExp, LegacyActivityType]> = [
   [/\brun\b|treadmill/i, "running"],
   [/\bbike\b|cycling|spinning/i, "cycling"],
   [/\bwalk\b/i, "walking"],
@@ -73,13 +76,13 @@ const ACTIVITY_NAME_PATTERNS: Array<[RegExp, CanonicalActivityType]> = [
 export function mapFitbitActivityType(
   activityName: string,
   _activityTypeId: number,
-): CanonicalActivityType {
+): ProviderActivityType {
   for (const [pattern, type] of ACTIVITY_NAME_PATTERNS) {
     if (pattern.test(activityName)) {
-      return type;
+      return resolveProviderActivityType(_activityTypeId, type);
     }
   }
-  return "other";
+  return resolveProviderActivityType(_activityTypeId, "other");
 }
 
 // ============================================================
@@ -96,7 +99,6 @@ export function parseFitbitActivity(rawActivity: FitbitActivity): ParsedFitbitAc
     name: rawActivity.activityName,
     startedAt,
     endedAt,
-    calories: rawActivity.calories,
     distanceKm: rawActivity.distance,
     steps: rawActivity.steps,
     averageHeartRate: rawActivity.averageHeartRate,
@@ -106,6 +108,8 @@ export function parseFitbitActivity(rawActivity: FitbitActivity): ParsedFitbitAc
 
 export function parseFitbitSleep(sleep: FitbitSleepLog): ParsedFitbitSleep {
   const summary = sleep.levels.summary;
+  const stagingAvailable =
+    summary.deep != null && summary.light != null && summary.rem != null && summary.wake != null;
 
   return {
     externalId: String(sleep.logId),
@@ -116,6 +120,7 @@ export function parseFitbitSleep(sleep: FitbitSleepLog): ParsedFitbitSleep {
     lightMinutes: summary.light?.minutes,
     remMinutes: summary.rem?.minutes,
     awakeMinutes: summary.wake?.minutes,
+    stagingAvailable,
     efficiencyPct: sleep.efficiency,
     sleepType: sleep.isMainSleep ? "main" : "not_main",
     isNap: !sleep.isMainSleep,
@@ -132,7 +137,6 @@ export function parseFitbitDailySummary(
     date,
     steps: daily.summary.steps,
     restingHr: daily.summary.restingHeartRate,
-    activeEnergyKcal: daily.summary.activityCalories,
     exerciseMinutes: daily.summary.fairlyActiveMinutes + daily.summary.veryActiveMinutes,
     distanceKm: totalDistance?.distance,
     flightsClimbed: daily.summary.floors,

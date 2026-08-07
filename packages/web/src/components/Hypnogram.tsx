@@ -1,5 +1,12 @@
+import { formatTimeOnly } from "@dofek/format/format";
 import { sleepStageColors } from "@dofek/scoring/colors";
-import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepStage {
@@ -53,12 +60,9 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
       formatter: (params: { value: [string, number] }[]) => {
         const point = params[0];
         if (!point) return "";
-        const time = new Date(point.value[0]).toLocaleTimeString("en-US", {
-          hour: "numeric",
-          minute: "2-digit",
-        });
+        const time = formatTimeOnly(point.value[0]);
         const label = STAGE_LABELS[point.value[1]] ?? "Unknown";
-        return `${time}<br/><strong>${label}</strong>`;
+        return `${escapeTooltipHtml(time)}<br/><strong>${escapeTooltipHtml(label)}</strong>`;
       },
     }),
     xAxis: {
@@ -66,11 +70,7 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
       axisLabel: {
         color: chartThemeColors.axisLabel,
         fontSize: 11,
-        formatter: (value: string) =>
-          new Date(value).toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-          }),
+        formatter: (value: string) => formatTimeOnly(value),
       },
     },
     yAxis: {
@@ -115,6 +115,7 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
       empty={data.length === 0}
       height={200}
       emptyMessage="No sleep stage data available"
+      timeRangeMode="data"
     />
   );
 }

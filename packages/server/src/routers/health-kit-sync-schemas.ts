@@ -1,3 +1,4 @@
+import type { LegacyActivityType } from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { protectedProcedure } from "../trpc.ts";
 
@@ -9,7 +10,6 @@ export const INTEGER_DAILY_COLUMNS = new Set([
   "steps",
   "flights_climbed",
   "exercise_minutes",
-  "resting_hr",
   "stand_hours",
 ]);
 
@@ -18,7 +18,6 @@ export const INTEGER_METRIC_STREAM_COLUMNS = new Set([
   "heart_rate",
   "power",
   "cadence",
-  "gps_accuracy",
   "accumulated_power",
   "stress",
 ]);
@@ -47,7 +46,7 @@ export const workoutActivitySchema = z.object({
   activityType: z.number(),
   startDate: z.string(),
   endDate: z.string().optional(),
-  metadata: z.record(z.union([z.string(), z.number()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 });
 
 export const workoutSampleSchema = z.object({
@@ -56,11 +55,10 @@ export const workoutSampleSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
   duration: z.number(),
-  totalEnergyBurned: z.number().nullish(),
   totalDistance: z.number().nullish(),
   sourceName: z.string(),
   sourceBundle: z.string(),
-  metadata: z.record(z.union([z.string(), z.number()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   workoutActivities: z.array(workoutActivitySchema).optional(),
 });
 
@@ -112,32 +110,36 @@ export const bodyMeasurementTypes: Record<
 /** Additive daily metrics -- values that should be summed within a day */
 export const additiveDailyMetricTypes: Record<
   string,
-  { column: string; transform?: (value: number) => number }
+  {
+    column: string;
+    accumulatorKey: AdditiveDailyMetricAccumulatorKey;
+    transform?: (value: number) => number;
+  }
 > = {
-  HKQuantityTypeIdentifierStepCount: { column: "steps" },
-  HKQuantityTypeIdentifierActiveEnergyBurned: { column: "active_energy_kcal" },
-  HKQuantityTypeIdentifierBasalEnergyBurned: { column: "basal_energy_kcal" },
+  HKQuantityTypeIdentifierStepCount: { column: "steps", accumulatorKey: "steps" },
   HKQuantityTypeIdentifierDistanceWalkingRunning: {
     column: "distance_km",
+    accumulatorKey: "distanceKm",
     transform: (value) => value / 1000,
   },
-  HKQuantityTypeIdentifierDistanceCycling: {
-    column: "cycling_distance_km",
-    transform: (value) => value / 1000,
+  HKQuantityTypeIdentifierFlightsClimbed: {
+    column: "flights_climbed",
+    accumulatorKey: "flightsClimbed",
   },
-  HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
-  HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
+  HKQuantityTypeIdentifierAppleExerciseTime: {
+    column: "exercise_minutes",
+    accumulatorKey: "exerciseMinutes",
+  },
 };
 
 /** Point-in-time daily metrics -- use latest value for the day */
 export const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
-  HKQuantityTypeIdentifierRestingHeartRate: { column: "resting_hr" },
   HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { column: "hrv" },
-  HKQuantityTypeIdentifierVO2Max: { column: "vo2max" },
   HKQuantityTypeIdentifierWalkingSpeed: { column: "walking_speed" },
   HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
   HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
   HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
+  HKQuantityTypeIdentifierAppleWalkingSteadiness: { column: "walking_steadiness" },
 };
 
 /** Metric stream types and their column names */
@@ -154,11 +156,11 @@ export const metricStreamTypes: Record<string, { column: string }> = {
  * HKWorkoutActivityType rawValue → canonical snake_case activity type.
  *
  * Keys are the UInt rawValues from Apple's HKWorkoutActivityType enum.
- * Values must match the fitness.activity_type DB enum (snake_case).
+ * Values must match the fitness.canonical_type DB enum (snake_case).
  *
  * Reference: https://developer.apple.com/documentation/healthkit/hkworkoutactivitytype
  */
-export const workoutActivityTypeMap: Record<string, string> = {
+export const workoutActivityTypeMap: Record<string, LegacyActivityType> = {
   "1": "american_football",
   "2": "archery",
   "3": "australian_football",
@@ -250,74 +252,75 @@ export const HEALTHKIT_STAGE_MAP: Record<string, string> = {
   awake: "awake",
 };
 
-/** GPS channel names for route data */
+/** Scalar metric channel names for route-associated data. */
 export const ROUTE_CHANNELS: Array<{
   channel: string;
   getValue: (location: RouteLocation) => number | null | undefined;
   round?: boolean;
 }> = [
-  { channel: "lat", getValue: (location) => location.lat },
-  { channel: "lng", getValue: (location) => location.lng },
   { channel: "altitude", getValue: (location) => location.altitude },
   { channel: "speed", getValue: (location) => location.speed },
-  {
-    channel: "gps_accuracy",
-    getValue: (location) => location.horizontalAccuracy,
-    round: true,
-  },
 ];
 
 /** Aggregated daily metric values for a single date */
 export interface DailyMetricAccumulator {
-  steps: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
-  distanceKm: number;
-  cyclingDistanceKm: number;
-  flightsClimbed: number;
-  exerciseMinutes: number;
-  restingHr: number | null;
+  steps: number | null;
+  distanceKm: number | null;
+  flightsClimbed: number | null;
+  exerciseMinutes: number | null;
   hrv: number | null;
-  vo2max: number | null;
   walkingSpeed: number | null;
   walkingStepLength: number | null;
   walkingDoubleSupportPct: number | null;
   walkingAsymmetryPct: number | null;
+  walkingSteadiness: number | null;
 }
+
+export type AdditiveDailyMetricAccumulatorKey =
+  | "steps"
+  | "distanceKm"
+  | "flightsClimbed"
+  | "exerciseMinutes";
 
 export function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
-    steps: 0,
-    activeEnergyKcal: 0,
-    basalEnergyKcal: 0,
-    distanceKm: 0,
-    cyclingDistanceKm: 0,
-    flightsClimbed: 0,
-    exerciseMinutes: 0,
-    restingHr: null,
+    steps: null,
+    distanceKm: null,
+    flightsClimbed: null,
+    exerciseMinutes: null,
     hrv: null,
-    vo2max: null,
     walkingSpeed: null,
     walkingStepLength: null,
     walkingDoubleSupportPct: null,
     walkingAsymmetryPct: null,
+    walkingSteadiness: null,
   };
 }
 
 /** Column name to accumulator key mapping */
 export const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   steps: "steps",
-  active_energy_kcal: "activeEnergyKcal",
-  basal_energy_kcal: "basalEnergyKcal",
   distance_km: "distanceKm",
-  cycling_distance_km: "cyclingDistanceKm",
   flights_climbed: "flightsClimbed",
   exercise_minutes: "exerciseMinutes",
-  resting_hr: "restingHr",
   hrv: "hrv",
-  vo2max: "vo2max",
   walking_speed: "walkingSpeed",
   walking_step_length: "walkingStepLength",
   walking_double_support_pct: "walkingDoubleSupportPct",
   walking_asymmetry_pct: "walkingAsymmetryPct",
+  walking_steadiness: "walkingSteadiness",
 };
+
+/** Provider-estimated calorie expenditure that is deliberately ignored at ingestion. */
+export const ignoredCalorieExpenditureTypes = new Set([
+  "HKQuantityTypeIdentifierActiveEnergyBurned",
+  "HKQuantityTypeIdentifierBasalEnergyBurned",
+]);
+
+export function getDailyMetricAccumulatorKey(column: string): keyof DailyMetricAccumulator {
+  const key = columnToAccumulatorKey[column];
+  if (!key) {
+    throw new Error(`Missing daily metric accumulator mapping for column: ${column}`);
+  }
+  return key;
+}

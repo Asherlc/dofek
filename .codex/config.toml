@@ -9,12 +9,9 @@ args = ["-y", "chrome-devtools-mcp@latest"]
 url = "https://mcp.axiom.co/mcp"
 headers = {}
 
-[mcp_servers.github]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp_servers.github.env]
-GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_PERSONAL_ACCESS_TOKEN}"
-
 [mcp_servers.sentry]
 url = "https://mcp.sentry.dev/mcp"
+
+[mcp_servers.xcodebuildmcp]
+command = "pnpm"
+args = ["dlx", "xcodebuildmcp@2.6.2", "mcp"]

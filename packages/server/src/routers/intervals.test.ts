@@ -165,7 +165,13 @@ describe("summarizeSegment", () => {
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{
+      db: unknown;
+      userId: string | null;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -173,6 +179,23 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function makeSensorStore(rows: unknown[] = []): SensorStore {
+  return {
+    query: vi.fn().mockResolvedValue(rows),
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -195,14 +218,44 @@ const createCaller = createTestCallerFactory(intervalsRouter);
 
 describe("intervalsRouter", () => {
   describe("byActivity", () => {
+    it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.byActivity({
+          activityId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ).rejects.toThrow("intervals.byActivity requires the ClickHouse activity analytics store");
+    });
+
     it("returns intervals for an activity", async () => {
-      const rows = [
-        { interval_number: 1, avg_power: 200, avg_hr: 140 },
-        { interval_number: 2, avg_power: 250, avg_hr: 155 },
+      const intervalRows = [
+        {
+          id: "i-1",
+          interval_index: 1,
+          label: null,
+          interval_type: null,
+          started_at: "2026-03-01T10:00:00Z",
+          ended_at: "2026-03-01T10:05:00Z",
+          duration_seconds: 300,
+        },
+        {
+          id: "i-2",
+          interval_index: 2,
+          label: null,
+          interval_type: null,
+          started_at: "2026-03-01T10:05:00Z",
+          ended_at: "2026-03-01T10:10:00Z",
+          duration_seconds: 300,
+        },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn().mockResolvedValue(intervalRows) },
         userId: "user-1",
+        sensorStore: makeSensorStore([]),
       });
       const result = await caller.byActivity({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -214,6 +267,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        sensorStore: makeSensorStore([]),
       });
       const result = await caller.byActivity({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -225,6 +279,7 @@ describe("intervalsRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        sensorStore: makeSensorStore([]),
       });
       await expect(caller.byActivity({ activityId: "not-a-uuid" })).rejects.toThrow();
     });
@@ -234,8 +289,9 @@ describe("intervalsRouter", () => {
     it("returns detected intervals", async () => {
       const rows = [{ minute_start: "2026-03-01T10:00:00", avg_power: 200, avg_hr: 140 }];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.detect({
         activityId: "00000000-0000-0000-0000-000000000001",
@@ -245,8 +301,9 @@ describe("intervalsRouter", () => {
 
     it("rejects invalid UUID", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore([]),
       });
       await expect(caller.detect({ activityId: "not-a-uuid" })).rejects.toThrow();
     });

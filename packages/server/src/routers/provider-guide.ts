@@ -6,7 +6,7 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 export { PROVIDER_GUIDE_SETTINGS_KEY };
 
 export const providerGuideRouter = router({
-  status: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
+  status: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     const setting = await repo.get(PROVIDER_GUIDE_SETTINGS_KEY);
     return { dismissed: setting?.value === true };

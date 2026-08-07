@@ -1,8 +1,10 @@
+import { formatTimeOnly } from "@dofek/format/format";
 import { sleepStageColors } from "@dofek/scoring/colors";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Polyline, Rect } from "react-native-svg";
 import { colors } from "../../theme";
+import { AccessibleChart } from "../AccessibleChart";
 
 interface SleepStage {
   stage: string;
@@ -51,6 +53,10 @@ export function Hypnogram({ data }: HypnogramProps) {
   const timeStart = new Date(firstStage?.started_at ?? "").getTime();
   const timeEnd = new Date(lastStage?.ended_at ?? "").getTime();
   const timeSpan = timeEnd - timeStart;
+  const accessibleRows = data.map((stage) => ({
+    label: STAGE_LABEL[STAGE_VALUE[stage.stage] ?? 2] ?? stage.stage,
+    value: `${formatTimeOnly(stage.started_at)} to ${formatTimeOnly(stage.ended_at)}`,
+  }));
 
   function timeToX(time: string): number {
     const ms = new Date(time).getTime() - timeStart;
@@ -92,90 +98,94 @@ export function Hypnogram({ data }: HypnogramProps) {
   });
 
   // Time labels (start and end)
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-
   return (
-    <View style={styles.container}>
-      <View
-        style={styles.chart}
-        onLayout={(e) =>
-          setLayout({
-            width: e.nativeEvent.layout.width,
-            height: e.nativeEvent.layout.height,
-          })
-        }
-      >
-        {layout.width > 0 && layout.height > 0 && (
-          <Svg width={layout.width} height={layout.height}>
-            {/* Grid lines for each stage */}
-            {STAGE_LABEL.map((stageLabel, i) => {
-              const gridY = PADDING.top + (i / 3) * chartHeight;
-              return (
-                <Line
-                  key={stageLabel}
-                  x1={PADDING.left}
-                  y1={gridY}
-                  x2={layout.width - PADDING.right}
-                  y2={gridY}
-                  stroke={colors.surfaceSecondary}
-                  strokeWidth={0.5}
-                />
-              );
-            })}
+    <AccessibleChart
+      title="Sleep stages"
+      summary="Sleep stages over the recorded sleep period."
+      rows={accessibleRows}
+    >
+      <View style={styles.container}>
+        <View
+          style={styles.chart}
+          onLayout={(e) =>
+            setLayout({
+              width: e.nativeEvent.layout.width,
+              height: e.nativeEvent.layout.height,
+            })
+          }
+        >
+          {layout.width > 0 && layout.height > 0 && (
+            <Svg width={layout.width} height={layout.height}>
+              {/* Grid lines for each stage */}
+              {STAGE_LABEL.map((stageLabel, i) => {
+                const gridY = PADDING.top + (i / 3) * chartHeight;
+                return (
+                  <Line
+                    key={stageLabel}
+                    x1={PADDING.left}
+                    y1={gridY}
+                    x2={layout.width - PADDING.right}
+                    y2={gridY}
+                    stroke={colors.surfaceSecondary}
+                    strokeWidth={0.5}
+                  />
+                );
+              })}
 
-            {/* Colored fill areas */}
-            {rects}
+              {/* Colored fill areas */}
+              {rects}
 
-            {/* Step line */}
-            <Polyline
-              points={points.join(" ")}
-              fill="none"
-              stroke={colors.textSecondary}
-              strokeWidth={2}
-            />
-          </Svg>
-        )}
-      </View>
+              {/* Step line */}
+              <Polyline
+                points={points.join(" ")}
+                fill="none"
+                stroke={colors.textSecondary}
+                strokeWidth={2}
+              />
+            </Svg>
+          )}
+        </View>
 
-      {/* Y-axis labels */}
-      <View style={[styles.yAxisLabels, { top: PADDING.top }]}>
-        {STAGE_LABEL.map((label, i) => (
-          <Text
-            key={label}
-            style={[
-              styles.axisLabel,
-              {
-                position: "absolute",
-                top: chartHeight > 0 ? (i / 3) * chartHeight - 6 : 0,
-                left: 0,
-              },
-            ]}
-          >
-            {label}
+        {/* Y-axis labels */}
+        <View style={[styles.yAxisLabels, { top: PADDING.top }]}>
+          {STAGE_LABEL.map((label, i) => (
+            <Text
+              key={label}
+              style={[
+                styles.axisLabel,
+                {
+                  position: "absolute",
+                  top: chartHeight > 0 ? (i / 3) * chartHeight - 6 : 0,
+                  left: 0,
+                },
+              ]}
+            >
+              {label}
+            </Text>
+          ))}
+        </View>
+
+        {/* X-axis labels */}
+        <View style={styles.xAxisLabels}>
+          <Text style={styles.axisLabel}>
+            {firstStage ? formatTimeOnly(firstStage.started_at) : ""}
           </Text>
-        ))}
-      </View>
+          <Text style={styles.axisLabel}>
+            {lastStage ? formatTimeOnly(lastStage.ended_at) : ""}
+          </Text>
+        </View>
 
-      {/* X-axis labels */}
-      <View style={styles.xAxisLabels}>
-        <Text style={styles.axisLabel}>{firstStage ? formatTime(firstStage.started_at) : ""}</Text>
-        <Text style={styles.axisLabel}>{lastStage ? formatTime(lastStage.ended_at) : ""}</Text>
+        {/* Legend */}
+        <View style={styles.legend}>
+          {Object.entries(STAGE_COLOR).map(([stage, color]) => (
+            <View key={stage} style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: color }]} />
+              <Text style={styles.legendText}>{STAGE_LABEL[STAGE_VALUE[stage] ?? 0]}</Text>
+            </View>
+          ))}
+        </View>
       </View>
-
-      {/* Legend */}
-      <View style={styles.legend}>
-        {Object.entries(STAGE_COLOR).map(([stage, color]) => (
-          <View key={stage} style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: color }]} />
-            <Text style={styles.legendText}>{STAGE_LABEL[STAGE_VALUE[stage] ?? 0]}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
+    </AccessibleChart>
   );
 }
 

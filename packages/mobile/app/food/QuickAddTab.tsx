@@ -1,4 +1,5 @@
 import { MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
+import { chartColors } from "@dofek/scoring/colors";
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { colors } from "../../theme";
 import { styles } from "./add-styles.ts";
@@ -62,6 +63,9 @@ export function QuickAddTab({
             style={[styles.mealChip, selectedMeal === value && styles.mealChipSelected]}
             onPress={() => onMealChange(value)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: selectedMeal === value }}
           >
             <Text
               style={[styles.mealChipText, selectedMeal === value && styles.mealChipTextSelected]}
@@ -83,14 +87,14 @@ export function QuickAddTab({
           keyboardType="number-pad"
           autoFocus
         />
-        <Text style={styles.quickAddCalorieUnit}>cal</Text>
+        <Text style={styles.quickAddCalorieUnit}>kcal</Text>
       </View>
 
       {/* Macros — optional row */}
       <View style={styles.macroRow}>
         <View style={styles.macroField}>
           <View style={styles.macroLabelRow}>
-            <View style={[styles.macroDot, { backgroundColor: colors.positive }]} />
+            <View style={[styles.macroDot, { backgroundColor: chartColors.blue }]} />
             <Text style={styles.macroLabel}>Protein</Text>
           </View>
           <TextInput
@@ -104,7 +108,7 @@ export function QuickAddTab({
         </View>
         <View style={styles.macroField}>
           <View style={styles.macroLabelRow}>
-            <View style={[styles.macroDot, { backgroundColor: colors.warning }]} />
+            <View style={[styles.macroDot, { backgroundColor: chartColors.purple }]} />
             <Text style={styles.macroLabel}>Carbs</Text>
           </View>
           <TextInput
@@ -118,7 +122,7 @@ export function QuickAddTab({
         </View>
         <View style={styles.macroField}>
           <View style={styles.macroLabelRow}>
-            <View style={[styles.macroDot, { backgroundColor: colors.danger }]} />
+            <View style={[styles.macroDot, { backgroundColor: chartColors.teal }]} />
             <Text style={styles.macroLabel}>Fat</Text>
           </View>
           <TextInput
@@ -138,6 +142,9 @@ export function QuickAddTab({
         onPress={onSave}
         activeOpacity={0.8}
         disabled={isSaving}
+        accessibilityRole="button"
+        accessibilityLabel="Log food"
+        accessibilityState={{ busy: isSaving, disabled: isSaving }}
       >
         <Text style={styles.saveButtonText}>{isSaving ? "Saving..." : "Log"}</Text>
       </TouchableOpacity>

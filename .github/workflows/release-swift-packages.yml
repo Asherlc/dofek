@@ -1,0 +1,225 @@
+name: Release Swift Packages
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-swift-packages
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare Swift package releases
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.packages.outputs.matrix }}
+      should_release: ${{ steps.current.outputs.should_release }}
+      source_sha: ${{ steps.current.outputs.source_sha }}
+    steps:
+      - name: Check out canonical source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Confirm the tested commit is current
+        id: current
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          SOURCE_SHA=$(git rev-parse HEAD)
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$SOURCE_SHA" = "$TESTED_SHA" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "A newer commit is on main; its CI run will publish instead."
+          fi
+
+      - name: Load Swift package release configuration
+        id: packages
+        run: |
+          jq -e '
+            .version == 1 and
+            (.packages | type == "array" and length > 0) and
+            all(
+              .packages[];
+              (.id | type == "string" and test("^[a-z0-9][a-z0-9-]*$")) and
+              (.display_name | type == "string" and length > 0) and
+              (.source_path | type == "string" and test("^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$")) and
+              (.repository | type == "string" and test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) and
+              (.export_script | type == "string" and test("^scripts/[A-Za-z0-9_.-]+\\.ts$"))
+            )
+          ' .github/swift-packages.json >/dev/null
+          echo "matrix=$(jq -c '{include: .packages}' .github/swift-packages.json)" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify ${{ matrix.display_name }}
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Test Swift package
+        env:
+          SOURCE_PATH: ${{ matrix.source_path }}
+        run: swift test --package-path "$SOURCE_PATH"
+
+  release:
+    name: Release ${{ matrix.display_name }}
+    needs:
+      - prepare
+      - verify
+    if: needs.prepare.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out canonical source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Confirm the verified commit is still current
+        id: current
+        env:
+          VERIFIED_SHA: ${{ needs.prepare.outputs.source_sha }}
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$VERIFIED_SHA" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "A newer commit is on main; its CI run will publish instead."
+          fi
+
+      - name: Set up Node.js and pnpm
+        if: steps.current.outputs.should_release == 'true'
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Resolve SwiftPM distribution repository
+        if: steps.current.outputs.should_release == 'true'
+        id: mirror
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+        run: |
+          OWNER=${REPOSITORY%%/*}
+          NAME=${REPOSITORY#*/}
+          if [ -z "$OWNER" ] || [ -z "$NAME" ] || [ "$OWNER" = "$REPOSITORY" ]; then
+            echo "matrix.repository must be an <owner>/<repo> string, got: $REPOSITORY" >&2
+            exit 1
+          fi
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Mint SwiftPM distribution token
+        if: steps.current.outputs.should_release == 'true'
+        id: distribution_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ steps.mirror.outputs.owner }}
+          repositories: ${{ steps.mirror.outputs.name }}
+
+      - name: Check out SwiftPM distribution repository
+        if: steps.current.outputs.should_release == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          path: swiftpm-mirror
+          repository: ${{ matrix.repository }}
+          token: ${{ steps.distribution_token.outputs.token }}
+
+      - name: Export canonical Swift package
+        if: steps.current.outputs.should_release == 'true'
+        env:
+          EXPORT_SCRIPT: ${{ matrix.export_script }}
+        run: node --import tsx "$EXPORT_SCRIPT" swiftpm-mirror
+
+      - name: Detect package changes
+        if: steps.current.outputs.should_release == 'true'
+        id: changed
+        working-directory: swiftpm-mirror
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            git status --short
+          fi
+
+      - name: Resolve Swift package version
+        if: steps.current.outputs.should_release == 'true'
+        id: version
+        env:
+          HAS_CHANGES: ${{ steps.changed.outputs.has_changes }}
+        run: |
+          if [ "$HAS_CHANGES" = "true" ]; then
+            VERSION=$(node --import tsx scripts/next-swift-package-version.ts swiftpm-mirror)
+          else
+            VERSION=$(
+              git -C swiftpm-mirror tag \
+                --points-at HEAD \
+                --list '[0-9]*.[0-9]*.[0-9]*' \
+                --sort=-version:refname |
+                head -n 1
+            )
+            if [ -z "$VERSION" ]; then
+              echo "The unchanged Swift package mirror HEAD has no semantic-version tag." >&2
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Version and push Swift package
+        if: >
+          steps.current.outputs.should_release == 'true' &&
+          steps.changed.outputs.has_changes == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git -C swiftpm-mirror config user.name "github-actions[bot]"
+          git -C swiftpm-mirror config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C swiftpm-mirror add --all
+          git -C swiftpm-mirror commit -m "Release $VERSION"
+          git -C swiftpm-mirror tag "$VERSION"
+          git -C swiftpm-mirror push origin HEAD:main "refs/tags/$VERSION" --atomic
+
+      - name: Create GitHub release
+        if: steps.current.outputs.should_release == 'true'
+        env:
+          DISPLAY_NAME: ${{ matrix.display_name }}
+          GH_TOKEN: ${{ steps.distribution_token.outputs.token }}
+          MIRROR_REPOSITORY: ${{ matrix.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "$VERSION" --repo "$MIRROR_REPOSITORY" >/dev/null 2>&1; then
+            echo "$MIRROR_REPOSITORY already has release $VERSION."
+          else
+            gh release create "$VERSION" \
+              --repo "$MIRROR_REPOSITORY" \
+              --title "$DISPLAY_NAME $VERSION" \
+              --generate-notes \
+              --verify-tag
+          fi

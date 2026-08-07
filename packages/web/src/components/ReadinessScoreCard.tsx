@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import { statusColors, textColors } from "@dofek/scoring/colors";
 import { SCORE_ZONES, scoreColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow } from "dofek-server/types";
@@ -117,13 +118,7 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
             </span>
             <span className="text-subtle text-sm">/100</span>
           </div>
-          <span className="text-dim text-xs">
-            {new Date(latest.date).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </span>
+          <span className="text-dim text-xs">{formatDateMedium(latest.date)}</span>
         </div>
         <div className="w-32 h-16">
           <DofekChart option={sparklineOption} height={64} />

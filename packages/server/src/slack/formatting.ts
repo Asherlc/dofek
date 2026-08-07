@@ -1,3 +1,11 @@
+import {
+  formatCalories,
+  formatDateYmdInTimeZone,
+  formatGrams,
+  formatNutritionAmount,
+  formatNutritionNumber,
+  formatWeekdayTime,
+} from "@dofek/format/format";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 
 interface SlackBlock {
@@ -15,7 +23,33 @@ export interface SavedFoodSummaryItem {
   calories: number;
 }
 
+type AvailableDailyCalorieProgress = {
+  status?: "available";
+  calorieGoal: number;
+  caloriesConsumed: number;
+};
+
+export type DailyCalorieProgress =
+  | AvailableDailyCalorieProgress
+  | {
+      status: "source_conflict";
+      message: string;
+      sourceLabels: string[];
+    };
+
 type MicroKey = keyof NutritionItemWithMeal & string;
+
+/** Convert a Slack epoch timestamp to a readable local time string using the user's timezone. */
+export function slackTimestampToLocalTime(slackTs: string, timezone: string): string {
+  const epochSeconds = Number.parseFloat(slackTs);
+  return formatWeekdayTime(epochSeconds * 1000, { timeZone: timezone });
+}
+
+/** Convert a Slack epoch timestamp to YYYY-MM-DD date string in the user's timezone. */
+export function slackTimestampToDateString(slackTs: string, timezone: string): string {
+  const epochSeconds = Number.parseFloat(slackTs);
+  return formatDateYmdInTimeZone(epochSeconds * 1000, timezone);
+}
 
 /** Object containing only micronutrient values, used for summing totals */
 type MicroTotals = Partial<Record<MicroKey, number | undefined>>;
@@ -58,7 +92,37 @@ const MICRO_DISPLAY: Array<{ key: MicroKey; label: string; unit: string }> = [
 ];
 
 function formatMacroLine(item: NutritionItemWithMeal): string {
-  return `*${item.calories} cal* | P: ${item.proteinG}g | C: ${item.carbsG}g | F: ${item.fatG}g`;
+  return `*${formatCalories(item.calories)}* | P: ${formatGrams(item.proteinG)} | C: ${formatGrams(item.carbsG)} | F: ${formatGrams(item.fatG)}`;
+}
+
+function formatCalorieProgressBar(progress: AvailableDailyCalorieProgress): string {
+  const rawPercentage =
+    progress.calorieGoal > 0 ? (progress.caloriesConsumed / progress.calorieGoal) * 100 : 0;
+  const percentage =
+    rawPercentage >= 100 ? Math.round(rawPercentage) : Math.max(Math.floor(rawPercentage), 0);
+  const filledSegments = Math.min(Math.max(Math.floor(rawPercentage / 10), 0), 10);
+  const emptySegments = 10 - filledSegments;
+  return `[${"█".repeat(filledSegments)}${"░".repeat(emptySegments)}] ${formatNutritionNumber(percentage)}%`;
+}
+
+function formatDailyCalorieProgress(progress: DailyCalorieProgress): string {
+  if (progress.status === "source_conflict") {
+    return `${progress.message}\nSources: ${progress.sourceLabels.join(", ")}`;
+  }
+  const calorieLine = `Calories: ${formatCalories(progress.caloriesConsumed)} / ${formatCalories(progress.calorieGoal)}`;
+  const progressBar = formatCalorieProgressBar(progress);
+  return `${calorieLine}\n${progressBar}\n${formatDailyCalorieStatus(progress)}`;
+}
+
+function formatDailyCalorieStatus(progress: AvailableDailyCalorieProgress): string {
+  const caloriesRemaining = Math.round(progress.calorieGoal - progress.caloriesConsumed);
+  if (caloriesRemaining > 0) {
+    return `${formatCalories(caloriesRemaining)} remaining today`;
+  }
+  if (caloriesRemaining < 0) {
+    return `${formatCalories(Math.abs(caloriesRemaining))} over goal today`;
+  }
+  return "Calorie goal reached today";
 }
 
 /** Format a condensed micronutrient line showing only non-zero values */
@@ -68,8 +132,7 @@ export function formatMicroLine(item: NutritionItemWithMeal | MicroTotals): stri
     const rawValue = item[key];
     if (typeof rawValue !== "number") continue;
     if (rawValue > 0) {
-      const formatted = rawValue < 10 ? rawValue.toFixed(1) : Math.round(rawValue).toString();
-      parts.push(`${label}: ${formatted}${unit}`);
+      parts.push(`${label}: ${formatNutritionAmount(rawValue, unit)}`);
     }
   }
   return parts.join(" | ");
@@ -142,7 +205,7 @@ export function formatConfirmationMessage(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*Total:* *${totalCalories} cal* | P: ${totalProtein.toFixed(1)}g | C: ${totalCarbs.toFixed(1)}g | F: ${totalFat.toFixed(1)}g${totalMicroSection}`,
+          text: `*Total:* *${formatCalories(totalCalories)}* | P: ${formatGrams(totalProtein)} | C: ${formatGrams(totalCarbs)} | F: ${formatGrams(totalFat)}${totalMicroSection}`,
         },
       },
     );
@@ -167,13 +230,18 @@ export function formatConfirmationMessage(
     ],
   });
 
-  const fallbackText = items.map((i) => `${i.foodName}: ${i.calories} cal`).join(", ");
+  const fallbackText = items
+    .map((itemSummary) => `${itemSummary.foodName}: ${formatCalories(itemSummary.calories)}`)
+    .join(", ");
 
   return { blocks, text: fallbackText };
 }
 
 /** Format a success message after food entries are saved */
-export function formatSavedMessage(items: SavedFoodSummaryItem[]): SlackMessage {
+export function formatSavedMessage(
+  items: SavedFoodSummaryItem[],
+  dailyCalorieProgress?: DailyCalorieProgress | null,
+): SlackMessage {
   const blocks: SlackBlock[] = [
     {
       type: "section",
@@ -189,12 +257,37 @@ export function formatSavedMessage(items: SavedFoodSummaryItem[]): SlackMessage 
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${item.foodName} — *${item.calories} cal*`,
+        text: `${item.foodName} — *${formatCalories(item.calories)}*`,
       },
     });
   }
 
-  const fallbackText = items.map((i) => `${i.foodName}: ${i.calories} cal`).join(", ");
+  const dailyCalorieProgressText = dailyCalorieProgress
+    ? formatDailyCalorieProgress(dailyCalorieProgress)
+    : null;
+  const dailyCalorieStatusText = dailyCalorieProgress
+    ? dailyCalorieProgress.status === "source_conflict"
+      ? dailyCalorieProgress.message
+      : formatDailyCalorieStatus(dailyCalorieProgress)
+    : null;
+  if (dailyCalorieProgressText) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: dailyCalorieProgressText,
+      },
+    });
+  }
 
-  return { blocks, text: `Logged: ${fallbackText}` };
+  const fallbackText = items
+    .map((itemSummary) => `${itemSummary.foodName}: ${formatCalories(itemSummary.calories)}`)
+    .join(", ");
+
+  return {
+    blocks,
+    text: dailyCalorieStatusText
+      ? `Logged: ${fallbackText}. ${dailyCalorieStatusText}`
+      : `Logged: ${fallbackText}`,
+  };
 }

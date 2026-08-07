@@ -58,12 +58,19 @@ describe("Slack Bot — DB helper functions (integration)", () => {
             ) RETURNING id
           ),
           new_nutrition AS (
-            INSERT INTO fitness.food_entry_nutrition (
-              food_entry_id,
-              calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg
-            )
-            SELECT id, 200, 10, 30, 8, 3, 2, 5, 100
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, nutrient_id, amount
             FROM new_entry
+            CROSS JOIN (VALUES
+              ('calories', 200),
+              ('protein', 10),
+              ('carbohydrate', 30),
+              ('fat', 8),
+              ('fiber', 3),
+              ('saturated_fat', 2),
+              ('sugar', 5),
+              ('sodium', 100)
+            ) AS nutrient_values(nutrient_id, amount)
           )
           SELECT id FROM new_entry`,
     );
@@ -184,12 +191,19 @@ describe("Slack Bot — DB helper functions (integration)", () => {
               RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg
-              )
-              SELECT id, 200, 10, 20, 8, 3, 2, 5, 100
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 200),
+                ('protein', 10),
+                ('carbohydrate', 20),
+                ('fat', 8),
+                ('fiber', 3),
+                ('saturated_fat', 2),
+                ('sugar', 5),
+                ('sodium', 100)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );

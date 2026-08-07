@@ -1,17 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock expo-location before importing
+// Capture the background task executor registered via TaskManager.defineTask
+// at module load so tests can simulate background location batches.
+interface BackgroundTaskBody {
+  data: { locations: unknown[] } | null;
+  error: { message: string } | null;
+}
+const hoisted = vi.hoisted(() => {
+  const holder: { taskExecutor?: (body: BackgroundTaskBody) => void } = {};
+  return holder;
+});
+
+vi.mock("expo-task-manager", () => ({
+  defineTask: vi.fn((_taskName: string, executor) => {
+    hoisted.taskExecutor = executor;
+  }),
+}));
+
 vi.mock("expo-location", () => ({
   requestForegroundPermissionsAsync: vi.fn().mockResolvedValue({ status: "granted" }),
   requestBackgroundPermissionsAsync: vi.fn().mockResolvedValue({ status: "granted" }),
-  watchPositionAsync: vi.fn().mockResolvedValue({ remove: vi.fn() }),
-  Accuracy: {
-    BestForNavigation: 6,
-  },
+  startLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
+  stopLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
+  hasStartedLocationUpdatesAsync: vi.fn().mockResolvedValue(true),
+  Accuracy: { BestForNavigation: 6 },
+  ActivityType: { Fitness: 3 },
 }));
 
 import * as Location from "expo-location";
-import { createLocationAdapter } from "./location-service.ts";
+import { BACKGROUND_LOCATION_TASK, createLocationAdapter } from "./location-service.ts";
+
+function makeLocation(overrides?: { altitude?: number | null; speed?: number | null }) {
+  return {
+    timestamp: 1718438400000,
+    coords: {
+      latitude: 40.7128,
+      longitude: -74.006,
+      accuracy: 5,
+      altitude: overrides?.altitude ?? 10,
+      speed: overrides?.speed ?? 3.5,
+    },
+  };
+}
 
 describe("createLocationAdapter", () => {
   beforeEach(() => {
@@ -39,46 +69,32 @@ describe("createLocationAdapter", () => {
     const granted = await adapter.requestPermissions();
 
     expect(granted).toBe(false);
+    // Without foreground permission there is no point requesting background.
+    expect(Location.requestBackgroundPermissionsAsync).not.toHaveBeenCalled();
   });
 
-  it("starts watching position with high accuracy", async () => {
+  it("starts background-capable location updates with high accuracy", async () => {
     const adapter = createLocationAdapter();
-    const callback = vi.fn();
-    await adapter.startUpdates(callback);
+    await adapter.startUpdates(vi.fn());
 
-    expect(Location.watchPositionAsync).toHaveBeenCalledWith(
+    expect(Location.startLocationUpdatesAsync).toHaveBeenCalledWith(
+      BACKGROUND_LOCATION_TASK,
       expect.objectContaining({
         accuracy: Location.Accuracy.BestForNavigation,
         distanceInterval: 5,
+        activityType: Location.ActivityType.Fitness,
+        showsBackgroundLocationIndicator: true,
+        pausesUpdatesAutomatically: false,
       }),
-      expect.any(Function),
     );
   });
 
-  it("transforms location events into GpsSample format", async () => {
+  it("forwards background task locations to the active callback as GpsSample", async () => {
     const adapter = createLocationAdapter();
     const callback = vi.fn();
-
-    // Capture the location callback passed to watchPositionAsync
-    let locationCallback: ((location: unknown) => void) | undefined;
-    vi.mocked(Location.watchPositionAsync).mockImplementation(async (_opts, cb) => {
-      locationCallback = cb;
-      return { remove: vi.fn() };
-    });
-
     await adapter.startUpdates(callback);
 
-    // Simulate a location event
-    locationCallback?.({
-      timestamp: 1718438400000,
-      coords: {
-        latitude: 40.7128,
-        longitude: -74.006,
-        accuracy: 5,
-        altitude: 10,
-        speed: 3.5,
-      },
-    });
+    hoisted.taskExecutor?.({ data: { locations: [makeLocation()] }, error: null });
 
     expect(callback).toHaveBeenCalledWith({
       recordedAt: expect.stringContaining("2024-06-15"),
@@ -93,45 +109,55 @@ describe("createLocationAdapter", () => {
   it("treats negative speed as null", async () => {
     const adapter = createLocationAdapter();
     const callback = vi.fn();
-
-    let locationCallback: ((location: unknown) => void) | undefined;
-    vi.mocked(Location.watchPositionAsync).mockImplementation(async (_opts, cb) => {
-      locationCallback = cb;
-      return { remove: vi.fn() };
-    });
-
     await adapter.startUpdates(callback);
 
-    locationCallback?.({
-      timestamp: 1718438400000,
-      coords: {
-        latitude: 40.7128,
-        longitude: -74.006,
-        accuracy: 5,
-        altitude: null,
-        speed: -1, // Negative speed from GPS means no speed data
-      },
+    hoisted.taskExecutor?.({
+      data: { locations: [makeLocation({ altitude: null, speed: -1 })] },
+      error: null,
     });
 
     expect(callback).toHaveBeenCalledWith(expect.objectContaining({ speed: null }));
   });
 
-  it("stops watching position", async () => {
-    const removeFn = vi.fn();
-    vi.mocked(Location.watchPositionAsync).mockResolvedValue({
-      remove: removeFn,
-    });
+  it("does not forward samples when the task reports an error", async () => {
+    const adapter = createLocationAdapter();
+    const callback = vi.fn();
+    await adapter.startUpdates(callback);
+
+    hoisted.taskExecutor?.({ data: null, error: { message: "location failed" } });
+
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("stops location updates when they are running", async () => {
+    vi.mocked(Location.hasStartedLocationUpdatesAsync).mockResolvedValue(true);
 
     const adapter = createLocationAdapter();
     await adapter.startUpdates(vi.fn());
     await adapter.stopUpdates();
 
-    expect(removeFn).toHaveBeenCalled();
+    expect(Location.stopLocationUpdatesAsync).toHaveBeenCalledWith(BACKGROUND_LOCATION_TASK);
   });
 
-  it("handles stopUpdates when no subscription exists", async () => {
+  it("does not stop location updates when none are running", async () => {
+    vi.mocked(Location.hasStartedLocationUpdatesAsync).mockResolvedValue(false);
+
     const adapter = createLocationAdapter();
-    // Should not throw
     await adapter.stopUpdates();
+
+    expect(Location.stopLocationUpdatesAsync).not.toHaveBeenCalled();
+  });
+
+  it("ignores background samples after updates are stopped", async () => {
+    vi.mocked(Location.hasStartedLocationUpdatesAsync).mockResolvedValue(true);
+
+    const adapter = createLocationAdapter();
+    const callback = vi.fn();
+    await adapter.startUpdates(callback);
+    await adapter.stopUpdates();
+
+    hoisted.taskExecutor?.({ data: { locations: [makeLocation()] }, error: null });
+
+    expect(callback).not.toHaveBeenCalled();
   });
 });

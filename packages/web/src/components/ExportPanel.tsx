@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 
@@ -51,11 +52,7 @@ function formatBytes(sizeBytes: number | null): string {
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateMedium(value);
 }
 
 async function fetchExports(): Promise<DataExport[]> {
@@ -68,6 +65,16 @@ async function fetchExports(): Promise<DataExport[]> {
     throw new Error("Unexpected export list response");
   }
   return body.exports;
+}
+
+async function getResponseErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    return isRecord(body) && typeof body.error === "string" ? body.error : fallback;
+  } catch (error: unknown) {
+    captureException(error, { context: "data-export-response-error-json" });
+    return fallback;
+  }
 }
 
 export function ExportPanel() {
@@ -126,7 +133,7 @@ export function ExportPanel() {
       });
 
       if (!triggerRes.ok) {
-        throw new Error("Failed to start export");
+        throw new Error(await getResponseErrorMessage(triggerRes, "Failed to start export"));
       }
 
       await refreshExports();

@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
+
 import {
   createInertialMeasurementUnitService,
   type InertialMeasurementUnitService,
   type InertialMeasurementUnitServiceDeps,
 } from "./inertial-measurement-unit-service.ts";
+import { captureException } from "./telemetry";
+
+const mockSyncPendingWatchFiles = vi.fn().mockResolvedValue(undefined);
 
 function makeMockWhoopBle() {
   return {
@@ -11,23 +17,25 @@ function makeMockWhoopBle() {
     findAndConnect: vi.fn().mockResolvedValue(true),
     startStreaming: vi.fn().mockResolvedValue(true),
     stopStreaming: vi.fn().mockResolvedValue(true),
-    getBufferedSamples: vi.fn().mockResolvedValue([]),
+    peekBufferedSamples: vi.fn().mockResolvedValue([]),
+    confirmSamplesDrain: vi.fn(),
   };
 }
 
 function makeMockDeps(): InertialMeasurementUnitServiceDeps {
+  const watch = {
+    isAvailable: vi.fn().mockReturnValue(true),
+    requestSync: vi.fn().mockResolvedValue(true),
+    syncPendingFiles: mockSyncPendingWatchFiles,
+  };
+
   return {
     coreMotion: {
       isAccelerometerRecordingAvailable: vi.fn().mockReturnValue(true),
       startRecording: vi.fn().mockResolvedValue(true),
       queryRecordedData: vi.fn().mockResolvedValue([]),
     },
-    watch: {
-      isAvailable: vi.fn().mockReturnValue(true),
-      requestSync: vi.fn().mockResolvedValue(true),
-      getPendingSamples: vi.fn().mockResolvedValue([]),
-      acknowledgeSamples: vi.fn(),
-    },
+    watch,
     whoopBle: makeMockWhoopBle(),
     trpcClient: {
       inertialMeasurementUnitSync: {
@@ -45,6 +53,8 @@ describe("InertialMeasurementUnitService", () => {
   let service: InertialMeasurementUnitService;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+    mockSyncPendingWatchFiles.mockResolvedValue(undefined);
     deps = makeMockDeps();
     service = createInertialMeasurementUnitService(deps);
   });
@@ -79,9 +89,13 @@ describe("InertialMeasurementUnitService", () => {
     });
 
     it("does not throw when CoreMotion fails", async () => {
-      vi.mocked(deps.coreMotion.startRecording).mockRejectedValue(new Error("CoreMotion error"));
+      const recordingError = new Error("CoreMotion error");
+      vi.mocked(deps.coreMotion.startRecording).mockRejectedValue(recordingError);
 
       await expect(service.ensureRecording()).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(recordingError, {
+        source: "activity-recording-core-motion-start",
+      });
     });
 
     it("does not throw when Watch sync fails", async () => {
@@ -112,23 +126,14 @@ describe("InertialMeasurementUnitService", () => {
       });
     });
 
-    it("uploads Watch pending samples", async () => {
-      const watchSamples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 }];
-      vi.mocked(deps.watch.getPendingSamples).mockResolvedValue(watchSamples);
-
+    it("syncs pending Watch files through the per-file pipeline", async () => {
       await service.syncForTimeRange(startedAt, endedAt);
 
-      expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
-        deviceId: "Apple Watch",
-        deviceType: "apple_watch",
-        samples: watchSamples,
-      });
-      expect(deps.watch.acknowledgeSamples).toHaveBeenCalled();
+      expect(mockSyncPendingWatchFiles).toHaveBeenCalledTimes(1);
     });
 
     it("does not upload when CoreMotion returns no samples", async () => {
       vi.mocked(deps.coreMotion.queryRecordedData).mockResolvedValue([]);
-      vi.mocked(deps.watch.getPendingSamples).mockResolvedValue([]);
 
       await service.syncForTimeRange(startedAt, endedAt);
 
@@ -143,18 +148,22 @@ describe("InertialMeasurementUnitService", () => {
       expect(deps.coreMotion.queryRecordedData).not.toHaveBeenCalled();
     });
 
-    it("skips Watch query when unavailable", async () => {
+    it("skips Watch file sync when unavailable", async () => {
       vi.mocked(deps.watch.isAvailable).mockReturnValue(false);
 
       await service.syncForTimeRange(startedAt, endedAt);
 
-      expect(deps.watch.getPendingSamples).not.toHaveBeenCalled();
+      expect(mockSyncPendingWatchFiles).not.toHaveBeenCalled();
     });
 
     it("does not throw when CoreMotion query fails", async () => {
-      vi.mocked(deps.coreMotion.queryRecordedData).mockRejectedValue(new Error("Query failed"));
+      const queryError = new Error("Query failed");
+      vi.mocked(deps.coreMotion.queryRecordedData).mockRejectedValue(queryError);
 
       await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(queryError, {
+        source: "activity-save-core-motion-sync",
+      });
     });
 
     it("does not throw when upload fails", async () => {
@@ -167,16 +176,15 @@ describe("InertialMeasurementUnitService", () => {
       await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
     });
 
-    it("does not acknowledge Watch samples when upload fails", async () => {
-      const watchSamples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 }];
-      vi.mocked(deps.watch.getPendingSamples).mockResolvedValue(watchSamples);
-      vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockRejectedValue(
-        new Error("Upload failed"),
-      );
+    it("reports a Watch file sync failure without failing activity save", async () => {
+      const syncError = new Error("Watch file sync failed");
+      mockSyncPendingWatchFiles.mockRejectedValue(syncError);
 
-      await service.syncForTimeRange(startedAt, endedAt);
+      await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
 
-      expect(deps.watch.acknowledgeSamples).not.toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalledWith(syncError, {
+        source: "activity-save-watch-sync",
+      });
     });
 
     it("batches large sample sets", async () => {
@@ -227,9 +235,25 @@ describe("InertialMeasurementUnitService", () => {
     it("does not throw when WHOOP connection fails", async () => {
       const whoopBle = deps.whoopBle;
       if (!whoopBle) throw new Error("whoopBle not initialized");
-      vi.mocked(whoopBle.findAndConnect).mockRejectedValue(new Error("BLE error"));
+      const connectionError = new Error("BLE error");
+      vi.mocked(whoopBle.findAndConnect).mockRejectedValue(connectionError);
 
       await expect(service.ensureRecording()).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(connectionError, {
+        source: "activity-recording-whoop-connect",
+      });
+    });
+
+    it("reports WHOOP streaming-start failures with a distinct source", async () => {
+      const whoopBle = deps.whoopBle;
+      if (!whoopBle) throw new Error("whoopBle not initialized");
+      const streamingError = new Error("Streaming failed");
+      vi.mocked(whoopBle.startStreaming).mockRejectedValue(streamingError);
+
+      await expect(service.ensureRecording()).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(streamingError, {
+        source: "activity-recording-whoop-start-streaming",
+      });
     });
 
     it("does not start streaming when connection fails", async () => {
@@ -249,7 +273,7 @@ describe("InertialMeasurementUnitService", () => {
       ];
       const whoopBle = deps.whoopBle;
       if (!whoopBle) throw new Error("whoopBle not initialized");
-      vi.mocked(whoopBle.getBufferedSamples).mockResolvedValue(whoopSamples);
+      vi.mocked(whoopBle.peekBufferedSamples).mockResolvedValue(whoopSamples);
 
       await service.syncForTimeRange(startedAt, endedAt);
 
@@ -263,6 +287,43 @@ describe("InertialMeasurementUnitService", () => {
       expect(whoopCalls[0][0].samples).toHaveLength(2);
     });
 
+    it("retains WHOOP samples after a failed upload and confirms them after a successful retry", async () => {
+      const whoopSamples = [{ timestamp: "2026-03-25T08:00:01.000Z", x: 100, y: -200, z: 300 }];
+      let bufferedSamples = whoopSamples;
+      const whoopBle = makeMockWhoopBle();
+      vi.mocked(whoopBle.peekBufferedSamples).mockImplementation(async () => bufferedSamples);
+      vi.mocked(whoopBle.confirmSamplesDrain).mockImplementation((count) => {
+        bufferedSamples = bufferedSamples.slice(count);
+      });
+      const retryDeps = makeMockDeps();
+      vi.mocked(retryDeps.coreMotion.isAccelerometerRecordingAvailable).mockReturnValue(false);
+      vi.mocked(retryDeps.watch.isAvailable).mockReturnValue(false);
+      retryDeps.whoopBle = whoopBle;
+      const uploadError = new Error("Upload failed");
+      vi.mocked(retryDeps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
+        .mockRejectedValueOnce(uploadError)
+        .mockResolvedValueOnce({ inserted: 1 });
+      const retryService = createInertialMeasurementUnitService(retryDeps);
+
+      await retryService.syncForTimeRange(startedAt, endedAt);
+
+      expect(bufferedSamples).toEqual(whoopSamples);
+      expect(whoopBle.confirmSamplesDrain).not.toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalledWith(uploadError, {
+        source: "activity-save-whoop-imu-upload",
+        bufferedSampleCount: 1,
+      });
+
+      await retryService.syncForTimeRange(startedAt, endedAt);
+
+      expect(whoopBle.peekBufferedSamples).toHaveBeenCalledTimes(2);
+      expect(
+        retryDeps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate,
+      ).toHaveBeenCalledTimes(2);
+      expect(whoopBle.confirmSamplesDrain).toHaveBeenCalledWith(1);
+      expect(bufferedSamples).toEqual([]);
+    });
+
     it("stops WHOOP streaming after sync", async () => {
       await service.syncForTimeRange(startedAt, endedAt);
 
@@ -272,7 +333,7 @@ describe("InertialMeasurementUnitService", () => {
     it("does not upload when WHOOP buffer is empty", async () => {
       const whoopBle = deps.whoopBle;
       if (!whoopBle) throw new Error("whoopBle not initialized");
-      vi.mocked(whoopBle.getBufferedSamples).mockResolvedValue([]);
+      vi.mocked(whoopBle.peekBufferedSamples).mockResolvedValue([]);
 
       await service.syncForTimeRange(startedAt, endedAt);
 

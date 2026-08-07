@@ -59,13 +59,6 @@ export function getConditionalTests(): ConditionalTest[] {
       valueFn: (_d, all, i) => all[i + 1]?.hrv ?? null,
     },
     {
-      id: "active-500-sleep-eff",
-      action: "500+ active kcal",
-      metric: "sleep efficiency that night",
-      splitFn: (d) => (d.active_energy_kcal != null ? d.active_energy_kcal >= 500 : null),
-      valueFn: (_d, all, i) => all[i + 1]?.sleep_efficiency ?? null,
-    },
-    {
       id: "sleep-consistent-hrv",
       action: "consistent sleep schedule (< 30min variation)",
       metric: "HRV",

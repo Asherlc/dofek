@@ -62,8 +62,8 @@ describe("SportSettingsRepository", () => {
         paceZonePcts: null,
         effectiveFrom: "2025-01-01",
         notes: null,
-        createdAt: "2025-01-01T00:00:00Z",
-        updatedAt: "2025-01-01T00:00:00Z",
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
       });
     });
 
