@@ -77,7 +77,7 @@ export default defineConfig({
     VitePWA({
       base: "/",
       buildBase: "/",
-      registerType: "prompt",
+      registerType: "autoUpdate",
       scope: "/",
       manifest: {
         name: "Dofek",

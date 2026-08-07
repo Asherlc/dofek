@@ -7,6 +7,46 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-07 — Wahoo OAuth callback served as `Not Found`
+
+- **Status:** Root cause identified; the PWA update fix is implemented in this
+  workspace, but deployment and production validation are pending.
+- **Symptoms:** The user reported that Wahoo OAuth redirected to
+  `https://dofek.asherlc.com/callback` with an authorization code and state, and
+  the resulting page showed only a bare `Not Found` body. The one-time
+  authorization code is not recorded here.
+- **User impact:** Wahoo authorization could not complete in browsers holding
+  the older PWA service worker.
+- **Evidence:** The known Wahoo reconnect regression is already fixed on `main`
+  and the focused Wahoo/provider-callback suite passed 52 tests. The latest
+  production deployment for the current `main` commit completed successfully
+  ([deployment run](https://github.com/Asherlc/dofek/actions/runs/31193566292)).
+  A live request to the public callback returned `200 OK` with no parameters,
+  while a safe request with a fake state reached the callback handler and
+  returned `400 Unknown or expired OAuth state`; the current release therefore
+  does expose the callback route. Sentry had no matching callback error or
+  request, and production metrics had callback 200/400 responses but no 404.
+  The screenshot’s bare body matches the SPA router fallback, not any response
+  emitted by the callback handler.
+- **Root cause:** `vite-plugin-pwa` was configured with `registerType: "prompt"`,
+  but the web app had no update prompt handler. The browser could therefore keep
+  the old service worker active indefinitely. That worker did not yet exclude
+  `/callback` from its navigation fallback, so it served the cached SPA shell
+  and the client router rendered `Not Found` before the server callback route
+  ran. The plugin documents `autoUpdate` as the mode that updates caches and
+  takes control automatically ([official guide](https://vite-pwa-org.netlify.app/guide/auto-update)).
+- **Fix or mitigation:** Changed the PWA registration to `autoUpdate`. The
+  generated worker now calls `skipWaiting()` and `clientsClaim()`, while the
+  existing denylist keeps `/callback` server-owned. The July reconnect fix
+  remains deployed; it exchanges the replacement grant before the
+  token-limit-only deauthorization path.
+- **Remaining risk / follow-up:** Deploy the web fix, then start a fresh Wahoo
+  authorization flow in the affected browser. Until deployment, a private
+  window or clearing the site’s service worker can validate the server route;
+  do not reuse or share an old callback URL. Axiom credentials were unavailable
+  and the configured production SSH alias could not be resolved from this
+  workspace, so live provider state still could not be inspected.
+
 ## 2026-08-06: Sleep heart-rate analytics builds saturated ClickHouse
 
 ### Status
