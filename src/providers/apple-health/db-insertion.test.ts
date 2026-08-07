@@ -25,13 +25,14 @@ import type { HealthWorkout } from "./workouts.ts";
 
 interface MockInsertCapture {
   values: Record<string, unknown>[][];
+  conflictUpdates: { set: Record<string, unknown> }[];
 }
 
 function createMockDb(returningData: Record<string, unknown>[] = []): {
   db: SyncDatabase;
   capture: MockInsertCapture;
 } {
-  const capture: MockInsertCapture = { values: [] };
+  const capture: MockInsertCapture = { values: [], conflictUpdates: [] };
 
   function makeChainable(): Promise<undefined> {
     return Object.assign(Promise.resolve(undefined), {
@@ -39,7 +40,10 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
         capture.values.push(rows);
         return makeChainable();
       }),
-      onConflictDoUpdate: vi.fn(() => makeChainable()),
+      onConflictDoUpdate: vi.fn((config: { set: Record<string, unknown> }) => {
+        capture.conflictUpdates.push(config);
+        return makeChainable();
+      }),
       onConflictDoNothing: vi.fn(() => makeChainable()),
       returning: vi.fn(() => Promise.resolve(returningData)),
     });
@@ -1187,6 +1191,46 @@ describe("upsertWorkoutBatch", () => {
           boardName: "Metolius Compact II",
           rawActivitySegments: '{"segments":[],"version":1}',
           activitySegments: [],
+        },
+      },
+    });
+  });
+
+  it("updates the activity name from a reimported Hang Ten plan", async () => {
+    const { db, capture } = createMockDb([{ id: "act-1" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: "hangboard",
+        sourceName: "Hang Ten",
+        hangTen: { planName: "Updated Repeaters" },
+      }),
+    ]);
+
+    expect(capture.conflictUpdates[0]?.set.name).toBeDefined();
+  });
+
+  it("preserves a Hang Ten segment parse error without inserting intervals", async () => {
+    const { db, capture } = createMockDb([{ id: "act-1" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: "hangboard",
+        sourceName: "Hang Ten",
+        hangTen: {
+          planName: "Repeaters",
+          rawActivitySegments: "{not-json}",
+          activitySegmentsError: "Unexpected token n in JSON at position 1",
+        },
+      }),
+    ]);
+
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]?.[0]).toMatchObject({
+      raw: {
+        hangTen: {
+          rawActivitySegments: "{not-json}",
+          activitySegmentsError: "Unexpected token n in JSON at position 1",
         },
       },
     });

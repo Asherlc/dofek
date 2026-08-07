@@ -788,6 +788,7 @@ export async function upsertWorkoutBatch(
         set: {
           activityType: sql`excluded.activity_type`,
           endedAt: sql`excluded.ended_at`,
+          name: sql`excluded.name`,
           sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
           raw: sql`excluded.raw`,
         },

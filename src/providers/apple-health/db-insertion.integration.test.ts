@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
@@ -134,6 +134,8 @@ describe("db-insertion deduplication (integration)", () => {
       };
 
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+      if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.planName = "Updated Repeaters";
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
 
       const [storedActivity] = await ctx.db
@@ -142,11 +144,13 @@ describe("db-insertion deduplication (integration)", () => {
         .where(eq(schema.activity.externalId, "ah:workout:22222222-2222-4222-8222-222222222222"));
       expect(storedActivity).toBeDefined();
       if (!storedActivity) return;
+      expect(storedActivity.name).toBe("Updated Repeaters");
 
       const intervals = await ctx.db
         .select()
         .from(schema.activityInterval)
-        .where(eq(schema.activityInterval.activityId, storedActivity.id));
+        .where(eq(schema.activityInterval.activityId, storedActivity.id))
+        .orderBy(asc(schema.activityInterval.intervalIndex));
 
       expect(intervals).toHaveLength(2);
       expect(intervals.map((interval) => interval.label)).toEqual([
