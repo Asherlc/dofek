@@ -30,6 +30,18 @@ background analytics failure rather than a direct request error.
 
 ### Evidence
 
+The failing worker step was the `analytics` entrypoint running
+`$NODE scripts/run-analytics-build.ts`; that runner invoked dbt with the
+following command shape (the temporary artifact path and microbatch values are
+redacted):
+
+```text
+dbt build --project-dir analytics --profiles-dir analytics --threads 1 --target-path <temporary-artifact-directory> --vars <redacted> --select <production-model-list>
+```
+
+The first fatal log entry was `2026-08-06 01:35:40 UTC | sleep_heart_rate_sample
+| ExceptionWhileProcessing | Code: 159 (TIMEOUT_EXCEEDED) | elapsed 240007 ms`.
+
 The read-only production `system.query_log` records three
 `ExceptionWhileProcessing` entries for the same dbt model at `01:35:40`,
 `01:43:21`, and `01:54:15 UTC`. Each returned ClickHouse error 159 at

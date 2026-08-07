@@ -21,8 +21,11 @@ pnpm test:coverage:all
 ```
 
 These commands start the current workspace's Postgres, ClickHouse, Redis, and
-Redpanda services through `pnpm compose:up`, load `.env.local`, and set
-`TEST_DATABASE_URL` to the workspace Postgres URL. Redpanda-backed integration
+Redpanda services through `pnpm compose:up` and wait for their Compose health
+checks before Vitest starts. Docker documents the `--wait` health-gated startup
+behavior in its [Compose startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+The command loads `.env.local` and sets `TEST_DATABASE_URL` to the workspace
+Postgres URL. Redpanda-backed integration
 tests receive the generated workspace-local `REDPANDA_BROKERS` value so they
 cannot connect to another workspace's broker. `setupTestDatabase()` fails
 immediately when the Postgres URL is absent; it never creates an unbounded

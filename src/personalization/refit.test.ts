@@ -117,9 +117,6 @@ describe("refitAllParams", () => {
       .filter((query) => query.includes("analytics.daily_sleep"));
     expect(sleepQueries).toHaveLength(2);
     expect(sleepQueries.every((query) => query.includes("FINAL"))).toBe(true);
-    expect(
-      sensorStore.query.mock.calls.some(([, query]) => query.includes("analytics.v_sleep")),
-    ).toBe(false);
   });
 
   it("handles individual fitter errors gracefully", async () => {

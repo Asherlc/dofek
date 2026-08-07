@@ -85,6 +85,25 @@ describe("daily_body_measurement read-model lifecycle", () => {
       [{ weight_kg: 70 }],
     );
   }, 180_000);
+
+  it("replaces weekly sleep metrics when a historical sleep night is tombstoned", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, targetSchema);
+    await materializeDailyBodyMeasurement(activeClient, targetSchema, false);
+    await materializeWeeklyHealthspan(activeClient, targetSchema, false);
+
+    await expect(readWeeklyWeight(activeClient, targetSchema)).resolves.toEqual([
+      { weight_kg: 80, avg_sleep_min: 480 },
+    ]);
+
+    const refreshedAt = await nextWeeklyRefreshAt(activeClient, targetSchema);
+    await appendSleepVersion(activeClient, targetSchema, "2026-01-01", 5, true, refreshedAt);
+    await materializeWeeklyHealthspan(activeClient, targetSchema, true);
+
+    await expect(readWeeklyWeight(activeClient, targetSchema)).resolves.toEqual([
+      { weight_kg: 80, avg_sleep_min: null },
+    ]);
+  }, 180_000);
 });
 
 function requireClickHouseUrl(): string {
@@ -272,9 +291,10 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
   await appendHistoricalVersion(client, targetSchema, 80, false, 1, "2026-01-02 00:00:00");
   await client.command({
     query: `INSERT INTO ${targetSchema}.daily_sleep VALUES
-      ('${testUserId}', toDate('2026-01-01'), toDateTime64('2026-01-01 08:00:00', 6, 'UTC'), 480, 0, 1),
-      ('${testUserId}', toDate('2026-01-02'), toDateTime64('2026-01-02 08:00:00', 6, 'UTC'), 60, 0, 2),
-      ('${testUserId}', toDate('2026-01-02'), toDateTime64('2026-01-02 08:00:00', 6, 'UTC'), 120, 1, 3)`,
+      ('${testUserId}', toDate('2026-01-01'), toDateTime64('2026-01-01 08:00:00', 6, 'UTC'), 480, 0, 1, toDateTime64('2026-01-01 09:00:00', 9, 'UTC')),
+      ('${testUserId}', toDate('2026-01-02'), toDateTime64('2026-01-02 08:00:00', 6, 'UTC'), 60, 0, 2, toDateTime64('2026-01-02 09:00:00', 9, 'UTC')),
+      ('${testUserId}', toDate('2026-01-02'), toDateTime64('2026-01-02 08:00:00', 6, 'UTC'), 120, 1, 3, toDateTime64('2026-01-02 10:00:00', 9, 'UTC')),
+      ('${testUserId}', toDate('2026-08-01'), toDateTime64('2026-08-01 08:00:00', 6, 'UTC'), 300, 0, 4, toDateTime64('2026-08-01 09:00:00', 9, 'UTC'))`,
   });
   await client.command({
     query: `INSERT INTO ${targetSchema}.body_measurement VALUES (
@@ -310,6 +330,47 @@ async function appendHistoricalVersion(
       toDateTime64('${sourceSyncedAt}', 9, 'UTC')
     )`,
   });
+}
+
+async function appendSleepVersion(
+  client: ClickHouseClient,
+  targetSchema: string,
+  date: string,
+  version: number,
+  isDeleted: boolean,
+  refreshedAt: string,
+): Promise<void> {
+  await client.command({
+    query: `INSERT INTO ${targetSchema}.daily_sleep VALUES (
+      '${testUserId}',
+      toDate('${date}'),
+      toDateTime64('${date} 08:00:00', 6, 'UTC'),
+      480,
+      ${isDeleted ? 1 : 0},
+      ${version},
+      toDateTime64('${refreshedAt}', 9, 'UTC')
+    )`,
+  });
+}
+
+async function nextWeeklyRefreshAt(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<string> {
+  const result = await client.query({
+    query: `SELECT formatDateTime(
+        addSeconds(max(refreshed_at), 1),
+        '%Y-%m-%d %H:%i:%S'
+      ) AS refreshed_at
+      FROM ${targetSchema}.weekly_healthspan FINAL`,
+    format: "JSONEachRow",
+  });
+  const rows = z.array(z.object({ refreshed_at: z.string() })).parse(await result.json<unknown>());
+  const refreshedAt = rows[0]?.refreshed_at;
+  if (!refreshedAt) {
+    throw new Error("Weekly healthspan target state is missing refreshed_at");
+  }
+  return refreshedAt;
 }
 
 async function appendLaggedMeasurement(
@@ -379,7 +440,8 @@ function createWeeklyHealthspanDependencyTablesSql(targetSchema: string): string
       started_at DateTime64(6, 'UTC'),
       duration_minutes Nullable(Int32),
       is_deleted UInt8,
-      refresh_version UInt64
+      refresh_version UInt64,
+      refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, date)`,
     `CREATE TABLE ${targetSchema}.resting_heart_rate_sleep_window (
       user_id UUID,

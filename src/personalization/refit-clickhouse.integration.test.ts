@@ -3,7 +3,7 @@ import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import type { Database } from "../db/typed-sql.ts";
-import { fitSleepFromDb } from "./refit.ts";
+import { fitSleepFromDb, refitAllParams } from "./refit.ts";
 
 const testUserId = "00000000-0000-4000-8000-000000001777";
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -17,7 +17,7 @@ describe("personalization refit ClickHouse sleep inputs", () => {
       url: requireClickHouseUrl(),
       request_timeout: 120_000,
     });
-    await waitForClickHouse(client);
+    await assertClickHouseReady(client);
   }, 120_000);
 
   afterAll(async () => {
@@ -33,7 +33,7 @@ describe("personalization refit ClickHouse sleep inputs", () => {
     const tombstonedDate = utcDateDaysAgo(46);
     await seedFixture(activeClient, targetSchema, sleepDates, tombstonedDate);
 
-    let executedQuery = "";
+    let executedQuery: string | undefined;
     const sensorStore = createRefitSensorStore({
       query: async (args) => {
         executedQuery = args.query;
@@ -60,6 +60,49 @@ describe("personalization refit ClickHouse sleep inputs", () => {
     expect(executedQuery).toContain("sleep.is_deleted = 0");
     expect(executedQuery).not.toContain("analytics.v_sleep");
   }, 180_000);
+
+  it("fits readiness through the public refit flow with tombstoned sleep excluded", async () => {
+    const activeClient = requireClient(client);
+    const sleepDates = Array.from({ length: 15 }, (_, index) => utcDateDaysAgo(30 + index));
+    const tombstonedDate = utcDateDaysAgo(46);
+    const metricDates = Array.from({ length: 60 }, (_, index) => utcDateDaysAgo(30 + index));
+    await seedFixture(activeClient, targetSchema, sleepDates, tombstonedDate);
+
+    const dailySleepRows: unknown[][] = [];
+    const sensorStore = createRefitSensorStore({
+      query: async (args) => {
+        if (!args.query.includes("analytics.daily_sleep")) {
+          return { json: async () => [] };
+        }
+
+        const result = await activeClient.query({
+          query: args.query.replaceAll("analytics.daily_sleep", `${targetSchema}.daily_sleep`),
+          format: args.format,
+          query_params: args.query_params,
+        });
+        return {
+          json: async () => {
+            const rows = await result.json();
+            dailySleepRows.push(rows);
+            return rows;
+          },
+        };
+      },
+    });
+    const readinessRows = createReadinessRows(metricDates);
+    const db = {
+      execute: async () => readinessRows,
+    } satisfies Database;
+
+    const result = await refitAllParams(db, testUserId, sensorStore);
+
+    expect(result.readinessWeights).toMatchObject({ sampleCount: metricDates.length });
+    expect(dailySleepRows).toHaveLength(2);
+    expect(dailySleepRows.flat()).toContainEqual(expect.objectContaining({ date: sleepDates[0] }));
+    expect(dailySleepRows.flat()).not.toContainEqual(
+      expect.objectContaining({ date: tombstonedDate }),
+    );
+  }, 180_000);
 });
 
 function requireClickHouseUrl(): string {
@@ -77,19 +120,9 @@ function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
   return client;
 }
 
-async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
-  let lastError: unknown;
-  for (let attemptIndex = 0; attemptIndex < 60; attemptIndex += 1) {
-    try {
-      const result = await client.query({ query: "SELECT 1", format: "JSONEachRow" });
-      await result.json();
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolveAfterDelay) => setTimeout(resolveAfterDelay, 1_000));
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
+async function assertClickHouseReady(client: ClickHouseClient): Promise<void> {
+  const result = await client.query({ query: "SELECT 1", format: "JSONEachRow" });
+  await result.json();
 }
 
 function utcDateDaysAgo(days: number): string {
@@ -119,18 +152,42 @@ async function seedFixture(
       date Date,
       started_at DateTime64(6, 'UTC'),
       duration_minutes Nullable(Int32),
+      efficiency_pct Nullable(Float32),
       is_deleted UInt8,
       refresh_version UInt64
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, date)`,
   });
   const liveRows = sleepDates.map(
     (date, index) =>
-      `('${testUserId}', toDate('${date}'), toDateTime64('${date} 08:00:00', 6, 'UTC'), 480, 0, ${index + 1})`,
+      `('${testUserId}', toDate('${date}'), toDateTime64('${date} 08:00:00', 6, 'UTC'), 480, 85, 0, ${index + 1})`,
   );
   liveRows.push(
-    `('${testUserId}', toDate('${tombstonedDate}'), toDateTime64('${tombstonedDate} 08:00:00', 6, 'UTC'), 60, 1, 100)`,
+    `('${testUserId}', toDate('${tombstonedDate}'), toDateTime64('${tombstonedDate} 08:00:00', 6, 'UTC'), 480, 95, 0, 99)`,
+    `('${testUserId}', toDate('${tombstonedDate}'), toDateTime64('${tombstonedDate} 08:00:00', 6, 'UTC'), 60, 100, 1, 100)`,
   );
   await client.command({
     query: `INSERT INTO ${targetSchema}.daily_sleep VALUES ${liveRows.join(",\n")}`,
+  });
+}
+
+function createReadinessRows(dates: string[]): Record<string, unknown>[] {
+  return dates.map((date, index) => {
+    const hrv = 40 + index;
+    return {
+      date,
+      hrv,
+      resting_hr: 55,
+      hrv_mean: 70,
+      hrv_sd: 20,
+      rhr_mean: 55,
+      rhr_sd: 5,
+      respiratory_rate: 16,
+      rr_mean: 16,
+      rr_sd: 1,
+      efficiency_pct: null,
+      next_day_hrv: hrv,
+      next_day_hrv_mean: 70,
+      next_day_hrv_sd: 20,
+    };
   });
 }

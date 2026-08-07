@@ -914,6 +914,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_weeks AS");
+    expect(sql).toContain("sleep_week_keys AS");
+    expect(sql).toContain("changed_sleep_weeks AS");
+    expect(sql).toContain("FROM sleep_week_keys");
+    expect(sql).toContain("FROM changed_sleep_weeks");
     expect(normalizedSql).toContain("existing_weeks.latest_materialized_week_start - INTERVAL 26 WEEK");
     expect(sql).toContain("ref('healthspan_activity_zone_minutes')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
