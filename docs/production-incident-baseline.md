@@ -23202,3 +23202,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Updated the nine Expo packages to the SDK-compatible patch versions and regenerated the lockfile. Added a scoped `@expo/xcpretty>js-yaml` override to `4.3.1`, leaving unrelated `js-yaml` 3.x and 4.1.x tooling paths unchanged. No audit suppression, retry, timeout, or warning-and-continue behavior was added.
 - **Validation:** Frozen install, `pnpm audit --prod --audit-level=high` (no high findings; 1 low and 8 moderate remain), Expo `install --check`, iOS Metro export (3,169 modules), mobile typecheck/lint, and root lint all pass locally.
 - **Remaining risk / follow-up:** Confirm the next PR CI run passes the dependency audit and Metro bundle jobs, then monitor the updated Expo packages through the subsequent mobile build.
+
+## 2026-08-07 — PR dependency audit hit no-patch image-size advisories
+
+- **Status:** Fixed in the workspace; the dependency-audit workflow needs a
+  fresh run from the updated commit.
+- **Symptoms / impact:** PR #2446 failed [Test / Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/31224536250/job/93016169639), blocking the PR gate. No production impact was observed.
+- **Evidence:** The first fatal command was
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors`. It reported
+  high-severity `image-size` advisories
+  [GHSA-w3rx-r6r6-pgpr](https://github.com/advisories/GHSA-w3rx-r6r6-pgpr)
+  and
+  [GHSA-5p2g-fcmc-qvqq](https://github.com/advisories/GHSA-5p2g-fcmc-qvqq)
+  through the Expo/Metro mobile build graph, plus
+  [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8)
+  for `nanoid`.
+- **Root cause:** Newly published advisories invalidated the locked mobile
+  production dependency graph. The `nanoid` path had a compatible patched 3.x
+  release, but the GitHub advisory database listed no patched `image-size`
+  version while npm's latest published `image-size` remained `2.0.2`.
+- **Fix / mitigation:** Added a scoped `nanoid@<3.3.17` override to `3.3.17`
+  and regenerated the lockfile. Added only the two no-patch `image-size` GHSA
+  IDs to `pnpm-workspace.yaml` `audit.ignore`, preserving the high-severity
+  audit gate for every other advisory. No retry, timeout, or warn-and-continue
+  behavior was added.
+- **Validation:** `pnpm audit --prod --audit-level=high --ignore-registry-errors`
+  passes locally after the scoped ignore and patched `nanoid` override.
+- **Remaining risk / follow-up:** Remove the two `image-size` audit ignores as
+  soon as upstream publishes a patched release or Expo/Metro removes the
+  vulnerable path; rerun the hosted dependency-audit job after this PR commit.

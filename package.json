@@ -148,7 +148,7 @@
     "release:npm:publish": "pnpm --recursive publish --access public --no-git-checks",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm lint:sandbox && pnpm lint:analytics-sql",
-    "lint:sandbox": "pnpm lint:exact-versions && biome check . --max-diagnostics=500 && pnpm lint:suppressions && pnpm lint:workflow-downloads && pnpm lint:analytics-policy && pnpm lint:mobile-telemetry && pnpm lint:web-stories && pnpm lint:review-scenarios",
+    "lint:sandbox": "pnpm lint:exact-versions && biome check . --max-diagnostics=500 && pnpm lint:suppressions && pnpm lint:workflow-downloads && pnpm lint:analytics-policy && pnpm lint:mobile-telemetry && pnpm lint:web-stories && pnpm lint:review-scenarios && pnpm check:mobile-app-routes",
     "lint:fix": "biome check --write .",
     "lint:exact-versions": "tsx scripts/exact-versions.ts",
     "lint:openapi": "redocly lint docs/whoop-api.openapi.yaml --extends minimal",
@@ -213,7 +213,8 @@
     "size": "size-limit",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
     "spellcheck": "cspell --no-progress",
-    "check:mobile-update": "tsx scripts/check-ota-manifest.ts"
+    "check:mobile-update": "tsx scripts/check-ota-manifest.ts",
+    "check:mobile-app-routes": "pnpm tsx scripts/check-mobile-app-route-files.ts"
   },
   "dependencies": {
     "@ai-sdk/otel": "1.0.47",
