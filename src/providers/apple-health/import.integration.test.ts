@@ -739,6 +739,7 @@ describe("importAppleHealthFile — full DB integration", () => {
   let ctx: TestContext;
   let tmpDir: string;
   let zipPath: string;
+  let importResult: Awaited<ReturnType<typeof importAppleHealthFile>>;
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
@@ -750,6 +751,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     writeFileSync(xmlPath, IMPORT_XML);
     zipPath = join(tmpDir, "export.zip");
     execSync(`cd "${tmpDir}" && zip "${zipPath}" export.xml`);
+    importResult = await importAppleHealthFile(ctx.db, zipPath, new Date("2024-01-01"), () => {});
   }, 120_000);
 
   afterAll(async () => {
@@ -761,14 +763,11 @@ describe("importAppleHealthFile — full DB integration", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("imports from a .zip and inserts into all tables", async () => {
-    const since = new Date("2024-01-01");
-    const result = await importAppleHealthFile(ctx.db, zipPath, since, () => {});
-
-    expect(result.provider).toBe("apple_health");
-    expect(result.recordsSynced).toBeGreaterThan(0);
-    expect(result.errors).toHaveLength(0);
-  }, 60_000);
+  it("imports from a .zip and inserts into all tables", () => {
+    expect(importResult.provider).toBe("apple_health");
+    expect(importResult.recordsSynced).toBeGreaterThan(0);
+    expect(importResult.errors).toHaveLength(0);
+  });
 
   it("creates metric_stream rows for HR, SpO2, and blood glucose", async () => {
     const rows = await ctx.db.select().from(schema.metricStream);
@@ -887,6 +886,25 @@ describe("importAppleHealthFile — full DB integration", () => {
         planName: "7/3 Repeaters",
         boardId: "metolius-compact-ii",
         boardName: "Metolius Compact II",
+        rawActivitySegments: expect.stringContaining('"stepID":"step-1"'),
+        activitySegments: [
+          {
+            stepID: "step-1",
+            stepNumber: 1,
+            kind: "work",
+            holdIDs: ["edge-19"],
+            holdType: "edge",
+            sizeMillimeters: 19,
+            durationSeconds: 7,
+          },
+          {
+            stepID: "step-1-rest",
+            stepNumber: 1,
+            kind: "rest",
+            holdIDs: [],
+            durationSeconds: 3,
+          },
+        ],
       },
     });
     expect(

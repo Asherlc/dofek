@@ -650,6 +650,7 @@ describe("runImport (control-flow mutation killers)", () => {
 
   it("reports malformed Hang Ten segments after importing the workout", async () => {
     vi.resetModules();
+    const upsertWorkoutBatch = vi.fn().mockResolvedValue(1);
 
     vi.doMock("./db-insertion.ts", () => ({
       METRIC_STREAM_TYPES: {},
@@ -663,7 +664,7 @@ describe("runImport (control-flow mutation killers)", () => {
       upsertNutritionBatch: vi.fn().mockResolvedValue(0),
       upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
       upsertSleepBatch: vi.fn().mockResolvedValue(0),
-      upsertWorkoutBatch: vi.fn().mockResolvedValue(1),
+      upsertWorkoutBatch,
       linkUnassignedHeartRateToActivities: vi.fn().mockResolvedValue(0),
       aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
       aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
@@ -712,6 +713,8 @@ describe("runImport (control-flow mutation killers)", () => {
         message: "Invalid Hang Ten activity segments JSON: could not parse JSON",
       }),
     ]);
+    expect(result.recordsSynced).toBe(1);
+    expect(upsertWorkoutBatch).toHaveBeenCalledTimes(1);
   });
 });
 
