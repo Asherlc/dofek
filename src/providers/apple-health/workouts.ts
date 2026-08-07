@@ -156,9 +156,8 @@ function hangTenWorkoutOverrides(
   if (!planName) return {};
 
   const rawActivitySegments = metadata["HangTen.ActivitySegments"];
-  const parsedActivitySegments = rawActivitySegments
-    ? parseHangTenActivitySegments(rawActivitySegments)
-    : {};
+  const parsedActivitySegments =
+    rawActivitySegments !== undefined ? parseHangTenActivitySegments(rawActivitySegments) : {};
 
   return {
     activityType: "hangboard",
