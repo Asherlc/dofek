@@ -75,14 +75,7 @@ export async function replaceHangTenIntervals(
       DELETE FROM ${activityInterval}
       WHERE ${activityInterval.activityId} = ${activityId}
     )
-    INSERT INTO ${activityInterval} (
-      ${activityInterval.activityId},
-      ${activityInterval.intervalIndex},
-      ${activityInterval.label},
-      ${activityInterval.intervalType},
-      ${activityInterval.startedAt},
-      ${activityInterval.endedAt}
-    )
+    INSERT INTO ${activityInterval} (activity_id, interval_index, label, interval_type, started_at, ended_at)
     VALUES ${replacementValues}
   `);
 }
