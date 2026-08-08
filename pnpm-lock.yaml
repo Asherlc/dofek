@@ -566,8 +566,8 @@ importers:
         specifier: 2.32.0
         version: 2.32.0(react-native@0.86.2)(react@19.2.3)
       react-native-maps:
-        specifier: 1.27.2
-        version: 1.27.2(react-native-web@0.21.2)(react-native@0.86.2)(react@19.2.3)
+        specifier: 1.29.0
+        version: 1.29.0(react-native-web@0.21.2)(react-native@0.86.2)(react@19.2.3)
       react-native-reanimated:
         specifier: 4.5.1
         version: 4.5.1(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)
@@ -14126,8 +14126,8 @@ packages:
       react: 19.2.3
       react-native: '*'
 
-  react-native-maps@1.27.2:
-    resolution: {integrity: sha512-VKr+xZ2RZGHHJlY6KhlafvGSmK0dq/tUu5uhfJ7K9rwN5pUdubdugzMKGDU/16lXmQSg7xbClKhRctj3Pm5F5g==}
+  react-native-maps@1.29.0:
+    resolution: {integrity: sha512-tXyYyyeZgiThHQvr/d22V7MMOxUfxdkXujFkGEuGP6FwBvVew/QmTS8VNiPbPce95uBIqE/SaOjai3Zwndpadg==}
     engines: {node: '>= 20.19.4'}
     peerDependencies:
       react: 19.2.3
@@ -32040,7 +32040,7 @@ snapshots:
       react: 19.2.3
       react-native: 0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(@types/react@19.2.14)(react@19.2.3)(supports-color@11.0.0)
 
-  react-native-maps@1.27.2(react-native-web@0.21.2)(react-native@0.86.2)(react@19.2.3):
+  react-native-maps@1.29.0(react-native-web@0.21.2)(react-native@0.86.2)(react@19.2.3):
     dependencies:
       '@types/geojson': 7946.0.16
       react: 19.2.3
