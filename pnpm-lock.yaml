@@ -606,8 +606,8 @@ importers:
         specifier: 19.2.14
         version: 19.2.14
       playwright:
-        specifier: 1.55.1
-        version: 1.55.1
+        specifier: 1.62.1
+        version: 1.62.1
       react-dom:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
@@ -13708,14 +13708,14 @@ packages:
   plantuml-encoder@1.4.0:
     resolution: {integrity: sha512-sxMwpDw/ySY1WB2CE3+IdMuEcWibJ72DDOsXLkSmEaSzwEUaYBT6DWgOfBiHGCux4q433X6+OEFWjlVqp7gL6g==}
 
-  playwright-core@1.55.1:
-    resolution: {integrity: sha512-Z6Mh9mkwX+zxSlHqdr5AOcJnfp+xUWLCt9uKV18fhzA8eyxUd8NUWzAjxUh55RZKSYwDGX0cfaySdhZJGMoJ+w==}
-    engines: {node: '>=18'}
+  playwright-core@1.62.1:
+    resolution: {integrity: sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==}
+    engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.55.1:
-    resolution: {integrity: sha512-cJW4Xd/G3v5ovXtJJ52MAOclqeac9S/aGGgRzLabuF8TnIb6xHvMzKIa6JmrRzUkeXJgfL1MhukP0NK6l39h3A==}
-    engines: {node: '>=18'}
+  playwright@1.62.1:
+    resolution: {integrity: sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg==}
+    engines: {node: '>=20'}
     hasBin: true
 
   plist@3.1.1:
@@ -31668,11 +31668,11 @@ snapshots:
 
   plantuml-encoder@1.4.0: {}
 
-  playwright-core@1.55.1: {}
+  playwright-core@1.62.1: {}
 
-  playwright@1.55.1:
+  playwright@1.62.1:
     dependencies:
-      playwright-core: 1.55.1
+      playwright-core: 1.62.1
     optionalDependencies:
       fsevents: 2.3.2
 
