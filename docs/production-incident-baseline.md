@@ -23231,3 +23231,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Remove the two `image-size` audit ignores as
   soon as upstream publishes a patched release or Expo/Metro removes the
   vulnerable path; rerun the hosted dependency-audit job after this PR commit.
+
+## 2026-08-08 — PR 2447 CI migration failed on a removed activity enum
+
+- **Status:** Fixed in the workspace; hosted CI needs a fresh run from the
+  updated commit. No production impact was observed.
+- **Symptoms / impact:** [PR CI run 31242532102](https://github.com/Asherlc/dofek/actions/runs/31242532102) failed all four integration shards and the web E2E migration step, blocking PR #2447.
+- **Evidence / root cause:** The first fatal database line in [integration shard 1](https://github.com/Asherlc/dofek/actions/runs/31242532102/job/93066014694) and the E2E migration log was `type "fitness.activity_type" does not exist`. Migration [`0068_canonical_activity_types.sql`](../drizzle/0068_canonical_activity_types.sql) drops that legacy enum, while [`0071_add_hangboard_activity_type.sql`](../drizzle/0071_add_hangboard_activity_type.sql) still attempted to alter it. PostgreSQL applies enum-value changes through `ALTER TYPE` ([official documentation](https://www.postgresql.org/docs/current/sql-altertype.html)).
+- **Fix / mitigation:** Removed the obsolete legacy-enum statement and added a real Postgres integration regression that applies migrations 0068 and 0071 together, verifies `hangboard` on `canonical_activity_type`, and verifies the legacy enum remains absent. No migration skip, retry, timeout, or failure suppression was added.
+- **Validation:** The regression test passes 1/1, the full seed/migration integration test passes 2/2, migration policy passes, and TypeScript typecheck passes locally. Full analytics SQL lint was not runnable because this workspace could not start isolated Compose services after Docker reported `all predefined address pools have been fully subnetted`.
+- **Remaining risk / follow-up:** Push the workspace changes and confirm the hosted PR CI rerun passes the integration and E2E migration jobs; clean only disposable stale Docker networks if local analytics lint must be rerun.
