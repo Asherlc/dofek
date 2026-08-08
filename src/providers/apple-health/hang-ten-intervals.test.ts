@@ -1,36 +1,17 @@
-import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { describe, expect, it } from "vitest";
 import { buildHangTenIntervals } from "./hang-ten-intervals.ts";
-import type { HealthWorkout } from "./workouts.ts";
+import { hangTenActivitySegments, hangTenWorkout } from "./test-helpers.ts";
 
 describe("buildHangTenIntervals", () => {
   it("keeps later intervals at the last known time after a missing duration", () => {
     const start = new Date("2026-08-07T14:00:00Z");
-    const workout: HealthWorkout = {
-      activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
-      sourceName: "Hang Ten",
-      durationSeconds: 60,
+    const workout = hangTenWorkout({
       startDate: start,
       endDate: new Date("2026-08-07T14:01:00Z"),
       hangTen: {
         planName: "Repeaters",
         activitySegments: [
-          {
-            stepID: "step-1",
-            stepNumber: 1,
-            kind: "work",
-            holdIDs: ["edge-19"],
-            holdType: "edge",
-            sizeMillimeters: 19,
-            durationSeconds: 7,
-          },
-          {
-            stepID: "step-1-rest",
-            stepNumber: 1,
-            kind: "rest",
-            holdIDs: [],
-            durationSeconds: 3,
-          },
+          ...hangTenActivitySegments(),
           {
             stepID: "step-2",
             stepNumber: 2,
@@ -46,7 +27,7 @@ describe("buildHangTenIntervals", () => {
           },
         ],
       },
-    };
+    });
 
     expect(buildHangTenIntervals("act-1", workout)).toEqual([
       expect.objectContaining({

@@ -766,7 +766,6 @@ function workoutName(workout: HealthWorkout): string {
 function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
   const raw: Record<string, unknown> = { durationSeconds: workout.durationSeconds };
   if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
-  if (workout.calories !== undefined) raw.calories = workout.calories;
   if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
   if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
   if (workout.hangTen) raw.hangTen = workout.hangTen;

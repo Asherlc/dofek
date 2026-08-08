@@ -12,7 +12,7 @@
 
 - Keep `provider_id = apple_health`; represent Hang Ten through `sourceName` and raw metadata.
 - Add `hangboard` as a first-class canonical activity type in the shared training package and database enum.
-- Recognize Hang Ten only when Apple Health maps the workout to `functional_strength`, brand metadata is `Hang Ten`, and `HangTen.PlanName` is present after trimming whitespace.
+- Recognize Hang Ten only when the Apple Health export uses `HKWorkoutActivityTypeFunctionalStrengthTraining`, the HealthKit workout brand metadata key contains `Hang Ten`, and `HangTen.PlanName` is present after trimming whitespace. Apple documents the HealthKit functional strength workout type and workout brand metadata key in `HKWorkoutActivityType.functionalStrengthTraining` and `HKMetadataKeyWorkoutBrandName`: https://developer.apple.com/documentation/healthkit/hkworkoutactivitytype/functionalstrengthtraining and https://developer.apple.com/documentation/healthkit/hkmetadatakeyworkoutbrandname.
 - Store Hang Ten session ID, plan name, board ID, board name, raw segment JSON, and parsed segments in `activity.raw`.
 - Insert one `activity_interval` per parsed segment and replace existing intervals on reimport.
 - Malformed Hang Ten segment JSON must report a sync error while still importing the workout row.
@@ -26,7 +26,7 @@
 - Modify `packages/training/src/training.ts`: add `hangboard` to canonical activity types and labels.
 - Modify `packages/training/src/training.test.ts`: prove `hangboard` is canonical and labels as `Hangboard`.
 - Modify `src/db/schema.ts`: add `hangboard` to the Drizzle activity type enum.
-- Create `drizzle/0005_add_hangboard_activity_type.sql`: add the enum value with `ALTER TYPE fitness.activity_type ADD VALUE IF NOT EXISTS 'hangboard';`.
+- Create `drizzle/0071_add_hangboard_activity_type.sql`: add the enum values with `ALTER TYPE ... ADD VALUE IF NOT EXISTS 'hangboard';`.
 - Modify `src/providers/apple-health/workouts.ts`: add metadata and Hang Ten segment parsing helpers on `HealthWorkout`.
 - Modify `src/providers/apple-health/parsing.test.ts` and `src/providers/apple-health/parsing-extra.test.ts`: cover Hang Ten detection and metadata parsing.
 - Modify `src/providers/apple-health/streaming.ts`: collect nested `MetadataEntry` elements for open workouts.
@@ -46,7 +46,7 @@
 - Modify: `packages/training/src/training.ts`
 - Modify: `packages/training/src/training.test.ts`
 - Modify: `src/db/schema.ts`
-- Create: `drizzle/0005_add_hangboard_activity_type.sql`
+- Create: `drizzle/0071_add_hangboard_activity_type.sql`
 
 **Interfaces:**
 - Produces: canonical activity type literal `"hangboard"` usable anywhere `CanonicalActivityType` is accepted.
@@ -79,10 +79,11 @@ hangboard: "Hangboard",
 
 In `src/db/schema.ts`, add `"hangboard"` to `activityTypeEnum` near `"climbing"` and `"rock_climbing"`.
 
-Create `drizzle/0005_add_hangboard_activity_type.sql`:
+Create `drizzle/0071_add_hangboard_activity_type.sql`:
 
 ```sql
-ALTER TYPE fitness.activity_type ADD VALUE IF NOT EXISTS 'hangboard';
+ALTER TYPE fitness.canonical_activity_type ADD VALUE IF NOT EXISTS 'hangboard' AFTER 'climbing';
+ALTER TYPE fitness.activity_type ADD VALUE IF NOT EXISTS 'hangboard' AFTER 'climbing';
 ```
 
 - [ ] **Step 5: Run focused tests**
@@ -100,7 +101,7 @@ Expected: migration succeeds.
 - [ ] **Step 7: Commit**
 
 ```bash
-rtk git add packages/training/src/training.ts packages/training/src/training.test.ts src/db/schema.ts drizzle/0005_add_hangboard_activity_type.sql
+rtk git add packages/training/src/training.ts packages/training/src/training.test.ts src/db/schema.ts drizzle/0071_add_hangboard_activity_type.sql drizzle/meta/_journal.json
 rtk git commit -m "feat: add hangboard activity type"
 rtk git push
 ```
@@ -530,7 +531,6 @@ function workoutName(workout: HealthWorkout): string {
 function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
   const raw: Record<string, unknown> = { durationSeconds: workout.durationSeconds };
   if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
-  if (workout.calories !== undefined) raw.calories = workout.calories;
   if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
   if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
   if (workout.hangTen) raw.hangTen = workout.hangTen;
@@ -611,9 +611,8 @@ In `src/providers/apple-health/db-insertion.integration.test.ts`, add a test tha
 Run:
 
 ```bash
-rtk docker compose up -d db redis
-rtk docker compose ps db redis
-rtk pnpm vitest src/providers/apple-health/db-insertion.test.ts src/providers/apple-health/db-insertion.integration.test.ts
+rtk pnpm test:integration -- src/providers/apple-health/db-insertion.integration.test.ts
+rtk pnpm vitest run --project unit src/providers/apple-health/db-insertion.test.ts
 ```
 
 Expected: PASS.

@@ -32,7 +32,6 @@ export interface HealthWorkout {
   sourceName: string | null;
   durationSeconds: number;
   distanceMeters?: number;
-  calories?: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
   startDate: Date;
@@ -89,19 +88,12 @@ export function parseWorkout(
     distanceMeters = normalizeDistance(attrs.totalDistance, attrs.totalDistanceUnit ?? "m");
   }
 
-  let calories: number | undefined;
-  if (attrs.totalEnergyBurned) {
-    const raw = parseFloat(attrs.totalEnergyBurned);
-    calories = Math.round(raw);
-  }
-
   return applyWorkoutMetadata(
     {
       activityType,
       sourceName: attrs.sourceName ?? null,
       durationSeconds,
       distanceMeters,
-      calories,
       startDate: parseHealthDate(attrs.startDate ?? ""),
       endDate: parseHealthDate(attrs.endDate ?? ""),
     },

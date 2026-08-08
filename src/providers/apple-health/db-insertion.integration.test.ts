@@ -17,7 +17,7 @@ import {
 } from "./db-insertion.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
-import { healthRecord } from "./test-helpers.ts";
+import { hangTenWorkout, healthRecord } from "./test-helpers.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const PROVIDER_ID = "apple_health";
@@ -134,35 +134,10 @@ describe("db-insertion deduplication (integration)", () => {
 
     it("replaces Hang Ten intervals on reimport", async () => {
       const start = new Date("2026-08-07T14:00:00Z");
-      const workout: HealthWorkout = {
-        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
-        sourceName: "Hang Ten",
-        durationSeconds: 10,
+      const workout = hangTenWorkout({
         startDate: start,
         endDate: new Date("2026-08-07T14:00:10Z"),
-        hangTen: {
-          sessionId: "22222222-2222-4222-8222-222222222222",
-          planName: "Repeaters",
-          activitySegments: [
-            {
-              stepID: "step-1",
-              stepNumber: 1,
-              kind: "work",
-              holdIDs: ["edge-19"],
-              holdType: "edge",
-              sizeMillimeters: 19,
-              durationSeconds: 7,
-            },
-            {
-              stepID: "step-1-rest",
-              stepNumber: 1,
-              kind: "rest",
-              holdIDs: [],
-              durationSeconds: 3,
-            },
-          ],
-        },
-      };
+      });
 
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
       if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
@@ -192,10 +167,7 @@ describe("db-insertion deduplication (integration)", () => {
 
     it("keeps existing Hang Ten intervals when replacement insertion fails", async () => {
       const start = new Date("2026-08-08T14:00:00Z");
-      const workout: HealthWorkout = {
-        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
-        sourceName: "Hang Ten",
-        durationSeconds: 7,
+      const workout = hangTenWorkout({
         startDate: start,
         endDate: new Date("2026-08-08T14:00:07Z"),
         hangTen: {
@@ -211,7 +183,7 @@ describe("db-insertion deduplication (integration)", () => {
             },
           ],
         },
-      };
+      });
 
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
       const hangTen = workout.hangTen;

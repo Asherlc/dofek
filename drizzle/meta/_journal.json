@@ -582,6 +582,13 @@
       "when": 1785770820000,
       "tag": "0070_repair_subjective_inputs",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1786162800000,
+      "tag": "0071_add_hangboard_activity_type",
+      "breakpoints": true
     }
   ]
 }
