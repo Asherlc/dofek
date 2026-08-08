@@ -15,7 +15,7 @@ import { runMigrations } from "./migrate.ts";
 import { writeTestMigrationFiles } from "./test-helpers.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
-// cspell:ignore conrelid contype functional_fitness relacl relkind relname relnamespace relreplident
+// cspell:ignore conrelid contype enumlabel enumtypid functional_fitness regtype relacl relkind relname relnamespace relreplident typname typnamespace
 
 const activityIds = {
   football: "00000000-0000-4000-8000-000000000105",
