@@ -23,7 +23,7 @@
 
 - `src/db/schema/processing.ts`: Drizzle declaration for the dismissal relation.
 - `drizzle/0071_processing_alert_dismissal.sql` and `drizzle/meta/*`: forward migration and generated schema metadata.
-- `src/db/processing-alert-dismissals.integration.test.ts`: executable PostgreSQL coverage for the new relation's ownership and idempotency behavior.
+- `src/db/processing-alert-dismissals.integration.test.ts`: executable PostgreSQL coverage for the new relation's foreign keys and uniqueness behavior.
 - `packages/server/src/repositories/processing-repository.ts`: derive `lastFailedAt`/`errorMessage`, read dismissals, group current failures for alerts, and persist scoped dismissals.
 - `packages/server/src/repositories/processing-repository.test.ts`: repository unit coverage for timestamps, grouping, dismissal state, ownership, and idempotency.
 - `packages/server/src/routers/processing.ts`: validate the new response fields and expose `processing.dismiss`.
@@ -56,7 +56,7 @@
 
 - [ ] **Step 1: Write the failing integration test**
 
-Add a Docker-backed test that creates two fixture users and one processing operation for the first user, inserts a dismissal for that operation with a direct SQL helper, verifies the row can be read, verifies the table's duplicate primary key is enforced, and verifies a dismissal for the second user cannot reference the first user's operation through the foreign key relationship.
+Add a Docker-backed test that creates one fixture user and one processing operation, inserts a dismissal for that operation with a direct SQL helper, verifies the row can be read, verifies the table's duplicate primary key is enforced, and verifies nonexistent user and operation references fail through the actual foreign keys. Cross-user ownership belongs to the repository mutation test in Task 2 because independent `user_id` and `operation_id` foreign keys do not enforce a composite user-operation relationship.
 
 The database assertion must exercise the actual foreign keys rather than checking SQL text:
 
@@ -69,7 +69,10 @@ const insertDismissal = (userId: string, operationId: string) => database.execut
 
 await expect(insertDismissal(firstUserId, operationId)).resolves.toHaveLength(1);
 await expect(insertDismissal(firstUserId, operationId)).rejects.toThrow();
-await expect(insertDismissal(secondUserId, operationId)).rejects.toThrow();
+await expect(insertDismissal("10000000-0000-4000-8000-000000000099", operationId)).rejects.toThrow();
+await expect(
+  insertDismissal(firstUserId, "10000000-0000-4000-8000-000000000099"),
+).rejects.toThrow();
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
