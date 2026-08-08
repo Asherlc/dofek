@@ -198,7 +198,6 @@ const workoutAttrs: Record<string, string> = {
   durationUnit: "min",
   totalDistance: "5200",
   totalDistanceUnit: "m",
-  totalEnergyBurned: "420",
   sourceName: "Apple Watch",
   sourceVersion: "11.0",
   creationDate: "2024-03-01 18:30:00 -0500",
@@ -496,7 +495,6 @@ describe("Apple Health Provider -- parsing", () => {
       expect(result.activityType.canonicalType).toBe("running");
       expect(result.durationSeconds).toBeCloseTo(1830); // 30.5 min
       expect(result.distanceMeters).toBe(5200);
-      expect(result).not.toHaveProperty("calories");
       expect(result.sourceName).toBe("Apple Watch");
       expect(result.startDate).toBeInstanceOf(Date);
       expect(result.endDate).toBeInstanceOf(Date);

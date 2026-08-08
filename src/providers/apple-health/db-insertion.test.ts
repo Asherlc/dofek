@@ -109,6 +109,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isSqlWrapper(value: unknown): value is SQLWrapper {
+  return isRecord(value) && typeof value.getSQL === "function";
+}
+
 function findActivityUpsertValues(
   predicate: (values: Record<string, unknown>) => boolean,
 ): Record<string, unknown> | undefined {
@@ -1513,7 +1517,13 @@ describe("upsertWorkoutBatch", () => {
     ]);
 
     const update = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls[0]?.[2];
-    expect(isRecord(update) ? update.name : undefined).toBeDefined();
+    const nameExpression = isRecord(update) ? update.name : undefined;
+    expect(nameExpression).toBeDefined();
+    if (!isSqlWrapper(nameExpression)) throw new Error("Expected a SQL name expression");
+
+    const compiled = new PgDialect().sqlToQuery(nameExpression.getSQL());
+    expect(compiled.sql).toContain("excluded.canonical_type = 'hangboard'");
+    expect(compiled.sql).toContain("excluded.name");
   });
 
   it("preserves a Hang Ten segment parse error without inserting intervals", async () => {

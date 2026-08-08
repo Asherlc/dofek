@@ -11,17 +11,7 @@
   "engines": {
     "node": ">=16.x"
   },
-  "packageManager": "yarn@4.0.2",
   "bin": "bin/image-size.js",
-  "scripts": {
-    "lint": "eslint bin lib specs",
-    "format": "prettier --write lib specs eslint.config.mjs",
-    "test": "nyc mocha",
-    "clean": "rm -rf dist docs",
-    "generate-docs": "typedoc",
-    "build": "tsc",
-    "prepack": "yarn clean && yarn build"
-  },
   "keywords": [
     "image",
     "size",

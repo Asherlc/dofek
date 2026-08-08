@@ -14,8 +14,8 @@ intervals.
 
 Dofek's Apple Health importer streams `Workout`, `WorkoutStatistics`, routes,
 records, sleep, and category data from `export.xml`. Workout parsing currently
-keeps the canonical activity type, source name, duration, distance, calories,
-heart-rate summary, start date, end date, and route points. Nested workout
+keeps the canonical activity type, source name, duration, distance, heart-rate
+summary, start date, end date, and route points. Nested workout
 metadata entries are ignored.
 
 Hang Ten saves completed sessions with:

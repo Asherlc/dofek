@@ -165,6 +165,42 @@ describe("db-insertion deduplication (integration)", () => {
       ]);
     });
 
+    it("keeps existing Hang Ten intervals after a malformed reimport", async () => {
+      const start = new Date("2026-08-07T15:00:00Z");
+      const workout = hangTenWorkout({
+        startDate: start,
+        endDate: new Date("2026-08-07T15:00:10Z"),
+      });
+      if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.sessionId = "44444444-4444-4444-8444-444444444444";
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      workout.hangTen.rawActivitySegments = "{not-json}";
+      workout.hangTen.activitySegments = undefined;
+      workout.hangTen.activitySegmentsError = "Unexpected token n in JSON at position 1";
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, "ah:workout:44444444-4444-4444-8444-444444444444"));
+      expect(storedActivity).toBeDefined();
+      if (!storedActivity) return;
+
+      const intervals = await ctx.db
+        .select()
+        .from(schema.activityInterval)
+        .where(eq(schema.activityInterval.activityId, storedActivity.id))
+        .orderBy(asc(schema.activityInterval.intervalIndex));
+
+      expect(intervals).toHaveLength(2);
+      expect(intervals.map((interval) => interval.label)).toEqual([
+        "Step 1: 19 mm edge",
+        "Step 1: Rest",
+      ]);
+    });
+
     it("keeps existing Hang Ten intervals when replacement insertion fails", async () => {
       const start = new Date("2026-08-08T14:00:00Z");
       const workout = hangTenWorkout({

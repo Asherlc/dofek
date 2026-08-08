@@ -25,8 +25,8 @@
 
 - Modify `packages/training/src/training.ts`: add `hangboard` to canonical activity types and labels.
 - Modify `packages/training/src/training.test.ts`: prove `hangboard` is canonical and labels as `Hangboard`.
-- Modify `src/db/schema.ts`: add `hangboard` to the Drizzle activity type enum.
-- Create `drizzle/0071_add_hangboard_activity_type.sql`: add the enum values with `ALTER TYPE ... ADD VALUE IF NOT EXISTS 'hangboard';`.
+- Modify `src/db/schema/enums.ts`: add `hangboard` to the Drizzle canonical activity type enum.
+- Create `drizzle/0071_add_hangboard_activity_type.sql`: add the canonical enum value with `ALTER TYPE ... ADD VALUE IF NOT EXISTS 'hangboard';`.
 - Modify `src/providers/apple-health/workouts.ts`: add metadata and Hang Ten segment parsing helpers on `HealthWorkout`.
 - Modify `src/providers/apple-health/parsing.test.ts` and `src/providers/apple-health/parsing-extra.test.ts`: cover Hang Ten detection and metadata parsing.
 - Modify `src/providers/apple-health/streaming.ts`: collect nested `MetadataEntry` elements for open workouts.
@@ -50,7 +50,7 @@
 
 **Interfaces:**
 - Produces: canonical activity type literal `"hangboard"` usable anywhere `CanonicalActivityType` is accepted.
-- Produces: database enum value `fitness.activity_type = 'hangboard'`.
+- Produces: database enum value `fitness.canonical_activity_type = 'hangboard'`.
 
 - [ ] **Step 1: Write the failing shared training tests**
 
@@ -77,13 +77,12 @@ hangboard: "Hangboard",
 
 - [ ] **Step 4: Add the Drizzle enum value**
 
-In `src/db/schema.ts`, add `"hangboard"` to `activityTypeEnum` near `"climbing"` and `"rock_climbing"`.
+In `src/db/schema/enums.ts`, add `"hangboard"` to `canonicalActivityTypeEnum` near `"climbing"` and `"rock_climbing"`.
 
 Create `drizzle/0071_add_hangboard_activity_type.sql`:
 
 ```sql
 ALTER TYPE fitness.canonical_activity_type ADD VALUE IF NOT EXISTS 'hangboard' AFTER 'climbing';
-ALTER TYPE fitness.activity_type ADD VALUE IF NOT EXISTS 'hangboard' AFTER 'climbing';
 ```
 
 - [ ] **Step 5: Run focused tests**
@@ -743,9 +742,9 @@ expect(intervals.map((interval) => interval.label)).toEqual([
 Run:
 
 ```bash
-rtk docker compose up -d db redis
-rtk docker compose ps db redis
-rtk pnpm vitest src/providers/apple-health/import.integration.test.ts
+rtk pnpm compose -- up -d db redis
+rtk pnpm compose -- ps db redis
+rtk pnpm test:integration -- src/providers/apple-health/import.integration.test.ts
 ```
 
 Expected before implementation: FAIL. Expected after Tasks 1-3: PASS.
@@ -772,7 +771,8 @@ const hangboard = activities.find(
 Run:
 
 ```bash
-rtk pnpm vitest packages/training/src/training.test.ts src/providers/apple-health/parsing.test.ts src/providers/apple-health/parsing-extra.test.ts src/providers/apple-health/streaming.test.ts src/providers/apple-health/db-insertion.test.ts src/providers/apple-health/db-insertion.integration.test.ts src/providers/apple-health/import.integration.test.ts
+rtk pnpm vitest packages/training/src/training.test.ts src/providers/apple-health/parsing.test.ts src/providers/apple-health/parsing-extra.test.ts src/providers/apple-health/streaming.test.ts src/providers/apple-health/db-insertion.test.ts
+rtk pnpm test:integration -- src/providers/apple-health/db-insertion.integration.test.ts src/providers/apple-health/import.integration.test.ts
 ```
 
 Expected: PASS.

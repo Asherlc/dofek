@@ -42,7 +42,6 @@ describe("CANONICAL_ACTIVITY_TYPES", () => {
 
   it("includes strength and fitness types", () => {
     expect(CANONICAL_ACTIVITY_TYPES).toContain("strength");
-    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("yoga");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("pilates");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("elliptical");

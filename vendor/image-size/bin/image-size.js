@@ -14,7 +14,6 @@ if (!files.length) {
 }
 
 const red = ['\x1B[31m', '\x1B[39m']
-// const bold = ['\x1B[1m',  '\x1B[22m']
 const grey = ['\x1B[90m', '\x1B[39m']
 const green = ['\x1B[32m', '\x1B[39m']
 
@@ -47,7 +46,6 @@ files.forEach(function (image) {
       console.error("file doesn't exist - ", image)
     }
   } catch (e) {
-    // console.error(e.stack)
     console.error(colorize(e.message, red), '-', image)
   }
 })

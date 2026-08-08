@@ -31,13 +31,7 @@ A [Node](https://nodejs.org/en/) module to get dimensions of any image file
 ## Programmatic Usage
 
 ```shell
-npm install image-size --save
-```
-
-or
-
-```shell
-yarn add image-size
+pnpm add image-size
 ```
 
 ### Synchronous
@@ -161,13 +155,7 @@ console.log(dimensions.orientation)
 ## Command-Line Usage (CLI)
 
 ```shell
-npm install image-size --global
-```
-
-or
-
-```shell
-yarn global add image-size
+pnpm add --global image-size
 ```
 
 followed by
@@ -180,5 +168,3 @@ image-size image1 [image2] [image3] ...
 
 not a direct port, but an attempt to have something like
 [dabble's imagesize](https://github.com/dabble/imagesize/blob/master/lib/image_size.rb) as a node module.
-
-## [Contributors](Contributors.md)
