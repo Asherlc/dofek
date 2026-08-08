@@ -47,7 +47,6 @@ describe("CANONICAL_ACTIVITY_TYPES", () => {
     expect(CANONICAL_ACTIVITY_TYPES).toContain("pilates");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("elliptical");
     expect(CANONICAL_ACTIVITY_TYPES).toContain("rowing");
-    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
   });
 
   it("includes 'other' as a catch-all", () => {

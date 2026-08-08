@@ -26,7 +26,7 @@ overrides:
   lerna>minimatch: 3.1.4
   minimatch@3>brace-expansion: 1.1.18
   minimatch: 10.2.5
-  nanoid: 3.3.18
+  nanoid@<3.3.17: 3.3.18
   image-size: file:vendor/image-size
   picomatch@>=4.0.0 <4.0.4: 4.0.4
   postcss: 8.5.23
