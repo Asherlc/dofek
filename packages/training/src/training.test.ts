@@ -300,6 +300,7 @@ describe("RIDE_WITH_GPS_ACTIVITY_TYPE_MAP", () => {
 describe("formatActivityTypeLabel", () => {
   it("maps known activity types to human-readable names", () => {
     expect(formatActivityTypeLabel("functional_strength")).toBe("Functional Strength");
+    expect(formatActivityTypeLabel("hangboard")).toBe("Hangboard");
     expect(formatActivityTypeLabel("strength_training")).toBe("Strength Training");
   });
 

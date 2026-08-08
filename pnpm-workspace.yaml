@@ -32,11 +32,6 @@ packages:
 
 dedupePeers: true
 
-audit:
-  ignore:
-    - GHSA-w3rx-r6r6-pgpr
-    - GHSA-5p2g-fcmc-qvqq
-
 overrides:
   "@expo/dom-webview": 55.0.5
   "@expo/xcpretty>js-yaml": 4.3.1
@@ -58,7 +53,8 @@ overrides:
   "lerna>minimatch": 3.1.4
   "minimatch@3>brace-expansion": 1.1.18
   minimatch: 10.2.5
-  "nanoid@<3.3.17": 3.3.17
+  "nanoid@<3.3.17": 3.3.18
+  image-size: "file:vendor/image-size"
   "picomatch@>=4.0.0 <4.0.4": 4.0.4
   postcss: 8.5.23
   protobufjs: 8.7.1
@@ -133,3 +129,4 @@ minimumReleaseAgeExclude:
   - '@expo/config-plugins@57.0.7'
   - expo-file-system@57.0.2
   - expo-symbols@57.0.2
+  - nanoid@3.3.18
