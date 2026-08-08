@@ -1,18 +1,32 @@
+import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import type { ProcessingOperationWithEvents } from "dofek/processing/processing-event-store";
 import type { DerivedProcessingStatus } from "dofek/processing/processing-state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockDeriveProcessingState, mockListProcessingHistory, mockListScopedProcessingOperations } =
-  vi.hoisted(() => ({
-    mockDeriveProcessingState: vi.fn(),
-    mockListProcessingHistory: vi.fn(),
-    mockListScopedProcessingOperations: vi.fn(),
-  }));
+const {
+  mockDeriveProcessingState,
+  mockExecuteWithSchema,
+  mockListProcessingHistory,
+  mockListScopedProcessingOperations,
+} = vi.hoisted(() => ({
+  mockDeriveProcessingState: vi.fn(),
+  mockExecuteWithSchema: vi.fn(),
+  mockListProcessingHistory: vi.fn(),
+  mockListScopedProcessingOperations: vi.fn(),
+}));
 
 vi.mock("dofek/processing/processing-state", () => ({
   deriveProcessingState: mockDeriveProcessingState,
 }));
+
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: (...args: unknown[]) => mockExecuteWithSchema(...args),
+  };
+});
 
 vi.mock("dofek/processing/processing-event-store", () => ({
   listProcessingHistory: mockListProcessingHistory,
@@ -75,6 +89,7 @@ describe("ProcessingRepository", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(now);
+    mockExecuteWithSchema.mockResolvedValue([]);
     mockDeriveProcessingState.mockImplementation((input: { datasetKeys: readonly string[] }) => ({
       overallStatus: "ready",
       datasets: input.datasetKeys.map((datasetKey) => ({
@@ -120,6 +135,7 @@ describe("ProcessingRepository", () => {
         currentStage: null,
         progressPercentage: null,
         lastAdvancedAt: null,
+        lastFailedAt: null,
         lastReadyAt: null,
       },
     ]);
@@ -282,6 +298,7 @@ describe("ProcessingRepository", () => {
         currentStage: "cdc",
         progressPercentage: 40,
         lastAdvancedAt: "2026-07-22T18:00:00.000Z",
+        lastFailedAt: null,
         lastReadyAt: "2026-07-22T17:00:00.000Z",
       },
     ]);
@@ -334,6 +351,7 @@ describe("ProcessingRepository", () => {
       currentStage: "analytics",
       progressPercentage: 75,
       lastAdvancedAt: null,
+      lastFailedAt: null,
       lastReadyAt: null,
     });
   });
@@ -357,7 +375,133 @@ describe("ProcessingRepository", () => {
     const result = await repository.status({ datasets: ["activity"] });
 
     expect(result.datasets[0]?.lastAdvancedAt).toBeNull();
+    expect(result.datasets[0]?.lastFailedAt).toBeNull();
     expect(result.datasets[0]?.lastReadyAt).toBeNull();
+  });
+
+  it("derives dataset failure timestamps from the failed event occurrence time", async () => {
+    const failedAt = new Date("2026-07-22T16:00:00.000Z");
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        createdAt: new Date("2026-07-22T15:00:00.000Z"),
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: failedAt,
+            errorMessage: "Activity analytics failed.",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.datasets[0]?.lastAdvancedAt).toBe("2026-07-22T18:00:00.000Z");
+    expect(result.datasets[0]?.lastFailedAt).toBe("2026-07-22T16:00:00.000Z");
+    expect(result.operations[0]?.dismissed).toBe(false);
+    expect(result.operations[0]?.errorMessage).toBe("Activity analytics failed.");
+  });
+
+  it("keeps a dataset ready when a later operation succeeds and suppresses the old alert", async () => {
+    const olderFailure = operation({
+      id: "10000000-0000-4000-8000-000000000041",
+      createdAt: new Date("2026-07-22T16:00:00.000Z"),
+      events: [
+        event(1, {
+          operationId: "10000000-0000-4000-8000-000000000041",
+          stage: "analytics",
+          status: "failed",
+          datasetKey: "activity",
+          occurredAt: new Date("2026-07-22T16:30:00.000Z"),
+        }),
+      ],
+    });
+    const laterReady = operation({
+      id: "10000000-0000-4000-8000-000000000042",
+      createdAt: new Date("2026-07-22T17:30:00.000Z"),
+      events: [
+        event(1, {
+          operationId: "10000000-0000-4000-8000-000000000042",
+          stage: "cache_refresh",
+          status: "succeeded",
+          datasetKey: "activity",
+          occurredAt: new Date("2026-07-22T17:45:00.000Z"),
+        }),
+      ],
+    });
+    mockListScopedProcessingOperations.mockResolvedValue([laterReady, olderFailure]);
+    mockDeriveProcessingState
+      .mockReturnValueOnce({
+        overallStatus: "ready",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "cache_refresh",
+            status: "ready",
+            progressPercentage: 100,
+            lastAdvancedAt: new Date("2026-07-22T17:45:00.000Z"),
+          },
+        ],
+      })
+      .mockReturnValueOnce({
+        overallStatus: "failed",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "analytics",
+            status: "failed",
+            progressPercentage: null,
+            lastAdvancedAt: new Date("2026-07-22T16:30:00.000Z"),
+          },
+        ],
+      })
+      .mockReturnValueOnce({
+        overallStatus: "ready",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "cache_refresh",
+            status: "ready",
+            progressPercentage: 100,
+            lastAdvancedAt: new Date("2026-07-22T17:45:00.000Z"),
+          },
+        ],
+      })
+      .mockReturnValueOnce({
+        overallStatus: "failed",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "analytics",
+            status: "failed",
+            progressPercentage: null,
+            lastAdvancedAt: new Date("2026-07-22T16:30:00.000Z"),
+          },
+        ],
+      });
+    const repository = new ProcessingRepository(database, userId);
+
+    const status = await repository.status({ datasets: ["activity"] });
+    const alerts = await repository.alerts();
+
+    expect(status.datasets[0]?.status).toBe("ready");
+    expect(status.datasets[0]?.lastFailedAt).toBe("2026-07-22T16:30:00.000Z");
+    expect(alerts.alerts).toEqual([]);
   });
 
   it.each<DerivedProcessingStatus>([
@@ -465,6 +609,7 @@ describe("ProcessingRepository", () => {
           providerId: "garmin",
           providerLabel: "Garmin",
           datasetKey: "providers",
+          datasetKeys: ["providers"],
           occurredAt: "2026-07-22T18:00:00.000Z",
           title: "Garmin summary wasn’t updated",
           message:
@@ -734,6 +879,7 @@ describe("ProcessingRepository", () => {
           providerId: null,
           providerLabel: null,
           datasetKey: "activity",
+          datasetKeys: ["activity"],
           occurredAt: latestFailureAt.toISOString(),
           title: "Activities wasn’t updated",
           message:
@@ -771,6 +917,7 @@ describe("ProcessingRepository", () => {
       alerts: [
         expect.objectContaining({
           occurredAt: "2026-07-22T18:00:00.000Z",
+          datasetKeys: ["activity"],
           title: "Activities wasn’t updated",
           message:
             "Dofek imported your file, but couldn’t update activities. Your previously imported data is still available.",
@@ -816,6 +963,7 @@ describe("ProcessingRepository", () => {
           providerId: "garmin",
           providerLabel: "Garmin",
           datasetKey: "activity",
+          datasetKeys: ["activity"],
           occurredAt: "2026-07-22T18:00:00.000Z",
           title: "Activities wasn’t updated",
           message:
@@ -841,6 +989,7 @@ describe("ProcessingRepository", () => {
           currentStage: "analytics",
           progressPercentage: null,
           lastAdvancedAt: "2026-07-22T18:00:00.000Z",
+          lastFailedAt: null,
           lastReadyAt: null,
         },
       ],
@@ -873,6 +1022,110 @@ describe("ProcessingRepository", () => {
       generatedAt: "2026-07-22T18:00:00.000Z",
       alerts: [expect.objectContaining({ datasetKey: "activity", action: "retry_import" })],
     });
+  });
+
+  it("groups several failed datasets in one provider operation into one alert", async () => {
+    const latestFailureAt = new Date("2026-07-22T17:50:00.000Z");
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "provider_sync",
+        datasetKeys: ["activity", "recovery", "sleep"],
+        outputManifest: {
+          activity: ["relational"],
+          recovery: ["relational"],
+          sleep: ["relational"],
+        },
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: new Date("2026-07-22T17:10:00.000Z"),
+          }),
+          event(2, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "recovery",
+            occurredAt: new Date("2026-07-22T17:30:00.000Z"),
+          }),
+          event(3, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "sleep",
+            occurredAt: latestFailureAt,
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "recovery",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "sleep",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const alerts = await repository.alerts();
+
+    expect(alerts.alerts).toHaveLength(1);
+    expect(alerts.alerts[0]?.datasetKeys).toEqual(["activity", "recovery", "sleep"]);
+    expect(alerts.alerts[0]?.occurredAt).toBe("2026-07-22T17:50:00.000Z");
+  });
+
+  it("marks dismissed operations in status and omits them from alerts", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: new Date("2026-07-22T17:20:00.000Z"),
+          }),
+        ],
+      }),
+    ]);
+    mockExecuteWithSchema.mockResolvedValue([{ operation_id: operationId }]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const status = await repository.status({ datasets: ["activity"] });
+    const alerts = await repository.alerts();
+
+    expect(status.operations[0]?.dismissed).toBe(true);
+    expect(alerts.alerts).toEqual([]);
   });
 
   it("does not alert for resolved or in-progress datasets", async () => {
@@ -1042,6 +1295,31 @@ describe("ProcessingRepository", () => {
       userId,
       cursor: operationId,
       limit: 25,
+    });
+  });
+
+  it("inserts a dismissal once and returns dismissed on repeated requests", async () => {
+    mockExecuteWithSchema
+      .mockResolvedValueOnce([{ operation_id: operationId }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ operation_id: operationId }]);
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.dismiss(operationId)).resolves.toEqual({ dismissed: true });
+    await expect(repository.dismiss(operationId)).resolves.toEqual({ dismissed: true });
+    expect(mockExecuteWithSchema).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    "10000000-0000-4000-8000-000000000091",
+    "10000000-0000-4000-8000-000000000092",
+  ])("rejects dismissing an unknown or foreign operation (%s)", async (targetOperationId) => {
+    mockExecuteWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.dismiss(targetOperationId)).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "NOT_FOUND",
+      message: "Processing operation not found",
     });
   });
 });
