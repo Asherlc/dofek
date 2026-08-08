@@ -414,6 +414,14 @@ export class ProcessingRepository {
 
   async alerts(): Promise<ProcessingAlertsSnapshot> {
     const snapshot = await this.status({});
+    const currentOperationIdsByDataset = new Map<ProcessingDatasetKey, string>();
+    for (const operation of snapshot.operations) {
+      for (const datasetKey of operation.datasets) {
+        if (!currentOperationIdsByDataset.has(datasetKey)) {
+          currentOperationIdsByDataset.set(datasetKey, operation.id);
+        }
+      }
+    }
     const alertableDatasets = new Map(
       snapshot.datasets
         .filter((dataset) => dataset.status === "failed" || dataset.status === "blocked")
@@ -422,6 +430,7 @@ export class ProcessingRepository {
     const alerts = snapshot.operations.flatMap((operation) => {
       if (operation.dismissed) return [];
       const groupedDatasets = operation.datasets
+        .filter((datasetKey) => currentOperationIdsByDataset.get(datasetKey) === operation.id)
         .map((datasetKey) => alertableDatasets.get(datasetKey))
         .filter((dataset): dataset is ProcessingStatusDataset => dataset !== undefined);
       return groupedDatasets.length === 0 ? [] : [buildProcessingAlert(groupedDatasets, operation)];

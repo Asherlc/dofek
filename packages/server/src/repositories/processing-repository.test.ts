@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { ProcessingOperationWithEvents } from "dofek/processing/processing-event-store";
 import type { DerivedProcessingStatus } from "dofek/processing/processing-state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,6 +40,7 @@ const operationId = "10000000-0000-4000-8000-000000000001";
 const userId = "10000000-0000-4000-8000-000000000002";
 const now = new Date("2026-07-22T18:00:00.000Z");
 const database: Database = Object.create(null);
+const postgresDialect = new PgDialect();
 
 function event(
   sequence: number,
@@ -1128,6 +1130,71 @@ describe("ProcessingRepository", () => {
     expect(alerts.alerts).toEqual([]);
   });
 
+  it("alerts only for the newest current failed operation when older failed operations share the dataset", async () => {
+    const newerOperationId = "10000000-0000-4000-8000-000000000051";
+    const olderOperationId = "10000000-0000-4000-8000-000000000052";
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        id: newerOperationId,
+        createdAt: new Date("2026-07-22T17:40:00.000Z"),
+        events: [
+          event(1, {
+            operationId: newerOperationId,
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: new Date("2026-07-22T17:50:00.000Z"),
+          }),
+        ],
+      }),
+      operation({
+        id: olderOperationId,
+        createdAt: new Date("2026-07-22T16:40:00.000Z"),
+        events: [
+          event(1, {
+            operationId: olderOperationId,
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: new Date("2026-07-22T16:50:00.000Z"),
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState
+      .mockReturnValueOnce({
+        overallStatus: "failed",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "analytics",
+            status: "failed",
+            progressPercentage: null,
+            lastAdvancedAt: new Date("2026-07-22T17:50:00.000Z"),
+          },
+        ],
+      })
+      .mockReturnValueOnce({
+        overallStatus: "failed",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "analytics",
+            status: "failed",
+            progressPercentage: null,
+            lastAdvancedAt: new Date("2026-07-22T16:50:00.000Z"),
+          },
+        ],
+      });
+    const repository = new ProcessingRepository(database, userId);
+
+    const alerts = await repository.alerts();
+
+    expect(alerts.alerts).toHaveLength(1);
+    expect(alerts.alerts[0]?.id).toBe(`${newerOperationId}:activity`);
+    expect(alerts.alerts[0]?.occurredAt).toBe("2026-07-22T17:50:00.000Z");
+  });
+
   it("does not alert for resolved or in-progress datasets", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([operation()]);
     const repository = new ProcessingRepository(database, userId);
@@ -1308,6 +1375,19 @@ describe("ProcessingRepository", () => {
     await expect(repository.dismiss(operationId)).resolves.toEqual({ dismissed: true });
     await expect(repository.dismiss(operationId)).resolves.toEqual({ dismissed: true });
     expect(mockExecuteWithSchema).toHaveBeenCalledTimes(3);
+  });
+
+  it("scopes dismissal inserts to operations owned by the authenticated user", async () => {
+    mockExecuteWithSchema.mockResolvedValueOnce([{ operation_id: operationId }]);
+    const repository = new ProcessingRepository(database, userId);
+
+    await repository.dismiss(operationId);
+
+    const compiledQuery = postgresDialect.sqlToQuery(mockExecuteWithSchema.mock.calls[0]?.[2]);
+    expect(compiledQuery.sql).toContain("operation.user_id =");
+    expect(compiledQuery.params).toEqual(
+      expect.arrayContaining([userId, operationId, userId]),
+    );
   });
 
   it.each([
