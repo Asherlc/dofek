@@ -857,7 +857,7 @@ describe("ActivitiesCalendarRepository", () => {
     });
   });
 
-  it("does not report partial overview totals as available", async () => {
+  it("reports partial overview totals as available", async () => {
     const database = makeDatabase([
       [{ id: "run" }, { id: "ride" }],
       [{ id: "run" }, { id: "ride" }],
@@ -887,13 +887,58 @@ describe("ActivitiesCalendarRepository", () => {
       repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
     ).resolves.toMatchObject({
       activityCount: 2,
-      totalDistanceMeters: null,
-      totalDistanceState: {
-        status: "missing",
-        reason: "Distance was not recorded for every activity.",
-      },
+      totalDistanceMeters: 5000,
+      totalDistanceState: { status: "available" },
       totalElevationGainM: 100,
       totalElevationState: { status: "available" },
+    });
+  });
+
+  it("compares partial totals when both periods have measurements", async () => {
+    const database = makeDatabase([
+      [{ id: "current-1" }, { id: "current-2" }],
+      [{ id: "previous-1" }, { id: "previous-2" }],
+    ]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          current_activity_count: 2,
+          current_total_minutes: 120,
+          current_total_distance_meters: 7500,
+          current_total_elevation_gain_m: 150,
+          current_distance_measurement_count: 1,
+          current_elevation_measurement_count: 1,
+          previous_activity_count: 2,
+          previous_total_minutes: 90,
+          previous_total_distance_meters: 5000,
+          previous_total_elevation_gain_m: 100,
+          previous_distance_measurement_count: 1,
+          previous_elevation_measurement_count: 1,
+        },
+      ],
+      [{ canonical_type: "running" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toMatchObject({
+      totalDistanceMeters: 7500,
+      totalDistanceState: { status: "available" },
+      totalElevationGainM: 150,
+      totalElevationState: { status: "available" },
+      comparison: {
+        totalDistanceMeters: {
+          magnitude: 2500,
+          trend: "higher",
+          state: { status: "available" },
+        },
+        totalElevationGainM: {
+          magnitude: 50,
+          trend: "higher",
+          state: { status: "available" },
+        },
+      },
     });
   });
 

@@ -818,16 +818,22 @@ function overviewPeriodFromRow(
     period === "current"
       ? row.current_elevation_measurement_count
       : row.previous_elevation_measurement_count;
-  const distanceComplete = distanceMeasurementCount === activityCount;
-  const elevationComplete = elevationMeasurementCount === activityCount;
-  const completeDistance = distanceComplete ? roundNullableMetric(totalDistanceMeters) : null;
-  const completeElevation = elevationComplete ? roundNullableMetric(totalElevationGainM) : null;
+  const distanceHasMeasurement = distanceMeasurementCount > 0;
+  const elevationHasMeasurement = elevationMeasurementCount > 0;
 
   return {
     activityCount,
     totalMinutes,
-    totalDistance: overviewMeasurement("Distance", completeDistance, distanceComplete),
-    totalElevation: overviewMeasurement("Elevation gain", completeElevation, elevationComplete),
+    totalDistance: overviewMeasurement(
+      "Distance",
+      distanceHasMeasurement ? roundNullableMetric(totalDistanceMeters) : null,
+      distanceHasMeasurement || activityCount === 0,
+    ),
+    totalElevation: overviewMeasurement(
+      "Elevation gain",
+      elevationHasMeasurement ? roundNullableMetric(totalElevationGainM) : null,
+      elevationHasMeasurement || activityCount === 0,
+    ),
   };
 }
 
