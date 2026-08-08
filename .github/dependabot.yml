@@ -26,9 +26,16 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: "docker"
-    directories:
-      - "/"
-      - "/packages/ml"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "python"
+        versions: [">=3.14"]
+  - package-ecosystem: "docker"
+    directory: "/packages/ml"
     schedule:
       interval: "weekly"
     cooldown:
