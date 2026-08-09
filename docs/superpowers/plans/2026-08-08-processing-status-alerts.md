@@ -116,6 +116,7 @@ git commit -m "feat: add processing alert dismissals"
 **Files:**
 - Modify: `packages/server/src/repositories/processing-repository.ts`
 - Modify: `packages/server/src/repositories/processing-repository.test.ts`
+- Modify: `packages/providers-meta/src/processing-alerts.ts` when aligning the shared grouped-alert type with the live router contract
 
 **Interfaces:**
 - `ProcessingStatusDataset` gains `lastFailedAt: string | null`.
@@ -123,6 +124,7 @@ git commit -m "feat: add processing alert dismissals"
 - `ProcessingRepository.dismiss(operationId: string): Promise<{ dismissed: true }>` inserts an idempotent dismissal only for an operation owned by `#userId`; an unknown or foreign operation throws a not-found error.
 - `ProcessingRepository.status()` reads dismissal rows only for the scoped operations and returns dismissal state on each operation.
 - `ProcessingRepository.alerts()` returns at most one grouped `ProcessingAlert` per current failed/blocked operation and excludes dismissed operations.
+- The grouped `ProcessingAlert` returned by the repository uses the operation UUID as `id` and includes `datasetKeys` and `datasetLabels`; this shared type alignment is part of this task so the Task 3 runtime router contract cannot be false-green against mocked repository output.
 
 - [ ] **Step 1: Write failing repository tests**
 
@@ -179,7 +181,7 @@ Expected: PASS, including all existing status/history/alert behavior and the new
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/server/src/repositories/processing-repository.ts packages/server/src/repositories/processing-repository.test.ts
+git add packages/server/src/repositories/processing-repository.ts packages/server/src/repositories/processing-repository.test.ts packages/providers-meta/src/processing-alerts.ts
 git commit -m "feat: derive processing failure timestamps"
 ```
 
