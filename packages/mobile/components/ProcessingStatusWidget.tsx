@@ -3,13 +3,14 @@ import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
   processingAggregateProgress,
-  processingDatasetErrorMessage,
   processingDatasetStatusLabel,
+  processingFailureGroups,
   processingHeading,
   processingStatusMessage,
   processingTarget,
 } from "@dofek/providers/processing-status";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { trpc } from "../lib/trpc";
 import { colors, spacing } from "../theme";
 import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator";
 import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard";
@@ -26,6 +27,7 @@ export interface ProcessingStatusSnapshot {
     progressPercentage: number | null;
     lastAdvancedAt: string | null;
     lastReadyAt: string | null;
+    lastFailedAt: string | null;
   }>;
   operations: Array<{
     id: string;
@@ -34,7 +36,10 @@ export interface ProcessingStatusSnapshot {
     createdAt: string;
     status: ProcessingDisplayStatus;
     datasets: string[];
+    dismissed: boolean;
+    errorMessage: string | null;
     timeline: Array<{
+      sequence: number;
       stage: ProcessingDisplayStage;
       status: string;
       datasetKey: string | null;
@@ -63,6 +68,13 @@ export function ProcessingStatusWidget({
   contextLabel,
   alwaysVisible = false,
 }: ProcessingStatusWidgetProps) {
+  const trpcUtils = trpc.useUtils();
+  const dismissMutation = trpc.processing.dismiss.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.processing.status.invalidate();
+    },
+  });
+
   if (loading && !data) return null;
   if (error && !data) {
     return (
@@ -92,20 +104,24 @@ export function ProcessingStatusWidget({
   const problemDatasets = data.datasets.filter(
     (dataset) => dataset.status === "failed" || dataset.status === "blocked",
   );
+  const failureGroups = processingFailureGroups({
+    datasets: data.datasets,
+    operations: data.operations,
+  });
+  const hasFailureStatus = data.overallStatus === "failed" || data.overallStatus === "blocked";
+  if (hasFailureStatus && failureGroups.length === 0) {
+    return null;
+  }
   const datasetsWithHistory = data.datasets.filter(
     (dataset) =>
       dataset.status !== "ready" || dataset.lastAdvancedAt !== null || dataset.lastReadyAt !== null,
   );
   const visibleDatasets = alwaysVisible ? datasetsWithHistory : problemDatasets;
-  const datasetDetails =
+  const historicalDatasetDetails =
     visibleDatasets.length > 0 ? (
       <View style={styles.datasetList}>
         {visibleDatasets.map((dataset) => {
           const lastReady = dataset.lastReadyAt ? formatRelativeTime(dataset.lastReadyAt) : null;
-          const datasetError =
-            dataset.status === "failed" || dataset.status === "blocked"
-              ? processingDatasetErrorMessage(data.operations, dataset.key)
-              : null;
           return (
             <View key={dataset.key} style={styles.datasetRow}>
               <View style={styles.datasetHeading}>
@@ -117,12 +133,58 @@ export function ProcessingStatusWidget({
               <Text style={styles.datasetFreshness}>
                 {lastReady ? `Last ready: ${lastReady}` : "No completed update recorded"}
               </Text>
-              {datasetError ? <Text style={styles.datasetError}>{datasetError}</Text> : null}
             </View>
           );
         })}
       </View>
     ) : null;
+  const failureGroupDetails =
+    failureGroups.length > 0 ? (
+      <View style={styles.datasetList}>
+        {failureGroups.map((group) => {
+          const failedAt = group.failedAt ? formatRelativeTime(group.failedAt) : null;
+          const lastReadyAt = group.lastReadyAt ? formatRelativeTime(group.lastReadyAt) : null;
+          const labelPrefix = group.providerLabel ? `${group.providerLabel} sync` : "data update";
+          return (
+            <View key={group.operationId} style={styles.datasetRow}>
+              <View style={styles.failureGroupHeader}>
+                <View style={styles.failureGroupCopy}>
+                  <View style={styles.datasetLabels}>
+                    {group.datasetLabels.map((label) => (
+                      <Text key={label} style={styles.datasetLabel}>
+                        {label}
+                      </Text>
+                    ))}
+                  </View>
+                  <Text style={styles.datasetFreshness}>
+                    {processingDatasetStatusLabel(group.status)}: {failedAt ?? "not recorded"}
+                  </Text>
+                  {lastReadyAt ? (
+                    <Text style={styles.datasetFreshness}>
+                      Last successful update: {lastReadyAt}
+                    </Text>
+                  ) : null}
+                  {group.errorMessage ? (
+                    <Text style={styles.datasetError}>{group.errorMessage}</Text>
+                  ) : null}
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Dismiss ${labelPrefix} failure`}
+                  accessibilityState={{ disabled: dismissMutation.isPending }}
+                  disabled={dismissMutation.isPending}
+                  onPress={() => dismissMutation.mutate({ operationId: group.operationId })}
+                  style={[styles.dismissButton, dismissMutation.isPending && styles.actionDisabled]}
+                >
+                  <Text style={styles.dismissButtonText}>Dismiss</Text>
+                </Pressable>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    ) : null;
+  const datasetDetails = failureGroupDetails ?? historicalDatasetDetails;
 
   if (target.action === "recompute" && visibleDatasets.length === 0) {
     return (
@@ -139,6 +201,11 @@ export function ProcessingStatusWidget({
       status={data.overallStatus}
     >
       {datasetDetails}
+      {dismissMutation.error ? (
+        <Text style={styles.datasetError} accessibilityRole="alert">
+          {dismissMutation.error.message}
+        </Text>
+      ) : null}
     </SourceProcessingStatusCard>
   );
 }
@@ -162,7 +229,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   datasetLabel: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  datasetLabels: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   datasetStatus: { color: colors.textSecondary, fontSize: 12 },
   datasetFreshness: { color: colors.textTertiary, fontSize: 12 },
   datasetError: { color: colors.danger, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  failureGroupHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  failureGroupCopy: { flex: 1, gap: 2 },
+  dismissButton: {
+    alignItems: "center",
+    borderColor: colors.surfaceSecondary,
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  dismissButtonText: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  actionDisabled: { opacity: 0.5 },
 });
