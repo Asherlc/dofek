@@ -279,20 +279,14 @@ describe("activity visibility consistency", () => {
         activityCount: { magnitude: 3, trend: "higher" },
         totalMinutes: { magnitude: 90, trend: "higher" },
         totalDistanceMeters: {
-          magnitude: null,
-          trend: "unavailable",
-          state: {
-            status: "missing",
-            reason: "Previous period: Distance not recorded",
-          },
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
         },
         totalElevationGainM: {
-          magnitude: null,
-          trend: "unavailable",
-          state: {
-            status: "missing",
-            reason: "Previous period: Elevation gain not recorded",
-          },
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
         },
       },
     });
