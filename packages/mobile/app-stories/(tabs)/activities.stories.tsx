@@ -252,6 +252,7 @@ function createStoryData() {
         progressPercentage: null,
         lastAdvancedAt: null,
         lastReadyAt: `${today}T12:00:00.000Z`,
+        lastFailedAt: null,
       },
     ],
     operations: [],

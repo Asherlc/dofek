@@ -28,6 +28,11 @@ export default function AlertsScreen() {
       await trpcUtils.processing.alerts.invalidate();
     },
   });
+  const dismissMutation = trpc.processing.dismiss.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.processing.alerts.invalidate();
+    },
+  });
 
   function handleAction(alert: ProcessingAlert) {
     if (alert.action === "retry_sync" && alert.providerId) {
@@ -83,24 +88,53 @@ export default function AlertsScreen() {
       ) : (
         <View style={styles.list}>
           {failurePanel}
+          {dismissMutation.error ? (
+            <Text style={styles.error} accessibilityRole="alert">
+              {dismissMutation.error.message}
+            </Text>
+          ) : null}
           {visibleAlerts.map((alert) => (
             <View key={alert.id} style={styles.card}>
               <Text style={styles.title}>{alert.title}</Text>
               <Text style={styles.message}>{alert.message}</Text>
-              <Text style={styles.time}>{formatRelativeTime(alert.occurredAt)}</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={alert.actionLabel}
-                disabled={syncMutation.isPending}
-                onPress={() => handleAction(alert)}
-                style={({ pressed }) => [
-                  styles.action,
-                  pressed && styles.actionPressed,
-                  syncMutation.isPending && styles.actionDisabled,
-                ]}
-              >
-                <Text style={styles.actionText}>{alert.actionLabel}</Text>
-              </Pressable>
+              <View style={styles.datasetLabels}>
+                {alert.datasetLabels.map((label) => (
+                  <Text key={label} style={styles.datasetLabel}>
+                    {label}
+                  </Text>
+                ))}
+              </View>
+              <Text style={styles.time}>Occurred: {formatRelativeTime(alert.occurredAt)}</Text>
+              <View style={styles.actions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={alert.actionLabel}
+                  accessibilityState={{ disabled: syncMutation.isPending }}
+                  disabled={syncMutation.isPending}
+                  onPress={() => handleAction(alert)}
+                  style={({ pressed }) => [
+                    styles.action,
+                    pressed && styles.actionPressed,
+                    syncMutation.isPending && styles.actionDisabled,
+                  ]}
+                >
+                  <Text style={styles.actionText}>{alert.actionLabel}</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Dismiss ${alert.providerLabel ?? "processing"} alert`}
+                  accessibilityState={{ disabled: dismissMutation.isPending }}
+                  disabled={dismissMutation.isPending}
+                  onPress={() => dismissMutation.mutate({ operationId: alert.id })}
+                  style={({ pressed }) => [
+                    styles.dismissAction,
+                    pressed && styles.actionPressed,
+                    dismissMutation.isPending && styles.actionDisabled,
+                  ]}
+                >
+                  <Text style={styles.dismissActionText}>Dismiss</Text>
+                </Pressable>
+              </View>
               {startedProviderId === alert.providerId && alert.providerLabel ? (
                 <Text style={styles.success} accessibilityRole="summary">
                   {alert.providerLabel} sync started.
@@ -169,12 +203,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: spacing.sm,
   },
+  datasetLabels: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  datasetLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  actions: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
   action: {
     alignItems: "center",
     alignSelf: "flex-start",
     backgroundColor: colors.accent,
     borderRadius: radius.md,
-    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  dismissAction: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
@@ -186,6 +246,11 @@ const styles = StyleSheet.create({
   },
   actionText: {
     color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  dismissActionText: {
+    color: colors.text,
     fontSize: 13,
     fontWeight: "700",
   },

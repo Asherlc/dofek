@@ -23,24 +23,26 @@ function occurredMinutesAgo(minutes: number): string {
 
 const activeAlerts = [
   {
-    id: "garmin-sync:activity",
-    providerId: "garmin",
-    providerLabel: "Garmin",
-    datasetKey: "activity",
+    id: "00000000-0000-4000-8000-00000000f501",
+    providerId: "wahoo",
+    providerLabel: "Wahoo",
+    datasetKeys: ["activity", "sleep", "recovery"],
+    datasetLabels: ["Activities", "Sleep", "Recovery"],
     occurredAt: occurredMinutesAgo(4),
-    title: "Garmin activities weren’t updated",
+    title: "Wahoo sync didn’t finish",
     message:
-      "Your Garmin data synced, but Dofek couldn’t update activities. Your previously synced data is still available.",
+      "Dofek couldn’t get the latest data from Wahoo. Reconnect Wahoo, then start the sync again.",
     action: "retry_sync",
-    actionLabel: "Retry Garmin sync",
+    actionLabel: "Retry Wahoo sync",
   },
   {
-    id: "whoop-sync:recovery",
+    id: "00000000-0000-4000-8000-00000000f502",
     providerId: "whoop",
     providerLabel: "WHOOP",
-    datasetKey: "recovery",
+    datasetKeys: ["recovery"],
+    datasetLabels: ["Recovery"],
     occurredAt: occurredMinutesAgo(18),
-    title: "WHOOP couldn’t sync",
+    title: "WHOOP sync didn’t finish",
     message:
       "Dofek couldn’t get the latest data from WHOOP. Reconnect WHOOP, then start the sync again.",
     action: "reconnect",
@@ -83,14 +85,16 @@ function createMockObservable(
           result: {
             data: [
               {
-                providerId: "garmin",
+                providerId: "wahoo",
                 status: "started",
                 jobId: "storybook-sync",
-                queueName: "provider-sync-garmin",
+                queueName: "provider-sync-wahoo",
               },
             ],
           },
         });
+      } else if (path === "processing.dismiss") {
+        observer.next?.({ result: { data: { dismissed: true } } });
       } else {
         observer.error?.(
           TRPCClientError.from<AppRouter>(new Error(`Unhandled Storybook tRPC operation: ${path}`)),
