@@ -610,7 +610,6 @@ describe("ProcessingRepository", () => {
           id: operationId,
           providerId: "garmin",
           providerLabel: "Garmin",
-          datasetKey: "providers",
           datasetKeys: ["providers"],
           datasetLabels: ["Data sources"],
           occurredAt: "2026-07-22T18:00:00.000Z",
@@ -881,7 +880,6 @@ describe("ProcessingRepository", () => {
           id: operationId,
           providerId: null,
           providerLabel: null,
-          datasetKey: "activity",
           datasetKeys: ["activity"],
           datasetLabels: ["Activities"],
           occurredAt: latestFailureAt.toISOString(),
@@ -966,7 +964,6 @@ describe("ProcessingRepository", () => {
           id: operationId,
           providerId: "garmin",
           providerLabel: "Garmin",
-          datasetKey: "activity",
           datasetKeys: ["activity"],
           datasetLabels: ["Activities"],
           occurredAt: "2026-07-22T18:00:00.000Z",
@@ -1025,7 +1022,7 @@ describe("ProcessingRepository", () => {
 
     await expect(repository.alerts()).resolves.toEqual({
       generatedAt: "2026-07-22T18:00:00.000Z",
-      alerts: [expect.objectContaining({ datasetKey: "activity", action: "retry_import" })],
+      alerts: [expect.objectContaining({ datasetKeys: ["activity"], action: "retry_import" })],
     });
   });
 

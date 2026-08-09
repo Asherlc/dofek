@@ -73,10 +73,8 @@ export interface ProcessingStatusSnapshot {
   operations: ProcessingStatusOperation[];
 }
 
-interface ServerProcessingAlert extends Omit<ProcessingAlert, "datasetKey"> {
-  datasetKey: ProcessingDatasetKey;
+interface ServerProcessingAlert extends Omit<ProcessingAlert, "datasetKeys"> {
   datasetKeys: ProcessingDatasetKey[];
-  datasetLabels: string[];
 }
 
 export interface ProcessingAlertsSnapshot {
@@ -179,7 +177,6 @@ function buildProcessingAlert(
       id: alertId,
       providerId: operation.providerId,
       providerLabel: sourceLabel,
-      datasetKey: primaryDataset.key,
       datasetKeys,
       datasetLabels,
       occurredAt,
@@ -206,7 +203,6 @@ function buildProcessingAlert(
         id: alertId,
         providerId: operation.providerId,
         providerLabel: sourceLabel,
-        datasetKey: primaryDataset.key,
         datasetKeys,
         datasetLabels,
         occurredAt,
@@ -221,7 +217,6 @@ function buildProcessingAlert(
       id: alertId,
       providerId: operation.providerId,
       providerLabel: sourceLabel,
-      datasetKey: primaryDataset.key,
       datasetKeys,
       datasetLabels,
       occurredAt,
@@ -239,7 +234,6 @@ function buildProcessingAlert(
     id: alertId,
     providerId: operation.providerId,
     providerLabel: sourceLabel,
-    datasetKey: primaryDataset.key,
     datasetKeys,
     datasetLabels,
     occurredAt,
