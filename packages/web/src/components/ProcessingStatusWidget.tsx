@@ -3,12 +3,13 @@ import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
   processingAggregateProgress,
-  processingDatasetErrorMessage,
   processingDatasetStatusLabel,
+  processingFailureGroups,
   processingHeading,
   processingStatusMessage,
   processingTarget,
 } from "@dofek/providers/processing-status";
+import { trpc } from "../lib/trpc.ts";
 import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator.tsx";
 import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard.tsx";
 
@@ -24,6 +25,7 @@ export interface ProcessingStatusSnapshot {
     progressPercentage: number | null;
     lastAdvancedAt: string | null;
     lastReadyAt: string | null;
+    lastFailedAt: string | null;
   }>;
   operations: Array<{
     id: string;
@@ -32,6 +34,8 @@ export interface ProcessingStatusSnapshot {
     createdAt: string;
     status: ProcessingDisplayStatus;
     datasets: string[];
+    dismissed: boolean;
+    errorMessage: string | null;
     timeline: Array<{
       sequence: number;
       stage: ProcessingDisplayStage;
@@ -62,6 +66,12 @@ export function ProcessingStatusWidget({
   contextLabel,
   alwaysVisible = false,
 }: ProcessingStatusWidgetProps) {
+  const trpcUtils = trpc.useUtils();
+  const dismissMutation = trpc.processing.dismiss.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.processing.status.invalidate();
+    },
+  });
   if (loading && !data) {
     return (
       <section
@@ -101,20 +111,24 @@ export function ProcessingStatusWidget({
   const problemDatasets = data.datasets.filter(
     (dataset) => dataset.status === "failed" || dataset.status === "blocked",
   );
+  const failureGroups = processingFailureGroups({
+    datasets: data.datasets,
+    operations: data.operations,
+  });
+  const hasFailureStatus = data.overallStatus === "failed" || data.overallStatus === "blocked";
+  if (hasFailureStatus && failureGroups.length === 0) {
+    return null;
+  }
   const datasetsWithHistory = data.datasets.filter(
     (dataset) =>
       dataset.status !== "ready" || dataset.lastAdvancedAt !== null || dataset.lastReadyAt !== null,
   );
   const visibleDatasets = alwaysVisible ? datasetsWithHistory : problemDatasets;
-  const datasetDetails =
+  const historicalDatasetDetails =
     visibleDatasets.length > 0 ? (
       <ul className="mt-2 divide-y divide-border border-t border-border">
         {visibleDatasets.map((dataset) => {
           const lastReady = dataset.lastReadyAt ? formatRelativeTime(dataset.lastReadyAt) : null;
-          const datasetError =
-            dataset.status === "failed" || dataset.status === "blocked"
-              ? processingDatasetErrorMessage(data.operations, dataset.key)
-              : null;
           return (
             <li key={dataset.key} className="py-2 text-xs">
               <div className="flex items-center justify-between gap-3">
@@ -124,12 +138,53 @@ export function ProcessingStatusWidget({
               <p className="mt-0.5 text-subtle">
                 {lastReady ? `Last ready: ${lastReady}` : "No completed update recorded"}
               </p>
-              {datasetError ? <p className="mt-1 text-red-700">{datasetError}</p> : null}
             </li>
           );
         })}
       </ul>
     ) : null;
+  const failureGroupDetails =
+    failureGroups.length > 0 ? (
+      <ul className="mt-2 divide-y divide-border border-t border-border">
+        {failureGroups.map((group) => {
+          const failedAt = group.failedAt ? formatRelativeTime(group.failedAt) : null;
+          const lastReadyAt = group.lastReadyAt ? formatRelativeTime(group.lastReadyAt) : null;
+          const labelPrefix = group.providerLabel ? `${group.providerLabel} sync` : "data update";
+          return (
+            <li key={group.operationId} className="py-2 text-xs">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <ul className="flex flex-wrap gap-x-2 gap-y-1 font-semibold text-foreground">
+                    {group.datasetLabels.map((label) => (
+                      <li key={label}>{label}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-0.5 text-subtle">
+                    {processingDatasetStatusLabel(group.status)}: {failedAt ?? "not recorded"}
+                  </p>
+                  {lastReadyAt ? (
+                    <p className="mt-0.5 text-subtle">Last successful update: {lastReadyAt}</p>
+                  ) : null}
+                  {group.errorMessage ? (
+                    <p className="mt-1 text-red-700">{group.errorMessage}</p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 items-center justify-center rounded-md border border-border-strong px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-surface-hover disabled:opacity-50"
+                  disabled={dismissMutation.isPending}
+                  aria-label={`Dismiss ${labelPrefix} failure`}
+                  onClick={() => dismissMutation.mutate({ operationId: group.operationId })}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    ) : null;
+  const datasetDetails = failureGroupDetails ?? historicalDatasetDetails;
 
   if (target.action === "recompute" && visibleDatasets.length === 0) {
     return (
@@ -146,6 +201,11 @@ export function ProcessingStatusWidget({
       status={data.overallStatus}
     >
       {datasetDetails}
+      {dismissMutation.error ? (
+        <p className="mt-2 text-xs font-medium text-red-700" role="alert">
+          {dismissMutation.error.message}
+        </p>
+      ) : null}
     </SourceProcessingStatusCard>
   );
 }
