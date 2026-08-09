@@ -767,17 +767,17 @@ function emptyActivityOverviewPeriod(): ActivityOverviewPeriod {
   return {
     activityCount: 0,
     totalMinutes: 0,
-    totalDistance: overviewMeasurement("Distance", null, true),
-    totalElevation: overviewMeasurement("Elevation gain", null, true),
+    totalDistance: overviewMeasurement("Distance", 0, true),
+    totalElevation: overviewMeasurement("Elevation gain", 0, true),
   };
 }
 
 function overviewMeasurement(
   label: string,
   value: number | null,
-  complete: boolean,
+  isAvailable: boolean,
 ): ActivityOverviewMeasurement {
-  if (!complete) {
+  if (!isAvailable) {
     return {
       value: null,
       state: {
@@ -820,18 +820,30 @@ function overviewPeriodFromRow(
       : row.previous_elevation_measurement_count;
   const distanceHasMeasurement = distanceMeasurementCount > 0;
   const elevationHasMeasurement = elevationMeasurementCount > 0;
+  const distanceValue =
+    activityCount === 0
+      ? 0
+      : distanceHasMeasurement
+        ? roundNullableMetric(totalDistanceMeters)
+        : null;
+  const elevationValue =
+    activityCount === 0
+      ? 0
+      : elevationHasMeasurement
+        ? roundNullableMetric(totalElevationGainM)
+        : null;
 
   return {
     activityCount,
     totalMinutes,
     totalDistance: overviewMeasurement(
       "Distance",
-      distanceHasMeasurement ? roundNullableMetric(totalDistanceMeters) : null,
+      distanceValue,
       distanceHasMeasurement || activityCount === 0,
     ),
     totalElevation: overviewMeasurement(
       "Elevation gain",
-      elevationHasMeasurement ? roundNullableMetric(totalElevationGainM) : null,
+      elevationValue,
       elevationHasMeasurement || activityCount === 0,
     ),
   };

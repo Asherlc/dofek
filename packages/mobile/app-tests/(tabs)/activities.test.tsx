@@ -503,7 +503,10 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("180 m")).toBeDefined();
     expect(screen.getByText("2.5 km more vs previous 4 weeks")).toBeDefined();
     expect(screen.getByText("50 m more vs previous 4 weeks")).toBeDefined();
-    expect(screen.queryByText(/unavailable/)).toBeNull();
+    expect(
+      screen.getByLabelText("Distance 12.5 km. 2.5 km more vs previous 4 weeks"),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Elevation 180 m. 50 m more vs previous 4 weeks")).toBeDefined();
   });
 
   it("passes selected activity type to the activity list query", () => {

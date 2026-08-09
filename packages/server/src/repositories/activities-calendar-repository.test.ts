@@ -808,6 +808,53 @@ describe("ActivitiesCalendarRepository", () => {
     });
   });
 
+  it("returns available zero measurements for an empty current period", async () => {
+    const database = makeDatabase([[{ id: "previous-activity" }], [{ id: "current-activity" }]]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          current_activity_count: 0,
+          current_total_minutes: 0,
+          current_total_distance_meters: null,
+          current_total_elevation_gain_m: null,
+          current_distance_measurement_count: 0,
+          current_elevation_measurement_count: 0,
+          previous_activity_count: 0,
+          previous_total_minutes: 0,
+          previous_total_distance_meters: null,
+          previous_total_elevation_gain_m: null,
+          previous_distance_measurement_count: 0,
+          previous_elevation_measurement_count: 0,
+        },
+      ],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toMatchObject({
+      activityCount: 0,
+      totalMinutes: 0,
+      totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
+      totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
+      comparison: {
+        totalDistanceMeters: {
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
+        },
+        totalElevationGainM: {
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
+        },
+      },
+    });
+  });
+
   it("authors lower, unchanged, and previous-period unavailable comparisons", async () => {
     const database = makeDatabase([
       [{ id: "current" }, { id: "previous-1" }, { id: "previous-2" }],
@@ -991,24 +1038,24 @@ describe("ActivitiesCalendarRepository", () => {
     ).resolves.toMatchObject({
       activityCount: 0,
       totalMinutes: 0,
-      totalDistanceMeters: null,
-      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
-      totalElevationGainM: null,
-      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
+      totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
+      totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
       activityTypes: [],
       comparison: {
         periodLabel: "previous 4 weeks",
         activityCount: { magnitude: 0, trend: "unchanged" },
         totalMinutes: { magnitude: 0, trend: "unchanged" },
         totalDistanceMeters: {
-          magnitude: null,
-          trend: "unavailable",
-          state: { status: "missing", reason: "Distance not recorded" },
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
         },
         totalElevationGainM: {
-          magnitude: null,
-          trend: "unavailable",
-          state: { status: "missing", reason: "Elevation gain not recorded" },
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
         },
       },
     });
@@ -1016,7 +1063,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).toHaveBeenCalledTimes(1);
   });
 
-  it("uses empty aggregate rows to author an unavailable comparison", async () => {
+  it("uses empty aggregate rows to author available zero comparisons", async () => {
     const database = makeDatabase([[{ id: "activity" }], [{ id: "activity" }]]);
     const sensorStore = makeSensorStore([[], [{ canonical_type: "running" }]]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -1029,9 +1076,9 @@ describe("ActivitiesCalendarRepository", () => {
       comparison: {
         activityCount: { magnitude: 0, trend: "unchanged" },
         totalDistanceMeters: {
-          magnitude: null,
-          trend: "unavailable",
-          state: { status: "missing", reason: "Distance not recorded" },
+          magnitude: 0,
+          trend: "unchanged",
+          state: { status: "available" },
         },
       },
     });
@@ -1107,10 +1154,10 @@ describe("ActivitiesCalendarRepository", () => {
     ).resolves.toMatchObject({
       activityCount: 0,
       totalMinutes: 0,
-      totalDistanceMeters: null,
-      totalDistanceState: { status: "missing", reason: "Distance not recorded" },
-      totalElevationGainM: null,
-      totalElevationState: { status: "missing", reason: "Elevation gain not recorded" },
+      totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
+      totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
       activityTypes: ["running"],
     });
     for (const queryCall of vi.mocked(sensorStore.query).mock.calls) {
