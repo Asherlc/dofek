@@ -11,17 +11,20 @@ const {
   mockInvalidateAlerts,
   mockRefetchAlerts,
   mockRetrySync,
-} = vi.hoisted(() => ({
-  mockAlertsQuery: vi.fn(),
-  mockDismissAlert: vi.fn(),
-  mockDismissState: {
+} = vi.hoisted(() => {
+  const mockDismissState: { error: Error | null; isPending: boolean } = {
     error: null,
     isPending: false,
-  } satisfies { error: Error | null; isPending: boolean },
-  mockInvalidateAlerts: vi.fn(),
-  mockRefetchAlerts: vi.fn(),
-  mockRetrySync: vi.fn(),
-}));
+  };
+  return {
+    mockAlertsQuery: vi.fn(),
+    mockDismissAlert: vi.fn(),
+    mockDismissState,
+    mockInvalidateAlerts: vi.fn(),
+    mockRefetchAlerts: vi.fn(),
+    mockRetrySync: vi.fn(),
+  };
+});
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
