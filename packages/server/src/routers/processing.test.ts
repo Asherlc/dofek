@@ -380,4 +380,13 @@ describe("processingRouter", () => {
       message: "Processing operation not found.",
     });
   });
+
+  it("validates the dismiss mutation response", async () => {
+    mockDismiss.mockResolvedValue({ dismissed: false });
+    const caller = createCaller({ db: {}, userId, timezone: "UTC" });
+
+    await expect(
+      caller.dismiss({ operationId: "10000000-0000-4000-8000-000000000002" }),
+    ).rejects.toThrow();
+  });
 });

@@ -239,31 +239,6 @@ export function processingFailureGroups(input: {
   });
 }
 
-interface ProcessingErrorEvent {
-  datasetKey: string | null;
-  status: string;
-  occurredAt: string;
-  message: string | null;
-  errorMessage: string | null;
-}
-
-export function processingDatasetErrorMessage(
-  operations: readonly {
-    datasets: readonly string[];
-    timeline: readonly ProcessingErrorEvent[];
-  }[],
-  datasetKey: string,
-): string | null {
-  const currentOperation = operations.find((operation) => operation.datasets.includes(datasetKey));
-  const failedEvent = currentOperation?.timeline
-    .filter(
-      (event) =>
-        event.status === "failed" && (event.datasetKey === null || event.datasetKey === datasetKey),
-    )
-    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0];
-  return failedEvent?.errorMessage ?? failedEvent?.message ?? null;
-}
-
 export function processingDatasetStatusLabel(status: ProcessingDisplayStatus): string {
   switch (status) {
     case "ready":

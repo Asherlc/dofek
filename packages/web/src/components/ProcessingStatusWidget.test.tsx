@@ -6,17 +6,19 @@ import {
   ProcessingStatusWidget,
 } from "./ProcessingStatusWidget.tsx";
 
-const { mockDismissOperation, mockDismissState, mockInvalidateStatus } = vi.hoisted(() => {
-  const mockDismissState: { error: Error | null; isPending: boolean } = {
-    error: null,
-    isPending: false,
-  };
-  return {
-    mockDismissOperation: vi.fn(),
-    mockDismissState,
-    mockInvalidateStatus: vi.fn(),
-  };
-});
+const { mockDismissOperation, mockDismissState, mockInvalidateAlerts, mockInvalidateStatus } =
+  vi.hoisted(() => {
+    const mockDismissState: { error: Error | null; isPending: boolean } = {
+      error: null,
+      isPending: false,
+    };
+    return {
+      mockDismissOperation: vi.fn(),
+      mockDismissState,
+      mockInvalidateAlerts: vi.fn(),
+      mockInvalidateStatus: vi.fn(),
+    };
+  });
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -38,6 +40,9 @@ vi.mock("../lib/trpc.ts", () => ({
       processing: {
         status: {
           invalidate: mockInvalidateStatus,
+        },
+        alerts: {
+          invalidate: mockInvalidateAlerts,
         },
       },
     }),
@@ -283,6 +288,9 @@ describe("ProcessingStatusWidget", () => {
     expect(
       screen.getByText("Wahoo returned a server error. Reconnect Wahoo, then try again."),
     ).toBeTruthy();
+    expect(
+      screen.queryByText("Try the update again. If it still fails, reconnect the data source."),
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "Dismiss Wahoo sync failure" })).toBeTruthy();
   });
 
@@ -295,6 +303,7 @@ describe("ProcessingStatusWidget", () => {
       operationId: "00000000-0000-4000-8000-00000000f501",
     });
     await waitFor(() => expect(mockInvalidateStatus).toHaveBeenCalledOnce());
+    expect(mockInvalidateAlerts).toHaveBeenCalledOnce();
   });
 
   it("disables the dismiss button while the operation is pending", () => {

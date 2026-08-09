@@ -12,8 +12,13 @@ const datasetKeys = ["activity", "recovery", "sleep"] satisfies ProcessingDatase
 
 describe("ProcessingRepository integration", () => {
   let testContext: TestContext;
+  let baseTime: Date;
+
+  const isoAt = (minutesFromBase: number) =>
+    new Date(baseTime.getTime() + minutesFromBase * 60_000).toISOString();
 
   beforeAll(async () => {
+    baseTime = new Date(Date.now() - 10 * 60_000);
     testContext = await setupTestDatabase();
     await testContext.db.execute(sql`
       INSERT INTO fitness.user_profile (id, name)
@@ -76,13 +81,13 @@ describe("ProcessingRepository integration", () => {
     await insertOperation({
       operationId: failedOperationId,
       externalCorrelationKey: "processing-repository-integration-failed",
-      createdAt: "2026-07-22T16:00:00.000Z",
+      createdAt: isoAt(-9),
     });
     await appendSucceededStage({
       operationId: failedOperationId,
       stage: "ingest",
       datasetKey: null,
-      occurredAt: "2026-07-22T16:01:00.000Z",
+      occurredAt: isoAt(-8),
       idempotencyKey: "failed-ingest-succeeded",
     });
 
@@ -92,7 +97,7 @@ describe("ProcessingRepository integration", () => {
         stage: "analytics",
         status: "failed",
         datasetKey,
-        occurredAt: new Date(`2026-07-22T16:0${datasetIndex + 2}:00.000Z`),
+        occurredAt: new Date(isoAt(-7 + datasetIndex)),
         errorCode: "analytics_failed",
         errorMessage: `${datasetKey} analytics failed`,
         idempotencyKey: `failed-analytics-${datasetKey}`,
@@ -104,13 +109,13 @@ describe("ProcessingRepository integration", () => {
     await insertOperation({
       operationId: readyOperationId,
       externalCorrelationKey: "processing-repository-integration-ready",
-      createdAt: "2026-07-22T17:00:00.000Z",
+      createdAt: isoAt(-4),
     });
     await appendSucceededStage({
       operationId: readyOperationId,
       stage: "ingest",
       datasetKey: null,
-      occurredAt: "2026-07-22T17:01:00.000Z",
+      occurredAt: isoAt(-3),
       idempotencyKey: "ready-ingest-succeeded",
     });
 
@@ -119,14 +124,14 @@ describe("ProcessingRepository integration", () => {
         operationId: readyOperationId,
         stage: "analytics",
         datasetKey,
-        occurredAt: "2026-07-22T17:02:00.000Z",
+        occurredAt: isoAt(-2),
         idempotencyKey: `ready-analytics-${datasetKey}`,
       });
       await appendSucceededStage({
         operationId: readyOperationId,
         stage: "cache_refresh",
         datasetKey,
-        occurredAt: "2026-07-22T17:03:00.000Z",
+        occurredAt: isoAt(-1),
         idempotencyKey: `ready-cache-refresh-${datasetKey}`,
       });
     }
@@ -143,17 +148,17 @@ describe("ProcessingRepository integration", () => {
         expect.objectContaining({
           key: "activity",
           status: "failed",
-          lastFailedAt: "2026-07-22T16:02:00.000Z",
+          lastFailedAt: isoAt(-7),
         }),
         expect.objectContaining({
           key: "recovery",
           status: "failed",
-          lastFailedAt: "2026-07-22T16:03:00.000Z",
+          lastFailedAt: isoAt(-6),
         }),
         expect.objectContaining({
           key: "sleep",
           status: "failed",
-          lastFailedAt: "2026-07-22T16:04:00.000Z",
+          lastFailedAt: isoAt(-5),
         }),
       ]),
     );
@@ -166,7 +171,7 @@ describe("ProcessingRepository integration", () => {
           providerId: "wahoo",
           datasetKeys,
           datasetLabels: ["Activities", "Recovery", "Sleep"],
-          occurredAt: "2026-07-22T16:04:00.000Z",
+          occurredAt: isoAt(-5),
           action: "retry_sync",
         }),
       ],
@@ -188,17 +193,17 @@ describe("ProcessingRepository integration", () => {
         expect.objectContaining({
           key: "activity",
           status: "ready",
-          lastFailedAt: "2026-07-22T16:02:00.000Z",
+          lastFailedAt: isoAt(-7),
         }),
         expect.objectContaining({
           key: "recovery",
           status: "ready",
-          lastFailedAt: "2026-07-22T16:03:00.000Z",
+          lastFailedAt: isoAt(-6),
         }),
         expect.objectContaining({
           key: "sleep",
           status: "ready",
-          lastFailedAt: "2026-07-22T16:04:00.000Z",
+          lastFailedAt: isoAt(-5),
         }),
       ]),
     );

@@ -70,6 +70,7 @@ export function ProcessingStatusWidget({
   const dismissMutation = trpc.processing.dismiss.useMutation({
     onSuccess: async () => {
       await trpcUtils.processing.status.invalidate();
+      await trpcUtils.processing.alerts.invalidate();
     },
   });
   if (loading && !data) {
@@ -103,10 +104,6 @@ export function ProcessingStatusWidget({
     datasets: data.datasets,
     operationKind: data.operations[0]?.kind,
   });
-  const statusMessage = processingStatusMessage({
-    status: data.overallStatus,
-    errorMessage: null,
-  });
   const problemDatasets = data.datasets.filter(
     (dataset) => dataset.status === "failed" || dataset.status === "blocked",
   );
@@ -114,6 +111,13 @@ export function ProcessingStatusWidget({
     datasets: data.datasets,
     operations: data.operations,
   });
+  const statusMessage =
+    failureGroups.length > 0
+      ? null
+      : processingStatusMessage({
+          status: data.overallStatus,
+          errorMessage: null,
+        });
   const hasFailureStatus = data.overallStatus === "failed" || data.overallStatus === "blocked";
   const inProgressDatasets = data.datasets.filter((dataset) =>
     ["active", "partial", "waiting", "delayed"].includes(dataset.status),
