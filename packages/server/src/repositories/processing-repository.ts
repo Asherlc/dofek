@@ -76,6 +76,7 @@ export interface ProcessingStatusSnapshot {
 interface ServerProcessingAlert extends Omit<ProcessingAlert, "datasetKey"> {
   datasetKey: ProcessingDatasetKey;
   datasetKeys: ProcessingDatasetKey[];
+  datasetLabels: string[];
 }
 
 export interface ProcessingAlertsSnapshot {
@@ -169,7 +170,8 @@ function buildProcessingAlert(
       .find((value): value is string => value !== null) ??
     operation.createdAt;
   const datasetKeys = datasets.map((dataset) => dataset.key);
-  const alertId = `${operation.id}:${datasetKeys.join(",")}`;
+  const datasetLabels = datasets.map((dataset) => dataset.label);
+  const alertId = operation.id;
 
   if (operation.kind === "file_import") {
     const importedFile = sourceLabel ? `the ${sourceLabel} file` : "your file";
@@ -179,6 +181,7 @@ function buildProcessingAlert(
       providerLabel: sourceLabel,
       datasetKey: primaryDataset.key,
       datasetKeys,
+      datasetLabels,
       occurredAt,
       title:
         failedEvent?.stage === "ingest"
@@ -205,6 +208,7 @@ function buildProcessingAlert(
         providerLabel: sourceLabel,
         datasetKey: primaryDataset.key,
         datasetKeys,
+        datasetLabels,
         occurredAt,
         title: `${sourceLabel} couldn’t sync`,
         message: `Dofek couldn’t get the latest data from ${sourceLabel}. Reconnect ${sourceLabel}, then start the sync again.`,
@@ -219,6 +223,7 @@ function buildProcessingAlert(
       providerLabel: sourceLabel,
       datasetKey: primaryDataset.key,
       datasetKeys,
+      datasetLabels,
       occurredAt,
       title: `${sourceLabel} ${subject} ${titleSuffix}`,
       message:
@@ -236,6 +241,7 @@ function buildProcessingAlert(
     providerLabel: sourceLabel,
     datasetKey: primaryDataset.key,
     datasetKeys,
+    datasetLabels,
     occurredAt,
     title: `${titleLabel} ${titleSuffix}`,
     message: `Dofek couldn’t update ${subject}. Your existing data is still available. Contact support for help.`,

@@ -607,11 +607,12 @@ describe("ProcessingRepository", () => {
       generatedAt: "2026-07-22T18:00:00.000Z",
       alerts: [
         {
-          id: `${operationId}:providers`,
+          id: operationId,
           providerId: "garmin",
           providerLabel: "Garmin",
           datasetKey: "providers",
           datasetKeys: ["providers"],
+          datasetLabels: ["Data sources"],
           occurredAt: "2026-07-22T18:00:00.000Z",
           title: "Garmin summary wasn’t updated",
           message:
@@ -877,11 +878,12 @@ describe("ProcessingRepository", () => {
       generatedAt: "2026-07-22T18:00:00.000Z",
       alerts: [
         {
-          id: `${operationId}:activity`,
+          id: operationId,
           providerId: null,
           providerLabel: null,
           datasetKey: "activity",
           datasetKeys: ["activity"],
+          datasetLabels: ["Activities"],
           occurredAt: latestFailureAt.toISOString(),
           title: "Activities wasn’t updated",
           message:
@@ -961,11 +963,12 @@ describe("ProcessingRepository", () => {
       generatedAt: "2026-07-22T18:00:00.000Z",
       alerts: [
         {
-          id: `${operationId}:activity`,
+          id: operationId,
           providerId: "garmin",
           providerLabel: "Garmin",
           datasetKey: "activity",
           datasetKeys: ["activity"],
+          datasetLabels: ["Activities"],
           occurredAt: "2026-07-22T18:00:00.000Z",
           title: "Activities wasn’t updated",
           message:
@@ -1091,7 +1094,9 @@ describe("ProcessingRepository", () => {
     const alerts = await repository.alerts();
 
     expect(alerts.alerts).toHaveLength(1);
+    expect(alerts.alerts[0]?.id).toBe(operationId);
     expect(alerts.alerts[0]?.datasetKeys).toEqual(["activity", "recovery", "sleep"]);
+    expect(alerts.alerts[0]?.datasetLabels).toEqual(["Activities", "Recovery", "Sleep"]);
     expect(alerts.alerts[0]?.occurredAt).toBe("2026-07-22T17:50:00.000Z");
   });
 
@@ -1191,7 +1196,9 @@ describe("ProcessingRepository", () => {
     const alerts = await repository.alerts();
 
     expect(alerts.alerts).toHaveLength(1);
-    expect(alerts.alerts[0]?.id).toBe(`${newerOperationId}:activity`);
+    expect(alerts.alerts[0]?.id).toBe(newerOperationId);
+    expect(alerts.alerts[0]?.datasetKeys).toEqual(["activity"]);
+    expect(alerts.alerts[0]?.datasetLabels).toEqual(["Activities"]);
     expect(alerts.alerts[0]?.occurredAt).toBe("2026-07-22T17:50:00.000Z");
   });
 

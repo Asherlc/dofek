@@ -20,6 +20,8 @@ export interface ProcessingAlert {
   providerId: string | null;
   providerLabel: string | null;
   datasetKey: string;
+  datasetKeys: string[];
+  datasetLabels: string[];
   occurredAt: string;
   title: string;
   message: string;
