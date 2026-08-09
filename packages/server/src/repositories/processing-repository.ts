@@ -1,8 +1,7 @@
-import { TRPCError } from "@trpc/server";
 import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
 import { providerLabel } from "@dofek/providers/providers";
+import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import {
   DATASET_CONTRACTS,
   PROCESSING_DATASET_KEYS,
@@ -20,6 +19,7 @@ import {
   type ProcessingEventStatus,
   type ProcessingStage,
 } from "dofek/processing/processing-state";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
@@ -95,8 +95,7 @@ function compareByOccurredAtDescending<T extends { occurredAt: Date | string; se
   left: T,
   right: T,
 ) {
-  const timeDifference =
-    new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime();
+  const timeDifference = new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime();
   return timeDifference === 0 ? right.sequence - left.sequence : timeDifference;
 }
 
@@ -158,8 +157,7 @@ function buildProcessingAlert(
     datasets.length === 1
       ? datasetSubject(primaryDataset.key, primaryDataset.label)
       : groupedDatasetSubject(datasets);
-  const titleLabel =
-    datasets.length === 1 ? primaryDataset.label : groupedDatasetTitle(datasets);
+  const titleLabel = datasets.length === 1 ? primaryDataset.label : groupedDatasetTitle(datasets);
   const titleSuffix = datasets.length === 1 ? "wasn’t updated" : "weren’t updated";
   const occurredAt =
     failedEvent?.occurredAt ??

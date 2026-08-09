@@ -1,8 +1,8 @@
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
-import { PgDialect } from "drizzle-orm/pg-core";
 import type { ProcessingOperationWithEvents } from "dofek/processing/processing-event-store";
 import type { DerivedProcessingStatus } from "dofek/processing/processing-state";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -1389,9 +1389,7 @@ describe("ProcessingRepository", () => {
 
     const compiledQuery = postgresDialect.sqlToQuery(mockExecuteWithSchema.mock.calls[0]?.[2]);
     expect(compiledQuery.sql).toContain("operation.user_id =");
-    expect(compiledQuery.params).toEqual(
-      expect.arrayContaining([userId, operationId, userId]),
-    );
+    expect(compiledQuery.params).toEqual(expect.arrayContaining([userId, operationId, userId]));
   });
 
   it.each([
