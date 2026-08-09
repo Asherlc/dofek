@@ -140,6 +140,7 @@ export const processingRouter = router({
     .query(({ ctx }) => new ProcessingRepository(ctx.db, ctx.userId).alerts()),
   dismiss: protectedProcedure
     .input(z.object({ operationId: z.uuid() }))
+    .output(z.object({ dismissed: z.literal(true) }))
     .mutation(async ({ ctx, input }) => {
       const result = await new ProcessingRepository(ctx.db, ctx.userId).dismiss(input.operationId);
       await queryCache.invalidateByPrefix(`${ctx.userId}:processing.`);

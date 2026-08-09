@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   processingAggregateProgress,
-  processingDatasetErrorMessage,
   processingDatasetStatusLabel,
   processingFailureGroups,
   processingHeading,
@@ -355,125 +354,6 @@ describe("processing status presentation", () => {
         lastReadyAt: null,
       }),
     ]);
-  });
-
-  it("uses the latest matching failed event as the dataset error", () => {
-    expect(
-      processingDatasetErrorMessage(
-        [
-          {
-            datasets: ["activity"],
-            timeline: [
-              {
-                datasetKey: "sleep",
-                status: "failed",
-                occurredAt: "2026-07-22T10:00:00.000Z",
-                message: "Sleep failed",
-                errorMessage: "Old sleep error",
-              },
-              {
-                datasetKey: null,
-                status: "failed",
-                occurredAt: "2026-07-22T11:00:00.000Z",
-                message: null,
-                errorMessage: "Reconnect the provider.",
-              },
-              {
-                datasetKey: "activity",
-                status: "succeeded",
-                occurredAt: "2026-07-22T12:00:00.000Z",
-                message: "Ignore success",
-                errorMessage: null,
-              },
-            ],
-          },
-        ],
-        "activity",
-      ),
-    ).toBe("Reconnect the provider.");
-  });
-
-  it("falls back to a failed event message and ignores other datasets", () => {
-    expect(
-      processingDatasetErrorMessage(
-        [
-          {
-            datasets: ["activity", "sleep"],
-            timeline: [
-              {
-                datasetKey: "sleep",
-                status: "failed",
-                occurredAt: "2026-07-22T12:00:00.000Z",
-                message: "Sleep failed",
-                errorMessage: null,
-              },
-              {
-                datasetKey: "activity",
-                status: "failed",
-                occurredAt: "2026-07-22T11:00:00.000Z",
-                message: "Try the activity sync again.",
-                errorMessage: null,
-              },
-            ],
-          },
-        ],
-        "activity",
-      ),
-    ).toBe("Try the activity sync again.");
-  });
-
-  it("ignores failures from older and unrelated operations", () => {
-    expect(
-      processingDatasetErrorMessage(
-        [
-          {
-            datasets: ["activity"],
-            timeline: [
-              {
-                datasetKey: "activity",
-                status: "succeeded",
-                occurredAt: "2026-07-22T12:00:00.000Z",
-                message: "Activity ready",
-                errorMessage: null,
-              },
-            ],
-          },
-          {
-            datasets: ["activity"],
-            timeline: [
-              {
-                datasetKey: "activity",
-                status: "failed",
-                occurredAt: "2026-07-22T11:00:00.000Z",
-                message: null,
-                errorMessage: "Old activity failure",
-              },
-            ],
-          },
-        ],
-        "activity",
-      ),
-    ).toBeNull();
-
-    expect(
-      processingDatasetErrorMessage(
-        [
-          {
-            datasets: ["sleep"],
-            timeline: [
-              {
-                datasetKey: null,
-                status: "failed",
-                occurredAt: "2026-07-22T12:00:00.000Z",
-                message: null,
-                errorMessage: "Sleep operation failed",
-              },
-            ],
-          },
-        ],
-        "activity",
-      ),
-    ).toBeNull();
   });
 
   it.each([

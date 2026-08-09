@@ -2,14 +2,19 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ProcessingStatusSnapshot, ProcessingStatusWidget } from "./ProcessingStatusWidget";
 
-const { mockDismissOperation, mockDismissState, mockInvalidateStatus } = vi.hoisted(() => ({
-  mockDismissOperation: vi.fn(),
-  mockDismissState: {
-    error: null,
-    isPending: false,
-  } satisfies { error: Error | null; isPending: boolean },
-  mockInvalidateStatus: vi.fn(),
-}));
+const { mockDismissOperation, mockDismissState, mockInvalidateAlerts, mockInvalidateStatus } =
+  vi.hoisted(() => {
+    const mockDismissState: { error: Error | null; isPending: boolean } = {
+      error: null,
+      isPending: false,
+    };
+    return {
+      mockDismissOperation: vi.fn(),
+      mockDismissState,
+      mockInvalidateAlerts: vi.fn(),
+      mockInvalidateStatus: vi.fn(),
+    };
+  });
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -31,6 +36,9 @@ vi.mock("../lib/trpc", () => ({
       processing: {
         status: {
           invalidate: mockInvalidateStatus,
+        },
+        alerts: {
+          invalidate: mockInvalidateAlerts,
         },
       },
     }),
@@ -278,6 +286,9 @@ describe("ProcessingStatusWidget", () => {
     expect(
       screen.getByText("Wahoo returned a server error. Reconnect Wahoo, then try again."),
     ).toBeTruthy();
+    expect(
+      screen.queryByText("Try the update again. If it still fails, reconnect the data source."),
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "Dismiss Wahoo sync failure" })).toBeTruthy();
   });
 
@@ -290,6 +301,7 @@ describe("ProcessingStatusWidget", () => {
       operationId: "00000000-0000-4000-8000-00000000f501",
     });
     await waitFor(() => expect(mockInvalidateStatus).toHaveBeenCalledOnce());
+    expect(mockInvalidateAlerts).toHaveBeenCalledOnce();
   });
 
   it("disables the dismiss button while dismissal is pending", () => {
@@ -315,6 +327,41 @@ describe("ProcessingStatusWidget", () => {
     expect(
       render(<ProcessingStatusWidget data={dismissedSnapshot} alwaysVisible />).container.innerHTML,
     ).toBe("");
+  });
+
+  it("keeps active processing visible when a separate failure was dismissed", () => {
+    const currentSnapshot = failedWahooSnapshot();
+    const failedDataset = currentSnapshot.datasets.at(0);
+    const activeDataset = currentSnapshot.datasets.at(1);
+    const currentOperation = currentSnapshot.operations.at(0);
+    if (!failedDataset || !activeDataset || !currentOperation) {
+      throw new Error("Expected current processing fixtures");
+    }
+
+    render(
+      <ProcessingStatusWidget
+        data={failedWahooSnapshot({
+          datasets: [
+            { ...failedDataset, status: "failed" },
+            { ...activeDataset, status: "active", lastFailedAt: null },
+          ],
+          operations: [
+            { ...currentOperation, dismissed: true },
+            {
+              ...currentOperation,
+              id: "00000000-0000-4000-8000-00000000f502",
+              status: "active",
+              datasets: ["sleep"],
+              dismissed: false,
+              errorMessage: null,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
+    expect(screen.getByText("Sleep")).toBeTruthy();
   });
 
   it("does not render an older failed group after the dataset is ready again", () => {
