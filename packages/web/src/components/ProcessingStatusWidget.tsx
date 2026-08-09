@@ -198,9 +198,7 @@ export function ProcessingStatusWidget({
   const datasetDetails = failureGroupDetails ?? historicalDatasetDetails;
 
   if (target.action === "recompute" && failureGroups.length === 0) {
-    return (
-      <RecomputeStatusIndicator label={heading} progress={progress} status={data.overallStatus} />
-    );
+    return <RecomputeStatusIndicator label={heading} progress={progress} status={displayStatus} />;
   }
 
   return (
