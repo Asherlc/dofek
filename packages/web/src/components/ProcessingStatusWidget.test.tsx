@@ -6,14 +6,17 @@ import {
   ProcessingStatusWidget,
 } from "./ProcessingStatusWidget.tsx";
 
-const { mockDismissOperation, mockDismissState, mockInvalidateStatus } = vi.hoisted(() => ({
-  mockDismissOperation: vi.fn(),
-  mockDismissState: {
+const { mockDismissOperation, mockDismissState, mockInvalidateStatus } = vi.hoisted(() => {
+  const mockDismissState: { error: Error | null; isPending: boolean } = {
     error: null,
     isPending: false,
-  } satisfies { error: Error | null; isPending: boolean },
-  mockInvalidateStatus: vi.fn(),
-}));
+  };
+  return {
+    mockDismissOperation: vi.fn(),
+    mockDismissState,
+    mockInvalidateStatus: vi.fn(),
+  };
+});
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -313,6 +316,41 @@ describe("ProcessingStatusWidget", () => {
     expect(
       render(<ProcessingStatusWidget data={dismissedSnapshot} alwaysVisible />).container.innerHTML,
     ).toBe("");
+  });
+
+  it("keeps active processing visible when a separate failure was dismissed", () => {
+    const currentSnapshot = failedWahooSnapshot();
+    const failedDataset = currentSnapshot.datasets.at(0);
+    const activeDataset = currentSnapshot.datasets.at(1);
+    const currentOperation = currentSnapshot.operations.at(0);
+    if (!failedDataset || !activeDataset || !currentOperation) {
+      throw new Error("Expected current processing fixtures");
+    }
+
+    render(
+      <ProcessingStatusWidget
+        data={failedWahooSnapshot({
+          datasets: [
+            { ...failedDataset, status: "failed" },
+            { ...activeDataset, status: "active", progressPercentage: 60, lastFailedAt: null },
+          ],
+          operations: [
+            { ...currentOperation, dismissed: true },
+            {
+              ...currentOperation,
+              id: "00000000-0000-4000-8000-00000000f502",
+              status: "active",
+              datasets: ["sleep"],
+              dismissed: false,
+              errorMessage: null,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
+    expect(screen.getByText("Sleep")).toBeTruthy();
   });
 
   it("does not render an older failed group after the dataset is ready again", () => {

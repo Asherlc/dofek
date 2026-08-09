@@ -107,7 +107,6 @@ export function ProcessingStatusWidget({
     status: data.overallStatus,
     errorMessage: null,
   });
-  const heading = processingHeading(data.overallStatus, target);
   const problemDatasets = data.datasets.filter(
     (dataset) => dataset.status === "failed" || dataset.status === "blocked",
   );
@@ -116,14 +115,26 @@ export function ProcessingStatusWidget({
     operations: data.operations,
   });
   const hasFailureStatus = data.overallStatus === "failed" || data.overallStatus === "blocked";
-  if (hasFailureStatus && failureGroups.length === 0) {
+  const inProgressDatasets = data.datasets.filter((dataset) =>
+    ["active", "partial", "waiting", "delayed"].includes(dataset.status),
+  );
+  if (hasFailureStatus && failureGroups.length === 0 && inProgressDatasets.length === 0) {
     return null;
   }
+  const displayStatus =
+    hasFailureStatus && failureGroups.length === 0
+      ? (inProgressDatasets[0]?.status ?? data.overallStatus)
+      : data.overallStatus;
+  const heading = processingHeading(displayStatus, target);
   const datasetsWithHistory = data.datasets.filter(
     (dataset) =>
       dataset.status !== "ready" || dataset.lastAdvancedAt !== null || dataset.lastReadyAt !== null,
   );
-  const visibleDatasets = alwaysVisible ? datasetsWithHistory : problemDatasets;
+  const visibleDatasets = alwaysVisible
+    ? datasetsWithHistory
+    : failureGroups.length > 0
+      ? problemDatasets
+      : inProgressDatasets;
   const historicalDatasetDetails =
     visibleDatasets.length > 0 ? (
       <ul className="mt-2 divide-y divide-border border-t border-border">
@@ -186,7 +197,7 @@ export function ProcessingStatusWidget({
     ) : null;
   const datasetDetails = failureGroupDetails ?? historicalDatasetDetails;
 
-  if (target.action === "recompute" && visibleDatasets.length === 0) {
+  if (target.action === "recompute" && failureGroups.length === 0) {
     return (
       <RecomputeStatusIndicator label={heading} progress={progress} status={data.overallStatus} />
     );
@@ -198,7 +209,7 @@ export function ProcessingStatusWidget({
       heading={heading}
       message={statusMessage}
       progress={progress}
-      status={data.overallStatus}
+      status={displayStatus}
     >
       {datasetDetails}
       {dismissMutation.error ? (
