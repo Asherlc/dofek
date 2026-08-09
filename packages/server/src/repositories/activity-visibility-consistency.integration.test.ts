@@ -269,16 +269,10 @@ describe("activity visibility consistency", () => {
     expect(overview).toEqual({
       activityCount: 3,
       totalMinutes: 90,
-      totalDistanceMeters: null,
-      totalDistanceState: {
-        status: "missing",
-        reason: "Distance was not recorded for every activity.",
-      },
-      totalElevationGainM: null,
-      totalElevationState: {
-        status: "missing",
-        reason: "Elevation gain was not recorded for every activity.",
-      },
+      totalDistanceMeters: 0,
+      totalDistanceState: { status: "available" },
+      totalElevationGainM: 0,
+      totalElevationState: { status: "available" },
       activityTypes: ["running", "walking"],
       comparison: {
         periodLabel: "previous 8 weeks",
@@ -289,7 +283,7 @@ describe("activity visibility consistency", () => {
           trend: "unavailable",
           state: {
             status: "missing",
-            reason: "Distance was not recorded for every activity.",
+            reason: "Previous period: Distance not recorded",
           },
         },
         totalElevationGainM: {
@@ -297,7 +291,7 @@ describe("activity visibility consistency", () => {
           trend: "unavailable",
           state: {
             status: "missing",
-            reason: "Elevation gain was not recorded for every activity.",
+            reason: "Previous period: Elevation gain not recorded",
           },
         },
       },
