@@ -11,13 +11,13 @@ const {
   mockHistory,
   mockStatus,
 } = vi.hoisted(() => ({
-    mockAlerts: vi.fn(),
-    mockDataQuality: vi.fn(),
-    mockDismiss: vi.fn(),
-    mockEnsureProvidersRegistered: vi.fn(),
-    mockHistory: vi.fn(),
-    mockStatus: vi.fn(),
-  }));
+  mockAlerts: vi.fn(),
+  mockDataQuality: vi.fn(),
+  mockDismiss: vi.fn(),
+  mockEnsureProvidersRegistered: vi.fn(),
+  mockHistory: vi.fn(),
+  mockStatus: vi.fn(),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: {
