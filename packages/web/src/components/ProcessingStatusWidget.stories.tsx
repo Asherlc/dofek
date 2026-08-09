@@ -17,6 +17,7 @@ const activeSnapshot: ProcessingStatusSnapshot = {
       progressPercentage: 60,
       lastAdvancedAt: "2026-07-22T11:59:00.000Z",
       lastReadyAt: "2026-07-21T12:00:00.000Z",
+      lastFailedAt: null,
     },
   ],
   operations: [
@@ -27,6 +28,8 @@ const activeSnapshot: ProcessingStatusSnapshot = {
       createdAt: "2026-07-22T11:58:00.000Z",
       status: "active",
       datasets: ["activity"],
+      dismissed: false,
+      errorMessage: null,
       timeline: [
         {
           sequence: 1,
@@ -138,12 +141,15 @@ export const Failed: Story = {
           ...activeDataset,
           status: "failed",
           progressPercentage: null,
+          lastFailedAt: "2026-07-22T12:05:00.000Z",
         },
       ],
       operations: [
         {
           ...activeOperation,
           status: "failed",
+          dismissed: false,
+          errorMessage: "Reconnect Garmin, then start the sync again.",
           timeline: [
             {
               ...activeTimelineEvent,
