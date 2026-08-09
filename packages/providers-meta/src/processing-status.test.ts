@@ -3,6 +3,7 @@ import {
   processingAggregateProgress,
   processingDatasetErrorMessage,
   processingDatasetStatusLabel,
+  processingFailureGroups,
   processingHeading,
   processingPollInterval,
   processingStatusMessage,
@@ -10,6 +11,9 @@ import {
 } from "./processing-status.ts";
 
 describe("processing status presentation", () => {
+  const firstOperationId = "10000000-0000-4000-8000-000000000001";
+  const secondOperationId = "10000000-0000-4000-8000-000000000002";
+
   it("gives failures and delays actionable copy", () => {
     expect(processingHeading("failed")).toBe("Your data update didn’t finish");
     expect(processingStatusMessage({ status: "failed", errorMessage: "Reconnect WHOOP." })).toBe(
@@ -164,6 +168,193 @@ describe("processing status presentation", () => {
         { status: "ready", progressPercentage: null },
       ]),
     ).toBe(80);
+  });
+
+  it("groups current failed datasets by operation in server dataset order", () => {
+    const groups = processingFailureGroups({
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          lastFailedAt: "2026-07-22T14:00:00.000Z",
+          lastReadyAt: "2026-07-21T10:00:00.000Z",
+        },
+        {
+          key: "recovery",
+          label: "Recovery",
+          status: "blocked",
+          lastFailedAt: "2026-07-22T16:00:00.000Z",
+          lastReadyAt: "2026-07-21T12:00:00.000Z",
+        },
+        {
+          key: "sleep",
+          label: "Sleep",
+          status: "failed",
+          lastFailedAt: "2026-07-22T15:00:00.000Z",
+          lastReadyAt: "2026-07-21T11:00:00.000Z",
+        },
+      ],
+      operations: [
+        {
+          id: firstOperationId,
+          providerId: "whoop",
+          status: "failed",
+          datasets: ["sleep", "activity", "recovery"],
+          dismissed: false,
+          errorMessage: "Reconnect WHOOP.",
+        },
+      ],
+    });
+
+    expect(groups).toEqual([
+      {
+        operationId: firstOperationId,
+        providerLabel: "WHOOP (Cloud)",
+        datasetLabels: ["Activities", "Recovery", "Sleep"],
+        status: "failed",
+        failedAt: "2026-07-22T16:00:00.000Z",
+        lastReadyAt: "2026-07-21T12:00:00.000Z",
+        errorMessage: "Reconnect WHOOP.",
+        dismissed: false,
+      },
+    ]);
+  });
+
+  it("does not expose dismissed or later-ready operation groups", () => {
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            status: "failed",
+            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            lastReadyAt: null,
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: "garmin",
+            status: "failed",
+            datasets: ["activity"],
+            dismissed: true,
+            errorMessage: "Reconnect Garmin.",
+          },
+        ],
+      }),
+    ).toEqual([]);
+
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            status: "ready",
+            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            lastReadyAt: "2026-07-22T15:00:00.000Z",
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: "garmin",
+            status: "failed",
+            datasets: ["activity"],
+            dismissed: false,
+            errorMessage: "Old failure.",
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it("keeps separate failed operations separate", () => {
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            status: "failed",
+            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            lastReadyAt: "2026-07-21T10:00:00.000Z",
+          },
+          {
+            key: "sleep",
+            label: "Sleep",
+            status: "blocked",
+            lastFailedAt: "2026-07-22T15:00:00.000Z",
+            lastReadyAt: "2026-07-21T11:00:00.000Z",
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: "garmin",
+            status: "failed",
+            datasets: ["activity"],
+            dismissed: false,
+            errorMessage: "Activity failed.",
+          },
+          {
+            id: secondOperationId,
+            providerId: "whoop",
+            status: "blocked",
+            datasets: ["sleep"],
+            dismissed: false,
+            errorMessage: "Sleep blocked.",
+          },
+        ],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        operationId: firstOperationId,
+        datasetLabels: ["Activities"],
+        status: "failed",
+        errorMessage: "Activity failed.",
+      }),
+      expect.objectContaining({
+        operationId: secondOperationId,
+        datasetLabels: ["Sleep"],
+        status: "blocked",
+        errorMessage: "Sleep blocked.",
+      }),
+    ]);
+  });
+
+  it("preserves a missing last-ready timestamp", () => {
+    expect(
+      processingFailureGroups({
+        datasets: [
+          {
+            key: "providers",
+            label: "Providers",
+            status: "blocked",
+            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            lastReadyAt: null,
+          },
+        ],
+        operations: [
+          {
+            id: firstOperationId,
+            providerId: null,
+            status: "blocked",
+            datasets: ["providers"],
+            dismissed: false,
+            errorMessage: null,
+          },
+        ],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        operationId: firstOperationId,
+        providerLabel: null,
+        lastReadyAt: null,
+      }),
+    ]);
   });
 
   it("uses the latest matching failed event as the dataset error", () => {
