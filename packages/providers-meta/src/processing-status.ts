@@ -160,6 +160,85 @@ export function processingAggregateProgress(
   return Math.min(...progressValues);
 }
 
+interface ProcessingFailureDataset {
+  key: string;
+  label: string;
+  status: ProcessingDisplayStatus;
+  lastFailedAt: string | null;
+  lastReadyAt: string | null;
+}
+
+interface ProcessingFailureOperation {
+  id: string;
+  providerId: string | null;
+  status: ProcessingDisplayStatus;
+  datasets: readonly string[];
+  dismissed: boolean;
+  errorMessage: string | null;
+}
+
+export interface ProcessingFailureGroup {
+  operationId: string;
+  providerLabel: string | null;
+  datasetLabels: string[];
+  status: "blocked" | "failed";
+  failedAt: string | null;
+  lastReadyAt: string | null;
+  errorMessage: string | null;
+  dismissed: boolean;
+}
+
+function isFailureStatus(status: ProcessingDisplayStatus): status is "blocked" | "failed" {
+  return status === "blocked" || status === "failed";
+}
+
+function latestTimestamp(values: readonly (string | null)[]): string | null {
+  return (
+    values
+      .filter((value): value is string => value !== null)
+      .sort((left, right) => right.localeCompare(left))[0] ?? null
+  );
+}
+
+export function processingFailureGroups(input: {
+  datasets: readonly ProcessingFailureDataset[];
+  operations: readonly ProcessingFailureOperation[];
+}): ProcessingFailureGroup[] {
+  const currentOperationIdsByDataset = new Map<string, string>();
+  for (const operation of input.operations) {
+    for (const datasetKey of operation.datasets) {
+      if (!currentOperationIdsByDataset.has(datasetKey)) {
+        currentOperationIdsByDataset.set(datasetKey, operation.id);
+      }
+    }
+  }
+
+  const alertableDatasets = input.datasets.filter((dataset) => isFailureStatus(dataset.status));
+  return input.operations.flatMap((operation) => {
+    if (operation.dismissed || !isFailureStatus(operation.status)) return [];
+    const operationDatasetKeys = new Set(operation.datasets);
+    const groupedDatasets = alertableDatasets.filter(
+      (dataset) =>
+        operationDatasetKeys.has(dataset.key) &&
+        currentOperationIdsByDataset.get(dataset.key) === operation.id,
+    );
+    if (groupedDatasets.length === 0) return [];
+
+    return [
+      {
+        operationId: operation.id,
+        providerLabel: operation.providerId ? providerLabel(operation.providerId) : null,
+        datasetLabels: groupedDatasets.map((dataset) => dataset.label),
+        status: operation.status,
+        failedAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastFailedAt)),
+        lastReadyAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastReadyAt)),
+        errorMessage: operation.errorMessage,
+        dismissed: operation.dismissed,
+      },
+    ];
+  });
+}
+
 interface ProcessingErrorEvent {
   datasetKey: string | null;
   status: string;
