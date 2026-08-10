@@ -310,6 +310,9 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     processing: {
       status: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
+      dismiss: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+      },
     },
     sync: {
       providers: { useQuery: (...args: unknown[]) => mockProvidersQuery(...args) },

@@ -204,6 +204,9 @@ vi.mock("../../lib/trpc.ts", () => {
           datasets: [],
           operations: [],
         }),
+        dismiss: {
+          useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+        },
       },
     },
   };
