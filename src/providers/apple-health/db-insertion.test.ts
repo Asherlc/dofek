@@ -1,4 +1,6 @@
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import type { SQLWrapper } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
@@ -99,6 +101,7 @@ vi.mock("../../db/provider-activity-sync.ts", async (importOriginal) => {
 
 interface MockInsertCapture {
   values: Record<string, unknown>[][];
+  executions: { sql: string; params: unknown[] }[];
   partitionKeys: Array<string | undefined>;
 }
 
@@ -120,7 +123,8 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
   db: SyncDatabase;
   capture: MockInsertCapture;
 } {
-  const capture: MockInsertCapture = { values: [], partitionKeys: [] };
+  const capture: MockInsertCapture = { values: [], executions: [], partitionKeys: [] };
+  const dialect = new PgDialect();
   metricStreamCapture.current = capture;
 
   let returnIndex = 0;
@@ -162,7 +166,12 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
     select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
     delete: vi.fn().mockReturnValue(deleteChain),
-    execute: vi.fn().mockResolvedValue([]),
+    execute: vi.fn((query: SQLWrapper | string) => {
+      const compiled =
+        typeof query === "string" ? { sql: query, params: [] } : dialect.sqlToQuery(query.getSQL());
+      capture.executions.push({ sql: compiled.sql, params: compiled.params });
+      return Promise.resolve([]);
+    }),
   });
 
   return { db, capture };
@@ -1440,6 +1449,160 @@ describe("upsertWorkoutBatch", () => {
       endedAt: end,
       sourceName: "Wahoo",
     });
+  });
+
+  it("uses Hang Ten session metadata for hangboard activity rows", async () => {
+    const start = new Date("2026-08-07T14:00:00Z");
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        startDate: start,
+        hangTen: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          planName: "7/3 Repeaters",
+          boardId: "metolius-compact-ii",
+          boardName: "Metolius Compact II",
+          rawActivitySegments: '{"segments":[],"version":1}',
+          activitySegments: [],
+        },
+      }),
+    ]);
+
+    expect(
+      findActivityUpsertValues(
+        (row) => row.externalId === "ah:workout:11111111-1111-4111-8111-111111111111",
+      ),
+    ).toMatchObject({
+      providerId: "apple_health",
+      externalId: "ah:workout:11111111-1111-4111-8111-111111111111",
+      activityType: {
+        canonicalType: "hangboard",
+        providerType: "Hang Ten",
+        modality: null,
+      },
+      name: "7/3 Repeaters",
+      sourceName: "Hang Ten",
+      raw: {
+        durationSeconds: 1800,
+        hangTen: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          planName: "7/3 Repeaters",
+          boardId: "metolius-compact-ii",
+          boardName: "Metolius Compact II",
+          rawActivitySegments: '{"segments":[],"version":1}',
+          activitySegments: [],
+        },
+      },
+    });
+  });
+
+  it("updates the activity name from a reimported Hang Ten plan", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        hangTen: { planName: "Updated Repeaters" },
+      }),
+    ]);
+
+    const update = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls[0]?.[2];
+    expect(isRecord(update) ? update.name : undefined).toBeDefined();
+  });
+
+  it("preserves a Hang Ten segment parse error without inserting intervals", async () => {
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        hangTen: {
+          planName: "Repeaters",
+          rawActivitySegments: "{not-json}",
+          activitySegmentsError: "Unexpected token n in JSON at position 1",
+        },
+      }),
+    ]);
+
+    expect(capture.executions).toHaveLength(0);
+    expect(findActivityUpsertValues(() => true)).toMatchObject({
+      raw: {
+        hangTen: {
+          rawActivitySegments: "{not-json}",
+          activitySegmentsError: "Unexpected token n in JSON at position 1",
+        },
+      },
+    });
+  });
+
+  it("uses returned activity IDs for Hang Ten interval replacement", async () => {
+    const firstStart = new Date("2026-08-07T14:00:00Z");
+    const secondStart = new Date("2026-08-07T15:00:00Z");
+    const firstActivityId = "10000000-0000-4000-8000-000000000001";
+    const secondActivityId = "10000000-0000-4000-8000-000000000002";
+    const { db, capture } = createMockDb([{ id: firstActivityId }, { id: secondActivityId }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        startDate: firstStart,
+        hangTen: {
+          sessionId: "session-first",
+          planName: "First Plan",
+          activitySegments: [
+            {
+              stepID: "first-step",
+              stepNumber: 1,
+              kind: "work",
+              holdIDs: [],
+              holdType: "first-hold",
+              durationSeconds: 7,
+            },
+          ],
+        },
+        routeLocations: [{ date: firstStart, lat: 11, lng: 12 }],
+      }),
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        startDate: secondStart,
+        hangTen: {
+          sessionId: "session-second",
+          planName: "Second Plan",
+          activitySegments: [
+            {
+              stepID: "second-step",
+              stepNumber: 2,
+              kind: "work",
+              holdIDs: [],
+              holdType: "second-hold",
+              durationSeconds: 8,
+            },
+          ],
+        },
+        routeLocations: [{ date: secondStart, lat: 21, lng: 22 }],
+      }),
+    ]);
+
+    const intervalReplacements = capture.executions.filter((execution) =>
+      execution.sql.includes("activity_interval"),
+    );
+    expect(intervalReplacements).toHaveLength(2);
+    expect(intervalReplacements[0]?.sql).toMatch(
+      /INSERT INTO "fitness"\."activity_interval" \(activity_id, interval_index, label, interval_type, started_at, ended_at\)/,
+    );
+    expect(intervalReplacements.map((replacement) => replacement.params)).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining([firstActivityId, "Step 1: first-hold"]),
+        expect.arrayContaining([secondActivityId, "Step 2: second-hold"]),
+      ]),
+    );
   });
 
   it("inserts GPS route locations for workouts", async () => {

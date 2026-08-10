@@ -9,7 +9,7 @@ import {
 } from "../../db/metric-stream-writer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
-import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { healthEvent, labResult } from "../../db/schema/clinical.ts";
 import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
@@ -17,9 +17,10 @@ import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
-import type { HealthWorkout } from "./workouts.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
 
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
@@ -678,7 +679,7 @@ export async function upsertWorkoutBatch(
   // in a single INSERT statement.
   const dedupMap = new Map<string, HealthWorkout>();
   for (const w of workouts) {
-    dedupMap.set(`ah:workout:${w.startDate.toISOString()}`, w);
+    dedupMap.set(workoutExternalId(w), w);
   }
   const uniqueWorkouts = [...dedupMap.values()];
 
@@ -688,27 +689,26 @@ export async function upsertWorkoutBatch(
   for (let i = 0; i < uniqueWorkouts.length; i += 500) {
     const batch = uniqueWorkouts.slice(i, i + 500);
     for (const workout of batch) {
-      const raw: Record<string, number> = { durationSeconds: workout.durationSeconds };
-      if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
-      if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
-      if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
-
       const values = {
         providerId,
-        externalId: `ah:workout:${workout.startDate.toISOString()}`,
+        externalId: workoutExternalId(workout),
         activityType: workout.activityType,
         startedAt: workout.startDate,
         endedAt: workout.endDate,
-        name: workout.activityType.canonicalType,
+        name: workoutName(workout),
         sourceName: workout.sourceName,
-        raw,
+        raw: workoutRawPayload(workout),
       };
 
       const returned = await upsertProviderActivity(db, values, {
         activityType: values.activityType,
         startedAt: values.startedAt,
         endedAt: values.endedAt,
-        name: values.name,
+        name: sql`CASE
+          WHEN excluded.canonical_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
+            THEN excluded.name
+          ELSE ${activity.name}
+        END`,
         sourceName: values.sourceName,
         raw: values.raw,
       });
@@ -717,6 +717,11 @@ export async function upsertWorkoutBatch(
         activityResults.push({ activityId: returned.id, workout });
       }
     }
+  }
+
+  for (const { activityId, workout } of activityResults) {
+    if (!workout.hangTen) continue;
+    await replaceHangTenIntervals(db, activityId, workout);
   }
 
   // Batch all GPS route locations across all workouts
@@ -752,6 +757,19 @@ export async function upsertWorkoutBatch(
   }
 
   return activityResults.length;
+}
+
+function workoutName(workout: HealthWorkout): string {
+  return workout.hangTen?.planName ?? workout.activityType.canonicalType;
+}
+
+function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
+  const raw: Record<string, unknown> = { durationSeconds: workout.durationSeconds };
+  if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
+  if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
+  if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
+  if (workout.hangTen) raw.hangTen = workout.hangTen;
+  return raw;
 }
 
 export async function upsertSleepBatch(

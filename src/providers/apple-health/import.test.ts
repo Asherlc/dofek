@@ -1499,6 +1499,74 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertHealthEventBatch).not.toHaveBeenCalled();
   });
 
+  it("reports malformed Hang Ten segments after importing the workout", async () => {
+    vi.resetModules();
+    const upsertWorkoutBatch = vi.fn().mockResolvedValue(1);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: {},
+      BODY_MEASUREMENT_TYPES: new Set(),
+      DAILY_METRIC_TYPES: new Set(),
+      NUTRITION_TYPES: {},
+      ALL_ROUTED_TYPES: new Set(),
+      upsertMetricStreamBatch: vi.fn().mockResolvedValue(0),
+      upsertBodyMeasurementBatch: vi.fn().mockResolvedValue(0),
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch,
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onWorkoutBatch: (workouts: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onWorkoutBatch([
+            {
+              activityType: "hangboard",
+              sourceName: "Hang Ten",
+              durationSeconds: 600,
+              startDate: new Date("2026-08-07T14:00:00Z"),
+              endDate: new Date("2026-08-07T14:10:00Z"),
+              hangTen: {
+                planName: "Max Hangs",
+                rawActivitySegments: "{not json",
+                activitySegmentsError:
+                  "Invalid Hang Ten activity segments JSON: could not parse JSON",
+              },
+            },
+          ]);
+          return { recordCount: 0, workoutCount: 1, sleepCount: 0, categoryCount: 0 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const result = await mockedRunImport(
+      createRunImportDbForMockedStreaming(),
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-08-07T00:00:00Z"),
+    );
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        externalId: "ah:workout:2026-08-07T14:00:00.000Z",
+        message: "Invalid Hang Ten activity segments JSON: could not parse JSON",
+      }),
+    ]);
+    expect(result.recordsSynced).toBe(1);
+    expect(upsertWorkoutBatch).toHaveBeenCalledTimes(1);
+  });
+
   it("does not run daily metric aggregation when streamed records contain no metric records", async () => {
     vi.resetModules();
 
