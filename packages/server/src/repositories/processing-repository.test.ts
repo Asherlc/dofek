@@ -472,6 +472,46 @@ describe("ProcessingRepository", () => {
     expect(alerts.alerts[0]?.occurredAt).toBe(newestActivityFailure.toISOString());
   });
 
+  it("uses event sequence to break ties between same-time failures", async () => {
+    const failedAt = new Date("2026-07-22T17:45:00.000Z");
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            occurredAt: failedAt,
+            errorMessage: "Earlier failure at the same time.",
+          }),
+          event(2, {
+            stage: "analytics",
+            status: "failed",
+            occurredAt: failedAt,
+            errorMessage: "Later failure at the same time.",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const status = await repository.status({ datasets: ["activity"] });
+
+    expect(status.datasets[0]?.lastFailedAt).toBe(failedAt.toISOString());
+    expect(status.operations[0]?.errorMessage).toBe("Later failure at the same time.");
+  });
+
   it("keeps a dataset ready when a later operation succeeds and suppresses the old alert", async () => {
     const olderFailure = operation({
       id: "10000000-0000-4000-8000-000000000041",
@@ -1183,6 +1223,56 @@ describe("ProcessingRepository", () => {
     expect(alerts.alerts[0]?.datasetKeys).toEqual(["activity", "recovery", "sleep"]);
     expect(alerts.alerts[0]?.datasetLabels).toEqual(["Activities", "Recovery", "Sleep"]);
     expect(alerts.alerts[0]?.occurredAt).toBe("2026-07-22T17:50:00.000Z");
+    expect(alerts.alerts[0]).toMatchObject({
+      title: "Garmin activities, recovery, and sleep weren’t updated",
+      message:
+        "Your Garmin data synced, but Dofek couldn’t update activities, recovery, and sleep. Your previously synced data is still available.",
+      action: "retry_sync",
+      actionLabel: "Retry Garmin sync",
+    });
+  });
+
+  it("formats a two-dataset provider alert without an Oxford comma", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "provider_sync",
+        datasetKeys: ["activity", "recovery"],
+        outputManifest: { activity: ["relational"], recovery: ["relational"] },
+        events: [
+          event(1, { stage: "analytics", status: "failed", datasetKey: "activity" }),
+          event(2, { stage: "analytics", status: "failed", datasetKey: "recovery" }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "recovery",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const alerts = await repository.alerts();
+
+    expect(alerts.alerts[0]).toMatchObject({
+      title: "Garmin activities and recovery weren’t updated",
+      message:
+        "Your Garmin data synced, but Dofek couldn’t update activities and recovery. Your previously synced data is still available.",
+    });
   });
 
   it("marks dismissed operations in status and omits them from alerts", async () => {
