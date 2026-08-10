@@ -90,10 +90,11 @@ const dailyRowSchema = z.object({
 });
 
 const memberSource = sql`
-  LEFT JOIN LATERAL (
-    SELECT member.started_at, member.ended_at, member.raw
+  JOIN LATERAL (
+    SELECT member.id AS hang_ten_activity_id, member.started_at, member.ended_at, member.raw
     FROM fitness.activity AS member
     WHERE member.id = ANY(a.member_activity_ids)
+      AND member.raw ? 'hangTen'
     ORDER BY (member.id = a.id) DESC, member.created_at DESC
     LIMIT 1
   ) AS member ON TRUE
@@ -155,7 +156,7 @@ export class HangboardingRepository {
           FROM fitness.v_activity AS a
           ${memberSource}
           LEFT JOIN fitness.activity_interval AS interval
-            ON interval.activity_id = ANY(a.member_activity_ids)
+            ON interval.activity_id = member.hang_ten_activity_id
           WHERE a.user_id = ${this.#userId}::uuid
             AND a.canonical_type = 'hangboard'
             AND ${activityId}::uuid = ANY(a.member_activity_ids)
@@ -207,7 +208,7 @@ export class HangboardingRepository {
       sql`WITH sessions AS (
             SELECT
               a.id::text AS activity_id,
-              a.member_activity_ids,
+              member.hang_ten_activity_id,
               member.started_at,
               member.ended_at,
               NULLIF(member.raw->'hangTen'->>'planName', '') AS plan_name,
@@ -242,7 +243,7 @@ export class HangboardingRepository {
               ), 0)::int AS work_interval_count
             FROM sessions
             LEFT JOIN fitness.activity_interval AS interval
-              ON interval.activity_id = ANY(sessions.member_activity_ids)
+              ON interval.activity_id = sessions.hang_ten_activity_id
             GROUP BY sessions.activity_id
           ), session_metrics AS (
             SELECT
@@ -284,7 +285,7 @@ export class HangboardingRepository {
       dailyRowSchema,
       sql`WITH sessions AS (
             SELECT
-              a.member_activity_ids,
+              member.hang_ten_activity_id,
               member.started_at,
               member.ended_at
             FROM fitness.v_activity AS a
@@ -306,8 +307,8 @@ export class HangboardingRepository {
                 AS rest_duration_seconds
             FROM sessions
             LEFT JOIN fitness.activity_interval AS interval
-              ON interval.activity_id = ANY(sessions.member_activity_ids)
-            GROUP BY sessions.started_at, sessions.ended_at, sessions.member_activity_ids
+              ON interval.activity_id = sessions.hang_ten_activity_id
+            GROUP BY sessions.started_at, sessions.ended_at, sessions.hang_ten_activity_id
           )
           SELECT
             local_date AS date,

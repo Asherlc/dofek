@@ -12,9 +12,14 @@ const activityIdRowSchema = z.object({
   id: z.string(),
   external_id: z.string(),
 });
+const hangboardingActivityIdRowSchema = activityIdRowSchema.extend({
+  started_at: z.string(),
+});
 
 describe("Hangboarding climbing router integration", () => {
   let testContext: TestContext;
+  let firstDate: string;
+  let secondDate: string;
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
@@ -23,24 +28,38 @@ describe("Hangboarding climbing router integration", () => {
           VALUES ('hangboarding-climbing-router-test', 'Hang Ten', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
-    await testContext.db.execute(
+    const activities = await executeWithSchema(
+      testContext.db,
+      hangboardingActivityIdRowSchema,
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, canonical_type, provider_type,
             started_at, ended_at, name, raw
           ) VALUES
           (
             'hangboarding-climbing-router-test', ${TEST_USER_ID}, 'hangboard-climbing-router-session-1',
-            'hangboard', 'Hang Ten', '2026-08-07T14:00:00Z'::timestamptz,
-            '2026-08-07T14:10:00Z'::timestamptz, 'Repeaters',
+            'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '2 days',
+            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '10 minutes', 'Repeaters',
             '{"avgHeartRate":120,"maxHeartRate":145,"hangTen":{"planName":"Repeaters","boardName":"Tension Board"}}'::jsonb
           ),
           (
             'hangboarding-climbing-router-test', ${TEST_USER_ID}, 'hangboard-climbing-router-session-2',
-            'hangboard', 'Hang Ten', '2026-08-08T14:00:00Z'::timestamptz,
-            '2026-08-08T14:15:00Z'::timestamptz, 'Max Hangs',
+            'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '1 day',
+            CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '15 minutes', 'Max Hangs',
             '{"avgHeartRate":130,"maxHeartRate":150,"hangTen":{"planName":"Max Hangs","boardName":"Tension Board"}}'::jsonb
-          )`,
+          )
+          RETURNING id::text AS id, external_id, started_at::text AS started_at`,
     );
+    const firstActivity = activities.find(
+      (activity) => activity.external_id === "hangboard-climbing-router-session-1",
+    );
+    const secondActivity = activities.find(
+      (activity) => activity.external_id === "hangboard-climbing-router-session-2",
+    );
+    if (!firstActivity || !secondActivity) {
+      throw new Error("Failed to seed Hangboarding climbing router activities");
+    }
+    firstDate = new Date(firstActivity.started_at).toISOString().slice(0, 10);
+    secondDate = new Date(secondActivity.started_at).toISOString().slice(0, 10);
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, interval_type, started_at, ended_at
@@ -88,6 +107,10 @@ describe("Hangboarding climbing router integration", () => {
       workIntervalCount: 2,
       averageHeartRate: 125,
       peakHeartRate: 150,
+      daily: expect.arrayContaining([
+        expect.objectContaining({ date: firstDate, durationSeconds: 600 }),
+        expect.objectContaining({ date: secondDate, durationSeconds: 900 }),
+      ]),
     });
   });
 });
