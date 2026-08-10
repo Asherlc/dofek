@@ -700,7 +700,7 @@ jobs:
         run: |
           mkdir -p "$VCPKG_DOWNLOADS"
           git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
-          git -C "$VCPKG_ROOT" checkout ec62869cdd9f80413abb5e4c1d8b68688df932f4
+          git -C "$VCPKG_ROOT" checkout 9e593bb18ea69cc5095e012465dcd675a822ed0d
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
       - name: Build and test FIT decoder
         working-directory: native/fit-decoder
