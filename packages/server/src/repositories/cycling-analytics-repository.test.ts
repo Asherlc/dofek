@@ -930,6 +930,25 @@ describe("CyclingAnalyticsRepository", () => {
     ]);
   });
 
+  it("treats an empty modality from the read model as unknown", async () => {
+    const sensorStore = makeMockSensorStore([cyclingActivityRow({ modality: "" })]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    await expect(
+      repository.getActivities(ChartRange.fromDays(90), {
+        activityLimit: 20,
+        activityOffset: 0,
+        variabilityLimit: 20,
+        variabilityOffset: 0,
+      }),
+    ).resolves.toBeDefined();
+  });
+
   it("returns the cycling empty state when there are no activities", async () => {
     const sensorStore = makeMockSensorStore([]);
     const repository = new CyclingAnalyticsRepository(

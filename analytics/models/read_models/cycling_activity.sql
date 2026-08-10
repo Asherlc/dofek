@@ -62,7 +62,7 @@ active_cycling AS (
         identity.source_providers AS source_providers,
         assumeNotNull(summary.canonical_type) AS canonical_type,
         summary.provider_type AS provider_type,
-        summary.modality AS modality,
+        nullIf(summary.modality, '') AS modality,
         summary.name AS activity_name,
         assumeNotNull(summary.started_at) AS started_at,
         summary.ended_at AS ended_at,

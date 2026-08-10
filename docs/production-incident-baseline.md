@@ -7,6 +7,60 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-10 — Sentry production failures from stale analytics data and pool starvation
+
+- **Status:** Fix prepared; deployment and post-release verification are pending. Affected unresolved issues were [DOFEK-MOBILE-19](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-19), [DOFEK-MOBILE-1F](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1F), [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G), [DOFEK-SERVER-5K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5K), [DOFEK-SERVER-5Y](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Y), [DOFEK-SERVER-5Z](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Z), and [DOFEK-SERVER-58](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-58).
+- **Symptoms / impact:** Mobile dashboard and IMU uploads intermittently failed; the training dashboard rejected one cycling row; analytics builds timed out while reading sleep heart-rate samples; and session validation/calendar activity lookups failed with PostgreSQL connection-pool timeouts.
+- **Evidence / root cause:** Sentry showed an empty-string `modality` in `analytics.cycling_activity`, which the server enum rejected. ClickHouse query logs showed `sleep_heart_rate_sample` timing out at the 240-second limit while scanning 1.87 million existing rows and 13.2 million deduped sensor rows despite a 32-key incremental batch. PostgreSQL query statistics showed the scoped processing query reaching 43.2 seconds and the `fitness.v_activity` visibility query reaching 8.1 seconds; Sentry's nested error was `timeout exceeded when trying to connect`, while production PostgreSQL remained healthy at `max_connections = 40` with no crash, recovery, or disk-pressure evidence. Mobile network-loss events were expected transport failures reported by the React Query global error hook.
+- **Fix / mitigation:** Normalize empty modalities to null in both the ClickHouse model and server boundary; restrict sleep sample state and sensor reads to current dirty windows/dates; add an ordered latest-event index for scoped processing history; use a bounded base-table lookup when filtering already-canonical calendar rows instead of expanding the recursive visibility view; and stop sending known transient mobile transport errors to Sentry while preserving reporting for server and parse failures. No timeout, retry, pool-size increase, or warning-and-continue workaround was added.
+- **Validation:** Regression tests pass for the mobile telemetry filter, cycling modality normalization, bounded sleep model SQL, and latest-event model behavior. Production read-only checks confirmed the database and service health before the change.
+- **Remaining risk / follow-up:** Apply the migration and deploy the release, then verify that all seven issue IDs stop receiving production events and that the next analytics build completes below its timeout. Confirm that the direct calendar visibility lookup preserves canonical-row authorization for all production read-model paths.
+
+## 2026-08-10 — Dependabot updates blocked by mismatched CI baselines
+
+- **Status:** Resolved. Dependabot PRs [#2463](https://github.com/Asherlc/dofek/pull/2463), [#2455](https://github.com/Asherlc/dofek/pull/2455), and [#2450](https://github.com/Asherlc/dofek/pull/2450) were merged; duplicate CodeQL PRs [#2461](https://github.com/Asherlc/dofek/pull/2461) and [#2456](https://github.com/Asherlc/dofek/pull/2456), plus incompatible mobile PR [#2460](https://github.com/Asherlc/dofek/pull/2460), were closed. No production impact occurred.
+- **Evidence / root cause:** CodeQL reported `Loaded a configuration file for version '4.37.3', but running version '4.37.4'` in [job 93158091311](https://github.com/Asherlc/dofek/actions/runs/31279367655/job/93158091311) because Dependabot split one workflow upgrade across three action PRs. The mobile job's first fatal command was `pnpm expo install --check`, which rejected `react-native-maps@1.29.0` while Expo SDK 57 expected `1.27.2` ([Expo dependency validation](https://docs.expo.dev/more/expo-cli/#dependency-validation)). The S3 PR failed typechecking because `S3Client` from the pinned client package was incompatible with the newer presigner in [job 93158710273](https://github.com/Asherlc/dofek/actions/runs/31279188149/job/93158710273). The vcpkg PR failed with `no version database entry for vcpkg-cmake-config at 2026-07-21` in [job 93157522927](https://github.com/Asherlc/dofek/actions/runs/31279106911/job/93157522927), because CI bootstrapped an older vcpkg commit than the requested manifest baseline.
+- **Fix / mitigation:** Aligned all CodeQL actions to the latest pinned v4.37.6 commit, aligned the S3 client and presigner at 3.1106.0, and aligned the native workflow and image vcpkg pins with the 2026.07.29 baseline. The Expo-incompatible maps update was closed rather than bypassing the canonical compatibility check.
+- **Validation:** The final exact-head run [31355357176](https://github.com/Asherlc/dofek/actions/runs/31355357176) completed with 2,226 passed checks and zero failures before PR #2450 merged at commit `cb2ebb029306561635c31945997a093cc4a44b90`. A fresh Dependabot search reports no open PRs.
+- **Remaining risk / follow-up:** Keep CodeQL action components grouped or version-aligned in future Dependabot updates, and treat Expo compatibility failures as dependency-selection issues rather than adding exclusions or warning-only behavior.
+
+## 2026-08-09 — PostHog Sentry summary warehouse sync rejected by upstream API
+
+- **Status:** Unresolved external integration issue; no Dofek application or
+  deployment change was made.
+- **Symptoms / impact:** PostHog project Dofek reported the Sentry
+  `organization_stats_summary` warehouse sync as failed. The schema has never
+  materialized a table, and every observed run synced zero rows; the summary
+  data remains unavailable until the sync succeeds or the schema is disabled.
+- **Evidence / root cause:** PostHog’s live source history shows 43 consecutive
+  failed full-refresh runs from 2026-07-29 through 2026-08-09. The failures
+  consistently return HTTP 400 from
+  `https://sentry.io/api/0/organizations/east-bay-software/stats-summary/`.
+  Earlier requests used `statsPeriod=90d`; later requests used explicit
+  `start`/`end` timestamps. All other enabled Sentry schemas completed, so
+  credentials and general source connectivity are working. PostHog’s first
+  fix for this incident changed the request away from the 90-day retention
+  boundary to explicit `start`/`end` values and was deployed on 2026-08-07
+  ([PR #79517](https://github.com/PostHog/posthog/pull/79517)); Dofek continued
+  failing afterward. PostHog’s follow-up ([PR #80099](https://github.com/PostHog/posthog/pull/80099))
+  identifies the remaining pattern as another deterministic Sentry 400,
+  usually caused by a requested range outside the Sentry plan’s retention, and
+  notes that the upstream response body is not preserved. Sentry’s current API
+  documentation lists `sum(quantity)` and either `statsPeriod` or `start`/`end`
+  as valid parameters ([official API reference](https://docs.sentry.io/api/organizations/retrieve-an-organizations-events-count-by-project/)),
+  so the exact Dofek-specific rejection remains unconfirmed without a direct
+  read-only Sentry request.
+- **Fix / mitigation:** No retry or configuration workaround was applied;
+  automatic retries are ineffective while the same request is rejected. The
+  recommended next action is to disable this unused optional schema, or open a
+  PostHog support case with the source ID, schema ID, and failed workflow ID if
+  the summary table is required.
+- **Remaining risk / follow-up:** Decide whether
+  `organization_stats_summary` is needed. If it is, obtain the Sentry 400
+  response body from PostHog support or Sentry and repair the connector before
+  re-enabling it; if not, disable the schema to stop repeated failed billable
+  sync attempts.
+
 ## 2026-08-07 — Wahoo OAuth callback served as `Not Found`
 
 - **Status:** Root cause identified; the PWA update fix is implemented in this

@@ -1,5 +1,5 @@
 import { environmentManager, QueryObserver } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppQueryClient } from "./query-client";
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
@@ -7,6 +7,10 @@ const mockCaptureException = vi.hoisted(() => vi.fn());
 vi.mock("./telemetry", () => ({
   captureException: mockCaptureException,
 }));
+
+beforeEach(() => {
+  mockCaptureException.mockClear();
+});
 
 describe("createAppQueryClient", () => {
   it("does not automatically retry a failed query", async () => {
@@ -56,5 +60,24 @@ describe("createAppQueryClient", () => {
       queryHash: '[["processing","status"],{"type":"query"}]',
       failureCount: 1,
     });
+  });
+
+  it("does not report transient network transport errors to Sentry", async () => {
+    const queryClient = createAppQueryClient();
+    const queryError = new Error(
+      "fetch failed: UnexpectedException: The network connection was lost.",
+    );
+
+    await expect(
+      queryClient.fetchQuery({
+        queryKey: ["offline-query"],
+        retry: false,
+        queryFn: async () => {
+          throw queryError;
+        },
+      }),
+    ).rejects.toThrow(queryError);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 });
