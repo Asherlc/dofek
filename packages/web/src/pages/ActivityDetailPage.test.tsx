@@ -138,6 +138,14 @@ const mockStrengthExercisesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const mockHangboardDetailsUseQuery = vi.fn(
+  (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<unknown> => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
+);
 const mockClimbingEntriesUseQuery = vi.fn(
   (
     _input?: unknown,
@@ -232,6 +240,7 @@ vi.mock("../lib/trpc.ts", () => ({
         }),
       },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
+      hangboardDetails: { useQuery: mockHangboardDetailsUseQuery },
       recompute: {
         useMutation: (options?: {
           onSuccess?: () => Promise<void>;
@@ -307,6 +316,13 @@ afterEach(() => {
     isError: false,
     isLoading: false,
   });
+  mockHangboardDetailsUseQuery.mockReset();
+  mockHangboardDetailsUseQuery.mockReturnValue({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockPowerZonesUseQuery.mockReset();
   mockPowerZonesUseQuery.mockReturnValue({
     data: undefined,
@@ -324,6 +340,7 @@ afterEach(() => {
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
   mockStrengthExercisesUseQuery.mockClear();
+  mockHangboardDetailsUseQuery.mockClear();
   mockClimbingEntriesUseQuery.mockClear();
   mockHrZonesUseQuery.mockClear();
   mockPowerZonesUseQuery.mockClear();
@@ -1099,6 +1116,41 @@ describe("ActivityDetailPage", () => {
 
       const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
       expect(enabled).toBe(true);
+
+      Object.assign(mockActivity, originalData);
+    });
+  });
+
+  describe("Hangboarding detail query gating", () => {
+    it("disables Hangboarding details for non-Hangboarding activities", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(getQueryEnabledFlag(mockHangboardDetailsUseQuery.mock.calls[0]?.[1])).toBe(false);
+    });
+
+    it("enables Hangboarding details and uses the Hangboarding label", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "hangboard", name: "Repeaters" });
+      mockHangboardDetailsUseQuery.mockReturnValue({
+        data: {
+          planName: "7/3 Repeaters",
+          sessionId: "session-1",
+          boardId: "board-1",
+          boardName: "Tension Board",
+          segmentsError: null,
+          intervals: [],
+        },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(getQueryEnabledFlag(mockHangboardDetailsUseQuery.mock.calls[0]?.[1])).toBe(true);
+      expect(screen.getAllByText("Hangboarding").length).toBeGreaterThanOrEqual(2);
 
       Object.assign(mockActivity, originalData);
     });
