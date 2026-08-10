@@ -7,6 +7,7 @@ import {
   type MobileRecoveryTabResult,
   type MobileTrainingTabResult,
   mobileRecoveryFixtureSchema,
+  mobileRecoveryTabOutputSchema,
   mobileTrainingFixtureSchema,
   type WorkloadRatioResult,
   workloadDisplayFixtureSchema,
@@ -127,6 +128,7 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
           interpolated: false,
         },
       ],
+      bodyFat: [{ date: "2026-03-20", bodyFatPct: 20.9 }],
       decisionContext: {
         latestMeasurement: {
           date: input.endDate,
@@ -349,6 +351,12 @@ function zeroClaimTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema>
 describe("mobileRecoveryFixtureSchema", () => {
   it("accepts a complete fixture that matches the runtime output contract", () => {
     expect(mobileRecoveryFixtureSchema.parse(validRecoveryFixture())).toBeTruthy();
+  });
+
+  it("parses bodyFat history", () => {
+    const parsed = mobileRecoveryTabOutputSchema.parse(validRecoveryFixture().data);
+
+    expect(parsed.bodyFat).toEqual([{ date: "2026-03-20", bodyFatPct: 20.9 }]);
   });
 
   it("rejects stress values outside the server-owned 0-3 range", () => {
