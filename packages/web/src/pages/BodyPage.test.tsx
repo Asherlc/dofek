@@ -19,6 +19,11 @@ vi.mock("../components/BodyRecompositionChart.tsx", () => ({
     <div>Recomposition points: {data.length}</div>
   ),
 }));
+vi.mock("../components/BodyFatPercentageChart.tsx", () => ({
+  BodyFatPercentageChart: ({ data }: { data: unknown[] }) => (
+    <div>Body fat points: {data.length}</div>
+  ),
+}));
 vi.mock("../components/CorrelationCard.tsx", () => ({
   CorrelationCard: () => null,
   CorrelationCardSkeleton: () => null,
@@ -185,6 +190,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BodyPage", () => {
+  it("shows body fat points from recomposition data", () => {
+    render(<BodyPage />);
+
+    expect(screen.getByText("Body fat points: 1")).toBeTruthy();
+  });
+
   it("shows one dependency notice for a repeated body-composition query failure", () => {
     queryMocks.weightOverview.mockReturnValue(
       mockQuery({ error: new Error("Body measurements are unavailable.") }),
