@@ -19,6 +19,7 @@
   "words": [
     "ABCDEFGHJKLMNPQRSTUVWXYZ",
     "Invalidatable",
+    "alertable",
     "refetches",
     "unlogged",
     "CPLUSPLUSFLAGS",
