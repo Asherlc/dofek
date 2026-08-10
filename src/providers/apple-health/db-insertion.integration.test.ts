@@ -210,6 +210,7 @@ describe("db-insertion deduplication (integration)", () => {
             durationSeconds: 7,
           },
         ];
+        hangTen.planName = "Rejected Replacement";
 
         await expect(upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout])).rejects.toThrow();
 
@@ -219,6 +220,20 @@ describe("db-insertion deduplication (integration)", () => {
           .where(eq(schema.activity.externalId, "ah:workout:33333333-3333-4333-8333-333333333333"));
         expect(storedActivity).toBeDefined();
         if (!storedActivity) return;
+        expect(storedActivity.name).toBe("Atomic Replacement");
+        expect(storedActivity.raw).toMatchObject({
+          hangTen: {
+            planName: "Atomic Replacement",
+            activitySegments: [
+              {
+                stepID: "step-1",
+                stepNumber: 1,
+                kind: "work",
+                durationSeconds: 7,
+              },
+            ],
+          },
+        });
 
         const intervals = await ctx.db
           .select()
