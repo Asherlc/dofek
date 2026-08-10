@@ -21,6 +21,7 @@ import {
   ActivityRepository,
   StreamPoint as StreamPointModel,
 } from "../repositories/activity-repository.ts";
+import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -151,6 +152,25 @@ export const activityRouter = router({
 
       await ensureProvidersRegistered();
       return new Activity(row, getProvider).toDetail();
+    }),
+
+  hangboardDetails: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
+    .query(async ({ ctx, input }) => {
+      const repository = new HangboardingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
+      const detail = await repository.getDetail(input.id);
+      if (!detail) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Hangboarding details not found",
+        });
+      }
+      return detail;
     }),
 
   setPerceivedExertion: protectedProcedure

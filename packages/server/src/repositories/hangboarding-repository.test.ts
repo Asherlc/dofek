@@ -1,0 +1,201 @@
+import { describe, expect, it, vi } from "vitest";
+import { HangboardingRepository } from "./hangboarding-repository.ts";
+
+function makeDb(responses: Record<string, unknown>[][]) {
+  const execute = vi.fn();
+  for (const response of responses) execute.mockResolvedValueOnce(response);
+  execute.mockResolvedValue([]);
+  return { execute };
+}
+
+describe("HangboardingRepository", () => {
+  it("maps Hang Ten detail metadata and orders intervals by interval index", async () => {
+    const db = makeDb([
+      [
+        {
+          activity_id: "activity-1",
+          canonical_type: "hangboard",
+          plan_name: "7/3 Repeaters",
+          session_id: "session-1",
+          board_id: "board-1",
+          board_name: "Tension Board",
+          segments_error: null,
+          interval_id: "interval-2",
+          interval_index: 1,
+          label: "Step 1: Rest",
+          interval_type: "rest",
+          interval_started_at: "2026-08-07T14:00:07.000Z",
+          interval_ended_at: "2026-08-07T14:01:00.000Z",
+          duration_seconds: 53,
+        },
+        {
+          activity_id: "activity-1",
+          canonical_type: "hangboard",
+          plan_name: "7/3 Repeaters",
+          session_id: "session-1",
+          board_id: "board-1",
+          board_name: "Tension Board",
+          segments_error: null,
+          interval_id: "interval-1",
+          interval_index: 0,
+          label: "Step 1: 19 mm edge",
+          interval_type: "work",
+          interval_started_at: "2026-08-07T14:00:00.000Z",
+          interval_ended_at: "2026-08-07T14:00:07.000Z",
+          duration_seconds: 7,
+        },
+      ],
+    ]);
+
+    await expect(
+      new HangboardingRepository(db, "user-1", "UTC").getDetail("activity-1"),
+    ).resolves.toEqual({
+      planName: "7/3 Repeaters",
+      sessionId: "session-1",
+      boardId: "board-1",
+      boardName: "Tension Board",
+      segmentsError: null,
+      intervals: [
+        {
+          id: "interval-1",
+          intervalIndex: 0,
+          label: "Step 1: 19 mm edge",
+          intervalType: "work",
+          startedAt: "2026-08-07T14:00:00.000Z",
+          endedAt: "2026-08-07T14:00:07.000Z",
+          durationSeconds: 7,
+        },
+        {
+          id: "interval-2",
+          intervalIndex: 1,
+          label: "Step 1: Rest",
+          intervalType: "rest",
+          startedAt: "2026-08-07T14:00:07.000Z",
+          endedAt: "2026-08-07T14:01:00.000Z",
+          durationSeconds: 53,
+        },
+      ],
+    });
+  });
+
+  it("returns null for an activity that is not owned or not Hangboarding", async () => {
+    const db = makeDb([]);
+    const repository = new HangboardingRepository(db, "user-1", "UTC");
+
+    await expect(repository.getDetail("not-visible")).resolves.toBeNull();
+  });
+
+  it("returns server-computed summary totals and daily rows", async () => {
+    const db = makeDb([
+      [
+        {
+          session_count: 2,
+          total_duration_seconds: 1500,
+          average_duration_seconds: 750,
+          total_work_duration_seconds: 17,
+          total_rest_duration_seconds: 103,
+          work_interval_count: 2,
+          average_heart_rate: 125,
+          peak_heart_rate: 150,
+          latest_activity_id: "activity-2",
+          latest_started_at: "2026-08-08T14:00:00.000Z",
+          latest_plan_name: "Repeaters",
+          latest_board_name: "Tension Board",
+          latest_duration_seconds: 900,
+        },
+      ],
+      [
+        {
+          date: "2026-08-07",
+          session_count: 1,
+          duration_seconds: 600,
+          work_duration_seconds: 7,
+          rest_duration_seconds: 53,
+        },
+        {
+          date: "2026-08-08",
+          session_count: 1,
+          duration_seconds: 900,
+          work_duration_seconds: 10,
+          rest_duration_seconds: 50,
+        },
+      ],
+    ]);
+
+    await expect(new HangboardingRepository(db, "user-1", "UTC").getSummary(30)).resolves.toEqual({
+      sessionCount: 2,
+      totalDurationSeconds: 1500,
+      averageDurationSeconds: 750,
+      totalWorkDurationSeconds: 17,
+      totalRestDurationSeconds: 103,
+      workIntervalCount: 2,
+      averageHeartRate: 125,
+      peakHeartRate: 150,
+      latestSession: {
+        activityId: "activity-2",
+        startedAt: "2026-08-08T14:00:00.000Z",
+        planName: "Repeaters",
+        boardName: "Tension Board",
+        durationSeconds: 900,
+      },
+      daily: [
+        {
+          date: "2026-08-07",
+          sessionCount: 1,
+          durationSeconds: 600,
+          workDurationSeconds: 7,
+          restDurationSeconds: 53,
+        },
+        {
+          date: "2026-08-08",
+          sessionCount: 1,
+          durationSeconds: 900,
+          workDurationSeconds: 10,
+          restDurationSeconds: 50,
+        },
+      ],
+    });
+  });
+
+  it("preserves null aggregates when interval durations or heart rates are unavailable", async () => {
+    const db = makeDb([
+      [
+        {
+          session_count: 1,
+          total_duration_seconds: 600,
+          average_duration_seconds: 600,
+          total_work_duration_seconds: null,
+          total_rest_duration_seconds: null,
+          work_interval_count: null,
+          average_heart_rate: null,
+          peak_heart_rate: null,
+          latest_activity_id: "activity-1",
+          latest_started_at: "2026-08-07T14:00:00.000Z",
+          latest_plan_name: null,
+          latest_board_name: null,
+          latest_duration_seconds: 600,
+        },
+      ],
+      [
+        {
+          date: "2026-08-07",
+          session_count: 1,
+          duration_seconds: 600,
+          work_duration_seconds: null,
+          rest_duration_seconds: null,
+        },
+      ],
+    ]);
+
+    const result = await new HangboardingRepository(db, "user-1", "UTC").getSummary(30);
+    expect(result.totalWorkDurationSeconds).toBeNull();
+    expect(result.totalRestDurationSeconds).toBeNull();
+    expect(result.workIntervalCount).toBeNull();
+    expect(result.averageHeartRate).toBeNull();
+    expect(result.peakHeartRate).toBeNull();
+    expect(result.daily[0]).toMatchObject({
+      workDurationSeconds: null,
+      restDurationSeconds: null,
+    });
+  });
+});
