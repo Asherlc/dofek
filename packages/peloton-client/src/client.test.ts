@@ -154,6 +154,34 @@ describe("PelotonClient", () => {
     await expect(client.getWorkouts()).resolves.toEqual(response);
   });
 
+  it("accepts workouts where Peloton omits total work", async () => {
+    const response = {
+      data: [
+        {
+          id: "workout-2",
+          status: "COMPLETE",
+          fitness_discipline: "strength",
+          created_at: 1_709_280_000,
+          start_time: 1_709_280_000,
+          end_time: 1_709_281_800,
+          is_total_work_personal_record: false,
+        },
+      ],
+      total: 1,
+      count: 1,
+      page: 0,
+      limit: 20,
+      page_count: 1,
+      sort_by: "-created_at",
+      show_next: false,
+      show_previous: false,
+    };
+    const responses = [Response.json({ id: "user-123" }), Response.json(response)];
+    const client = new PelotonClient("secret", async () => responses.shift() ?? Response.error());
+
+    await expect(client.getWorkouts()).resolves.toEqual(response);
+  });
+
   it("accepts numeric performance summaries (DOFEK-SERVER-5F)", async () => {
     const graph = {
       duration: 5,

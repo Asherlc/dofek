@@ -7,6 +7,33 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-10: Peloton workouts omitted `total_work`
+
+- **Status:** Root cause identified and fixed in this workspace; deployment and
+  post-deploy Sentry verification remain pending.
+- **Symptoms / user impact:** Peloton workout syncs failed with
+  `PelotonResponseError: Peloton returned an invalid workouts response`, so
+  affected sync runs could not ingest the returned workout page. The issue had
+  64 occurrences and no directly affected Sentry users. See
+  [DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E/).
+- **Evidence:** The latest event's Zod errors identify
+  `data[6]` through `data[19].total_work` as `undefined`; the failure occurs
+  while parsing the successful `/api/user/{userId}/workouts` response in
+  `packages/peloton-client/src/client.ts`. Existing Sentry error reporting
+  captured the complete validation paths, so no additional diagnostic
+  instrumentation was required.
+- **Root cause:** `pelotonWorkoutSchema` accepted `total_work: null` but still
+  required the property to be present. Peloton omits that field for some
+  workout records, making the schema stricter than the observed API contract.
+- **Fix:** Changed `total_work` to `z.number().nullish()` and added a client
+  regression test covering a workout response where Peloton omits the field.
+- **Validation:** The red regression test failed with the same Zod validation
+  path reported by Sentry; after the schema change, the Peloton client and
+  parser suites passed (18 tests).
+- **Remaining risk / follow-up:** Deploy the fix and verify that
+  `DOFEK-SERVER-5E` stops receiving new events. No retry, timeout, or fallback
+  was added because the root cause was a local response-contract mismatch.
+
 ## 2026-08-10: Pull-request CI failures from configuration and test drift
 
 - **Status:** Repository fixes are pushed; the latest CI run has no failed
