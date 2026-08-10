@@ -1,0 +1,53 @@
+{
+  "scripts": {
+    "server": {
+      "type": "service",
+      "command": "PORT=\"$PASEO_PORT\" mise exec -- pnpm --filter dofek-server dev"
+    },
+    "web": {
+      "type": "service",
+      "command": "mise exec -- pnpm --filter dofek-web dev --host \"$HOST\" --port \"$PASEO_PORT\""
+    },
+    "worker": {
+      "command": "mise exec -- pnpm dev"
+    },
+    "mobile": {
+      "command": "mise exec -- pnpm --filter dofek-mobile start"
+    },
+    "storybook-web": {
+      "type": "service",
+      "command": "mise exec -- pnpm --filter dofek-web storybook -- --host \"$HOST\" --port \"$PASEO_PORT\""
+    },
+    "storybook-mobile-web": {
+      "type": "service",
+      "command": "mise exec -- pnpm --dir packages/mobile exec storybook dev --config-dir .storybook --host \"$HOST\" --port \"$PASEO_PORT\""
+    },
+    "doctor": {
+      "command": "mise run doctor"
+    },
+    "test": {
+      "command": "mise exec -- pnpm test"
+    }
+  },
+  "worktree": {
+    "setup": "command -v mise >/dev/null || { echo 'mise is required: https://mise.jdx.dev/getting-started.html' >&2; exit 1; }; export MISE_LOCKED=1; mise install --locked && mise run cloud:prebuild",
+    "teardown": "mise exec -- pnpm tsx scripts/conductor-archive.ts",
+    "servicePorts": {
+      "range": "51000-51999"
+    }
+  },
+  "metadataGeneration": {
+    "title": {
+      "instructions": "Use a concise, imperative title that describes the user-visible outcome."
+    },
+    "branchName": {
+      "instructions": "Use a short kebab-case branch name based on the change."
+    },
+    "commitMessage": {
+      "instructions": "Use a Conventional Commit message that states the durable change."
+    },
+    "pullRequest": {
+      "instructions": "Monitor CI. If a job fails, fix the root cause, commit, push, and keep checking. Monitor for review comments, address all actionable comments, resolve conflicts, and do not stop until CI is green and the PR is ready for review."
+    }
+  }
+}
