@@ -369,6 +369,9 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("BODY FAT %")).toBeTruthy();
     expect(screen.getByText("20.9%")).toBeTruthy();
     expect(sparkLinePropsCalls.some((props) => props.data?.join(",") === "21.4,20.9")).toBe(true);
+    expect(
+      screen.getByLabelText("Body fat trend: 2026-03-10 21.4%; 2026-03-20 20.9%."),
+    ).toBeTruthy();
   });
 
   it("does not consume cached default-range data during preference hydration", async () => {

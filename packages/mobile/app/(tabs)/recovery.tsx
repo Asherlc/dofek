@@ -683,14 +683,29 @@ export default function RecoveryScreen() {
                   {formatBodyCompositionNumber(latestBodyFat)}%
                 </Text>
                 {bodyFatData.length >= 2 && (
-                  <View style={styles.sparkContainer}>
-                    <SparkLine
-                      data={bodyFatData.map((row) => row.bodyFatPct)}
-                      height={50}
-                      color={colors.purple}
-                      showYAxis
-                      formatYLabel={(value) => `${formatBodyCompositionNumber(value)}%`}
-                    />
+                  <View
+                    accessible
+                    accessibilityRole="image"
+                    accessibilityLabel={`Body fat trend: ${bodyFatData
+                      .map(
+                        ({ date, bodyFatPct }) =>
+                          `${date} ${formatBodyCompositionNumber(bodyFatPct)}%`,
+                      )
+                      .join("; ")}.`}
+                  >
+                    <View
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                      style={styles.sparkContainer}
+                    >
+                      <SparkLine
+                        data={bodyFatData.map((row) => row.bodyFatPct)}
+                        height={50}
+                        color={colors.purple}
+                        showYAxis
+                        formatYLabel={(value) => `${formatBodyCompositionNumber(value)}%`}
+                      />
+                    </View>
                   </View>
                 )}
               </View>

@@ -322,7 +322,7 @@ pnpm exec vitest run \
   packages/server/src/services/mobile-recovery-tab.test.ts \
   packages/server/src/contracts/mobile-dashboard-contracts.test.ts \
   packages/web/src/components/BodyFatPercentageChart.test.tsx \
-  packages/web/src/components/BodyPage.test.tsx \
+  packages/web/src/pages/BodyPage.test.tsx \
   packages/mobile/app-tests/'(tabs)'/recovery.test.tsx
 ```
 
