@@ -237,6 +237,8 @@ export default function RecoveryScreen() {
 
   const weightData = recoveryData?.weight ?? [];
   const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
+  const bodyFatData = recoveryData?.bodyFat ?? [];
+  const latestBodyFat = bodyFatData.at(-1)?.bodyFatPct ?? null;
   const weightPrediction = recoveryData?.weightPrediction;
 
   const healthspan = recoveryData?.healthspan;
@@ -671,6 +673,27 @@ export default function RecoveryScreen() {
                 )}
               </View>
               <BodyDecisionContext context={recoveryData?.decisionContext ?? null} />
+            </Card>
+          )}
+
+          {latestBodyFat != null && (
+            <Card title="Body Fat %">
+              <View style={styles.weightRow}>
+                <Text style={styles.weightValue}>
+                  {formatBodyCompositionNumber(latestBodyFat)}%
+                </Text>
+                {bodyFatData.length >= 2 && (
+                  <View style={styles.sparkContainer}>
+                    <SparkLine
+                      data={bodyFatData.map((row) => row.bodyFatPct)}
+                      height={50}
+                      color={colors.purple}
+                      showYAxis
+                      formatYLabel={(value) => `${formatBodyCompositionNumber(value)}%`}
+                    />
+                  </View>
+                )}
+              </View>
             </Card>
           )}
 

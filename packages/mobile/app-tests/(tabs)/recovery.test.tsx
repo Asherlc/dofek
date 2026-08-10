@@ -326,6 +326,22 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(mockTodayPlanQueryCalls).toEqual([{ days: 30, endDate: "2026-07-26" }]);
   });
 
+  it("renders the server-authored body fat history", async () => {
+    mockRecoveryData = {
+      bodyFat: [
+        { date: "2026-03-10", bodyFatPct: 21.4 },
+        { date: "2026-03-20", bodyFatPct: 20.9 },
+      ],
+    };
+
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("BODY FAT %")).toBeTruthy();
+    expect(screen.getByText("20.9%")).toBeTruthy();
+    expect(sparkLinePropsCalls.some((props) => props.data?.join(",") === "21.4,20.9")).toBe(true);
+  });
+
   it("does not consume cached default-range data during preference hydration", async () => {
     mockRecoveryData = {
       readinessScore: [{ date: "2026-04-06", readinessScore: 77 }],
