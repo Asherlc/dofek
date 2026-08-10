@@ -18,6 +18,20 @@ describe("sleep_heart_rate_sample model", () => {
     expect(dirtyKeysSql).toContain("LIMIT {{ sleep_dirty_key_batch_size }}");
   });
 
+  it("bounds existing state and sensor reads to the current dirty source keys", async () => {
+    const existingStateSql = extractCteSql(modelSql, "existing_sleep_state").replace(/\s+/g, " ");
+    const currentSamplesSql = extractCteSql(modelSql, "current_samples").replace(/\s+/g, " ");
+
+    expect(existingStateSql).toContain(
+      "(user_id, sleep_id) IN ( SELECT user_id, sleep_id FROM current_windows )",
+    );
+    expect(currentSamplesSql).toContain("INNER JOIN dirty_sleep_dates");
+    expect(currentSamplesSql).toContain("dirty_sleep_dates.user_id = samples.user_id");
+    expect(currentSamplesSql).toContain(
+      "dirty_sleep_dates.recorded_date = samples.recorded_date",
+    );
+  });
+
   it("only emits lifecycle tombstones for previously active samples", () => {
     const staleKeysSql = extractCteSql(modelSql, "stale_sleep_dirty_keys").replace(/\s+/g, " ");
 

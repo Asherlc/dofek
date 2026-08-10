@@ -297,6 +297,22 @@ describe("ActivityRepository", () => {
 
       expect(filtered).toEqual([{ id: "activity-1", name: "Run" }]);
     });
+
+    it("filters already-canonical activity rows without expanding v_activity", async () => {
+      const { repo, execute } = makeRepository([{ id: "activity-1" }]);
+
+      const filtered = await repo.filterToVisibleCanonicalActivities([
+        { id: "activity-1", name: "Run" },
+        { id: "activity-2", name: "Ride" },
+      ]);
+
+      expect(filtered).toEqual([{ id: "activity-1", name: "Run" }]);
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.activity");
+      expect(compiledQuery.sql).not.toContain("FROM fitness.v_activity");
+      expect(compiledQuery.sql).toContain("provider_absent_at IS NULL");
+      expect(compiledQuery.sql).toContain("deleted_at IS NULL");
+    });
   });
 
   describe("list", () => {

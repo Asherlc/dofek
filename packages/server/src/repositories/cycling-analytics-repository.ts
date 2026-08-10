@@ -50,7 +50,10 @@ const cyclingActivityRowSchema = z.object({
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   canonical_type: z.string(),
-  modality: z.enum(ACTIVITY_MODALITIES).nullable(),
+  modality: z.preprocess(
+    (value) => (value === "" ? null : value),
+    z.enum(ACTIVITY_MODALITIES).nullable(),
+  ),
   activity_name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),

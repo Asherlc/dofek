@@ -291,7 +291,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.userId,
       this.timezone,
       this.accessWindow,
-    ).filterToVisibleActivities(activityRowsMatchingType);
+    ).filterToVisibleCanonicalActivities(activityRowsMatchingType);
     const locationActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat != null && row.centroid_lng != null)
       .map((row) => row.id);

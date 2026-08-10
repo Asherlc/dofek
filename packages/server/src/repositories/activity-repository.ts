@@ -399,6 +399,36 @@ export class ActivityRepository extends BaseRepository {
     return rows.filter((row) => visibleActivityIds.has(getActivityId(row)));
   }
 
+  /**
+   * Filters rows whose IDs are already canonicalized by the ClickHouse activity
+   * read model without expanding the recursive PostgreSQL visibility view.
+   */
+  async filterToVisibleCanonicalActivities<T extends { id: string }>(
+    rows: readonly T[],
+  ): Promise<T[]> {
+    const uniqueActivityIds = [...new Set(rows.map(readActivityId))];
+    if (uniqueActivityIds.length === 0) {
+      return [];
+    }
+
+    const activityIdFilter = sql.join(
+      uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    );
+    const visibleRows = await this.query(
+      z.object({ id: z.string() }),
+      sql`SELECT id::text AS id
+          FROM fitness.activity
+          WHERE user_id = ${this.userId}::uuid
+            AND id IN (${activityIdFilter})
+            AND provider_absent_at IS NULL
+            AND deleted_at IS NULL
+            ${this.timestampAccessPredicate(sql`started_at`)}`,
+    );
+    const visibleActivityIds = new Set(visibleRows.map((row) => row.id));
+    return rows.filter((row) => visibleActivityIds.has(row.id));
+  }
+
   /** Counts visible activities in fitness.v_activity for the requested window. */
   async countVisibleInWindow(input: CountVisibleInWindowInput): Promise<number> {
     const activityTypePredicate =

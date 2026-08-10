@@ -30,7 +30,7 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
 
   const execute = vi.fn().mockImplementation(async (query) => {
     const compiled = dialect.sqlToQuery(query);
-    if (compiled.sql.includes("fitness.v_activity")) {
+    if (compiled.sql.includes("fitness.v_activity") || compiled.sql.includes("fitness.activity")) {
       const stringParams = compiled.params.filter(
         (param): param is string => typeof param === "string",
       );
@@ -567,7 +567,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).toHaveBeenCalledTimes(1);
     const sqlObject = database.execute.mock.calls[0]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
-    expect(normalizeSql(compiledQuery.sql)).toContain("FROM fitness.v_activity");
+    expect(normalizeSql(compiledQuery.sql)).toContain("FROM fitness.activity");
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
