@@ -1,4 +1,4 @@
-import { formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import { formatDateTime, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import { Link } from "@tanstack/react-router";
 import type { HangboardingSummary as HangboardingSummaryData } from "../../../server/src/repositories/hangboarding-repository.ts";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
@@ -52,6 +52,11 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
         <Metric label="Avg Session" value={formatNullableDuration(data.averageDurationSeconds)} />
         <Metric label="Work Time" value={formatNullableDuration(data.totalWorkDurationSeconds)} />
         <Metric label="Rest Time" value={formatNullableDuration(data.totalRestDurationSeconds)} />
+        <Metric
+          label="Work Intervals"
+          value={data.workIntervalCount == null ? "—" : String(data.workIntervalCount)}
+        />
+        <Metric label="Avg Heart Rate" value={formatNullableHeartRate(data.averageHeartRate)} />
         <Metric label="Peak Heart Rate" value={formatNullableHeartRate(data.peakHeartRate)} />
       </div>
 
@@ -81,6 +86,20 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
               <span className="text-subtle">· {data.latestSession.boardName}</span>
             ) : null}
           </Link>
+          <dl className="mt-2 grid grid-cols-2 gap-3 text-xs text-subtle">
+            <div>
+              <dt>Started</dt>
+              <dd className="mt-0.5 text-foreground">
+                {formatDateTime(data.latestSession.startedAt)}
+              </dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd className="mt-0.5 text-foreground">
+                {formatDurationSeconds(data.latestSession.durationSeconds)}
+              </dd>
+            </div>
+          </dl>
         </div>
       ) : null}
     </div>

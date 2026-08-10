@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { formatDateTime } from "@dofek/format/format";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HangboardingSummary as HangboardingSummaryData } from "../../../server/src/repositories/hangboarding-repository.ts";
@@ -76,19 +77,25 @@ describe("HangboardingSummary", () => {
       "Avg Session",
       "Work Time",
       "Rest Time",
+      "Work Intervals",
+      "Avg Heart Rate",
       "Peak Heart Rate",
     ]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
-    expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.getAllByText("2")).toHaveLength(2);
     expect(screen.getByText("25m")).toBeTruthy();
     expect(screen.getByText("13m")).toBeTruthy();
     expect(screen.getByText("17s")).toBeTruthy();
     expect(screen.getByText("2m")).toBeTruthy();
+    expect(screen.getByText("125 bpm")).toBeTruthy();
     expect(screen.getByText("150 bpm")).toBeTruthy();
     expect(screen.getByText("Repeaters")).toBeTruthy();
     const latestSessionLink = screen.getByRole("link", { name: /Repeaters.*Tension Board/ });
     expect(latestSessionLink).toHaveAttribute("href", "/activity/activity-2");
+    expect(screen.getByText("Started")).toBeTruthy();
+    expect(screen.getByText(formatDateTime(summary.latestSession.startedAt))).toBeTruthy();
+    expect(screen.getByText("15m")).toBeTruthy();
   });
 
   it("renders nullable work, rest, and heart-rate values as em dashes", () => {
@@ -98,13 +105,15 @@ describe("HangboardingSummary", () => {
           ...summary,
           totalWorkDurationSeconds: null,
           totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
           peakHeartRate: null,
         }}
         loading={false}
       />,
     );
 
-    expect(screen.getAllByText("—")).toHaveLength(3);
+    expect(screen.getAllByText("—")).toHaveLength(5);
     expect(screen.queryByText("0s")).toBeNull();
     expect(screen.queryByText("0 bpm")).toBeNull();
   });
