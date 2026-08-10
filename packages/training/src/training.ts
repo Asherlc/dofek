@@ -348,6 +348,7 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   strength: "Strength",
   strength_training: "Strength Training",
   functional_strength: "Functional Strength",
+  hangboard: "Hangboarding",
   stair_climbing: "Stair Climbing",
   cross_training: "Cross Training",
   hiit: "HIIT",

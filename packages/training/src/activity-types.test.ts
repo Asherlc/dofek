@@ -174,6 +174,14 @@ describe("legacy activity classification", () => {
 });
 
 describe("resolveProviderActivityType", () => {
+  it("preserves the canonical hangboard activity type", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
+    expect(resolveProviderActivityType("Hang Ten", "hangboard")).toMatchObject({
+      canonicalType: "hangboard",
+      providerType: "Hang Ten",
+    });
+  });
+
   it("retains string provider types verbatim", () => {
     expect(resolveProviderActivityType("Ride", "road_cycling")).toEqual({
       canonicalType: "cycling",
