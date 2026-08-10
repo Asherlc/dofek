@@ -64,6 +64,34 @@ them, and the durability work they suggest.
 - **Remaining risk / follow-up:** Confirm the two queued native jobs complete;
   no code-level CI failure remains in the current run.
 
+## 2026-08-10: Hangboarding pull-request CI failures
+
+- **Status:** Root causes fixed and pushed; the [replacement CI run](https://github.com/Asherlc/dofek/actions/runs/31431192266)
+  completed with 105 checks passed and none failed.
+- **Symptoms / user impact:** PR #2471 was blocked by SQLFluff, spell check,
+  mutation testing, an Apple Health integration test, and web typecheck.
+- **Evidence:** The initial [failed CI run](https://github.com/Asherlc/dofek/actions/runs/31426584106)
+  reported an indented migration statement, missing Hangboarding and PostgreSQL
+  catalog dictionary words, mutation score 61.82 below the 75 threshold, a
+  PostgreSQL `23514` failure while adding a table-wide test constraint, and two
+  web TypeScript errors.
+- **Root causes:** The migration indentation violated SQLFluff; the dictionary
+  did not contain the new domain terms; repository branches lacked unit
+  coverage for several Hangboarding paths; the integration test's constraint
+  rejected an existing `Step 2: Work` row; and the web components did not
+  preserve nullable narrowing or accept tRPC error objects.
+- **Fix:** Corrected the migration and dictionary, added focused repository
+  tests, scoped the failure-injection constraint with PostgreSQL's `NOT VALID`
+  behavior ([official documentation](https://www.postgresql.org/docs/current/sql-altertable.html)),
+  and corrected the web component types and narrowing. Commits
+  [`5443228`](https://github.com/Asherlc/dofek/commit/54432285e68bac09b2a318e0f51dfb2fe2375ff9)
+  and [`ae16be3`](https://github.com/Asherlc/dofek/commit/ae16be3efe234462de83dda5e507e685de21220e)
+  contain the fixes.
+- **Validation:** Local focused tests, the Apple Health integration file,
+  TypeScript, CSpell, SQLFluff, Biome, and mutation testing passed; the
+  replacement GitHub run passed all checks.
+- **Remaining risk / follow-up:** None identified for this CI failure.
+
 ## 2026-08-07 — Wahoo OAuth callback served as `Not Found`
 
 - **Status:** Root cause identified; the PWA update fix is implemented in this
