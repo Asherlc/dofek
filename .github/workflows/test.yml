@@ -1064,7 +1064,9 @@ jobs:
       - name: Compute changed files and split into shards
         id: shard
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DIFF_RANGE="${{ github.event.pull_request.base.sha }}...HEAD"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             DIFF_RANGE="origin/main...HEAD"
           else
             DIFF_RANGE="HEAD~1...HEAD"
