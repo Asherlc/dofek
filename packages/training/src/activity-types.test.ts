@@ -147,6 +147,12 @@ const EXPECTED_LEGACY_CLASSIFICATIONS = [
   ExpectedLegacyClassification["modality"],
 ])[];
 
+describe("CANONICAL_ACTIVITY_TYPES", () => {
+  it("includes hangboard as a canonical activity type", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
+  });
+});
+
 describe("legacy activity classification", () => {
   it("covers every legacy enum value exactly once", () => {
     const expectedLegacyTypes = EXPECTED_LEGACY_CLASSIFICATIONS.map(([legacyType]) => legacyType);
@@ -174,6 +180,14 @@ describe("legacy activity classification", () => {
 });
 
 describe("resolveProviderActivityType", () => {
+  it("preserves the canonical hangboard activity type", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
+    expect(resolveProviderActivityType("Hang Ten", "hangboard")).toMatchObject({
+      canonicalType: "hangboard",
+      providerType: "Hang Ten",
+    });
+  });
+
   it("retains string provider types verbatim", () => {
     expect(resolveProviderActivityType("Ride", "road_cycling")).toEqual({
       canonicalType: "cycling",

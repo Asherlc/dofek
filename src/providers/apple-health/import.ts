@@ -58,6 +58,7 @@ import {
 import type { HealthRecord } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
 
 const appleMedicationDoseEventSchema = z
   .object({
@@ -212,6 +213,19 @@ export function defaultConsoleProgress(info: ProgressInfo): void {
   }
 }
 
+function collectWorkoutImportErrors(workouts: HealthWorkout[]): SyncError[] {
+  return workouts.flatMap((workout) => {
+    const message = workout.hangTen?.activitySegmentsError;
+    if (!message) return [];
+    return [
+      {
+        message,
+        externalId: workoutExternalId(workout),
+      },
+    ];
+  });
+}
+
 // ============================================================
 // Import logic (shared between CLI and sync)
 // ============================================================
@@ -321,7 +335,7 @@ export async function runImport(
       },
       onWorkoutBatch: async (workouts) => {
         for (const workout of workouts) {
-          presentWorkoutExternalIds.add(`ah:workout:${workout.startDate.toISOString()}`);
+          presentWorkoutExternalIds.add(workoutExternalId(workout));
           const workoutEnd = workout.endDate ?? workout.startDate;
           if (!latestWorkoutTimestamp || workoutEnd > latestWorkoutTimestamp) {
             latestWorkoutTimestamp = workoutEnd;
@@ -335,6 +349,7 @@ export async function runImport(
           metricStreamPublisher,
         );
         recordsSynced += workoutCount;
+        errors.push(...collectWorkoutImportErrors(workouts));
       },
       onCategoryBatch: async (records) => {
         // Insert category records into health_event table

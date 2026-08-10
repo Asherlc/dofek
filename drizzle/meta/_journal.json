@@ -589,6 +589,13 @@
       "when": 1786230300000,
       "tag": "0071_processing_alert_dismissal",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1786372124000,
+      "tag": "0072_add_hangboard_activity_type",
+      "breakpoints": true
     }
   ]
 }

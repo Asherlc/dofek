@@ -302,6 +302,18 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
         gradeProgression: [],
         volumeByGrade: [],
         sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
       },
     },
   };

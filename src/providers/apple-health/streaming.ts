@@ -11,6 +11,7 @@ import {
 } from "./records.ts";
 import { parseSleepAnalysis, type SleepAnalysisRecord } from "./sleep.ts";
 import {
+  applyWorkoutMetadata,
   enrichWorkoutFromStats,
   type HealthWorkout,
   parseWorkout,
@@ -88,6 +89,7 @@ export function streamHealthExport(
 
     // State for nested elements
     let currentWorkout: HealthWorkout | null = null;
+    let currentWorkoutMetadata: Record<string, string> = {};
     let currentWorkoutStats: WorkoutStatistics[] = [];
     let currentRouteLocations: RouteLocation[] = [];
     let insideWorkoutRoute = false;
@@ -160,6 +162,7 @@ export function streamHealthExport(
 
     function flushWorkout() {
       if (currentWorkout) {
+        currentWorkout = applyWorkoutMetadata(currentWorkout, currentWorkoutMetadata);
         if (currentWorkoutStats.length > 0) {
           enrichWorkoutFromStats(currentWorkout, currentWorkoutStats);
         }
@@ -172,6 +175,7 @@ export function streamHealthExport(
         }
       }
       currentWorkout = null;
+      currentWorkoutMetadata = {};
       currentWorkoutStats = [];
     }
 
@@ -193,11 +197,19 @@ export function streamHealthExport(
           if (record && record.startDate >= since) addRecord(record);
         }
       } else if (node.name === "Workout") {
+        currentWorkoutMetadata = {};
         const workout = parseWorkout(attrs);
         if (workout.startDate >= since) {
           currentWorkout = workout;
           currentWorkoutStats = [];
         }
+      } else if (
+        node.name === "MetadataEntry" &&
+        currentWorkout &&
+        attrs.key &&
+        attrs.value !== undefined
+      ) {
+        currentWorkoutMetadata[attrs.key] = attrs.value;
       } else if (node.name === "WorkoutStatistics" && currentWorkout) {
         const stat = parseWorkoutStatistics(attrs);
         if (stat) currentWorkoutStats.push(stat);

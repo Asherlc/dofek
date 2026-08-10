@@ -19,11 +19,12 @@ RUN apk add --no-cache build-base && \
 FROM alpine:3.24 AS fit-decoder-build
 ENV VCPKG_ROOT=/opt/vcpkg
 ENV VCPKG_FORCE_SYSTEM_BINARIES=1
-ARG VCPKG_COMMIT=ec62869cdd9f80413abb5e4c1d8b68688df932f4
+ARG VCPKG_COMMIT=9e593bb18ea69cc5095e012465dcd675a822ed0d
 RUN apk add --no-cache \
       bash \
       build-base \
-      cmake \
+      --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
+      cmake=4.3.4-r0 \
       curl \
       git \
       linux-headers \

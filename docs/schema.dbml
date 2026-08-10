@@ -92,6 +92,7 @@ enum canonical_activity_type {
   golf
   disc_golf
   climbing
+  hangboard
   dance
   triathlon
   multisport

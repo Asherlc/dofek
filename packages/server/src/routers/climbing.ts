@@ -18,6 +18,7 @@ import {
   fingerLoadingGripPositionSchema,
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
+import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
@@ -216,5 +217,17 @@ export const climbingRouter = router({
       const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const rows = await runClimbingQuery(() => repository.getSessionSummaries(input.days));
       return rows.map((row) => row.toDetail());
+    }),
+
+  hangboardingSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+    .input(daysInputSchema)
+    .query(async ({ ctx, input }) => {
+      const repository = new HangboardingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
+      return runClimbingQuery(() => repository.getSummary(input.days));
     }),
 });

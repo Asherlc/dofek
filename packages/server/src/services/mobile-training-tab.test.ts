@@ -6,6 +6,7 @@ import {
   ClimbingVolumeByGrade,
 } from "../repositories/climbing-repository.ts";
 import { VerticalAscentModel } from "../repositories/cycling-advanced-models.ts";
+import type { HangboardingSummary } from "../repositories/hangboarding-repository.ts";
 import { ProgressiveOverload } from "../repositories/progressive-overload.ts";
 import { loadMobileTrainingTab } from "./mobile-training-tab.ts";
 
@@ -58,6 +59,18 @@ describe("loadMobileTrainingTab", () => {
     weeklyVolume: unknown[] = [],
     verticalAscent: VerticalAscentModel[] = [],
     progressiveOverload: ProgressiveOverload[] = [],
+    hangboardingSummary: HangboardingSummary = {
+      sessionCount: 0,
+      totalDurationSeconds: 0,
+      averageDurationSeconds: null,
+      totalWorkDurationSeconds: null,
+      totalRestDurationSeconds: null,
+      workIntervalCount: null,
+      averageHeartRate: null,
+      peakHeartRate: null,
+      latestSession: null,
+      daily: [],
+    },
   ) {
     const trainingSpy = vi
       .spyOn(
@@ -86,7 +99,14 @@ describe("loadMobileTrainingTab", () => {
         "getProgressiveOverload",
       )
       .mockResolvedValue(progressiveOverload);
-    return { trainingSpy, cyclingSpy, strengthSpy };
+    const hangboardingSpy = vi
+      .spyOn(
+        (await import("../repositories/hangboarding-repository.ts")).HangboardingRepository
+          .prototype,
+        "getSummary",
+      )
+      .mockResolvedValue(hangboardingSummary);
+    return { trainingSpy, cyclingSpy, strengthSpy, hangboardingSpy };
   }
 
   async function mockClimbingRepos() {
@@ -184,6 +204,24 @@ describe("loadMobileTrainingTab", () => {
           { week: "2026-03-23", totalVolumeKg: 1_200 },
         ]),
       ],
+      {
+        sessionCount: 2,
+        totalDurationSeconds: 1500,
+        averageDurationSeconds: 750,
+        totalWorkDurationSeconds: 17,
+        totalRestDurationSeconds: 103,
+        workIntervalCount: 2,
+        averageHeartRate: 125,
+        peakHeartRate: 150,
+        latestSession: {
+          activityId: "activity-2",
+          startedAt: "2026-08-08T14:00:00.000Z",
+          planName: "7/3 Repeaters",
+          boardName: "Tension Board",
+          durationSeconds: 900,
+        },
+        daily: [],
+      },
     );
     await mockClimbingRepos();
 
@@ -245,6 +283,18 @@ describe("loadMobileTrainingTab", () => {
           hardestRouteGradeSortValue: 5101,
         },
       ],
+      hangboarding: {
+        sessionCount: 2,
+        totalDurationSeconds: 1500,
+        averageDurationSeconds: 750,
+        totalWorkDurationSeconds: 17,
+        totalRestDurationSeconds: 103,
+        workIntervalCount: 2,
+        averageHeartRate: 125,
+        peakHeartRate: 150,
+        latestSession: expect.objectContaining({ planName: "7/3 Repeaters" }),
+        daily: expect.any(Array),
+      },
     });
   });
 

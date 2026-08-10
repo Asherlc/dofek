@@ -1248,6 +1248,18 @@ describe("mobileDashboard.training", () => {
       gradeProgression: [],
       volumeByGrade: [],
       sessionSummary: [],
+      hangboarding: {
+        sessionCount: 0,
+        totalDurationSeconds: 0,
+        averageDurationSeconds: null,
+        totalWorkDurationSeconds: null,
+        totalRestDurationSeconds: null,
+        workIntervalCount: null,
+        averageHeartRate: null,
+        peakHeartRate: null,
+        latestSession: null,
+        daily: [],
+      },
     });
     const timingCall = vi
       .mocked(logger.info)
@@ -1293,6 +1305,18 @@ describe("mobileDashboard.training", () => {
         gradeProgression: [],
         volumeByGrade: [],
         sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
       },
     });
 
@@ -1369,6 +1393,18 @@ describe("mobileDashboard.training", () => {
         gradeProgression: [],
         volumeByGrade: [],
         sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
       },
     });
 

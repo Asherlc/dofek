@@ -258,6 +258,95 @@ describe("streamHealthExport — sleep filtering", () => {
 // ============================================================
 
 describe("streamHealthExport — workout edge cases", () => {
+  it("attaches MetadataEntry values to workouts", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+ <Workout workoutActivityType="HKWorkoutActivityTypeFunctionalStrengthTraining"
+  duration="10" durationUnit="min"
+  sourceName="Hang Ten"
+  startDate="2026-08-07 07:00:00 -0700"
+  endDate="2026-08-07 07:10:00 -0700">
+  <MetadataEntry key="HKMetadataKeyWorkoutBrandName" value="Hang Ten"/>
+  <MetadataEntry key="HangTen.PlanName" value="7/3 Repeaters"/>
+  <MetadataEntry key="HangTen.ActivitySegments" value="{&quot;segments&quot;:[],&quot;version&quot;:1}"/>
+ </Workout>
+</HealthData>`;
+    const path = writeXml("hang-ten-workout.xml", xml);
+
+    const workouts: HealthWorkout[] = [];
+    await streamHealthExport(path, new Date("2020-01-01"), {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async (batch) => {
+        workouts.push(...batch);
+      },
+    });
+
+    expect(workouts[0]?.activityType.canonicalType).toBe("hangboard");
+    expect(workouts[0]?.hangTen?.planName).toBe("7/3 Repeaters");
+    expect(workouts[0]?.metadata?.["HangTen.PlanName"]).toBe("7/3 Repeaters");
+  });
+
+  it("does not treat metadata-shaped workout children as MetadataEntry values", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+ <Workout workoutActivityType="HKWorkoutActivityTypeFunctionalStrengthTraining"
+  duration="10" durationUnit="min"
+  sourceName="Watch"
+  startDate="2026-08-07 07:00:00 -0700"
+  endDate="2026-08-07 07:10:00 -0700">
+  <MetadataEntry key="HKMetadataKeyWorkoutBrandName" value="Hang Ten"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" average="122" maximum="140" unit="count/min"
+   key="HangTen.PlanName" value="Injected Repeaters"/>
+ </Workout>
+</HealthData>`;
+    const path = writeXml("metadata-shaped-workout-child.xml", xml);
+
+    const workouts: HealthWorkout[] = [];
+    await streamHealthExport(path, new Date("2020-01-01"), {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async (batch) => {
+        workouts.push(...batch);
+      },
+    });
+
+    expect(workouts).toHaveLength(1);
+    expect(workouts[0]?.activityType.canonicalType).toBe("strength");
+    expect(workouts[0]?.activityType.modality).toBe("functional");
+    expect(workouts[0]?.hangTen).toBeUndefined();
+    expect(workouts[0]?.avgHeartRate).toBe(122);
+    expect(workouts[0]?.metadata?.["HangTen.PlanName"]).toBeUndefined();
+  });
+
+  it("ignores MetadataEntry nodes without values", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+ <Workout workoutActivityType="HKWorkoutActivityTypeFunctionalStrengthTraining"
+  duration="10" durationUnit="min"
+  sourceName="Watch"
+  startDate="2026-08-07 07:00:00 -0700"
+  endDate="2026-08-07 07:10:00 -0700">
+  <MetadataEntry key="HKMetadataKeyWorkoutBrandName" value="Hang Ten"/>
+  <MetadataEntry key="HangTen.PlanName"/>
+ </Workout>
+</HealthData>`;
+    const path = writeXml("metadata-entry-without-value.xml", xml);
+
+    const workouts: HealthWorkout[] = [];
+    await streamHealthExport(path, new Date("2020-01-01"), {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async (batch) => {
+        workouts.push(...batch);
+      },
+    });
+
+    expect(workouts).toHaveLength(1);
+    expect(workouts[0]?.hangTen).toBeUndefined();
+    expect(Object.hasOwn(workouts[0]?.metadata ?? {}, "HangTen.PlanName")).toBe(false);
+  });
+
   it("handles workout with route locations but no WorkoutStatistics", async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_US">
