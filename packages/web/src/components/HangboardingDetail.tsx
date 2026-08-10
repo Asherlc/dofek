@@ -5,7 +5,7 @@ import { QueryStatePanel } from "./QueryStatePanel.tsx";
 interface HangboardingDetailProps {
   data: HangboardingDetailData | undefined;
   loading: boolean;
-  error: Error | null;
+  error: unknown;
 }
 
 function nullableValue(value: string | null): string {

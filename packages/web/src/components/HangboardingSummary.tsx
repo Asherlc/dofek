@@ -27,6 +27,7 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
     return <QueryStatePanel variant="empty" message="No Hangboarding sessions yet." height={220} />;
   }
 
+  const latestSession = data.latestSession;
   const dailyDurationOption = {
     grid: dofekGrid("single", { top: 12, right: 20, bottom: 36, left: 52 }),
     tooltip: dofekTooltip(),
@@ -73,30 +74,28 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
         />
       </div>
 
-      {data.latestSession ? (
+      {latestSession ? (
         <div className="rounded border border-border bg-surface px-3 py-2 text-sm">
           <div className="text-xs uppercase tracking-wider text-subtle">Latest Session</div>
           <Link
             to="/activity/$id"
-            params={{ id: data.latestSession.activityId }}
+            params={{ id: latestSession.activityId }}
             className="mt-1 inline-flex flex-wrap gap-x-2 text-foreground hover:text-accent"
           >
-            <span>{data.latestSession.planName ?? "Hangboarding session"}</span>
-            {data.latestSession.boardName ? (
-              <span className="text-subtle">· {data.latestSession.boardName}</span>
+            <span>{latestSession.planName ?? "Hangboarding session"}</span>
+            {latestSession.boardName ? (
+              <span className="text-subtle">· {latestSession.boardName}</span>
             ) : null}
           </Link>
           <dl className="mt-2 grid grid-cols-2 gap-3 text-xs text-subtle">
             <div>
               <dt>Started</dt>
-              <dd className="mt-0.5 text-foreground">
-                {formatDateTime(data.latestSession.startedAt)}
-              </dd>
+              <dd className="mt-0.5 text-foreground">{formatDateTime(latestSession.startedAt)}</dd>
             </div>
             <div>
               <dt>Duration</dt>
               <dd className="mt-0.5 text-foreground">
-                {formatDurationSeconds(data.latestSession.durationSeconds)}
+                {formatDurationSeconds(latestSession.durationSeconds)}
               </dd>
             </div>
           </dl>

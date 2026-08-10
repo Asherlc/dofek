@@ -94,6 +94,7 @@ describe("HangboardingSummary", () => {
     const latestSessionLink = screen.getByRole("link", { name: /Repeaters.*Tension Board/ });
     expect(latestSessionLink).toHaveAttribute("href", "/activity/activity-2");
     expect(screen.getByText("Started")).toBeTruthy();
+    if (!summary.latestSession) throw new Error("Expected a latest Hangboarding session");
     expect(screen.getByText(formatDateTime(summary.latestSession.startedAt))).toBeTruthy();
     expect(screen.getByText("15m")).toBeTruthy();
   });
