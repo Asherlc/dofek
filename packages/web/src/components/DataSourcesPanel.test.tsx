@@ -99,6 +99,7 @@ vi.mock("../lib/trpc.ts", () => ({
         providers: { invalidate: vi.fn() },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
+      processing: { status: { invalidate: vi.fn() } },
     }),
   },
 }));
