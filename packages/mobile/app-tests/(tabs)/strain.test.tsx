@@ -883,19 +883,36 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("Hangboarding")).toBeTruthy();
-    expect(screen.getByText("2 sessions")).toBeTruthy();
-    expect(screen.getByText("13m average session")).toBeTruthy();
-    expect(screen.getByText("17s work · 2m rest")).toBeTruthy();
-    expect(screen.getByText("125 bpm average · 150 bpm peak")).toBeTruthy();
+    for (const label of [
+      "Sessions",
+      "Total Time",
+      "Avg Session",
+      "Work Time",
+      "Rest Time",
+      "Work Intervals",
+      "Avg Heart Rate",
+      "Peak Heart Rate",
+    ]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getAllByText("2").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("25m")).toBeTruthy();
+    expect(screen.getByText("13m")).toBeTruthy();
+    expect(screen.getByText("17s")).toBeTruthy();
+    expect(screen.getByText("2m")).toBeTruthy();
+    expect(screen.getByText("125 bpm")).toBeTruthy();
+    expect(screen.getByText("150 bpm")).toBeTruthy();
     expect(screen.getByText("7/3 Repeaters")).toBeTruthy();
+    expect(screen.getByText("Tension Board")).toBeTruthy();
+    expect(screen.getByText("15m")).toBeTruthy();
+    expect(screen.getByText(/2026/)).toBeTruthy();
   });
 
   it("shows the Hangboarding empty state", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("No Hangboarding sessions")).toBeTruthy();
+    expect(screen.getByText("No Hangboarding sessions yet.")).toBeTruthy();
   });
 
   it("reports malformed Hangboarding daily rows while rendering valid summary metrics", async () => {
@@ -916,7 +933,8 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("1 session")).toBeTruthy();
+    expect(screen.getByText("Sessions")).toBeTruthy();
+    expect(screen.getByText("1")).toBeTruthy();
     expect(screen.getByText(/strain:climbing.hangboarding.daily/)).toBeTruthy();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       context: "strain:climbing.hangboarding.daily",
@@ -932,7 +950,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("No Hangboarding sessions")).toBeTruthy();
+    expect(screen.getByText("No Hangboarding sessions yet.")).toBeTruthy();
     expect(screen.queryByText("Training refresh failed")).toBeNull();
   });
 

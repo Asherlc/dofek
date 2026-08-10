@@ -1,7 +1,6 @@
 import {
   formatDateShort,
   formatDurationMinutes,
-  formatDurationSeconds,
   formatIntensity,
   formatNumber,
   formatTrainingLoad,
@@ -31,6 +30,7 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
+import { HangboardingSummary } from "../../components/HangboardingSummary";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
@@ -580,7 +580,10 @@ export default function StrainScreen() {
             {shouldShowClimbingSection ? (
               <>
                 <ClimbingSection model={climbingModel} />
-                <HangboardingSummary summary={climbingModel.hangboarding} />
+                <HangboardingSummary
+                  data={climbingModel.hangboarding}
+                  loading={trainingQuery.isLoading && trainingData == null}
+                />
               </>
             ) : null}
           </View>
@@ -775,59 +778,6 @@ function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
           ))
         )}
       </View>
-    </View>
-  );
-}
-
-function HangboardingSummary({ summary }: { summary: MobileHangboardingSummary }) {
-  if (summary.sessionCount === 0) {
-    return <Text style={styles.activitiesEmpty}>No Hangboarding sessions</Text>;
-  }
-
-  const sessionLabel = summary.sessionCount === 1 ? "session" : "sessions";
-  const averageDuration =
-    summary.averageDurationSeconds == null
-      ? "--"
-      : formatDurationSeconds(summary.averageDurationSeconds);
-  const workDuration =
-    summary.totalWorkDurationSeconds == null
-      ? "--"
-      : formatDurationSeconds(summary.totalWorkDurationSeconds);
-  const restDuration =
-    summary.totalRestDurationSeconds == null
-      ? "--"
-      : formatDurationSeconds(summary.totalRestDurationSeconds);
-  const heartRate =
-    summary.averageHeartRate == null || summary.peakHeartRate == null
-      ? "Heart rate unavailable"
-      : `${summary.averageHeartRate} bpm average · ${summary.peakHeartRate} bpm peak`;
-
-  return (
-    <View style={styles.hangboardingStack}>
-      <Text style={styles.climbingSubsectionTitle}>Hangboarding</Text>
-      <View style={styles.loadGrid}>
-        <View style={styles.loadItem}>
-          <Text style={styles.loadValue}>{`${summary.sessionCount} ${sessionLabel}`}</Text>
-        </View>
-        <View style={styles.loadItem}>
-          <Text style={styles.loadValue}>{`${averageDuration} average session`}</Text>
-        </View>
-      </View>
-      <Text style={styles.climbingMetaText}>
-        {workDuration} work · {restDuration} rest
-      </Text>
-      <Text style={styles.climbingMetaText}>{heartRate}</Text>
-      {summary.latestSession?.planName && (
-        <Text style={styles.climbingSessionName}>{summary.latestSession.planName}</Text>
-      )}
-      {summary.daily.length >= 2 && (
-        <SparkLine
-          data={summary.daily.map((row) => row.durationSeconds)}
-          height={60}
-          color={colors.accent}
-          showBaseline
-        />
-      )}
     </View>
   );
 }
@@ -1030,12 +980,6 @@ const styles = StyleSheet.create({
   },
   climbingStack: {
     gap: 14,
-  },
-  hangboardingStack: {
-    borderTopColor: colors.surfaceSecondary,
-    borderTopWidth: 1,
-    gap: 8,
-    paddingTop: 12,
   },
   climbingGradeGrid: {
     flexDirection: "row",
