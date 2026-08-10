@@ -147,6 +147,12 @@ const EXPECTED_LEGACY_CLASSIFICATIONS = [
   ExpectedLegacyClassification["modality"],
 ])[];
 
+describe("CANONICAL_ACTIVITY_TYPES", () => {
+  it("includes hangboard as a canonical activity type", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
+  });
+});
+
 describe("legacy activity classification", () => {
   it("covers every legacy enum value exactly once", () => {
     const expectedLegacyTypes = EXPECTED_LEGACY_CLASSIFICATIONS.map(([legacyType]) => legacyType);

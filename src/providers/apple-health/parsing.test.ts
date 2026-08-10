@@ -421,6 +421,30 @@ describe("Apple Health Provider -- parsing", () => {
       expect(result.hangTen).toBeUndefined();
     });
 
+    it("reports malformed Hang Ten activity segment JSON", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          duration: "10",
+          durationUnit: "min",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": "{not json",
+        },
+      );
+
+      expect(result.activityType.canonicalType).toBe("hangboard");
+      expect(result.hangTen?.rawActivitySegments).toBe("{not json");
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toContain(
+        "Invalid Hang Ten activity segments JSON",
+      );
+    });
+
     it("accepts an empty Hang Ten activity segment array", () => {
       const result = parseWorkout(
         {
@@ -437,6 +461,64 @@ describe("Apple Health Provider -- parsing", () => {
 
       expect(result.hangTen?.activitySegments).toEqual([]);
       expect(result.hangTen?.activitySegmentsError).toBeUndefined();
+    });
+
+    it("reports empty Hang Ten activity segment JSON", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": "",
+        },
+      );
+
+      expect(result.hangTen?.rawActivitySegments).toBe("");
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toContain(
+        "Invalid Hang Ten activity segments JSON",
+      );
+    });
+
+    it("reports structurally invalid Hang Ten activity segment JSON", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": '{"segments":[{"stepID":"step-1"}]}',
+        },
+      );
+
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toBe(
+        "Invalid Hang Ten activity segments JSON: segment metadata has invalid fields",
+      );
+    });
+
+    it("requires the exact Hang Ten brand metadata value", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: " Hang Ten ",
+          "HangTen.PlanName": "Max Hangs",
+        },
+      );
+
+      expect(result.activityType.canonicalType).toBe("strength");
+      expect(result.hangTen).toBeUndefined();
     });
 
     it("uses the Hang Ten session ID for the workout external ID", () => {

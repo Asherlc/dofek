@@ -15,7 +15,7 @@ import { runMigrations } from "./migrate.ts";
 import { writeTestMigrationFiles } from "./test-helpers.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
-// cspell:ignore conrelid contype functional_fitness relacl relkind relname relnamespace relreplident
+// cspell:ignore conrelid contype enumlabel enumtypid functional_fitness regtype relacl relkind relname relnamespace relreplident typname typnamespace
 
 const activityIds = {
   football: "00000000-0000-4000-8000-000000000105",
@@ -523,15 +523,48 @@ describe("canonical activity types Postgres migration", () => {
         join(import.meta.dirname, "../../drizzle/0068_canonical_activity_types.sql"),
         "utf8",
       );
+      const hangboardMigrationContent = readFileSync(
+        join(import.meta.dirname, "../../drizzle/0071_add_hangboard_activity_type.sql"),
+        "utf8",
+      );
       writeTestMigrationFiles(migrationDirectory, [
         {
           content: migrationContent,
           file: "0068_canonical_activity_types.sql",
           when: 2_100_000_000_000,
         },
+        {
+          content: hangboardMigrationContent,
+          file: "0071_add_hangboard_activity_type.sql",
+          when: 2_100_000_000_001,
+        },
       ]);
 
-      expect(await runMigrations(connectionString, migrationDirectory)).toBe(1);
+      expect(await runMigrations(connectionString, migrationDirectory)).toBe(2);
+
+      const hangboardTypeState = await executeWithSchema(
+        database,
+        z.object({
+          has_hangboard: z.boolean(),
+          legacy_activity_type_removed: z.boolean(),
+        }),
+        sql`
+        SELECT
+          EXISTS (
+            SELECT 1
+            FROM pg_enum
+            INNER JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+            INNER JOIN pg_namespace ON pg_namespace.oid = pg_type.typnamespace
+            WHERE pg_namespace.nspname = 'fitness'
+              AND pg_type.typname = 'canonical_activity_type'
+              AND pg_enum.enumlabel = 'hangboard'
+          ) AS has_hangboard,
+          to_regtype('fitness.activity_type') IS NULL AS legacy_activity_type_removed
+      `,
+      );
+      expect(hangboardTypeState).toEqual([
+        { has_hangboard: true, legacy_activity_type_removed: true },
+      ]);
 
       const identityAfter = await executeWithSchema(
         database,

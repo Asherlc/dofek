@@ -305,6 +305,7 @@ describe("formatActivityTypeLabel", () => {
 
   it("maps known activity types to human-readable names", () => {
     expect(formatActivityTypeLabel("functional_strength")).toBe("Functional Strength");
+    expect(formatActivityTypeLabel("hangboard")).toBe("Hangboarding");
     expect(formatActivityTypeLabel("strength_training")).toBe("Strength Training");
   });
 

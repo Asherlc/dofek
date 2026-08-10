@@ -50,6 +50,9 @@ export async function replaceHangTenIntervals(
   activityId: string,
   workout: HealthWorkout,
 ): Promise<void> {
+  const segments = workout.hangTen?.activitySegments;
+  if (segments === undefined) return;
+
   const intervals = buildHangTenIntervals(activityId, workout);
   if (intervals.length === 0) {
     await db.delete(activityInterval).where(eq(activityInterval.activityId, activityId));
