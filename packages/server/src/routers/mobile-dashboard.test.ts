@@ -854,6 +854,7 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
     dailyMetrics: [],
     baselineRelative: [],
     weight: [],
+    bodyFat: [],
     decisionContext: null,
     weightPrediction: {
       ratePerWeek: null,
@@ -1021,6 +1022,7 @@ describe("mobileDashboard.recovery", () => {
 
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
+    expect(result.bodyFat).toEqual([]);
     const timingCall = vi
       .mocked(logger.info)
       .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] recovery timings"));
@@ -1038,6 +1040,7 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
+      bodyFat: [],
       decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
@@ -1113,6 +1116,7 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
+      bodyFat: [],
       decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
@@ -1244,6 +1248,18 @@ describe("mobileDashboard.training", () => {
       gradeProgression: [],
       volumeByGrade: [],
       sessionSummary: [],
+      hangboarding: {
+        sessionCount: 0,
+        totalDurationSeconds: 0,
+        averageDurationSeconds: null,
+        totalWorkDurationSeconds: null,
+        totalRestDurationSeconds: null,
+        workIntervalCount: null,
+        averageHeartRate: null,
+        peakHeartRate: null,
+        latestSession: null,
+        daily: [],
+      },
     });
     const timingCall = vi
       .mocked(logger.info)
@@ -1289,6 +1305,18 @@ describe("mobileDashboard.training", () => {
         gradeProgression: [],
         volumeByGrade: [],
         sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
       },
     });
 
@@ -1365,6 +1393,18 @@ describe("mobileDashboard.training", () => {
         gradeProgression: [],
         volumeByGrade: [],
         sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
       },
     });
 

@@ -237,6 +237,12 @@ export const mobileRecoveryTabOutputSchema = z.object({
       interpolated: z.boolean(),
     }),
   ),
+  bodyFat: z.array(
+    z.object({
+      date: dateSchema,
+      bodyFatPct: z.number(),
+    }),
+  ),
   decisionContext: bodyDecisionContextOutputSchema.nullable(),
   weightPrediction: z.object({
     ratePerWeek: z.number().nullable(),
@@ -376,6 +382,34 @@ export const mobileTrainingTabOutputSchema = z.object({
         hardestRouteGradeSortValue: z.number().nullable(),
       }),
     ),
+    hangboarding: z.object({
+      sessionCount: z.number().int().nonnegative(),
+      totalDurationSeconds: nonnegativeNumberSchema,
+      averageDurationSeconds: nonnegativeNumberSchema.nullable(),
+      totalWorkDurationSeconds: nonnegativeNumberSchema.nullable(),
+      totalRestDurationSeconds: nonnegativeNumberSchema.nullable(),
+      workIntervalCount: z.number().int().nonnegative().nullable(),
+      averageHeartRate: nonnegativeNumberSchema.nullable(),
+      peakHeartRate: nonnegativeNumberSchema.nullable(),
+      latestSession: z
+        .object({
+          activityId: z.string(),
+          startedAt: z.iso.datetime(),
+          planName: z.string().nullable(),
+          boardName: z.string().nullable(),
+          durationSeconds: nonnegativeNumberSchema,
+        })
+        .nullable(),
+      daily: z.array(
+        z.object({
+          date: dateSchema,
+          sessionCount: z.number().int().nonnegative(),
+          durationSeconds: nonnegativeNumberSchema,
+          workDurationSeconds: nonnegativeNumberSchema.nullable(),
+          restDurationSeconds: nonnegativeNumberSchema.nullable(),
+        }),
+      ),
+    }),
   }),
 });
 

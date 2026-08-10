@@ -66,6 +66,7 @@ export const CANONICAL_ACTIVITY_TYPES = [
   "golf",
   "disc_golf",
   "climbing",
+  "hangboard",
   "dance",
   "triathlon",
   "multisport",

@@ -1,7 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
-import type { SyncDatabase } from "../../db/index.ts";
+import type { Database, SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
@@ -9,7 +9,7 @@ import {
 } from "../../db/metric-stream-writer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
-import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { healthEvent, labResult } from "../../db/schema/clinical.ts";
 import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
@@ -17,9 +17,23 @@ import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
-import type { HealthWorkout } from "./workouts.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
+
+type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
+  return "transaction" in db && typeof db.transaction === "function";
+}
+
+function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
+  if (!hasTransaction(db)) {
+    throw new Error("Apple Health workout upsert requires a transactional database");
+  }
+  return db;
+}
 
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
@@ -678,46 +692,55 @@ export async function upsertWorkoutBatch(
   // in a single INSERT statement.
   const dedupMap = new Map<string, HealthWorkout>();
   for (const w of workouts) {
-    dedupMap.set(`ah:workout:${w.startDate.toISOString()}`, w);
+    dedupMap.set(workoutExternalId(w), w);
   }
   const uniqueWorkouts = [...dedupMap.values()];
 
-  // Multi-row upsert with RETURNING to get all activity IDs in one statement
-  const activityResults: { activityId: string; workout: HealthWorkout }[] = [];
+  const transactionalDb = requireTransactionalDatabase(db);
+  // Multi-row upsert with RETURNING to get all activity IDs in one statement.
+  // Keep activity metadata and Hang Ten intervals in the same transaction so a
+  // failed replacement cannot leave the activity row ahead of its intervals.
+  const activityResults = await transactionalDb.transaction(async (transactionDb) => {
+    const results: { activityId: string; workout: HealthWorkout }[] = [];
 
-  for (let i = 0; i < uniqueWorkouts.length; i += 500) {
-    const batch = uniqueWorkouts.slice(i, i + 500);
-    for (const workout of batch) {
-      const raw: Record<string, number> = { durationSeconds: workout.durationSeconds };
-      if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
-      if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
-      if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
+    for (let i = 0; i < uniqueWorkouts.length; i += 500) {
+      const batch = uniqueWorkouts.slice(i, i + 500);
+      for (const workout of batch) {
+        const values = {
+          providerId,
+          externalId: workoutExternalId(workout),
+          activityType: workout.activityType,
+          startedAt: workout.startDate,
+          endedAt: workout.endDate,
+          name: workoutName(workout),
+          sourceName: workout.sourceName,
+          raw: workoutRawPayload(workout),
+        };
 
-      const values = {
-        providerId,
-        externalId: `ah:workout:${workout.startDate.toISOString()}`,
-        activityType: workout.activityType,
-        startedAt: workout.startDate,
-        endedAt: workout.endDate,
-        name: workout.activityType.canonicalType,
-        sourceName: workout.sourceName,
-        raw,
-      };
+        const returned = await upsertProviderActivity(transactionDb, values, {
+          activityType: values.activityType,
+          startedAt: values.startedAt,
+          endedAt: values.endedAt,
+          name: sql`CASE
+            WHEN excluded.canonical_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
+              THEN excluded.name
+            ELSE ${activity.name}
+          END`,
+          sourceName: values.sourceName,
+          raw: values.raw,
+        });
 
-      const returned = await upsertProviderActivity(db, values, {
-        activityType: values.activityType,
-        startedAt: values.startedAt,
-        endedAt: values.endedAt,
-        name: values.name,
-        sourceName: values.sourceName,
-        raw: values.raw,
-      });
-
-      if (returned) {
-        activityResults.push({ activityId: returned.id, workout });
+        if (returned) {
+          results.push({ activityId: returned.id, workout });
+          if (workout.hangTen) {
+            await replaceHangTenIntervals(transactionDb, returned.id, workout);
+          }
+        }
       }
     }
-  }
+
+    return results;
+  });
 
   // Batch all GPS route locations across all workouts
   const allGpsRows: MetricStreamSourceRow[] = [];
@@ -752,6 +775,19 @@ export async function upsertWorkoutBatch(
   }
 
   return activityResults.length;
+}
+
+function workoutName(workout: HealthWorkout): string {
+  return workout.hangTen?.planName ?? workout.activityType.canonicalType;
+}
+
+function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
+  const raw: Record<string, unknown> = { durationSeconds: workout.durationSeconds };
+  if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
+  if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
+  if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
+  if (workout.hangTen) raw.hangTen = workout.hangTen;
+  return raw;
 }
 
 export async function upsertSleepBatch(

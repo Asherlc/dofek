@@ -80,6 +80,7 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     processing: {
       status: { useQuery: mockDataHealthQuery },
+      dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
     },
     sync: {
       providers: {
@@ -98,6 +99,7 @@ vi.mock("../lib/trpc.ts", () => ({
         providers: { invalidate: vi.fn() },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
+      processing: { status: { invalidate: vi.fn() } },
     }),
   },
 }));

@@ -134,6 +134,7 @@ vi.mock("../lib/trpc.ts", () => ({
           return mockDataHealthQuery;
         },
       },
+      dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
     },
     useUtils: () => ({
       calendar: {
@@ -142,6 +143,9 @@ vi.mock("../lib/trpc.ts", () => ({
       },
       activity: {
         list: { invalidate: invalidateActivityList },
+      },
+      processing: {
+        status: { invalidate: vi.fn() },
       },
     }),
   },
@@ -438,6 +442,47 @@ describe("ActivitiesPage", () => {
 
     expect(screen.getByText("0.0 km")).toBeDefined();
     expect(screen.getByText("0 m")).toBeDefined();
+  });
+
+  it("renders available partial overview measurements and comparisons", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 4,
+        totalMinutes: 280,
+        totalDistanceMeters: 12500,
+        totalDistanceState: { status: "available" },
+        totalElevationGainM: 180,
+        totalElevationState: { status: "available" },
+        activityTypes: ["running", "cycling"],
+        comparison: {
+          periodLabel: "previous 4 weeks",
+          activityCount: { magnitude: 1, trend: "higher" },
+          totalMinutes: { magnitude: 60, trend: "higher" },
+          totalDistanceMeters: {
+            magnitude: 2500,
+            trend: "higher",
+            state: { status: "available" },
+          },
+          totalElevationGainM: {
+            magnitude: 50,
+            trend: "higher",
+            state: { status: "available" },
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("12.5 km")).toBeDefined();
+    expect(screen.getByText("180 m")).toBeDefined();
+    expect(screen.getByText("2.5 km more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("50 m more vs previous 4 weeks")).toBeDefined();
+    expect(screen.getByText("Distance").parentElement).not.toHaveTextContent(/unavailable/);
+    expect(screen.getByText("Elevation").parentElement).not.toHaveTextContent(/unavailable/);
   });
 
   it("passes selected filters to the activity list query", () => {

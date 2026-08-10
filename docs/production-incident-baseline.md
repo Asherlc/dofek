@@ -16,50 +16,90 @@ them, and the durability work they suggest.
 - **Validation:** Regression tests pass for the mobile telemetry filter, cycling modality normalization, bounded sleep model SQL, and latest-event model behavior. Production read-only checks confirmed the database and service health before the change.
 - **Remaining risk / follow-up:** Apply the migration and deploy the release, then verify that all seven issue IDs stop receiving production events and that the next analytics build completes below its timeout. Confirm that the direct calendar visibility lookup preserves canonical-row authorization for all production read-model paths.
 
-## 2026-08-10 — Dependabot updates blocked by mismatched CI baselines
+## 2026-08-10: Peloton workouts omitted `total_work`
 
-- **Status:** Resolved. Dependabot PRs [#2463](https://github.com/Asherlc/dofek/pull/2463), [#2455](https://github.com/Asherlc/dofek/pull/2455), and [#2450](https://github.com/Asherlc/dofek/pull/2450) were merged; duplicate CodeQL PRs [#2461](https://github.com/Asherlc/dofek/pull/2461) and [#2456](https://github.com/Asherlc/dofek/pull/2456), plus incompatible mobile PR [#2460](https://github.com/Asherlc/dofek/pull/2460), were closed. No production impact occurred.
-- **Evidence / root cause:** CodeQL reported `Loaded a configuration file for version '4.37.3', but running version '4.37.4'` in [job 93158091311](https://github.com/Asherlc/dofek/actions/runs/31279367655/job/93158091311) because Dependabot split one workflow upgrade across three action PRs. The mobile job's first fatal command was `pnpm expo install --check`, which rejected `react-native-maps@1.29.0` while Expo SDK 57 expected `1.27.2` ([Expo dependency validation](https://docs.expo.dev/more/expo-cli/#dependency-validation)). The S3 PR failed typechecking because `S3Client` from the pinned client package was incompatible with the newer presigner in [job 93158710273](https://github.com/Asherlc/dofek/actions/runs/31279188149/job/93158710273). The vcpkg PR failed with `no version database entry for vcpkg-cmake-config at 2026-07-21` in [job 93157522927](https://github.com/Asherlc/dofek/actions/runs/31279106911/job/93157522927), because CI bootstrapped an older vcpkg commit than the requested manifest baseline.
-- **Fix / mitigation:** Aligned all CodeQL actions to the latest pinned v4.37.6 commit, aligned the S3 client and presigner at 3.1106.0, and aligned the native workflow and image vcpkg pins with the 2026.07.29 baseline. The Expo-incompatible maps update was closed rather than bypassing the canonical compatibility check.
-- **Validation:** The final exact-head run [31355357176](https://github.com/Asherlc/dofek/actions/runs/31355357176) completed with 2,226 passed checks and zero failures before PR #2450 merged at commit `cb2ebb029306561635c31945997a093cc4a44b90`. A fresh Dependabot search reports no open PRs.
-- **Remaining risk / follow-up:** Keep CodeQL action components grouped or version-aligned in future Dependabot updates, and treat Expo compatibility failures as dependency-selection issues rather than adding exclusions or warning-only behavior.
+- **Status:** Root cause identified and fixed in this workspace; deployment and
+  post-deploy Sentry verification remain pending.
+- **Symptoms / user impact:** Peloton workout syncs failed with
+  `PelotonResponseError: Peloton returned an invalid workouts response`, so
+  affected sync runs could not ingest the returned workout page. The issue had
+  64 occurrences and no directly affected Sentry users. See
+  [DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E/).
+- **Evidence:** The latest event's Zod errors identify
+  `data[6]` through `data[19].total_work` as `undefined`; the failure occurs
+  while parsing the successful `/api/user/{userId}/workouts` response in
+  `packages/peloton-client/src/client.ts`. Existing Sentry error reporting
+  captured the complete validation paths, so no additional diagnostic
+  instrumentation was required.
+- **Root cause:** `pelotonWorkoutSchema` accepted `total_work: null` but still
+  required the property to be present. Peloton omits that field for some
+  workout records, making the schema stricter than the observed API contract.
+- **Fix:** Changed `total_work` to `z.number().nullish()` and added a client
+  regression test covering a workout response where Peloton omits the field.
+- **Validation:** The red regression test failed with the same Zod validation
+  path reported by Sentry; after the schema change, the Peloton client and
+  parser suites passed (18 tests).
+- **Remaining risk / follow-up:** Deploy the fix and verify that
+  `DOFEK-SERVER-5E` stops receiving new events. No retry, timeout, or fallback
+  was added because the root cause was a local response-contract mismatch.
 
-## 2026-08-09 — PostHog Sentry summary warehouse sync rejected by upstream API
+## 2026-08-10: Pull-request CI failures from configuration and test drift
 
-- **Status:** Unresolved external integration issue; no Dofek application or
-  deployment change was made.
-- **Symptoms / impact:** PostHog project Dofek reported the Sentry
-  `organization_stats_summary` warehouse sync as failed. The schema has never
-  materialized a table, and every observed run synced zero rows; the summary
-  data remains unavailable until the sync succeeds or the schema is disabled.
-- **Evidence / root cause:** PostHog’s live source history shows 43 consecutive
-  failed full-refresh runs from 2026-07-29 through 2026-08-09. The failures
-  consistently return HTTP 400 from
-  `https://sentry.io/api/0/organizations/east-bay-software/stats-summary/`.
-  Earlier requests used `statsPeriod=90d`; later requests used explicit
-  `start`/`end` timestamps. All other enabled Sentry schemas completed, so
-  credentials and general source connectivity are working. PostHog’s first
-  fix for this incident changed the request away from the 90-day retention
-  boundary to explicit `start`/`end` values and was deployed on 2026-08-07
-  ([PR #79517](https://github.com/PostHog/posthog/pull/79517)); Dofek continued
-  failing afterward. PostHog’s follow-up ([PR #80099](https://github.com/PostHog/posthog/pull/80099))
-  identifies the remaining pattern as another deterministic Sentry 400,
-  usually caused by a requested range outside the Sentry plan’s retention, and
-  notes that the upstream response body is not preserved. Sentry’s current API
-  documentation lists `sum(quantity)` and either `statsPeriod` or `start`/`end`
-  as valid parameters ([official API reference](https://docs.sentry.io/api/organizations/retrieve-an-organizations-events-count-by-project/)),
-  so the exact Dofek-specific rejection remains unconfirmed without a direct
-  read-only Sentry request.
-- **Fix / mitigation:** No retry or configuration workaround was applied;
-  automatic retries are ineffective while the same request is rejected. The
-  recommended next action is to disable this unused optional schema, or open a
-  PostHog support case with the source ID, schema ID, and failed workflow ID if
-  the summary table is required.
-- **Remaining risk / follow-up:** Decide whether
-  `organization_stats_summary` is needed. If it is, obtain the Sentry 400
-  response body from PostHog support or Sentry and repair the connector before
-  re-enabling it; if not, disable the schema to stop repeated failed billable
-  sync attempts.
+- **Status:** Repository fixes are pushed; the latest CI run has no failed
+  checks, but its iOS and watchOS native-build jobs remain queued for a
+  GitHub-hosted macOS runner.
+- **Symptoms / user impact:** Pull-request CI initially failed spell check,
+  mutation testing, mobile tests, web unit tests, and the mobile Metro job.
+  The PR could not reach a completed green CI gate.
+- **Evidence:** The [latest CI run](https://github.com/Asherlc/dofek/actions/runs/31406513226)
+  reports 81 successful checks and 4 skipped checks; only the iOS and watchOS
+  native-build jobs are queued. Local validation passed the full unit tier
+  (15,280 tests), mobile tests (1,486 tests), the focused web tests (68 tests),
+  and cspell.
+- **Root causes:** The spell dictionary omitted the existing word
+  `alertable`; mutation preparation compared pull requests against
+  `origin/main` instead of the actual pull-request base SHA; several web and
+  mobile tRPC fixtures had not added the current processing dismissal
+  mutation; and Expo SDK 57 dependencies were one patch behind the installed
+  SDK compatibility set.
+- **Fix:** Added the dictionary entry, scoped mutation diffs to
+  `github.event.pull_request.base.sha`, aligned the stale test fixtures, and
+  synchronized the Expo manifest and lockfile with `pnpm expo install --fix`.
+  The fixes are in commits [`2afe007`](https://github.com/Asherlc/dofek/commit/2afe0078cc271da42d21e6eea1b9ba33afbf8f80),
+  [`82cf19f`](https://github.com/Asherlc/dofek/commit/82cf19f432c8264f7cbe7808fd663f76557f5680),
+  [`ef8810d`](https://github.com/Asherlc/dofek/commit/ef8810d463ec628d1347422da8d667267b3c796e),
+  [`97671b6`](https://github.com/Asherlc/dofek/commit/97671b64e6a6f2a33527a7011cb3c5c3d18ab6d6),
+  and [`a7ef077`](https://github.com/Asherlc/dofek/commit/a7ef077e3c731818bf8ff2ad64c7b03647ce1e49).
+- **Remaining risk / follow-up:** Confirm the two queued native jobs complete;
+  no code-level CI failure remains in the current run.
+
+## 2026-08-10: Hangboarding pull-request CI failures
+
+- **Status:** Root causes fixed and pushed; the [replacement CI run](https://github.com/Asherlc/dofek/actions/runs/31431192266)
+  completed with 105 checks passed and none failed.
+- **Symptoms / user impact:** PR #2471 was blocked by SQLFluff, spell check,
+  mutation testing, an Apple Health integration test, and web typecheck.
+- **Evidence:** The initial [failed CI run](https://github.com/Asherlc/dofek/actions/runs/31426584106)
+  reported an indented migration statement, missing Hangboarding and PostgreSQL
+  catalog dictionary words, mutation score 61.82 below the 75 threshold, a
+  PostgreSQL `23514` failure while adding a table-wide test constraint, and two
+  web TypeScript errors.
+- **Root causes:** The migration indentation violated SQLFluff; the dictionary
+  did not contain the new domain terms; repository branches lacked unit
+  coverage for several Hangboarding paths; the integration test's constraint
+  rejected an existing `Step 2: Work` row; and the web components did not
+  preserve nullable narrowing or accept tRPC error objects.
+- **Fix:** Corrected the migration and dictionary, added focused repository
+  tests, scoped the failure-injection constraint with PostgreSQL's `NOT VALID`
+  behavior ([official documentation](https://www.postgresql.org/docs/current/sql-altertable.html)),
+  and corrected the web component types and narrowing. Commits
+  [`5443228`](https://github.com/Asherlc/dofek/commit/54432285e68bac09b2a318e0f51dfb2fe2375ff9)
+  and [`ae16be3`](https://github.com/Asherlc/dofek/commit/ae16be3efe234462de83dda5e507e685de21220e)
+  contain the fixes.
+- **Validation:** Local focused tests, the Apple Health integration file,
+  TypeScript, CSpell, SQLFluff, Biome, and mutation testing passed; the
+  replacement GitHub run passed all checks.
+- **Remaining risk / follow-up:** None identified for this CI failure.
 
 ## 2026-08-07 — Wahoo OAuth callback served as `Not Found`
 
@@ -23285,3 +23325,21 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Remove the two `image-size` audit ignores as
   soon as upstream publishes a patched release or Expo/Metro removes the
   vulnerable path; rerun the hosted dependency-audit job after this PR commit.
+## 2026-08-08 — Dependabot PRs exposed stale CI baselines and incompatible runtime upgrades
+
+- **Status:** Resolved in PR [#2448](https://github.com/Asherlc/dofek/pull/2448). PR [#2423](https://github.com/Asherlc/dofek/pull/2423) was refreshed onto current `main` and merged after hosted run [31266778240](https://github.com/Asherlc/dofek/actions/runs/31266778240) passed; incompatible PRs [#2421](https://github.com/Asherlc/dofek/pull/2421) and [#2429](https://github.com/Asherlc/dofek/pull/2429) were closed.
+- **Symptoms / impact:** #2421 initially failed [Image Vulnerability Scan](https://github.com/Asherlc/dofek/actions/runs/30961542865/job/92166470552) and [E2E Tests (Web)](https://github.com/Asherlc/dofek/actions/runs/30961542865/job/92166470826). #2423 failed [Integration Tests (3/4)](https://github.com/Asherlc/dofek/actions/runs/30961577671/job/92167161546). #2429 failed [Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/31192266739/job/92912059957). No production impact was observed.
+- **Evidence / root cause:** #2421's initial fatal line was `COPY --from=dbt-tools /usr/local/bin/python3.13 ...: not found`: the PR selected the [official Python 3.14.6 Alpine image](https://hub.docker.com/_/python/) but retained Python 3.13 runtime paths in the server stage. After those paths were aligned, the E2E job [93126662595](https://github.com/Asherlc/dofek/actions/runs/31266962159/job/93126662595) failed at analytics startup with `mashumaro.exceptions.UnserializableField: Field "schema" of type Optional[str] in JSONObjectSchema is not serializable`; stable `dbt-core==1.11.12` resolves `mashumaro==3.14`, which is incompatible with Python 3.14; see [dbt-core issue #12098](https://github.com/dbt-labs/dbt-core/issues/12098) and the [dbt-core 1.11.12 metadata](https://pypi.org/project/dbt-core/1.11.12/). #2423's first fatal assertion was at `src/account-erasure/restore-reconciliation.integration.test.ts:309`, where a concurrent reconciler returned `recoveredRequestIds: []`; the branch was based before the existing [concurrency stabilization](https://github.com/Asherlc/dofek/commit/c1f43cb3378d148e3a56e7cbabf47e99147d499f). #2429's first fatal line was `react-native-svg@15.15.5 - expected version: 15.15.4`; [Expo's SDK 57 SVG guidance](https://docs.expo.dev/versions/v57.0.0/sdk/svg/) and [version-validation documentation](https://docs.expo.dev/more/expo-cli/#version-validation) support keeping the check enabled.
+- **Fix / mitigation:** Restored the root `dbt-tools` image and copied interpreter/library paths to Python 3.13, and added a root-Dockerfile-only Dependabot ignore for Python versions `>=3.14`; the ML Docker update remains independently managed. Added a narrow Dependabot ignore for `react-native-svg` versions `>=15.15.5`, while retaining the SDK-managed `15.15.4` pin and compatibility gate. Refreshed #2423 onto current `main`; no retry, timeout, test skip, or compatibility-check bypass was added.
+- **Validation:** #2448's refreshed hosted run [31268664654](https://github.com/Asherlc/dofek/actions/runs/31268664654) completed successfully: all executed lint, unit, integration, coverage, typecheck, security, and gate jobs passed. The explicit all-areas workflow-dispatch run [31269405954](https://github.com/Asherlc/dofek/actions/runs/31269405954) then passed the Docker build, [image scan](https://github.com/Asherlc/dofek/actions/runs/31269405954/job/93132862709), [web E2E](https://github.com/Asherlc/dofek/actions/runs/31269405954/job/93132862713), all integration shards, coverage, Test Gate, and CI Gate on the supported Python 3.13 image.
+- **Remaining risk / follow-up:** Revisit the Python ignore when stable dbt releases support Python 3.14, and revisit the `react-native-svg` ignore during the next Expo SDK upgrade.
+
+## 2026-08-08 — PR 2447 CI migration failed on a removed activity enum
+
+- **Status:** Fixed in the workspace; hosted CI needs a fresh run from the
+  updated commit. No production impact was observed.
+- **Symptoms / impact:** [PR CI run 31242532102](https://github.com/Asherlc/dofek/actions/runs/31242532102) failed all four integration shards and the web E2E migration step, blocking PR #2447.
+- **Evidence / root cause:** The first fatal database line in [integration shard 1](https://github.com/Asherlc/dofek/actions/runs/31242532102/job/93066014694) and the E2E migration log was `type "fitness.activity_type" does not exist`. Migration [`0068_canonical_activity_types.sql`](../drizzle/0068_canonical_activity_types.sql) drops that legacy enum, while [`0071_add_hangboard_activity_type.sql`](../drizzle/0071_add_hangboard_activity_type.sql) still attempted to alter it. PostgreSQL applies enum-value changes through `ALTER TYPE` ([official documentation](https://www.postgresql.org/docs/current/sql-altertype.html)).
+- **Fix / mitigation:** Removed the obsolete legacy-enum statement and added a real Postgres integration regression that applies migrations 0068 and 0071 together, verifies `hangboard` on `canonical_activity_type`, and verifies the legacy enum remains absent. No migration skip, retry, timeout, or failure suppression was added.
+- **Validation:** The regression test passes 1/1, the full seed/migration integration test passes 2/2, migration policy passes, and TypeScript typecheck passes locally. Full analytics SQL lint was not runnable because this workspace could not start isolated Compose services after Docker reported `all predefined address pools have been fully subnetted`.
+- **Remaining risk / follow-up:** Push the workspace changes and confirm the hosted PR CI rerun passes the integration and E2E migration jobs; clean only disposable stale Docker networks if local analytics lint must be rerun.
