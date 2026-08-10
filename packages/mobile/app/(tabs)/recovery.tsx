@@ -692,11 +692,11 @@ export default function RecoveryScreen() {
                           `${date} ${formatBodyCompositionNumber(bodyFatPct)}%`,
                       )
                       .join("; ")}.`}
+                    style={styles.sparkContainer}
                   >
                     <View
                       accessibilityElementsHidden
                       importantForAccessibility="no-hide-descendants"
-                      style={styles.sparkContainer}
                     >
                       <SparkLine
                         data={bodyFatData.map((row) => row.bodyFatPct)}
