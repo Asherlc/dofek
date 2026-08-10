@@ -524,7 +524,7 @@ describe("canonical activity types Postgres migration", () => {
         "utf8",
       );
       const hangboardMigrationContent = readFileSync(
-        join(import.meta.dirname, "../../drizzle/0071_add_hangboard_activity_type.sql"),
+        join(import.meta.dirname, "../../drizzle/0072_add_hangboard_activity_type.sql"),
         "utf8",
       );
       writeTestMigrationFiles(migrationDirectory, [
@@ -535,7 +535,7 @@ describe("canonical activity types Postgres migration", () => {
         },
         {
           content: hangboardMigrationContent,
-          file: "0071_add_hangboard_activity_type.sql",
+          file: "0072_add_hangboard_activity_type.sql",
           when: 2_100_000_000_001,
         },
       ]);
