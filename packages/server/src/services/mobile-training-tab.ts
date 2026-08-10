@@ -14,6 +14,7 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
 import {
@@ -79,6 +80,12 @@ export async function loadMobileTrainingTab(
     ctx.accessWindow,
   );
   const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+  const hangboardingRepo = new HangboardingRepository(
+    ctx.db,
+    ctx.userId,
+    ctx.timezone,
+    ctx.accessWindow,
+  );
   const strengthRepo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
 
   const windowStart = dateWindowStartString(endDate, days);
@@ -152,6 +159,7 @@ export async function loadMobileTrainingTab(
     gradeProgressionModels,
     volumeByGradeModels,
     sessionSummaryModels,
+    hangboardingSummary,
     progressiveOverloadModels,
   ] = await Promise.all([
     trainingRepo.getActivityStatsAndWeeklyVolume(days),
@@ -164,6 +172,7 @@ export async function loadMobileTrainingTab(
     climbingRepo.getGradeProgression(days),
     climbingRepo.getVolumeByGrade(days),
     climbingRepo.getSessionSummaries(days),
+    hangboardingRepo.getSummary(days),
     strengthRepo.getProgressiveOverload(days),
   ]);
 
@@ -201,6 +210,7 @@ export async function loadMobileTrainingTab(
       gradeProgression: gradeProgressionModels.map((model) => model.toDetail()),
       volumeByGrade: volumeByGradeModels.map((model) => model.toDetail()),
       sessionSummary: sessionSummaryModels.map((model) => model.toDetail()),
+      hangboarding: hangboardingSummary,
     },
   };
 }

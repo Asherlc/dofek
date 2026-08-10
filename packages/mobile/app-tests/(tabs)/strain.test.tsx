@@ -99,6 +99,18 @@ function defaultMockTrainingData(): MockTrainingData {
       gradeProgression: [],
       volumeByGrade: [],
       sessionSummary: [],
+      hangboarding: {
+        sessionCount: 0,
+        totalDurationSeconds: 0,
+        averageDurationSeconds: null,
+        totalWorkDurationSeconds: null,
+        totalRestDurationSeconds: null,
+        workIntervalCount: null,
+        averageHeartRate: null,
+        peakHeartRate: null,
+        latestSession: null,
+        daily: [],
+      },
     },
   };
 }
@@ -168,6 +180,9 @@ vi.mock("../../lib/trpc", () => ({
     processing: {
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
+      },
+      dismiss: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
     },
     useUtils: () => ({
@@ -822,6 +837,103 @@ describe("StrainScreen recent activity navigation", () => {
       context: "strain:climbing.volumeByGrade",
       zodError: expect.any(Object),
     });
+  });
+
+  it("renders server-computed Hangboarding summary metrics and duration trend", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        ...defaultMockTrainingData().climbing,
+        hangboarding: {
+          sessionCount: 2,
+          totalDurationSeconds: 1500,
+          averageDurationSeconds: 750,
+          totalWorkDurationSeconds: 17,
+          totalRestDurationSeconds: 103,
+          workIntervalCount: 2,
+          averageHeartRate: 125,
+          peakHeartRate: 150,
+          latestSession: {
+            activityId: "activity-2",
+            startedAt: "2026-08-08T14:00:00.000Z",
+            planName: "7/3 Repeaters",
+            boardName: "Tension Board",
+            durationSeconds: 900,
+          },
+          daily: [
+            {
+              date: "2026-08-07",
+              sessionCount: 1,
+              durationSeconds: 600,
+              workDurationSeconds: 7,
+              restDurationSeconds: 53,
+            },
+            {
+              date: "2026-08-08",
+              sessionCount: 1,
+              durationSeconds: 900,
+              workDurationSeconds: 10,
+              restDurationSeconds: 50,
+            },
+          ],
+        },
+      },
+    };
+
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Hangboarding")).toBeTruthy();
+    expect(screen.getByText("2 sessions")).toBeTruthy();
+    expect(screen.getByText("13m average session")).toBeTruthy();
+    expect(screen.getByText("17s work · 2m rest")).toBeTruthy();
+    expect(screen.getByText("125 bpm average · 150 bpm peak")).toBeTruthy();
+    expect(screen.getByText("7/3 Repeaters")).toBeTruthy();
+  });
+
+  it("shows the Hangboarding empty state", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("No Hangboarding sessions")).toBeTruthy();
+  });
+
+  it("reports malformed Hangboarding daily rows while rendering valid summary metrics", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        ...defaultMockTrainingData().climbing,
+        hangboarding: {
+          ...defaultMockTrainingData().climbing.hangboarding,
+          sessionCount: 1,
+          totalDurationSeconds: 600,
+          averageDurationSeconds: 600,
+          daily: [{ date: "bad", sessionCount: "bad", durationSeconds: 600 }],
+        },
+      },
+    };
+
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("1 session")).toBeTruthy();
+    expect(screen.getByText(/strain:climbing.hangboarding.daily/)).toBeTruthy();
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      context: "strain:climbing.hangboarding.daily",
+      zodError: expect.any(Object),
+    });
+  });
+
+  it("preserves cached Hangboarding data during a failed training refresh", async () => {
+    mockTrainingState.data = defaultMockTrainingData();
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training refresh failed");
+
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("No Hangboarding sessions")).toBeTruthy();
+    expect(screen.queryByText("Training refresh failed")).toBeNull();
   });
 
   it("shows the best climbing grade instead of the most recent lower grade", async () => {
