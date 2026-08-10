@@ -251,10 +251,11 @@ export async function loadMobileRecoveryTab(
   const goalWeightKg =
     parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg) ? parsedGoalWeightKg : null;
 
-  const [hrvBaseline, weight, weightPrediction, healthspanRaw, decisionContext] = await Promise.all(
-    [
+  const [hrvBaseline, weight, bodyFat, weightPrediction, healthspanRaw, decisionContext] =
+    await Promise.all([
       metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
       bodyRepo.getSmoothedWeight(weightDays, endDate),
+      bodyRepo.getRecomposition(days, endDate),
       bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
       fetchHealthspanRawData(
         {
@@ -270,8 +271,7 @@ export async function loadMobileRecoveryTab(
         captureException(error);
         return null;
       }),
-    ],
-  );
+    ]);
 
   const restingHeartRateBaseline = baselineRelative.find(
     (metric) => metric.metric === "resting_heart_rate",
@@ -339,6 +339,7 @@ export async function loadMobileRecoveryTab(
     trends: deriveTrends(dailyMetrics),
     dailyMetrics,
     weight,
+    bodyFat: bodyFat.map(({ date, bodyFatPct }) => ({ date, bodyFatPct })),
     decisionContext,
     weightPrediction,
     baselineRelative,
