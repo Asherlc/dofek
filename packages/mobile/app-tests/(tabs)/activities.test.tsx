@@ -122,9 +122,7 @@ vi.mock("../../lib/trpc", () => ({
           return mockDataHealthQuery;
         },
       },
-      dismiss: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-      },
+      dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
     },
     useUtils: () => ({
       calendar: {
