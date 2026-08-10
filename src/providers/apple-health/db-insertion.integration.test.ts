@@ -230,13 +230,14 @@ describe("db-insertion deduplication (integration)", () => {
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
       const hangTen = workout.hangTen;
       if (!hangTen) throw new Error("Expected Hang Ten metadata");
-      await ctx.db.execute(sql`
-        ALTER TABLE fitness.activity_interval
-        ADD CONSTRAINT activity_interval_replacement_failure_test
-        CHECK (label <> 'Step 2: Work')
-      `);
 
       try {
+        await ctx.db.execute(sql`
+          ALTER TABLE fitness.activity_interval
+          ADD CONSTRAINT activity_interval_replacement_failure_test
+          CHECK (label <> 'Step 2: Work') NOT VALID
+        `);
+
         hangTen.activitySegments = [
           {
             stepID: "step-2",
