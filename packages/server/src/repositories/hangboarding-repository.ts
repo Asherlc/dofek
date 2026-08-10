@@ -90,7 +90,7 @@ const dailyRowSchema = z.object({
 });
 
 const memberSource = sql`
-  JOIN LATERAL (
+  LEFT JOIN LATERAL (
     SELECT member.id AS hang_ten_activity_id, member.started_at, member.ended_at, member.raw
     FROM fitness.activity AS member
     WHERE member.id = ANY(a.member_activity_ids)
@@ -209,8 +209,14 @@ export class HangboardingRepository {
             SELECT
               a.id::text AS activity_id,
               member.hang_ten_activity_id,
-              member.started_at,
-              member.ended_at,
+              CASE
+                WHEN member.hang_ten_activity_id IS NULL THEN a.started_at
+                ELSE member.started_at
+              END AS started_at,
+              CASE
+                WHEN member.hang_ten_activity_id IS NULL THEN a.ended_at
+                ELSE member.ended_at
+              END AS ended_at,
               NULLIF(member.raw->'hangTen'->>'planName', '') AS plan_name,
               NULLIF(member.raw->'hangTen'->>'boardName', '') AS board_name,
               CASE
@@ -286,8 +292,14 @@ export class HangboardingRepository {
       sql`WITH sessions AS (
             SELECT
               member.hang_ten_activity_id,
-              member.started_at,
-              member.ended_at
+              CASE
+                WHEN member.hang_ten_activity_id IS NULL THEN a.started_at
+                ELSE member.started_at
+              END AS started_at,
+              CASE
+                WHEN member.hang_ten_activity_id IS NULL THEN a.ended_at
+                ELSE member.ended_at
+              END AS ended_at
             FROM fitness.v_activity AS a
             ${memberSource}
             WHERE a.user_id = ${this.#userId}::uuid

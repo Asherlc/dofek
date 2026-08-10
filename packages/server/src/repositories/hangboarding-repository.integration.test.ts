@@ -9,8 +9,10 @@ describe("HangboardingRepository integration", () => {
   let firstActivityId: string;
   let nonHangboardingActivityId: string;
   let groupedOtherActivityId: string;
+  let noHangTenActivityId: string;
   let firstDate: string;
   let secondDate: string;
+  let noHangTenDate: string;
   let nullDataDate: string;
 
   function dateOnly(timestamp: string): string {
@@ -65,6 +67,11 @@ describe("HangboardingRepository integration", () => {
             'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-null-data',
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '31 days', NULL,
             'Incomplete Session', '{"hangTen":{"sessionId":"session-null","planName":"Incomplete"}}'::jsonb
+          ),
+          (
+            'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-no-hang-ten',
+            'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '3 days',
+            CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '5 minutes', 'Metadata Missing', '{}'::jsonb
           )
           RETURNING id::text AS id, external_id, started_at::text AS started_at`,
     );
@@ -84,14 +91,19 @@ describe("HangboardingRepository integration", () => {
     const nullDataActivity = activities.find(
       (activity) => activity.external_id === "hangboard-repository-null-data",
     );
-    if (!secondActivity || !nullDataActivity) {
+    const noHangTenActivity = activities.find(
+      (activity) => activity.external_id === "hangboard-repository-no-hang-ten",
+    );
+    if (!secondActivity || !nullDataActivity || !noHangTenActivity) {
       throw new Error("Failed to seed Hangboarding repository date fixtures");
     }
     firstDate = dateOnly(firstActivity.started_at);
     secondDate = dateOnly(secondActivity.started_at);
     nullDataDate = dateOnly(nullDataActivity.started_at);
+    noHangTenDate = dateOnly(noHangTenActivity.started_at);
     firstActivityId = firstActivity.id;
     nonHangboardingActivityId = nonHangboardingActivity.id;
+    noHangTenActivityId = noHangTenActivity.id;
 
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity_interval (
@@ -179,9 +191,9 @@ describe("HangboardingRepository integration", () => {
     const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
 
     await expect(repository.getSummary(30)).resolves.toMatchObject({
-      sessionCount: 2,
-      totalDurationSeconds: 1500,
-      averageDurationSeconds: 750,
+      sessionCount: 3,
+      totalDurationSeconds: 1800,
+      averageDurationSeconds: 600,
       totalWorkDurationSeconds: 17,
       totalRestDurationSeconds: 103,
       workIntervalCount: 2,
@@ -193,9 +205,23 @@ describe("HangboardingRepository integration", () => {
         durationSeconds: 900,
       }),
       daily: [
+        expect.objectContaining({ date: noHangTenDate, durationSeconds: 300 }),
         expect.objectContaining({ date: firstDate, durationSeconds: 600 }),
         expect.objectContaining({ date: secondDate, durationSeconds: 900 }),
       ],
+    });
+  });
+
+  it("keeps canonical hangboard details visible when Hang Ten metadata is absent", async () => {
+    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
+
+    await expect(repository.getDetail(noHangTenActivityId)).resolves.toEqual({
+      planName: null,
+      sessionId: null,
+      boardId: null,
+      boardName: null,
+      segmentsError: null,
+      intervals: [],
     });
   });
 
