@@ -1,6 +1,6 @@
 {
   "name": "@dofek/zepp-client",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Unofficial Zepp/Amazfit API client using reverse-engineered Huami authentication",
   "type": "module",
   "license": "MIT",

@@ -1,5 +1,6 @@
 import { PROCESSING_ALERT_ACTIONS } from "@dofek/providers/processing-alerts";
 import { processingPollInterval } from "@dofek/providers/processing-status";
+import { queryCache } from "dofek/lib/cache";
 import {
   PROCESSING_DATASET_KEYS,
   PROCESSING_OUTPUT_PATHS,
@@ -15,7 +16,7 @@ import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { DataQualityRepository } from "../repositories/data-quality-repository.ts";
 import { ProcessingRepository } from "../repositories/processing-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 const datasetKeySchema = z.enum(PROCESSING_DATASET_KEYS);
@@ -56,6 +57,7 @@ const statusOutputSchema = z.object({
       progressPercentage: z.number().int().min(0).max(100).nullable(),
       lastAdvancedAt: z.string().datetime().nullable(),
       lastReadyAt: z.string().datetime().nullable(),
+      lastFailedAt: z.string().datetime().nullable(),
     }),
   ),
   operations: z.array(
@@ -65,6 +67,8 @@ const statusOutputSchema = z.object({
       kind: operationKindSchema,
       createdAt: z.string().datetime(),
       status: derivedStatusSchema,
+      dismissed: z.boolean(),
+      errorMessage: z.string().nullable(),
       datasets: z.array(datasetKeySchema),
       timeline: z.array(timelineEventSchema),
     }),
@@ -74,10 +78,11 @@ const alertsOutputSchema = z.object({
   generatedAt: z.string().datetime(),
   alerts: z.array(
     z.object({
-      id: z.string().min(1),
+      id: z.uuid(),
       providerId: z.string().nullable(),
       providerLabel: z.string().nullable(),
-      datasetKey: datasetKeySchema,
+      datasetKeys: z.array(datasetKeySchema).min(1),
+      datasetLabels: z.array(z.string().min(1)).min(1),
       occurredAt: z.string().datetime(),
       title: z.string().min(1),
       message: z.string().min(1),
@@ -133,6 +138,14 @@ export const processingRouter = router({
   alerts: cachedProtectedQuery({ maxAge: processingPollInterval("failed") })
     .output(alertsOutputSchema)
     .query(({ ctx }) => new ProcessingRepository(ctx.db, ctx.userId).alerts()),
+  dismiss: protectedProcedure
+    .input(z.object({ operationId: z.uuid() }))
+    .output(z.object({ dismissed: z.literal(true) }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await new ProcessingRepository(ctx.db, ctx.userId).dismiss(input.operationId);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:processing.`);
+      return result;
+    }),
   status: cachedProtectedQuery({ maxAge: processingPollInterval("active") })
     .input(statusInputSchema)
     .output(statusOutputSchema)

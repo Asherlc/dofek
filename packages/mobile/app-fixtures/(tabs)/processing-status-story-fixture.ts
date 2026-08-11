@@ -50,6 +50,7 @@ interface ProcessingStatusStorySnapshot {
     progressPercentage: null;
     lastAdvancedAt: null;
     lastReadyAt: string;
+    lastFailedAt: null;
   }>;
   operations: [];
 }
@@ -71,6 +72,7 @@ export function seedReadyProcessingStatus(
       progressPercentage: null,
       lastAdvancedAt: null,
       lastReadyAt: generatedAt,
+      lastFailedAt: null,
     })),
     operations: [],
   };

@@ -237,6 +237,12 @@ export const mobileRecoveryTabOutputSchema = z.object({
       interpolated: z.boolean(),
     }),
   ),
+  bodyFat: z.array(
+    z.object({
+      date: dateSchema,
+      bodyFatPct: z.number(),
+    }),
+  ),
   decisionContext: bodyDecisionContextOutputSchema.nullable(),
   weightPrediction: z.object({
     ratePerWeek: z.number().nullable(),

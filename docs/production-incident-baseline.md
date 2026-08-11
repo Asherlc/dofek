@@ -7,6 +7,33 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-10: Peloton workouts omitted `total_work`
+
+- **Status:** Root cause identified and fixed in this workspace; deployment and
+  post-deploy Sentry verification remain pending.
+- **Symptoms / user impact:** Peloton workout syncs failed with
+  `PelotonResponseError: Peloton returned an invalid workouts response`, so
+  affected sync runs could not ingest the returned workout page. The issue had
+  64 occurrences and no directly affected Sentry users. See
+  [DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E/).
+- **Evidence:** The latest event's Zod errors identify
+  `data[6]` through `data[19].total_work` as `undefined`; the failure occurs
+  while parsing the successful `/api/user/{userId}/workouts` response in
+  `packages/peloton-client/src/client.ts`. Existing Sentry error reporting
+  captured the complete validation paths, so no additional diagnostic
+  instrumentation was required.
+- **Root cause:** `pelotonWorkoutSchema` accepted `total_work: null` but still
+  required the property to be present. Peloton omits that field for some
+  workout records, making the schema stricter than the observed API contract.
+- **Fix:** Changed `total_work` to `z.number().nullish()` and added a client
+  regression test covering a workout response where Peloton omits the field.
+- **Validation:** The red regression test failed with the same Zod validation
+  path reported by Sentry; after the schema change, the Peloton client and
+  parser suites passed (18 tests).
+- **Remaining risk / follow-up:** Deploy the fix and verify that
+  `DOFEK-SERVER-5E` stops receiving new events. No retry, timeout, or fallback
+  was added because the root cause was a local response-contract mismatch.
+
 ## 2026-08-10: Pull-request CI failures from configuration and test drift
 
 - **Status:** Repository fixes are pushed; the latest CI run has no failed
@@ -23289,3 +23316,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Applied the proven Expo 57 patch pins and regenerated `pnpm-lock.yaml`, including the matching release-age policy entries. No retry, timeout, validation bypass, or warning-and-continue behavior was added.
 - **Validation:** Frozen install, Expo policy verification (`Dependencies are up to date`), and mobile TypeScript pass locally. The hosted rerun is the remaining confirmation.
 - **Remaining risk / follow-up:** Confirm the hosted Metro bundle and full CI matrix pass, then mark #2477 ready for review.
+
+## 2026-08-10 — PR Metro bundle rejected stale Expo SDK patch dependencies
+- **Status:** Fixed in this workspace; a fresh PR CI run is pending.
+- **Symptoms / impact:** PR [#2478](https://github.com/Asherlc/dofek/pull/2478)
+  failed [Build Mobile / Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/31451360495/job/93656443134)
+  before Metro export, blocking the PR gate. No production impact occurred.
+- **Evidence / root cause:** The exact failed command was `pnpm expo install
+  --check`; its first fatal line was `Found outdated dependencies`. It reported
+  eleven installed Expo SDK 57 packages below the current compatible patch
+  releases, including `expo@57.0.11` where `~57.0.12` is required. Expo's
+  dependency validation checks installed packages against the SDK-compatible
+  versions ([official documentation](https://docs.expo.dev/more/expo-cli/#version-validation)).
+- **Fix / mitigation:** Updated each reported Expo package to its SDK 57
+  compatible patch release and regenerated the lockfile. No retry, timeout,
+  suppression, or compatibility-check bypass was added.
+- **Validation:** Hosted CI had already passed the Peloton package typecheck
+  before this update; the rerun will execute the authoritative Expo check with
+  the required production configuration. Local Expo validation correctly
+  stopped earlier because this workspace has neither an authenticated Infisical
+  session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
+- **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
+  remaining hosted checks pass, then remove no configuration guards.
