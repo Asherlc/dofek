@@ -113,9 +113,6 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
-      dismiss: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-      },
     },
     useUtils: () => ({
       invalidate: mockInvalidate,
