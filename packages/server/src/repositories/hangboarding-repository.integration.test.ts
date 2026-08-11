@@ -284,4 +284,43 @@ describe("HangboardingRepository integration", () => {
       ),
     ).resolves.toBeNull();
   });
+
+  it("counts distinct sessions that share timestamps in daily totals", async () => {
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name, raw
+          ) VALUES
+          (
+            'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-same-time-1',
+            'hangboard', 'Hang Ten', TIMESTAMP '2099-01-02 10:00:00+00',
+            TIMESTAMP '2099-01-02 10:10:00+00', 'Same Time 1', '{}'::jsonb
+          ),
+          (
+            'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-same-time-2',
+            'hangboard', 'Hang Ten', TIMESTAMP '2099-01-02 10:00:00+00',
+            TIMESTAMP '2099-01-02 10:10:00+00', 'Same Time 2', '{}'::jsonb
+          )`,
+    );
+
+    await expect(
+      new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2099-01-02",
+        endDateExclusive: "2099-01-03",
+      }).getSummary(30),
+    ).resolves.toMatchObject({
+      sessionCount: 2,
+      totalDurationSeconds: 1200,
+      daily: [
+        expect.objectContaining({
+          date: "2099-01-02",
+          sessionCount: 2,
+          durationSeconds: 1200,
+        }),
+      ],
+    });
+  });
 });
