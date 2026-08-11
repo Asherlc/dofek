@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import type { ClimbingGradePreference } from "@dofek/training/climbing-grades";
+import { describe, expect, it, vi } from "vitest";
 import {
   ClimbingActivityEntry,
   ClimbingGradeProgression,
