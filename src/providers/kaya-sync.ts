@@ -53,11 +53,11 @@ export class KayaSyncProvider implements SyncProvider {
     await ensureProvider(run.db, this.id, this.name, "https://kaya-beta.kayaclimb.com", userId);
     const tokens = await loadTokens(run.db, this.id, userId);
     if (!tokens) {
-      return this.result(startedAt, 0, [new ProviderStoredIdentityMissingError(this.name, "credentials — connect via the app")]);
+      return this.#result(startedAt, 0, [new ProviderStoredIdentityMissingError(this.name, "credentials — connect via the app")]);
     }
     const identity = scopesSchema.safeParse(tokens.scopes ? JSON.parse(tokens.scopes) : null);
     if (!identity.success) {
-      return this.result(startedAt, 0, [new ProviderStoredIdentityMissingError(this.name, "account identity — reconnect via the app")]);
+      return this.#result(startedAt, 0, [new ProviderStoredIdentityMissingError(this.name, "account identity — reconnect via the app")]);
     }
     const client = new KayaClient(tokens.accessToken, this.fetchFn);
     try {
@@ -107,10 +107,10 @@ export class KayaSyncProvider implements SyncProvider {
           recordsSynced += sessionAscents.length;
         }
       }
-      return this.result(startedAt, recordsSynced, errors);
+      return this.#result(startedAt, recordsSynced, errors);
     } catch (error) {
       captureException(error);
-      return this.result(startedAt, 0, [error]);
+      return this.#result(startedAt, 0, [error]);
     }
   }
 
