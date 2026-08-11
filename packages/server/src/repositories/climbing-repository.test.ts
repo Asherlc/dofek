@@ -356,6 +356,37 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("attempt_count");
       expect(text).toContain("ce.grade_system");
     });
+
+    it("keeps a non-null location from a later entry in the same activity", async () => {
+      const { repo } = makeRepository([
+        {
+          activity_id: "activity-1",
+          session_date: "2026-07-09",
+          name: "Climbing session",
+          location_name: null,
+          attempt_count: 1,
+          sent: false,
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V3",
+        },
+        {
+          activity_id: "activity-1",
+          session_date: "2026-07-09",
+          name: "Climbing session",
+          location_name: "Pacific Pipe",
+          attempt_count: 1,
+          sent: true,
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V4",
+        },
+      ]);
+
+      const [summary] = await repo.getSessionSummaries(90);
+
+      expect(summary?.toDetail().locationName).toBe("Pacific Pipe");
+    });
   });
 
   describe("getActivityEntries", () => {
@@ -413,6 +444,45 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ANY(a.member_activity_ids)");
       expect(text).toContain("a.user_id = ");
       expect(text).toContain("ORDER BY");
+    });
+
+    it("keeps activity entries with invalid grades in deterministic source order", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "entry-1",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "not-a-grade",
+          sent: false,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: null,
+          location_name: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+        {
+          id: "entry-2",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "also-not-a-grade",
+          sent: false,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: null,
+          location_name: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((entry) => entry.toDetail().id)).toEqual(["entry-1", "entry-2"]);
     });
   });
 });

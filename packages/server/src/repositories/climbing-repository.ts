@@ -343,6 +343,9 @@ export class ClimbingRepository extends BaseRepository {
         hardestRouteGrade: null,
         hardestRouteGradeSortValue: null,
       };
+      if (existing.locationName === null && row.location_name !== null) {
+        existing.locationName = row.location_name;
+      }
       existing.attempts += row.attempt_count;
       if (row.sent) existing.sends += 1;
       const display = row.sent
@@ -420,7 +423,7 @@ export class ClimbingRepository extends BaseRepository {
               display: {
                 grade: row.grade,
                 gradeSystem: row.grade_system,
-                gradeSortValue: -Infinity,
+                gradeSortValue: -1e9,
               },
             };
       })
