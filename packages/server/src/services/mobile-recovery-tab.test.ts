@@ -39,6 +39,45 @@ vi.mock("./health-status.ts", async (importOriginal) => {
 });
 
 describe("loadMobileRecoveryTab", () => {
+  it("returns body-fat history for the selected range", async () => {
+    const getRecomposition = vi
+      .spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getRecomposition",
+      )
+      .mockResolvedValue([
+        {
+          date: "2026-03-10",
+          weightKg: 80,
+          bodyFatPct: 21.4,
+          fatMassKg: 17.12,
+          leanMassKg: 62.88,
+          smoothedFatMass: 17.12,
+          smoothedLeanMass: 62.88,
+        },
+        {
+          date: "2026-03-20",
+          weightKg: 79,
+          bodyFatPct: 20.9,
+          fatMassKg: 16.511,
+          leanMassKg: 62.489,
+          smoothedFatMass: 16.511,
+          smoothedLeanMass: 62.489,
+        },
+      ]);
+
+    const result = await runRecoveryTab(loadMobileRecoveryTab, []);
+
+    expect(result.bodyFat).toEqual([
+      { date: "2026-03-10", bodyFatPct: 21.4 },
+      { date: "2026-03-20", bodyFatPct: 20.9 },
+    ]);
+    expect(getRecomposition).toHaveBeenCalledWith(30, "2026-03-28");
+
+    getRecomposition.mockRestore();
+  });
+
   it("returns server-authored body decision context alongside recovery data", async () => {
     const decisionContext: BodyDecisionContext = {
       latestMeasurement: {

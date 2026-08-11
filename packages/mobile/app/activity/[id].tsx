@@ -31,6 +31,7 @@ import {
 } from "react-native";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { RouteMap } from "../../components/RouteMap";
 import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
@@ -51,6 +52,10 @@ function isStrengthActivityType(activityType: string): boolean {
 
 function isClimbingActivityType(activityType: string): boolean {
   return activityType === "climbing";
+}
+
+function isHangboardingActivityType(activityType: string): boolean {
+  return activityType === "hangboard";
 }
 
 function activityIcon(type: string): string {
@@ -523,6 +528,9 @@ export default function ActivityDetailScreen() {
   const [isRecomputing, setIsRecomputing] = useState(false);
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
+      if (id) {
+        await trpcUtils.activity.hangboardDetails.invalidate({ id });
+      }
       await trpcUtils.activity.list.invalidate();
       router.back();
     },
@@ -540,6 +548,7 @@ export default function ActivityDetailScreen() {
           trpcUtils.activity.hrZones.invalidate({ id }),
           trpcUtils.activity.powerZones.invalidate({ id }),
           trpcUtils.activity.strengthExercises.invalidate({ id }),
+          trpcUtils.activity.hangboardDetails.invalidate({ id }),
           trpcUtils.activity.list.invalidate(),
           trpcUtils.calendar.weekList.invalidate(),
           trpcUtils.calendar.activityOverview.invalidate(),
@@ -605,6 +614,12 @@ export default function ActivityDetailScreen() {
   const climbingEntries = trpc.climbing.activityEntries.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isClimbingActivity },
+  );
+  const isHangboardingActivity =
+    detail.data != null && isHangboardingActivityType(detail.data.activityType);
+  const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id && isHangboardingActivity },
   );
 
   const [hoveredPosition, setHoveredPosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -822,6 +837,17 @@ export default function ActivityDetailScreen() {
       {stats.length > 0 && <StatsGrid stats={stats} />}
       <ActivityPerceivedExertion activityId={id ?? ""} value={activity.perceivedExertion} />
 
+      {isHangboardingActivity && (
+        <View style={hangboardingStyles.container}>
+          <Text style={hangboardingStyles.title}>Hangboarding</Text>
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
+        </View>
+      )}
+
       {/* Route Map */}
       {hasGps && <RouteMap points={points} hoveredPosition={hoveredPosition} />}
 
@@ -1021,3 +1047,8 @@ export default function ActivityDetailScreen() {
     </ScrollView>
   );
 }
+
+const hangboardingStyles = StyleSheet.create({
+  container: { gap: 12 },
+  title: { color: colors.text, fontSize: 18, fontWeight: "700" },
+});

@@ -37,6 +37,7 @@ import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExerti
 import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
+import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -100,6 +101,10 @@ function isClimbingActivityType(activityType: string): boolean {
   return activityType === "climbing";
 }
 
+function isHangboardingActivityType(activityType: string): boolean {
+  return activityType === "hangboard";
+}
+
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
@@ -131,6 +136,12 @@ export function ActivityDetailPage() {
   const climbingEntries = trpc.climbing.activityEntries.useQuery(
     { id },
     { enabled: isClimbingActivity },
+  );
+  const isHangboardingActivity =
+    detail.data != null && isHangboardingActivityType(detail.data.activityType);
+  const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
+    { id },
+    { enabled: isHangboardingActivity },
   );
 
   // Ref-based hover callback avoids re-rendering the entire page on every mouse move.
@@ -283,6 +294,19 @@ export function ActivityDetailPage() {
           ) : (
             <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
           )}
+        </Section>
+      )}
+
+      {isHangboardingActivity && (
+        <Section
+          title={formatActivityTypeLabel(activity.activityType)}
+          description="The hangboard plan, board, and intervals recorded during this session."
+        >
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
         </Section>
       )}
 

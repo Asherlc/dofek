@@ -1,7 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { buildHangTenIntervals } from "./hang-ten-intervals.ts";
+import { buildHangTenIntervals, hangTenIntervalLabel } from "./hang-ten-intervals.ts";
 import { hangTenActivitySegments, hangTenWorkout } from "./test-helpers.ts";
 
+describe("hangTenIntervalLabel", () => {
+  it("labels work intervals with hold size and type", () => {
+    expect(
+      hangTenIntervalLabel({
+        stepID: "step-1",
+        stepNumber: 1,
+        kind: "work",
+        holdIDs: ["edge-19"],
+        holdType: "edge",
+        sizeMillimeters: 19,
+      }),
+    ).toBe("Step 1: 19 mm edge");
+  });
+
+  it("labels rest intervals by step", () => {
+    expect(
+      hangTenIntervalLabel({
+        stepID: "step-1-rest",
+        stepNumber: 1,
+        kind: "rest",
+        holdIDs: [],
+      }),
+    ).toBe("Step 1: Rest");
+  });
+});
 describe("buildHangTenIntervals", () => {
   it("keeps later intervals at the last known time after a missing duration", () => {
     const start = new Date("2026-08-07T14:00:00Z");

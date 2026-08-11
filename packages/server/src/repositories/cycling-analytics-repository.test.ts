@@ -933,14 +933,7 @@ describe("CyclingAnalyticsRepository", () => {
   it("treats an empty modality from the read model as unknown", async () => {
     const sensorStore = makeMockSensorStore();
     vi.mocked(sensorStore.query).mockImplementation(async (schema) => [
-      schema.parse(cyclingActivityRow({ modality: "" })),
-      schema.parse(
-        cyclingActivityRow({
-          id: "22222222-2222-4222-8222-222222222222",
-          modality: "road",
-          elevation_gain_meters: 500,
-        }),
-      ),
+      schema.parse(cyclingActivityRow({ modality: "", elevation_gain_meters: 100 })),
     ]);
     const repository = new CyclingAnalyticsRepository(
       { execute: vi.fn().mockResolvedValue([]) },
@@ -956,9 +949,29 @@ describe("CyclingAnalyticsRepository", () => {
       variabilityOffset: 0,
     });
 
-    expect(result.verticalAscent).toEqual([
-      expect.objectContaining({ activityName: "Steady Ride", modality: "road" }),
+    expect(result.verticalAscent[0]?.modality).toBeNull();
+  });
+
+  it("preserves a non-empty modality from the read model", async () => {
+    const sensorStore = makeMockSensorStore();
+    vi.mocked(sensorStore.query).mockImplementation(async (schema) => [
+      schema.parse(cyclingActivityRow({ modality: "road", elevation_gain_meters: 100 })),
     ]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
+    });
+
+    expect(result.verticalAscent[0]?.modality).toBe("road");
   });
 
   it("returns the cycling empty state when there are no activities", async () => {

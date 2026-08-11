@@ -63,6 +63,18 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   return { caller, execute };
 }
 
+function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
+  const execute = vi.fn();
+  for (const response of responses) execute.mockResolvedValueOnce(response);
+  execute.mockResolvedValue([]);
+  const caller = createCaller({
+    db: { execute },
+    userId: "user-1",
+    timezone: "America/Los_Angeles",
+  });
+  return { caller, execute };
+}
+
 function makeMutationCaller(error: unknown = new Error("database unavailable")) {
   const execute = vi.fn();
   const transaction = vi.fn().mockRejectedValue(error);
@@ -258,6 +270,64 @@ describe("climbingRouter", () => {
         hardestRouteGradeSortValue: null,
       },
     ]);
+  });
+
+  it("returns the Hangboarding summary contract", async () => {
+    const { caller, execute } = makeCallerWithResponses([
+      [
+        {
+          session_count: 2,
+          total_duration_seconds: 1500,
+          average_duration_seconds: 750,
+          total_work_duration_seconds: 17,
+          total_rest_duration_seconds: 103,
+          work_interval_count: 2,
+          average_heart_rate: 125,
+          peak_heart_rate: 150,
+          latest_activity_id: "activity-2",
+          latest_started_at: "2026-08-08T14:00:00.000Z",
+          latest_plan_name: "Repeaters",
+          latest_board_name: "Tension Board",
+          latest_duration_seconds: 900,
+        },
+      ],
+      [
+        {
+          date: "2026-08-07",
+          session_count: 1,
+          duration_seconds: 600,
+          work_duration_seconds: 7,
+          rest_duration_seconds: 53,
+        },
+        {
+          date: "2026-08-08",
+          session_count: 1,
+          duration_seconds: 900,
+          work_duration_seconds: 10,
+          rest_duration_seconds: 50,
+        },
+      ],
+    ]);
+
+    await expect(caller.hangboardingSummary({ days: 30 })).resolves.toMatchObject({
+      sessionCount: 2,
+      totalDurationSeconds: 1500,
+      averageDurationSeconds: 750,
+      totalWorkDurationSeconds: 17,
+      totalRestDurationSeconds: 103,
+      workIntervalCount: 2,
+      averageHeartRate: 125,
+      peakHeartRate: 150,
+      latestSession: expect.objectContaining({
+        activityId: "activity-2",
+        durationSeconds: 900,
+      }),
+      daily: expect.arrayContaining([
+        expect.objectContaining({ date: "2026-08-07", durationSeconds: 600 }),
+        expect.objectContaining({ date: "2026-08-08", durationSeconds: 900 }),
+      ]),
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it("returns empty arrays when there is no climbing data", async () => {

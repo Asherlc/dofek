@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { MobileRecoveryTabResult } from "dofek-server/mobile-dashboard-contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockRecoveryData: Record<string, unknown> | undefined;
@@ -89,7 +90,35 @@ const insufficientHealthspan = {
     summary: "0 of 3 required Healthspan metrics are available.",
     nextCondition: "The score becomes available after 3 more supported metrics sync successfully.",
   },
-} as const;
+} satisfies MobileRecoveryTabResult["healthspan"];
+
+function createRecoveryFixture(
+  overrides: Partial<MobileRecoveryTabResult> = {},
+): MobileRecoveryTabResult {
+  return {
+    hrvVariability: [],
+    hrvBaseline: [],
+    readinessScore: [],
+    stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    trends: null,
+    dailyMetrics: [],
+    weight: [],
+    bodyFat: [],
+    decisionContext: null,
+    weightPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      goal: null,
+      projectionLine: [],
+    },
+    baselineRelative: [],
+    healthStatus: [],
+    healthspan: insufficientHealthspan,
+    ...overrides,
+  };
+}
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -324,6 +353,28 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     ).toBeTruthy();
     expect(screen.getByText("Server-authored recovery action")).toBeTruthy();
     expect(mockTodayPlanQueryCalls).toEqual([{ days: 30, endDate: "2026-07-26" }]);
+  });
+
+  it("renders the server-authored body fat history", async () => {
+    mockRecoveryData = createRecoveryFixture({
+      bodyFat: [
+        { date: "2026-03-10", bodyFatPct: 21.4 },
+        { date: "2026-03-20", bodyFatPct: 20.9 },
+      ],
+    });
+
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("BODY FAT %")).toBeTruthy();
+    expect(screen.getByText("20.9%")).toBeTruthy();
+    expect(sparkLinePropsCalls.some((props) => props.data?.join(",") === "21.4,20.9")).toBe(true);
+    const bodyFatTrend = screen.getByLabelText(
+      "Body fat trend: 2026-03-10 21.4%; 2026-03-20 20.9%.",
+    );
+    expect(bodyFatTrend).toBeTruthy();
+    expect(bodyFatTrend.style.flex).toBe("1 1 0%");
+    expect(bodyFatTrend.style.marginLeft).toBe("16px");
   });
 
   it("does not consume cached default-range data during preference hydration", async () => {

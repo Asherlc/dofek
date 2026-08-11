@@ -1,6 +1,6 @@
 {
   "name": "@dofek/xert",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Unofficial Xert API client with password authentication, token refresh, and activity parsing",
   "type": "module",
   "license": "MIT",
