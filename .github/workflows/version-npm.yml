@@ -53,12 +53,38 @@ jobs:
             echo "A newer commit is on main; its CI run will version instead."
           fi
 
-      - name: Set up Node.js and pnpm
+      - name: Check for an open version pull request
         if: steps.current.outputs.should_version == 'true'
+        id: open_pr
+        env:
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+        run: |
+          OPEN_RELEASE_PRS=$(
+            gh pr list \
+              --base main \
+              --state open \
+              --limit 100 \
+              --json number,title,headRefName \
+              --jq '.[] | select(.title == "chore(release): version npm packages") | "#\(.number) (\(.headRefName))"'
+          )
+          if [ -n "$OPEN_RELEASE_PRS" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "An npm version pull request is already open:"
+            echo "$OPEN_RELEASE_PRS"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js and pnpm
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.open_pr.outputs.exists != 'true'
         uses: ./.github/actions/setup-node-pnpm
 
       - name: Find changed packages
-        if: steps.current.outputs.should_version == 'true'
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.open_pr.outputs.exists != 'true'
         id: changed
         run: |
           # A merged version bump reaches main before "Release npm Packages" has
@@ -101,7 +127,8 @@ jobs:
       - name: Check version branch
         if: >
           steps.current.outputs.should_version == 'true' &&
-          steps.changed.outputs.has_changes == 'true'
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true'
         id: branch
         run: |
           BRANCH="release/npm-$(git rev-parse --short HEAD)"
@@ -117,6 +144,7 @@ jobs:
         if: >
           steps.current.outputs.should_version == 'true' &&
           steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
           steps.branch.outputs.exists != 'true'
         run: pnpm exec lerna version patch --yes --no-git-tag-version --no-push
 
@@ -124,6 +152,7 @@ jobs:
         if: >
           steps.current.outputs.should_version == 'true' &&
           steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
           steps.branch.outputs.exists != 'true'
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
@@ -147,6 +176,7 @@ jobs:
         if: >
           steps.current.outputs.should_version == 'true' &&
           steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
           steps.branch.outputs.exists != 'true'
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
@@ -156,6 +186,7 @@ jobs:
         if: >
           steps.current.outputs.should_version == 'true' &&
           steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
           steps.branch.outputs.exists != 'true'
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
@@ -171,6 +202,7 @@ jobs:
         if: >
           steps.current.outputs.should_version == 'true' &&
           steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
           steps.branch.outputs.exists != 'true'
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
