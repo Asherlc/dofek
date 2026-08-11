@@ -190,9 +190,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BodyPage", () => {
-  it("shows body fat points from recomposition data", () => {
+  it("switches the body trend from weight to body fat", () => {
     render(<BodyPage />);
 
+    expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
+    expect(screen.queryByText("Body fat points: 1")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
+
+    expect(screen.queryByText("Smoothed weight points: 1")).toBeNull();
     expect(screen.getByText("Body fat points: 1")).toBeTruthy();
   });
 

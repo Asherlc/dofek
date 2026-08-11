@@ -8,6 +8,7 @@ const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const sessionSummaryQuery = vi.hoisted(() => vi.fn());
 const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const fingerLoadingHistoryQuery = vi.hoisted(() => vi.fn());
+const climbingGradeSettingQuery = vi.hoisted(() => vi.fn());
 const logFingerLoadingMutation = vi.hoisted(() => vi.fn());
 const logClimbingSessionMutation = vi.hoisted(() => vi.fn());
 const recentActivitiesSection = vi.hoisted(() => vi.fn());
@@ -76,6 +77,7 @@ vi.mock("../../lib/trpc.ts", () => ({
       sessionSummary: { useQuery: sessionSummaryQuery },
       hangboardingSummary: { useQuery: hangboardingSummaryQuery },
     },
+    settings: { get: { useQuery: climbingGradeSettingQuery } },
     useUtils: () => ({
       activity: { invalidate: vi.fn() },
       climbing: {
@@ -100,6 +102,7 @@ describe("ClimbingTab", () => {
     sessionSummaryQuery.mockReset();
     hangboardingSummaryQuery.mockReset();
     fingerLoadingHistoryQuery.mockReset();
+    climbingGradeSettingQuery.mockReset();
     logFingerLoadingMutation.mockReset();
     logClimbingSessionMutation.mockReset();
     recentActivitiesSection.mockReset();
@@ -109,6 +112,7 @@ describe("ClimbingTab", () => {
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     hangboardingSummaryQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     fingerLoadingHistoryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    climbingGradeSettingQuery.mockReturnValue({ data: null, isLoading: false, error: null });
     logFingerLoadingMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
     logClimbingSessionMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
   });
