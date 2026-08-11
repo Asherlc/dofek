@@ -172,6 +172,7 @@ const mockSettingsGetGetData = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
+const mockProcessingDismissMutation = { mutate: vi.fn(), isPending: false, error: null };
 const mockPollSyncJob = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 
@@ -179,6 +180,7 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     processing: {
       status: { useQuery: () => mockDataHealth },
+      dismiss: { useMutation: () => mockProcessingDismissMutation },
     },
     sync: {
       providers: { useQuery: () => mockProviders },
@@ -647,6 +649,7 @@ describe("ProviderDetailPage import-only providers", () => {
           progressPercentage: null,
           lastAdvancedAt: "2026-06-29T12:00:00Z",
           lastReadyAt: null,
+          lastFailedAt: null,
         },
       ],
     };
@@ -743,6 +746,7 @@ describe("ProviderDetailPage import-only providers", () => {
           progressPercentage: 100,
           lastAdvancedAt: "2026-06-30T12:00:00Z",
           lastReadyAt: "2026-06-30T12:00:00Z",
+          lastFailedAt: null,
         },
       ],
     };

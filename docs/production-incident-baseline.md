@@ -69,6 +69,34 @@ them, and the durability work they suggest.
   response body from PostHog support or Sentry and repair the connector before
   re-enabling it; if not, disable the schema to stop repeated failed billable
   sync attempts.
+## 2026-08-10: Peloton workouts omitted `total_work`
+
+- **Status:** Root cause identified and fixed in this workspace; deployment and
+  post-deploy Sentry verification remain pending.
+- **Symptoms / user impact:** Peloton workout syncs failed with
+  `PelotonResponseError: Peloton returned an invalid workouts response`, so
+  affected sync runs could not ingest the returned workout page. The issue had
+  64 occurrences and no directly affected Sentry users. See
+  [DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E/).
+- **Evidence:** The latest event's Zod errors identify
+  `data[6]` through `data[19].total_work` as `undefined`; the failure occurs
+  while parsing the successful `/api/user/{userId}/workouts` response in
+  `packages/peloton-client/src/client.ts`. Existing Sentry error reporting
+  captured the complete validation paths, so no additional diagnostic
+  instrumentation was required.
+- **Root cause:** `pelotonWorkoutSchema` accepted `total_work: null` but still
+  required the property to be present. Peloton omits that field for some
+  workout records, making the schema stricter than the observed API contract.
+- **Fix:** Changed `total_work` to `z.number().nullish()` and added a client
+  regression test covering a workout response where Peloton omits the field.
+- **Validation:** The red regression test failed with the same Zod validation
+  path reported by Sentry; after the schema change, the Peloton client and
+  parser suites passed (18 tests).
+- **Remaining risk / follow-up:** Deploy the fix and verify that
+  `DOFEK-SERVER-5E` stops receiving new events. No retry, timeout, or fallback
+  was added because the root cause was a local response-contract mismatch.
+
+
 ## 2026-08-10: Pull-request CI failures from configuration and test drift
 
 - **Status:** Repository fixes are pushed; the latest CI run has no failed
@@ -23324,21 +23352,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   soon as upstream publishes a patched release or Expo/Metro removes the
   vulnerable path; rerun the hosted dependency-audit job after this PR commit.
 
-## 2026-08-08 — Dependabot PRs exposed stale CI baselines and incompatible runtime upgrades
+## 2026-08-10 — PR Metro bundle rejected stale Expo SDK patch dependencies
 
-- **Status:** Resolved in PR [#2448](https://github.com/Asherlc/dofek/pull/2448). PR [#2423](https://github.com/Asherlc/dofek/pull/2423) was refreshed onto current `main` and merged after hosted run [31266778240](https://github.com/Asherlc/dofek/actions/runs/31266778240) passed; incompatible PRs [#2421](https://github.com/Asherlc/dofek/pull/2421) and [#2429](https://github.com/Asherlc/dofek/pull/2429) were closed.
-- **Symptoms / impact:** #2421 initially failed [Image Vulnerability Scan](https://github.com/Asherlc/dofek/actions/runs/30961542865/job/92166470552) and [E2E Tests (Web)](https://github.com/Asherlc/dofek/actions/runs/30961542865/job/92166470826). #2423 failed [Integration Tests (3/4)](https://github.com/Asherlc/dofek/actions/runs/30961577671/job/92167161546). #2429 failed [Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/31192266739/job/92912059957). No production impact was observed.
-- **Evidence / root cause:** #2421's initial fatal line was `COPY --from=dbt-tools /usr/local/bin/python3.13 ...: not found`: the PR selected the [official Python 3.14.6 Alpine image](https://hub.docker.com/_/python/) but retained Python 3.13 runtime paths in the server stage. After those paths were aligned, the E2E job [93126662595](https://github.com/Asherlc/dofek/actions/runs/31266962159/job/93126662595) failed at analytics startup with `mashumaro.exceptions.UnserializableField: Field "schema" of type Optional[str] in JSONObjectSchema is not serializable`; stable `dbt-core==1.11.12` resolves `mashumaro==3.14`, which is incompatible with Python 3.14; see [dbt-core issue #12098](https://github.com/dbt-labs/dbt-core/issues/12098) and the [dbt-core 1.11.12 metadata](https://pypi.org/project/dbt-core/1.11.12/). #2423's first fatal assertion was at `src/account-erasure/restore-reconciliation.integration.test.ts:309`, where a concurrent reconciler returned `recoveredRequestIds: []`; the branch was based before the existing [concurrency stabilization](https://github.com/Asherlc/dofek/commit/c1f43cb3378d148e3a56e7cbabf47e99147d499f). #2429's first fatal line was `react-native-svg@15.15.5 - expected version: 15.15.4`; [Expo's SDK 57 SVG guidance](https://docs.expo.dev/versions/v57.0.0/sdk/svg/) and [version-validation documentation](https://docs.expo.dev/more/expo-cli/#version-validation) support keeping the check enabled.
-- **Fix / mitigation:** Restored the root `dbt-tools` image and copied interpreter/library paths to Python 3.13, and added a root-Dockerfile-only Dependabot ignore for Python versions `>=3.14`; the ML Docker update remains independently managed. Added a narrow Dependabot ignore for `react-native-svg` versions `>=15.15.5`, while retaining the SDK-managed `15.15.4` pin and compatibility gate. Refreshed #2423 onto current `main`; no retry, timeout, test skip, or compatibility-check bypass was added.
-- **Validation:** #2448's refreshed hosted run [31268664654](https://github.com/Asherlc/dofek/actions/runs/31268664654) completed successfully: all executed lint, unit, integration, coverage, typecheck, security, and gate jobs passed. The explicit all-areas workflow-dispatch run [31269405954](https://github.com/Asherlc/dofek/actions/runs/31269405954) then passed the Docker build, [image scan](https://github.com/Asherlc/dofek/actions/runs/31269405954/job/93132862709), [web E2E](https://github.com/Asherlc/dofek/actions/runs/31269405954/job/93132862713), all integration shards, coverage, Test Gate, and CI Gate on the supported Python 3.13 image.
-- **Remaining risk / follow-up:** Revisit the Python ignore when stable dbt releases support Python 3.14, and revisit the `react-native-svg` ignore during the next Expo SDK upgrade.
-
-## 2026-08-08 — PR 2447 CI migration failed on a removed activity enum
-
-- **Status:** Fixed in the workspace; hosted CI needs a fresh run from the
-  updated commit. No production impact was observed.
-- **Symptoms / impact:** [PR CI run 31242532102](https://github.com/Asherlc/dofek/actions/runs/31242532102) failed all four integration shards and the web E2E migration step, blocking PR #2447.
-- **Evidence / root cause:** The first fatal database line in [integration shard 1](https://github.com/Asherlc/dofek/actions/runs/31242532102/job/93066014694) and the E2E migration log was `type "fitness.activity_type" does not exist`. Migration [`0068_canonical_activity_types.sql`](../drizzle/0068_canonical_activity_types.sql) drops that legacy enum, while [`0071_add_hangboard_activity_type.sql`](../drizzle/0071_add_hangboard_activity_type.sql) still attempted to alter it. PostgreSQL applies enum-value changes through `ALTER TYPE` ([official documentation](https://www.postgresql.org/docs/current/sql-altertype.html)).
-- **Fix / mitigation:** Removed the obsolete legacy-enum statement and added a real Postgres integration regression that applies migrations 0068 and 0071 together, verifies `hangboard` on `canonical_activity_type`, and verifies the legacy enum remains absent. No migration skip, retry, timeout, or failure suppression was added.
-- **Validation:** The regression test passes 1/1, the full seed/migration integration test passes 2/2, migration policy passes, and TypeScript typecheck passes locally. Full analytics SQL lint was not runnable because this workspace could not start isolated Compose services after Docker reported `all predefined address pools have been fully subnetted`.
-- **Remaining risk / follow-up:** Push the workspace changes and confirm the hosted PR CI rerun passes the integration and E2E migration jobs; clean only disposable stale Docker networks if local analytics lint must be rerun.
+- **Status:** Fixed in this workspace; a fresh PR CI run is pending.
+- **Symptoms / impact:** PR [#2478](https://github.com/Asherlc/dofek/pull/2478)
+  failed [Build Mobile / Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/31451360495/job/93656443134)
+  before Metro export, blocking the PR gate. No production impact occurred.
+- **Evidence / root cause:** The exact failed command was `pnpm expo install
+  --check`; its first fatal line was `Found outdated dependencies`. It reported
+  eleven installed Expo SDK 57 packages below the current compatible patch
+  releases, including `expo@57.0.11` where `~57.0.12` is required. Expo's
+  dependency validation checks installed packages against the SDK-compatible
+  versions ([official documentation](https://docs.expo.dev/more/expo-cli/#version-validation)).
+- **Fix / mitigation:** Updated each reported Expo package to its SDK 57
+  compatible patch release and regenerated the lockfile. No retry, timeout,
+  suppression, or compatibility-check bypass was added.
+- **Validation:** Hosted CI had already passed the Peloton package typecheck
+  before this update; the rerun will execute the authoritative Expo check with
+  the required production configuration. Local Expo validation correctly
+  stopped earlier because this workspace has neither an authenticated Infisical
+  session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
+- **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
+  remaining hosted checks pass, then remove no configuration guards.

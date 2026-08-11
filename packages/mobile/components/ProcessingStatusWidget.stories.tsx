@@ -1,5 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import type { AppRouter } from "dofek-server/router";
+import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
+import { trpc } from "../lib/trpc";
 import { type ProcessingStatusSnapshot, ProcessingStatusWidget } from "./ProcessingStatusWidget";
 
 const activeSnapshot: ProcessingStatusSnapshot = {
@@ -15,6 +20,7 @@ const activeSnapshot: ProcessingStatusSnapshot = {
       progressPercentage: 60,
       lastAdvancedAt: "2026-07-22T11:59:00.000Z",
       lastReadyAt: "2026-07-21T12:00:00.000Z",
+      lastFailedAt: null,
     },
   ],
   operations: [
@@ -25,8 +31,11 @@ const activeSnapshot: ProcessingStatusSnapshot = {
       createdAt: "2026-07-22T11:58:00.000Z",
       status: "active",
       datasets: ["activity"],
+      dismissed: false,
+      errorMessage: null,
       timeline: [
         {
+          sequence: 1,
           stage: "ingest",
           status: "succeeded",
           datasetKey: "activity",
@@ -48,10 +57,43 @@ if (!activeOperation) throw new Error("Expected the processing story to include 
 const activeTimelineEvent = activeOperation.timeline.at(0);
 if (!activeTimelineEvent) throw new Error("Expected the processing story to include an event");
 
+function createMockLink(): TRPCLink<AppRouter> {
+  return () =>
+    ({ op }) => {
+      const result: OperationResultObservable<AppRouter, unknown> = {
+        subscribe(observer) {
+          if (op.path !== "processing.dismiss") {
+            throw new Error(`Unhandled processing status story tRPC operation: ${op.path}`);
+          }
+          observer.next?.({ result: { data: { dismissed: true } } });
+          observer.complete?.();
+          return { unsubscribe: () => {} };
+        },
+        pipe() {
+          return result;
+        },
+      };
+      return result;
+    };
+}
+
+function StoryFrame({ children }: { children: ReactNode }) {
+  const queryClient = useMemo(() => new QueryClient(), []);
+  const trpcClient = useMemo(() => trpc.createClient({ links: [createMockLink()] }), []);
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <View style={{ width: 360, padding: 16 }}>{children}</View>
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+}
+
 const meta = {
   title: "State/ProcessingStatusWidget",
   component: ProcessingStatusWidget,
-  decorators: [(Story) => <View style={{ width: 360, padding: 16 }}>{Story()}</View>],
+  decorators: [(Story) => <StoryFrame>{Story()}</StoryFrame>],
   args: { data: activeSnapshot },
 } satisfies Meta<typeof ProcessingStatusWidget>;
 export default meta;
@@ -108,12 +150,15 @@ export const Failed: Story = {
           ...activeDataset,
           status: "failed",
           progressPercentage: null,
+          lastFailedAt: "2026-07-22T12:05:00.000Z",
         },
       ],
       operations: [
         {
           ...activeOperation,
           status: "failed",
+          dismissed: false,
+          errorMessage: "Reconnect Garmin, then start the sync again.",
           timeline: [
             {
               ...activeTimelineEvent,

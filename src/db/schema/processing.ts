@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -49,6 +50,31 @@ export const processingOperation = fitness.table(
       sql`${table.kind} IN ('provider_sync', 'file_import', 'push_ingest', 'data_deletion', 'analytics_build', 'cache_refresh')`,
     ),
     check("processing_operation_datasets_nonempty", sql`cardinality(${table.datasetKeys}) > 0`),
+  ],
+);
+
+export const processingAlertDismissal = fitness.table(
+  "processing_alert_dismissal",
+  {
+    userId: uuid("user_id").notNull(),
+    operationId: uuid("operation_id").notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: "processing_alert_dismissal_pkey",
+      columns: [table.userId, table.operationId],
+    }),
+    foreignKey({
+      name: "processing_alert_dismissal_user_fk",
+      columns: [table.userId],
+      foreignColumns: [userProfile.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "processing_alert_dismissal_operation_fk",
+      columns: [table.operationId],
+      foreignColumns: [processingOperation.id],
+    }).onDelete("cascade"),
   ],
 );
 
