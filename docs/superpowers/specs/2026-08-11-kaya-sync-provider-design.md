@@ -24,10 +24,11 @@ source for the observed contract: [Kaya web app](https://kaya-app.kayaclimb.com/
   alongside the existing WHOOP contract.
 
 The initial mapping includes boulder versus route, grade, send status,
-attempt count, names, locations, and session timing. `ascent_type` represents
-send style (for example, flash or redpoint), not lead versus top-rope. The
-initial provider will not infer rope style; it will retain the vendor record so
-a confirmed field can be mapped later.
+attempt count, names, locations, session timing, and Kaya's route-level
+`lead` boolean. `ascent_type` represents send style (for example, flash or
+redpoint), not lead versus top-rope. For routes, `lead: true` means lead and
+`lead: false` means top-rope. Boulders retain `null` because Kaya also returns
+`false` for them and they have no rope style.
 
 ## Architecture
 
@@ -54,6 +55,7 @@ Kaya session/ascent IDs and should not be conflated with API-origin records.
    identity, then pages through the requested session and ascent window.
 4. Each session is upserted with the Kaya session ID. Its ascents are replaced
    transactionally from the authoritative API response, using Kaya ascent IDs.
+   The canonical climbing entry stores the nullable route-level `lead` value.
 5. When the full activity list for a sync window completes, normal provider
    activity reconciliation applies absence tombstones. No reconciliation occurs
    after a partial or failed fetch.
@@ -84,7 +86,8 @@ keyed by external ID while other records continue.
 - Client tests cover credential login, auth headers, GraphQL variables,
   pagination, and Zod rejection of malformed responses.
 - Provider unit tests cover token handling and the mapping of a complete
-  session with boulder and route ascents, including send status and attempts.
+  session with boulder and route ascents, including send status, attempts, and
+  `lead` / top-rope differentiation.
 - A database integration test verifies stable-ID upserts, authoritative ascent
   replacement, and activity reconciliation semantics against Postgres.
 - Contract tests confirm the provider has the `kaya` identity and a per-user
@@ -94,6 +97,7 @@ keyed by external ID while other records continue.
 ## Non-goals
 
 - Removing, merging, or changing `kaya-export`.
-- Inferring top-rope or lead from grade or send status.
+- Inferring top-rope or lead from grade or send status; the provider uses only
+  Kaya's explicit `lead` boolean.
 - Writing provider-estimated calorie expenditure.
 - Adding a custom provider-connect UI or application-level environment secrets.
