@@ -703,8 +703,12 @@ export async function upsertWorkoutBatch(
   const activityResults = await transactionalDb.transaction(async (transactionDb) => {
     const results: { activityId: string; workout: HealthWorkout }[] = [];
 
-    for (let i = 0; i < uniqueWorkouts.length; i += 500) {
-      const batch = uniqueWorkouts.slice(i, i + 500);
+    const batches: HealthWorkout[][] = [];
+    const remainingWorkouts = [...uniqueWorkouts];
+    while (remainingWorkouts.length) {
+      batches.push(remainingWorkouts.splice(0, 500));
+    }
+    for (const batch of batches) {
       for (const workout of batch) {
         const values = {
           providerId,
@@ -732,9 +736,7 @@ export async function upsertWorkoutBatch(
 
         if (returned) {
           results.push({ activityId: returned.id, workout });
-          if (workout.hangTen) {
-            await replaceHangTenIntervals(transactionDb, returned.id, workout);
-          }
+          await replaceHangTenIntervals(transactionDb, returned.id, workout);
         }
       }
     }

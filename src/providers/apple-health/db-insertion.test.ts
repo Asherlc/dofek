@@ -1395,6 +1395,24 @@ describe("upsertHealthEventBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertWorkoutBatch", () => {
+  it("requires transaction support", async () => {
+    const { db } = createMockDb();
+    Reflect.deleteProperty(db, "transaction");
+
+    await expect(upsertWorkoutBatch(db, "p1", [makeWorkout()])).rejects.toThrow(
+      "Apple Health workout upsert requires a transactional database",
+    );
+  });
+
+  it("rejects a database whose transaction property is not callable", async () => {
+    const { db } = createMockDb();
+    Reflect.set(db, "transaction", "not-a-function");
+
+    await expect(upsertWorkoutBatch(db, "p1", [makeWorkout()])).rejects.toThrow(
+      "Apple Health workout upsert requires a transactional database",
+    );
+  });
+
   it("deduplicates workouts with the same startDate", async () => {
     const sharedStart = new Date("2024-06-01T08:00:00Z");
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
@@ -1425,6 +1443,21 @@ describe("upsertWorkoutBatch", () => {
 
     const count = await upsertWorkoutBatch(db, "p1", workouts);
     expect(count).toBe(2);
+  });
+
+  it("processes workouts in batches of 500", async () => {
+    const { db } = createMockDb(
+      Array.from({ length: 501 }, (_, index) => ({ id: `10000000-0000-4000-8000-${index}` })),
+    );
+    const workouts = Array.from({ length: 501 }, (_, index) =>
+      makeWorkout({
+        startDate: new Date(Date.UTC(2024, 5, 1, 8, 0, index)),
+      }),
+    );
+
+    await upsertWorkoutBatch(db, "p1", workouts);
+
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledTimes(501);
   });
 
   it("builds correct insert row fields", async () => {
@@ -1550,6 +1583,35 @@ describe("upsertWorkoutBatch", () => {
         },
       },
     });
+  });
+
+  it("does not replace intervals when the activity upsert returns no row", async () => {
+    const { db, capture } = createMockDb([{}]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        hangTen: {
+          planName: "Repeaters",
+          activitySegments: [],
+        },
+      }),
+    ]);
+
+    expect(
+      capture.executions.filter((execution) => execution.sql.includes("activity_interval")),
+    ).toHaveLength(0);
+  });
+
+  it("does not replace intervals for ordinary workouts", async () => {
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+
+    expect(
+      capture.executions.filter((execution) => execution.sql.includes("activity_interval")),
+    ).toHaveLength(0);
   });
 
   it("uses returned activity IDs for Hang Ten interval replacement", async () => {
