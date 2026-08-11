@@ -21,6 +21,13 @@ const migrationRollbackRowsSchema = z.array(
   }),
 );
 const migrationHashRowsSchema = z.array(z.object({ hash: z.string() }));
+const climbingEntryLeadColumnRowsSchema = z.array(
+  z.object({
+    data_type: z.literal("boolean"),
+    is_nullable: z.literal("YES"),
+    constraint_definition: z.string(),
+  }),
+);
 const accountErasureTriggerRowsSchema = z.array(
   z.object({
     function_name: z.string(),
@@ -66,6 +73,35 @@ describe("runMigrations", () => {
     );
     expect(tableNameRowsSchema.parse(result.rows).length).toBe(1);
     await client.end();
+  });
+
+  it("creates a nullable route-only lead value for climbing entries", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const result = await client.query(
+        `SELECT
+          columns.data_type,
+          columns.is_nullable,
+          pg_get_constraintdef(constraints.oid) AS constraint_definition
+        FROM information_schema.columns AS columns
+        JOIN pg_constraint AS constraints
+          ON constraints.conname = 'climbing_entry_lead_routes_only'
+        WHERE columns.table_schema = 'fitness'
+          AND columns.table_name = 'climbing_entry'
+          AND columns.column_name = 'lead'`,
+      );
+
+      expect(climbingEntryLeadColumnRowsSchema.parse(result.rows)).toEqual([
+        {
+          data_type: "boolean",
+          is_nullable: "YES",
+          constraint_definition: "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
+        },
+      ]);
+    } finally {
+      await client.end();
+    }
   });
 
   it("skips already-applied migrations on second run", async () => {
