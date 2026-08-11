@@ -91,6 +91,9 @@ importers:
       '@dofek/mountain-project':
         specifier: workspace:*
         version: link:packages/mountain-project-client
+      '@dofek/kaya-client':
+        specifier: workspace:*
+        version: link:packages/kaya-client
       '@dofek/peloton':
         specifier: workspace:*
         version: link:packages/peloton-client
@@ -394,6 +397,12 @@ importers:
   packages/heart-rate-variability: {}
 
   packages/imu: {}
+
+  packages/kaya-client:
+    dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/mobile:
     dependencies:
