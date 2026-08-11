@@ -58,7 +58,7 @@ describe("cycling_activity read model", () => {
         elevation_gain_m Nullable(Float64),
         refreshed_at DateTime64(9, 'UTC'),
         is_deleted UInt8
-      ) ENGINE = MergeTree ORDER BY (user_id, activity_id)`,
+      ) ENGINE = ReplacingMergeTree(refreshed_at) ORDER BY (user_id, activity_id)`,
     });
     await client.command({
       query: `CREATE TABLE ${database}.deduped_activities (
@@ -68,7 +68,7 @@ describe("cycling_activity read model", () => {
         source_providers Array(String),
         refreshed_at DateTime64(9, 'UTC'),
         is_deleted UInt8
-      ) ENGINE = MergeTree ORDER BY (user_id, activity_id)`,
+      ) ENGINE = ReplacingMergeTree(refreshed_at) ORDER BY (user_id, activity_id)`,
     });
     await client.command({
       query: `CREATE TABLE ${database}.activity_aerobic_efficiency (
@@ -81,7 +81,7 @@ describe("cycling_activity read model", () => {
         z2_samples Nullable(UInt64),
         refreshed_at DateTime64(9, 'UTC'),
         is_deleted UInt8
-      ) ENGINE = MergeTree ORDER BY (user_id, activity_id)`,
+      ) ENGINE = ReplacingMergeTree(refreshed_at) ORDER BY (user_id, activity_id)`,
     });
     await client.command({
       query: `INSERT INTO ${database}.activity_summary_rows

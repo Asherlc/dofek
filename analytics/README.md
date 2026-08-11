@@ -260,7 +260,10 @@ pnpm tsx scripts/with-env.ts -- env \
 ```
 
 After the build succeeds, repeat the query and verify `empty_modality_rows = 0`.
-Record both counts and the model run result with the maintenance change. This
+Verify that `active_cycling_rows` matches the preflight count, unless the
+maintenance record documents and justifies an expected delta. Record both
+checks and the model run result before treating the maintenance change as
+successful. This
 bounded, operator-invoked rebuild follows dbt's guidance for rewriting existing
 incremental rows after a model semantic change:
 <https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
