@@ -7,6 +7,41 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-11 — Pull-request CI cache rate limit and read-model test-fixture drift
+
+- **Status:** E2E cache failure resolved and verified; the current integration-test fixture fix passes locally and awaits exact-head CI verification.
+- **Symptoms / impact:** PR #2475's E2E image build failed before tests, then the integration shard 4/4 failed after the E2E fix, keeping the aggregate test gate red.
+- **Evidence / root cause:** [Job 93795145021](https://github.com/Asherlc/dofek/actions/runs/31496331204/job/93795145021) failed `Build E2E images with cache` when its registry-cache request to GHCR returned `403 Forbidden` with `You have exceeded a secondary rate limit`. The E2E job already used the GitHub Actions cache backend, so its additional GHCR registry-cache import created the failing redundant remote request. The replacement [E2E job 93798063430](https://github.com/Asherlc/dofek/actions/runs/31497126234/job/93798063430) passed. The next integration run, [job 93820985793](https://github.com/Asherlc/dofek/actions/runs/31503763873/job/93820985793), first failed because the new cycling-model test queried its plain `MergeTree` fixtures with the model's required `FINAL` clause; ClickHouse returned `Storage MergeTree doesn't support FINAL`.
+- **Fix / mitigation:** Removed the redundant GHCR cache import and login from the E2E build while retaining the canonical `type=gha,scope=e2e` cache. The cycling test now creates `ReplacingMergeTree(refreshed_at)` fixtures, matching the production read-model contract and supporting `FINAL`; its focused integration test passes locally. Docker documents the GitHub Actions cache backend in its [cache backend guide](https://docs.docker.com/build/ci/github-actions/cache/), and GitHub documents secondary limits in its [REST API rate-limit guidance](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits).
+- **Remaining risk / follow-up:** Confirm the new exact-head integration shard and aggregate gate pass. E2E cold builds may be slower if the GitHub Actions cache is empty; no timeout, retry, or fallback was added.
+
+## 2026-08-11 — Local integration validation blocked by exhausted Linux AIO capacity
+
+- **Status:** Unresolved local validation prerequisite; no production impact.
+- **Symptoms / impact:** The workspace Compose integration tier could not become ready, even though PostgreSQL, ClickHouse, and Redis were healthy.
+- **Evidence / root cause:** `pnpm test:integration -- packages/server/src/routers/cycling-activity-read-model.integration.test.ts` stopped at `docker compose ... up -d --wait` because `sentry-fixes-redpanda-1` was unhealthy. Its first fatal log line was `Could not setup Async I/O: unknown error. The required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536`, showing host-wide Linux asynchronous-I/O capacity is exhausted; the kernel documents this system-wide limit in its [`aio-max-nr` reference](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- **Fix / mitigation:** No Compose or application resilience setting was changed. The ClickHouse-only cycling test ran directly against the healthy workspace ClickHouse service and passed; recover host AIO capacity before relying on the full local integration tier.
+- **Remaining risk / follow-up:** Investigate which local workload holds the AIO allocations, then restore sufficient host capacity and rerun the complete integration tier. Do not add retries or lower Redpanda requirements to mask the host prerequisite.
+
+## 2026-08-11 — Local integration validation blocked by exhausted Docker address pools
+
+- **Status:** Unresolved local validation prerequisite; no production impact.
+- **Symptoms:** The current workspace could not start its isolated Compose dependencies for integration tests.
+- **Evidence:** Compose failed while creating `sentry-fixes_default` with `all predefined address pools have been fully subnetted`.
+- **Root cause:** The Docker daemon has no available predefined network address pool for another workspace network.
+- **Fix / mitigation:** No cross-workspace containers, networks, or volumes were removed; the integration test remains pending until approved Docker network cleanup or address-pool recovery is completed.
+- **Remaining risk:** Integration coverage for the new cycling read-model behavior has not yet executed in this workspace.
+- **Follow-up:** Apply the scoped Docker recovery procedure, then rerun the integration test. See Docker’s [network address pool documentation](https://docs.docker.com/engine/network/address-pools/).
+
+## 2026-08-10 — Expo SDK 57 compatibility metadata invalidated mobile CI
+
+- **Status:** Fix prepared; exact-head CI verification is pending.
+- **Symptoms / impact:** The `Build Mobile / Metro Bundle` CI job for PR #2475 stopped before Metro export, blocking the Sentry remediation from merging. There was no production impact.
+- **Evidence / root cause:** The exact failing command was `cd packages/mobile && pnpm expo install --check` in [job 93654925469](https://github.com/Asherlc/dofek/actions/runs/31450857261/job/93654925469). Its first fatal line was `Found outdated dependencies`, after Expo listed eleven SDK 57 patch releases, including `expo@57.0.12`, `expo-router@57.0.12`, and `expo-updates@57.0.13`. The branch and `main` had the same mobile dependency state, so the cause was mutable Expo compatibility metadata advancing after the previously valid exact pins. Expo documents that this check rejects incompatible versions and that its canonical fix updates them to the compatible set in its [dependency-validation guidance](https://docs.expo.dev/more/expo-cli/#dependency-validation).
+- **Fix / mitigation:** Align the affected Expo SDK 57 package pins with the compatibility set, regenerate the lockfile, and update the existing release-age policy entries for those exact releases. No retry, timeout, validation exclusion, or fallback behavior was added.
+- **Validation:** A frozen-lockfile workspace install and the exact-version policy pass locally. Local configuration validation without a Sentry DSN correctly fails fast at the existing required-secret guard; the CI job loaded that secret successfully before reporting the dependency mismatch. Run the same Expo compatibility command with the production CI environment on the new exact head.
+- **Remaining risk / follow-up:** Expo's live compatibility metadata can advance independently of repository commits. Keep the pinned SDK package set synchronized whenever this required CI check reports a newly expected patch release.
+
 ## 2026-08-10 — Sentry production failures from stale analytics data and pool starvation
 
 - **Status:** Fix prepared; deployment and post-release verification are pending. Affected unresolved issues were [DOFEK-MOBILE-19](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-19), [DOFEK-MOBILE-1F](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1F), [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G), [DOFEK-SERVER-5K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5K), [DOFEK-SERVER-5Y](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Y), [DOFEK-SERVER-5Z](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Z), and [DOFEK-SERVER-58](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-58).
@@ -16,6 +51,51 @@ them, and the durability work they suggest.
 - **Validation:** Regression tests pass for the mobile telemetry filter, cycling modality normalization, bounded sleep model SQL, and latest-event model behavior. Production read-only checks confirmed the database and service health before the change.
 - **Remaining risk / follow-up:** Apply the migration and deploy the release, then verify that all seven issue IDs stop receiving production events and that the next analytics build completes below its timeout. Confirm that the direct calendar visibility lookup preserves canonical-row authorization for all production read-model paths.
 
+## 2026-08-10 — Dependabot updates blocked by mismatched CI baselines
+
+- **Status:** Resolved. Dependabot PRs [#2463](https://github.com/Asherlc/dofek/pull/2463), [#2455](https://github.com/Asherlc/dofek/pull/2455), and [#2450](https://github.com/Asherlc/dofek/pull/2450) were merged; duplicate CodeQL PRs [#2461](https://github.com/Asherlc/dofek/pull/2461) and [#2456](https://github.com/Asherlc/dofek/pull/2456), plus incompatible mobile PR [#2460](https://github.com/Asherlc/dofek/pull/2460), were closed. No production impact occurred.
+- **Evidence / root cause:** CodeQL reported `Loaded a configuration file for version '4.37.3', but running version '4.37.4'` in [job 93158091311](https://github.com/Asherlc/dofek/actions/runs/31279367655/job/93158091311) because Dependabot split one workflow upgrade across three action PRs. The mobile job's first fatal command was `pnpm expo install --check`, which rejected `react-native-maps@1.29.0` while Expo SDK 57 expected `1.27.2` ([Expo dependency validation](https://docs.expo.dev/more/expo-cli/#dependency-validation)). The S3 PR failed typechecking because `S3Client` from the pinned client package was incompatible with the newer presigner in [job 93158710273](https://github.com/Asherlc/dofek/actions/runs/31279188149/job/93158710273). The vcpkg PR failed with `no version database entry for vcpkg-cmake-config at 2026-07-21` in [job 93157522927](https://github.com/Asherlc/dofek/actions/runs/31279106911/job/93157522927), because CI bootstrapped an older vcpkg commit than the requested manifest baseline.
+- **Fix / mitigation:** Aligned all CodeQL actions to the latest pinned v4.37.6 commit, aligned the S3 client and presigner at 3.1106.0, and aligned the native workflow and image vcpkg pins with the 2026.07.29 baseline. The Expo-incompatible maps update was closed rather than bypassing the canonical compatibility check.
+- **Validation:** The final exact-head run [31355357176](https://github.com/Asherlc/dofek/actions/runs/31355357176) completed with 2,226 passed checks and zero failures before PR #2450 merged at commit `cb2ebb029306561635c31945997a093cc4a44b90`. A fresh Dependabot search reports no open PRs.
+- **Remaining risk / follow-up:** Keep CodeQL action components grouped or version-aligned in future Dependabot updates, and treat Expo compatibility failures as dependency-selection issues rather than adding exclusions or warning-only behavior.
+
+## 2026-08-09 — PostHog Sentry summary warehouse sync rejected by upstream API
+
+- **Status:** Unresolved external integration issue; no Dofek application or
+  deployment change was made.
+- **Symptoms / impact:** PostHog project Dofek reported the Sentry
+  `organization_stats_summary` warehouse sync as failed. The schema has never
+  materialized a table, and every observed run synced zero rows; the summary
+  data remains unavailable until the sync succeeds or the schema is disabled.
+- **Evidence / root cause:** PostHog’s live source history shows 43 consecutive
+  failed full-refresh runs from 2026-07-29 through 2026-08-09. The failures
+  consistently return HTTP 400 from
+  `https://sentry.io/api/0/organizations/east-bay-software/stats-summary/`.
+  Earlier requests used `statsPeriod=90d`; later requests used explicit
+  `start`/`end` timestamps. All other enabled Sentry schemas completed, so
+  credentials and general source connectivity are working. PostHog PR #79517
+  changed the request away from the 90-day retention boundary to an explicit,
+  retention-clamped `start`/`end` window and was deployed on 2026-08-07
+  ([PR #79517](https://github.com/PostHog/posthog/pull/79517)); Dofek continued
+  failing afterward. PostHog PR #80099 then classified generic Sentry 400
+  responses as non-retryable so deterministic failures stop retrying
+  ([PR #80099](https://github.com/PostHog/posthog/pull/80099)); it did not
+  establish the retention-boundary root cause. The upstream response body is
+  not preserved. Sentry’s current API documentation lists `sum(quantity)` and
+  either `statsPeriod` or `start`/`end` as valid parameters ([official API
+  reference](https://docs.sentry.io/api/organizations/retrieve-an-organizations-events-count-by-project/)),
+  so the exact Dofek-specific rejection remains unconfirmed without a direct
+  read-only Sentry request.
+- **Fix / mitigation:** No retry or configuration workaround was applied;
+  automatic retries are ineffective while the same request is rejected. The
+  recommended next action is to disable this unused optional schema, or open a
+  PostHog support case with the source ID, schema ID, and failed workflow ID if
+  the summary table is required.
+- **Remaining risk / follow-up:** Decide whether
+  `organization_stats_summary` is needed. If it is, obtain the Sentry 400
+  response body from PostHog support or Sentry and repair the connector before
+  re-enabling it; if not, disable the schema to stop repeated failed billable
+  sync attempts.
 ## 2026-08-10: Peloton workouts omitted `total_work`
 
 - **Status:** Root cause identified and fixed in this workspace; deployment and
@@ -42,6 +122,7 @@ them, and the durability work they suggest.
 - **Remaining risk / follow-up:** Deploy the fix and verify that
   `DOFEK-SERVER-5E` stops receiving new events. No retry, timeout, or fallback
   was added because the root cause was a local response-contract mismatch.
+
 
 ## 2026-08-10: Pull-request CI failures from configuration and test drift
 
