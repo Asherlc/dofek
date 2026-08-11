@@ -27,6 +27,8 @@ export interface HangTenWorkoutMetadata {
   activitySegmentsError?: string;
 }
 
+export type WorkoutMetadata = Record<string, string | number>;
+
 export interface HealthWorkout {
   activityType: ProviderActivityType;
   sourceName: string | null;
@@ -37,7 +39,7 @@ export interface HealthWorkout {
   startDate: Date;
   endDate: Date;
   routeLocations?: RouteLocation[];
-  metadata?: Record<string, string>;
+  metadata?: WorkoutMetadata;
   hangTen?: HangTenWorkoutMetadata;
 }
 
@@ -101,8 +103,9 @@ export function parseWorkout(
   );
 }
 
-function trimmedMetadataValue(metadata: Record<string, string>, key: string): string | undefined {
-  const value = metadata[key]?.trim();
+function trimmedMetadataValue(metadata: WorkoutMetadata, key: string): string | undefined {
+  const rawValue = metadata[key];
+  const value = typeof rawValue === "string" ? rawValue.trim() : undefined;
   return value ? value : undefined;
 }
 
@@ -141,7 +144,7 @@ function parseHangTenActivitySegments(raw: string): {
 
 function hangTenWorkoutOverrides(
   activityType: ProviderActivityType,
-  metadata: Record<string, string>,
+  metadata: WorkoutMetadata,
 ): Partial<HealthWorkout> {
   if (
     activityType.canonicalType !== "strength" ||
@@ -175,7 +178,7 @@ function hangTenWorkoutOverrides(
 
 export function applyWorkoutMetadata(
   workout: HealthWorkout,
-  metadata: Record<string, string>,
+  metadata: WorkoutMetadata,
 ): HealthWorkout {
   return {
     ...workout,

@@ -169,6 +169,7 @@
     "check:database-backup-freshness": "tsx scripts/check-database-backup-freshness.ts",
     "catch-up:metric-stream": "tsx scripts/with-env.ts -- tsx scripts/catch-up-clickhouse-metric-stream.ts",
     "backfill:body-measurements": "tsx scripts/with-env.ts -- tsx scripts/backfill-body-measurement-sample.ts",
+    "backfill:hang-ten-workouts": "tsx scripts/with-env.ts -- tsx scripts/backfill-hang-ten-workouts.ts",
     "backfill:activity-overview-availability": "tsx scripts/with-env.ts -- tsx scripts/backfill-activity-overview-availability.ts",
     "backfill:climbing-attempt-count": "tsx scripts/with-env.ts -- tsx scripts/backfill-climbing-attempt-count.ts",
     "backfill:sleep-quality": "tsx scripts/with-env.ts -- tsx scripts/backfill-sleep-quality.ts",

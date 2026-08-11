@@ -6,7 +6,6 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
@@ -18,10 +17,12 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import { replaceHangTenIntervals } from "../../../../src/providers/apple-health/hang-ten-intervals.ts";
 import {
   buildAppleHealthWorkoutIdentity,
   collectAppleHealthWorkoutIdentities,
 } from "../../../../src/providers/apple-health/workout-identity.ts";
+import { applyWorkoutMetadata } from "../../../../src/providers/apple-health/workouts.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -404,74 +405,92 @@ function appleHealthLocalTimeContext(startTimestamp: string, endTimestamp: strin
 
 /** Process workout samples */
 export async function processWorkouts(
-  db: SyncDatabase,
+  db: Database,
   userId: string,
   workouts: WorkoutSample[],
   options: ProcessWorkoutsOptions,
 ): Promise<number> {
-  const activitySync = new ProviderActivityListSync({
-    db,
-    providerId: PROVIDER_ID,
-    userId,
-    windowStart: new Date(options.windowStart),
-    windowEnd: new Date(options.windowEnd),
-  });
+  return db.transaction(async (transactionDb) => {
+    const activitySync = new ProviderActivityListSync({
+      db: transactionDb,
+      providerId: PROVIDER_ID,
+      userId,
+      windowStart: new Date(options.windowStart),
+      windowEnd: new Date(options.windowEnd),
+    });
 
-  let inserted = 0;
-  for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
-    const batch = workouts.slice(i, i + BATCH_SIZE);
-    for (const workout of batch) {
-      const activityType = resolveProviderActivityType(
-        workout.workoutType,
-        workoutActivityTypeMap[workout.workoutType] ?? "other",
-      );
+    let inserted = 0;
+    for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
+      const batch = workouts.slice(i, i + BATCH_SIZE);
+      for (const workout of batch) {
+        const normalizedWorkout = applyWorkoutMetadata(
+          {
+            activityType: resolveProviderActivityType(
+              workout.workoutType,
+              workoutActivityTypeMap[workout.workoutType] ?? "other",
+            ),
+            sourceName: workout.sourceName,
+            durationSeconds: workout.duration,
+            distanceMeters: workout.totalDistance ?? undefined,
+            startDate: new Date(workout.startDate),
+            endDate: new Date(workout.endDate),
+          },
+          workout.metadata ?? {},
+        );
 
-      const rawData = {
-        duration: workout.duration,
-        totalDistance: workout.totalDistance,
-        sourceName: workout.sourceName,
-        workoutType: workout.workoutType,
-        metadata: workout.metadata,
-        workoutActivities: workout.workoutActivities,
-      };
+        const rawData = {
+          duration: workout.duration,
+          totalDistance: workout.totalDistance,
+          sourceName: workout.sourceName,
+          workoutType: workout.workoutType,
+          metadata: workout.metadata,
+          workoutActivities: workout.workoutActivities,
+          ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
+        };
 
-      await activitySync.upsert(
-        {
+        const values = {
           userId,
           providerId: PROVIDER_ID,
           externalId: appleHealthWorkoutExternalId(workout.uuid),
-          activityType,
-          startedAt: new Date(workout.startDate),
-          endedAt: new Date(workout.endDate),
+          activityType: normalizedWorkout.activityType,
+          startedAt: normalizedWorkout.startDate,
+          endedAt: normalizedWorkout.endDate,
+          name: normalizedWorkout.hangTen?.planName,
+          sourceName: normalizedWorkout.sourceName,
           ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
           raw: rawData,
-        },
-        {
-          activityType,
-          startedAt: new Date(workout.startDate),
-          endedAt: new Date(workout.endDate),
+        };
+        const returned = await activitySync.upsert(values, {
+          activityType: values.activityType,
+          startedAt: values.startedAt,
+          endedAt: values.endedAt,
+          name: values.name,
+          sourceName: values.sourceName,
           ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
           raw: rawData,
-        },
-      );
-      inserted++;
+        });
+        if (returned && normalizedWorkout.hangTen) {
+          await replaceHangTenIntervals(transactionDb, returned.id, normalizedWorkout);
+        }
+        inserted++;
+      }
     }
-  }
 
-  await activitySync.reconcile(undefined, {
-    presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
-      workouts.map((workout) =>
-        buildAppleHealthWorkoutIdentity({
-          syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
-          startedAt: new Date(workout.startDate),
-          endedAt: new Date(workout.endDate),
-          sourceName: workout.sourceName,
-        }),
+    await activitySync.reconcile(undefined, {
+      presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
+        workouts.map((workout) =>
+          buildAppleHealthWorkoutIdentity({
+            syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
+            startedAt: new Date(workout.startDate),
+            endedAt: new Date(workout.endDate),
+            sourceName: workout.sourceName,
+          }),
+        ),
       ),
-    ),
-  });
+    });
 
-  return inserted;
+    return inserted;
+  });
 }
 
 /** Process workout route locations as location point metrics plus associated scalar metrics. */

@@ -417,6 +417,90 @@ describe("HealthKit sync router", () => {
   });
 
   describe("pushWorkouts", () => {
+    it("stores Hang Ten HealthKit workouts as hangboard sessions with intervals", async () => {
+      const result = await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [
+          {
+            uuid: "hang-ten-workout-uuid",
+            workoutType: "20",
+            startDate: "2025-06-06T06:00:00Z",
+            endDate: "2025-06-06T06:00:10Z",
+            duration: 10,
+            totalDistance: null,
+            sourceName: "Hang Ten",
+            sourceBundle: "com.asherlc.hangten",
+            metadata: {
+              HKMetadataKeyWorkoutBrandName: "Hang Ten",
+              "HangTen.PlanName": "7/3 Repeaters",
+              "HangTen.SessionID": "hang-ten-session-1",
+              "HangTen.BoardID": "metolius-compact-ii",
+              "HangTen.BoardName": "Metolius Compact II",
+              "HangTen.ActivitySegments": JSON.stringify({
+                version: 1,
+                segments: [
+                  {
+                    stepID: "step-1",
+                    stepNumber: 1,
+                    kind: "work",
+                    holdIDs: ["edge-19"],
+                    holdType: "edge",
+                    sizeMillimeters: 19,
+                    durationSeconds: 7,
+                  },
+                  {
+                    stepID: "step-1-rest",
+                    stepNumber: 1,
+                    kind: "rest",
+                    holdIDs: [],
+                    durationSeconds: 3,
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(1);
+
+      const activities = await testCtx.db.execute(
+        sql`SELECT id, canonical_type, source_name, raw
+            FROM fitness.activity
+            WHERE provider_id = 'apple_health'
+              AND external_id = 'hk:workout:hang-ten-workout-uuid'`,
+      );
+      expect(activities).toHaveLength(1);
+      expect(activities[0]).toMatchObject({
+        canonical_type: "hangboard",
+        source_name: "Hang Ten",
+        raw: {
+          hangTen: {
+            sessionId: "hang-ten-session-1",
+            planName: "7/3 Repeaters",
+            boardId: "metolius-compact-ii",
+            boardName: "Metolius Compact II",
+          },
+        },
+      });
+
+      const intervals = await testCtx.db.execute(
+        sql`SELECT label, interval_type, started_at, ended_at
+            FROM fitness.activity_interval
+            WHERE activity_id = ${activities[0]?.id}
+            ORDER BY interval_index`,
+      );
+      expect(intervals).toHaveLength(2);
+      expect(intervals[0]).toMatchObject({
+        label: "Step 1: 19 mm edge",
+        interval_type: "work",
+      });
+      expect(intervals[1]).toMatchObject({
+        label: "Step 1: Rest",
+        interval_type: "rest",
+      });
+    });
+
     it("creates activity records from workout samples", async () => {
       const result = await mutate("healthKitSync.pushWorkouts", {
         ...WORKOUT_SYNC_WINDOW,

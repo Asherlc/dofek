@@ -135,7 +135,7 @@ describe("processWorkouts", () => {
     const execute = vi.fn(async () => []);
 
     await processWorkouts(
-      { execute },
+      makeTransactionalTestDatabase({ execute }),
       "00000000-0000-0000-0000-000000000001",
       [
         {
@@ -184,7 +184,7 @@ describe("processWorkouts", () => {
     const execute = vi.fn(async () => []);
 
     await processWorkouts(
-      { execute },
+      makeTransactionalTestDatabase({ execute }),
       "00000000-0000-0000-0000-000000000001",
       [
         {
