@@ -27,7 +27,6 @@ describe("hangTenIntervalLabel", () => {
     ).toBe("Step 1: Rest");
   });
 });
-
 describe("buildHangTenIntervals", () => {
   it("keeps later intervals at the last known time after a missing duration", () => {
     const start = new Date("2026-08-07T14:00:00Z");

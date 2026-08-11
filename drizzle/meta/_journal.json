@@ -586,15 +586,15 @@
     {
       "idx": 83,
       "version": "7",
-      "when": 1786230300000,
-      "tag": "0071_processing_alert_dismissal",
+      "when": 1786162800000,
+      "tag": "0071_add_hangboard_activity_type",
       "breakpoints": true
     },
     {
       "idx": 84,
       "version": "7",
-      "when": 1786372124000,
-      "tag": "0072_add_hangboard_activity_type",
+      "when": 1786230300000,
+      "tag": "0072_processing_alert_dismissal",
       "breakpoints": true
     },
     {
