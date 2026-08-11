@@ -23343,3 +23343,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Removed the obsolete legacy-enum statement and added a real Postgres integration regression that applies migrations 0068 and 0071 together, verifies `hangboard` on `canonical_activity_type`, and verifies the legacy enum remains absent. No migration skip, retry, timeout, or failure suppression was added.
 - **Validation:** The regression test passes 1/1, the full seed/migration integration test passes 2/2, migration policy passes, and TypeScript typecheck passes locally. Full analytics SQL lint was not runnable because this workspace could not start isolated Compose services after Docker reported `all predefined address pools have been fully subnetted`.
 - **Remaining risk / follow-up:** Push the workspace changes and confirm the hosted PR CI rerun passes the integration and E2E migration jobs; clean only disposable stale Docker networks if local analytics lint must be rerun.
+
+## 2026-08-10 — PR Metro bundle rejected stale Expo SDK patch dependencies
+
+- **Status:** Fixed in this workspace; a fresh PR CI run is pending.
+- **Symptoms / impact:** PR [#2478](https://github.com/Asherlc/dofek/pull/2478)
+  failed [Build Mobile / Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/31451360495/job/93656443134)
+  before Metro export, blocking the PR gate. No production impact occurred.
+- **Evidence / root cause:** The exact failed command was `pnpm expo install
+  --check`; its first fatal line was `Found outdated dependencies`. It reported
+  eleven installed Expo SDK 57 packages below the current compatible patch
+  releases, including `expo@57.0.11` where `~57.0.12` is required. Expo's
+  dependency validation checks installed packages against the SDK-compatible
+  versions ([official documentation](https://docs.expo.dev/more/expo-cli/#version-validation)).
+- **Fix / mitigation:** Updated each reported Expo package to its SDK 57
+  compatible patch release and regenerated the lockfile. No retry, timeout,
+  suppression, or compatibility-check bypass was added.
+- **Validation:** Hosted CI had already passed the Peloton package typecheck
+  before this update; the rerun will execute the authoritative Expo check with
+  the required production configuration. Local Expo validation correctly
+  stopped earlier because this workspace has neither an authenticated Infisical
+  session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
+- **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
+  remaining hosted checks pass, then remove no configuration guards.

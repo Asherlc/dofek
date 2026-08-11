@@ -986,6 +986,57 @@ describe("ProcessingRepository", () => {
     });
   });
 
+  it("uses sequence order when failed events share a timestamp", async () => {
+    const failedAt = new Date("2026-07-22T17:45:00.000Z");
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "provider_sync",
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: failedAt,
+            errorCode: "provider_sync_failed",
+            errorMessage: "The earlier failure.",
+          }),
+          event(2, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: failedAt,
+            errorMessage: "The latest failure.",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: null,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          occurredAt: failedAt.toISOString(),
+          message:
+            "Your Garmin data synced, but Dofek couldn’t update activities. Your previously synced data is still available.",
+        }),
+      ],
+    });
+  });
+
   it("uses generic import guidance and the operation time when no failure event is available", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({
@@ -1272,6 +1323,69 @@ describe("ProcessingRepository", () => {
       title: "Garmin activities and recovery weren’t updated",
       message:
         "Your Garmin data synced, but Dofek couldn’t update activities and recovery. Your previously synced data is still available.",
+    });
+  });
+
+  it("formats a two-dataset provider alert with provider-specific and dataset-specific labels", async () => {
+    const failedAt = new Date("2026-07-22T17:50:00.000Z");
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "provider_sync",
+        datasetKeys: ["providers", "activity"],
+        outputManifest: {
+          providers: ["relational"],
+          activity: ["relational"],
+        },
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "providers",
+            occurredAt: failedAt,
+          }),
+          event(2, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: failedAt,
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "providers",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: null,
+        },
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: null,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          datasetKeys: ["providers", "activity"],
+          datasetLabels: ["Data sources", "Activities"],
+          occurredAt: failedAt.toISOString(),
+          title: "Garmin summary and activities weren’t updated",
+          message:
+            "Your Garmin data synced, but Dofek couldn’t update summary and activities. Your previously synced data is still available.",
+        }),
+      ],
     });
   });
 
