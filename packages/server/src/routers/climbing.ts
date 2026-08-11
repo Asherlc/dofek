@@ -277,4 +277,5 @@ export const climbingRouter = router({
       );
       return runClimbingQuery(() => repository.getSummary(input.days));
     }),
+
 });
