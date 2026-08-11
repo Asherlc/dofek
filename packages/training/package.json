@@ -43,7 +43,9 @@
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*",
-    "@dofek/zones": "workspace:*"
+    "@dofek/zones": "workspace:*",
+    "@openbeta/sandbag": "0.0.55",
+    "zod": "4.4.3"
   },
   "scripts": {
     "build": "tsc",

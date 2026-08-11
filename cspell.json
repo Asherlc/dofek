@@ -657,7 +657,11 @@
     "trkpt",
     "trkseg",
     "Mesgs",
-    "mesg"
+    "mesg",
+    "openbeta",
+    "uiaa",
+    "ewbank",
+    "vscale"
   ],
   "flagWords": [],
   "useGitignore": false,
