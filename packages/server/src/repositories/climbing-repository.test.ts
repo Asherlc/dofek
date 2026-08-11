@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ClimbingGradePreference } from "@dofek/training/climbing-grades";
 import {
   ClimbingActivityEntry,
   ClimbingGradeProgression,
@@ -129,9 +130,18 @@ describe("ClimbingRepository", () => {
     return { execute };
   }
 
-  function makeRepository(rows: Record<string, unknown>[] = []) {
+  function makeRepository(
+    rows: Record<string, unknown>[] = [],
+    gradePreference?: ClimbingGradePreference,
+  ) {
     const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new ClimbingRepository(executeDb(execute), "user-1", "America/Los_Angeles");
+    const repo = new ClimbingRepository(
+      executeDb(execute),
+      "user-1",
+      "America/Los_Angeles",
+      undefined,
+      gradePreference,
+    );
     return { repo, execute };
   }
 
@@ -177,6 +187,45 @@ describe("ClimbingRepository", () => {
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.10c",
+          gradeSortValue: 64.5,
+        },
+      ]);
+    });
+
+    it("converts boulder and route progression grades to the selected systems", async () => {
+      const { repo } = makeRepository(
+        [
+          {
+            session_date: "2026-07-06",
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "V4",
+          },
+          {
+            session_date: "2026-07-09",
+            climb_type: "route",
+            grade_system: "yds",
+            grade: "5.10c",
+          },
+        ],
+        { boulder: "font", route: "french" },
+      );
+
+      const progression = await repo.getGradeProgression(90);
+
+      expect(progression.map((row) => row.toDetail())).toEqual([
+        {
+          date: "2026-07-06",
+          climbType: "boulder",
+          gradeSystem: "font",
+          grade: "6a+/6b+",
+          gradeSortValue: 65,
+        },
+        {
+          date: "2026-07-09",
+          climbType: "route",
+          gradeSystem: "french",
+          grade: "6b",
           gradeSortValue: 64.5,
         },
       ]);
@@ -262,6 +311,49 @@ describe("ClimbingRepository", () => {
           gradeSortValue: 75.5,
           attempts: 2,
           sends: 1,
+        },
+      ]);
+    });
+
+    it("converts volume buckets to the selected grade systems", async () => {
+      const { repo } = makeRepository(
+        [
+          {
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "V4",
+            attempts: 6,
+            sends: 4,
+          },
+          {
+            climb_type: "route",
+            grade_system: "yds",
+            grade: "5.10c",
+            attempts: 2,
+            sends: 1,
+          },
+        ],
+        { boulder: "font", route: "french" },
+      );
+
+      const volume = await repo.getVolumeByGrade(90);
+
+      expect(volume.map((row) => row.toDetail())).toEqual([
+        {
+          climbType: "route",
+          gradeSystem: "french",
+          grade: "6b",
+          gradeSortValue: 64.5,
+          attempts: 2,
+          sends: 1,
+        },
+        {
+          climbType: "boulder",
+          gradeSystem: "font",
+          grade: "6a+/6b+",
+          gradeSortValue: 65,
+          attempts: 6,
+          sends: 4,
         },
       ]);
     });
@@ -483,6 +575,51 @@ describe("ClimbingRepository", () => {
       const entries = await repo.getActivityEntries("activity-1");
 
       expect(entries.map((entry) => entry.toDetail().id)).toEqual(["entry-1", "entry-2"]);
+    });
+
+    it("preserves an unparseable source grade after valid converted entries", async () => {
+      const { repo } = makeRepository(
+        [
+          {
+            id: "entry-valid",
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "V4",
+            sent: true,
+            attempt_count: 1,
+            attempts: [],
+            ascent_type: null,
+            hold_type: null,
+            route_name: null,
+            location_name: null,
+            source_name: "Kaya",
+            wall_angle_degrees: null,
+          },
+          {
+            id: "entry-invalid",
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "not-a-grade",
+            sent: false,
+            attempt_count: 1,
+            attempts: [],
+            ascent_type: null,
+            hold_type: null,
+            route_name: null,
+            location_name: null,
+            source_name: "Kaya",
+            wall_angle_degrees: null,
+          },
+        ],
+        { boulder: "font", route: "french" },
+      );
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((entry) => entry.toDetail())).toMatchObject([
+        { id: "entry-valid", gradeSystem: "font", grade: "6a+/6b+" },
+        { id: "entry-invalid", gradeSystem: "v_scale", grade: "not-a-grade" },
+      ]);
     });
   });
 });
