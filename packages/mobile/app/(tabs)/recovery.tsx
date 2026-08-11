@@ -66,6 +66,43 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+type BodyTrendMetric = "weight" | "bodyFat";
+
+const bodyTrendOptions = [
+  { value: "weight", label: "Weight" },
+  { value: "bodyFat", label: "Body Fat" },
+] as const;
+
+function BodyTrendSelector({
+  value,
+  onChange,
+}: {
+  value: BodyTrendMetric;
+  onChange: (value: BodyTrendMetric) => void;
+}) {
+  return (
+    <View style={styles.bodyTrendSelector}>
+      {bodyTrendOptions.map((option) => {
+        const isSelected = value === option.value;
+        return (
+          <TouchableOpacity
+            key={option.value}
+            style={[styles.bodyTrendOption, isSelected && styles.bodyTrendOptionSelected]}
+            onPress={() => onChange(option.value)}
+            accessibilityRole="button"
+            accessibilityLabel={option.label}
+            accessibilityState={{ selected: isSelected }}
+          >
+            <Text style={[styles.bodyTrendOptionText, isSelected && styles.bodyTrendOptionTextSelected]}>
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 function ComponentBar({ label, value, weight }: { label: string; value: number; weight: number }) {
   const color = scoreColor(value);
   return (
@@ -254,6 +291,11 @@ export default function RecoveryScreen() {
       : null;
 
   const [recoveryExpanded, setRecoveryExpanded] = useState(false);
+  const [bodyTrendMetric, setBodyTrendMetric] = useState<BodyTrendMetric>("weight");
+  const displayedBodyTrendMetric =
+    bodyTrendMetric === "weight" && latestWeight == null && latestBodyFat != null
+      ? "bodyFat"
+      : bodyTrendMetric;
 
   const isLoading = shouldShowBlockingLoading({
     data: recoveryData,
@@ -627,8 +669,9 @@ export default function RecoveryScreen() {
           ) : null}
 
           {/* Trend Weight */}
-          {latestWeight != null && (
+          {latestWeight != null && displayedBodyTrendMetric === "weight" && (
             <Card title="Trend Weight">
+              <BodyTrendSelector value={displayedBodyTrendMetric} onChange={setBodyTrendMetric} />
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
@@ -676,8 +719,9 @@ export default function RecoveryScreen() {
             </Card>
           )}
 
-          {latestBodyFat != null && (
+          {latestBodyFat != null && displayedBodyTrendMetric === "bodyFat" && (
             <Card title="Body Fat %">
+              <BodyTrendSelector value={displayedBodyTrendMetric} onChange={setBodyTrendMetric} />
               <View style={styles.weightRow}>
                 <Text style={styles.weightValue}>
                   {formatBodyCompositionNumber(latestBodyFat)}%
@@ -881,6 +925,30 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
+  },
+  bodyTrendSelector: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    marginBottom: 12,
+    padding: 2,
+  },
+  bodyTrendOption: {
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  bodyTrendOptionSelected: {
+    backgroundColor: colors.surface,
+  },
+  bodyTrendOptionText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  bodyTrendOptionTextSelected: {
+    color: colors.text,
   },
   weightRow: {
     flexDirection: "row",
