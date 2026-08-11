@@ -742,11 +742,6 @@ export async function upsertWorkoutBatch(
     return results;
   });
 
-  for (const { activityId, workout } of activityResults) {
-    if (!workout.hangTen) continue;
-    await replaceHangTenIntervals(db, activityId, workout);
-  }
-
   // Batch all GPS route locations across all workouts
   const allGpsRows: MetricStreamSourceRow[] = [];
   for (const { activityId, workout } of activityResults) {

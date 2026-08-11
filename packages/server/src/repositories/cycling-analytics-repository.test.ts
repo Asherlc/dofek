@@ -931,7 +931,10 @@ describe("CyclingAnalyticsRepository", () => {
   });
 
   it("treats an empty modality from the read model as unknown", async () => {
-    const sensorStore = makeMockSensorStore([cyclingActivityRow({ modality: "" })]);
+    const sensorStore = makeMockSensorStore();
+    vi.mocked(sensorStore.query).mockImplementation(async (schema) => [
+      schema.parse(cyclingActivityRow({ modality: "" })),
+    ]);
     const repository = new CyclingAnalyticsRepository(
       { execute: vi.fn().mockResolvedValue([]) },
       "11111111-1111-4111-8111-111111111111",
