@@ -47,6 +47,11 @@ const dailyMetricRowSchema = z.object({
   steps: z.number().nullable(),
 });
 
+const bodyTrendOptions: ReadonlyArray<{ metric: "weight" | "bodyFat"; label: string }> = [
+  { metric: "weight", label: "Weight" },
+  { metric: "bodyFat", label: "Body Fat" },
+];
+
 function isBodyInsight(metric: string): boolean {
   return /hrv|resting.?hr|heart.?rate|weight|body.?fat|bmi|spo2|skin.?temp/i.test(metric);
 }
@@ -334,11 +339,9 @@ export function BodyPage() {
                     <ChartDescriptionTooltip description={BODY_TREND_WEIGHT_DECISION_COPY} />
                   )}
                 </div>
-                <div className="flex rounded-lg border border-border-strong p-0.5" aria-label="Body trend metric">
-                  {[
-                    ["weight", "Weight"],
-                    ["bodyFat", "Body Fat"],
-                  ].map(([metric, label]) => {
+                <fieldset className="flex rounded-lg border border-border-strong p-0.5">
+                  <legend className="sr-only">Body trend metric</legend>
+                  {bodyTrendOptions.map(({ metric, label }) => {
                     const isSelected = bodyTrendMetric === metric;
                     return (
                       <button
@@ -350,13 +353,13 @@ export function BodyPage() {
                             ? "bg-accent text-accent-foreground"
                             : "text-subtle hover:bg-surface-hover"
                         }`}
-                        onClick={() => setBodyTrendMetric(metric as "weight" | "bodyFat")}
+                        onClick={() => setBodyTrendMetric(metric)}
                       >
                         {label}
                       </button>
                     );
                   })}
-                </div>
+                </fieldset>
               </div>
               {bodyTrendMetric === "weight" ? (
                 <>

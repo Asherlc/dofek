@@ -93,7 +93,9 @@ function BodyTrendSelector({
             accessibilityLabel={option.label}
             accessibilityState={{ selected: isSelected }}
           >
-            <Text style={[styles.bodyTrendOptionText, isSelected && styles.bodyTrendOptionTextSelected]}>
+            <Text
+              style={[styles.bodyTrendOptionText, isSelected && styles.bodyTrendOptionTextSelected]}
+            >
               {option.label}
             </Text>
           </TouchableOpacity>
