@@ -231,6 +231,48 @@ describe("ClimbingRepository", () => {
       ]);
     });
 
+    it("keeps the first equal grade, replaces it with a harder grade, skips invalid grades, and orders session types", async () => {
+      const { repo } = makeRepository([
+        {
+          session_date: "2026-07-06",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V3",
+        },
+        {
+          session_date: "2026-07-06",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V3",
+        },
+        {
+          session_date: "2026-07-06",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V4",
+        },
+        {
+          session_date: "2026-07-06",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "not-a-grade",
+        },
+        {
+          session_date: "2026-07-06",
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.10c",
+        },
+      ]);
+
+      const progression = await repo.getGradeProgression(90);
+
+      expect(progression.map((row) => row.toDetail())).toEqual([
+        expect.objectContaining({ climbType: "boulder", grade: "V4", gradeSortValue: 65 }),
+        expect.objectContaining({ climbType: "route", grade: "5.10c", gradeSortValue: 64.5 }),
+      ]);
+    });
+
     it("queries best sent grades through deduped activity members and excludes unsent entries", async () => {
       const { repo, execute } = makeRepository([]);
 
@@ -358,6 +400,48 @@ describe("ClimbingRepository", () => {
       ]);
     });
 
+    it("merges source grades that convert to the same display bucket and skips invalid grades", async () => {
+      const { repo } = makeRepository(
+        [
+          {
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "V4",
+            attempts: 3,
+            sends: 1,
+          },
+          {
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "V4",
+            attempts: 2,
+            sends: 2,
+          },
+          {
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "not-a-grade",
+            attempts: 9,
+            sends: 9,
+          },
+        ],
+        { boulder: "font", route: "french" },
+      );
+
+      const volume = await repo.getVolumeByGrade(90);
+
+      expect(volume.map((row) => row.toDetail())).toEqual([
+        {
+          climbType: "boulder",
+          gradeSystem: "font",
+          grade: "6a+/6b+",
+          gradeSortValue: 65,
+          attempts: 5,
+          sends: 3,
+        },
+      ]);
+    });
+
     it("queries canonical attempt totals and sent counts", async () => {
       const { repo, execute } = makeRepository([]);
 
@@ -478,6 +562,78 @@ describe("ClimbingRepository", () => {
       const [summary] = await repo.getSessionSummaries(90);
 
       expect(summary?.toDetail().locationName).toBe("Pacific Pipe");
+    });
+
+    it("preserves the first location, counts only sent entries, and selects each climb type's hardest sent grade", async () => {
+      const { repo } = makeRepository([
+        {
+          activity_id: "activity-1",
+          session_date: "2026-07-09",
+          name: "Climbing session",
+          location_name: "First gym",
+          attempt_count: 2,
+          sent: true,
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V3",
+        },
+        {
+          activity_id: "activity-1",
+          session_date: "2026-07-09",
+          name: "Climbing session",
+          location_name: "Second gym",
+          attempt_count: 3,
+          sent: false,
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V8",
+        },
+        {
+          activity_id: "activity-1",
+          session_date: "2026-07-09",
+          name: "Climbing session",
+          location_name: null,
+          attempt_count: 4,
+          sent: true,
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V4",
+        },
+        {
+          activity_id: "activity-1",
+          session_date: "2026-07-09",
+          name: "Climbing session",
+          location_name: null,
+          attempt_count: 5,
+          sent: true,
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.10c",
+        },
+        {
+          activity_id: "activity-1",
+          session_date: "2026-07-09",
+          name: "Climbing session",
+          location_name: null,
+          attempt_count: 6,
+          sent: true,
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.11a",
+        },
+      ]);
+
+      const [summary] = await repo.getSessionSummaries(90);
+
+      expect(summary?.toDetail()).toMatchObject({
+        locationName: "First gym",
+        attempts: 20,
+        sends: 4,
+        hardestBoulderGrade: "V4",
+        hardestBoulderGradeSortValue: 65,
+        hardestRouteGrade: "5.11a",
+        hardestRouteGradeSortValue: 67.5,
+      });
     });
   });
 
@@ -619,6 +775,64 @@ describe("ClimbingRepository", () => {
       expect(entries.map((entry) => entry.toDetail())).toMatchObject([
         { id: "entry-valid", gradeSystem: "font", grade: "6a+/6b+" },
         { id: "entry-invalid", gradeSystem: "v_scale", grade: "not-a-grade" },
+      ]);
+    });
+
+    it("orders valid grades from hardest to easiest and uses entry IDs to break ties", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "entry-b",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V4",
+          sent: true,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: null,
+          location_name: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+        {
+          id: "entry-a",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V4",
+          sent: true,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: null,
+          location_name: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+        {
+          id: "entry-c",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V3",
+          sent: true,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: null,
+          location_name: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((entry) => entry.toDetail().id)).toEqual([
+        "entry-a",
+        "entry-b",
+        "entry-c",
       ]);
     });
   });
