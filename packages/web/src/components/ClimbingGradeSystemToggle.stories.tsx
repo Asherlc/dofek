@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
@@ -30,7 +30,7 @@ function createMockObservable(
     subscribe(observer) {
       if (state === "loading") return { unsubscribe: () => {} };
       if (state === "error") {
-        observer.error?.(new Error("Could not load climbing grade systems."));
+        observer.error?.(new TRPCClientError<AppRouter>("Could not load climbing grade systems."));
         return { unsubscribe: () => {} };
       }
       observer.next?.({ result: { data } });
