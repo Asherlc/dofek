@@ -7,6 +7,14 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-11 — Pull-request CI cache rate limit and read-model test renderer drift
+
+- **Status:** E2E cache failure resolved and verified; integration-test renderer fix is pushed for exact-head CI verification.
+- **Symptoms / impact:** PR #2475's E2E image build failed before tests, then the integration shard 4/4 failed after the E2E fix, keeping the aggregate test gate red.
+- **Evidence / root cause:** [Job 93795145021](https://github.com/Asherlc/dofek/actions/runs/31496331204/job/93795145021) failed `Build E2E images with cache` when its registry-cache request to GHCR returned `403 Forbidden` with `You have exceeded a secondary rate limit`. The E2E job already used the GitHub Actions cache backend, so its additional GHCR registry-cache import created the failing redundant remote request. The replacement [E2E job 93798063430](https://github.com/Asherlc/dofek/actions/runs/31497126234/job/93798063430) passed. Separately, [integration job 93798372338](https://github.com/Asherlc/dofek/actions/runs/31497126234/job/93798372338) failed `pnpm exec vitest run --project integration --coverage --shard=4/4`: the cycling read-model test's copied template renderer retained no-`else` incremental CTEs, leaving `FROM {{ this }} FINAL` in initial-mode ClickHouse SQL.
+- **Fix / mitigation:** Removed the redundant GHCR cache import and login from the E2E build while retaining the canonical `type=gha,scope=e2e` cache. Replaced the copied cycling-test renderer with the shared renderer, which removes incremental-only blocks in initial mode; added regression coverage for the real cycling model. Docker documents the GitHub Actions cache backend in its [cache backend guide](https://docs.docker.com/build/ci/github-actions/cache/), and GitHub documents secondary limits in its [REST API rate-limit guidance](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits).
+- **Remaining risk / follow-up:** Confirm the new exact-head integration shard and aggregate gate pass. E2E cold builds may be slower if the GitHub Actions cache is empty; no timeout, retry, or fallback was added.
+
 ## 2026-08-11 — Local integration validation blocked by exhausted Docker address pools
 
 - **Status:** Unresolved local validation prerequisite; no production impact.

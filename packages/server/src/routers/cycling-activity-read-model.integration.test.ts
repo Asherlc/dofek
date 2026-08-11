@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readModelSql } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+import {
+  readModelSql,
+  renderDbtModelSql,
+} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
@@ -15,18 +18,12 @@ const resultSchema = z.array(
 );
 
 function renderCyclingActivitySql(database: string): string {
-  return readModelSql("cycling_activity.sql")
-    .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
+  return renderDbtModelSql(readModelSql("cycling_activity.sql"), { isIncremental: false })
     .replace(/\{\{\s*ref\('activity_summary_rows'\)\s*\}\}/g, `${database}.activity_summary_rows`)
     .replace(/\{\{\s*ref\('deduped_activities'\)\s*\}\}/g, `${database}.deduped_activities`)
     .replace(
       /\{\{\s*ref\('activity_aerobic_efficiency'\)\s*\}\}/g,
       `${database}.activity_aerobic_efficiency`,
-    )
-    .replace(
-      /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g,
-      (_, incrementalSql: string, nonIncrementalSql: string | undefined) =>
-        nonIncrementalSql ?? incrementalSql,
     )
     .trim();
 }
