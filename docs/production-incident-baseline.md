@@ -23283,9 +23283,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-08-10 — Hangboarding PR exposed resumed Expo patch drift
 
-- **Status:** Unresolved in [PR #2477](https://github.com/Asherlc/dofek/pull/2477); the branch deliberately preserves current `main` dependency and release state.
+- **Status:** Fixed in [PR #2477](https://github.com/Asherlc/dofek/pull/2477) by the Expo alignment commit `78e9b0d`; hosted rerun [31452822313](https://github.com/Asherlc/dofek/actions/runs/31452822313) is in progress.
 - **Symptoms / impact:** [Build Mobile / Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/31451149562/job/93655775496) failed before the iOS export, blocking the Hangboarding PR CI gate. No production impact was observed.
 - **Evidence / root cause:** The failed CI step was `pnpm expo install --check`; the first fatal line was `Found outdated dependencies`. Reproducing the same validation with a non-secret placeholder config listed `expo@57.0.11`, `@expo/metro-runtime@57.0.8`, and eight related Expo SDK 57 packages below their expected patch versions. The branch has no diff from `origin/main` in `packages/mobile/package.json` or `pnpm-lock.yaml`, so this is current-main dependency drift rather than a Hangboarding source regression. Expo documents this compatibility validation in its [version-validation guide](https://docs.expo.dev/more/expo-cli/#version-validation).
-- **Fix / mitigation:** None in this PR: dependency alignment is deliberately out of scope for the isolated Hangboarding import/contracts/UI change. No retry, timeout, or validation bypass was added.
-- **Validation:** Hangboarding-related web build, web/mobile Storybook, mobile-change, migration-lint, spell-check, and completed type/security checks passed before the blocked gate; the remaining hosted matrix was still running when the prerequisite failure was confirmed.
-- **Remaining risk / follow-up:** Restore the SDK-compatible Expo patch versions in a dedicated dependency/release change, then rerun the Metro bundle check before marking #2477 ready for review.
+- **Fix / mitigation:** Applied the proven Expo 57 patch pins and regenerated `pnpm-lock.yaml`, including the matching release-age policy entries. No retry, timeout, validation bypass, or warning-and-continue behavior was added.
+- **Validation:** Frozen install, Expo policy verification (`Dependencies are up to date`), and mobile TypeScript pass locally. The hosted rerun is the remaining confirmation.
+- **Remaining risk / follow-up:** Confirm the hosted Metro bundle and full CI matrix pass, then mark #2477 ready for review.
