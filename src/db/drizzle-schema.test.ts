@@ -190,6 +190,7 @@ describe("drizzleSchema", () => {
       "grade",
       "sent",
       "attempt_count",
+      "lead",
       "wall_angle_degrees",
       "hold_type",
       "route_name",
@@ -240,6 +241,11 @@ describe("drizzleSchema", () => {
       attempt_count: {
         columnType: "PgInteger",
         hasDefault: true,
+        notNull: false,
+      },
+      lead: {
+        columnType: "PgBoolean",
+        hasDefault: false,
         notNull: false,
       },
       wall_angle_degrees: {

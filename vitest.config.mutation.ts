@@ -51,6 +51,7 @@ const nodeTestIncludes = [
   "packages/server/src/**/*.test.ts",
   "packages/garmin-connect/src/**/*.test.ts",
   "packages/eight-sleep/src/**/*.test.ts",
+  "packages/kaya-client/src/**/*.test.ts",
   "packages/trainerroad-client/src/**/*.test.ts",
   "packages/velohero-client/src/**/*.test.ts",
   "packages/mountain-project-client/src/**/*.test.ts",

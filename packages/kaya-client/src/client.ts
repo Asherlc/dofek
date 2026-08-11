@@ -39,7 +39,10 @@ export class KayaInvalidCredentialsError extends Error {
 }
 
 export class KayaApiError extends Error {
-  constructor(message: string, readonly status?: number) {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
     super(message);
     this.name = new.target.name;
   }
@@ -58,10 +61,19 @@ export async function signInToKaya(
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new KayaInvalidCredentialsError();
   const parsed = z
-    .object({ message: z.literal("ok"), token: z.string(), refresh_token: z.string(), user: z.object({ id: idSchema }) })
+    .object({
+      message: z.literal("ok"),
+      token: z.string(),
+      refresh_token: z.string(),
+      user: z.object({ id: idSchema }),
+    })
     .safeParse(payload);
   if (!parsed.success) throw new KayaInvalidCredentialsError();
-  return { accessToken: parsed.data.token, refreshToken: parsed.data.refresh_token, userId: parsed.data.user.id };
+  return {
+    accessToken: parsed.data.token,
+    refreshToken: parsed.data.refresh_token,
+    userId: parsed.data.user.id,
+  };
 }
 
 export class KayaClient {
@@ -92,11 +104,16 @@ export class KayaClient {
         body: JSON.stringify({ query, variables: { user_id: userId, offset, count: PAGE_SIZE } }),
       });
       const payload: unknown = await response.json().catch(() => null);
-      if (!response.ok) throw new KayaApiError(`Kaya API request failed (${response.status})`, response.status);
+      if (!response.ok)
+        throw new KayaApiError(`Kaya API request failed (${response.status})`, response.status);
       const envelope = z
-        .object({ data: z.object({ [field]: z.array(itemSchema) }).optional(), errors: z.array(z.object({ message: z.string() })).optional() })
+        .object({
+          data: z.object({ [field]: z.array(itemSchema) }).optional(),
+          errors: z.array(z.object({ message: z.string() })).optional(),
+        })
         .parse(payload);
-      if (envelope.errors?.length) throw new KayaApiError(envelope.errors.map(({ message }) => message).join("; "));
+      if (envelope.errors?.length)
+        throw new KayaApiError(envelope.errors.map(({ message }) => message).join("; "));
       const page = envelope.data?.[field] ?? [];
       items.push(...page);
       if (page.length < PAGE_SIZE) return items;

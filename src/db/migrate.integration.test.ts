@@ -96,7 +96,8 @@ describe("runMigrations", () => {
         {
           data_type: "boolean",
           is_nullable: "YES",
-          constraint_definition: "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
+          constraint_definition:
+            "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
         },
       ]);
     } finally {
