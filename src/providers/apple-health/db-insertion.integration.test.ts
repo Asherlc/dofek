@@ -142,6 +142,15 @@ describe("db-insertion deduplication (integration)", () => {
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
       if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
       workout.hangTen.planName = "Updated Repeaters";
+      workout.hangTen.activitySegments = [
+        {
+          stepID: "step-2",
+          stepNumber: 2,
+          kind: "work",
+          holdIDs: [],
+          durationSeconds: 4,
+        },
+      ];
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
 
       const [storedActivity] = await ctx.db
@@ -158,11 +167,8 @@ describe("db-insertion deduplication (integration)", () => {
         .where(eq(schema.activityInterval.activityId, storedActivity.id))
         .orderBy(asc(schema.activityInterval.intervalIndex));
 
-      expect(intervals).toHaveLength(2);
-      expect(intervals.map((interval) => interval.label)).toEqual([
-        "Step 1: 19 mm edge",
-        "Step 1: Rest",
-      ]);
+      expect(intervals).toHaveLength(1);
+      expect(intervals.map((interval) => interval.label)).toEqual(["Step 2: Work"]);
     });
 
     it("keeps existing Hang Ten intervals after a malformed reimport", async () => {
@@ -224,13 +230,14 @@ describe("db-insertion deduplication (integration)", () => {
       await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
       const hangTen = workout.hangTen;
       if (!hangTen) throw new Error("Expected Hang Ten metadata");
-      await ctx.db.execute(sql`
-        ALTER TABLE fitness.activity_interval
-        ADD CONSTRAINT activity_interval_replacement_failure_test
-        CHECK (label <> 'Step 2: Work')
-      `);
 
       try {
+        await ctx.db.execute(sql`
+          ALTER TABLE fitness.activity_interval
+          ADD CONSTRAINT activity_interval_replacement_failure_test
+          CHECK (label <> 'Step 2: Work') NOT VALID
+        `);
+
         hangTen.activitySegments = [
           {
             stepID: "step-2",
@@ -240,6 +247,7 @@ describe("db-insertion deduplication (integration)", () => {
             durationSeconds: 7,
           },
         ];
+        hangTen.planName = "Rejected Replacement";
 
         await expect(upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout])).rejects.toThrow();
 
@@ -249,6 +257,20 @@ describe("db-insertion deduplication (integration)", () => {
           .where(eq(schema.activity.externalId, "ah:workout:33333333-3333-4333-8333-333333333333"));
         expect(storedActivity).toBeDefined();
         if (!storedActivity) return;
+        expect(storedActivity.name).toBe("Atomic Replacement");
+        expect(storedActivity.raw).toMatchObject({
+          hangTen: {
+            planName: "Atomic Replacement",
+            activitySegments: [
+              {
+                stepID: "step-1",
+                stepNumber: 1,
+                kind: "work",
+                durationSeconds: 7,
+              },
+            ],
+          },
+        });
 
         const intervals = await ctx.db
           .select()

@@ -12,6 +12,108 @@ const activityIdRowSchema = z.object({
   id: z.string(),
   external_id: z.string(),
 });
+const hangboardingActivityIdRowSchema = activityIdRowSchema.extend({
+  started_at: z.string(),
+});
+
+describe("Hangboarding climbing router integration", () => {
+  let testContext: TestContext;
+  let firstDate: string;
+  let secondDate: string;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('hangboarding-climbing-router-test', 'Hang Ten', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    const activities = await executeWithSchema(
+      testContext.db,
+      hangboardingActivityIdRowSchema,
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name, raw
+          ) VALUES
+          (
+            'hangboarding-climbing-router-test', ${TEST_USER_ID}, 'hangboard-climbing-router-session-1',
+            'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '2 days',
+            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '10 minutes', 'Repeaters',
+            '{"avgHeartRate":120,"maxHeartRate":145,"hangTen":{"planName":"Repeaters","boardName":"Tension Board"}}'::jsonb
+          ),
+          (
+            'hangboarding-climbing-router-test', ${TEST_USER_ID}, 'hangboard-climbing-router-session-2',
+            'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '1 day',
+            CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '15 minutes', 'Max Hangs',
+            '{"avgHeartRate":130,"maxHeartRate":150,"hangTen":{"planName":"Max Hangs","boardName":"Tension Board"}}'::jsonb
+          )
+          RETURNING id::text AS id, external_id, started_at::text AS started_at`,
+    );
+    const firstActivity = activities.find(
+      (activity) => activity.external_id === "hangboard-climbing-router-session-1",
+    );
+    const secondActivity = activities.find(
+      (activity) => activity.external_id === "hangboard-climbing-router-session-2",
+    );
+    if (!firstActivity || !secondActivity) {
+      throw new Error("Failed to seed Hangboarding climbing router activities");
+    }
+    firstDate = new Date(firstActivity.started_at).toISOString().slice(0, 10);
+    secondDate = new Date(secondActivity.started_at).toISOString().slice(0, 10);
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity_interval (
+            activity_id, interval_index, interval_type, started_at, ended_at
+          )
+          SELECT activity.id, intervals.interval_index, intervals.interval_type,
+                 activity.started_at + intervals.started_offset,
+                 activity.started_at + intervals.ended_offset
+          FROM fitness.activity AS activity
+          CROSS JOIN (VALUES
+            (0, 'work', INTERVAL '0 seconds', INTERVAL '7 seconds'),
+            (1, 'rest', INTERVAL '7 seconds', INTERVAL '60 seconds')
+          ) AS intervals(interval_index, interval_type, started_offset, ended_offset)
+          WHERE activity.provider_id = 'hangboarding-climbing-router-test'
+            AND activity.external_id = 'hangboard-climbing-router-session-1'
+          UNION ALL
+          SELECT activity.id, intervals.interval_index, intervals.interval_type,
+                 activity.started_at + intervals.started_offset,
+                 activity.started_at + intervals.ended_offset
+          FROM fitness.activity AS activity
+          CROSS JOIN (VALUES
+            (0, 'work', INTERVAL '0 seconds', INTERVAL '10 seconds'),
+            (1, 'rest', INTERVAL '10 seconds', INTERVAL '60 seconds')
+          ) AS intervals(interval_index, interval_type, started_offset, ended_offset)
+          WHERE activity.provider_id = 'hangboarding-climbing-router-test'
+            AND activity.external_id = 'hangboard-climbing-router-session-2'`,
+    );
+  }, 60_000);
+
+  afterAll(async () => {
+    await testContext?.cleanup();
+  });
+
+  it("returns exact server-computed Hangboarding summary totals", async () => {
+    const caller = createCaller({
+      db: testContext.db,
+      userId: TEST_USER_ID,
+      timezone: "UTC",
+    });
+    await expect(caller.hangboardingSummary({ days: 30 })).resolves.toMatchObject({
+      sessionCount: 2,
+      totalDurationSeconds: 1500,
+      averageDurationSeconds: 750,
+      totalWorkDurationSeconds: 17,
+      totalRestDurationSeconds: 103,
+      workIntervalCount: 2,
+      averageHeartRate: 125,
+      peakHeartRate: 150,
+      daily: expect.arrayContaining([
+        expect.objectContaining({ date: firstDate, durationSeconds: 600 }),
+        expect.objectContaining({ date: secondDate, durationSeconds: 900 }),
+      ]),
+    });
+  });
+});
 const countRowSchema = z.object({
   count: z.string(),
 });

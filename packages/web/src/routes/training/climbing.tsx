@@ -13,6 +13,7 @@ import {
   FingerLoadingLog,
   type FingerLoadingSubmission,
 } from "../../components/FingerLoadingLog.tsx";
+import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { captureException } from "../../lib/telemetry.ts";
@@ -91,6 +92,10 @@ export function ClimbingTab() {
     rangeInput,
     TRAINING_SLOW_QUERY_OPTIONS,
   );
+  const hangboardingSummary = trpc.climbing.hangboardingSummary.useQuery(
+    rangeInput,
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
   const fingerLoadingHistory = trpc.climbing.fingerLoadingHistory.useQuery({ days: 90 });
   const utils = trpc.useUtils();
   const fingerLoadingMutation = trpc.climbing.logFingerLoading.useMutation({
@@ -110,6 +115,7 @@ export function ClimbingTab() {
     onSuccess: async () => {
       await Promise.all([
         utils.climbing.invalidate(),
+        utils.climbing.hangboardingSummary.invalidate(),
         utils.activity.invalidate(),
         utils.mobileDashboard.training.invalidate(),
       ]);
@@ -185,6 +191,23 @@ export function ClimbingTab() {
             additionalDataLoading={sessionSummary.isLoading}
           />
         </div>
+      </Section>
+
+      <Section
+        title="Hangboarding"
+        subtitle="Server-computed hangboard session time, intervals, and heart-rate summary"
+      >
+        {hangboardingSummary.error && !hangboardingSummary.data ? (
+          <QueryStatePanel error={hangboardingSummary.error} />
+        ) : (
+          <HangboardingSummary
+            data={hangboardingSummary.data}
+            loading={hangboardingSummary.isLoading}
+          />
+        )}
+        {hangboardingSummary.error && hangboardingSummary.data ? (
+          <QueryStatePanel error={hangboardingSummary.error} height={72} />
+        ) : null}
       </Section>
     </>
   );
