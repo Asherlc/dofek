@@ -67,6 +67,7 @@ the exact section.
 | AllTrails | [alltrails.md](alltrails.md) | Export formats, private endpoint findings, and import-only recommendation. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
+| Kaya | [kaya.md](kaya.md) | GraphQL API, REST auth, and the public/authenticated surface split. |
 | Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |
 | Peloton | [peloton.md](peloton.md) | Auth and workout sync notes. |
 | Ride with GPS | [ride-with-gps.md](ride-with-gps.md) | OAuth flow and activity import notes. |

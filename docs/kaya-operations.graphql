@@ -1,0 +1,742 @@
+# Kaya GraphQL operations
+#
+# Extracted verbatim from the Kaya production web client bundle
+#   https://kaya-app.kayaclimb.com/static/js/main.b2aae2ae.chunk.js (app version 1.3.48)
+# by decoding the Babel tagged-template arrays passed to graphql-tag.
+#
+# Reference material only - not compiled or executed. See docs/kaya.md.
+# '...INTERPOLATED_FRAGMENT...' marks where the client splices in a fragment
+# document at runtime.
+
+
+fragment UserFields on User {
+    id
+    email
+    fname
+    lname
+    username
+    photo_url
+    usac_id
+}
+
+query currentUser {
+  currentUser {
+    ...UserFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query userPaymentMethodLast4 {
+  userPaymentMethodLast4
+}
+
+mutation createSetupIntent {
+  createSetupIntent
+}
+
+mutation removePaymentMethod($last4: String!) {
+  removePaymentMethod(last4: $last4)
+}
+
+fragment ChallengeBasicFields on Challenge {
+    id
+    name
+    photo_url
+    banner_photo_url
+}
+
+fragment ReceiptFields on Receipt {
+    id
+    description
+    charge_amount
+    charge_currency
+    status
+    date
+    challenge {
+      ...ChallengeBasicFields
+    }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query receiptsForUser($offset: Int!, $count: Int!) {
+  receiptsForUser(offset: $offset, count: $count) {
+    ...ReceiptFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+fragment ChallengeFields on Challenge {
+    id
+    name
+    climb_type {
+      id
+      name
+    }
+    challenge_type {
+      id
+      name
+    }
+    photo_url
+    banner_photo_url
+    description_long
+    description_short
+    rules
+    prize
+    date_start
+    date_end
+    registration_start
+    registration_end
+    entry_currency
+    entry_cost
+    team_min_size
+    team_max_size
+    climb_expiry_days
+    repeats_allowed
+    has_categories
+    has_shirts
+    token_required
+    has_access_code
+    global
+    date_created
+    registered_count
+    use_circuits
+    has_notes
+    max_participants
+    payment_url
+    auto_assign_category
+    usac_id_required
+    has_paid
+    gym {
+      id
+      name
+      photo_url
+    }
+}
+
+query searchForCurrentAndUpcomingChallenges($term: String!, $offset: Int!, $count: Int!) {
+  searchForCurrentAndUpcomingChallenges(term: $term, paid_only: true, offset: $offset, count: $count) {
+    ...ChallengeFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query challenge($id: ID!) {
+  challenge(id: $id) {
+    ...ChallengeFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+mutation createPaymentIntentForChallenge($challenge_id: ID!) {
+  createPaymentIntentForChallenge(challenge_id: $challenge_id)
+}
+
+mutation confirmPaymentIntentForChallenge($challenge_id: ID!, $payment_intent_id: ID!) {
+  confirmPaymentIntentForChallenge(challenge_id: $challenge_id, payment_intent_id: $payment_intent_id) {
+    ...ChallengeFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+mutation payForChallenge($challenge_id: ID!, $last4: String!) {
+  payForChallenge(challenge_id: $challenge_id, last4: $last4) {
+    ...ChallengeFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+mutation validateUSACId($usac_id: String!, $challenge_id: ID) {
+  validateUSACId(usac_id: $usac_id, challenge_id: $challenge_id) {
+    ...UserFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query slugForClimb($climb_id: ID) {
+  slugForClimb(climb_id: $climb_id)
+}
+
+query slugForLocation($location_id: ID!) {
+        slugForLocation(location_id: $location_id)
+    }
+
+query slugForGym($gym_id: ID!) {
+        slugForGym(gym_id: $gym_id)
+    }
+
+fragment WebClimbBasicFields on WebClimb {
+        slug
+        name
+        rating
+        ascent_count
+        grade {
+            name
+            id
+        }
+        climb_type {
+            name
+        }
+        color {
+            name
+        }
+        gym {
+            name
+        }
+        board {
+            name
+        }
+        destination {
+            name
+        }
+        area {
+            name
+        }
+        is_gb_moderated
+        is_access_sensitive
+        is_closed
+        is_offensive
+    }
+
+fragment WebUserFields on WebUser {
+        id
+        username
+        fname
+        lname
+        photo_url
+        is_private
+        bio
+        height
+        ape_index
+        limit_grade_bouldering {
+          name 
+          id
+        }
+        limit_grade_routes {
+          name 
+          id
+        }
+        is_premium
+    }
+
+fragment GradeFields on Grade {
+    id
+    name
+    climb_type_id
+    grade_type_id
+    ordering
+    mapped_grade_ids
+    climb_type_group
+}
+
+fragment WebAscentFields on WebAscent {
+        id
+        user {
+            ...WebUserFields
+        }
+        climb {
+            ...WebClimbBasicFields
+        }
+        date
+        comment
+        rating
+        stiffness
+        grade {
+            ...GradeFields
+        }
+        photo {
+            photo_url
+            thumb_url
+        }
+        video {
+            video_url
+            thumb_url
+        }
+    }
+
+   ...INTERPOLATED_FRAGMENT... 
+   ...INTERPOLATED_FRAGMENT... 
+   ...INTERPOLATED_FRAGMENT...
+
+fragment WebPostFields on WebPost {
+        id
+        items {
+            id
+            post_id
+            photo_url
+            video_url
+            climb {
+                ...WebClimbBasicFields
+            }
+            ascent {
+                ...WebAscentFields
+            }
+            video_thumbnail_url
+            caption
+        }
+        user {
+            ...WebUserFields
+        }
+        date_created
+    }
+
+     ...INTERPOLATED_FRAGMENT... 
+     ...INTERPOLATED_FRAGMENT... 
+     ...INTERPOLATED_FRAGMENT...
+
+query webPost($post_id: ID!) {
+  webPost(post_id: $post_id) {
+    ...WebPostFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query webUserById($id: ID!) {
+  webUserById(id: $id) {
+    ...WebUserFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query allGrades($climb_type_id: ID, $grade_type_id: ID) {
+  allGrades(climb_type_id: $climb_type_id, grade_type_id: $grade_type_id) {
+    ...GradeFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+fragment WebClimbFields on WebClimb {
+    id
+    slug
+    name
+    grade {
+      name 
+      id
+    }
+    climb_type {
+      name
+      id
+    }
+    color {
+        name
+    }
+    ascent_count
+    is_offensive
+    top_videos {
+      video_url
+      thumb_url
+      username
+      user_photo_url
+      ascent_date
+    }
+    media_links {
+      url
+      thumbnail_url
+      rp_climb_media_link_type_id
+    }
+    lead
+    rating
+    num_reviews
+    avg_grade_ordering
+    gym {
+      id
+      name
+      slug
+    }
+    board {
+      id
+      name
+      slug
+    }
+    destination {
+      id
+      name
+      latitude
+      longitude
+      slug
+      access_issues_description_bouldering 
+      access_issues_description_routes
+    }
+    area {
+      id
+      name
+      slug
+      access_issues_description_bouldering 
+      access_issues_description_routes
+    }
+    subarea {
+      id
+      name
+      slug
+      access_issues_description_bouldering 
+      access_issues_description_routes
+    }
+    angle
+    description
+    has_access_issues
+    is_gb_moderated
+    access_issues_description
+    is_access_sensitive
+    is_closed
+    closed_date
+    post_count
+}
+
+query webClimb($slug: String!) {
+  webClimb(slug: $slug) {
+    ...WebClimbFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query recommendedClimbsForWeb($slug: String!) {
+  recommendedClimbsForWeb(slug: $slug) {
+    ...WebClimbFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query webSearchForClimb($name: String!, $offset: Int!, $count: Int!) {
+        webSearchForClimb(name: $name, offset: $offset, count: $count) {
+            ...WebClimbBasicFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+fragment WebLocationFields on WebLocation {
+        id
+        slug
+        name
+        latitude
+        longitude
+        photo_url
+        description
+        location_type {
+            id
+            name
+        }
+        parent_location {
+            id
+            slug
+            name
+            latitude
+            longitude
+            description
+            location_type {
+                id
+                name
+            }
+        }
+        is_gb_moderated_bouldering
+        is_gb_moderated_routes
+        has_maps_disabled
+        description_bouldering
+        description_routes
+        description_short_bouldering
+        description_short_routes
+        access_description_bouldering
+        access_description_routes
+        access_issues_description_bouldering 
+        access_issues_description_routes
+        climb_count
+        boulder_count
+        route_count
+        ascent_count
+        is_access_sensitive
+        is_closed
+        closed_date
+        climb_type_id
+    }
+
+query webSearchForLocation($name: String!, $location_type_id: ID, $is_gb_moderated_only: Boolean, $offset: Int!, $count: Int!) {
+        webSearchForLocation(name: $name, location_type_id: $location_type_id, is_gb_moderated_only: $is_gb_moderated_only, offset: $offset, count: $count) {
+            ...WebLocationFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webSearchForUser($term: String!,$offset: Int!, $count: Int!) {
+        webSearchForUser(term: $term, offset: $offset, count: $count) {
+            ...WebUserFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+fragment WebGymFields on WebGym {
+        id
+        slug
+        name
+        boulder_count
+        route_count
+        address
+        city
+        postal_code
+        region
+        country
+        follower_count
+        is_official
+        website
+    }
+
+query webSearchForGym($term: String!, $offset: Int!, $count: Int!) {
+        webSearchForGym(term: $term, offset: $offset, count: $count) {
+            ...WebGymFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+fragment WebSetterFields on WebSetter {
+        id
+        fname
+        lname
+        photo_url
+        thumbnail_url
+    }
+
+query webModeratorsForDestination($destination_id: ID!) {
+        webModeratorsForDestination(destination_id: $destination_id) {
+            ...WebSetterFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webPostsForClimb($climb_id: ID!, $count: Int!, $offset: Int!) {
+        webPostsForClimb(climb_id: $climb_id, count: $count, offset: $offset) {
+            ...WebPostFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+fragment WebClimbMediaLinkFields on WebClimbMediaLink {
+        id
+        url
+        thumbnail_url
+        timecode
+        rp_climb_media_link_type_id
+        climb {
+            ...WebClimbFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webClimbMediaLinksForClimb($climb_id: ID!, $offset: Int!, $count: Int!) {
+        webClimbMediaLinksForClimb(climb_id: $climb_id, offset: $offset, count: $count) {
+            ...WebClimbMediaLinkFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webClimbsForLocation(
+        $location_id: ID!,
+        $climb_name: String,
+        $climb_type_id: ID,
+        $min_grade_id: ID,
+        $max_grade_id: ID,
+        $min_rating: Int,
+        $max_rating: Int,
+        $sort_by: sortClimbs,
+        $offset: Int!,
+        $count: Int!
+    ) {
+        webClimbsForLocation(
+            location_id: $location_id,
+            climb_name: $climb_name,
+            climb_type_id: $climb_type_id,
+            min_grade_id: $min_grade_id,
+            max_grade_id: $max_grade_id,
+            min_rating: $min_rating,
+            max_rating: $max_rating,
+            sort_by: $sort_by,
+            offset: $offset,
+            count: $count,
+            use_reduced_query: true,
+        ) {
+            ...WebClimbBasicFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webAscentsForClimb($climb_id: ID!, $count: Int!, $offset: Int!) {
+        webAscentsForClimb(climb_id: $climb_id, count: $count, offset: $offset) {
+            ...WebAscentFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webAscentsForLocation($location_id: ID!, $count: Int!, $offset: Int!) {
+        webAscentsForLocation(location_id: $location_id, offset: $offset, count: $count) {
+            ...WebAscentFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webAscentsForGym($gym_id: ID!, $count: Int!, $offset: Int!) {
+        webAscentsForGym(gym_id: $gym_id, count: $count, offset: $offset) {
+            ...WebAscentFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+fragment WebLocationAscentsDistributionFields on WebLocationAscentsDistribution {
+        id
+        month
+        ascent_count
+    }
+
+query webLocationAscentsDistribution($location_id: ID!) {
+        webLocationAscentsDistribution(location_id: $location_id) {
+            ...WebLocationAscentsDistributionFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webLocation($slug: String!) {
+        webLocation(slug: $slug) {
+            ...WebLocationFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webLocationsForLocation($location_id: ID!, $offset: Int!, $count: Int!, $climb_type_id: ID) {
+        webLocationsForLocation(location_id: $location_id, offset: $offset, count: $count, climb_type_id: $climb_type_id) {
+            ...WebLocationFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webPostsForLocation($location_id: ID!, $sub_location_ids: [ID], $count: Int!, $offset: Int!) {
+        webPostsForLocation(location_id: $location_id, sub_location_ids: $sub_location_ids, count: $count, offset: $offset) {
+            ...WebPostFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webPostsForGym($gym_id: ID!, $count: Int!, $offset: Int!) {
+        webPostsForGym(gym_id: $gym_id, count: $count, offset: $offset) {
+            ...WebPostFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webClimbMediaLinksForLocation($location_id: ID!, $offset: Int!, $count: Int!) {
+        webClimbMediaLinksForLocation(location_id: $location_id, offset: $offset, count: $count) {
+            ...WebClimbMediaLinkFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webClimbMediaLinksForGym($gym_id: ID!, $offset: Int!, $count: Int!) {
+        webClimbMediaLinksForGym(gym_id: $gym_id, offset: $offset, count: $count) {
+            ...WebClimbMediaLinkFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webGym($slug: String!) {
+        webGym(slug: $slug) {
+            ...WebGymFields
+        }
+    }
+
+     ...INTERPOLATED_FRAGMENT...
+
+query webUser($username: String!) {
+  webUser(username: $username) {
+    ...WebUserFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+fragment WebFilterDistributionFields on WebFilterDistribution {
+      data {
+        grade {
+          id
+          name
+        }
+        climb_count
+        climb_with_video_count
+        ascent_count
+        redpoint_count
+        flash_count
+        onsight_count
+      }
+    }
+
+query webFilterDistributionForAscents($user_id: ID!,
+  $filter_by: filterAscentLocation,
+  $climb_type_id: ID) {
+    webFilterDistributionForAscents(user_id: $user_id,
+      filter_by: $filter_by,
+      climb_type_id: $climb_type_id) {
+    ...WebFilterDistributionFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query webPostsForUser($user_id: ID!,
+  $offset: Int!,
+  $count: Int!) {
+    webPostsForUser(user_id: $user_id,
+    offset: $offset,
+    count: $count) {
+    ...WebPostFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
+query webAscentsForUser($user_id: ID!,
+  $climb_type_id: ID,
+  $min_grade_id: ID,
+  $max_grade_id: ID,
+  $filter_by: filterAscentLocation,
+  $sort_by: sortAscents,
+  $offset: Int!,
+  $count: Int!) {
+  webAscentsForUser(user_id: $user_id,
+    climb_type_id: $climb_type_id,
+    min_grade_id: $min_grade_id,
+    max_grade_id: $max_grade_id,
+    filter_by: $filter_by,
+    sort_by: $sort_by,
+    offset: $offset,
+    count: $count) {
+    ...WebAscentFields
+  }
+}
+
+ ...INTERPOLATED_FRAGMENT...
+
