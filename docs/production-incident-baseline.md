@@ -7,6 +7,15 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-11 — Wahoo retry mutation coverage and body-trend merge mismatch blocked PR CI
+
+- **Status:** Fixed in this workspace; a replacement CI run is pending.
+- **Symptoms / impact:** PR [#2491](https://github.com/Asherlc/dofek/pull/2491) failed the unit and Stryker checks after resolving its merge conflicts, which kept the aggregate test and CI gates red. There was no production impact.
+- **Evidence / root cause:** The unit job's first fatal assertion was `expected <div></div> to be null` in `packages/web/src/pages/BodyPage.test.tsx:197`: the merged test expected the Body Fat selection to replace the weight chart, but the page still rendered a separate, always-visible duplicate body-fat chart. Stryker's first fatal line was `Final mutation score 15.38 under breaking threshold 75`; the Wahoo sync retry was covered only by an integration test, while mutation testing runs the Docker-free unit tier and therefore had no coverage for the new retry branches.
+- **Fix / mitigation:** Made the trend selector the canonical body-fat presentation by removing the duplicate chart and using the matching two-column layout. Added Wahoo unit regressions that verify an expired-token rejection refreshes and retries the current pagination page exactly once, and that another rejection propagates without a second refresh. No retry, timeout, threshold, or test exclusion was added.
+- **Validation:** The focused BodyPage suite passes locally. The Wahoo unit regression and targeted Stryker configuration were started locally; confirm the hosted mutation shard and aggregate gate on the replacement commit.
+- **Remaining risk / follow-up:** Monitor the new run; if mutation fails again, inspect its first surviving mutant and add behavior-specific coverage rather than lowering the threshold.
+
 ## 2026-08-11 — Pull-request CI cache rate limit and read-model test-fixture drift
 
 - **Status:** E2E cache failure resolved and verified; the current integration-test fixture fix passes locally and awaits exact-head CI verification.

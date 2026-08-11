@@ -330,7 +330,7 @@ export function BodyPage() {
           ) : null}
         </div>
         {!weightOverviewUnavailable && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -386,15 +386,6 @@ export function BodyPage() {
                 <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
               </div>
               <BodyRecompositionChart
-                data={weightOverview.data?.recomposition ?? []}
-                loading={weightOverview.isLoading}
-              />
-            </div>
-            <div className="card p-2 sm:p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <h4 className="text-xs font-medium text-subtle uppercase">Body Fat Percentage</h4>
-              </div>
-              <BodyFatPercentageChart
                 data={weightOverview.data?.recomposition ?? []}
                 loading={weightOverview.isLoading}
               />
