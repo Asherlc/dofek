@@ -2,7 +2,7 @@ import { BODY_TREND_WEIGHT_DECISION_COPY } from "@dofek/format/body-decision-con
 import { formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 import { BodyDecisionContext } from "../components/BodyDecisionContext.tsx";
 import { BodyFatPercentageChart } from "../components/BodyFatPercentageChart.tsx";
@@ -86,6 +86,7 @@ export function BodyPage() {
   const units = useUnitConverter();
   const { days, description, setDays } = useBodyDays();
   const endDate = useTodayQueryDate();
+  const [bodyTrendMetric, setBodyTrendMetric] = useState<"weight" | "bodyFat">("weight");
 
   const trends = trpc.dailyMetrics.trends.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({
@@ -326,19 +327,55 @@ export function BodyPage() {
         {!weightOverviewUnavailable && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="card p-2 sm:p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <h4 className="text-xs font-medium text-subtle uppercase">Trend Weight</h4>
-                <ChartDescriptionTooltip description={BODY_TREND_WEIGHT_DECISION_COPY} />
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-medium text-subtle uppercase">Trend</h4>
+                  {bodyTrendMetric === "weight" && (
+                    <ChartDescriptionTooltip description={BODY_TREND_WEIGHT_DECISION_COPY} />
+                  )}
+                </div>
+                <div className="flex rounded-lg border border-border-strong p-0.5" aria-label="Body trend metric">
+                  {[
+                    ["weight", "Weight"],
+                    ["bodyFat", "Body Fat"],
+                  ].map(([metric, label]) => {
+                    const isSelected = bodyTrendMetric === metric;
+                    return (
+                      <button
+                        key={metric}
+                        type="button"
+                        aria-pressed={isSelected}
+                        className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                          isSelected
+                            ? "bg-accent text-accent-foreground"
+                            : "text-subtle hover:bg-surface-hover"
+                        }`}
+                        onClick={() => setBodyTrendMetric(metric as "weight" | "bodyFat")}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              {weightOverview.isPending ? (
-                <SmoothedWeightChart data={[]} loading />
+              {bodyTrendMetric === "weight" ? (
+                <>
+                  {weightOverview.isPending ? (
+                    <SmoothedWeightChart data={[]} loading />
+                  ) : (
+                    <SmoothedWeightChart
+                      data={smoothedWeightData}
+                      prediction={weightPredictionDisplay}
+                    />
+                  )}
+                  <BodyDecisionContext context={weightOverview.data?.decisionContext ?? null} />
+                </>
               ) : (
-                <SmoothedWeightChart
-                  data={smoothedWeightData}
-                  prediction={weightPredictionDisplay}
+                <BodyFatPercentageChart
+                  data={weightOverview.data?.recomposition ?? []}
+                  loading={weightOverview.isLoading}
                 />
               )}
-              <BodyDecisionContext context={weightOverview.data?.decisionContext ?? null} />
             </div>
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center gap-2">
@@ -346,15 +383,6 @@ export function BodyPage() {
                 <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
               </div>
               <BodyRecompositionChart
-                data={weightOverview.data?.recomposition ?? []}
-                loading={weightOverview.isLoading}
-              />
-            </div>
-            <div className="card p-2 sm:p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <h4 className="text-xs font-medium text-subtle uppercase">Body Fat Percentage</h4>
-              </div>
-              <BodyFatPercentageChart
                 data={weightOverview.data?.recomposition ?? []}
                 loading={weightOverview.isLoading}
               />
