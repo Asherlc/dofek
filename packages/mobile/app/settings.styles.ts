@@ -81,6 +81,11 @@ export const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginBottom: 10,
   },
+  label: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 6,
+  },
 
   // ── Billing ──
   billingStatusText: {

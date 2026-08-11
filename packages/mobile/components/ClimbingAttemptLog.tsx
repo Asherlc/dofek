@@ -2,6 +2,7 @@ import {
   type ClimbingGradePreference,
   type ClimbingGradeSystem,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
+  gradeOptionsForSystem,
   gradeSystemLabel,
 } from "@dofek/training/climbing-grades";
 import { useState } from "react";
@@ -88,17 +89,21 @@ export function ClimbingAttemptLog({
       </Text>
       <OptionGroup
         label="Climb type"
-        onSelect={setClimbType}
+        onSelect={(nextClimbType) => {
+          setClimbType(nextClimbType);
+          setGrade("");
+        }}
         options={[
           { label: "Boulder", value: "boulder" },
           { label: "Route", value: "route" },
         ]}
         selected={climbType}
       />
-      <Input
+      <OptionGroup
         label={`Grade (${gradeSystemLabel(gradeSystem)})`}
-        onChangeText={setGrade}
-        value={grade}
+        onSelect={setGrade}
+        options={gradeOptionsForSystem(gradeSystem).map((value) => ({ label: value, value }))}
+        selected={grade}
       />
       <Input label="Wall angle (degrees)" onChangeText={setWallAngle} value={wallAngle} />
       <Input label="Route or problem name" onChangeText={setRouteName} value={routeName} />

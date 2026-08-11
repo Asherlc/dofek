@@ -58,15 +58,18 @@ const SYSTEM_LABELS: Record<ClimbingGradeSystem, string> = {
   font: "Fontainebleau",
   yds: "Yosemite Decimal System",
   french: "French",
-  uiaa: "UIAA",
+  uiaa: "International Climbing and Mountaineering Federation (UIAA)",
   ewbank: "Ewbank",
   saxon: "Saxon",
   norwegian: "Norwegian",
   brazilian_crux: "Brazilian Crux",
 };
 
-const BOULDER_SYSTEMS: readonly BoulderGradeSystem[] = ["v_scale", "font"];
-const ROUTE_SYSTEMS: readonly RouteGradeSystem[] = [
+export const BOULDER_GRADE_SYSTEMS = [
+  "v_scale",
+  "font",
+] as const satisfies readonly BoulderGradeSystem[];
+export const ROUTE_GRADE_SYSTEMS = [
   "yds",
   "french",
   "uiaa",
@@ -74,7 +77,23 @@ const ROUTE_SYSTEMS: readonly RouteGradeSystem[] = [
   "saxon",
   "norwegian",
   "brazilian_crux",
-];
+] as const satisfies readonly RouteGradeSystem[];
+
+function isBoulderGradeSystem(value: string): value is BoulderGradeSystem {
+  return value === "v_scale" || value === "font";
+}
+
+function isRouteGradeSystem(value: string): value is RouteGradeSystem {
+  return (
+    value === "yds" ||
+    value === "french" ||
+    value === "uiaa" ||
+    value === "ewbank" ||
+    value === "saxon" ||
+    value === "norwegian" ||
+    value === "brazilian_crux"
+  );
+}
 
 function sandbagScale(system: ClimbingGradeSystem) {
   const scale = getScale(systemToSandbagScale[system]);
@@ -110,7 +129,23 @@ export function gradeSystemsForClimbType(
 export function gradeSystemsForClimbType(
   climbType: ClimbingClimbType,
 ): readonly ClimbingGradeSystem[] {
-  return climbType === "boulder" ? BOULDER_SYSTEMS : ROUTE_SYSTEMS;
+  return climbType === "boulder" ? BOULDER_GRADE_SYSTEMS : ROUTE_GRADE_SYSTEMS;
+}
+
+export function resolveClimbingGradePreference(value: unknown): ClimbingGradePreference {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "boulder" in value &&
+    "route" in value &&
+    typeof value.boulder === "string" &&
+    typeof value.route === "string" &&
+    isBoulderGradeSystem(value.boulder) &&
+    isRouteGradeSystem(value.route)
+  ) {
+    return { boulder: value.boulder, route: value.route };
+  }
+  return DEFAULT_CLIMBING_GRADE_PREFERENCE;
 }
 
 export function gradeOptionsForSystem(system: ClimbingGradeSystem): readonly string[] {
@@ -138,7 +173,9 @@ export function gradeSortValue(grade: string, system: ClimbingGradeSystem): numb
   const canonical = canonicalGrade(grade, system);
   if (!canonical) return null;
   const score = sandbagScale(system).getScore(canonical);
-  return typeof score === "number" ? score : (score[0] + score[1]) / 2;
+  if (typeof score === "number") return score;
+  if (Array.isArray(score) && score.length >= 2) return (score[0] + score[1]) / 2;
+  return null;
 }
 
 export function convertClimbingGrade(input: {

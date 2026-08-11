@@ -1,9 +1,9 @@
 import {
   type BoulderGradeSystem,
   type ClimbingGradePreference,
-  DEFAULT_CLIMBING_GRADE_PREFERENCE,
   gradeSystemLabel,
   type RouteGradeSystem,
+  resolveClimbingGradePreference,
 } from "@dofek/training/climbing-grades";
 import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
@@ -21,33 +21,12 @@ const ROUTE_SYSTEMS: RouteGradeSystem[] = [
   "brazilian_crux",
 ];
 
-function preferenceFrom(value: unknown): ClimbingGradePreference {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "boulder" in value &&
-    "route" in value &&
-    (value.boulder === "v_scale" || value.boulder === "font") &&
-    (value.route === "yds" ||
-      value.route === "french" ||
-      value.route === "uiaa" ||
-      value.route === "ewbank" ||
-      value.route === "saxon" ||
-      value.route === "norwegian" ||
-      value.route === "brazilian_crux")
-  ) {
-    return { boulder: value.boulder, route: value.route };
-  }
-  return DEFAULT_CLIMBING_GRADE_PREFERENCE;
-}
-
 export function ClimbingGradeSystemToggle() {
   const setting = trpc.settings.get.useQuery({ key: SETTINGS_KEY });
   const mutation = trpc.settings.set.useMutation();
   const utils = trpc.useUtils();
   const lastError = useRef<unknown>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
-  const preference = preferenceFrom(setting.data?.value);
 
   useEffect(() => {
     if (setting.error && lastError.current !== setting.error) {
@@ -55,6 +34,15 @@ export function ClimbingGradeSystemToggle() {
       captureException(setting.error, { context: "climbing-grade-systems-read" });
     }
   }, [setting.error]);
+
+  if (!setting.data) {
+    if (setting.error) {
+      return <p role="alert">{setting.error.message}</p>;
+    }
+    return <p aria-busy="true">Loading climbing grade systems…</p>;
+  }
+
+  const preference = resolveClimbingGradePreference(setting.data.value);
 
   function setPreference(next: ClimbingGradePreference): void {
     const previous = utils.settings.get.getData({ key: SETTINGS_KEY });
@@ -80,12 +68,14 @@ export function ClimbingGradeSystemToggle() {
         onChange={(boulder) => setPreference({ ...preference, boulder })}
         options={BOULDER_SYSTEMS}
         value={preference.boulder}
+        disabled={mutation.isPending}
       />
       <GradeSystemSelect
         label="Route grades"
         onChange={(route) => setPreference({ ...preference, route })}
         options={ROUTE_SYSTEMS}
         value={preference.route}
+        disabled={mutation.isPending}
       />
       {(writeError ?? setting.error?.message) ? (
         <p className="text-sm text-red-400" role="alert">
@@ -98,11 +88,13 @@ export function ClimbingGradeSystemToggle() {
 
 function GradeSystemSelect<T extends BoulderGradeSystem | RouteGradeSystem>({
   label,
+  disabled,
   onChange,
   options,
   value,
 }: {
   label: string;
+  disabled: boolean;
   onChange: (value: T) => void;
   options: T[];
   value: T;
@@ -116,6 +108,7 @@ function GradeSystemSelect<T extends BoulderGradeSystem | RouteGradeSystem>({
           const next = options.find((option) => option === event.target.value);
           if (next) onChange(next);
         }}
+        disabled={disabled}
         value={value}
       >
         {options.map((option) => (

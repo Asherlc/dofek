@@ -9,9 +9,7 @@ describe("mobile ClimbingAttemptLog", () => {
     const onSubmit = vi.fn();
     render(<ClimbingAttemptLog errorMessage={null} onSubmit={onSubmit} submitting={false} />);
 
-    const gradeInput = screen.getAllByRole("textbox")[0];
-    if (!gradeInput) throw new Error("Grade input is required");
-    fireEvent.change(gradeInput, { target: { value: "V5" } });
+    fireEvent.click(screen.getByLabelText("Grade (V Scale) V5"));
     fireEvent.click(screen.getByLabelText("Attempt 1 reason Technique"));
     fireEvent.click(screen.getByLabelText("Add climbing attempt"));
     fireEvent.click(screen.getByLabelText("Attempt 2 outcome Sent"));
@@ -43,14 +41,27 @@ describe("mobile ClimbingAttemptLog", () => {
       />,
     );
 
-    const gradeInput = screen.getAllByRole("textbox")[0];
-    if (!gradeInput) throw new Error("Grade input is required");
-    fireEvent.change(gradeInput, { target: { value: "6a" } });
+    fireEvent.click(screen.getByLabelText("Grade (Fontainebleau) 6a"));
     fireEvent.click(screen.getByLabelText("Save climbing session"));
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         climbs: [expect.objectContaining({ grade: "6a", gradeSystem: "font" })],
+      }),
+    );
+  });
+
+  it("clears a selected grade when the climb type changes", () => {
+    const onSubmit = vi.fn();
+    render(<ClimbingAttemptLog errorMessage={null} onSubmit={onSubmit} submitting={false} />);
+
+    fireEvent.click(screen.getByLabelText("Grade (V Scale) V5"));
+    fireEvent.click(screen.getByLabelText("Climb type Route"));
+    fireEvent.click(screen.getByLabelText("Save climbing session"));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        climbs: [expect.objectContaining({ grade: "", gradeSystem: "yds" })],
       }),
     );
   });

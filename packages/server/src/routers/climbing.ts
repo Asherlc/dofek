@@ -26,7 +26,13 @@ import {
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import {
+  type AuthenticatedContext,
+  CacheTTL,
+  cachedProtectedQuery,
+  protectedProcedure,
+  router,
+} from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 const nullableNoteSchema = z.string().trim().min(1).max(500).nullable().default(null);
@@ -153,6 +159,11 @@ async function runClimbingMutation<T>(input: {
   }
 }
 
+async function createClimbingRepository(ctx: AuthenticatedContext): Promise<ClimbingRepository> {
+  const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
+  return new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow, preference);
+}
+
 export const climbingRouter = router({
   logFingerLoading: protectedProcedure
     .input(fingerLoadingInputSchema)
@@ -206,14 +217,7 @@ export const climbingRouter = router({
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ClimbingActivityEntryRow[]> => {
       return runClimbingQuery(async () => {
-        const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
-        const repository = new ClimbingRepository(
-          ctx.db,
-          ctx.userId,
-          ctx.timezone,
-          ctx.accessWindow,
-          preference,
-        );
+        const repository = await createClimbingRepository(ctx);
         return (await repository.getActivityEntries(input.id)).map((row) => row.toDetail());
       });
     }),
@@ -222,14 +226,7 @@ export const climbingRouter = router({
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
       return runClimbingQuery(async () => {
-        const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
-        const repository = new ClimbingRepository(
-          ctx.db,
-          ctx.userId,
-          ctx.timezone,
-          ctx.accessWindow,
-          preference,
-        );
+        const repository = await createClimbingRepository(ctx);
         return (await repository.getGradeProgression(input.days)).map((row) => row.toDetail());
       });
     }),
@@ -238,14 +235,7 @@ export const climbingRouter = router({
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingVolumeByGradeRow[]> => {
       return runClimbingQuery(async () => {
-        const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
-        const repository = new ClimbingRepository(
-          ctx.db,
-          ctx.userId,
-          ctx.timezone,
-          ctx.accessWindow,
-          preference,
-        );
+        const repository = await createClimbingRepository(ctx);
         return (await repository.getVolumeByGrade(input.days)).map((row) => row.toDetail());
       });
     }),
@@ -254,14 +244,7 @@ export const climbingRouter = router({
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingSessionSummaryRow[]> => {
       return runClimbingQuery(async () => {
-        const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
-        const repository = new ClimbingRepository(
-          ctx.db,
-          ctx.userId,
-          ctx.timezone,
-          ctx.accessWindow,
-          preference,
-        );
+        const repository = await createClimbingRepository(ctx);
         return (await repository.getSessionSummaries(input.days)).map((row) => row.toDetail());
       });
     }),

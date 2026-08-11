@@ -6,19 +6,33 @@ import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { ClimbingGradeSystemToggle } from "./ClimbingGradeSystemToggle.tsx";
 
-function createMockLink(): TRPCLink<AppRouter> {
+type GradeSystemStoryState = "default" | "error" | "loading" | "preference";
+
+function createMockLink(state: GradeSystemStoryState): TRPCLink<AppRouter> {
   return () =>
     ({ op }) =>
       createMockObservable(
+        state,
         op.path === "settings.get"
-          ? { key: "climbingGradeSystems", value: { boulder: "font", route: "french" } }
+          ? {
+              key: "climbingGradeSystems",
+              value: state === "preference" ? { boulder: "font", route: "french" } : null,
+            }
           : { key: "climbingGradeSystems", value: op.input },
       );
 }
 
-function createMockObservable(data: unknown): OperationResultObservable<AppRouter, unknown> {
+function createMockObservable(
+  state: GradeSystemStoryState,
+  data: unknown,
+): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
+      if (state === "loading") return { unsubscribe: () => {} };
+      if (state === "error") {
+        observer.error?.(new Error("Could not load climbing grade systems."));
+        return { unsubscribe: () => {} };
+      }
       observer.next?.({ result: { data } });
       observer.complete?.();
       return { unsubscribe: () => {} };
@@ -30,9 +44,9 @@ function createMockObservable(data: unknown): OperationResultObservable<AppRoute
   return result;
 }
 
-function ClimbingGradeSystemStoryFrame() {
+function ClimbingGradeSystemStoryFrame({ state }: { state: GradeSystemStoryState }) {
   const queryClient = useMemo(() => new QueryClient(), []);
-  const trpcClient = useMemo(() => trpc.createClient({ links: [createMockLink()] }), []);
+  const trpcClient = useMemo(() => trpc.createClient({ links: [createMockLink(state)] }), [state]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -55,5 +69,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const FontAndFrench: Story = {
-  render: () => <ClimbingGradeSystemStoryFrame />,
+  render: () => <ClimbingGradeSystemStoryFrame state="preference" />,
+};
+
+export const Default: Story = {
+  render: () => <ClimbingGradeSystemStoryFrame state="default" />,
+};
+
+export const Loading: Story = {
+  render: () => <ClimbingGradeSystemStoryFrame state="loading" />,
+};
+
+export const ErrorState: Story = {
+  render: () => <ClimbingGradeSystemStoryFrame state="error" />,
 };

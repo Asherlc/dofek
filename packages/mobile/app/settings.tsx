@@ -8,9 +8,9 @@ import { formatDateMedium, formatDateTime } from "@dofek/format/format";
 import {
   type BoulderGradeSystem,
   type ClimbingGradePreference,
-  DEFAULT_CLIMBING_GRADE_PREFERENCE,
   gradeSystemLabel,
   type RouteGradeSystem,
+  resolveClimbingGradePreference,
 } from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
@@ -276,7 +276,9 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
-  const climbingGradePreference = resolveGradePreference(climbingGradeSetting.data?.value);
+  const climbingGradePreference = climbingGradeSetting.data
+    ? resolveClimbingGradePreference(climbingGradeSetting.data.value)
+    : null;
 
   async function startCheckout(): Promise<void> {
     setCheckoutClientError(null);
@@ -530,55 +532,61 @@ export default function SettingsScreen() {
           <Text style={styles.sectionDescription}>
             Choose the grade systems used for boulders and routes
           </Text>
-          {climbingGradeSetting.error ? (
+          {climbingGradeSetting.error && !climbingGradePreference ? (
             <Text style={styles.unitErrorText}>{climbingGradeSetting.error.message}</Text>
+          ) : climbingGradePreference ? null : (
+            <ActivityIndicator color={colors.accent} size="small" />
+          )}
+          {climbingGradePreference ? <Text style={styles.label}>Boulder grades</Text> : null}
+          {climbingGradePreference ? (
+            <View style={styles.unitRow}>
+              {BOULDER_GRADE_SYSTEMS.map((value) => {
+                const selected = climbingGradePreference.boulder === value;
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    style={[styles.unitButton, selected && styles.unitButtonSelected]}
+                    onPress={() =>
+                      handleClimbingGradeChange({ ...climbingGradePreference, boulder: value })
+                    }
+                    disabled={setSettingMutation.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel={gradeSystemLabel(value)}
+                    accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
+                  >
+                    <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
+                      {gradeSystemLabel(value)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           ) : null}
-          <Text style={styles.label}>Boulder grades</Text>
-          <View style={styles.unitRow}>
-            {BOULDER_GRADE_SYSTEMS.map((value) => {
-              const selected = climbingGradePreference.boulder === value;
-              return (
-                <TouchableOpacity
-                  key={value}
-                  style={[styles.unitButton, selected && styles.unitButtonSelected]}
-                  onPress={() =>
-                    handleClimbingGradeChange({ ...climbingGradePreference, boulder: value })
-                  }
-                  disabled={setSettingMutation.isPending}
-                  accessibilityRole="button"
-                  accessibilityLabel={gradeSystemLabel(value)}
-                  accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
-                >
-                  <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
-                    {gradeSystemLabel(value)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <Text style={styles.label}>Route grades</Text>
-          <View style={styles.unitRow}>
-            {ROUTE_GRADE_SYSTEMS.map((value) => {
-              const selected = climbingGradePreference.route === value;
-              return (
-                <TouchableOpacity
-                  key={value}
-                  style={[styles.unitButton, selected && styles.unitButtonSelected]}
-                  onPress={() =>
-                    handleClimbingGradeChange({ ...climbingGradePreference, route: value })
-                  }
-                  disabled={setSettingMutation.isPending}
-                  accessibilityRole="button"
-                  accessibilityLabel={gradeSystemLabel(value)}
-                  accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
-                >
-                  <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
-                    {gradeSystemLabel(value)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {climbingGradePreference ? <Text style={styles.label}>Route grades</Text> : null}
+          {climbingGradePreference ? (
+            <View style={styles.unitRow}>
+              {ROUTE_GRADE_SYSTEMS.map((value) => {
+                const selected = climbingGradePreference.route === value;
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    style={[styles.unitButton, selected && styles.unitButtonSelected]}
+                    onPress={() =>
+                      handleClimbingGradeChange({ ...climbingGradePreference, route: value })
+                    }
+                    disabled={setSettingMutation.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel={gradeSystemLabel(value)}
+                    accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
+                  >
+                    <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
+                      {gradeSystemLabel(value)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -992,24 +1000,4 @@ export default function SettingsScreen() {
       ) : null}
     </ScrollView>
   );
-}
-
-function resolveGradePreference(value: unknown): ClimbingGradePreference {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "boulder" in value &&
-    "route" in value &&
-    (value.boulder === "v_scale" || value.boulder === "font") &&
-    (value.route === "yds" ||
-      value.route === "french" ||
-      value.route === "uiaa" ||
-      value.route === "ewbank" ||
-      value.route === "saxon" ||
-      value.route === "norwegian" ||
-      value.route === "brazilian_crux")
-  ) {
-    return { boulder: value.boulder, route: value.route };
-  }
-  return DEFAULT_CLIMBING_GRADE_PREFERENCE;
 }

@@ -1,3 +1,4 @@
+import type { ClimbingGradeSystem } from "@dofek/training/climbing-grades";
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -114,24 +115,16 @@ function makeClimbingSessionInput({
   endedAt?: string | null;
   failureReason?: "fell" | null;
   grade?: string;
-  gradeSystem?:
-    | "v_scale"
-    | "font"
-    | "yds"
-    | "french"
-    | "uiaa"
-    | "ewbank"
-    | "saxon"
-    | "norwegian"
-    | "brazilian_crux";
+  gradeSystem?: ClimbingGradeSystem;
   outcome?: "failed" | "sent";
 } = {}) {
+  const defaultGrade = gradeSystem === "v_scale" ? "V5" : gradeSystem === "font" ? "6a" : "5.11a";
   return {
     climbs: [
       {
         attempts: [{ failureReason, notes: null, outcome }],
         climbType,
-        grade: grade ?? (climbType === "boulder" ? "V5" : "5.11a"),
+        grade: grade ?? defaultGrade,
         gradeSystem,
         holdType: "crimp" as const,
         routeName: null,
@@ -586,7 +579,6 @@ describe("climbingRouter", () => {
         makeClimbingSessionInput({ failureReason: null, outcome: "sent" }),
       ),
     ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
-
     const invalidSent = makeMutationCaller();
     await expect(
       invalidSent.caller.logClimbingSession(
@@ -642,6 +634,7 @@ describe("climbingRouter", () => {
         makeClimbingSessionInput({ climbType: "boulder", grade: "6a", gradeSystem: "font" }),
       ),
     ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
+    expect(validFont.transaction).toHaveBeenCalledTimes(1);
 
     const invalidGrade = makeMutationCaller();
     await expect(

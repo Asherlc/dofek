@@ -36,9 +36,9 @@
 
 ```ts
 expect(gradeSystemsForClimbType("boulder")).toEqual(["v_scale", "font"]);
-expect(gradeOptionsForSystem("font")).toContain("6A");
+expect(gradeOptionsForSystem("font")).toContain("6a");
 expect(convertClimbingGrade({ grade: "V4", sourceSystem: "v_scale", displaySystem: "font" }))
-  .toMatchObject({ displaySystem: "font", displayGrade: "6b+" });
+  .toMatchObject({ displaySystem: "font", displayGrade: "6a+/6b+" });
 expect(convertClimbingGrade({ grade: "V4", sourceSystem: "v_scale", displaySystem: "yds" }))
   .toBeNull();
 ```

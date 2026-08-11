@@ -954,6 +954,19 @@ describe("mobileTrainingFixtureSchema", () => {
     );
   });
 
+  it("rejects climbing grade systems from the wrong discipline", () => {
+    const fixture = validTrainingFixture();
+    fixture.data.climbing.gradeProgression.push({
+      date: input.endDate,
+      climbType: "boulder",
+      gradeSystem: "yds",
+      grade: "5.10a",
+      gradeSortValue: 63.5,
+    });
+
+    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(false);
+  });
+
   it("rejects weekly volume rows that do not start on Monday", () => {
     const fixture = validTrainingFixture();
     const cyclingVolume = fixture.data.weeklyVolume[0];

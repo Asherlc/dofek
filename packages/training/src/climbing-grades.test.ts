@@ -6,6 +6,7 @@ import {
   isGradeSystemForClimbType,
   isValidClimbingGrade,
   parseClimbingGrade,
+  resolveClimbingGradePreference,
 } from "./climbing-grades.ts";
 
 describe("parseClimbingGrade", () => {
@@ -39,6 +40,37 @@ describe("parseClimbingGrade", () => {
         displaySystem: "yds",
       }),
     ).toBeNull();
+  });
+
+  it.each([
+    "v_scale",
+    "font",
+    "yds",
+    "french",
+    "uiaa",
+    "ewbank",
+    "saxon",
+    "norwegian",
+    "brazilian_crux",
+  ] as const)("validates and preserves %s grades", (system) => {
+    const grade = gradeOptionsForSystem(system)[0];
+    if (!grade) throw new Error(`Sandbag returned no grades for ${system}`);
+
+    expect(isValidClimbingGrade(grade, system)).toBe(true);
+    expect(
+      convertClimbingGrade({ grade, sourceSystem: system, displaySystem: system }),
+    ).toMatchObject({ displayGrade: grade, displaySystem: system });
+  });
+
+  it("uses defaults only when a grade preference is malformed or absent", () => {
+    expect(resolveClimbingGradePreference({ boulder: "font", route: "french" })).toEqual({
+      boulder: "font",
+      route: "french",
+    });
+    expect(resolveClimbingGradePreference({ boulder: "font", route: "v_scale" })).toEqual({
+      boulder: "v_scale",
+      route: "yds",
+    });
   });
   it("normalizes V-scale grades and orders them by Sandbag score", () => {
     const parsedGrades = ["VB", "V0", "V1", "V5", "V10"].map(parseClimbingGrade);

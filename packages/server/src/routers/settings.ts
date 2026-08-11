@@ -60,9 +60,15 @@ export const settingsRouter = router({
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     const result = await repo.set(input.key, input.value);
 
-    // Invalidate server-side cache for settings.get and settings.getAll
-    // so subsequent reads return the updated value, not stale cached data.
-    await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
+    if (input.key === CLIMBING_GRADE_PREFERENCE_SETTINGS_KEY) {
+      await Promise.all([
+        queryCache.invalidateByPrefix(`${ctx.userId}:settings.`),
+        queryCache.invalidateByPrefix(`${ctx.userId}:climbing.`),
+        queryCache.invalidateByPrefix(`${ctx.userId}:mobileDashboard.training`),
+      ]);
+    } else {
+      await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
+    }
 
     return result;
   }),

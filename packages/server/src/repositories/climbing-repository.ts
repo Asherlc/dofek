@@ -1,4 +1,5 @@
 import {
+  CLIMBING_GRADE_SYSTEMS,
   type ClimbingClimbType,
   type ClimbingGradePreference,
   type ClimbingGradeSystem,
@@ -81,17 +82,7 @@ export class ClimbingSessionSummary {
 }
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
-const gradeSystemSchema = z.enum([
-  "v_scale",
-  "font",
-  "yds",
-  "french",
-  "uiaa",
-  "ewbank",
-  "saxon",
-  "norwegian",
-  "brazilian_crux",
-]);
+const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
 const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
 const attemptOutcomeSchema = z.enum(["sent", "failed"]);
 const failureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
@@ -427,7 +418,11 @@ export class ClimbingRepository extends BaseRepository {
               },
             };
       })
-      .sort((left, right) => right.display.gradeSortValue - left.display.gradeSortValue)
+      .sort(
+        (left, right) =>
+          right.display.gradeSortValue - left.display.gradeSortValue ||
+          left.row.id.localeCompare(right.row.id),
+      )
       .map(
         ({ row, display }) =>
           new ClimbingActivityEntry({
