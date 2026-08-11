@@ -353,7 +353,17 @@ export const mobileTrainingTabOutputSchema = z.object({
       z.object({
         date: dateSchema,
         climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds"]),
+        gradeSystem: z.enum([
+          "v_scale",
+          "font",
+          "yds",
+          "french",
+          "uiaa",
+          "ewbank",
+          "saxon",
+          "norwegian",
+          "brazilian_crux",
+        ]),
         grade: z.string(),
         gradeSortValue: z.number(),
       }),
@@ -361,7 +371,17 @@ export const mobileTrainingTabOutputSchema = z.object({
     volumeByGrade: z.array(
       z.object({
         climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds"]),
+        gradeSystem: z.enum([
+          "v_scale",
+          "font",
+          "yds",
+          "french",
+          "uiaa",
+          "ewbank",
+          "saxon",
+          "norwegian",
+          "brazilian_crux",
+        ]),
         grade: z.string(),
         gradeSortValue: z.number(),
         attempts: z.number().int().nonnegative(),

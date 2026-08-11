@@ -1,3 +1,7 @@
+import {
+  type ClimbingGradePreference,
+  DEFAULT_CLIMBING_GRADE_PREFERENCE,
+} from "@dofek/training/climbing-grades";
 import { useEffect, useRef } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import {
@@ -15,7 +19,9 @@ export default function ClimbingLogScreen() {
   const units = useUnitConverter();
   const utils = trpc.useUtils();
   const history = trpc.climbing.fingerLoadingHistory.useQuery({ days: 90 });
+  const gradePreferenceSetting = trpc.settings.get.useQuery({ key: "climbingGradeSystems" });
   const lastHistoryError = useRef<unknown>(null);
+  const gradePreference = resolveGradePreference(gradePreferenceSetting.data?.value);
 
   useEffect(() => {
     if (history.error && lastHistoryError.current !== history.error) {
@@ -76,12 +82,33 @@ export default function ClimbingLogScreen() {
         </Text>
         <ClimbingAttemptLog
           errorMessage={climbingMutation.error?.message ?? null}
+          gradePreference={gradePreference}
           onSubmit={(input: ClimbingSessionSubmission) => climbingMutation.mutate(input)}
           submitting={climbingMutation.isPending}
         />
       </View>
     </ScrollView>
   );
+}
+
+function resolveGradePreference(value: unknown): ClimbingGradePreference {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "boulder" in value &&
+    "route" in value &&
+    (value.boulder === "v_scale" || value.boulder === "font") &&
+    (value.route === "yds" ||
+      value.route === "french" ||
+      value.route === "uiaa" ||
+      value.route === "ewbank" ||
+      value.route === "saxon" ||
+      value.route === "norwegian" ||
+      value.route === "brazilian_crux")
+  ) {
+    return { boulder: value.boulder, route: value.route };
+  }
+  return DEFAULT_CLIMBING_GRADE_PREFERENCE;
 }
 
 const styles = StyleSheet.create({

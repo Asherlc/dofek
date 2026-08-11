@@ -328,6 +328,16 @@ describe("drizzleSchema", () => {
     expect(climbingClimbTypeEnum.enumName).toBe("climbing_climb_type");
     expect(climbingClimbTypeEnum.enumValues).toEqual(["boulder", "route"]);
     expect(climbingGradeSystemEnum.enumName).toBe("climbing_grade_system");
-    expect(climbingGradeSystemEnum.enumValues).toEqual(["v_scale", "yds"]);
+    expect(climbingGradeSystemEnum.enumValues).toEqual([
+      "v_scale",
+      "font",
+      "yds",
+      "french",
+      "uiaa",
+      "ewbank",
+      "saxon",
+      "norwegian",
+      "brazilian_crux",
+    ]);
   });
 });

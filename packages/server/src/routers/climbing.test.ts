@@ -106,13 +106,24 @@ function makeClimbingSessionInput({
   climbType = "boulder",
   endedAt = null,
   failureReason = null,
+  grade,
   gradeSystem = "v_scale",
   outcome = "sent",
 }: {
   climbType?: "boulder" | "route";
   endedAt?: string | null;
   failureReason?: "fell" | null;
-  gradeSystem?: "v_scale" | "yds";
+  grade?: string;
+  gradeSystem?:
+    | "v_scale"
+    | "font"
+    | "yds"
+    | "french"
+    | "uiaa"
+    | "ewbank"
+    | "saxon"
+    | "norwegian"
+    | "brazilian_crux";
   outcome?: "failed" | "sent";
 } = {}) {
   return {
@@ -120,7 +131,7 @@ function makeClimbingSessionInput({
       {
         attempts: [{ failureReason, notes: null, outcome }],
         climbType,
-        grade: climbType === "boulder" ? "V5" : "5.11a",
+        grade: grade ?? (climbType === "boulder" ? "V5" : "5.11a"),
         gradeSystem,
         holdType: "crimp" as const,
         routeName: null,
@@ -165,7 +176,7 @@ describe("climbingRouter", () => {
       id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
     });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         id: "entry-1",
@@ -192,20 +203,19 @@ describe("climbingRouter", () => {
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V4",
-        grade_sort_value: 4,
       },
     ]);
 
     const result: ClimbingGradeProgressionRow[] = await caller.gradeProgression({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         date: "2026-07-09",
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V4",
-        gradeSortValue: 4,
+        gradeSortValue: 65,
       },
     ]);
   });
@@ -216,7 +226,6 @@ describe("climbingRouter", () => {
         climb_type: "route",
         grade_system: "yds",
         grade: "5.10c",
-        grade_sort_value: 5103,
         attempts: 3,
         sends: 2,
       },
@@ -224,13 +233,13 @@ describe("climbingRouter", () => {
 
     const result: ClimbingVolumeByGradeRow[] = await caller.volumeByGrade({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         climbType: "route",
         gradeSystem: "yds",
         grade: "5.10c",
-        gradeSortValue: 5103,
+        gradeSortValue: 64.5,
         attempts: 3,
         sends: 2,
       },
@@ -244,18 +253,17 @@ describe("climbingRouter", () => {
         session_date: "2026-07-09",
         name: "Kaya climbing at Touchstone Pacific Pipe",
         location_name: "Touchstone Pacific Pipe",
-        attempts: 9,
-        sends: 6,
-        hardest_boulder_grade: "V4",
-        hardest_boulder_grade_sort_value: 4,
-        hardest_route_grade: null,
-        hardest_route_grade_sort_value: null,
+        attempt_count: 9,
+        sent: true,
+        climb_type: "boulder",
+        grade_system: "v_scale",
+        grade: "V4",
       },
     ]);
 
     const result: ClimbingSessionSummaryRow[] = await caller.sessionSummary({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         activityId: "activity-1",
@@ -263,9 +271,9 @@ describe("climbingRouter", () => {
         name: "Kaya climbing at Touchstone Pacific Pipe",
         locationName: "Touchstone Pacific Pipe",
         attempts: 9,
-        sends: 6,
+        sends: 1,
         hardestBoulderGrade: "V4",
-        hardestBoulderGradeSortValue: 4,
+        hardestBoulderGradeSortValue: 65,
         hardestRouteGrade: null,
         hardestRouteGradeSortValue: null,
       },
@@ -336,7 +344,7 @@ describe("climbingRouter", () => {
     await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(6);
   });
 
   it("returns a controlled error when climbing data cannot load", async () => {
@@ -627,6 +635,23 @@ describe("climbingRouter", () => {
         makeClimbingSessionInput({ climbType: "route", gradeSystem: "yds" }),
       ),
     ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
+
+    const validFont = makeMutationCaller();
+    await expect(
+      validFont.caller.logClimbingSession(
+        makeClimbingSessionInput({ climbType: "boulder", grade: "6a", gradeSystem: "font" }),
+      ),
+    ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
+
+    const invalidGrade = makeMutationCaller();
+    await expect(
+      invalidGrade.caller.logClimbingSession(
+        makeClimbingSessionInput({ climbType: "boulder", grade: "V4", gradeSystem: "font" }),
+      ),
+    ).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "BAD_REQUEST",
+    });
+    expect(invalidGrade.execute).not.toHaveBeenCalled();
 
     for (const [climbType, gradeSystem] of [
       ["boulder", "yds"],

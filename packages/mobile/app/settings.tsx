@@ -5,6 +5,13 @@ import {
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
+import {
+  type BoulderGradeSystem,
+  type ClimbingGradePreference,
+  DEFAULT_CLIMBING_GRADE_PREFERENCE,
+  gradeSystemLabel,
+  type RouteGradeSystem,
+} from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
@@ -56,6 +63,16 @@ type SettingsCategory =
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: "metric", label: "Metric", description: "kg, km, °C" },
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
+];
+const BOULDER_GRADE_SYSTEMS: BoulderGradeSystem[] = ["v_scale", "font"];
+const ROUTE_GRADE_SYSTEMS: RouteGradeSystem[] = [
+  "yds",
+  "french",
+  "uiaa",
+  "ewbank",
+  "saxon",
+  "norwegian",
+  "brazilian_crux",
 ];
 const SETTINGS_CATEGORIES: readonly {
   id: SettingsCategory;
@@ -235,6 +252,7 @@ export default function SettingsScreen() {
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
+  const climbingGradeSetting = trpc.settings.get.useQuery({ key: "climbingGradeSystems" });
   const setSettingMutation = trpc.settings.set.useMutation();
   const lastUnitReadError = useRef<unknown>(null);
   const billingStatus = trpc.billing.status.useQuery();
@@ -258,6 +276,7 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
+  const climbingGradePreference = resolveGradePreference(climbingGradeSetting.data?.value);
 
   async function startCheckout(): Promise<void> {
     setCheckoutClientError(null);
@@ -297,6 +316,25 @@ export default function SettingsScreen() {
         },
         onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key: "unitSystem" });
+        },
+      },
+    );
+  }
+
+  function handleClimbingGradeChange(next: ClimbingGradePreference) {
+    const key = "climbingGradeSystems" as const;
+    const previousSetting = trpcUtils.settings.get.getData({ key });
+    trpcUtils.settings.get.setData({ key }, { key, value: next });
+    setSettingMutation.mutate(
+      { key, value: next },
+      {
+        onError: (error) => {
+          trpcUtils.settings.get.setData({ key }, previousSetting);
+          captureException(error, { context: "climbing-grade-systems-write" });
+          Alert.alert("Error", error.message);
+        },
+        onSettled: () => {
+          void trpcUtils.settings.get.invalidate({ key });
         },
       },
     );
@@ -482,6 +520,64 @@ export default function SettingsScreen() {
                 <Text style={styles.devToolChevron}>›</Text>
               </View>
             </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {activeCategory === "goals-models" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Climbing grades</Text>
+          <Text style={styles.sectionDescription}>
+            Choose the grade systems used for boulders and routes
+          </Text>
+          {climbingGradeSetting.error ? (
+            <Text style={styles.unitErrorText}>{climbingGradeSetting.error.message}</Text>
+          ) : null}
+          <Text style={styles.label}>Boulder grades</Text>
+          <View style={styles.unitRow}>
+            {BOULDER_GRADE_SYSTEMS.map((value) => {
+              const selected = climbingGradePreference.boulder === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.unitButton, selected && styles.unitButtonSelected]}
+                  onPress={() =>
+                    handleClimbingGradeChange({ ...climbingGradePreference, boulder: value })
+                  }
+                  disabled={setSettingMutation.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel={gradeSystemLabel(value)}
+                  accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
+                >
+                  <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
+                    {gradeSystemLabel(value)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.label}>Route grades</Text>
+          <View style={styles.unitRow}>
+            {ROUTE_GRADE_SYSTEMS.map((value) => {
+              const selected = climbingGradePreference.route === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.unitButton, selected && styles.unitButtonSelected]}
+                  onPress={() =>
+                    handleClimbingGradeChange({ ...climbingGradePreference, route: value })
+                  }
+                  disabled={setSettingMutation.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel={gradeSystemLabel(value)}
+                  accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
+                >
+                  <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
+                    {gradeSystemLabel(value)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
       ) : null}
@@ -896,4 +992,24 @@ export default function SettingsScreen() {
       ) : null}
     </ScrollView>
   );
+}
+
+function resolveGradePreference(value: unknown): ClimbingGradePreference {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "boulder" in value &&
+    "route" in value &&
+    (value.boulder === "v_scale" || value.boulder === "font") &&
+    (value.route === "yds" ||
+      value.route === "french" ||
+      value.route === "uiaa" ||
+      value.route === "ewbank" ||
+      value.route === "saxon" ||
+      value.route === "norwegian" ||
+      value.route === "brazilian_crux")
+  ) {
+    return { boulder: value.boulder, route: value.route };
+  }
+  return DEFAULT_CLIMBING_GRADE_PREFERENCE;
 }

@@ -46,7 +46,9 @@ describe("parseClimbingGrade", () => {
     expect(parsedGrades.map((grade) => grade?.grade)).toEqual(["VB", "V0", "V1", "V5", "V10"]);
     expect(parsedGrades.every((grade) => grade?.gradeSystem === "v_scale")).toBe(true);
     expect(parsedGrades.map((grade) => grade?.sortValue)).toEqual(
-      [...parsedGrades.map((grade) => grade?.sortValue)].sort((left, right) => Number(left) - Number(right)),
+      [...parsedGrades.map((grade) => grade?.sortValue)].sort(
+        (left, right) => Number(left) - Number(right),
+      ),
     );
   });
 

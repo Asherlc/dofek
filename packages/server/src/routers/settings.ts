@@ -2,6 +2,10 @@ import { medicationRemindersSchema } from "@dofek/format/medication-reminders";
 import { PRIMARY_GOAL_SETTINGS_KEY, primaryGoalIds } from "@dofek/onboarding/primary-goal";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { z } from "zod";
+import {
+  CLIMBING_GRADE_PREFERENCE_SETTINGS_KEY,
+  climbingGradePreferenceSchema,
+} from "../climbing-grade-preferences.ts";
 import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -20,6 +24,10 @@ const settingInputSchema = z.discriminatedUnion("key", [
   z.strictObject({
     key: z.literal("unitSystem"),
     value: z.enum(["metric", "imperial"]),
+  }),
+  z.strictObject({
+    key: z.literal(CLIMBING_GRADE_PREFERENCE_SETTINGS_KEY),
+    value: climbingGradePreferenceSchema,
   }),
   z.strictObject({
     key: z.literal("whoop.wearLocation"),

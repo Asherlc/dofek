@@ -1,6 +1,6 @@
 /// <reference path="./openbeta-sandbag.d.ts" />
 
-import { convertGrade, getScale, GradeScales } from "@openbeta/sandbag";
+import { convertGrade, GradeScales, getScale } from "@openbeta/sandbag";
 
 export const CLIMBING_GRADE_SYSTEMS = [
   "v_scale",
@@ -87,7 +87,9 @@ function canonicalGrade(grade: string, system: ClimbingGradeSystem): string | nu
   const scale = sandbagScale(system);
   if (!scale.isType(trimmed)) return null;
   const normalized = trimmed.toLocaleLowerCase();
-  const listedGrade = scale.grades.find((candidate) => candidate.toLocaleLowerCase() === normalized);
+  const listedGrade = scale.grades.find(
+    (candidate) => candidate.toLocaleLowerCase() === normalized,
+  );
   if (listedGrade) return listedGrade;
   if (system !== "yds") return null;
   const yosemiteBase = /^5\.(\d+)([+-])?$/i.exec(trimmed);
@@ -122,7 +124,9 @@ export function isGradeSystemForClimbType(
   system: ClimbingGradeSystem,
   climbType: ClimbingClimbType,
 ): boolean {
-  return gradeSystemsForClimbType(climbType).includes(system as never);
+  return climbType === "boulder"
+    ? system === "v_scale" || system === "font"
+    : system !== "v_scale" && system !== "font";
 }
 
 export function isValidClimbingGrade(grade: string, system: ClimbingGradeSystem): boolean {

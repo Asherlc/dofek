@@ -170,14 +170,14 @@ describe("ClimbingRepository", () => {
           climbType: "boulder",
           gradeSystem: "v_scale",
           grade: "V3",
-          gradeSortValue: 3,
+          gradeSortValue: 60,
         },
         {
           date: "2026-07-09",
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.10c",
-          gradeSortValue: 5103,
+          gradeSortValue: 64.5,
         },
       ]);
     });
@@ -195,7 +195,6 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("detail.attempt_count > 0");
       expect(text).toContain("BOOL_OR(attempt.outcome = 'sent')");
       expect(text).toContain("ELSE ce.sent");
-      expect(text).toContain("IS NOT NULL");
       expect(text).toContain("NOW() - ");
     });
 
@@ -252,7 +251,7 @@ describe("ClimbingRepository", () => {
           climbType: "boulder",
           gradeSystem: "v_scale",
           grade: "V2",
-          gradeSortValue: 2,
+          gradeSortValue: 55,
           attempts: 6,
           sends: 4,
         },
@@ -260,7 +259,7 @@ describe("ClimbingRepository", () => {
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.12-",
-          gradeSortValue: 5117,
+          gradeSortValue: 75.5,
           attempts: 2,
           sends: 1,
         },
@@ -277,8 +276,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ELSE ce.attempt_count");
       expect(text).toContain("WHEN detail.attempt_count > 0 THEN detail.sent");
       expect(text).toContain("ELSE ce.sent");
-      expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value");
-      expect(text).toContain("ORDER BY grade_sort_value");
+      expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade");
     });
   });
 
@@ -296,24 +294,22 @@ describe("ClimbingRepository", () => {
           session_date: "2026-07-09",
           name: "Kaya climbing at Touchstone Pacific Pipe",
           location_name: "Touchstone Pacific Pipe",
-          attempts: 12,
-          sends: 8,
-          hardest_boulder_grade: "V4",
-          hardest_boulder_grade_sort_value: 4,
-          hardest_route_grade: null,
-          hardest_route_grade_sort_value: null,
+          attempt_count: 12,
+          sent: true,
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "V4",
         },
         {
           activity_id: "activity-2",
           session_date: "2026-07-10",
           name: "Evening routes",
           location_name: "Mission Cliffs",
-          attempts: 5,
-          sends: 2,
-          hardest_boulder_grade: null,
-          hardest_boulder_grade_sort_value: null,
-          hardest_route_grade: "5.10c",
-          hardest_route_grade_sort_value: 5103,
+          attempt_count: 5,
+          sent: true,
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.10c",
         },
       ]);
 
@@ -322,28 +318,28 @@ describe("ClimbingRepository", () => {
       expect(result[0]).toBeInstanceOf(ClimbingSessionSummary);
       expect(result.map((row) => row.toDetail())).toEqual([
         {
-          activityId: "activity-1",
-          date: "2026-07-09",
-          name: "Kaya climbing at Touchstone Pacific Pipe",
-          locationName: "Touchstone Pacific Pipe",
-          attempts: 12,
-          sends: 8,
-          hardestBoulderGrade: "V4",
-          hardestBoulderGradeSortValue: 4,
-          hardestRouteGrade: null,
-          hardestRouteGradeSortValue: null,
-        },
-        {
           activityId: "activity-2",
           date: "2026-07-10",
           name: "Evening routes",
           locationName: "Mission Cliffs",
           attempts: 5,
-          sends: 2,
+          sends: 1,
           hardestBoulderGrade: null,
           hardestBoulderGradeSortValue: null,
           hardestRouteGrade: "5.10c",
-          hardestRouteGradeSortValue: 5103,
+          hardestRouteGradeSortValue: 64.5,
+        },
+        {
+          activityId: "activity-1",
+          date: "2026-07-09",
+          name: "Kaya climbing at Touchstone Pacific Pipe",
+          locationName: "Touchstone Pacific Pipe",
+          attempts: 12,
+          sends: 1,
+          hardestBoulderGrade: "V4",
+          hardestBoulderGradeSortValue: 65,
+          hardestRouteGrade: null,
+          hardestRouteGradeSortValue: null,
         },
       ]);
     });
@@ -357,10 +353,8 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("fitness.v_activity");
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
       expect(text).toContain("a.canonical_type = 'climbing'");
-      expect(text).toContain("IS NOT NULL");
-      expect(text).toContain("SUM(attempt_count) AS attempts");
-      expect(text).not.toContain("SUM(attempt_count)::int AS attempts");
-      expect(text).toContain("COUNT(*) FILTER (WHERE sent)::int AS sends");
+      expect(text).toContain("attempt_count");
+      expect(text).toContain("ce.grade_system");
     });
   });
 

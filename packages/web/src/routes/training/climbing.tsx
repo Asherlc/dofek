@@ -1,3 +1,7 @@
+import {
+  type ClimbingGradePreference,
+  DEFAULT_CLIMBING_GRADE_PREFERENCE,
+} from "@dofek/training/climbing-grades";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ClimbingSessionSummaryRow } from "dofek-server/types";
 import type { Activity } from "../../components/ActivityList.tsx";
@@ -29,6 +33,26 @@ const CLIMBING_ACTIVITY_TYPES = ["climbing"] as const;
 
 function climbingRangeInput(days: number | null): { days?: number } {
   return days === null ? {} : { days };
+}
+
+function resolveGradePreference(value: unknown): ClimbingGradePreference {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "boulder" in value &&
+    "route" in value &&
+    (value.boulder === "v_scale" || value.boulder === "font") &&
+    (value.route === "yds" ||
+      value.route === "french" ||
+      value.route === "uiaa" ||
+      value.route === "ewbank" ||
+      value.route === "saxon" ||
+      value.route === "norwegian" ||
+      value.route === "brazilian_crux")
+  ) {
+    return { boulder: value.boulder, route: value.route };
+  }
+  return DEFAULT_CLIMBING_GRADE_PREFERENCE;
 }
 
 function climbingSessionColumns(
@@ -97,6 +121,8 @@ export function ClimbingTab() {
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const fingerLoadingHistory = trpc.climbing.fingerLoadingHistory.useQuery({ days: 90 });
+  const gradePreferenceSetting = trpc.settings.get.useQuery({ key: "climbingGradeSystems" });
+  const gradePreference = resolveGradePreference(gradePreferenceSetting.data?.value);
   const utils = trpc.useUtils();
   const fingerLoadingMutation = trpc.climbing.logFingerLoading.useMutation({
     meta: { errorReportedLocally: true },
@@ -171,6 +197,7 @@ export function ClimbingTab() {
         >
           <ClimbingAttemptLog
             errorMessage={climbingSessionMutation.error?.message ?? null}
+            gradePreference={gradePreference}
             onSubmit={(input: ClimbingSessionSubmission) => climbingSessionMutation.mutate(input)}
             submitting={climbingSessionMutation.isPending}
           />
