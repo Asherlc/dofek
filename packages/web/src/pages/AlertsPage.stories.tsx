@@ -28,22 +28,24 @@ function occurredMinutesAgo(minutes: number): string {
 
 const activeAlerts = [
   {
-    id: "garmin-sync:activity",
+    id: "00000000-0000-4000-8000-00000000a001",
     providerId: "garmin",
     providerLabel: "Garmin",
-    datasetKey: "activity",
+    datasetKeys: ["activity", "providers"],
+    datasetLabels: ["Activities", "Provider summaries"],
     occurredAt: occurredMinutesAgo(4),
-    title: "Garmin activities weren’t updated",
+    title: "Garmin sync didn’t finish",
     message:
-      "Your Garmin data synced, but Dofek couldn’t update activities. Your previously synced data is still available.",
+      "Dofek couldn’t get the latest data from Garmin. Reconnect Garmin, then start the sync again.",
     action: "retry_sync",
     actionLabel: "Retry Garmin sync",
   },
   {
-    id: "whoop-sync:recovery",
+    id: "00000000-0000-4000-8000-00000000a002",
     providerId: "whoop",
     providerLabel: "WHOOP",
-    datasetKey: "recovery",
+    datasetKeys: ["recovery", "sleep"],
+    datasetLabels: ["Recovery", "Sleep"],
     occurredAt: occurredMinutesAgo(18),
     title: "WHOOP couldn’t sync",
     message:
@@ -52,10 +54,11 @@ const activeAlerts = [
     actionLabel: "Reconnect WHOOP",
   },
   {
-    id: "apple-health-import:sleep",
+    id: "00000000-0000-4000-8000-00000000a003",
     providerId: "apple_health",
     providerLabel: "Apple Health",
-    datasetKey: "sleep",
+    datasetKeys: ["sleep"],
+    datasetLabels: ["Sleep"],
     occurredAt: occurredMinutesAgo(42),
     title: "Apple Health file wasn’t imported",
     message:
@@ -106,6 +109,14 @@ function createMockObservable(
                 queueName: "provider-sync-garmin",
               },
             ],
+          },
+        });
+      } else if (path === "processing.dismiss") {
+        observer.next?.({
+          result: {
+            data: {
+              dismissed: true,
+            },
           },
         });
       } else {
