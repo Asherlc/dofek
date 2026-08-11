@@ -290,8 +290,7 @@ export class HangboardingRepository {
     const dailyRows = await this.#query(
       dailyRowSchema,
       sql`WITH sessions AS (
-          SELECT
-              a.id::text AS activity_id,
+            SELECT
               member.hang_ten_activity_id,
               CASE
                 WHEN member.hang_ten_activity_id IS NULL THEN a.started_at
@@ -321,7 +320,7 @@ export class HangboardingRepository {
             FROM sessions
             LEFT JOIN fitness.activity_interval AS interval
               ON interval.activity_id = sessions.hang_ten_activity_id
-            GROUP BY sessions.activity_id, sessions.started_at, sessions.ended_at, sessions.hang_ten_activity_id
+            GROUP BY sessions.started_at, sessions.ended_at, sessions.hang_ten_activity_id
           )
           SELECT
             local_date AS date,
