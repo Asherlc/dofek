@@ -1,0 +1,11 @@
+{
+  "worktree": {
+    "setup": "pnpm install",
+    "teardown": "mise exec -- pnpm tsx scripts/conductor-archive.ts"
+  },
+  "metadataGeneration": {
+    "pullRequest": {
+      "instructions": "Monitor CI. If it passes, then mark as ready for review and monitor for CR comments. If Ci fails, fixi t, and monitor, then proceed."
+    }
+  }
+}
