@@ -231,6 +231,40 @@ semantic change. A full refresh drops rows older than
 unchanged activities. The three selected models must all report `PASS` with no
 warnings or errors before the operator treats the rebuild as complete.
 
+The `cycling_activity` modality normalization requires the same explicit
+operator action for existing append-incremental rows. Before the repair, record
+the retained rows that still contain an empty modality:
+
+```sql
+SELECT
+    count() AS active_cycling_rows,
+    countIf(modality = '') AS empty_modality_rows,
+    min(started_at) AS oldest_active_activity
+FROM analytics.cycling_activity FINAL
+WHERE is_deleted = 0;
+```
+
+Run the model-only full refresh from the production analytics environment after
+reviewing that preflight count; do not put this command in deploys, the
+scheduled worker, request paths, or tests:
+
+```sh
+pnpm tsx scripts/with-env.ts -- env \
+  DBT_TARGET=prod \
+  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+  uv run --project analytics dbt build \
+  --project-dir analytics \
+  --profiles-dir analytics \
+  --full-refresh \
+  --select cycling_activity
+```
+
+After the build succeeds, repeat the query and verify `empty_modality_rows = 0`.
+Record both counts and the model run result with the maintenance change. This
+bounded, operator-invoked rebuild follows dbt's guidance for rewriting existing
+incremental rows after a model semantic change:
+<https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
+
 While the build is active, watch the analytics-worker/dbt output and the
 currently running ClickHouse queries. `system.processes` exposes the active
 query's elapsed time, rows/bytes read, and memory usage:

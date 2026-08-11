@@ -7,6 +7,16 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-11 — Local integration validation blocked by exhausted Docker address pools
+
+- **Status:** Unresolved local validation prerequisite; no production impact.
+- **Symptoms:** The current workspace could not start its isolated Compose dependencies for integration tests.
+- **Evidence:** Compose failed while creating `sentry-fixes_default` with `all predefined address pools have been fully subnetted`.
+- **Root cause:** The Docker daemon has no available predefined network address pool for another workspace network.
+- **Fix / mitigation:** No cross-workspace containers, networks, or volumes were removed; the integration test remains pending until approved Docker network cleanup or address-pool recovery is completed.
+- **Remaining risk:** Integration coverage for the new cycling read-model behavior has not yet executed in this workspace.
+- **Follow-up:** Apply the scoped Docker recovery procedure, then rerun the integration test. See Docker’s [network address pool documentation](https://docs.docker.com/engine/network/address-pools/).
+
 ## 2026-08-10 — Expo SDK 57 compatibility metadata invalidated mobile CI
 
 - **Status:** Fix prepared; exact-head CI verification is pending.
@@ -47,16 +57,17 @@ them, and the durability work they suggest.
   `https://sentry.io/api/0/organizations/east-bay-software/stats-summary/`.
   Earlier requests used `statsPeriod=90d`; later requests used explicit
   `start`/`end` timestamps. All other enabled Sentry schemas completed, so
-  credentials and general source connectivity are working. PostHog’s first
-  fix for this incident changed the request away from the 90-day retention
-  boundary to explicit `start`/`end` values and was deployed on 2026-08-07
+  credentials and general source connectivity are working. PostHog PR #79517
+  changed the request away from the 90-day retention boundary to an explicit,
+  retention-clamped `start`/`end` window and was deployed on 2026-08-07
   ([PR #79517](https://github.com/PostHog/posthog/pull/79517)); Dofek continued
-  failing afterward. PostHog’s follow-up ([PR #80099](https://github.com/PostHog/posthog/pull/80099))
-  identifies the remaining pattern as another deterministic Sentry 400,
-  usually caused by a requested range outside the Sentry plan’s retention, and
-  notes that the upstream response body is not preserved. Sentry’s current API
-  documentation lists `sum(quantity)` and either `statsPeriod` or `start`/`end`
-  as valid parameters ([official API reference](https://docs.sentry.io/api/organizations/retrieve-an-organizations-events-count-by-project/)),
+  failing afterward. PostHog PR #80099 then classified generic Sentry 400
+  responses as non-retryable so deterministic failures stop retrying
+  ([PR #80099](https://github.com/PostHog/posthog/pull/80099)); it did not
+  establish the retention-boundary root cause. The upstream response body is
+  not preserved. Sentry’s current API documentation lists `sum(quantity)` and
+  either `statsPeriod` or `start`/`end` as valid parameters ([official API
+  reference](https://docs.sentry.io/api/organizations/retrieve-an-organizations-events-count-by-project/)),
   so the exact Dofek-specific rejection remains unconfirmed without a direct
   read-only Sentry request.
 - **Fix / mitigation:** No retry or configuration workaround was applied;
