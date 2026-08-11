@@ -169,6 +169,7 @@ vi.mock("../../lib/trpc", () => ({
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
       },
+      dismiss: { useMutation: () => ({ error: null, isPending: false, mutate: vi.fn() }) },
     },
     useUtils: () => ({
       mobileDashboard: {
