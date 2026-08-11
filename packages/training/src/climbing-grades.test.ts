@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   convertClimbingGrade,
   gradeOptionsForSystem,
+  gradeSortValue,
+  gradeSystemLabel,
   gradeSystemsForClimbType,
   isGradeSystemForClimbType,
   isValidClimbingGrade,
@@ -62,6 +64,21 @@ describe("parseClimbingGrade", () => {
     ).toMatchObject({ displayGrade: grade, displaySystem: system });
   });
 
+  it.each([
+    ["v_scale", "boulder", "route"],
+    ["font", "boulder", "route"],
+    ["yds", "route", "boulder"],
+    ["french", "route", "boulder"],
+    ["uiaa", "route", "boulder"],
+    ["ewbank", "route", "boulder"],
+    ["saxon", "route", "boulder"],
+    ["norwegian", "route", "boulder"],
+    ["brazilian_crux", "route", "boulder"],
+  ] as const)("accepts %s only for %s climbs", (system, matchingType, mismatchingType) => {
+    expect(isGradeSystemForClimbType(system, matchingType)).toBe(true);
+    expect(isGradeSystemForClimbType(system, mismatchingType)).toBe(false);
+  });
+
   it("uses defaults only when a grade preference is malformed or absent", () => {
     expect(resolveClimbingGradePreference({ boulder: "font", route: "french" })).toEqual({
       boulder: "font",
@@ -71,6 +88,24 @@ describe("parseClimbingGrade", () => {
       boulder: "v_scale",
       route: "yds",
     });
+    expect(resolveClimbingGradePreference(null)).toEqual({ boulder: "v_scale", route: "yds" });
+    expect(resolveClimbingGradePreference({ boulder: "font" })).toEqual({
+      boulder: "v_scale",
+      route: "yds",
+    });
+    expect(resolveClimbingGradePreference({ boulder: "v_scale", route: "font" })).toEqual({
+      boulder: "v_scale",
+      route: "yds",
+    });
+  });
+
+  it("uses Sandbag scores only for valid, scored grades", () => {
+    expect(gradeSortValue("V4", "v_scale")).toBe(65);
+    expect(gradeSortValue("5.10", "yds")).toBe(63.5);
+    expect(gradeSortValue("V-not-a-grade", "v_scale")).toBeNull();
+    expect(gradeSystemLabel("uiaa")).toBe(
+      "International Climbing and Mountaineering Federation (UIAA)",
+    );
   });
   it("normalizes V-scale grades and orders them by Sandbag score", () => {
     const parsedGrades = ["VB", "V0", "V1", "V5", "V10"].map(parseClimbingGrade);

@@ -954,18 +954,28 @@ describe("mobileTrainingFixtureSchema", () => {
     );
   });
 
-  it("rejects climbing grade systems from the wrong discipline", () => {
-    const fixture = validTrainingFixture();
-    fixture.data.climbing.gradeProgression.push({
-      date: input.endDate,
-      climbType: "boulder",
-      gradeSystem: "yds",
-      grade: "5.10a",
-      gradeSortValue: 63.5,
-    });
+  it.each([
+    ["grade progression", "gradeProgression", "boulder", "yds", "5.10a", 63.5],
+    ["volume by grade", "volumeByGrade", "route", "font", "6a", 65],
+  ] as const)(
+    "rejects %s systems from the wrong discipline",
+    (_label, target, climbType, gradeSystem, grade, gradeSortValue) => {
+      const fixture = validTrainingFixture();
+      fixture.data.climbing[target].push({
+        climbType,
+        gradeSystem,
+        grade,
+        gradeSortValue,
+        ...(target === "gradeProgression" ? { date: input.endDate } : { attempts: 1, sends: 1 }),
+      });
 
-    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(false);
-  });
+      expectIssue(
+        mobileTrainingFixtureSchema.safeParse(fixture),
+        ["data", "climbing", target, 0, "gradeSystem"],
+        "Grade system must match the climb type",
+      );
+    },
+  );
 
   it("rejects weekly volume rows that do not start on Monday", () => {
     const fixture = validTrainingFixture();
