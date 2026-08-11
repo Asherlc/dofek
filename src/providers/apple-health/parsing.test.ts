@@ -462,7 +462,6 @@ describe("Apple Health Provider -- parsing", () => {
       expect(result.hangTen?.activitySegments).toEqual([]);
       expect(result.hangTen?.activitySegmentsError).toBeUndefined();
     });
-
     it("reports empty Hang Ten activity segment JSON", () => {
       const result = parseWorkout(
         {
@@ -537,7 +536,6 @@ describe("Apple Health Provider -- parsing", () => {
 
       expect(workoutExternalId(result)).toBe("ah:workout:11111111-1111-4111-8111-111111111111");
     });
-
     it("parses workout attributes", () => {
       const result = parseWorkout(workoutAttrs);
       expect(result.activityType.canonicalType).toBe("running");

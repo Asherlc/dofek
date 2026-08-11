@@ -697,45 +697,39 @@ export async function upsertWorkoutBatch(
   const uniqueWorkouts = [...dedupMap.values()];
 
   const transactionalDb = requireTransactionalDatabase(db);
-  // Multi-row upsert with RETURNING to get all activity IDs in one statement.
   // Keep activity metadata and Hang Ten intervals in the same transaction so a
   // failed replacement cannot leave the activity row ahead of its intervals.
   const activityResults = await transactionalDb.transaction(async (transactionDb) => {
     const results: { activityId: string; workout: HealthWorkout }[] = [];
 
-    const batches: HealthWorkout[][] = [];
-    const remainingWorkouts = [...uniqueWorkouts];
-    while (remainingWorkouts.length) {
-      batches.push(remainingWorkouts.splice(0, 500));
-    }
-    for (const batch of batches) {
-      for (const workout of batch) {
-        const values = {
-          providerId,
-          externalId: workoutExternalId(workout),
-          activityType: workout.activityType,
-          startedAt: workout.startDate,
-          endedAt: workout.endDate,
-          name: workoutName(workout),
-          sourceName: workout.sourceName,
-          raw: workoutRawPayload(workout),
-        };
+    for (const workout of uniqueWorkouts) {
+      const values = {
+        providerId,
+        externalId: workoutExternalId(workout),
+        activityType: workout.activityType,
+        startedAt: workout.startDate,
+        endedAt: workout.endDate,
+        name: workoutName(workout),
+        sourceName: workout.sourceName,
+        raw: workoutRawPayload(workout),
+      };
 
-        const returned = await upsertProviderActivity(transactionDb, values, {
-          activityType: values.activityType,
-          startedAt: values.startedAt,
-          endedAt: values.endedAt,
-          name: sql`CASE
+      const returned = await upsertProviderActivity(transactionDb, values, {
+        activityType: values.activityType,
+        startedAt: values.startedAt,
+        endedAt: values.endedAt,
+        name: sql`CASE
             WHEN excluded.canonical_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
               THEN excluded.name
             ELSE ${activity.name}
           END`,
-          sourceName: values.sourceName,
-          raw: values.raw,
-        });
+        sourceName: values.sourceName,
+        raw: values.raw,
+      });
 
-        if (returned) {
-          results.push({ activityId: returned.id, workout });
+      if (returned) {
+        results.push({ activityId: returned.id, workout });
+        if (workout.hangTen) {
           await replaceHangTenIntervals(transactionDb, returned.id, workout);
         }
       }

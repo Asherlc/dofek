@@ -121,6 +121,14 @@ export const processingStageEvent = fitness.table(
       table.operationId,
       table.sequence.desc(),
     ),
+    index("processing_stage_event_latest_idx").on(
+      table.operationId,
+      table.stage,
+      table.datasetKey,
+      table.outputPath,
+      table.modelName,
+      table.sequence.desc(),
+    ),
     index("processing_stage_event_dataset_sequence_idx").on(
       table.datasetKey,
       table.sequence.desc(),
