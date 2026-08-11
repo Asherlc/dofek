@@ -58,8 +58,8 @@ export async function signInToKaya(
     headers: browserHeaders(),
     body: JSON.stringify({ email, password }),
   });
-  const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new KayaInvalidCredentialsError();
+  const payload: unknown = await response.json();
   const parsed = z
     .object({
       message: z.literal("ok"),
@@ -103,9 +103,9 @@ export class KayaClient {
         headers: { ...browserHeaders(), authorization: `Bearer ${this.accessToken}` },
         body: JSON.stringify({ query, variables: { user_id: userId, offset, count: PAGE_SIZE } }),
       });
-      const payload: unknown = await response.json().catch(() => null);
       if (!response.ok)
         throw new KayaApiError(`Kaya API request failed (${response.status})`, response.status);
+      const payload: unknown = await response.json();
       const envelope = z
         .object({
           data: z.object({ [field]: z.array(itemSchema) }).optional(),
