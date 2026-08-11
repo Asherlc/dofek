@@ -2080,6 +2080,24 @@ describe("WahooProvider.sync — expired token refresh path", () => {
           );
         }
         if (requestUrl.pathname === "/v1/workouts") {
+          const accessToken = new Headers(init?.headers).get("Authorization");
+          const page = requestUrl.searchParams.get("page");
+          if (page === "1" && accessToken === "Bearer valid-access-token") {
+            return Promise.resolve(
+              Response.json({ error: "Access token has expired" }, { status: 401 }),
+            );
+          }
+          if (page === "1" && accessToken === "Bearer refreshed-access-token") {
+            return Promise.resolve(
+              Response.json(
+                makeWorkoutApiResponse([sampleWahooWorkoutNoFit], {
+                  page: 1,
+                  total: 31,
+                  perPage: 30,
+                }),
+              ),
+            );
+          }
           return Promise.resolve(
             Response.json({ error: "Access token has expired" }, { status: 401 }),
           );
