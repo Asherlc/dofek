@@ -1,7 +1,7 @@
 {
   "worktree": {
     "setup": "pnpm install",
-    "teardown": "mise exec -- pnpm tsx scripts/conductor-archive.ts"
+    "teardown": "node \"${PASEO_HOME:-$HOME/.paseo}/scripts/dofek-worktree-archive.mjs\""
   },
   "metadataGeneration": {
     "pullRequest": {
