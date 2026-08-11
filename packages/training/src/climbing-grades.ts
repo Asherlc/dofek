@@ -95,9 +95,10 @@ function canonicalGrade(grade: string, system: ClimbingGradeSystem): string | nu
   const yosemiteBase = /^5\.(\d+)([+-])?$/i.exec(trimmed);
   if (!yosemiteBase) return null;
   const major = yosemiteBase[1];
-  const hasKnownSubdivision = scale.grades.some((candidate) =>
-    new RegExp(`^5\\.${major}[abcd]$`, "i").test(candidate),
-  );
+  const hasKnownSubdivision = scale.grades.some((candidate) => {
+    const subdivision = /^5\.(\d+)[abcd]$/i.exec(candidate);
+    return subdivision?.[1] === major;
+  });
   return hasKnownSubdivision ? `5.${major}${yosemiteBase[2] ?? ""}` : null;
 }
 
