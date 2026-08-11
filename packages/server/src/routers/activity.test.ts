@@ -187,6 +187,61 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("activityRouter", () => {
+  describe("hangboardDetails", () => {
+    it("returns the Hangboarding detail contract", async () => {
+      const caller = makeCaller([
+        {
+          activity_id: "activity-1",
+          canonical_type: "hangboard",
+          plan_name: "7/3 Repeaters",
+          session_id: "session-1",
+          board_id: "board-1",
+          board_name: "Tension Board",
+          segments_error: null,
+          interval_id: "interval-1",
+          interval_index: 0,
+          label: "Step 1: 19 mm edge",
+          interval_type: "work",
+          interval_started_at: "2026-08-07T14:00:00.000Z",
+          interval_ended_at: "2026-08-07T14:00:07.000Z",
+          duration_seconds: 7,
+        },
+      ]);
+
+      await expect(
+        caller.hangboardDetails({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).resolves.toEqual({
+        planName: "7/3 Repeaters",
+        sessionId: "session-1",
+        boardId: "board-1",
+        boardName: "Tension Board",
+        segmentsError: null,
+        intervals: [
+          {
+            id: "interval-1",
+            intervalIndex: 0,
+            label: "Step 1: 19 mm edge",
+            intervalType: "work",
+            startedAt: "2026-08-07T14:00:00.000Z",
+            endedAt: "2026-08-07T14:00:07.000Z",
+            durationSeconds: 7,
+          },
+        ],
+      });
+    });
+
+    it("returns an actionable not-found error for a non-Hangboarding activity", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.hangboardDetails({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "NOT_FOUND",
+        message: "Hangboarding details not found",
+      });
+    });
+  });
+
   describe("list", () => {
     it("returns paginated items with totalCount", async () => {
       const rows = [

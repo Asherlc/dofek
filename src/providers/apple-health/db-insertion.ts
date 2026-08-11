@@ -1,7 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
-import type { SyncDatabase } from "../../db/index.ts";
+import type { Database, SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
@@ -21,6 +21,19 @@ import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
+
+type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
+  return "transaction" in db && typeof db.transaction === "function";
+}
+
+function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
+  if (!hasTransaction(db)) {
+    throw new Error("Apple Health workout upsert requires a transactional database");
+  }
+  return db;
+}
 
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
@@ -683,12 +696,13 @@ export async function upsertWorkoutBatch(
   }
   const uniqueWorkouts = [...dedupMap.values()];
 
-  // Multi-row upsert with RETURNING to get all activity IDs in one statement
-  const activityResults: { activityId: string; workout: HealthWorkout }[] = [];
+  const transactionalDb = requireTransactionalDatabase(db);
+  // Keep activity metadata and Hang Ten intervals in the same transaction so a
+  // failed replacement cannot leave the activity row ahead of its intervals.
+  const activityResults = await transactionalDb.transaction(async (transactionDb) => {
+    const results: { activityId: string; workout: HealthWorkout }[] = [];
 
-  for (let i = 0; i < uniqueWorkouts.length; i += 500) {
-    const batch = uniqueWorkouts.slice(i, i + 500);
-    for (const workout of batch) {
+    for (const workout of uniqueWorkouts) {
       const values = {
         providerId,
         externalId: workoutExternalId(workout),
@@ -700,29 +714,29 @@ export async function upsertWorkoutBatch(
         raw: workoutRawPayload(workout),
       };
 
-      const returned = await upsertProviderActivity(db, values, {
+      const returned = await upsertProviderActivity(transactionDb, values, {
         activityType: values.activityType,
         startedAt: values.startedAt,
         endedAt: values.endedAt,
         name: sql`CASE
-          WHEN excluded.canonical_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
-            THEN excluded.name
-          ELSE ${activity.name}
-        END`,
+            WHEN excluded.canonical_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
+              THEN excluded.name
+            ELSE ${activity.name}
+          END`,
         sourceName: values.sourceName,
         raw: values.raw,
       });
 
       if (returned) {
-        activityResults.push({ activityId: returned.id, workout });
+        results.push({ activityId: returned.id, workout });
+        if (workout.hangTen) {
+          await replaceHangTenIntervals(transactionDb, returned.id, workout);
+        }
       }
     }
-  }
 
-  for (const { activityId, workout } of activityResults) {
-    if (!workout.hangTen) continue;
-    await replaceHangTenIntervals(db, activityId, workout);
-  }
+    return results;
+  });
 
   // Batch all GPS route locations across all workouts
   const allGpsRows: MetricStreamSourceRow[] = [];

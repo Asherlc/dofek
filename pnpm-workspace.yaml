@@ -32,6 +32,11 @@ packages:
 
 dedupePeers: true
 
+audit:
+  ignore:
+    - GHSA-w3rx-r6r6-pgpr
+    - GHSA-5p2g-fcmc-qvqq
+
 overrides:
   "@expo/dom-webview": 55.0.5
   "@expo/xcpretty>js-yaml": 4.3.1

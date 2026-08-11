@@ -30,6 +30,7 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
+import { HangboardingSummary } from "../../components/HangboardingSummary";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
@@ -76,21 +77,56 @@ const mobileClimbingSessionSummaryRowSchema = z.object({
   hardestRouteGrade: z.string().nullable(),
 });
 
+const mobileHangboardingDailyRowSchema = z.object({
+  date: z.string(),
+  sessionCount: z.number().int().nonnegative(),
+  durationSeconds: z.number().nonnegative(),
+  workDurationSeconds: z.number().nonnegative().nullable(),
+  restDurationSeconds: z.number().nonnegative().nullable(),
+});
+
+const mobileHangboardingSummarySchema = z.object({
+  sessionCount: z.number().int().nonnegative(),
+  totalDurationSeconds: z.number().nonnegative(),
+  averageDurationSeconds: z.number().nonnegative().nullable(),
+  totalWorkDurationSeconds: z.number().nonnegative().nullable(),
+  totalRestDurationSeconds: z.number().nonnegative().nullable(),
+  workIntervalCount: z.number().int().nonnegative().nullable(),
+  averageHeartRate: z.number().nonnegative().nullable(),
+  peakHeartRate: z.number().nonnegative().nullable(),
+  latestSession: z
+    .object({
+      activityId: z.string(),
+      startedAt: z.string(),
+      planName: z.string().nullable(),
+      boardName: z.string().nullable(),
+      durationSeconds: z.number().nonnegative(),
+    })
+    .nullable(),
+  daily: z.unknown(),
+});
+
 const mobileClimbingDataSchema = z.object({
   gradeProgression: z.array(mobileClimbingGradeProgressionRowSchema),
   volumeByGrade: z.array(mobileClimbingVolumeByGradeRowSchema),
   sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
+  hangboarding: z.object({
+    ...mobileHangboardingSummarySchema.shape,
+    daily: z.array(mobileHangboardingDailyRowSchema),
+  }),
 });
 
 const mobileClimbingPayloadSchema = z.object({
   gradeProgression: z.unknown().optional(),
   volumeByGrade: z.unknown().optional(),
   sessionSummary: z.unknown().optional(),
+  hangboarding: z.unknown().optional(),
 });
 
 type MobileClimbingGradeProgressionRow = z.infer<typeof mobileClimbingGradeProgressionRowSchema>;
 type MobileClimbingVolumeByGradeRow = z.infer<typeof mobileClimbingVolumeByGradeRowSchema>;
 type MobileClimbingSessionSummaryRow = z.infer<typeof mobileClimbingSessionSummaryRowSchema>;
+type MobileHangboardingSummary = z.infer<typeof mobileClimbingDataSchema>["hangboarding"];
 type MobileClimbingData = z.infer<typeof mobileClimbingDataSchema>;
 
 interface MobileClimbingParseResult {
@@ -102,6 +138,18 @@ const emptyClimbingData: MobileClimbingData = {
   gradeProgression: [],
   volumeByGrade: [],
   sessionSummary: [],
+  hangboarding: {
+    sessionCount: 0,
+    totalDurationSeconds: 0,
+    averageDurationSeconds: null,
+    totalWorkDurationSeconds: null,
+    totalRestDurationSeconds: null,
+    workIntervalCount: null,
+    averageHeartRate: null,
+    peakHeartRate: null,
+    latestSession: null,
+    daily: [],
+  },
 };
 
 const reportedTrainingErrors = new WeakSet<object>();
@@ -146,14 +194,41 @@ function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
     payloadResult.data.sessionSummary ?? [],
     "strain:climbing.sessionSummary",
   );
+  const hangboardingResult = mobileHangboardingSummarySchema.safeParse(
+    payloadResult.data.hangboarding ?? emptyClimbingData.hangboarding,
+  );
+  const hangboardingDaily = hangboardingResult.success
+    ? safeParseRows(
+        mobileHangboardingDailyRowSchema,
+        hangboardingResult.data.daily,
+        "strain:climbing.hangboarding.daily",
+      )
+    : { data: [], error: null };
+  const hangboarding = hangboardingResult.success
+    ? { ...hangboardingResult.data, daily: hangboardingDaily.data }
+    : emptyClimbingData.hangboarding;
+  const hangboardingError = hangboardingResult.success
+    ? hangboardingDaily.error
+    : (() => {
+        const parseError = new Error(
+          `strain:climbing.hangboarding: Zod parse failed: ${hangboardingResult.error.message}`,
+        );
+        captureException(parseError, {
+          context: "strain:climbing.hangboarding",
+          zodError: hangboardingResult.error.format(),
+        });
+        return parseError;
+      })();
 
   return {
     data: {
       gradeProgression: gradeProgression.data,
       volumeByGrade: volumeByGrade.data,
       sessionSummary: sessionSummary.data,
+      hangboarding,
     },
-    error: gradeProgression.error ?? volumeByGrade.error ?? sessionSummary.error,
+    error:
+      gradeProgression.error ?? volumeByGrade.error ?? sessionSummary.error ?? hangboardingError,
   };
 }
 
@@ -182,6 +257,10 @@ class ClimbingSectionModel {
 
   get sessions(): MobileClimbingSessionSummaryRow[] {
     return this.#data.sessionSummary;
+  }
+
+  get hangboarding(): MobileHangboardingSummary {
+    return this.#data.hangboarding;
   }
 }
 
@@ -498,7 +577,15 @@ export default function StrainScreen() {
                 {climbingParsed.error?.message ?? "Failed to load climbing data."}
               </Text>
             ) : null}
-            {shouldShowClimbingSection ? <ClimbingSection model={climbingModel} /> : null}
+            {shouldShowClimbingSection ? (
+              <>
+                <ClimbingSection model={climbingModel} />
+                <HangboardingSummary
+                  data={climbingModel.hangboarding}
+                  loading={trainingQuery.isLoading && trainingData == null}
+                />
+              </>
+            ) : null}
           </View>
 
           {/* Weekly volume summary */}

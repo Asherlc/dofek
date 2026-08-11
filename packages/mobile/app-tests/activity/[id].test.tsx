@@ -140,10 +140,14 @@ vi.mock("../../theme", () => ({
     text: "#fff",
     textSecondary: "#aaa",
     textTertiary: "#666",
+    blue: "#00f",
+    warning: "#f90",
     accent: "#00f",
     positive: "#0f0",
     danger: "#f00",
   },
+  radius: { md: 8, xl: 16, full: 999 },
+  spacing: { xs: 4, sm: 8, md: 16, lg: 24 },
 }));
 
 vi.mock("@dofek/format/format", async (importOriginal) => {
@@ -189,6 +193,9 @@ vi.mock("@dofek/scoring/colors", () => ({
     info: "#2563eb",
     elevated: "#ea580c",
   },
+  operationalStatusColors: {
+    danger: { surface: "#fee2e2", border: "#dc2626", foreground: "#991b1b" },
+  },
   textColors: { neutral: "#8aaa8a" },
 }));
 
@@ -223,6 +230,7 @@ const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
 const mockClimbingEntriesQuery = vi.fn();
+const mockHangboardDetailsQuery = vi.fn();
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -230,6 +238,7 @@ const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityHangboardDetailsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -243,6 +252,7 @@ vi.mock("../../lib/trpc", () => ({
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
+      hangboardDetails: { useQuery: (...args: unknown[]) => mockHangboardDetailsQuery(...args) },
       recompute: {
         useMutation: (options?: {
           onSuccess?: () => Promise<void>;
@@ -274,6 +284,7 @@ vi.mock("../../lib/trpc", () => ({
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
         strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
+        hangboardDetails: { invalidate: mockActivityHangboardDetailsInvalidate },
         list: { invalidate: mockActivityListInvalidate },
       },
       calendar: {
@@ -363,6 +374,7 @@ beforeEach(() => {
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
   mockClimbingEntriesQuery.mockClear();
+  mockHangboardDetailsQuery.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
@@ -371,6 +383,7 @@ beforeEach(() => {
   mockActivityHrZonesInvalidate.mockClear();
   mockActivityPowerZonesInvalidate.mockClear();
   mockActivityStrengthExercisesInvalidate.mockClear();
+  mockActivityHangboardDetailsInvalidate.mockClear();
   mockActivityListInvalidate.mockClear();
   mockCalendarWeekListInvalidate.mockClear();
   mockCalendarActivityOverviewInvalidate.mockClear();
@@ -383,6 +396,7 @@ beforeEach(() => {
   mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false });
   mockStrengthExercisesQuery.mockReturnValue({ data: [], isLoading: false });
   mockClimbingEntriesQuery.mockReturnValue({ data: [], isLoading: false });
+  mockHangboardDetailsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
 });
 
 describe("ActivityDetailScreen", () => {
@@ -409,6 +423,7 @@ describe("ActivityDetailScreen", () => {
     expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
     expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
     expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: activityId });
+    expect(mockActivityHangboardDetailsInvalidate).toHaveBeenCalledWith({ id: activityId });
     expect(mockActivityListInvalidate).toHaveBeenCalled();
     expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
     expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
@@ -449,6 +464,40 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
+  });
+
+  it("enables Hangboarding details only for canonical hangboard activities", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "cycling" },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    expect(getQueryEnabledFlag(mockHangboardDetailsQuery.mock.calls[0]?.[1])).toBe(false);
+
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "hangboard", name: "Repeaters" },
+      isLoading: false,
+      error: null,
+    });
+    mockHangboardDetailsQuery.mockReturnValue({
+      data: {
+        planName: "Imported 7/3",
+        sessionId: "session-1",
+        boardId: "board-1",
+        boardName: "Tension Board",
+        segmentsError: null,
+        intervals: [],
+      },
+      isLoading: false,
+      error: null,
+    });
+    const rerendered = render(React.createElement(ActivityDetailScreen));
+    rerendered.rerender(React.createElement(ActivityDetailScreen));
+    expect(getQueryEnabledFlag(mockHangboardDetailsQuery.mock.calls.at(-1)?.[1])).toBe(true);
+    expect(screen.getByText("Hangboarding")).toBeTruthy();
+    expect(screen.getByText("Imported 7/3")).toBeTruthy();
   });
 
   it("renders the activity's session perceived exertion control", async () => {

@@ -21,6 +21,7 @@ import {
   upsertSleepBatch,
   upsertWorkoutBatch,
 } from "./db-insertion.ts";
+import * as hangTenIntervals from "./hang-ten-intervals.ts";
 import { type HealthRecord, parseRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
@@ -123,8 +124,12 @@ function findActivityUpsertValues(
   return undefined;
 }
 
+type TransactionalMockDatabase = SyncDatabase & {
+  transaction<TResult>(work: (transaction: SyncDatabase) => Promise<TResult>): Promise<TResult>;
+};
+
 function createMockDb(returningData: Record<string, unknown>[] = []): {
-  db: SyncDatabase;
+  db: TransactionalMockDatabase;
   capture: MockInsertCapture;
 } {
   const capture: MockInsertCapture = { values: [], executions: [], partitionKeys: [] };
@@ -1395,6 +1400,39 @@ describe("upsertHealthEventBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertWorkoutBatch", () => {
+  it("requires a transactional database", async () => {
+    const { db } = createMockDb();
+    const nonTransactionalDb: SyncDatabase = {
+      select: db.select,
+      insert: db.insert,
+      delete: db.delete,
+      execute: db.execute,
+    };
+
+    await expect(upsertWorkoutBatch(nonTransactionalDb, "p1", [makeWorkout()])).rejects.toThrow(
+      "Apple Health workout upsert requires a transactional database",
+    );
+  });
+
+  it("rejects a database with a non-callable transaction member", async () => {
+    const { db } = createMockDb();
+    const invalidTransactionDb = { ...db, transaction: undefined };
+
+    await expect(upsertWorkoutBatch(invalidTransactionDb, "p1", [makeWorkout()])).rejects.toThrow(
+      "Apple Health workout upsert requires a transactional database",
+    );
+  });
+
+  it("runs workout upserts inside one transaction", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const transactionSpy = vi.spyOn(db, "transaction");
+
+    await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+
+    expect(transactionSpy).toHaveBeenCalledOnce();
+    expect(transactionSpy).toHaveBeenCalledWith(expect.any(Function));
+  });
+
   it("deduplicates workouts with the same startDate", async () => {
     const sharedStart = new Date("2024-06-01T08:00:00Z");
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
@@ -1615,6 +1653,28 @@ describe("upsertWorkoutBatch", () => {
         expect.arrayContaining([secondActivityId, "Step 2: second-hold"]),
       ]),
     );
+  });
+
+  it("does not replace Hang Ten intervals for a non-Hang-Ten workout", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const replacementSpy = vi.spyOn(hangTenIntervals, "replaceHangTenIntervals");
+
+    try {
+      await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+      expect(replacementSpy).not.toHaveBeenCalled();
+    } finally {
+      replacementSpy.mockRestore();
+    }
+  });
+
+  it("does not process Hang Ten intervals when the activity upsert returns no row", async () => {
+    const { db, capture } = createMockDb([{ id: undefined }]);
+    const count = await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+
+    expect(count).toBe(0);
+    expect(
+      capture.executions.some((execution) => execution.sql.includes("activity_interval")),
+    ).toBe(false);
   });
 
   it("inserts GPS route locations for workouts", async () => {

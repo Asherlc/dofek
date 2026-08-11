@@ -47,6 +47,12 @@ existing_sleep_state AS materialized (
             max(refreshed_at) AS refreshed_at,
             countIf(is_deleted = 0) > 0 AS has_active_samples
         FROM {{ this }} FINAL
+        WHERE (user_id, sleep_id) IN (
+            SELECT
+                user_id,
+                sleep_id
+            FROM current_windows
+        )
         GROUP BY
             user_id,
             sleep_id
@@ -163,6 +169,9 @@ current_samples AS (
         greatest(samples.refreshed_at, active_dirty_sleep.source_refreshed_at)
             AS source_refreshed_at
     FROM {{ ref('deduped_sensor') }} AS samples FINAL
+    INNER JOIN dirty_sleep_dates
+        ON dirty_sleep_dates.user_id = samples.user_id
+        AND dirty_sleep_dates.recorded_date = samples.recorded_date
     INNER JOIN active_dirty_sleep
         ON active_dirty_sleep.user_id = samples.user_id
         AND samples.recorded_at >= active_dirty_sleep.started_at
@@ -177,12 +186,6 @@ current_samples AS (
     WHERE samples.channel = 'heart_rate'
         AND samples.is_deleted = 0
         AND samples.scalar IS NOT NULL
-        AND (samples.user_id, samples.recorded_date) IN (
-            SELECT
-                user_id,
-                recorded_date
-            FROM dirty_sleep_dates
-        )
         AND overlapping_activity.id IS NULL
 ),
 

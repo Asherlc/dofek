@@ -7,4 +7,8 @@ describe("cycling_activity model", () => {
   it("preserves nulls when an activity has no aerobic efficiency row", () => {
     expect(modelSql).toContain("'join_use_nulls': 1");
   });
+
+  it("normalizes empty modalities to null at the serving boundary", () => {
+    expect(modelSql).toContain("nullIf(summary.modality, '') AS modality");
+  });
 });

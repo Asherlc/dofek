@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const gradeProgressionQuery = vi.hoisted(() => vi.fn());
 const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const sessionSummaryQuery = vi.hoisted(() => vi.fn());
+const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const fingerLoadingHistoryQuery = vi.hoisted(() => vi.fn());
 const logFingerLoadingMutation = vi.hoisted(() => vi.fn());
 const logClimbingSessionMutation = vi.hoisted(() => vi.fn());
@@ -50,6 +51,10 @@ vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
   },
 }));
 
+vi.mock("../../components/HangboardingSummary.tsx", () => ({
+  HangboardingSummary: () => <div>Hangboarding Summary component</div>,
+}));
+
 vi.mock("../../components/QueryStatePanel.tsx", () => ({
   QueryStatePanel: ({ error }: { error?: Error | null }) => (
     <div>{error ? `Error: ${error.message}` : "Query state"}</div>
@@ -69,6 +74,7 @@ vi.mock("../../lib/trpc.ts", () => ({
       logClimbingSession: { useMutation: logClimbingSessionMutation },
       volumeByGrade: { useQuery: volumeByGradeQuery },
       sessionSummary: { useQuery: sessionSummaryQuery },
+      hangboardingSummary: { useQuery: hangboardingSummaryQuery },
     },
     useUtils: () => ({
       activity: { invalidate: vi.fn() },
@@ -92,6 +98,7 @@ describe("ClimbingTab", () => {
     gradeProgressionQuery.mockReset();
     volumeByGradeQuery.mockReset();
     sessionSummaryQuery.mockReset();
+    hangboardingSummaryQuery.mockReset();
     fingerLoadingHistoryQuery.mockReset();
     logFingerLoadingMutation.mockReset();
     logClimbingSessionMutation.mockReset();
@@ -100,6 +107,7 @@ describe("ClimbingTab", () => {
     gradeProgressionQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     volumeByGradeQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    hangboardingSummaryQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     fingerLoadingHistoryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     logFingerLoadingMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
     logClimbingSessionMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
@@ -129,6 +137,7 @@ describe("ClimbingTab", () => {
     expect(gradeProgressionQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(volumeByGradeQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(sessionSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
+    expect(hangboardingSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     const sectionProps = recentActivitiesSection.mock.calls[0]?.[0];
     expect(sectionProps.activityTypes).toEqual(["climbing"]);
     expect(sectionProps.additionalColumns.map((column: { key: string }) => column.key)).toEqual([
@@ -150,6 +159,7 @@ describe("ClimbingTab", () => {
     expect(gradeProgressionQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(volumeByGradeQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(sessionSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
+    expect(hangboardingSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
   });
 
   it("renders one recent climbing table", async () => {
@@ -159,6 +169,7 @@ describe("ClimbingTab", () => {
     expect(screen.getByText("Grade Progression")).toBeTruthy();
     expect(screen.getByText("Volume by Grade")).toBeTruthy();
     expect(screen.getByText("Recent Climbing Activities")).toBeTruthy();
+    expect(screen.getByText("Hangboarding")).toBeTruthy();
     expect(screen.queryByText("Recent Climbing Sessions")).toBeNull();
   });
 
