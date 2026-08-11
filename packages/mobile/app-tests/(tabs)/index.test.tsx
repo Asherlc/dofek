@@ -105,6 +105,7 @@ vi.mock("../../lib/trpc", () => ({
           };
         },
       },
+      dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
       triggerSync: {
         useMutation: () => ({
           mutate: vi.fn(),

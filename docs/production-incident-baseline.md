@@ -7,14 +7,35 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
-## 2026-08-10 — Expo SDK 57 compatibility metadata invalidated mobile CI
+## 2026-08-10: Pull-request CI failures from configuration and test drift
 
-- **Status:** Fix prepared; exact-head CI verification is pending.
-- **Symptoms / impact:** The `Build Mobile / Metro Bundle` CI job for PR #2475 stopped before Metro export, blocking the Sentry remediation from merging. There was no production impact.
-- **Evidence / root cause:** The exact failing command was `cd packages/mobile && pnpm expo install --check` in [job 93654925469](https://github.com/Asherlc/dofek/actions/runs/31450857261/job/93654925469). Its first fatal line was `Found outdated dependencies`, after Expo listed eleven SDK 57 patch releases, including `expo@57.0.12`, `expo-router@57.0.12`, and `expo-updates@57.0.13`. The branch and `main` had the same mobile dependency state, so the cause was mutable Expo compatibility metadata advancing after the previously valid exact pins. Expo documents that this check rejects incompatible versions and that its canonical fix updates them to the compatible set in its [dependency-validation guidance](https://docs.expo.dev/more/expo-cli/#dependency-validation).
-- **Fix / mitigation:** Align the affected Expo SDK 57 package pins with the compatibility set, regenerate the lockfile, and update the existing release-age policy entries for those exact releases. No retry, timeout, validation exclusion, or fallback behavior was added.
-- **Validation:** A frozen-lockfile workspace install and the exact-version policy pass locally. Local configuration validation without a Sentry DSN correctly fails fast at the existing required-secret guard; the CI job loaded that secret successfully before reporting the dependency mismatch. Run the same Expo compatibility command with the production CI environment on the new exact head.
-- **Remaining risk / follow-up:** Expo's live compatibility metadata can advance independently of repository commits. Keep the pinned SDK package set synchronized whenever this required CI check reports a newly expected patch release.
+- **Status:** Repository fixes are pushed; the latest CI run has no failed
+  checks, but its iOS and watchOS native-build jobs remain queued for a
+  GitHub-hosted macOS runner.
+- **Symptoms / user impact:** Pull-request CI initially failed spell check,
+  mutation testing, mobile tests, web unit tests, and the mobile Metro job.
+  The PR could not reach a completed green CI gate.
+- **Evidence:** The [latest CI run](https://github.com/Asherlc/dofek/actions/runs/31406513226)
+  reports 81 successful checks and 4 skipped checks; only the iOS and watchOS
+  native-build jobs are queued. Local validation passed the full unit tier
+  (15,280 tests), mobile tests (1,486 tests), the focused web tests (68 tests),
+  and cspell.
+- **Root causes:** The spell dictionary omitted the existing word
+  `alertable`; mutation preparation compared pull requests against
+  `origin/main` instead of the actual pull-request base SHA; several web and
+  mobile tRPC fixtures had not added the current processing dismissal
+  mutation; and Expo SDK 57 dependencies were one patch behind the installed
+  SDK compatibility set.
+- **Fix:** Added the dictionary entry, scoped mutation diffs to
+  `github.event.pull_request.base.sha`, aligned the stale test fixtures, and
+  synchronized the Expo manifest and lockfile with `pnpm expo install --fix`.
+  The fixes are in commits [`2afe007`](https://github.com/Asherlc/dofek/commit/2afe0078cc271da42d21e6eea1b9ba33afbf8f80),
+  [`82cf19f`](https://github.com/Asherlc/dofek/commit/82cf19f432c8264f7cbe7808fd663f76557f5680),
+  [`ef8810d`](https://github.com/Asherlc/dofek/commit/ef8810d463ec628d1347422da8d667267b3c796e),
+  [`97671b6`](https://github.com/Asherlc/dofek/commit/97671b64e6a6f2a33527a7011cb3c5c3d18ab6d6),
+  and [`a7ef077`](https://github.com/Asherlc/dofek/commit/a7ef077e3c731818bf8ff2ad64c7b03647ce1e49).
+- **Remaining risk / follow-up:** Confirm the two queued native jobs complete;
+  no code-level CI failure remains in the current run.
 
 ## 2026-08-07 — Wahoo OAuth callback served as `Not Found`
 
