@@ -551,8 +551,8 @@ importers:
         specifier: 57.0.2
         version: 57.0.2(expo@57.0.12)(react-native@0.86.2)
       posthog-react-native:
-        specifier: 4.61.2
-        version: 4.61.2(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4)
+        specifier: 4.61.4
+        version: 4.61.4(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4)
       react:
         specifier: 19.2.3
         version: 19.2.3
@@ -5134,11 +5134,14 @@ packages:
   '@posthog/core@1.46.1':
     resolution: {integrity: sha512-EoCFduRkvrg9E5ylMi4QnZCjlAdRJCq6tJouWfngBVR79XSI4iPvIWYA+CdzokAjk+TfSVBFVJ++4Im3r+T0Dg==}
 
+  '@posthog/core@1.47.0':
+    resolution: {integrity: sha512-LW62V+9yx7G7mLd+EYpwW0PiaPZI8XRJ1tLuhw+9fXHpugLp8XQD5JuCQ2kIXvoUfyx1DpKfGQY3dUnzMOIn7Q==}
+
   '@posthog/types@1.374.2':
     resolution: {integrity: sha512-ZghQSFMi+HFJNPvPjBoyY/jWQ+q6mSQVtWQxOHMSbBidUZjsyYbxYxBFbHy2qWLNe4mEpX+Wqir2Q4I/4AVvJQ==}
 
-  '@posthog/types@1.399.0':
-    resolution: {integrity: sha512-/WDwBzqIPko8VJ1B+0rlso2XQEz9+2sqtsY9Tqy3p1GhgTqsFakcz/PmMpAnA321LTEZVRcO6x5hAwABV4yrDw==}
+  '@posthog/types@1.402.2':
+    resolution: {integrity: sha512-ZZTiS4dLwF4/D0YTzS3gGSLFnhuNOY5yu4d9VGS9trGe5GW6FjIXo20p18K5BPW2RZSYSld8sdnSAY3AUXleUQ==}
 
   '@prisma/instrumentation@7.4.2':
     resolution: {integrity: sha512-r9JfchJF1Ae6yAxcaLu/V1TGqBhAuSDe3mRNOssBfx1rMzfZ4fdNvrgUBwyb/TNTGXFxlH9AZix5P257x07nrg==}
@@ -13904,8 +13907,8 @@ packages:
       rxjs:
         optional: true
 
-  posthog-react-native@4.61.2:
-    resolution: {integrity: sha512-AaLU4Lyst9M4E16kqf5F7fdxuOFu8g9m6mH2pJydXsWUx/Rm6aLk6CZ1/EpfspCKaAhO32TVoQkBI/x4ZpVbMw==}
+  posthog-react-native@4.61.4:
+    resolution: {integrity: sha512-8l9wZ1boR27hRuEH41dF/BtUdwm7VTyzFykRKXphFXYKqygrO4Cxr2xyuwqFVSnbnu4S/NKWFuWxK4bk98clpw==}
     hasBin: true
     peerDependencies:
       '@posthog/react-native-plugin': '>= 2.2.0'
@@ -21404,11 +21407,15 @@ snapshots:
 
   '@posthog/core@1.46.1':
     dependencies:
-      '@posthog/types': 1.399.0
+      '@posthog/types': 1.402.2
+
+  '@posthog/core@1.47.0':
+    dependencies:
+      '@posthog/types': 1.402.2
 
   '@posthog/types@1.374.2': {}
 
-  '@posthog/types@1.399.0': {}
+  '@posthog/types@1.402.2': {}
 
   '@prisma/instrumentation@7.4.2(@opentelemetry/api@1.9.1)(supports-color@11.0.0)':
     dependencies:
@@ -31994,10 +32001,10 @@ snapshots:
     optionalDependencies:
       rxjs: 7.8.2
 
-  posthog-react-native@4.61.2(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4):
+  posthog-react-native@4.61.4(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4):
     dependencies:
-      '@posthog/core': 1.46.1
-      '@posthog/types': 1.399.0
+      '@posthog/core': 1.47.0
+      '@posthog/types': 1.402.2
     optionalDependencies:
       '@react-native-async-storage/async-storage': 2.2.0(react-native@0.86.2)
       expo-application: 57.0.2(expo@57.0.12)
