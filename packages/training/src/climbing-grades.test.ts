@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  climbingGradePreferenceSchema,
   convertClimbingGrade,
   gradeOptionsForSystem,
   gradeSortValue,
@@ -97,6 +98,18 @@ describe("parseClimbingGrade", () => {
       boulder: "v_scale",
       route: "yds",
     });
+  });
+
+  it("rejects persisted preferences with grade systems from the wrong disciplines", () => {
+    expect(
+      climbingGradePreferenceSchema.safeParse({ boulder: "font", route: "french" }).success,
+    ).toBe(true);
+    expect(
+      climbingGradePreferenceSchema.safeParse({ boulder: "french", route: "yds" }).success,
+    ).toBe(false);
+    expect(
+      climbingGradePreferenceSchema.safeParse({ boulder: "font", route: "font" }).success,
+    ).toBe(false);
   });
 
   it("uses Sandbag scores only for valid, scored grades", () => {

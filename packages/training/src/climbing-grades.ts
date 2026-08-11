@@ -1,6 +1,7 @@
 /// <reference path="./openbeta-sandbag.d.ts" />
 
 import { convertGrade, GradeScales, getScale } from "@openbeta/sandbag";
+import { z } from "zod";
 
 export const CLIMBING_GRADE_SYSTEMS = [
   "v_scale",
@@ -79,21 +80,10 @@ export const ROUTE_GRADE_SYSTEMS = [
   "brazilian_crux",
 ] as const satisfies readonly RouteGradeSystem[];
 
-function isBoulderGradeSystem(value: string): value is BoulderGradeSystem {
-  return value === "v_scale" || value === "font";
-}
-
-function isRouteGradeSystem(value: string): value is RouteGradeSystem {
-  return (
-    value === "yds" ||
-    value === "french" ||
-    value === "uiaa" ||
-    value === "ewbank" ||
-    value === "saxon" ||
-    value === "norwegian" ||
-    value === "brazilian_crux"
-  );
-}
+export const climbingGradePreferenceSchema = z.object({
+  boulder: z.enum(BOULDER_GRADE_SYSTEMS),
+  route: z.enum(ROUTE_GRADE_SYSTEMS),
+});
 
 function sandbagScale(system: ClimbingGradeSystem) {
   const scale = getScale(systemToSandbagScale[system]);
@@ -133,19 +123,8 @@ export function gradeSystemsForClimbType(
 }
 
 export function resolveClimbingGradePreference(value: unknown): ClimbingGradePreference {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "boulder" in value &&
-    "route" in value &&
-    typeof value.boulder === "string" &&
-    typeof value.route === "string" &&
-    isBoulderGradeSystem(value.boulder) &&
-    isRouteGradeSystem(value.route)
-  ) {
-    return { boulder: value.boulder, route: value.route };
-  }
-  return DEFAULT_CLIMBING_GRADE_PREFERENCE;
+  const parsed = climbingGradePreferenceSchema.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_CLIMBING_GRADE_PREFERENCE;
 }
 
 export function gradeOptionsForSystem(system: ClimbingGradeSystem): readonly string[] {

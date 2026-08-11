@@ -24,6 +24,7 @@
 **Files:**
 - Modify: `packages/training/package.json`
 - Modify: `pnpm-lock.yaml`
+- Modify: `cspell.json` (add Sandbag and grade-system terms)
 - Modify: `packages/training/src/climbing-grades.ts`
 - Modify: `packages/training/src/climbing-grades.test.ts`
 - Modify: `packages/training/README.md`
@@ -38,7 +39,8 @@
 expect(gradeSystemsForClimbType("boulder")).toEqual(["v_scale", "font"]);
 expect(gradeOptionsForSystem("font")).toContain("6a");
 expect(convertClimbingGrade({ grade: "V4", sourceSystem: "v_scale", displaySystem: "font" }))
-  .toMatchObject({ displaySystem: "font", displayGrade: "6a+/6b+" });
+  .toEqual({ displaySystem: "font", displayGrade: "6a+/6b+", sortValue: 65 });
+expect(gradeSortValue("V0", "v_scale")).toBeLessThan(gradeSortValue("V4", "v_scale"));
 expect(convertClimbingGrade({ grade: "V4", sourceSystem: "v_scale", displaySystem: "yds" }))
   .toBeNull();
 ```
@@ -72,7 +74,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit the isolated domain change.**
 
 ```bash
-git add packages/training/package.json packages/training/src/climbing-grades.ts packages/training/src/climbing-grades.test.ts packages/training/README.md pnpm-lock.yaml
+git add cspell.json packages/training/package.json packages/training/src/climbing-grades.ts packages/training/src/climbing-grades.test.ts packages/training/README.md pnpm-lock.yaml
 git commit -m "feat(training): use sandbag for climbing grades"
 ```
 

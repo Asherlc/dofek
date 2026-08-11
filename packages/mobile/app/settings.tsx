@@ -6,10 +6,7 @@ import {
 } from "@dofek/auth/auth";
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
 import {
-  type BoulderGradeSystem,
   type ClimbingGradePreference,
-  gradeSystemLabel,
-  type RouteGradeSystem,
   resolveClimbingGradePreference,
 } from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -29,6 +26,7 @@ import {
   View,
 } from "react-native";
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
+import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
@@ -63,16 +61,6 @@ type SettingsCategory =
 const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] = [
   { value: "metric", label: "Metric", description: "kg, km, °C" },
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
-];
-const BOULDER_GRADE_SYSTEMS: BoulderGradeSystem[] = ["v_scale", "font"];
-const ROUTE_GRADE_SYSTEMS: RouteGradeSystem[] = [
-  "yds",
-  "french",
-  "uiaa",
-  "ewbank",
-  "saxon",
-  "norwegian",
-  "brazilian_crux",
 ];
 const SETTINGS_CATEGORIES: readonly {
   id: SettingsCategory;
@@ -527,67 +515,12 @@ export default function SettingsScreen() {
       ) : null}
 
       {activeCategory === "goals-models" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Climbing grades</Text>
-          <Text style={styles.sectionDescription}>
-            Choose the grade systems used for boulders and routes
-          </Text>
-          {climbingGradeSetting.error && !climbingGradePreference ? (
-            <Text style={styles.unitErrorText}>{climbingGradeSetting.error.message}</Text>
-          ) : climbingGradePreference ? null : (
-            <ActivityIndicator color={colors.accent} size="small" />
-          )}
-          {climbingGradePreference ? <Text style={styles.label}>Boulder grades</Text> : null}
-          {climbingGradePreference ? (
-            <View style={styles.unitRow}>
-              {BOULDER_GRADE_SYSTEMS.map((value) => {
-                const selected = climbingGradePreference.boulder === value;
-                return (
-                  <TouchableOpacity
-                    key={value}
-                    style={[styles.unitButton, selected && styles.unitButtonSelected]}
-                    onPress={() =>
-                      handleClimbingGradeChange({ ...climbingGradePreference, boulder: value })
-                    }
-                    disabled={setSettingMutation.isPending}
-                    accessibilityRole="button"
-                    accessibilityLabel={gradeSystemLabel(value)}
-                    accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
-                  >
-                    <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
-                      {gradeSystemLabel(value)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : null}
-          {climbingGradePreference ? <Text style={styles.label}>Route grades</Text> : null}
-          {climbingGradePreference ? (
-            <View style={styles.unitRow}>
-              {ROUTE_GRADE_SYSTEMS.map((value) => {
-                const selected = climbingGradePreference.route === value;
-                return (
-                  <TouchableOpacity
-                    key={value}
-                    style={[styles.unitButton, selected && styles.unitButtonSelected]}
-                    onPress={() =>
-                      handleClimbingGradeChange({ ...climbingGradePreference, route: value })
-                    }
-                    disabled={setSettingMutation.isPending}
-                    accessibilityRole="button"
-                    accessibilityLabel={gradeSystemLabel(value)}
-                    accessibilityState={{ selected, disabled: setSettingMutation.isPending }}
-                  >
-                    <Text style={[styles.unitLabel, selected && styles.unitLabelSelected]}>
-                      {gradeSystemLabel(value)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : null}
-        </View>
+        <ClimbingGradeSystemSettings
+          errorMessage={climbingGradeSetting.error?.message ?? null}
+          onChange={handleClimbingGradeChange}
+          preference={climbingGradePreference}
+          saving={setSettingMutation.isPending}
+        />
       ) : null}
 
       {/* ── Health Reports ── */}
