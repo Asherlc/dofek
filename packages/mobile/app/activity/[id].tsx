@@ -4,7 +4,6 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
-  formatClimbingAttemptResult,
   formatDateLong,
   formatDurationRange,
   formatDurationSeconds,
@@ -31,6 +30,10 @@ import {
 } from "react-native";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import {
+  type ClimbingEntry,
+  ClimbingEntryBreakdown,
+} from "../../components/ClimbingEntryBreakdown";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { RouteMap } from "../../components/RouteMap";
@@ -380,141 +383,6 @@ const exerciseStyles = StyleSheet.create({
   },
 });
 
-interface ClimbingEntry {
-  id: string;
-  climbType: "boulder" | "route";
-  grade: string;
-  sent: boolean;
-  attemptCount: number;
-  attempts: Array<{
-    attemptIndex: number;
-    failureReason: "fell" | "pumped" | "skin" | "technique" | "fear" | null;
-    notes: string | null;
-    outcome: "sent" | "failed";
-  }>;
-  ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
-  holdType: "crimp" | "sloper" | "pinch" | "pocket" | "jug" | null;
-  routeName: string | null;
-  locationName: string | null;
-  sourceName: string;
-  wallAngleDegrees: number | null;
-}
-
-function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
-  return (
-    <View style={climbingStyles.container}>
-      <ChartTitleWithTooltip
-        title="Climbs"
-        description="The climbs recorded during this session, including grades and send status."
-        textStyle={chartStyles.title}
-      />
-      {entries.map((entry) => (
-        <View key={entry.id} style={climbingStyles.entryRow}>
-          <View style={climbingStyles.gradeBadge}>
-            <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
-          </View>
-          <View style={climbingStyles.entryDetails}>
-            <Text style={climbingStyles.routeName}>
-              {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-            </Text>
-            {entry.locationName && (
-              <Text style={climbingStyles.locationName}>{entry.locationName}</Text>
-            )}
-            {(entry.wallAngleDegrees !== null || entry.holdType !== null) && (
-              <Text style={climbingStyles.locationName}>
-                {[
-                  entry.wallAngleDegrees === null ? null : `${entry.wallAngleDegrees}°`,
-                  entry.holdType === null
-                    ? null
-                    : `${entry.holdType[0]?.toUpperCase()}${entry.holdType.slice(1)}`,
-                ]
-                  .filter((value) => value !== null)
-                  .join(" · ")}
-              </Text>
-            )}
-            {entry.attempts.map((attempt) => (
-              <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
-                {attempt.attemptIndex}:{" "}
-                {attempt.outcome === "sent"
-                  ? "Sent"
-                  : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
-              </Text>
-            ))}
-          </View>
-          <View style={climbingStyles.resultDetails}>
-            {entry.ascentType && <Text style={climbingStyles.sent}>{entry.ascentType}</Text>}
-            <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
-              {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
-            </Text>
-            <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-const climbingStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  entryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 4,
-  },
-  gradeBadge: {
-    minWidth: 48,
-    borderRadius: 8,
-    backgroundColor: colors.surfaceSecondary,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    alignItems: "center",
-  },
-  gradeText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  entryDetails: {
-    flex: 1,
-  },
-  routeName: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  locationName: {
-    color: colors.textTertiary,
-    fontSize: 11,
-  },
-  resultDetails: {
-    alignItems: "flex-end",
-  },
-  sent: {
-    color: colors.positive,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  attempted: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  attemptDetail: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  sourceName: {
-    color: colors.textTertiary,
-    fontSize: 10,
-  },
-});
-
 // ── Main Screen ──
 
 export default function ActivityDetailScreen() {
@@ -857,7 +725,7 @@ export default function ActivityDetailScreen() {
       )}
 
       {isClimbingActivity && climbingEntries.error && (
-        <View style={climbingStyles.container}>
+        <View style={styles.chartsLoading}>
           <Text style={styles.errorText}>{climbingEntries.error.message}</Text>
         </View>
       )}
