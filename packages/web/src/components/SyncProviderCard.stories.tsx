@@ -107,7 +107,7 @@ export const NoSyncHistory: Story = {
 
 export const OverdueProvider: Story = {
   name: "Overdue provider",
-  tags: ["review-scenario", "review-scenario-overdue-provider"],
+  tags: ["review-scenario", "review-scenario-stale-provider"],
   args: {
     provider: {
       id: "strava",

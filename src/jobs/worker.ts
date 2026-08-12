@@ -74,10 +74,7 @@ import {
   ZIP_ENTRY_EXTRACT_QUEUE,
   type ZipEntryExtractJobData,
 } from "./queues.ts";
-import {
-  DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
-  setupScheduledSync,
-} from "./scheduled-sync.ts";
+import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES, setupScheduledSync } from "./scheduled-sync.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
