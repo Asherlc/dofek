@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   ascents: vi.fn(),
   captureException: vi.fn(),
   ensureProvider: vi.fn(),
+  kayaClient: vi.fn(),
   listSessions: vi.fn(),
   loadTokens: vi.fn(),
   signIn: vi.fn(),
@@ -18,6 +19,10 @@ vi.mock("@dofek/kaya-client", () => {
   class KayaInvalidCredentialsError extends Error {}
   return {
     KayaClient: class {
+      constructor(...args: unknown[]) {
+        mocks.kayaClient(...args);
+      }
+
       listSessions = mocks.listSessions;
       listAscents = mocks.ascents;
     },
@@ -46,7 +51,12 @@ describe("KayaSyncProvider", () => {
     mocks.ensureProvider.mockResolvedValue("kaya");
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("authenticates Kaya credentials and persists the Kaya user ID in scopes", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-08-01T12:00:00.000Z").valueOf());
     mocks.signIn.mockResolvedValue({
       accessToken: "access-token",
       refreshToken: "refresh-token",
@@ -62,7 +72,7 @@ describe("KayaSyncProvider", () => {
       refreshToken: "refresh-token",
       scopes: JSON.stringify({ kayaUserId: "42" }),
     });
-    expect(tokens?.expiresAt).toBeInstanceOf(Date);
+    expect(tokens?.expiresAt).toEqual(new Date("2026-08-01T12:25:00.000Z"));
   });
 
   it("normalizes invalid credentials for the shared connection flow", async () => {
@@ -71,6 +81,15 @@ describe("KayaSyncProvider", () => {
     await expect(
       new KayaSyncProvider().authSetup().automatedLogin?.("climber@example.com", "secret"),
     ).rejects.toBeInstanceOf(ProviderInvalidCredentialsError);
+  });
+
+  it("preserves non-credential authentication errors", async () => {
+    const error = new Error("Kaya unavailable");
+    mocks.signIn.mockRejectedValue(error);
+
+    await expect(
+      new KayaSyncProvider().authSetup().automatedLogin?.("climber@example.com", "secret"),
+    ).rejects.toBe(error);
   });
 
   it("syncs sessions and preserves route lead versus boulder unknown style", async () => {
@@ -97,6 +116,8 @@ describe("KayaSyncProvider", () => {
       userId,
     );
     expect(mocks.upsertActivity).toHaveBeenCalledTimes(1);
+    expect(mocks.listSessions).toHaveBeenCalledWith("42");
+    expect(mocks.ascents).toHaveBeenCalledWith("42");
     expect(result).toMatchObject({
       provider: "kaya",
       recordsSynced: 3,
@@ -105,9 +126,95 @@ describe("KayaSyncProvider", () => {
     expect(db.insertValues).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({ externalId: "route-1", lead: true, climbType: "route" }),
-        expect.objectContaining({ externalId: "boulder-1", lead: null, climbType: "boulder" }),
+        expect.objectContaining({
+          externalId: "boulder-1",
+          lead: null,
+          climbType: "boulder",
+          attemptCount: 2,
+          sent: true,
+        }),
       ]),
     );
+  });
+
+  it("requires a user ID before accessing Kaya", async () => {
+    const db = database();
+
+    await expect(
+      new KayaSyncProvider().sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromIsoRange({
+            sinceIso: "2026-08-01T00:00:00.000Z",
+            untilIso: "2026-08-02T00:00:00.000Z",
+          }),
+        }),
+      ),
+    ).rejects.toThrow("kaya sync requires a userId");
+    expect(mocks.ensureProvider).not.toHaveBeenCalled();
+  });
+
+  it("skips sessions before the requested window and keeps a session at its start", async () => {
+    const db = database();
+    const boundary = session("session-1");
+    boundary.start_time = "2026-08-01T00:00:00.000Z";
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      { ...session("old"), start_time: "2026-07-31T23:59:59.999Z" },
+      boundary,
+    ]);
+    mocks.ascents.mockResolvedValue([
+      ascent("boundary-ascent", { lead: true, climbType: "Routes", grade: "5.10a" }),
+    ]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({ recordsSynced: 1 });
+    expect(mocks.upsertActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips entry writes when an activity is unavailable or a session has no ascents", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([session("session-1"), session("session-2")]);
+    mocks.ascents.mockResolvedValue([
+      ascent("missing-activity", { lead: true, climbType: "Routes", grade: "5.10a" }),
+    ]);
+    mocks.upsertActivity.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "activity-2" });
+
+    await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({ recordsSynced: 0 });
+    expect(db.delete).toHaveBeenCalledTimes(1);
+    expect(db.insertValues).not.toHaveBeenCalled();
+  });
+
+  it("normalizes optional ascent fields and falls back to the session gym", async () => {
+    const db = database();
+    const noGymAscent = ascent("project", {
+      lead: true,
+      climbType: "Routes",
+      grade: "5.10a",
+      ascentType: "Project",
+      attempts: null,
+    });
+    noGymAscent.climb.gym = null;
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([session("session-1")]);
+    mocks.ascents.mockResolvedValue([noGymAscent]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(db.insertValues).toHaveBeenCalledWith([
+      expect.objectContaining({ attemptCount: 1, locationName: "Kaya Gym", sent: false }),
+    ]);
   });
 
   it("reports missing stored credentials or Kaya identity", async () => {
@@ -127,7 +234,7 @@ describe("KayaSyncProvider", () => {
   });
 
   it("captures upstream sync failures in the result", async () => {
-    const error = new Error("Kaya unavailable");
+    const error = "Kaya unavailable";
     mocks.loadTokens.mockResolvedValue({
       accessToken: "access-token",
       scopes: JSON.stringify({ kayaUserId: "42" }),
@@ -178,13 +285,22 @@ function session(id: string) {
   };
 }
 
-function ascent(id: string, options: { lead: boolean; climbType: string; grade: string | null }) {
+function ascent(
+  id: string,
+  options: {
+    lead: boolean;
+    climbType: string;
+    grade: string | null;
+    ascentType?: string;
+    attempts?: number | null;
+  },
+) {
   return {
     id,
     session_id: "session-1",
     date: "2026-08-01T10:30:00.000Z",
-    attempts: 2,
-    ascent_type: { id: "redpoint", name: "Redpoint" },
+    attempts: options.attempts === undefined ? 2 : options.attempts,
+    ascent_type: { id: "redpoint", name: options.ascentType ?? "Redpoint" },
     climb: {
       id: `climb-${id}`,
       name: "Kaya Climb",
@@ -193,7 +309,11 @@ function ascent(id: string, options: { lead: boolean; climbType: string; grade: 
       grade: options.grade
         ? { id: `grade-${id}`, name: options.grade, climb_type_group: "route" }
         : null,
-      gym: { id: "gym-1", name: "Kaya Gym" },
+      gym: climbGym(),
     },
   };
+}
+
+function climbGym(): { id: string; name: string } | null {
+  return { id: "gym-1", name: "Kaya Gym" };
 }
