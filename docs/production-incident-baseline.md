@@ -32,8 +32,9 @@ them, and the durability work they suggest.
   longer start provider-wide syncs from dashboard observation dates. The iOS
   Dofek-food HealthKit writeback remains a separate coverage-range operation.
 - **Validation:** Focused server, web, and iOS tests passed; final validation
-  passed lint, typecheck, and 4,159 changed tests. A real-Postgres integration
-  test verifies the timestamp aggregate path used for freshness.
+  passed lint, typecheck, and 4,159 changed tests. Three real-Postgres sync
+  repository integration tests verify the timestamp aggregate path used for
+  freshness.
 - **Remaining risk / follow-up:** Deploy and verify that provider cards report
   current freshness after successful scheduled syncs even when daily health
   observations are absent. Investigate the separate Garmin error shown in the

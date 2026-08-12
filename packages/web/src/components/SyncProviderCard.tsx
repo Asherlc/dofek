@@ -39,6 +39,9 @@ export function SyncProviderCard({
   const lastSyncedRelative = provider.lastSyncedAt
     ? formatRelativeTime(provider.lastSyncedAt)
     : null;
+  const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
+    ? formatRelativeTime(provider.lastSuccessfulSyncAt)
+    : null;
   const primaryActionLabel = needsReauth ? "Reconnect" : needsAuth ? "Connect" : "Sync";
   const primaryActionTitle = needsReauth
     ? `Reconnect ${provider.name}`
@@ -110,6 +113,11 @@ export function SyncProviderCard({
       {state.status !== "syncing" && !state.message && lastSyncedRelative && (
         <span className="text-xs text-dim mt-1">
           {pushOnly ? "Last received" : "Last sync"}: {lastSyncedRelative}
+        </span>
+      )}
+      {!pushOnly && state.status !== "syncing" && lastSuccessfulSyncRelative && (
+        <span className="text-xs text-dim mt-1">
+          Last successful sync: {lastSuccessfulSyncRelative}
         </span>
       )}
 

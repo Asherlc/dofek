@@ -150,10 +150,27 @@ describe("SyncProviderCard", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("The last successful sync is overdue.");
   });
 
-  it("renders an empty sync history state", () => {
-    renderProvider();
+  it("renders an unknown server freshness state for an empty sync history", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: null,
+        lastSuccessfulSyncAt: null,
+        syncFreshness: {
+          status: "unknown",
+          label: "Sync status unknown",
+          description: "No successful sync has been recorded yet.",
+        },
+        authorized: true,
+        description: null,
+      },
+    });
 
     expect(screen.getByText("No sync history")).not.toBeNull();
+    expect(screen.getByText("Sync status unknown")).not.toBeNull();
+    expect(screen.getByText("No successful sync has been recorded yet.")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("renders overdue server freshness as an alert beside the manual Sync action", () => {
@@ -181,6 +198,7 @@ describe("SyncProviderCard", () => {
     expect(overdueAlert).toHaveTextContent("Sync overdue");
     expect(overdueAlert).toHaveTextContent("The last successful sync is overdue.");
     expect(overdueAlert.parentElement).toContainElement(syncButton);
+    expect(screen.getByText(/^Last successful sync:/)).not.toBeNull();
   });
 
   it("renders current server freshness without raising an alert", () => {

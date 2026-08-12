@@ -113,6 +113,9 @@ export function ProviderCard({
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
+  const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
+    ? formatRelativeTime(provider.lastSuccessfulSyncAt)
+    : null;
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
   const syncFreshness =
     canRunManualSync && provider.authStatus !== "not_connected" ? provider.syncFreshness : null;
@@ -199,6 +202,11 @@ export function ProviderCard({
             ) : (
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
+          {canRunManualSync && lastSuccessfulSyncRelative ? (
+            <Text style={styles.cardMetaText}>
+              Last successful sync: {lastSuccessfulSyncRelative}
+            </Text>
+          ) : null}
           {syncFreshness ? (
             <View accessibilityRole={syncFreshness.status === "overdue" ? "alert" : undefined}>
               <Text style={styles.cardMetaText}>{syncFreshness.label}</Text>

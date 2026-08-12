@@ -1070,10 +1070,12 @@ describe("ProvidersScreen", () => {
     expect(polarCard.getByText("Reconnect")).toBeTruthy();
     expect(polarCard.getByText("Sync overdue")).toBeTruthy();
     expect(polarCard.getByText("The last successful sync is overdue.")).toBeTruthy();
+    expect(polarCard.getByText(/Last successful sync:/)).toBeTruthy();
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     expect(wahooCard.getByText("Connected")).toBeTruthy();
     expect(wahooCard.getByText("Sync current")).toBeTruthy();
+    expect(wahooCard.getByText(/Last successful sync:/)).toBeTruthy();
     expect(
       wahooCard.getByText("The last successful sync completed within the expected cadence."),
     ).toBeTruthy();
