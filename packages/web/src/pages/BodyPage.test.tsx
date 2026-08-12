@@ -56,7 +56,9 @@ vi.mock("../components/TimeSeriesChart.tsx", () => ({
   TimeSeriesChart: () => <div>Time series chart</div>,
 }));
 vi.mock("../components/WeightPredictionSummary.tsx", () => ({
-  WeightPredictionSummary: () => <div>Weight prediction</div>,
+  WeightPredictionSummary: ({ metric = "weight" }: { metric?: "weight" | "bodyFat" }) => (
+    <div>{metric === "weight" ? "Weight prediction" : "Body-fat prediction"}</div>
+  ),
 }));
 vi.mock("../hooks/useTodayQueryDate.ts", () => ({
   useTodayQueryDate: () => "2026-07-25",
@@ -132,6 +134,20 @@ const healthyWeightOverview = {
     goal: null,
     projectionLine: [],
   },
+  bodyFatTrend: [
+    {
+      date: "2026-07-25",
+      rawBodyFatPct: 20,
+      smoothedBodyFatPct: 20,
+      interpolated: false,
+    },
+  ],
+  bodyFatPrediction: {
+    ratePerWeek: -0.2,
+    rateConfidence: 0.8,
+    periodDeltas: { days7: -0.2, days14: -0.4, days30: -0.8 },
+    projectionLine: [],
+  },
   recomposition: [
     {
       date: "2026-07-25",
@@ -190,16 +206,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BodyPage", () => {
-  it("switches the body trend from weight to body fat", () => {
+  it("toggles the shared trend summary and chart between weight and body fat", () => {
     render(<BodyPage />);
 
     expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
-    expect(screen.queryByText("Body fat points: 1")).toBeNull();
+    expect(screen.getByText("Weight prediction")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
 
-    expect(screen.queryByText("Smoothed weight points: 1")).toBeNull();
     expect(screen.getByText("Body fat points: 1")).toBeTruthy();
+    expect(screen.getByText("Body-fat prediction")).toBeTruthy();
+    expect(screen.queryByText("Goal weight input")).toBeNull();
   });
 
   it("shows one dependency notice for a repeated body-composition query failure", () => {
