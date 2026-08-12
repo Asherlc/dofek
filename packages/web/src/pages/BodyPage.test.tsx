@@ -21,7 +21,7 @@ vi.mock("../components/BodyRecompositionChart.tsx", () => ({
 }));
 vi.mock("../components/BodyFatPercentageChart.tsx", () => ({
   BodyFatPercentageChart: ({ data }: { data: unknown[] }) => (
-    <div>Body fat points: {data.length}</div>
+    <div data-testid="body-fat-chart">Body fat points: {data.length}</div>
   ),
 }));
 vi.mock("../components/CorrelationCard.tsx", () => ({
@@ -190,16 +190,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BodyPage", () => {
+  it("renders the body fat percentage card with recomposition data", () => {
+    render(<BodyPage />);
+
+    expect(screen.getByRole("heading", { name: "Body Fat Percentage" })).toBeTruthy();
+    expect(screen.getAllByTestId("body-fat-chart")).toHaveLength(1);
+  });
+
   it("switches the body trend from weight to body fat", () => {
     render(<BodyPage />);
 
     expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
-    expect(screen.queryByText("Body fat points: 1")).toBeNull();
+    expect(screen.getAllByTestId("body-fat-chart")).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
 
     expect(screen.queryByText("Smoothed weight points: 1")).toBeNull();
-    expect(screen.getByText("Body fat points: 1")).toBeTruthy();
+    expect(screen.getAllByTestId("body-fat-chart")).toHaveLength(2);
   });
 
   it("shows one dependency notice for a repeated body-composition query failure", () => {

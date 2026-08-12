@@ -495,10 +495,14 @@ describe("HealthKit sync router", () => {
         label: "Step 1: 19 mm edge",
         interval_type: "work",
       });
+      expect(new Date(intervals[0]?.started_at).toISOString()).toBe("2025-06-06T06:00:00.000Z");
+      expect(new Date(intervals[0]?.ended_at).toISOString()).toBe("2025-06-06T06:00:07.000Z");
       expect(intervals[1]).toMatchObject({
         label: "Step 1: Rest",
         interval_type: "rest",
       });
+      expect(new Date(intervals[1]?.started_at).toISOString()).toBe("2025-06-06T06:00:07.000Z");
+      expect(new Date(intervals[1]?.ended_at).toISOString()).toBe("2025-06-06T06:00:10.000Z");
     });
 
     it("creates activity records from workout samples", async () => {

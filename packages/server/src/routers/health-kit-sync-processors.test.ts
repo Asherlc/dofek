@@ -169,6 +169,7 @@ describe("processWorkouts", () => {
         endUtcOffsetMinutes: -420,
         localTimeSource: "device_offset",
       }),
+      expect.anything(),
     );
     expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
     expect(providerActivitySyncMocks.scope?.windowStart.toISOString()).toBe(
@@ -213,6 +214,49 @@ describe("processWorkouts", () => {
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining(unknownContext),
       expect.objectContaining(unknownContext),
+      expect.anything(),
     );
+  });
+
+  it("commits each workout independently before reconciling the sync window", async () => {
+    providerActivitySyncMocks.reconcile.mockClear();
+    providerActivitySyncMocks.upsert.mockClear();
+    const execute = vi.fn(async () => []);
+    const db = makeTransactionalTestDatabase({ execute });
+    const transaction = vi.spyOn(db, "transaction");
+
+    await processWorkouts(
+      db,
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "workout-1",
+          workoutType: "13",
+          startDate: "2026-06-20T21:49:00.000Z",
+          endDate: "2026-06-20T22:17:59.000Z",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+        },
+        {
+          uuid: "workout-2",
+          workoutType: "13",
+          startDate: "2026-06-20T23:49:00.000Z",
+          endDate: "2026-06-21T00:17:59.000Z",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+        },
+      ],
+      {
+        windowStart: "2026-06-13T00:00:00.000Z",
+        windowEnd: "2026-06-21T00:00:00.000Z",
+      },
+    );
+
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
   });
 });

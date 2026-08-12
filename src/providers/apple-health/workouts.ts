@@ -157,7 +157,9 @@ function hangTenWorkoutOverrides(
   const planName = trimmedMetadataValue(metadata, "HangTen.PlanName");
   if (!planName) return {};
 
-  const rawActivitySegments = metadata["HangTen.ActivitySegments"];
+  const activitySegmentsMetadata = metadata["HangTen.ActivitySegments"];
+  const rawActivitySegments =
+    typeof activitySegmentsMetadata === "string" ? activitySegmentsMetadata : undefined;
   const parsedActivitySegments =
     rawActivitySegments !== undefined ? parseHangTenActivitySegments(rawActivitySegments) : {};
 

@@ -410,48 +410,57 @@ export async function processWorkouts(
   workouts: WorkoutSample[],
   options: ProcessWorkoutsOptions,
 ): Promise<number> {
-  return db.transaction(async (transactionDb) => {
-    const activitySync = new ProviderActivityListSync({
-      db: transactionDb,
-      providerId: PROVIDER_ID,
+  const activitySync = new ProviderActivityListSync({
+    db,
+    providerId: PROVIDER_ID,
+    userId,
+    windowStart: new Date(options.windowStart),
+    windowEnd: new Date(options.windowEnd),
+  });
+
+  let inserted = 0;
+  for (const workout of workouts) {
+    const normalizedWorkout = applyWorkoutMetadata(
+      {
+        activityType: resolveProviderActivityType(
+          workout.workoutType,
+          workoutActivityTypeMap[workout.workoutType] ?? "other",
+        ),
+        sourceName: workout.sourceName,
+        durationSeconds: workout.duration,
+        distanceMeters: workout.totalDistance ?? undefined,
+        startDate: new Date(workout.startDate),
+        endDate: new Date(workout.endDate),
+      },
+      workout.metadata ?? {},
+    );
+
+    const rawData = {
+      duration: workout.duration,
+      totalDistance: workout.totalDistance,
+      sourceName: workout.sourceName,
+      workoutType: workout.workoutType,
+      metadata: workout.metadata,
+      workoutActivities: workout.workoutActivities,
+      ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
+    };
+
+    const values = {
       userId,
-      windowStart: new Date(options.windowStart),
-      windowEnd: new Date(options.windowEnd),
-    });
-
-    let inserted = 0;
-    for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
-      const batch = workouts.slice(i, i + BATCH_SIZE);
-      for (const workout of batch) {
-        const normalizedWorkout = applyWorkoutMetadata(
-          {
-            activityType: resolveProviderActivityType(
-              workout.workoutType,
-              workoutActivityTypeMap[workout.workoutType] ?? "other",
-            ),
-            sourceName: workout.sourceName,
-            durationSeconds: workout.duration,
-            distanceMeters: workout.totalDistance ?? undefined,
-            startDate: new Date(workout.startDate),
-            endDate: new Date(workout.endDate),
-          },
-          workout.metadata ?? {},
-        );
-
-        const rawData = {
-          duration: workout.duration,
-          totalDistance: workout.totalDistance,
-          sourceName: workout.sourceName,
-          workoutType: workout.workoutType,
-          metadata: workout.metadata,
-          workoutActivities: workout.workoutActivities,
-          ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
-        };
-
-        const values = {
-          userId,
-          providerId: PROVIDER_ID,
-          externalId: appleHealthWorkoutExternalId(workout.uuid),
+      providerId: PROVIDER_ID,
+      externalId: appleHealthWorkoutExternalId(workout.uuid),
+      activityType: normalizedWorkout.activityType,
+      startedAt: normalizedWorkout.startDate,
+      endedAt: normalizedWorkout.endDate,
+      name: normalizedWorkout.hangTen?.planName,
+      sourceName: normalizedWorkout.sourceName,
+      ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
+      raw: rawData,
+    };
+    await db.transaction(async (transactionDb) => {
+      const returned = await activitySync.upsert(
+        values,
+        {
           activityType: normalizedWorkout.activityType,
           startedAt: normalizedWorkout.startDate,
           endedAt: normalizedWorkout.endDate,
@@ -459,38 +468,30 @@ export async function processWorkouts(
           sourceName: normalizedWorkout.sourceName,
           ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
           raw: rawData,
-        };
-        const returned = await activitySync.upsert(values, {
-          activityType: values.activityType,
-          startedAt: values.startedAt,
-          endedAt: values.endedAt,
-          name: values.name,
-          sourceName: values.sourceName,
-          ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
-          raw: rawData,
-        });
-        if (returned && normalizedWorkout.hangTen) {
-          await replaceHangTenIntervals(transactionDb, returned.id, normalizedWorkout);
-        }
-        inserted++;
+        },
+        transactionDb,
+      );
+      if (returned && normalizedWorkout.hangTen) {
+        await replaceHangTenIntervals(transactionDb, returned.id, normalizedWorkout);
       }
-    }
-
-    await activitySync.reconcile(undefined, {
-      presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
-        workouts.map((workout) =>
-          buildAppleHealthWorkoutIdentity({
-            syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
-            startedAt: new Date(workout.startDate),
-            endedAt: new Date(workout.endDate),
-            sourceName: workout.sourceName,
-          }),
-        ),
-      ),
     });
+    inserted++;
+  }
 
-    return inserted;
+  await activitySync.reconcile(undefined, {
+    presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
+      workouts.map((workout) =>
+        buildAppleHealthWorkoutIdentity({
+          syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          sourceName: workout.sourceName,
+        }),
+      ),
+    ),
   });
+
+  return inserted;
 }
 
 /** Process workout route locations as location point metrics plus associated scalar metrics. */
