@@ -86,7 +86,6 @@ describe("createAppQueryClient", () => {
 
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
-
   it("reports a non-transient query error to Sentry", async () => {
     const queryClient = createAppQueryClient();
     const queryError = new Error("Unexpected end of JSON input");
