@@ -455,6 +455,12 @@ function makeProvider(
     authStatus: "connected" | "not_connected" | "expired";
     authType: string;
     lastSyncAt: string | null;
+    lastSuccessfulSyncAt: string | null;
+    syncFreshness: {
+      status: "unknown" | "current" | "overdue";
+      label: string;
+      description: string;
+    } | null;
     importOnly: boolean;
     pushOnly: boolean;
   }> = {},
@@ -466,6 +472,8 @@ function makeProvider(
     authStatus: overrides.authStatus ?? "connected",
     authType: overrides.authType ?? "oauth",
     lastSyncAt: overrides.lastSyncAt ?? null,
+    lastSuccessfulSyncAt: overrides.lastSuccessfulSyncAt ?? null,
+    syncFreshness: overrides.syncFreshness ?? null,
     importOnly: overrides.importOnly ?? false,
     pushOnly: overrides.pushOnly ?? false,
     ...overrides,
@@ -1009,6 +1017,66 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
     });
+  });
+
+  it("renders server-authored overdue and current freshness without evaluating timestamps", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "polar",
+          name: "Polar",
+          description: null,
+          authType: "oauth",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+          syncFreshness: {
+            status: "overdue",
+            label: "Sync overdue",
+            description: "The last successful sync is overdue.",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: true,
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          description: null,
+          authType: "oauth",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-12T11:45:00.000Z",
+          syncFreshness: {
+            status: "current",
+            label: "Sync current",
+            description: "The last successful sync completed within the expected cadence.",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const polarCard = within(screen.getByTestId("provider-card-polar"));
+    expect(polarCard.getByText("Expired")).toBeTruthy();
+    expect(polarCard.getByText("Reconnect")).toBeTruthy();
+    expect(polarCard.getByText("Sync overdue")).toBeTruthy();
+    expect(polarCard.getByText("The last successful sync is overdue.")).toBeTruthy();
+
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    expect(wahooCard.getByText("Connected")).toBeTruthy();
+    expect(wahooCard.getByText("Sync current")).toBeTruthy();
+    expect(
+      wahooCard.getByText("The last successful sync completed within the expected cadence."),
+    ).toBeTruthy();
   });
 
   it("does not render Sync link for disconnected providers", async () => {
