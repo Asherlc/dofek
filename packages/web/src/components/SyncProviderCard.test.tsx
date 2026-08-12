@@ -32,6 +32,12 @@ function renderProvider({
     id: "strava",
     name: "Strava",
     lastSyncedAt: "2026-05-12T10:00:00.000Z",
+    lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+    syncFreshness: {
+      status: "current",
+      label: "Sync current",
+      description: "The last successful sync completed within the expected cadence.",
+    },
     authorized: true,
     description: null,
   },
@@ -126,6 +132,43 @@ describe("SyncProviderCard", () => {
     expect(screen.getByText("No sync history")).not.toBeNull();
   });
 
+  it("renders overdue server freshness as an alert beside the manual Sync action", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-08-12T12:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+    });
+
+    const overdueAlert = screen.getByRole("alert");
+    const syncButton = screen.getByRole("button", {
+      name: "Sync Strava from the last 7 days",
+    });
+
+    expect(overdueAlert).toHaveTextContent("Sync overdue");
+    expect(overdueAlert).toHaveTextContent("The last successful sync is overdue.");
+    expect(overdueAlert.parentElement).toContainElement(syncButton);
+  });
+
+  it("renders current server freshness without raising an alert", () => {
+    renderProvider();
+
+    expect(screen.getByText("Sync current")).not.toBeNull();
+    expect(
+      screen.getByText("The last successful sync completed within the expected cadence."),
+    ).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("identifies recent sync outcomes without relying on color", () => {
     renderProvider({
       recentLogs: [
@@ -159,6 +202,8 @@ describe("SyncProviderCard", () => {
           id: "whoop_ble",
           name: "WHOOP (Bluetooth)",
           lastSyncedAt: "2026-06-20T12:00:00.000Z",
+          lastSuccessfulSyncAt: null,
+          syncFreshness: null,
           authorized: true,
           description: "Synced from the iOS app when your WHOOP strap is nearby.",
         }}
