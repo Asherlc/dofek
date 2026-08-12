@@ -206,6 +206,40 @@ describe("bodyAnalyticsRouter", () => {
   });
 
   describe("weightOverview", () => {
+    it("returns the server-authored body-fat trend and prediction", async () => {
+      const bodyFatTrendSpy = vi
+        .spyOn(BodyAnalyticsRepository.prototype, "getSmoothedBodyFat")
+        .mockResolvedValueOnce([
+          {
+            date: "2026-03-15",
+            rawBodyFatPct: 20.5,
+            rawBodyFatStatus: { kind: "observed", label: "Observed" },
+            smoothedBodyFatPct: 20.4,
+            smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+            weeklyChange: -0.2,
+            interpolated: false,
+          },
+        ]);
+      const bodyFatPredictionSpy = vi
+        .spyOn(BodyAnalyticsRepository.prototype, "getBodyFatPrediction")
+        .mockResolvedValueOnce({
+          ratePerWeek: -0.2,
+          rateConfidence: 0.9,
+          periodDeltas: { days7: -0.2, days14: null, days30: null },
+          projectionLine: [{ date: "2026-03-16", projectedBodyFatPct: 20.4 }],
+        });
+      const caller = makeCaller();
+
+      const result = await caller.weightOverview({ days: 30, endDate: "2026-03-15" });
+
+      expect(bodyFatTrendSpy).toHaveBeenCalledWith(30, "2026-03-15");
+      expect(bodyFatPredictionSpy).toHaveBeenCalledWith(90, "2026-03-15");
+      expect(result).toMatchObject({
+        bodyFatTrend: [expect.objectContaining({ smoothedBodyFatPct: 20.4 })],
+        bodyFatPrediction: expect.objectContaining({ ratePerWeek: -0.2 }),
+      });
+    });
+
     it("uses the selected range for chart data and at least 90 days for prediction", async () => {
       const smoothedWeightSpy = vi
         .spyOn(BodyAnalyticsRepository.prototype, "getSmoothedWeight")
