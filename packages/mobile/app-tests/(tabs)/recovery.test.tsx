@@ -444,10 +444,32 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           interpolated: false,
         },
       ],
-      bodyFat: [
-        { date: "2026-03-10", bodyFatPct: 21.4 },
-        { date: "2026-03-20", bodyFatPct: 20.9 },
+      bodyFatTrend: [
+        {
+          date: "2026-03-10",
+          rawBodyFatPct: 21.4,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 21.4,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+        {
+          date: "2026-03-20",
+          rawBodyFatPct: 20.9,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 20.9,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
       ],
+      bodyFatPrediction: {
+        ratePerWeek: -0.2,
+        rateConfidence: 0.8,
+        periodDeltas: { days7: -0.2, days14: -0.4, days30: -0.8 },
+        projectionLine: [],
+      },
     });
 
     const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
