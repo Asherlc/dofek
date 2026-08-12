@@ -100,6 +100,7 @@ describe("SyncRepository", () => {
       expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS last_synced");
       expect(rawSql).toContain("WHERE user_id = ");
       expect(rawSql).toContain("AND status = 'success'");
+      expect(rawSql).toContain("AND origin = 'scheduled'");
       expect(rawSql).toContain("GROUP BY provider_id");
     });
   });

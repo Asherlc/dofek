@@ -674,6 +674,7 @@ function createTriggerSyncProcedure() {
                 {
                   providerId,
                   userId: ctx.userId,
+                  origin: "manual",
                   ...syncWindowToJobData(syncWindow, input.sinceDays),
                 },
                 { skipWhenRateLimited: true, singleFlightFullSync: true },

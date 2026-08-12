@@ -25,7 +25,7 @@ them, and the durability work they suggest.
   provider-sync freshness. A provider's freshest recovery/sleep/strain datum
   is not evidence of its most recent successful synchronization.
 - **Fix / mitigation:** The server now derives freshness only from each
-  connected pull provider's latest successful `fitness.sync_log` entry, using
+  connected pull provider's latest successful scheduled `fitness.sync_log` entry, using
   the scheduled interval plus one interval of grace. The `sync.providers` API
   returns the server-authored freshness state and separate latest-attempt and
   latest-success timestamps. Web and iOS render that state directly and no

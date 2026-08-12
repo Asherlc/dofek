@@ -1704,6 +1704,7 @@ table fitness.sync_log {
   user_id uuid [not null]
   data_type text [not null]
   status text [not null]
+  origin text [not null, default: 'unknown']
   record_count integer [default: 0]
   error_message text
   auth_failure_reason text
@@ -1713,8 +1714,10 @@ table fitness.sync_log {
 
   indexes {
     (user_id, provider_id, synced_at) [name: 'sync_log_user_provider_synced_at_idx']
+    (user_id, origin, status, provider_id, synced_at) [name: 'sync_log_user_origin_status_provider_synced_at_idx']
     (provider_id, data_type, synced_at) [name: 'sync_log_provider_type_idx']
     synced_at [name: 'sync_log_synced_at_idx']
+
   }
 }
 

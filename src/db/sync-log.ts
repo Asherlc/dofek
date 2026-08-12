@@ -5,7 +5,7 @@ import {
 import type { SyncDegradation, SyncDegradationKind } from "../sync/sync-degradation.ts";
 import { reportSyncDegradation } from "../sync/sync-degradation-reporting.ts";
 import type { SyncDatabase } from "./index.ts";
-import { syncLog } from "./schema/events.ts";
+import { type SyncLogOrigin, syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 export interface SyncLogEntry {
@@ -19,6 +19,7 @@ export interface SyncLogEntry {
   durationMs?: number;
   /** User ID for this sync log entry. */
   userId?: string;
+  origin?: SyncLogOrigin;
 }
 
 export class PartialSyncError extends Error {
@@ -56,6 +57,7 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     degradationKind: entry.degradationKind,
     durationMs: entry.durationMs,
     userId: scopedUserId,
+    origin: entry.origin ?? "unknown",
   });
 }
 

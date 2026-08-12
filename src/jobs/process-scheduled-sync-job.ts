@@ -116,6 +116,7 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
             userId,
             providerId,
             sinceDays: provider.scheduledSyncLookbackDays ?? 1,
+            origin: "scheduled" as const,
           };
 
           const syncJob = await enqueueSyncJob(providerId, jobData, {

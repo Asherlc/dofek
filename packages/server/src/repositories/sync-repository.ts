@@ -162,6 +162,7 @@ export class SyncRepository {
           FROM fitness.sync_log
           WHERE user_id = ${this.#userId}
             AND status = 'success'
+            AND origin = 'scheduled'
           GROUP BY provider_id`,
     );
     return rows.map((row) => ({
