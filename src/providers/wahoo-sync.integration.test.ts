@@ -292,6 +292,7 @@ describe("WahooProvider.sync() (integration)", () => {
     );
 
     expect(result.errors).toEqual([]);
+    expect(result.duration).toBeLessThan(60_000);
     expect(attemptedTokens).toEqual(["Bearer stale-token", "Bearer refreshed-after-rejection"]);
     await expect(loadTokens(ctx.db, "wahoo")).resolves.toMatchObject({
       accessToken: "refreshed-after-rejection",
