@@ -4,7 +4,6 @@ import { ZodError } from "zod";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
-import { makeTransactionalTestDatabase } from "../routers/test-helpers.ts";
 import {
   aggregateDailyMetricSamples,
   categorize,
@@ -16,6 +15,7 @@ import {
   isSleepStageValue,
   type SleepSample,
 } from "./health-kit-sync-repository.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
@@ -690,7 +690,7 @@ describe("HEALTHKIT_STAGE_MAP (via deriveSleepSessionsFromStages stage mapping)"
 describe("HEALTHKIT_STAGE_MAP mapped values (via processSleepSamples)", () => {
   async function getSleepSessionStageParams(stageValue?: string): Promise<unknown[]> {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-4000-8000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-quality",
@@ -741,7 +741,7 @@ describe("HEALTHKIT_STAGE_MAP mapped values (via processSleepSamples)", () => {
 
   async function getStageInsertSqlJson(stageValue: string): Promise<string> {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-1",
@@ -890,7 +890,7 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
 
   it("maps type 37 to running", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-1",
@@ -909,12 +909,13 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       expect.objectContaining({
         activityType: { providerType: "37", canonicalType: "running", modality: null },
       }),
+      expect.anything(),
     );
   });
 
   it("maps type 13 to cycling", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-2",
@@ -933,12 +934,13 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       expect.objectContaining({
         activityType: { providerType: "13", canonicalType: "cycling", modality: null },
       }),
+      expect.anything(),
     );
   });
 
   it("maps type 24 to hiking", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-hike",
@@ -957,12 +959,13 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       expect.objectContaining({
         activityType: { providerType: "24", canonicalType: "hiking", modality: null },
       }),
+      expect.anything(),
     );
   });
 
   it("maps type 46 to swimming", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-swim",
@@ -981,12 +984,13 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       expect.objectContaining({
         activityType: { providerType: "46", canonicalType: "swimming", modality: null },
       }),
+      expect.anything(),
     );
   });
 
   it("maps unknown workout type to other", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-3",
@@ -1005,6 +1009,7 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
       expect.objectContaining({
         activityType: { providerType: "9999", canonicalType: "other", modality: null },
       }),
+      expect.anything(),
     );
   });
 });
@@ -1012,7 +1017,7 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
 describe("INTEGER_DAILY_COLUMNS", () => {
   it("rounds steps to integer (not float)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierStepCount",
@@ -1032,7 +1037,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
 
   it("processes flights climbed as integer column", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processDailyMetrics([
       {
         type: "HKQuantityTypeIdentifierFlightsClimbed",
@@ -1050,7 +1055,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
 
   it("processes exercise minutes as integer column", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processDailyMetrics([
       {
         type: "HKQuantityTypeIdentifierAppleExerciseTime",
@@ -1068,7 +1073,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
 
   it("does not process provider resting HR as a daily metric", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processDailyMetrics([
       {
         type: "HKQuantityTypeIdentifierRestingHeartRate",
@@ -1168,7 +1173,11 @@ describe("HealthKitSyncRepository", () => {
         }),
       };
       const execute = vi.fn().mockResolvedValue([]);
-      const repository = new HealthKitSyncRepository({ execute }, "user-1", publisher);
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+        publisher,
+      );
 
       const deletion = repository.processDeletedQuantitySamples(
         "HKQuantityTypeIdentifierHeartRate",
@@ -1178,12 +1187,15 @@ describe("HealthKitSyncRepository", () => {
       await vi.waitFor(() => {
         expect(publisher.replaceRows).toHaveBeenCalledTimes(2);
       });
-      expect(getProviderDataGenerations).toHaveBeenLastCalledWith({ execute }, [
-        {
-          providerId: "apple_health",
-          userId: "user-1",
-        },
-      ]);
+      expect(getProviderDataGenerations).toHaveBeenLastCalledWith(
+        expect.objectContaining({ execute }),
+        [
+          {
+            providerId: "apple_health",
+            userId: "user-1",
+          },
+        ],
+      );
       expect(publisher.replaceRows).toHaveBeenNthCalledWith(
         1,
         {
@@ -1250,7 +1262,11 @@ describe("HealthKitSyncRepository", () => {
         publishRows: vi.fn(async () => []),
         replaceRows: vi.fn(),
       };
-      const repository = new HealthKitSyncRepository({ execute }, "user-1", publisher);
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+        publisher,
+      );
 
       await expect(
         repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", ["vo2-max-1"]),
@@ -1263,7 +1279,10 @@ describe("HealthKitSyncRepository", () => {
 
     it("returns the actual number of deleted HealthKit event rows", async () => {
       const execute = vi.fn().mockResolvedValue([{ externalId: "hk:vo2-max-1" }]);
-      const repository = new HealthKitSyncRepository({ execute }, "user-1");
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+      );
 
       await expect(
         repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", [
@@ -2177,7 +2196,7 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: body fat tr
 describe("HealthKitSyncRepository.processWorkouts (mutation: workout count)", () => {
   it("returns the count of workouts processed, not 0 or samples.length-1", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const workouts = [
       {
         uuid: "w-count-1",
@@ -2206,7 +2225,7 @@ describe("HealthKitSyncRepository.processWorkouts (mutation: workout count)", ()
 describe("HealthKitSyncRepository.processHealthEvents (mutation: event count)", () => {
   it("returns count matching input length", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierSomething",
@@ -2291,7 +2310,7 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
 describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 guard)", () => {
   it("does not write absent additive fields when point-in-time values are present", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierWalkingSpeed",
@@ -2314,7 +2333,7 @@ describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 gu
 
   it("writes zero-value additive fields when a zero sample is present", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierStepCount",
@@ -2337,7 +2356,7 @@ describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 gu
 describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs derived inBed)", () => {
   it("uses explicit inBed samples when present (not deriveSleepSessionsFromStages)", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-explicit",
@@ -2360,7 +2379,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("falls back to deriveSleepSessionsFromStages when no explicit inBed", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "stage-only-1",
@@ -2377,7 +2396,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("calculates duration in minutes from session start/end", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "dur-test",
@@ -2401,7 +2420,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
     ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00", [null, null, "unknown"]],
   ])("stores record-local sleep context for %s to %s", async (startDate, endDate, expectedContext) => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "sleep-local-time",
@@ -2426,7 +2445,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("filters out unmappable stage values from sleep_stage insert", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-filter",
@@ -2462,7 +2481,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("skips sleep_stage insert when all stages are unmappable", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-novalid",
@@ -2490,7 +2509,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("inserts multiple sources as separate sleep session rows", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-multi",
