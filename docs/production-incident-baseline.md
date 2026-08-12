@@ -23502,6 +23502,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-08-12 — PR 2507 CI retained an orphaned mobile component after conflict resolution
+
+- **Status:** Resolved by commit `a874f77`; the repaired [Knip job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312820), [Native FIT Decoder job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312585), and Mobile Preview OTA check passed on the fresh PR run.
+- **Symptoms / impact:** The post-merge [Knip job](https://github.com/Asherlc/dofek/actions/runs/31631878405/job/94232700644) blocked PR #2507. The same run also recorded independent 503 download failures in the Native FIT Decoder and Mobile Preview OTA jobs. No production impact occurred.
+- **Evidence / root cause:** The first fatal Knip finding was `Unused files (1): packages/mobile/components/ClimbingEntryBreakdown.tsx`. The merge retained an extracted component while `main` had already restored the inline consumer, leaving no import path.
+- **Fix / mitigation:** Removed the orphaned component. The 503s came from upstream vcpkg and Infisical artifact downloads, so no retry, timeout, or failure-suppression change was added.
+- **Validation:** Knip passed locally with CI's required non-secret Sentry configuration, mobile TypeScript passed, and the fresh hosted Knip, Native FIT Decoder, and Mobile Preview OTA checks passed.
+- **Remaining risk / follow-up:** The remainder of the CI matrix is still running; monitor it for any new first failure.
+
 ## 2026-08-11 — Wahoo sync required reconnect despite a usable refresh token
 
 - **Status:** Fix prepared in the workspace; deployment and production
