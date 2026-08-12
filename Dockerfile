@@ -65,6 +65,7 @@ COPY packages/zwift-client/package.json ./packages/zwift-client/
 COPY packages/zepp-client/package.json ./packages/zepp-client/
 COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY packages/velohero-client/package.json ./packages/velohero-client/
+COPY packages/mountain-project-client/package.json ./packages/mountain-project-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY packages/provider-http/package.json ./packages/provider-http/
@@ -146,6 +147,8 @@ COPY --from=source --chown=node:node /app/packages/trainerroad-client/src ./pack
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY --from=source --chown=node:node /app/packages/velohero-client/src ./packages/velohero-client/src
 COPY --from=source --chown=node:node /app/packages/velohero-client/package.json ./packages/velohero-client/
+COPY --from=source --chown=node:node /app/packages/mountain-project-client/src ./packages/mountain-project-client/src
+COPY --from=source --chown=node:node /app/packages/mountain-project-client/package.json ./packages/mountain-project-client/
 COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages/garmin-connect/src
 COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
@@ -207,6 +210,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/imu node_modules/@dofek/imu && \
     ln -sfn /app/packages/providers-meta node_modules/@dofek/providers && \
     ln -sfn /app/packages/provider-http node_modules/@dofek/provider-http && \
+    ln -sfn /app/packages/mountain-project-client node_modules/@dofek/mountain-project && \
     ln -sfn /app/packages/peloton-client node_modules/@dofek/peloton && \
     ln -sfn /app/packages/xert-client node_modules/@dofek/xert && \
     ln -sfn /app/packages/recovery node_modules/@dofek/recovery && \
