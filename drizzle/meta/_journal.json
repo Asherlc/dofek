@@ -603,9 +603,9 @@
       "when": 1786380000000,
       "tag": "0073_processing_stage_event_latest_lookup",
       "breakpoints": true
-    },
-    {
-      "idx": 86,
+      },
+      {
+        "idx": 86,
       "version": "7",
       "when": 1786466044000,
       "tag": "0074_climbing_grade_systems",
