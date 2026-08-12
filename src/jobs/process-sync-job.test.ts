@@ -1230,7 +1230,7 @@ describe("processSyncJob", () => {
       stage: "ingest",
       status: "failed",
       errorCode: "provider_sync_failed",
-      errorMessage: "Broken could not be synced. Reconnect Broken and try again.",
+      errorMessage: "Broken could not be synced. Try the sync again later.",
       idempotencyKey: "worker-failed",
     });
 
@@ -1300,7 +1300,7 @@ describe("processSyncJob", () => {
       mockDb,
       expect.objectContaining({
         errorCode: "provider_sync_failed",
-        errorMessage: "Partial could not be synced. Reconnect Partial and try again.",
+        errorMessage: "Partial could not be synced. Try the sync again later.",
       }),
     );
   });
@@ -1340,6 +1340,13 @@ describe("processSyncJob", () => {
         status: "error",
         errorMessage: expiredTokenError.message,
         authFailureReason: "access_token_expired",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Wahoo authorization needs attention. Reconnect Wahoo, then try again.",
       }),
     );
   });
@@ -1478,6 +1485,13 @@ describe("processSyncJob", () => {
         status: "error",
         errorMessage: cause.message,
         authFailureReason: "refresh_token_revoked",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Withings authorization needs attention. Reconnect Withings, then try again.",
       }),
     );
   });

@@ -23380,11 +23380,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the provider on `fitness.processing_operation`, but
   `src/jobs/process-sync-job.ts` persisted a generic event message for both
   returned and thrown provider sync errors.
-- **Fix / mitigation:** Processing events now name the provider and state the
-  matching reconnect action, for example “Strava could not be synced. Reconnect
-  Strava and try again.” No retry, timeout, or failure-suppression behavior was
-  changed.
-- **Validation:** The focused `process-sync-job` unit suite passes 56/56,
-  including returned and thrown failure paths; Biome and TypeScript checks pass.
+- **Fix / mitigation:** Processing events now name the provider and classify
+  typed authorization failures separately. Only those failures offer a
+  “Reconnect <provider>” action, which opens that provider’s page on web and
+  mobile. Provider service/API failures instead say to retry later and offer a
+  retry-sync action, so a Zwift 502 does not prescribe reconnecting Zwift. No
+  retry, timeout, or failure-suppression behavior was changed.
+- **Validation:** Focused worker, processing-status, processing-alert, web, and
+  mobile suites pass 183 tests; Biome and TypeScript checks pass.
 - **Remaining risk / follow-up:** Deploy the change and confirm the next failed
   provider sync identifies the source on both clients.

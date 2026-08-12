@@ -202,6 +202,7 @@ describe("processing status presentation", () => {
           datasets: ["sleep", "activity", "recovery"],
           dismissed: false,
           errorMessage: "Reconnect WHOOP.",
+          errorCode: "provider_auth_failed",
         },
       ],
     });
@@ -209,12 +210,14 @@ describe("processing status presentation", () => {
     expect(groups).toEqual([
       {
         operationId: firstOperationId,
+        providerId: "whoop",
         providerLabel: "WHOOP (Cloud)",
         datasetLabels: ["Activities", "Recovery", "Sleep"],
         status: "failed",
         failedAt: "2026-07-22T16:00:00.000Z",
         lastReadyAt: "2026-07-21T12:00:00.000Z",
         errorMessage: "Reconnect WHOOP.",
+        requiresReconnect: true,
         dismissed: false,
       },
     ]);
