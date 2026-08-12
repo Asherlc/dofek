@@ -69,13 +69,19 @@ const sampleData: SmoothedBodyFatRow[] = [
   {
     date: "2026-02-28",
     rawBodyFatPct: 21.2,
+    rawBodyFatStatus: { kind: "observed", label: "Observed" },
     smoothedBodyFatPct: 21.2,
+    smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+    weeklyChange: null,
     interpolated: false,
   },
   {
     date: "2026-03-01",
     rawBodyFatPct: 20.9,
+    rawBodyFatStatus: { kind: "observed", label: "Observed" },
     smoothedBodyFatPct: 21.1,
+    smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+    weeklyChange: null,
     interpolated: false,
   },
 ];

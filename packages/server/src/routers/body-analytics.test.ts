@@ -471,6 +471,36 @@ describe("bodyAnalyticsRouter", () => {
       });
       expect(captureException).toHaveBeenCalledWith(recompositionError);
     });
+
+    it("returns a semantic API error when the body-fat trend cannot be loaded", async () => {
+      const bodyFatTrendError = new Error("body-fat trend unavailable");
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getSmoothedBodyFat").mockRejectedValueOnce(
+        bodyFatTrendError,
+      );
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.weightOverview({ days: 90, endDate: "2024-01-20" }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Body composition data is temporarily unavailable. Please try again.",
+      });
+      expect(captureException).toHaveBeenCalledWith(bodyFatTrendError);
+    });
+
+    it("returns a null body-fat prediction when only its prediction fetch fails", async () => {
+      const bodyFatPredictionError = new Error("body-fat regression unavailable");
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getBodyFatPrediction").mockRejectedValueOnce(
+        bodyFatPredictionError,
+      );
+      const caller = makeCaller([]);
+
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
+
+      expect(result.bodyFatTrend).toEqual([]);
+      expect(result.bodyFatPrediction).toBeNull();
+      expect(captureException).toHaveBeenCalledWith(bodyFatPredictionError);
+    });
   });
 
   describe("weightPrediction", () => {

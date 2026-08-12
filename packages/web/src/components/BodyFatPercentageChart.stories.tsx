@@ -11,7 +11,10 @@ function generateBodyFatData(): SmoothedBodyFatRow[] {
     return {
       date,
       rawBodyFatPct: bodyFatPct + Math.sin(index) * 0.3,
+      rawBodyFatStatus: { kind: "observed", label: "Observed" },
       smoothedBodyFatPct: bodyFatPct,
+      smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+      weeklyChange: null,
       interpolated: false,
     };
   });
