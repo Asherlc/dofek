@@ -39,12 +39,12 @@ export class KayaInvalidCredentialsError extends Error {
 }
 
 export class KayaApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
+  readonly status: number | undefined;
+
+  constructor(message: string, status?: number) {
     super(message);
     this.name = new.target.name;
+    this.status = status;
   }
 }
 
@@ -77,10 +77,13 @@ export async function signInToKaya(
 }
 
 export class KayaClient {
-  constructor(
-    readonly accessToken: string,
-    readonly fetchFn: typeof fetch = globalThis.fetch,
-  ) {}
+  readonly accessToken: string;
+  readonly fetchFn: typeof fetch;
+
+  constructor(accessToken: string, fetchFn: typeof fetch = globalThis.fetch) {
+    this.accessToken = accessToken;
+    this.fetchFn = fetchFn;
+  }
 
   listSessions(userId: string): Promise<KayaSession[]> {
     return this.#list(userId, "sessionsForUser", SESSION_QUERY, sessionSchema);

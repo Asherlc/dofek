@@ -20,8 +20,11 @@ export class KayaSyncProvider implements SyncProvider {
   readonly id = "kaya";
   readonly name = "Kaya";
   readonly scheduledSyncLookbackDays = 30;
+  readonly fetchFn: typeof fetch;
 
-  constructor(readonly fetchFn: typeof fetch = globalThis.fetch) {}
+  constructor(fetchFn: typeof fetch = globalThis.fetch) {
+    this.fetchFn = fetchFn;
+  }
 
   validate(): string | null {
     return null;
@@ -153,9 +156,17 @@ export class KayaSyncProvider implements SyncProvider {
     return {
       provider: this.id,
       recordsSynced,
-      errors: errors.map((error) => ({
-        message: error instanceof Error ? error.message : String(error),
-      })),
+      errors: errors.map((error) => {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "message" in error &&
+          typeof error.message === "string"
+        ) {
+          return error as SyncError;
+        }
+        return { message: error instanceof Error ? error.message : String(error) };
+      }),
       duration: Date.now() - startedAt,
     };
   }
