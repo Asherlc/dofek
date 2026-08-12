@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeTransactionalTestDatabase } from "../routers/test-helpers.ts";
 import type { SaveActivityInput } from "./activity-recording-repository.ts";
 import { ActivityRecordingRepository } from "./activity-recording-repository.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
