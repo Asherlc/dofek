@@ -88,12 +88,12 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:packages/heart-rate-variability
-      '@dofek/mountain-project':
-        specifier: workspace:*
-        version: link:packages/mountain-project-client
       '@dofek/kaya-client':
         specifier: workspace:*
         version: link:packages/kaya-client
+      '@dofek/mountain-project':
+        specifier: workspace:*
+        version: link:packages/mountain-project-client
       '@dofek/peloton':
         specifier: workspace:*
         version: link:packages/peloton-client
