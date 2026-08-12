@@ -1435,9 +1435,7 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.ratePerWeek).toBeLessThan(0);
       expect(result.rateConfidence).not.toBeNull();
       expect(result.periodDeltas.days7).toBeLessThan(0);
-      expect(result.projectionLine[0]).toEqual(
-        expect.objectContaining({ date: "2024-01-15" }),
-      );
+      expect(result.projectionLine[0]).toEqual(expect.objectContaining({ date: "2024-01-15" }));
     });
   });
 });

@@ -259,28 +259,27 @@ export async function loadMobileRecoveryTab(
     bodyFatPrediction,
     healthspanRaw,
     decisionContext,
-  ] =
-    await Promise.all([
-      metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
-      bodyRepo.getSmoothedWeight(weightDays, endDate),
-      bodyRepo.getSmoothedBodyFat(weightDays, endDate),
-      bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
-      bodyRepo.getBodyFatPrediction(weightDays, endDate),
-      fetchHealthspanRawData(
-        {
-          userId: ctx.userId,
-          timezone: ctx.timezone,
-          accessWindow: ctx.accessWindow,
-          sensorStore: ctx.sensorStore,
-        },
-        endDate,
-        healthspanWeeks * 7,
-      ),
-      bodyRepo.getBodyDecisionContext(endDate).catch((error: unknown) => {
-        captureException(error);
-        return null;
-      }),
-    ]);
+  ] = await Promise.all([
+    metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
+    bodyRepo.getSmoothedWeight(weightDays, endDate),
+    bodyRepo.getSmoothedBodyFat(weightDays, endDate),
+    bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
+    bodyRepo.getBodyFatPrediction(weightDays, endDate),
+    fetchHealthspanRawData(
+      {
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        accessWindow: ctx.accessWindow,
+        sensorStore: ctx.sensorStore,
+      },
+      endDate,
+      healthspanWeeks * 7,
+    ),
+    bodyRepo.getBodyDecisionContext(endDate).catch((error: unknown) => {
+      captureException(error);
+      return null;
+    }),
+  ]);
 
   const restingHeartRateBaseline = baselineRelative.find(
     (metric) => metric.metric === "resting_heart_rate",

@@ -418,10 +418,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
   }
 
   /** Comprehensive body-fat prediction for the shared body-composition trend. */
-  async getBodyFatPrediction(
-    _days: RangeDays,
-    endDate: string,
-  ): Promise<BodyFatPrediction> {
+  async getBodyFatPrediction(_days: RangeDays, endDate: string): Promise<BodyFatPrediction> {
     const rows = await this.#fetchBodyWeightRows(null, endDate, true);
     const data = rows
       .map((row) => ({ date: row.date, rawBodyFatPct: Number(row.body_fat_pct) }))
@@ -458,22 +455,20 @@ export class BodyAnalyticsRepository extends BaseRepository {
   }
 
   #computeSmoothedWeight(data: { date: string; rawWeight: number }[]): SmoothedWeightRow[] {
-    return this.#computeSmoothedMetric(data.map(({ date, rawWeight }) => ({ date, rawWeight }))).map(
-      (row) => ({
-        date: row.date,
-        rawWeight: row.rawValue == null ? null : roundWeight(row.rawValue),
-        rawWeightStatus: row.rawValue == null ? null : getEpistemicStatus("observed"),
-        smoothedWeight: roundWeight(row.smoothedValue),
-        smoothedWeightStatus: getEpistemicStatus("estimated"),
-        weeklyChange: row.weeklyChange,
-        interpolated: row.interpolated,
-      }),
-    );
+    return this.#computeSmoothedMetric(
+      data.map(({ date, rawWeight }) => ({ date, rawWeight })),
+    ).map((row) => ({
+      date: row.date,
+      rawWeight: row.rawValue == null ? null : roundWeight(row.rawValue),
+      rawWeightStatus: row.rawValue == null ? null : getEpistemicStatus("observed"),
+      smoothedWeight: roundWeight(row.smoothedValue),
+      smoothedWeightStatus: getEpistemicStatus("estimated"),
+      weeklyChange: row.weeklyChange,
+      interpolated: row.interpolated,
+    }));
   }
 
-  #computeSmoothedBodyFat(
-    data: { date: string; rawBodyFatPct: number }[],
-  ): SmoothedBodyFatRow[] {
+  #computeSmoothedBodyFat(data: { date: string; rawBodyFatPct: number }[]): SmoothedBodyFatRow[] {
     return this.#computeSmoothedMetric(
       data.map(({ date, rawBodyFatPct }) => ({ date, rawWeight: rawBodyFatPct })),
     ).map((row) => ({
@@ -739,7 +734,8 @@ export class BodyAnalyticsRepository extends BaseRepository {
       };
     }
 
-    const maximumProjectionDays = goal?.daysRemaining != null ? Math.min(goal.daysRemaining, 30) : 30;
+    const maximumProjectionDays =
+      goal?.daysRemaining != null ? Math.min(goal.daysRemaining, 30) : 30;
     return {
       ratePerWeek: forecast.ratePerWeek,
       rateConfidence: forecast.rateConfidence,
@@ -753,9 +749,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
     };
   }
 
-  #computeBodyFatPrediction(
-    data: { date: string; rawBodyFatPct: number }[],
-  ): BodyFatPrediction {
+  #computeBodyFatPrediction(data: { date: string; rawBodyFatPct: number }[]): BodyFatPrediction {
     const emptyResult: BodyFatPrediction = {
       ratePerWeek: null,
       rateConfidence: null,
