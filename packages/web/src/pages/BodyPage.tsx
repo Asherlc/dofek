@@ -408,7 +408,11 @@ export function BodyPage() {
               <div className="mb-2 flex items-center gap-2">
                 <h4 className="text-xs font-medium text-subtle uppercase">Body Fat Percentage</h4>
               </div>
-              <BodyFatPercentageChart data={bodyFatTrendData} loading={weightOverview.isLoading} />
+              <BodyFatPercentageChart
+                data={bodyFatTrendData}
+                prediction={bodyFatPredictionDisplay}
+                loading={weightOverview.isLoading}
+              />
             </div>
           </div>
         )}

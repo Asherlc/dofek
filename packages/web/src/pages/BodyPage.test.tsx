@@ -20,7 +20,15 @@ vi.mock("../components/BodyRecompositionChart.tsx", () => ({
   ),
 }));
 vi.mock("../components/BodyFatPercentageChart.tsx", () => ({
-  BodyFatPercentageChart: ({ data, loading }: { data: unknown[]; loading?: boolean }) => {
+  BodyFatPercentageChart: ({
+    data,
+    prediction,
+    loading,
+  }: {
+    data: unknown[];
+    prediction?: unknown;
+    loading?: boolean;
+  }) => {
     const firstDataPoint = data[0];
     const isTrendData =
       firstDataPoint !== null &&
@@ -29,7 +37,8 @@ vi.mock("../components/BodyFatPercentageChart.tsx", () => ({
 
     return (
       <div data-loading={String(loading ?? false)} data-testid="body-fat-chart">
-        Body fat points: {data.length}; trend: {String(isTrendData)}
+        Body fat points: {data.length}; trend: {String(isTrendData)}; prediction:{" "}
+        {String(prediction != null)}
       </div>
     );
   },
@@ -105,19 +114,16 @@ interface MockQueryOptions {
   isLoading?: boolean;
 }
 
-function mockQuery({
-  data,
-  error = null,
-  isFetching = false,
-  isLoading = false,
-}: MockQueryOptions = {}) {
+function mockQuery({ data, error = null, isFetching, isLoading = false }: MockQueryOptions = {}) {
+  const resolvedIsFetching = isFetching ?? isLoading;
+
   return {
     data,
     error,
     isError: error !== null,
-    isFetching,
+    isFetching: resolvedIsFetching,
     isLoading,
-    isPending: false,
+    isPending: isLoading,
     isSuccess: error === null && !isLoading,
     refetch: vi.fn().mockResolvedValue(undefined),
   };
@@ -155,6 +161,12 @@ const healthyWeightOverview = {
       date: "2026-07-25",
       rawBodyFatPct: 20,
       smoothedBodyFatPct: 20,
+      interpolated: false,
+    },
+    {
+      date: "2026-07-26",
+      rawBodyFatPct: 19.8,
+      smoothedBodyFatPct: 19.9,
       interpolated: false,
     },
   ],
@@ -228,7 +240,7 @@ describe("BodyPage", () => {
     expect(screen.getByRole("heading", { name: "Body Fat Percentage" })).toBeTruthy();
     expect(screen.getAllByTestId("body-fat-chart")[0]).toHaveAttribute("data-loading", "false");
     expect(screen.getAllByTestId("body-fat-chart")[0]).toHaveTextContent(
-      "Body fat points: 1; trend: true",
+      "Body fat points: 2; trend: true; prediction: true",
     );
   });
 
@@ -254,7 +266,7 @@ describe("BodyPage", () => {
     const bodyFatCharts = screen.getAllByTestId("body-fat-chart");
     expect(bodyFatCharts).toHaveLength(2);
     for (const chart of bodyFatCharts) {
-      expect(chart).toHaveTextContent("Body fat points: 1; trend: true");
+      expect(chart).toHaveTextContent("Body fat points: 2; trend: true; prediction: true");
     }
     expect(screen.getByText("Body-fat prediction")).toBeTruthy();
     expect(screen.queryByText("Goal weight input")).toBeNull();
