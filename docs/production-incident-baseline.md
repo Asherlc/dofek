@@ -7,6 +7,15 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-11 — Hang Ten PR CI exposed a formatter miss and mutation-test gaps
+
+- **Status:** Fixed in commit `931f093`; a fresh exact-head CI run is pending. No production impact occurred.
+- **Symptoms / impact:** PR #2503 failed [Lint](https://github.com/Asherlc/dofek/actions/runs/31553079369/job/93980006965) and [Stryker shard 0](https://github.com/Asherlc/dofek/actions/runs/31553079369/job/93980332141), keeping the merge gate blocked after all typecheck shards had passed.
+- **Evidence / root cause:** Lint's first fatal diagnostic was Biome's formatter report for `health-kit-sync-repository.test.ts:1176`. Stryker's first fatal summary was `Final mutation score 46.15 under breaking threshold 75`; the new per-workout path had untested Hang Ten metadata normalization and interval-write conditions, and it retained an unused normalized distance value.
+- **Fix / mitigation:** Formatted the affected test, removed the unused distance normalization, and added focused unit cases for Hang Ten metadata, interval writes after a successful upsert, and interval suppression when either prerequisite is absent. No threshold change, suppression, retry, timeout, or test skip was added.
+- **Validation:** Biome, 306 affected unit tests, server and root typechecks pass locally. The focused Stryker slice reports seven killed and one explicitly ignored string-literal mutant, with no surviving or uncovered mutations.
+- **Remaining risk / follow-up:** Confirm the exact-head hosted Lint and Stryker shard 0 jobs pass; investigate only a different first fatal line.
+
 ## 2026-08-11 — Hang Ten PR CI rejected stale HealthKit sync contracts
 
 - **Status:** Fixed in commit `8863fba`; the exact-head hosted rerun [31552820377](https://github.com/Asherlc/dofek/actions/runs/31552820377) is queued. No production impact occurred.
