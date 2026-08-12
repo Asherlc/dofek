@@ -126,6 +126,30 @@ describe("SyncProviderCard", () => {
     });
   });
 
+  it("renders server freshness for an authorized provider that needs reauthorization", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-08-12T12:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+      needsReauth: true,
+    });
+
+    expect(screen.getByText("Authorization expired")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Reconnect Strava" })).not.toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("Sync overdue");
+    expect(screen.getByRole("alert")).toHaveTextContent("The last successful sync is overdue.");
+  });
+
   it("renders an empty sync history state", () => {
     renderProvider();
 

@@ -45,7 +45,7 @@ export function SyncProviderCard({
     : needsAuth
       ? `Connect ${provider.name}`
       : `Sync ${provider.name} from the last 7 days`;
-  const syncFreshness = !pushOnly && !needsAuth && !needsReauth ? provider.syncFreshness : null;
+  const syncFreshness = !pushOnly && !needsAuth ? provider.syncFreshness : null;
   const syncFreshnessColors =
     syncFreshness?.status === "overdue"
       ? operationalStatusColors.warning

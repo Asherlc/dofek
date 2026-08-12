@@ -148,7 +148,11 @@ export const NeedsReauth: Story = {
       name: "WHOOP",
       lastSyncedAt: "2026-05-10T10:00:00.000Z",
       lastSuccessfulSyncAt: "2026-05-10T10:00:00.000Z",
-      syncFreshness: null,
+      syncFreshness: {
+        status: "overdue",
+        label: "Sync overdue",
+        description: "The last successful sync is overdue.",
+      },
       authorized: true,
       description: null,
     },
