@@ -23366,3 +23366,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-08-12 — Activity sync failures omitted the affected provider
+
+- **Status:** Fixed in this workspace; deployment is pending.
+- **Symptoms / impact:** The Activities processing card reported “Some data
+  could not be synced. Reconnect the data source and try again,” without
+  naming the source. This left affected users unable to take the requested
+  reconnect action.
+- **Evidence / root cause:** At `2026-08-12T17:30Z`, worker logs recorded a
+  Strava authorization failure and a Zwift upstream HTTP 502. The corresponding
+  `fitness.processing_stage_event` rows retained `provider_sync_failed` and
+  the provider on `fitness.processing_operation`, but
+  `src/jobs/process-sync-job.ts` persisted a generic event message for both
+  returned and thrown provider sync errors.
+- **Fix / mitigation:** Processing events now name the provider and state the
+  matching reconnect action, for example “Strava could not be synced. Reconnect
+  Strava and try again.” No retry, timeout, or failure-suppression behavior was
+  changed.
+- **Validation:** The focused `process-sync-job` unit suite passes 56/56,
+  including returned and thrown failure paths; Biome and TypeScript checks pass.
+- **Remaining risk / follow-up:** Deploy the change and confirm the next failed
+  provider sync identifies the source on both clients.

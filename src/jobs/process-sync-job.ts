@@ -508,7 +508,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         progressPercentage: 100,
         errorCode: hasErrors ? "provider_sync_failed" : undefined,
         errorMessage: hasErrors
-          ? "Some data could not be synced. Reconnect the data source and try again."
+          ? `${provider.name} could not be synced. Reconnect ${provider.name} and try again.`
           : undefined,
         idempotencyKey: hasErrors ? "worker-failed" : "worker-succeeded",
       });
@@ -593,7 +593,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         stage: "ingest",
         status: "failed",
         errorCode: "provider_sync_failed",
-        errorMessage: "The data source could not be synced. Reconnect it and try again.",
+        errorMessage: `${provider.name} could not be synced. Reconnect ${provider.name} and try again.`,
         idempotencyKey: "worker-failed",
       });
       await job.updateProgress({

@@ -1230,7 +1230,7 @@ describe("processSyncJob", () => {
       stage: "ingest",
       status: "failed",
       errorCode: "provider_sync_failed",
-      errorMessage: "The data source could not be synced. Reconnect it and try again.",
+      errorMessage: "Broken could not be synced. Reconnect Broken and try again.",
       idempotencyKey: "worker-failed",
     });
 
@@ -1296,6 +1296,13 @@ describe("processSyncJob", () => {
     // Verify each error is logged individually via Winston
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_sync_failed",
+        errorMessage: "Partial could not be synced. Reconnect Partial and try again.",
+      }),
+    );
   });
 
   it("reports thrown sync errors to Sentry", async () => {
