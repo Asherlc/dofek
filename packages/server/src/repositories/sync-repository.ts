@@ -6,7 +6,7 @@ import {
 } from "dofek/providers/auth-errors";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod row schemas
@@ -19,7 +19,7 @@ const tokenRowSchema = z.object({
 
 const lastSyncRowSchema = z.object({
   provider_id: z.string(),
-  last_synced: z.string(),
+  last_synced: timestampStringSchema,
 });
 
 const latestErrorRowSchema = z.object({

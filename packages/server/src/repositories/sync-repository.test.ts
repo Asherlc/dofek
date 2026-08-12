@@ -77,8 +77,8 @@ describe("SyncRepository", () => {
       ]);
       const result = await repo.getLastSyncTimes();
       expect(result).toEqual([
-        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00Z" },
-        { providerId: "strava", lastSynced: "2024-01-14T08:00:00Z" },
+        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+        { providerId: "strava", lastSynced: "2024-01-14T08:00:00.000Z" },
       ]);
     });
   });
@@ -93,8 +93,8 @@ describe("SyncRepository", () => {
       const result = await repo.getLastSuccessfulSyncTimes();
 
       expect(result).toEqual([
-        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00Z" },
-        { providerId: "strava", lastSynced: "2024-01-14T08:00:00Z" },
+        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+        { providerId: "strava", lastSynced: "2024-01-14T08:00:00.000Z" },
       ]);
       const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
       expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS last_synced");
@@ -102,6 +102,19 @@ describe("SyncRepository", () => {
       expect(rawSql).toContain("AND status = 'success'");
       expect(rawSql).toContain("GROUP BY provider_id");
     });
+  });
+
+  it("normalizes PostgreSQL Date timestamps for both last-sync queries", async () => {
+    const { repo } = makeRepository([
+      { provider_id: "wahoo", last_synced: new Date("2024-01-15T10:00:00Z") },
+    ]);
+
+    await expect(repo.getLastSyncTimes()).resolves.toEqual([
+      { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+    ]);
+    await expect(repo.getLastSuccessfulSyncTimes()).resolves.toEqual([
+      { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+    ]);
   });
 
   describe("getLatestErrors", () => {
