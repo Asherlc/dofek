@@ -23325,6 +23325,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Remove the two `image-size` audit ignores as
   soon as upstream publishes a patched release or Expo/Metro removes the
   vulnerable path; rerun the hosted dependency-audit job after this PR commit.
+
 ## 2026-08-08 — Dependabot PRs exposed stale CI baselines and incompatible runtime upgrades
 
 - **Status:** Resolved in PR [#2448](https://github.com/Asherlc/dofek/pull/2448). PR [#2423](https://github.com/Asherlc/dofek/pull/2423) was refreshed onto current `main` and merged after hosted run [31266778240](https://github.com/Asherlc/dofek/actions/runs/31266778240) passed; incompatible PRs [#2421](https://github.com/Asherlc/dofek/pull/2421) and [#2429](https://github.com/Asherlc/dofek/pull/2429) were closed.

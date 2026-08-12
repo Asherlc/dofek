@@ -240,7 +240,7 @@ export const mobileRecoveryTabOutputSchema = z.object({
   bodyFat: z.array(
     z.object({
       date: dateSchema,
-      bodyFatPct: z.number(),
+      bodyFatPct: nonnegativeNumberSchema,
     }),
   ),
   decisionContext: bodyDecisionContextOutputSchema.nullable(),

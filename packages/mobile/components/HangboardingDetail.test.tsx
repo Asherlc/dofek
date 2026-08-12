@@ -1,6 +1,6 @@
+import type { HangboardingDetail as HangboardingDetailData } from "@dofek/providers/hangboarding";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { HangboardingDetail as HangboardingDetailData } from "../../server/src/repositories/hangboarding-repository.ts";
 
 import { HangboardingDetail } from "./HangboardingDetail";
 

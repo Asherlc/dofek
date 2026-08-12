@@ -359,6 +359,18 @@ describe("mobileRecoveryFixtureSchema", () => {
     expect(parsed.bodyFat).toEqual([{ date: "2026-03-20", bodyFatPct: 20.9 }]);
   });
 
+  it("rejects negative body-fat percentages", () => {
+    const fixture = validRecoveryFixture();
+    const bodyFat = first(fixture.data.bodyFat, "body-fat history");
+    bodyFat.bodyFatPct = -1;
+
+    expectIssue(
+      mobileRecoveryFixtureSchema.safeParse(fixture),
+      ["data", "bodyFat", 0, "bodyFatPct"],
+      "Too small: expected number to be >=0",
+    );
+  });
+
   it("rejects stress values outside the server-owned 0-3 range", () => {
     const fixture = validRecoveryFixture();
     const latestStress = fixture.data.stress.daily[1];

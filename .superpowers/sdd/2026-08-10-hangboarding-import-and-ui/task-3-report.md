@@ -118,3 +118,14 @@ subnetted`. Existing unrelated workspace networks were left untouched.
   scoped Biome check passed.
 - CI or a host with available Compose network capacity should run the exact
   integration command before merge.
+
+## Retrospective
+
+- **Root cause:** Docker network address pools were exhausted before the
+  requested integration suites could start.
+- **Direct fix:** No runtime mitigation was shipped; hosted CI must execute the
+  named integration suites until Docker network capacity is recovered.
+- **Remaining risk:** Local integration coverage remains unexecuted, with the
+  exact command and evidence retained above.
+- **Improvement:** Document Docker network-pool recovery in
+  [`docs/testing.md`](../../../docs/testing.md).

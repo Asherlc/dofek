@@ -1,6 +1,6 @@
+import type { HangboardingSummary as HangboardingSummaryData } from "@dofek/providers/hangboarding";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HangboardingSummary as HangboardingSummaryData } from "../../server/src/repositories/hangboarding-repository.ts";
 
 const sparkLineProps = vi.hoisted(() => {
   const props: Array<Record<string, unknown>> = [];

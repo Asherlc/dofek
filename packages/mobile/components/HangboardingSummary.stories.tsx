@@ -1,5 +1,5 @@
+import type { HangboardingSummary as HangboardingSummaryData } from "@dofek/providers/hangboarding";
 import type { Meta, StoryObj } from "@storybook/react-native";
-import type { HangboardingSummary as HangboardingSummaryData } from "../../server/src/repositories/hangboarding-repository.ts";
 import { HangboardingSummary } from "./HangboardingSummary";
 
 const data: HangboardingSummaryData = {

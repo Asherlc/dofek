@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
+import type { HangboardingDetail as HangboardingDetailData } from "@dofek/providers/hangboarding";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { HangboardingDetail as HangboardingDetailData } from "../../../server/src/repositories/hangboarding-repository.ts";
 
 import { HangboardingDetail } from "./HangboardingDetail.tsx";
 

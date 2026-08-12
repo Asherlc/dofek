@@ -223,6 +223,38 @@ describe("processing status presentation", () => {
     ]);
   });
 
+  it("does not require reconnecting for a retry-only provider failure", () => {
+    const groups = processingFailureGroups({
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          lastFailedAt: "2026-07-22T14:00:00.000Z",
+          lastReadyAt: null,
+        },
+      ],
+      operations: [
+        {
+          id: firstOperationId,
+          providerId: "zwift",
+          status: "failed",
+          datasets: ["activity"],
+          dismissed: false,
+          errorMessage: "Zwift could not be synced. Try the sync again later.",
+          errorCode: "provider_sync_failed",
+        },
+      ],
+    });
+
+    expect(groups).toEqual([
+      expect.objectContaining({
+        providerId: "zwift",
+        requiresReconnect: false,
+      }),
+    ]);
+  });
+
   it("does not expose dismissed or later-ready operation groups", () => {
     expect(
       processingFailureGroups({

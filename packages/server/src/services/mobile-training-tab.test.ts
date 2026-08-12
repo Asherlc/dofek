@@ -1,3 +1,4 @@
+import type { HangboardingSummary } from "@dofek/providers/hangboarding";
 import { StrainScore } from "@dofek/scoring/scoring";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -6,7 +7,6 @@ import {
   ClimbingVolumeByGrade,
 } from "../repositories/climbing-repository.ts";
 import { VerticalAscentModel } from "../repositories/cycling-advanced-models.ts";
-import type { HangboardingSummary } from "../repositories/hangboarding-repository.ts";
 import { ProgressiveOverload } from "../repositories/progressive-overload.ts";
 import { loadMobileTrainingTab } from "./mobile-training-tab.ts";
 

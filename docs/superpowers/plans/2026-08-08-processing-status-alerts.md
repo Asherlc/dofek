@@ -1,6 +1,7 @@
 # Processing Status Alert Clarity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For implementers:** Work through this plan task-by-task and use the
+> checkbox (`- [ ]`) syntax to track completed steps.
 
 **Goal:** Make provider sync failures actionable and non-duplicative by showing failure and last-success times, grouping one failed operation into one alert, and supporting durable account-wide dismissal on web and mobile.
 
@@ -15,7 +16,9 @@
 - Maintain web/mobile parity for every status and alert behavior.
 - Keep `packages/mobile/app/` route-only; put route tests under `packages/mobile/app-tests/`.
 - Use a forward-only Postgres migration and update the Drizzle schema metadata through the repository's normal migration workflow.
-- Do not modify provider adapters, sync workers, retry behavior, or raw processing events.
+- Do not modify provider adapters or retry behavior. Persist raw provider
+  failures as `provider_auth_failed` or `provider_sync_failed` so presentation
+  can distinguish reconnection from retry-later guidance.
 - Do not add dependencies or environment variables.
 - Preserve the pre-existing untracked `.nx/plans/` worktree content; stage only files belonging to this feature.
 
@@ -298,7 +301,9 @@ Update the alert type and any helper that builds titles/messages so grouped prov
 
 ```ts
 title: `${providerLabel} sync didn’t finish`;
-message: `Dofek couldn’t get the latest data from ${providerLabel}. Reconnect ${providerLabel}, then start the sync again.`;
+message: errorCode === "provider_auth_failed"
+  ? `Reconnect ${providerLabel}, then start the sync again.`
+  : `Dofek couldn’t get the latest data from ${providerLabel}. Try the sync again later.`;
 ```
 
 - [ ] **Step 4: Run the shared tests to verify they pass**

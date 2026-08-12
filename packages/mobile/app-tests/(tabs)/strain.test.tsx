@@ -951,7 +951,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.getByText("No Hangboarding sessions yet.")).toBeTruthy();
-    expect(screen.queryByText("Training refresh failed")).toBeNull();
+    expect(screen.getByText("Training refresh failed")).toBeTruthy();
   });
 
   it("shows the best climbing grade instead of the most recent lower grade", async () => {
@@ -1121,7 +1121,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.queryByText("Climbing refresh failed")).toBeNull();
+    expect(screen.getByText("Climbing refresh failed")).toBeTruthy();
     expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
   });

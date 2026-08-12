@@ -417,6 +417,15 @@ export default function StrainScreen() {
         loading={processingStatus.isLoading}
       />
 
+      {hasCachedTrainingData && trainingQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not refresh training data"
+          message={trainingQuery.error?.message}
+          minHeight={72}
+        />
+      ) : null}
+
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />
       ) : shouldShowTrainingQueryError ? (
@@ -580,6 +589,7 @@ export default function StrainScreen() {
             {shouldShowClimbingSection ? (
               <>
                 <ClimbingSection model={climbingModel} />
+                <Text style={styles.cardTitle}>Hangboarding</Text>
                 <HangboardingSummary
                   data={climbingModel.hangboarding}
                   loading={trainingQuery.isLoading && trainingData == null}
