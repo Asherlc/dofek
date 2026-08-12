@@ -6,6 +6,7 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Database as DrizzleDatabase, SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
@@ -61,6 +62,8 @@ function extractDate(isoString: string): string {
 }
 
 export { computeBoundsFromIsoTimestamps };
+
+type WorkoutSyncDatabase = SyncDatabase & Pick<DrizzleDatabase, "transaction">;
 
 function dateInTimezone(timestamp: string, timezone: string): string {
   const date = new Date(timestamp);
@@ -405,7 +408,7 @@ function appleHealthLocalTimeContext(startTimestamp: string, endTimestamp: strin
 
 /** Process workout samples */
 export async function processWorkouts(
-  db: Database,
+  db: WorkoutSyncDatabase,
   userId: string,
   workouts: WorkoutSample[],
   options: ProcessWorkoutsOptions,

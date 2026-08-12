@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "../routers/test-helpers.ts";
 import type { HealthKitSample } from "./health-kit-sync-repository.ts";
 
 vi.mock("../../../../src/db/sensor-channels.ts", async (importOriginal) => {
@@ -29,7 +30,11 @@ describe("HealthKitSyncRepository.processBodyMeasurements (channel mapping guard
   it("throws when body column has no metric stream channel mapping", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const publisher = { publishRows: vi.fn(async () => []) };
-    const repository = new HealthKitSyncRepository({ execute }, "user-1", publisher);
+    const repository = new HealthKitSyncRepository(
+      makeTransactionalTestDatabase({ execute }),
+      "user-1",
+      publisher,
+    );
 
     await expect(repository.processBodyMeasurements([makeSample()])).rejects.toThrow(
       "Missing metric stream channel mapping for body column: weight_kg",

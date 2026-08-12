@@ -78,7 +78,7 @@ export function normalizeDistance(value: string, unit: string): number {
 
 export function parseWorkout(
   attrs: Record<string, string>,
-  metadata: Record<string, string> = {},
+  metadata: WorkoutMetadata = {},
 ): HealthWorkout {
   const rawType = attrs.workoutActivityType ?? "HKWorkoutActivityTypeOther";
   const activityType = resolveProviderActivityType(rawType, WORKOUT_TYPE_MAP[rawType] ?? "other");
