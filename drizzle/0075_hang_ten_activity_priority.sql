@@ -9,4 +9,4 @@ INSERT INTO fitness.device_priority (
 )
 VALUES ('apple_health', 'Hang Ten', 10, NULL, NULL, NULL, NULL)
 ON CONFLICT (provider_id, source_name_pattern) DO UPDATE SET
-  priority = EXCLUDED.priority;
+  priority = excluded.priority;
