@@ -49,7 +49,7 @@ export class MountainProjectClient {
     if (response.status === 404) {
       throw new MountainProjectTickExportError(
         response.status,
-        "Mountain Project we couldn't read your ticks — check that your Mountain Project profile ID is correct and that your ticks aren't set to private.",
+        "Mountain Project: we couldn't read your ticks — check that your Mountain Project profile ID is correct and that your ticks aren't set to private.",
       );
     }
     if (!response.ok) {

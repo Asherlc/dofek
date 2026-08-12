@@ -45,7 +45,7 @@ describe("MountainProjectClient", () => {
     const client = new MountainProjectClient(async () => new Response("missing", { status: 404 }));
 
     await expect(client.getTickExport("110186720")).rejects.toThrow(
-      "we couldn't read your ticks — check that your Mountain Project profile ID is correct and that your ticks aren't set to private",
+      "Mountain Project: we couldn't read your ticks — check that your Mountain Project profile ID is correct and that your ticks aren't set to private.",
     );
   });
 

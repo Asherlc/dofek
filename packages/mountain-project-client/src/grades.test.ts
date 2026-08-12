@@ -9,6 +9,9 @@ describe("normalizeMountainProjectGrade", () => {
     ["5.7 PG13", "5.7"],
     ["5.5 WI2+ M2-3 Mod. Snow", "5.5"],
     ["V2", "V2"],
+    ["V0-", "V0"],
+    ["V0+", "V0"],
+    ["V2-3", "V2"],
   ])("normalizes %s through the canonical parser", (rating, canonicalToken) => {
     expect(normalizeMountainProjectGrade(rating)).toEqual(parseClimbingGrade(canonicalToken));
   });
