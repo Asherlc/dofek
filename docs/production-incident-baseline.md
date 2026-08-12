@@ -7,6 +7,15 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-11 — Hang Ten PR CI rejected stale HealthKit sync contracts
+
+- **Status:** Fixed in commit `8863fba`; the exact-head hosted rerun [31552820377](https://github.com/Asherlc/dofek/actions/runs/31552820377) is queued. No production impact occurred.
+- **Symptoms / impact:** PR [#2503](https://github.com/Asherlc/dofek/pull/2503) failed five TypeScript shards and the unit-test gate, blocking merge.
+- **Evidence / root cause:** The root typecheck's first fatal line was `src/providers/apple-health/parsing.test.ts(458,11): error TS2322: Type 'number' is not assignable to type 'string'`; Hang Ten metadata now permits numeric values but `parseWorkout` still declared a string-only metadata input. The server typecheck's first fatal line was `health-kit-sync-repository.ts(622,34): error TS2345: Argument of type 'SyncDatabase' is not assignable to parameter of type 'Database'`; the new per-workout transaction path required a transaction-capable store while the repository retained its narrower contract. Unit tests also retained two-argument `upsert` expectations after the transaction database was passed explicitly.
+- **Fix / mitigation:** Widened `parseWorkout` to the canonical `WorkoutMetadata` type, made the shared workout path and repository declare their transaction requirement, and updated the affected test fixtures and expectations. No retry, timeout, skip, or failure suppression was added.
+- **Validation:** 391 affected unit tests, server typecheck, root typecheck, Biome, and diff checks pass locally. The hosted exact-head run remains the final verification.
+- **Remaining risk / follow-up:** Confirm the queued hosted typecheck and unit-test jobs pass; investigate only if their first fatal line differs from the resolved contract failures.
+
 ## 2026-08-11 — Pull-request CI cache rate limit and read-model test-fixture drift
 
 - **Status:** E2E cache failure resolved and verified; the current integration-test fixture fix passes locally and awaits exact-head CI verification.
