@@ -10,7 +10,7 @@ import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
 import { reportJobProgress } from "./job-progress.ts";
-import type { ScheduledSyncJobData } from "./queues.ts";
+import type { ScheduledSyncJobData, SyncJobData } from "./queues.ts";
 
 interface ScheduledSyncJob {
   data: ScheduledSyncJobData;
@@ -116,8 +116,8 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
             userId,
             providerId,
             sinceDays: provider.scheduledSyncLookbackDays ?? 1,
-            origin: "scheduled" as const,
-          };
+            origin: "scheduled",
+          } satisfies SyncJobData;
 
           const syncJob = await enqueueSyncJob(providerId, jobData, {
             skipWhenRateLimited: true,
