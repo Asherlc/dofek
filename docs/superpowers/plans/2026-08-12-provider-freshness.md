@@ -163,7 +163,7 @@
 
 1. Run `pnpm lint`, `pnpm typecheck`, and `pnpm test:changed` (or the repository-prescribed equivalent that includes all changed unit/mobile tests).
 2. If a test fails, reproduce it in its focused command, make the smallest root-cause correction, and re-run the failing focused test before the full tier.
-3. Inspect `git diff --check`, `git status --short`, and the final diff. Confirm the pre-existing untracked `paseo.json` is neither staged nor committed.
+3. Inspect `git diff --check`, `git status --short`, and the final diff. Confirm the user-requested `paseo.json` configuration commit remains present and no unrelated workspace files are staged.
 4. Commit the final verified changes if verification required edits, then push every new commit to the configured remote.
 5. Report the root cause, behavior change, successful validation commands, and the fact that provider freshness now reflects successful syncs rather than health-data coverage.
 
@@ -175,4 +175,4 @@
 - [ ] Push-only, import-only, and disconnected providers receive no scheduled freshness state.
 - [ ] Web and iOS render the same server-authored status, label, and description.
 - [ ] Existing manual Sync, authorization, and HealthKit food writeback remain functional.
-- [ ] Tests were red before implementation and green afterward; unrelated `paseo.json` is preserved.
+- [ ] Tests were red before implementation and green afterward; the user-requested `paseo.json` commit is preserved.
