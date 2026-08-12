@@ -7,6 +7,38 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-12 — Providers incorrectly marked stale from dashboard coverage
+
+- **Status:** Root cause fixed in this workspace; deployment and production
+  verification remain pending.
+- **Symptoms / user impact:** Multiple connected providers appeared stale even
+  after their scheduled syncs completed. Opening the dashboard also triggered
+  a provider-wide sync when the latest health observation was from a prior day.
+- **Evidence:** Production sync logs showed successful recent runs for 11 of
+  12 provider types, while the dashboard's `latestDate` could still be the
+  previous day because recovery, sleep, or strain observations had not yet
+  arrived. Six connected provider records across five users met that
+  observation-date condition. The web and iOS hooks compared this coverage
+  date with today and triggered `sync.triggerSync` for every connected API
+  provider.
+- **Root cause:** Dashboard health-data coverage was incorrectly used as
+  provider-sync freshness. A provider's freshest recovery/sleep/strain datum
+  is not evidence of its most recent successful synchronization.
+- **Fix / mitigation:** The server now derives freshness only from each
+  connected pull provider's latest successful `fitness.sync_log` entry, using
+  the scheduled interval plus one interval of grace. The `sync.providers` API
+  returns the server-authored freshness state and separate latest-attempt and
+  latest-success timestamps. Web and iOS render that state directly and no
+  longer start provider-wide syncs from dashboard observation dates. The iOS
+  Dofek-food HealthKit writeback remains a separate coverage-range operation.
+- **Validation:** Focused server, web, and iOS tests passed; final validation
+  passed lint, typecheck, and 4,159 changed tests. A real-Postgres integration
+  test verifies the timestamp aggregate path used for freshness.
+- **Remaining risk / follow-up:** Deploy and verify that provider cards report
+  current freshness after successful scheduled syncs even when daily health
+  observations are absent. Investigate the separate Garmin error shown in the
+  production logs; it was not the cause of the broad stale labeling.
+
 ## 2026-08-10 — Sentry production failures from stale analytics data and pool starvation
 
 - **Status:** Fix prepared; deployment and post-release verification are pending. Affected unresolved issues were [DOFEK-MOBILE-19](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-19), [DOFEK-MOBILE-1F](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1F), [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G), [DOFEK-SERVER-5K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5K), [DOFEK-SERVER-5Y](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Y), [DOFEK-SERVER-5Z](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5Z), and [DOFEK-SERVER-58](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-58).
