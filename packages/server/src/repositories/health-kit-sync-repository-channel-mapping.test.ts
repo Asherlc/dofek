@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeTransactionalTestDatabase } from "../routers/test-helpers.ts";
 import type { HealthKitSample } from "./health-kit-sync-repository.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/sensor-channels.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../../src/db/sensor-channels.ts")>();

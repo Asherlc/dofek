@@ -37,7 +37,8 @@ export async function backfillHangTenWorkouts(execute: boolean): Promise<number>
            WHERE provider_id = 'apple_health'
              AND canonical_type = 'strength'
              AND raw->'metadata'->>'HKMetadataKeyWorkoutBrandName' = 'Hang Ten'
-             AND NULLIF(raw->'metadata'->>'HangTen.PlanName', '') IS NOT NULL`,
+             AND jsonb_typeof(raw->'metadata'->'HangTen.PlanName') = 'string'
+             AND NULLIF(REGEXP_REPLACE(raw->'metadata'->>'HangTen.PlanName', '\\s+', '', 'g'), '') IS NOT NULL`,
     );
     if (!execute) return rows.length;
 

@@ -4,7 +4,6 @@ import { ZodError } from "zod";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
-import { makeTransactionalTestDatabase } from "../routers/test-helpers.ts";
 import {
   aggregateDailyMetricSamples,
   categorize,
@@ -16,6 +15,7 @@ import {
   isSleepStageValue,
   type SleepSample,
 } from "./health-kit-sync-repository.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
   const actual =
