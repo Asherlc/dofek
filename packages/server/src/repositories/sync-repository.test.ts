@@ -83,6 +83,27 @@ describe("SyncRepository", () => {
     });
   });
 
+  describe("getLastSuccessfulSyncTimes", () => {
+    it("returns each provider's latest successful sync as LastSync objects", async () => {
+      const { repo, execute } = makeRepository([
+        { provider_id: "wahoo", last_synced: "2024-01-15T10:00:00Z" },
+        { provider_id: "strava", last_synced: "2024-01-14T08:00:00Z" },
+      ]);
+
+      const result = await repo.getLastSuccessfulSyncTimes();
+
+      expect(result).toEqual([
+        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00Z" },
+        { providerId: "strava", lastSynced: "2024-01-14T08:00:00Z" },
+      ]);
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS last_synced");
+      expect(rawSql).toContain("WHERE user_id = ");
+      expect(rawSql).toContain("AND status = 'success'");
+      expect(rawSql).toContain("GROUP BY provider_id");
+    });
+  });
+
   describe("getLatestErrors", () => {
     it("returns empty array when no errors", async () => {
       const { repo } = makeRepository([]);

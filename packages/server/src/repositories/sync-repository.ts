@@ -153,6 +153,23 @@ export class SyncRepository {
     }));
   }
 
+  /** Get the most recent successful sync timestamp per provider. */
+  async getLastSuccessfulSyncTimes(): Promise<LastSync[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      lastSyncRowSchema,
+      sql`SELECT provider_id, MAX(synced_at) AS last_synced
+          FROM fitness.sync_log
+          WHERE user_id = ${this.#userId}
+            AND status = 'success'
+          GROUP BY provider_id`,
+    );
+    return rows.map((row) => ({
+      providerId: row.provider_id,
+      lastSynced: row.last_synced,
+    }));
+  }
+
   /**
    * Get providers whose most recent sync entry is an error.
    * Only returns rows where the latest sync_log entry for a provider is an error.
