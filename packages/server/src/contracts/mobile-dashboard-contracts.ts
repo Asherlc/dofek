@@ -237,12 +237,32 @@ export const mobileRecoveryTabOutputSchema = z.object({
       interpolated: z.boolean(),
     }),
   ),
-  bodyFat: z.array(
+  bodyFatTrend: z.array(
     z.object({
       date: dateSchema,
-      bodyFatPct: z.number(),
+      rawBodyFatPct: z.number().nullable(),
+      rawBodyFatStatus: epistemicStatusSchema.nullable(),
+      smoothedBodyFatPct: z.number(),
+      smoothedBodyFatStatus: epistemicStatusSchema,
+      weeklyChange: z.number().nullable(),
+      interpolated: z.boolean(),
     }),
   ),
+  bodyFatPrediction: z.object({
+    ratePerWeek: z.number().nullable(),
+    rateConfidence: z.number().min(0).max(1).nullable(),
+    periodDeltas: z.object({
+      days7: z.number().nullable(),
+      days14: z.number().nullable(),
+      days30: z.number().nullable(),
+    }),
+    projectionLine: z.array(
+      z.object({
+        date: dateSchema,
+        projectedBodyFatPct: z.number(),
+      }),
+    ),
+  }),
   decisionContext: bodyDecisionContextOutputSchema.nullable(),
   weightPrediction: z.object({
     ratePerWeek: z.number().nullable(),
