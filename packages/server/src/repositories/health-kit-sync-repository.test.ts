@@ -1173,7 +1173,11 @@ describe("HealthKitSyncRepository", () => {
         }),
       };
       const execute = vi.fn().mockResolvedValue([]);
-      const repository = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1", publisher);
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+        publisher,
+      );
 
       const deletion = repository.processDeletedQuantitySamples(
         "HKQuantityTypeIdentifierHeartRate",
@@ -1183,12 +1187,15 @@ describe("HealthKitSyncRepository", () => {
       await vi.waitFor(() => {
         expect(publisher.replaceRows).toHaveBeenCalledTimes(2);
       });
-      expect(getProviderDataGenerations).toHaveBeenLastCalledWith(expect.objectContaining({ execute }), [
-        {
-          providerId: "apple_health",
-          userId: "user-1",
-        },
-      ]);
+      expect(getProviderDataGenerations).toHaveBeenLastCalledWith(
+        expect.objectContaining({ execute }),
+        [
+          {
+            providerId: "apple_health",
+            userId: "user-1",
+          },
+        ],
+      );
       expect(publisher.replaceRows).toHaveBeenNthCalledWith(
         1,
         {
@@ -1255,7 +1262,11 @@ describe("HealthKitSyncRepository", () => {
         publishRows: vi.fn(async () => []),
         replaceRows: vi.fn(),
       };
-      const repository = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1", publisher);
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+        publisher,
+      );
 
       await expect(
         repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", ["vo2-max-1"]),
@@ -1268,7 +1279,10 @@ describe("HealthKitSyncRepository", () => {
 
     it("returns the actual number of deleted HealthKit event rows", async () => {
       const execute = vi.fn().mockResolvedValue([{ externalId: "hk:vo2-max-1" }]);
-      const repository = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+      );
 
       await expect(
         repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", [

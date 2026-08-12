@@ -431,7 +431,6 @@ export async function processWorkouts(
         ),
         sourceName: workout.sourceName,
         durationSeconds: workout.duration,
-        distanceMeters: workout.totalDistance ?? undefined,
         startDate: new Date(workout.startDate),
         endDate: new Date(workout.endDate),
       },
