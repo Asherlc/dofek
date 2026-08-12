@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 const mocks = vi.hoisted(() => ({
   ascents: vi.fn(),
@@ -143,21 +145,27 @@ describe("KayaSyncProvider", () => {
 
 function run(db: ReturnType<typeof database>): SyncRun {
   return new SyncRun({
-    db: db as never,
+    db,
     userId,
-    window: {
-      since: new Date("2026-08-01T00:00:00.000Z"),
-      until: new Date("2026-08-02T00:00:00.000Z"),
-    },
+    window: SyncWindow.fromIsoRange({
+      sinceIso: "2026-08-01T00:00:00.000Z",
+      untilIso: "2026-08-02T00:00:00.000Z",
+    }),
   });
 }
 
-function database() {
+function database(): SyncDatabase & { insertValues: ReturnType<typeof vi.fn> } {
   const insertValues = vi.fn().mockResolvedValue(undefined);
+  const deleteFrom = vi.fn();
+  const insertInto = vi.fn();
+  deleteFrom.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+  insertInto.mockReturnValue({ values: insertValues });
   return {
-    delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
-    insert: vi.fn(() => ({ values: insertValues })),
+    delete: deleteFrom,
+    execute: vi.fn(),
+    insert: insertInto,
     insertValues,
+    select: vi.fn(),
   };
 }
 

@@ -163,7 +163,11 @@ export class KayaSyncProvider implements SyncProvider {
           "message" in error &&
           typeof error.message === "string"
         ) {
-          return error as SyncError;
+          const result: SyncError = { message: error.message };
+          if ("externalId" in error && typeof error.externalId === "string") {
+            result.externalId = error.externalId;
+          }
+          return result;
         }
         return { message: error instanceof Error ? error.message : String(error) };
       }),

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
-import { KayaApiError, KayaClient, KayaInvalidCredentialsError, signInToKaya } from "./client.ts";
+import {
+  type KayaApiError,
+  KayaClient,
+  KayaInvalidCredentialsError,
+  signInToKaya,
+} from "./client.ts";
 
 const loginResponse = {
   message: "ok",
