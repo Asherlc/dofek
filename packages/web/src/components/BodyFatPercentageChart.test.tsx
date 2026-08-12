@@ -3,7 +3,7 @@
 import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
+import type { SmoothedBodyFatRow } from "../../../server/src/routers/body-analytics.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
 let capturedOption: Record<string, unknown> | null = null;
@@ -65,24 +65,18 @@ function isNamedSeries(value: unknown): value is NamedSeries {
   );
 }
 
-const sampleData: BodyRecompositionRow[] = [
+const sampleData: SmoothedBodyFatRow[] = [
   {
     date: "2026-02-28",
-    weightKg: 86,
-    bodyFatPct: 21.2,
-    fatMassKg: 18.23,
-    leanMassKg: 67.77,
-    smoothedFatMass: 18.23,
-    smoothedLeanMass: 67.77,
+    rawBodyFatPct: 21.2,
+    smoothedBodyFatPct: 21.2,
+    interpolated: false,
   },
   {
     date: "2026-03-01",
-    weightKg: 85.5,
-    bodyFatPct: 20.9,
-    fatMassKg: 17.87,
-    leanMassKg: 67.63,
-    smoothedFatMass: 17.87,
-    smoothedLeanMass: 67.63,
+    rawBodyFatPct: 20.9,
+    smoothedBodyFatPct: 21.1,
+    interpolated: false,
   },
 ];
 
@@ -94,16 +88,12 @@ function renderWithUnits(children: ReactNode) {
   );
 }
 
-function getSeries(): NamedSeries {
+function getSeries(): NamedSeries[] {
   const series = capturedOption?.series;
-  if (!Array.isArray(series) || series.length !== 1) {
-    throw new Error("Expected one chart series");
+  if (!Array.isArray(series) || !series.every(isNamedSeries)) {
+    throw new Error("Expected named chart series");
   }
-  const [chartSeries] = series;
-  if (!isNamedSeries(chartSeries)) {
-    throw new Error("Expected a named line series");
-  }
-  return chartSeries;
+  return series;
 }
 
 function getTooltipFormatter(): TooltipFormatter {
@@ -127,18 +117,52 @@ describe("BodyFatPercentageChart", () => {
     capturedOption = null;
   });
 
-  it("renders one body-fat percentage line series with dated values", () => {
+  it("renders raw readings, a smoothed trend, and a dashed projection", () => {
     renderWithUnits(<BodyFatPercentageChart data={sampleData} />);
 
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
-    expect(getSeries()).toMatchObject({
-      name: "Body Fat %",
-      type: "line",
-      data: [
-        ["2026-02-28", 21.2],
-        ["2026-03-01", 20.9],
-      ],
-    });
+    expect(getSeries()).toMatchObject([
+      {
+        name: "Raw Body Fat",
+        type: "scatter",
+        data: [
+          ["2026-02-28", 21.2],
+          ["2026-03-01", 20.9],
+        ],
+      },
+      {
+        name: "Trend Body Fat",
+        type: "line",
+        data: [
+          ["2026-02-28", 21.2],
+          ["2026-03-01", 21.1],
+        ],
+      },
+    ]);
+
+    renderWithUnits(
+      <BodyFatPercentageChart
+        data={sampleData}
+        prediction={{
+          ratePerWeek: -0.2,
+          rateConfidence: 0.8,
+          periodDeltas: { days7: -0.2, days14: -0.4, days30: -0.8 },
+          projectionLine: [{ date: "2026-03-02", projectedBodyFatPct: 21 }],
+        }}
+      />,
+    );
+
+    expect(getSeries()).toContainEqual(
+      expect.objectContaining({
+        name: "Projection",
+        type: "line",
+        data: [
+          ["2026-03-01", 21.1],
+          ["2026-03-02", 21],
+        ],
+        lineStyle: expect.objectContaining({ type: "dashed" }),
+      }),
+    );
   });
 
   it("labels the body-fat y-axis with a percentage unit", () => {
@@ -156,7 +180,7 @@ describe("BodyFatPercentageChart", () => {
     const formatter = getTooltipFormatter();
     const tooltipHtml = formatter([
       {
-        seriesName: "Body Fat %",
+        seriesName: "Trend Body Fat",
         marker: '<span style="color:red"></span>',
         data: ["2026-03-01", 20.944],
         value: ["2026-03-01", 20.944],

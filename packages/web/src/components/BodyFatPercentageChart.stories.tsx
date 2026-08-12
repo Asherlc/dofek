@@ -1,24 +1,18 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
+import type { SmoothedBodyFatRow } from "../../../server/src/routers/body-analytics.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 import { BodyFatPercentageChart } from "./BodyFatPercentageChart.tsx";
 
-function generateBodyFatData(): BodyRecompositionRow[] {
+function generateBodyFatData(): SmoothedBodyFatRow[] {
   return Array.from({ length: 90 }, (_, index) => {
     const date = formatDateYmd(new Date(2026, 1, 1 + index));
-    const weightKg = 82 - index * 0.02;
     const bodyFatPct = 24 - index * 0.035;
-    const fatMassKg = weightKg * (bodyFatPct / 100);
-    const leanMassKg = weightKg - fatMassKg;
     return {
       date,
-      weightKg,
-      bodyFatPct,
-      fatMassKg,
-      leanMassKg,
-      smoothedFatMass: fatMassKg,
-      smoothedLeanMass: leanMassKg,
+      rawBodyFatPct: bodyFatPct + Math.sin(index) * 0.3,
+      smoothedBodyFatPct: bodyFatPct,
+      interpolated: false,
     };
   });
 }
@@ -29,6 +23,15 @@ const meta = {
   tags: ["autodocs"],
   args: {
     data: generateBodyFatData(),
+    prediction: {
+      ratePerWeek: -0.25,
+      rateConfidence: 0.9,
+      periodDeltas: { days7: -0.25, days14: -0.5, days30: -1 },
+      projectionLine: Array.from({ length: 14 }, (_, index) => ({
+        date: formatDateYmd(new Date(2026, 4, 2 + index)),
+        projectedBodyFatPct: 20.85 - index * 0.035,
+      })),
+    },
   },
   decorators: [
     (Story) => (
