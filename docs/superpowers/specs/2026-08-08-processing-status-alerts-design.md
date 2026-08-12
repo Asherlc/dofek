@@ -163,7 +163,7 @@ Add tests before implementation for:
 Use executable database integration coverage for the migration/repository
 foreign-key behavior where database semantics matter. Keep web/mobile
 component tests unit-level and colocated with their source files, following
-the repository testing guidance in [`docs/testing.md`](../../testing.md).
+the repository testing guidance in [`docs/testing.md`](../../../testing.md).
 
 ## Alternatives considered
 
@@ -185,6 +185,5 @@ processing model.
 
 The implementation is limited to the processing schema migration, processing
 repository/router contract, shared processing-status presentation helpers,
-web/mobile widgets and alert surfaces, and their tests/fixtures/stories. The
-sync worker records classified provider failures so authentication failures
-direct users to reconnect while service failures direct them to retry.
+web/mobile widgets and alert surfaces, and their tests/fixtures/stories. No
+provider adapters or sync workers change.

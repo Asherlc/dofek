@@ -434,6 +434,20 @@ describe("StrainScreen recent activity navigation", () => {
     expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
   });
 
+  it("does not report transient or cancelled training query errors", async () => {
+    mockHrZonesState.isError = true;
+    mockHrZonesState.error = new Error("User canceled");
+    mockPolarizationState.isError = true;
+    mockPolarizationState.error = new Error("User cancelled");
+    mockMonotonyState.isError = true;
+    mockMonotonyState.error = new Error("Network request failed");
+
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it("keeps cached server models visible with background query failures", async () => {
     mockHrZonesState.data = {
       maxHr: 190,
@@ -951,7 +965,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.getByText("No Hangboarding sessions yet.")).toBeTruthy();
-    expect(screen.getByText("Training refresh failed")).toBeTruthy();
+    expect(screen.queryByText("Training refresh failed")).toBeNull();
   });
 
   it("shows the best climbing grade instead of the most recent lower grade", async () => {
@@ -1121,7 +1135,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("Climbing refresh failed")).toBeTruthy();
+    expect(screen.queryByText("Climbing refresh failed")).toBeNull();
     expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
   });

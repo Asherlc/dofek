@@ -81,6 +81,11 @@ export const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginBottom: 10,
   },
+  label: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 6,
+  },
 
   // ── Billing ──
   billingStatusText: {
@@ -181,12 +186,24 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  gradeSystemList: {
+    gap: 10,
+  },
   unitButton: {
     flex: 1,
     backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: colors.surfaceSecondary,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  gradeSystemButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.surfaceSecondary,
+    minHeight: 48,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },

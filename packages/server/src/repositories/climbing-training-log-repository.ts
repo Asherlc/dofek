@@ -1,4 +1,5 @@
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import type { ClimbingGradeSystem } from "@dofek/training/climbing-grades";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -61,7 +62,7 @@ export interface ClimbInput {
   attempts: ClimbingAttemptInput[];
   climbType: "boulder" | "route";
   grade: string;
-  gradeSystem: "v_scale" | "yds";
+  gradeSystem: ClimbingGradeSystem;
   holdType: z.infer<typeof climbingHoldTypeSchema> | null;
   routeName: string | null;
   wallAngleDegrees: number | null;

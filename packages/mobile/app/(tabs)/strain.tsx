@@ -36,6 +36,7 @@ import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCa
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
+import { isTransientNetworkError } from "../../lib/query-client";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -156,7 +157,13 @@ const reportedTrainingErrors = new WeakSet<object>();
 
 function useReportQueryError(query: { isError: boolean; error: object | null }) {
   useEffect(() => {
-    if (!query.isError || !query.error || reportedTrainingErrors.has(query.error)) return;
+    if (
+      !query.isError ||
+      !query.error ||
+      isTransientNetworkError(query.error) ||
+      reportedTrainingErrors.has(query.error)
+    )
+      return;
     reportedTrainingErrors.add(query.error);
     captureException(query.error);
   }, [query.isError, query.error]);
@@ -417,15 +424,6 @@ export default function StrainScreen() {
         loading={processingStatus.isLoading}
       />
 
-      {hasCachedTrainingData && trainingQuery.isError ? (
-        <QueryStatePanel
-          variant="error"
-          title="Could not refresh training data"
-          message={trainingQuery.error?.message}
-          minHeight={72}
-        />
-      ) : null}
-
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />
       ) : shouldShowTrainingQueryError ? (
@@ -589,7 +587,6 @@ export default function StrainScreen() {
             {shouldShowClimbingSection ? (
               <>
                 <ClimbingSection model={climbingModel} />
-                <Text style={styles.cardTitle}>Hangboarding</Text>
                 <HangboardingSummary
                   data={climbingModel.hangboarding}
                   loading={trainingQuery.isLoading && trainingData == null}

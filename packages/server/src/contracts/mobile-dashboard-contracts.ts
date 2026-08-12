@@ -1,5 +1,6 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
+import { CLIMBING_GRADE_SYSTEMS, isGradeSystemForClimbType } from "@dofek/training/climbing-grades";
 import { z } from "zod";
 import {
   baselineComparisonDirectionSchema,
@@ -15,6 +16,22 @@ const score100Schema = z.number().min(0).max(100);
 const strainScoreSchema = z.number().min(0).max(21);
 const stressScoreSchema = z.number().min(0).max(3);
 const nonnegativeNumberSchema = z.number().min(0);
+const climbingGradeDisplaySchema = z
+  .object({
+    climbType: z.enum(["boulder", "route"]),
+    gradeSystem: z.enum(CLIMBING_GRADE_SYSTEMS),
+    grade: z.string(),
+    gradeSortValue: z.number(),
+  })
+  .superRefine((grade, context) => {
+    if (!isGradeSystemForClimbType(grade.gradeSystem, grade.climbType)) {
+      context.addIssue({
+        code: "custom",
+        message: "Grade system must match the climb type",
+        path: ["gradeSystem"],
+      });
+    }
+  });
 
 export const workloadRatioResultSchema = z.object({
   context: z.object({
@@ -237,12 +254,32 @@ export const mobileRecoveryTabOutputSchema = z.object({
       interpolated: z.boolean(),
     }),
   ),
-  bodyFat: z.array(
+  bodyFatTrend: z.array(
     z.object({
       date: dateSchema,
-      bodyFatPct: nonnegativeNumberSchema,
+      rawBodyFatPct: z.number().nullable(),
+      rawBodyFatStatus: epistemicStatusSchema.nullable(),
+      smoothedBodyFatPct: z.number(),
+      smoothedBodyFatStatus: epistemicStatusSchema,
+      weeklyChange: z.number().nullable(),
+      interpolated: z.boolean(),
     }),
   ),
+  bodyFatPrediction: z.object({
+    ratePerWeek: z.number().nullable(),
+    rateConfidence: z.number().min(0).max(1).nullable(),
+    periodDeltas: z.object({
+      days7: z.number().nullable(),
+      days14: z.number().nullable(),
+      days30: z.number().nullable(),
+    }),
+    projectionLine: z.array(
+      z.object({
+        date: dateSchema,
+        projectedBodyFatPct: z.number(),
+      }),
+    ),
+  }),
   decisionContext: bodyDecisionContextOutputSchema.nullable(),
   weightPrediction: z.object({
     ratePerWeek: z.number().nullable(),
@@ -349,21 +386,9 @@ export const mobileTrainingTabOutputSchema = z.object({
     verticalAscent: trainingChartAvailabilitySchema,
   }),
   climbing: z.object({
-    gradeProgression: z.array(
-      z.object({
-        date: dateSchema,
-        climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds"]),
-        grade: z.string(),
-        gradeSortValue: z.number(),
-      }),
-    ),
+    gradeProgression: z.array(climbingGradeDisplaySchema.extend({ date: dateSchema })),
     volumeByGrade: z.array(
-      z.object({
-        climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds"]),
-        grade: z.string(),
-        gradeSortValue: z.number(),
+      climbingGradeDisplaySchema.extend({
         attempts: z.number().int().nonnegative(),
         sends: z.number().int().nonnegative(),
       }),

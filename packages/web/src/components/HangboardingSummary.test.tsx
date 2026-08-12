@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { formatDateTime } from "@dofek/format/format";
-import type { HangboardingSummary as HangboardingSummaryData } from "@dofek/providers/hangboarding";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HangboardingSummary as HangboardingSummaryData } from "../../../server/src/repositories/hangboarding-repository.ts";
 
 const chart = vi.hoisted(() => vi.fn());
 

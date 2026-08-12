@@ -1,5 +1,5 @@
-import type { HangboardingDetail as HangboardingDetailData } from "@dofek/providers/hangboarding";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { HangboardingDetail as HangboardingDetailData } from "../../../server/src/repositories/hangboarding-repository.ts";
 import { HangboardingDetail } from "./HangboardingDetail.tsx";
 
 const data: HangboardingDetailData = {
@@ -57,15 +57,3 @@ export const SegmentWarning: Story = {
 };
 
 export const Loading: Story = { args: { data: undefined, loading: true, error: null } };
-
-export const Empty: Story = {
-  args: { data: { ...data, intervals: [] }, loading: false, error: null },
-};
-
-export const ErrorState: Story = {
-  args: {
-    data: undefined,
-    loading: false,
-    error: new Error("Hangboarding details unavailable"),
-  },
-};

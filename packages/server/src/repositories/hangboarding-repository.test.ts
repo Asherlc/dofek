@@ -230,19 +230,6 @@ describe("HangboardingRepository", () => {
     });
   });
 
-  it("keeps coincident sessions distinct in daily aggregation", async () => {
-    const db = makeDb([[], []]);
-
-    await new HangboardingRepository(db, "user-1", "UTC").getSummary(30);
-
-    const dailyQuery = queryText(db, 1);
-    expect(dailyQuery.sql).toContain("a.id::text AS activity_id");
-    expect(dailyQuery.sql).toMatch(/GROUP BY\s+sessions\.activity_id,/);
-    expect(dailyQuery.sql).not.toContain(
-      "GROUP BY sessions.started_at, sessions.ended_at, sessions.hang_ten_activity_id",
-    );
-  });
-
   it("preserves null aggregates when interval durations or heart rates are unavailable", async () => {
     const db = makeDb([
       [

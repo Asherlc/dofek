@@ -5,6 +5,10 @@ import {
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
+import {
+  type ClimbingGradePreference,
+  resolveClimbingGradePreference,
+} from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +26,7 @@ import {
   View,
 } from "react-native";
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
+import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
@@ -235,6 +240,7 @@ export default function SettingsScreen() {
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
+  const climbingGradeSetting = trpc.settings.get.useQuery({ key: "climbingGradeSystems" });
   const setSettingMutation = trpc.settings.set.useMutation();
   const lastUnitReadError = useRef<unknown>(null);
   const billingStatus = trpc.billing.status.useQuery();
@@ -258,6 +264,9 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
+  const climbingGradePreference = climbingGradeSetting.data
+    ? resolveClimbingGradePreference(climbingGradeSetting.data.value)
+    : null;
 
   async function startCheckout(): Promise<void> {
     setCheckoutClientError(null);
@@ -297,6 +306,25 @@ export default function SettingsScreen() {
         },
         onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key: "unitSystem" });
+        },
+      },
+    );
+  }
+
+  function handleClimbingGradeChange(next: ClimbingGradePreference) {
+    const key = "climbingGradeSystems" as const;
+    const previousSetting = trpcUtils.settings.get.getData({ key });
+    trpcUtils.settings.get.setData({ key }, { key, value: next });
+    setSettingMutation.mutate(
+      { key, value: next },
+      {
+        onError: (error) => {
+          trpcUtils.settings.get.setData({ key }, previousSetting);
+          captureException(error, { context: "climbing-grade-systems-write" });
+          Alert.alert("Error", error.message);
+        },
+        onSettled: () => {
+          void trpcUtils.settings.get.invalidate({ key });
         },
       },
     );
@@ -484,6 +512,15 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      ) : null}
+
+      {activeCategory === "goals-models" ? (
+        <ClimbingGradeSystemSettings
+          errorMessage={climbingGradeSetting.error?.message ?? null}
+          onChange={handleClimbingGradeChange}
+          preference={climbingGradePreference}
+          saving={setSettingMutation.isPending}
+        />
       ) : null}
 
       {/* ── Health Reports ── */}

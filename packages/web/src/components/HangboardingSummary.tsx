@@ -1,6 +1,6 @@
 import { formatDateTime, formatDurationSeconds, formatNumber } from "@dofek/format/format";
-import type { HangboardingSummary as HangboardingSummaryData } from "@dofek/providers/hangboarding";
 import { Link } from "@tanstack/react-router";
+import type { HangboardingSummary as HangboardingSummaryData } from "../../../server/src/repositories/hangboarding-repository.ts";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";

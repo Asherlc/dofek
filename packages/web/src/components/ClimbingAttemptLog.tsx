@@ -1,3 +1,10 @@
+import {
+  type ClimbingGradePreference,
+  type ClimbingGradeSystem,
+  DEFAULT_CLIMBING_GRADE_PREFERENCE,
+  gradeOptionsForSystem,
+  gradeSystemLabel,
+} from "@dofek/training/climbing-grades";
 import { useState } from "react";
 import { z } from "zod";
 
@@ -25,7 +32,7 @@ export interface ClimbingSessionSubmission {
     }>;
     climbType: "boulder" | "route";
     grade: string;
-    gradeSystem: "v_scale" | "yds";
+    gradeSystem: ClimbingGradeSystem;
     holdType: HoldType | null;
     routeName: string | null;
     wallAngleDegrees: number | null;
@@ -37,10 +44,12 @@ export interface ClimbingSessionSubmission {
 
 export function ClimbingAttemptLog({
   errorMessage,
+  gradePreference = DEFAULT_CLIMBING_GRADE_PREFERENCE,
   onSubmit,
   submitting,
 }: {
   errorMessage: string | null;
+  gradePreference?: ClimbingGradePreference;
   onSubmit: (input: ClimbingSessionSubmission) => void;
   submitting: boolean;
 }) {
@@ -62,6 +71,9 @@ export function ClimbingAttemptLog({
     );
   }
 
+  const gradeSystem = gradePreference[climbType];
+  const grades = gradeOptionsForSystem(gradeSystem);
+
   return (
     <form
       className="space-y-4"
@@ -77,7 +89,7 @@ export function ClimbingAttemptLog({
               })),
               climbType,
               grade,
-              gradeSystem: climbType === "boulder" ? "v_scale" : "yds",
+              gradeSystem,
               holdType,
               routeName: routeName.trim() || null,
               wallAngleDegrees,
@@ -97,22 +109,31 @@ export function ClimbingAttemptLog({
           <select
             aria-label="Climb type"
             className="input"
-            onChange={(event) => setClimbType(climbTypeSchema.parse(event.target.value))}
+            onChange={(event) => {
+              setClimbType(climbTypeSchema.parse(event.target.value));
+              setGrade("");
+            }}
             value={climbType}
           >
             <option value="boulder">Boulder</option>
             <option value="route">Route</option>
           </select>
         </Field>
-        <Field label="Grade">
-          <input
+        <Field label={`Grade (${gradeSystemLabel(gradeSystem)})`}>
+          <select
             aria-label="Grade"
             className="input"
             onChange={(event) => setGrade(event.target.value)}
-            placeholder={climbType === "boulder" ? "V5" : "5.11a"}
             required
             value={grade}
-          />
+          >
+            <option value="">Select grade</option>
+            {grades.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Wall angle (degrees; positive is overhang)">
           <input

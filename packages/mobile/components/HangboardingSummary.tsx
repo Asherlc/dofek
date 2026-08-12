@@ -1,6 +1,6 @@
 import { formatDateTime, formatDurationSeconds, formatNumber } from "@dofek/format/format";
-import type { HangboardingSummary as HangboardingSummaryData } from "@dofek/providers/hangboarding";
 import { StyleSheet, Text, View } from "react-native";
+import type { HangboardingSummary as HangboardingSummaryData } from "../../server/src/repositories/hangboarding-repository.ts";
 import { colors, spacing } from "../theme";
 import { SparkLine } from "./charts/SparkLine";
 import { QueryStatePanel } from "./QueryStatePanel";

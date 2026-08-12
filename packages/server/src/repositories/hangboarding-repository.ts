@@ -1,12 +1,52 @@
-import type {
-  HangboardingDetail,
-  HangboardingSummary,
-} from "@dofek/providers/hangboarding";
 import type { Database } from "dofek/db";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+
+export interface HangboardingIntervalDetail {
+  id: string;
+  intervalIndex: number;
+  label: string | null;
+  intervalType: "work" | "rest" | null;
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number | null;
+}
+
+export interface HangboardingDetail {
+  planName: string | null;
+  sessionId: string | null;
+  boardId: string | null;
+  boardName: string | null;
+  segmentsError: string | null;
+  intervals: HangboardingIntervalDetail[];
+}
+
+export interface HangboardingSummary {
+  sessionCount: number;
+  totalDurationSeconds: number;
+  averageDurationSeconds: number | null;
+  totalWorkDurationSeconds: number | null;
+  totalRestDurationSeconds: number | null;
+  workIntervalCount: number | null;
+  averageHeartRate: number | null;
+  peakHeartRate: number | null;
+  latestSession: {
+    activityId: string;
+    startedAt: string;
+    planName: string | null;
+    boardName: string | null;
+    durationSeconds: number;
+  } | null;
+  daily: Array<{
+    date: string;
+    sessionCount: number;
+    durationSeconds: number;
+    workDurationSeconds: number | null;
+    restDurationSeconds: number | null;
+  }>;
+}
 
 const detailRowSchema = z.object({
   activity_id: z.string(),
@@ -163,7 +203,7 @@ export class HangboardingRepository {
   }
 
   async getSummary(days: number): Promise<HangboardingSummary> {
-    const summaryQuery = this.#query(
+    const summaryRows = await this.#query(
       summaryRowSchema,
       sql`WITH sessions AS (
             SELECT
@@ -247,11 +287,10 @@ export class HangboardingRepository {
           LEFT JOIN latest ON TRUE`,
     );
 
-    const dailyQuery = this.#query(
+    const dailyRows = await this.#query(
       dailyRowSchema,
       sql`WITH sessions AS (
             SELECT
-              a.id::text AS activity_id,
               member.hang_ten_activity_id,
               CASE
                 WHEN member.hang_ten_activity_id IS NULL THEN a.started_at
@@ -281,11 +320,7 @@ export class HangboardingRepository {
             FROM sessions
             LEFT JOIN fitness.activity_interval AS interval
               ON interval.activity_id = sessions.hang_ten_activity_id
-            GROUP BY
-              sessions.activity_id,
-              sessions.started_at,
-              sessions.ended_at,
-              sessions.hang_ten_activity_id
+            GROUP BY sessions.started_at, sessions.ended_at, sessions.hang_ten_activity_id
           )
           SELECT
             local_date AS date,
@@ -297,8 +332,6 @@ export class HangboardingRepository {
           GROUP BY local_date
           ORDER BY date`,
     );
-
-    const [summaryRows, dailyRows] = await Promise.all([summaryQuery, dailyQuery]);
 
     const summary = summaryRows[0];
     if (!summary) {

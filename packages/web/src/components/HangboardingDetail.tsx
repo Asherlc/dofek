@@ -1,5 +1,5 @@
 import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
-import type { HangboardingDetail as HangboardingDetailData } from "@dofek/providers/hangboarding";
+import type { HangboardingDetail as HangboardingDetailData } from "../../../server/src/repositories/hangboarding-repository.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface HangboardingDetailProps {

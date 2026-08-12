@@ -1,7 +1,14 @@
+import {
+  CLIMBING_GRADE_SYSTEMS,
+  gradeSystemLabel,
+  isGradeSystemForClimbType,
+  isValidClimbingGrade,
+} from "@dofek/training/climbing-grades";
 import { TRPCError } from "@trpc/server";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import {
   type ClimbingActivityEntryRow,
   type ClimbingGradeProgressionRow,
@@ -19,7 +26,13 @@ import {
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import {
+  type AuthenticatedContext,
+  CacheTTL,
+  cachedProtectedQuery,
+  protectedProcedure,
+  router,
+} from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 const nullableNoteSchema = z.string().trim().min(1).max(500).nullable().default(null);
@@ -73,20 +86,28 @@ const climbingSessionInputSchema = z
             attempts: z.array(climbingAttemptInputSchema).min(1).max(100),
             climbType: z.enum(["boulder", "route"]),
             grade: z.string().trim().min(1).max(20),
-            gradeSystem: z.enum(["v_scale", "yds"]),
+            gradeSystem: z.enum(CLIMBING_GRADE_SYSTEMS),
             holdType: climbingHoldTypeSchema.nullable().default(null),
             routeName: z.string().trim().min(1).max(200).nullable().default(null),
             wallAngleDegrees: z.number().min(-90).max(90).nullable().default(null),
           })
-          .refine(
-            (climb) =>
-              (climb.climbType === "boulder" && climb.gradeSystem === "v_scale") ||
-              (climb.climbType === "route" && climb.gradeSystem === "yds"),
-            {
-              message: "Grade system must match the climb type",
-              path: ["gradeSystem"],
-            },
-          ),
+          .superRefine((climb, context) => {
+            if (!isGradeSystemForClimbType(climb.gradeSystem, climb.climbType)) {
+              context.addIssue({
+                code: "custom",
+                message: "Grade system must match the climb type",
+                path: ["gradeSystem"],
+              });
+              return;
+            }
+            if (!isValidClimbingGrade(climb.grade, climb.gradeSystem)) {
+              context.addIssue({
+                code: "custom",
+                message: `"${climb.grade}" is not a valid ${gradeSystemLabel(climb.gradeSystem)} grade`,
+                path: ["grade"],
+              });
+            }
+          }),
       )
       .min(1)
       .max(30),
@@ -136,6 +157,11 @@ async function runClimbingMutation<T>(input: {
       cause: error,
     });
   }
+}
+
+async function createClimbingRepository(ctx: AuthenticatedContext): Promise<ClimbingRepository> {
+  const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
+  return new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow, preference);
 }
 
 export const climbingRouter = router({
@@ -190,33 +216,37 @@ export const climbingRouter = router({
   activityEntries: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ClimbingActivityEntryRow[]> => {
-      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      const rows = await runClimbingQuery(() => repository.getActivityEntries(input.id));
-      return rows.map((row) => row.toDetail());
+      return runClimbingQuery(async () => {
+        const repository = await createClimbingRepository(ctx);
+        return (await repository.getActivityEntries(input.id)).map((row) => row.toDetail());
+      });
     }),
 
   gradeProgression: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
-      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      const rows = await runClimbingQuery(() => repository.getGradeProgression(input.days));
-      return rows.map((row) => row.toDetail());
+      return runClimbingQuery(async () => {
+        const repository = await createClimbingRepository(ctx);
+        return (await repository.getGradeProgression(input.days)).map((row) => row.toDetail());
+      });
     }),
 
   volumeByGrade: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingVolumeByGradeRow[]> => {
-      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      const rows = await runClimbingQuery(() => repository.getVolumeByGrade(input.days));
-      return rows.map((row) => row.toDetail());
+      return runClimbingQuery(async () => {
+        const repository = await createClimbingRepository(ctx);
+        return (await repository.getVolumeByGrade(input.days)).map((row) => row.toDetail());
+      });
     }),
 
   sessionSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingSessionSummaryRow[]> => {
-      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      const rows = await runClimbingQuery(() => repository.getSessionSummaries(input.days));
-      return rows.map((row) => row.toDetail());
+      return runClimbingQuery(async () => {
+        const repository = await createClimbingRepository(ctx);
+        return (await repository.getSessionSummaries(input.days)).map((row) => row.toDetail());
+      });
     }),
 
   hangboardingSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
