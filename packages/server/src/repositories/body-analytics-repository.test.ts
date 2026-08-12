@@ -544,6 +544,30 @@ describe("BodyAnalyticsRepository", () => {
         }),
       ]);
     });
+
+    it("labels observed and interpolated body-fat points by provenance", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-03", weight_kg: "80", body_fat_pct: "22" },
+      ]);
+
+      const result = await repo.getSmoothedBodyFat(null, "2024-06-01");
+
+      expect(result).toMatchObject([
+        {
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+        {
+          rawBodyFatStatus: null,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+        {
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+      ]);
+    });
   });
 
   describe("getRecomposition", () => {
