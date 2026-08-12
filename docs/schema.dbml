@@ -516,6 +516,7 @@ table fitness.climbing_entry {
   grade text [not null]
   sent boolean
   attempt_count integer [default: 1]
+  lead boolean
   wall_angle_degrees real
   hold_type climbing_hold_type
   route_name text

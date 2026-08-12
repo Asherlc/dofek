@@ -23,6 +23,7 @@ packages:
   - packages/eight-sleep
   - packages/zwift-client
   - packages/zepp-client
+  - packages/kaya-client
   - packages/trainerroad-client
   - packages/velohero-client
   - packages/mountain-project-client

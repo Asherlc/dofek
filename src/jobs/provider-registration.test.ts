@@ -13,6 +13,7 @@ const mockProviders = {
   peloton: { id: "peloton" },
   fatsecret: { id: "fatsecret" },
   whoop: { id: "whoop" },
+  kaya: { id: "kaya" },
   "ride-with-gps": { id: "ride-with-gps" },
   "strong-csv": { id: "strong-csv" },
   polar: { id: "polar" },
@@ -53,6 +54,9 @@ vi.mock("../providers/fatsecret/provider.ts", () => ({
 }));
 vi.mock("../providers/whoop/provider.ts", () => ({
   WhoopProvider: vi.fn(() => mockProviders.whoop),
+}));
+vi.mock("../providers/kaya-sync.ts", () => ({
+  KayaSyncProvider: vi.fn(() => mockProviders.kaya),
 }));
 vi.mock("../providers/ride-with-gps.ts", () => ({
   RideWithGpsProvider: vi.fn(() => mockProviders["ride-with-gps"]),

@@ -68,6 +68,7 @@ COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/mountain-project-client/package.json ./packages/mountain-project-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY packages/kaya-client/package.json ./packages/kaya-client/
 COPY packages/provider-http/package.json ./packages/provider-http/
 COPY packages/peloton-client/package.json ./packages/peloton-client/
 COPY packages/xert-client/package.json ./packages/xert-client/
@@ -153,6 +154,8 @@ COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages
 COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY --from=source --chown=node:node /app/packages/kaya-client/src ./packages/kaya-client/src
+COPY --from=source --chown=node:node /app/packages/kaya-client/package.json ./packages/kaya-client/
 COPY --from=source --chown=node:node /app/packages/provider-http/src ./packages/provider-http/src
 COPY --from=source --chown=node:node /app/packages/provider-http/package.json ./packages/provider-http/
 COPY --from=source --chown=node:node /app/packages/peloton-client/src ./packages/peloton-client/src
@@ -198,6 +201,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
     ln -sfn /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
+    ln -sfn /app/packages/kaya-client node_modules/@dofek/kaya-client && \
     ln -sfn /app/packages/format node_modules/@dofek/format && \
     ln -sfn /app/packages/filter-columns node_modules/@dofek/filter-columns && \
     ln -sfn /app/packages/stats node_modules/@dofek/stats && \

@@ -204,6 +204,7 @@ entity "climbing_entry" {
   grade : text
   sent : boolean
   attempt_count : integer
+  lead : boolean
   wall_angle_degrees : real
   hold_type : climbing_hold_type
   route_name : text
