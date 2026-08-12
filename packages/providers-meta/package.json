@@ -15,7 +15,8 @@
     "./processing-alerts": "./src/processing-alerts.ts",
     "./processing-status": "./src/processing-status.ts",
     "./sync-actions": "./src/sync-actions.ts",
-    "./auth-provider-grouping": "./src/auth-provider-grouping.ts"
+    "./auth-provider-grouping": "./src/auth-provider-grouping.ts",
+    "./hangboarding": "./src/hangboarding.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*"

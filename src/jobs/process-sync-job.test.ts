@@ -1230,7 +1230,7 @@ describe("processSyncJob", () => {
       stage: "ingest",
       status: "failed",
       errorCode: "provider_sync_failed",
-      errorMessage: "The data source could not be synced. Reconnect it and try again.",
+      errorMessage: "Broken could not be synced. Try the sync again later.",
       idempotencyKey: "worker-failed",
     });
 
@@ -1296,6 +1296,13 @@ describe("processSyncJob", () => {
     // Verify each error is logged individually via Winston
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_sync_failed",
+        errorMessage: "Partial could not be synced. Try the sync again later.",
+      }),
+    );
   });
 
   it("reports thrown sync errors to Sentry", async () => {
@@ -1333,6 +1340,13 @@ describe("processSyncJob", () => {
         status: "error",
         errorMessage: expiredTokenError.message,
         authFailureReason: "access_token_expired",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Wahoo authorization needs attention. Reconnect Wahoo, then try again.",
       }),
     );
   });
@@ -1471,6 +1485,13 @@ describe("processSyncJob", () => {
         status: "error",
         errorMessage: cause.message,
         authFailureReason: "refresh_token_revoked",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Withings authorization needs attention. Reconnect Withings, then try again.",
       }),
     );
   });

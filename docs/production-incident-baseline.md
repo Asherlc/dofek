@@ -23502,6 +23502,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-08-12 — PR 2507 CI retained an orphaned mobile component after conflict resolution
+
+- **Status:** Resolved by commits `a874f77` and `ce3bac9`; the repaired [Knip job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312820), [Native FIT Decoder job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312585), Mobile Preview OTA check, and [TFLint rerun](https://github.com/Asherlc/dofek/actions/runs/31633329057/job/94237945547) passed on fresh PR runs.
+- **Symptoms / impact:** The post-merge [Knip job](https://github.com/Asherlc/dofek/actions/runs/31631878405/job/94232700644) and a subsequent [Lint job](https://github.com/Asherlc/dofek/actions/runs/31632651475/job/94235518353) blocked PR #2507. The same run also recorded independent artifact-download failures in the Native FIT Decoder, Mobile Preview OTA, and TFLint jobs. No production impact occurred.
+- **Evidence / root cause:** The first fatal Knip finding was `Unused files (1): packages/mobile/components/ClimbingEntryBreakdown.tsx`; the merge retained an extracted component while `main` had already restored the inline consumer. The later Lint failure reported `noUnusedImports` for the provider-package `HangboardingSummary` import and `noRedeclare` for the repository type of the same name in `mobile-training-tab.test.ts`; both imports survived the merge although the test uses only the repository type. TFLint failed before reading repository configuration because its setup download ended with `socket hang up`.
+- **Fix / mitigation:** Removed the orphaned component and the unused provider-package import. The artifact-download failures were upstream availability failures, so no retry, timeout, or failure-suppression change was added.
+- **Validation:** Knip passed locally with CI's required non-secret Sentry configuration, the touched test's Biome check and 19 tests passed locally, and fresh hosted Knip, Native FIT Decoder, Mobile Preview OTA, and TFLint checks passed. The fresh full Lint job is still running.
+- **Remaining risk / follow-up:** Confirm the fresh hosted Lint job and remaining CI matrix pass.
+
 ## 2026-08-11 — Wahoo sync required reconnect despite a usable refresh token
 
 - **Status:** Fix prepared in the workspace; deployment and production
