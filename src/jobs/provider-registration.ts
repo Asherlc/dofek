@@ -65,6 +65,10 @@ async function doRegisterProviders() {
     ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
     ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
     [
+      "mountain-project",
+      () => import("../providers/mountain-project.ts").then((m) => new m.MountainProjectProvider()),
+    ],
+    [
       "auto-supplements",
       () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),
     ],

@@ -88,6 +88,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:packages/heart-rate-variability
+      '@dofek/mountain-project':
+        specifier: workspace:*
+        version: link:packages/mountain-project-client
       '@dofek/peloton':
         specifier: workspace:*
         version: link:packages/peloton-client
@@ -629,6 +632,19 @@ importers:
       expo-modules-core:
         specifier: '>=2.0.0'
         version: 57.0.7(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)
+
+  packages/mountain-project-client:
+    dependencies:
+      '@dofek/training':
+        specifier: workspace:*
+        version: link:../training
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 3.2.6
+        version: 3.2.6(@types/node@26.1.1)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11)(supports-color@11.0.0)(terser@5.47.1)(tsx@4.23.1)(yaml@2.9.0)
 
   packages/nutrition:
     dependencies:

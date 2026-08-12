@@ -101,6 +101,10 @@ async function doRegisterProviders() {
     ["wger", () => import("dofek/providers/wger").then((m) => new m.WgerProvider())],
     ["velohero", () => import("dofek/providers/velohero").then((m) => new m.VeloHeroProvider())],
     [
+      "mountain-project",
+      () => import("dofek/providers/mountain-project").then((m) => new m.MountainProjectProvider()),
+    ],
+    [
       "auto-supplements",
       () => import("dofek/providers/auto-supplements").then((m) => new m.AutoSupplementsProvider()),
     ],

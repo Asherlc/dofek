@@ -53,6 +53,7 @@ const nodeTestIncludes = [
   "packages/eight-sleep/src/**/*.test.ts",
   "packages/trainerroad-client/src/**/*.test.ts",
   "packages/velohero-client/src/**/*.test.ts",
+  "packages/mountain-project-client/src/**/*.test.ts",
   "packages/zwift-client/src/**/*.test.ts",
   "packages/zepp-client/src/**/*.test.ts",
   "packages/whoop-whoop/src/**/*.test.ts",

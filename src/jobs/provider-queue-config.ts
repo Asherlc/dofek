@@ -81,6 +81,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["zwift", frequentProvider()],
   ["wger", frequentProvider()],
   ["concept2", frequentProvider()],
+  ["mountain-project", frequentProvider()],
   ["auto-supplements", frequentProvider()],
 
   // ── Daily tier ──

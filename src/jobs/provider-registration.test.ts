@@ -32,6 +32,7 @@ const mockProviders = {
   "cycling-analytics": { id: "cycling-analytics" },
   wger: { id: "wger" },
   velohero: { id: "velohero" },
+  "mountain-project": { id: "mountain-project" },
   "auto-supplements": { id: "auto-supplements" },
   "amazfit-zepp": { id: "amazfit-zepp" },
   "kaya-export": { id: "kaya-export" },
@@ -109,6 +110,9 @@ vi.mock("../providers/wger.ts", () => ({
 }));
 vi.mock("../providers/velohero.ts", () => ({
   VeloHeroProvider: vi.fn(() => mockProviders.velohero),
+}));
+vi.mock("../providers/mountain-project.ts", () => ({
+  MountainProjectProvider: vi.fn(() => mockProviders["mountain-project"]),
 }));
 vi.mock("../providers/auto-supplements.ts", () => ({
   AutoSupplementsProvider: vi.fn(() => mockProviders["auto-supplements"]),

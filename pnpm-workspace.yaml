@@ -25,6 +25,7 @@ packages:
   - packages/zepp-client
   - packages/trainerroad-client
   - packages/velohero-client
+  - packages/mountain-project-client
   - packages/garmin-connect
   - packages/trainingpeaks-connect
   - packages/peloton-client
