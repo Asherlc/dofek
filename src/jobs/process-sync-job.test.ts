@@ -1248,6 +1248,7 @@ describe("processSyncJob", () => {
         errorMessage: "API timeout",
         durationMs: expect.any(Number),
         userId: "user-1",
+        origin: "unknown",
       }),
     );
 
