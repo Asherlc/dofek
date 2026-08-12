@@ -1,4 +1,3 @@
-import type { HangboardingSummary } from "@dofek/providers/hangboarding";
 import { StrainScore } from "@dofek/scoring/scoring";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
