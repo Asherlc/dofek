@@ -51,4 +51,25 @@ describe("ClimbingAttemptLog", () => {
       }),
     );
   });
+
+  it("uses the selected grade preference for manual logging", () => {
+    const onSubmit = vi.fn();
+    render(
+      <ClimbingAttemptLog
+        errorMessage={null}
+        gradePreference={{ boulder: "font", route: "french" }}
+        onSubmit={onSubmit}
+        submitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "6a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save climbing session" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        climbs: [expect.objectContaining({ grade: "6a", gradeSystem: "font" })],
+      }),
+    );
+  });
 });

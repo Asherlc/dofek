@@ -377,6 +377,37 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(bodyFatTrend.style.marginLeft).toBe("16px");
   });
 
+  it("switches the body trend from weight to body fat", async () => {
+    mockRecoveryData = createRecoveryFixture({
+      weight: [
+        {
+          date: "2026-03-20",
+          rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
+          smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      bodyFat: [
+        { date: "2026-03-10", bodyFatPct: 21.4 },
+        { date: "2026-03-20", bodyFatPct: 20.9 },
+      ],
+    });
+
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("79.8 kg")).toBeTruthy();
+    expect(screen.queryByText("20.9%")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
+
+    expect(screen.queryByText("79.8 kg")).toBeNull();
+    expect(screen.getByText("20.9%")).toBeTruthy();
+  });
+
   it("does not consume cached default-range data during preference hydration", async () => {
     mockRecoveryData = {
       readinessScore: [{ date: "2026-04-06", readinessScore: 77 }],

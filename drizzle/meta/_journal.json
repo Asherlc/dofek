@@ -605,6 +605,13 @@
       "breakpoints": true
     },
     {
+      "idx": 86,
+      "version": "7",
+      "when": 1786466044000,
+      "tag": "0074_climbing_grade_systems",
+      "breakpoints": true
+    },
+    {
       "idx": 87,
       "version": "7",
       "when": 1786467000000,

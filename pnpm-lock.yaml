@@ -838,6 +838,12 @@ importers:
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
+      '@openbeta/sandbag':
+        specifier: 0.0.55
+        version: 0.0.55
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/trainingpeaks-connect:
     dependencies:
@@ -3977,6 +3983,10 @@ packages:
 
   '@open-draft/until@2.1.0':
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
+
+  '@openbeta/sandbag@0.0.55':
+    resolution: {integrity: sha512-mHRK0uY/DpwstuTws6rJ89XwqJxkGKuJo9SWnLWqoWo51ITaXAHkPn4dwa1y3K4OJ+yoBl5SQuETB4JvbzgZhg==}
+    engines: {node: '>=14'}
 
   '@opentelemetry/api-logs@0.207.0':
     resolution: {integrity: sha512-lAb0jQRVyleQQGiuuvCOTDVspc14nx6XJjP4FspJ1sNARo3Regq4ZZbrc3rN4b1TYSuUCvgH+UXUPug4SLOqEQ==}
@@ -17236,7 +17246,7 @@ snapshots:
 
   '@babel/helper-annotate-as-pure@7.29.7':
     dependencies:
-      '@babel/types': 7.29.7
+      '@babel/types': 7.29.8
 
   '@babel/helper-compilation-targets@7.29.7':
     dependencies:
@@ -17322,7 +17332,7 @@ snapshots:
       '@babel/core': 7.29.7(supports-color@11.0.0)
       '@babel/helper-member-expression-to-functions': 7.29.7(supports-color@11.0.0)
       '@babel/helper-optimise-call-expression': 7.29.7
-      '@babel/traverse': 7.29.7(supports-color@11.0.0)
+      '@babel/traverse': 7.29.8(supports-color@11.0.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -17538,7 +17548,7 @@ snapshots:
       '@babel/helper-globals': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
       '@babel/helper-replace-supers': 7.29.7(@babel/core@7.29.7)(supports-color@11.0.0)
-      '@babel/traverse': 7.29.7(supports-color@11.0.0)
+      '@babel/traverse': 7.29.8(supports-color@11.0.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -20162,6 +20172,8 @@ snapshots:
 
   '@open-draft/until@2.1.0': {}
 
+  '@openbeta/sandbag@0.0.55': {}
+
   '@opentelemetry/api-logs@0.207.0':
     dependencies:
       '@opentelemetry/api': 1.9.1
@@ -21738,7 +21750,7 @@ snapshots:
   '@react-native/codegen@0.86.2(@babel/core@7.29.7)':
     dependencies:
       '@babel/core': 7.29.7(supports-color@11.0.0)
-      '@babel/parser': 7.29.7
+      '@babel/parser': 7.29.8
       hermes-parser: 0.36.0
       invariant: 2.2.4
       nullthrows: 1.1.1
@@ -30589,8 +30601,8 @@ snapshots:
 
   metro-source-map@0.84.4(supports-color@11.0.0):
     dependencies:
-      '@babel/traverse': 7.29.7(supports-color@11.0.0)
-      '@babel/types': 7.29.7
+      '@babel/traverse': 7.29.8(supports-color@11.0.0)
+      '@babel/types': 7.29.8
       flow-enums-runtime: 0.0.6
       invariant: 2.2.4
       metro-symbolicate: 0.84.4(supports-color@11.0.0)
@@ -32353,7 +32365,7 @@ snapshots:
       '@babel/plugin-transform-template-literals': 7.29.7(@babel/core@7.29.7)
       '@babel/plugin-transform-unicode-regex': 7.29.7(@babel/core@7.29.7)
       '@babel/preset-typescript': 7.28.5(@babel/core@7.29.7)(supports-color@11.0.0)
-      '@babel/types': 7.29.7
+      '@babel/types': 7.29.8
       '@react-native/metro-config': 0.86.2(@babel/core@7.29.7)(supports-color@11.0.0)
       convert-source-map: 2.0.0
       react: 19.2.3
