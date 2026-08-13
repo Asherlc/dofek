@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type {
   ClimbingActivityEntryRow,
   ClimbingGradeProgressionRow,
@@ -257,6 +258,32 @@ describe("climbingRouter", () => {
       ]),
     });
     expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects malformed hangboarding summary output", async () => {
+    const { caller } = makeCaller();
+    const getSummary = vi
+      .spyOn(HangboardingRepository.prototype, "getSummary")
+      .mockResolvedValueOnce({
+        averageDurationSeconds: null,
+        averageHeartRate: null,
+        daily: [],
+        latestSession: null,
+        peakHeartRate: null,
+        sessionCount: 1,
+        totalDurationSeconds: 600,
+        totalRestDurationSeconds: null,
+        totalWorkDurationSeconds: "invalid",
+        workIntervalCount: null,
+      } as never);
+
+    try {
+      await expect(caller.hangboardingSummary({ days: 30 })).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "INTERNAL_SERVER_ERROR",
+      });
+    } finally {
+      getSummary.mockRestore();
+    }
   });
 
   it("returns empty arrays when there is no climbing data", async () => {

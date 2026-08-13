@@ -14,6 +14,34 @@ import { HangboardingRepository } from "../repositories/hangboarding-repository.
 import { type AuthenticatedContext, CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
+const hangboardingSummarySchema = z.object({
+  sessionCount: z.number().int().nonnegative(),
+  totalDurationSeconds: z.number().nonnegative(),
+  averageDurationSeconds: z.number().nullable(),
+  totalWorkDurationSeconds: z.number().nullable(),
+  totalRestDurationSeconds: z.number().nullable(),
+  workIntervalCount: z.number().int().nonnegative().nullable(),
+  averageHeartRate: z.number().nullable(),
+  peakHeartRate: z.number().nullable(),
+  latestSession: z
+    .object({
+      activityId: z.string(),
+      startedAt: z.string(),
+      planName: z.string().nullable(),
+      boardName: z.string().nullable(),
+      durationSeconds: z.number().nonnegative(),
+    })
+    .nullable(),
+  daily: z.array(
+    z.object({
+      date: z.string(),
+      sessionCount: z.number().int().nonnegative(),
+      durationSeconds: z.number().nonnegative(),
+      workDurationSeconds: z.number().nullable(),
+      restDurationSeconds: z.number().nullable(),
+    }),
+  ),
+});
 
 async function createClimbingRepository(ctx: AuthenticatedContext): Promise<ClimbingRepository> {
   const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
@@ -85,6 +113,7 @@ export const climbingRouter = router({
 
   hangboardingSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
+    .output(hangboardingSummarySchema)
     .query(async ({ ctx, input }) => {
       const repository = new HangboardingRepository(
         ctx.db,
