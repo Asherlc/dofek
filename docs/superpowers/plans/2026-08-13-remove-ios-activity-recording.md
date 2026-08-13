@@ -44,7 +44,7 @@
 - Consumes: no new interfaces; `activityRecording.save` has no consumer after the mobile recorder is removed.
 - Produces: the root tRPC router exposes no `activityRecording` member; active `activity` APIs do not change.
 
-- [ ] **Step 1: Confirm the implementation is self-contained**
+- [x] **Step 1: Confirm the implementation is self-contained**
 
 Run:
 
@@ -55,7 +55,7 @@ rtk rg -n "ActivityRecordingRepository|activityRecordingRouter|activityRecording
 
 Expected: only the recorder client, dedicated router/repository, and root-router registration appear. Do not add an absence test.
 
-- [ ] **Step 2: Delete the dedicated API and its focused tests**
+- [x] **Step 2: Delete the dedicated API and its focused tests**
 
 Delete all four API files. Remove exactly this import and root-router property
 from `packages/server/src/router.ts`:
@@ -69,7 +69,7 @@ In `packages/server/src/router.test.ts`, delete the matching `vi.mock` and the
 `"activityRecording"` expected router key. The retained test exercises the
 active router composition rather than proving a removed interface is absent.
 
-- [ ] **Step 3: Run the active root-router regression**
+- [x] **Step 3: Run the active root-router regression**
 
 Run:
 
@@ -79,11 +79,11 @@ rtk pnpm exec vitest run packages/server/src/router.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 4: Audit API references**
+- [x] **Step 4: Audit API references**
 
 Run the Step 1 search again. Expected: no output in production source.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 ```bash
 rtk git add packages/server/src/router.ts packages/server/src/router.test.ts \
@@ -199,7 +199,7 @@ rtk git push
 - Consumes: Expo app-config plugin schema and pnpm workspace lockfile.
 - Produces: an iOS build that does not request location access or background location but retains HealthKit, Bluetooth, fetch, motion, and WatchConnectivity settings.
 
-- [ ] **Step 1: Remove only location-specific native configuration**
+- [x] **Step 1: Remove only location-specific native configuration**
 
 In `packages/mobile/app.json`, change:
 
@@ -217,7 +217,7 @@ Delete the entire `expo-location` plugin block, including both GPS permission
 strings and `isIosBackgroundLocationEnabled`. Retain every other plugin and
 native capability.
 
-- [ ] **Step 2: Remove dependencies and update the lockfile**
+- [x] **Step 2: Remove dependencies and update the lockfile**
 
 Remove `expo-location` and `expo-task-manager` from
 `packages/mobile/package.json`, then run:
@@ -229,7 +229,7 @@ rtk pnpm install --lockfile-only
 Expected: only their importer/resolution entries are removed; no unrelated
 dependency versions change.
 
-- [ ] **Step 3: Update human-facing feature documentation**
+- [x] **Step 3: Update human-facing feature documentation**
 
 Replace the Activity Recording README bullet with:
 
@@ -241,7 +241,7 @@ Replace the Activity Recording README bullet with:
 Keep the Core Motion and WatchMotion entries because passive background
 synchronization still uses them.
 
-- [ ] **Step 4: Validate mobile configuration and types**
+- [x] **Step 4: Validate mobile configuration and types**
 
 Run:
 
@@ -254,7 +254,7 @@ rtk pnpm --dir packages/mobile exec expo config --type public
 Expected: each exits 0; public Expo configuration contains neither
 `expo-location` nor a location background mode.
 
-- [ ] **Step 5: Confirm passive path files did not change**
+- [x] **Step 5: Confirm passive path files did not change**
 
 Run:
 
@@ -268,7 +268,7 @@ Expected: no diff. Task 2's approved type-ownership correction in
 `background-whoop-ble-sync.ts` is the sole permitted passive WHOOP diff and
 must not alter runtime behavior.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```bash
 rtk git add packages/mobile/app.json packages/mobile/package.json pnpm-lock.yaml packages/mobile/README.md
@@ -285,19 +285,21 @@ rtk git push
 - Consumes: completed Tasks 1-3.
 - Produces: fresh evidence that source, configuration, server routing, and active test tiers agree on the removal boundary.
 
-- [ ] **Step 1: Run final reference audit**
+- [x] **Step 1: Run final reference audit**
 
 Run:
 
 ```bash
-rtk rg -n "activityRecording|ActivityRecordingRepository|activity-recording|expo-location|expo-task-manager|/record" \
+rtk rg -n "activityRecording|ActivityRecordingRepository|activity-recording|expo-location|expo-task-manager|/record(?:[\"')?]|$)" \
   packages/mobile packages/server pnpm-lock.yaml --glob '!**/*.test.ts'
 ```
 
-Expected: no source/configuration output. Historical decision records under
-`docs/` are deliberately outside this audit.
+Expected: no source/configuration output. The `/record` term matches the
+literal retired route boundary, not substrings such as `record-local-time` or
+`recordAccelerometer`. Historical decision records under `docs/` are
+deliberately outside this audit.
 
-- [ ] **Step 2: Run final repository validation**
+- [x] **Step 2: Run final repository validation**
 
 Run:
 
@@ -310,17 +312,35 @@ rtk pnpm test
 Expected: each command exits 0. If a check fails, identify and fix the actual
 cause; do not suppress the check or add a workaround.
 
-- [ ] **Step 3: Record verified completion**
+- [x] **Step 3: Record verified completion**
 
 After all commands above exit 0, replace this plan's completed checkboxes from
 `- [ ]` to `- [x]` and append `## Verification Evidence` with the date and
 exact commands run. State that passive watchOS behavior was preserved by source
 boundary and no watchOS file changed; do not claim it was physically exercised.
 
-- [ ] **Step 4: Commit and push verification evidence**
+- [x] **Step 4: Commit and push verification evidence**
 
 ```bash
 rtk git add docs/superpowers/plans/2026-08-13-remove-ios-activity-recording.md
 rtk git commit -m "docs: record activity recording removal verification"
 rtk git push
 ```
+
+## Verification Evidence
+
+Verified 2026-08-13:
+
+```bash
+rtk rg -n "activityRecording|ActivityRecordingRepository|activity-recording|expo-location|expo-task-manager|/record(?:[\"')?]|$)" \
+  packages/mobile packages/server pnpm-lock.yaml --glob '!**/*.test.ts'
+rtk pnpm compose:up
+rtk pnpm lint
+rtk pnpm typecheck
+rtk pnpm test
+```
+
+The reference audit emitted no source/configuration matches (its standard
+no-match exit status was 1). `pnpm lint`, `pnpm typecheck`, and `pnpm test`
+each exited 0. Passive watchOS behavior is preserved by the source boundary;
+no watchOS file changed. Physical watchOS behavior was not exercised.
