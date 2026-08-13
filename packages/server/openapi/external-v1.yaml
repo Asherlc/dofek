@@ -1,0 +1,228 @@
+openapi: 3.1.0
+info:
+  title: Dofek External Write API
+  version: 1.0.0
+  description: Target-agnostic authenticated write boundary for external input applications.
+servers:
+  - url: /
+paths:
+  /api/external/v1/link/start:
+    post:
+      operationId: startExternalLink
+      security: [{ externalClient: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkStartRequest' }
+      responses:
+        '200':
+          description: Authorization transaction created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinkStartResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/external/v1/link/exchange:
+    post:
+      operationId: exchangeExternalLink
+      security: [{ externalClient: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkExchangeRequest' }
+      responses:
+        '200':
+          description: External grant issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinkExchangeResponse' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '423': { $ref: '#/components/responses/Problem' }
+  /api/external/v1/link/status:
+    post:
+      operationId: getExternalLinkStatus
+      security: [{ externalClient: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalSubject' }
+      responses:
+        '200':
+          description: Link status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinkStatusResponse' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/external/v1/nutrition/entries:
+    post:
+      operationId: createNutritionEntries
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 16, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NutritionEntriesRequest' }
+      responses:
+        '200':
+          description: Entries created or idempotent replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NutritionEntriesResponse' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '423': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/external/v1/erasure/ack:
+    post:
+      operationId: acknowledgeExternalErasure
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ErasureAckRequest' }
+      responses:
+        '200':
+          description: Acknowledgment recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties: { accepted: { type: boolean } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: opaque }
+    externalClient: { type: http, scheme: bearer, bearerFormat: opaque-client-credential }
+  responses:
+    Problem:
+      description: Structured external API error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    ExternalSubject:
+      type: object
+      required: [namespace, subject]
+      properties:
+        namespace: { type: string, minLength: 1, maxLength: 100 }
+        subject: { type: string, minLength: 1, maxLength: 500 }
+    LinkStartRequest:
+      type: object
+      required: [redirectUri, codeChallenge, requestedScopes]
+      properties:
+        redirectUri: { type: string, format: uri }
+        codeChallenge: { type: string, minLength: 43, maxLength: 128 }
+        requestedScopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: ['nutrition:write'] }
+    LinkStartResponse:
+      type: object
+      required: [linkId, authorizationUrl, expiresAt]
+      properties:
+        linkId: { type: string }
+        authorizationUrl: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+    LinkExchangeRequest:
+      type: object
+      required: [linkId, code, codeVerifier, externalSubject]
+      properties:
+        linkId: { type: string }
+        code: { type: string }
+        codeVerifier: { type: string, minLength: 43, maxLength: 128 }
+        externalSubject: { $ref: '#/components/schemas/ExternalSubject' }
+    LinkExchangeResponse:
+      type: object
+      required: [externalSubject, grantId, accessToken, tokenType, expiresIn, scope]
+      properties:
+        externalSubject: { type: string }
+        grantId: { type: string }
+        accessToken: { type: string }
+        tokenType: { type: string, enum: [Bearer] }
+        expiresIn: { type: integer, const: 900 }
+        scope: { type: string, const: 'nutrition:write' }
+    LinkStatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [linked, unlinked, revoked] }
+        externalSubject: { type: string }
+        grantId: { type: string }
+    NutritionEntriesRequest:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/NutritionEntry' }
+    NutritionEntry:
+      type: object
+      required: [date, foodName, nutrients, externalId]
+      properties:
+        date: { type: string, format: date }
+        meal: { type: string, enum: [breakfast, lunch, dinner, snack, other] }
+        foodName: { type: string, minLength: 1, maxLength: 500 }
+        foodDescription: { type: string, maxLength: 2000, nullable: true }
+        category: { type: string, maxLength: 100, nullable: true }
+        numberOfUnits: { type: number, exclusiveMinimum: 0, nullable: true }
+        externalId: { type: string, minLength: 1, maxLength: 500 }
+        nutrients:
+          type: object
+          additionalProperties: { type: number, minimum: 0 }
+    NutritionEntriesResponse:
+      type: object
+      required: [entries, dailyIntake]
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            required: [id, externalId]
+            properties:
+              id: { type: string, format: uuid }
+              externalId: { type: string }
+        dailyIntake: { $ref: '#/components/schemas/DailyIntake' }
+    DailyIntake:
+      type: object
+      required: [date, state, resolution]
+      properties:
+        date: { type: string, format: date }
+        state: { type: string, enum: [available, unavailable] }
+        summary: { type: object, nullable: true, additionalProperties: true }
+        resolution: { type: object, additionalProperties: true }
+    ErasureAckRequest:
+      type: object
+      required: [eventId, result]
+      properties:
+        eventId: { type: string }
+        result: { type: string, enum: [completed, failed] }
+        reasonCode: { type: string }
+    Problem:
+      type: object
+      required: [type, title, status, code, message, requestId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        message: { type: string }
+        requestId: { type: string }
+        details: { type: array }
