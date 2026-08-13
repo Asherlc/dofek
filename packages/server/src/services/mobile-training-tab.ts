@@ -4,6 +4,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import {
   type MobileTrainingTabResult,
   mobileTrainingTabOutputSchema,
@@ -79,7 +80,6 @@ export async function loadMobileTrainingTab(
     ctx.sensorStore,
     ctx.accessWindow,
   );
-  const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
   const hangboardingRepo = new HangboardingRepository(
     ctx.db,
     ctx.userId,
@@ -91,8 +91,9 @@ export async function loadMobileTrainingTab(
   const windowStart = dateWindowStartString(endDate, days);
   const accessParams = clickHouseDateAccessWindowParams(ctx.accessWindow);
 
-  const [storedParams, strainRows, readinessRows] = await Promise.all([
+  const [storedParams, climbingGradePreference, strainRows, readinessRows] = await Promise.all([
     loadPersonalizedParams(ctx.db, ctx.userId),
+    loadClimbingGradePreference(ctx.db, ctx.userId),
     ctx.sensorStore.query(
       strainRowSchema,
       `SELECT
@@ -142,6 +143,14 @@ export async function loadMobileTrainingTab(
       { priority: "dashboard" },
     ),
   ]);
+
+  const climbingRepo = new ClimbingRepository(
+    ctx.db,
+    ctx.userId,
+    ctx.timezone,
+    ctx.accessWindow,
+    climbingGradePreference,
+  );
 
   const effective = getEffectiveParams(storedParams);
   const workloadRatio = computeWorkloadRatio(strainRows);

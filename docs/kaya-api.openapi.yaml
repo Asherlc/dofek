@@ -1,0 +1,89 @@
+openapi: 3.1.0
+info:
+  title: Kaya observed application API
+  version: 1.0.0
+  description: Reverse-engineered from Kaya's web application; not a supported public API.
+servers:
+  - url: https://kaya-beta.kayaclimb.com
+paths:
+  /api/user/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Authenticated Kaya user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+  /graphql:
+    post:
+      operationId: graphQl
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, variables]
+              properties:
+                query: { type: string }
+                variables:
+                  type: object
+                  required: [user_id, offset, count]
+                  properties:
+                    user_id: { type: string }
+                    offset: { type: integer, minimum: 0 }
+                    count: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: GraphQL response for sessionsForUser or ascentsForUser
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  schemas:
+    LoginResponse:
+      type: object
+      required: [message, token, refresh_token, user]
+      properties:
+        message: { type: string, enum: [ok] }
+        token: { type: string }
+        refresh_token: { type: string }
+        user:
+          type: object
+          required: [id]
+          properties:
+            id: { oneOf: [{ type: string }, { type: integer }] }
+    KayaAscent:
+      type: object
+      required: [id, session_id, date, attempts, ascent_type, climb]
+      properties:
+        id: { type: string }
+        session_id: { type: string }
+        date: { type: string, format: date-time }
+        attempts: { type: integer, minimum: 1 }
+        ascent_type:
+          type: object
+          properties: { id: { type: string }, name: { type: string } }
+        climb:
+          type: object
+          required: [id, lead, climb_type]
+          properties:
+            id: { type: string }
+            lead:
+              type: boolean
+              description: Route-level lead flag; boulders also return false and must map to null.
+            climb_type:
+              type: object
+              properties: { id: { type: string }, name: { type: string } }

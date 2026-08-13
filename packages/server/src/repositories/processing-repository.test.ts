@@ -837,7 +837,7 @@ describe("ProcessingRepository", () => {
     });
   });
 
-  it("directs failed provider ingestion to reconnect the named source", async () => {
+  it("offers a retry instead of reconnecting after a provider service failure", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({
         providerId: "whoop",
@@ -872,14 +872,16 @@ describe("ProcessingRepository", () => {
         expect.objectContaining({
           providerLabel: "WHOOP (Cloud)",
           title: "WHOOP (Cloud) couldn’t sync",
-          action: "reconnect",
-          actionLabel: "Reconnect WHOOP (Cloud)",
+          message:
+            "Dofek couldn’t get the latest data from WHOOP (Cloud). Try the sync again later.",
+          action: "retry_sync",
+          actionLabel: "Retry WHOOP (Cloud) sync",
         }),
       ],
     });
   });
 
-  it("directs a provider-level sync failure to reconnect even after ingestion", async () => {
+  it("offers a retry for a provider-level sync failure after ingestion", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({
         providerId: "whoop",
@@ -913,7 +915,48 @@ describe("ProcessingRepository", () => {
       alerts: [
         expect.objectContaining({
           title: "WHOOP (Cloud) couldn’t sync",
+          action: "retry_sync",
+        }),
+      ],
+    });
+  });
+
+  it("directs a provider authentication failure to reconnect the named source", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "whoop",
+        kind: "provider_sync",
+        events: [
+          event(1, {
+            stage: "ingest",
+            status: "failed",
+            datasetKey: "activity",
+            errorCode: "provider_auth_failed",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          title: "WHOOP (Cloud) needs to reconnect",
           action: "reconnect",
+          actionLabel: "Reconnect WHOOP (Cloud)",
         }),
       ],
     });

@@ -1499,6 +1499,7 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.queueAdd).toHaveBeenCalledWith(
       "sync",
       {
+        origin: "manual",
         providerId: "wahoo",
         sinceDays: 7,
         sinceIso: expect.any(String),
