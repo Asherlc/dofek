@@ -2,10 +2,10 @@ import { useEffect } from "react";
 import {
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
+  type InertialMeasurementUnitUploadClient,
   type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import { captureException } from "./telemetry";
 
 /**

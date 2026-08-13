@@ -4,10 +4,10 @@ import {
   initBackgroundWhoopBleSync,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
+  type InertialMeasurementUnitUploadClient,
   type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
 
 const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
   mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),

@@ -110,12 +110,16 @@ rtk git push
 - Delete: `packages/mobile/lib/inertial-measurement-unit-service.ts`
 - Delete: `packages/mobile/lib/inertial-measurement-unit-service.test.ts`
 - Modify: `packages/mobile/app/(tabs)/activities.tsx:22,159,293-302,777-786`
+- Modify: `packages/mobile/lib/background-whoop-ble-sync.ts`
+- Modify: `packages/mobile/lib/background-whoop-ble-sync.test.ts`
+- Modify: `packages/mobile/lib/useWhoopBleSync.ts`
+- Modify: `packages/mobile/lib/useWhoopBleSync.test.ts`
 
 **Interfaces:**
 - Consumes: unchanged `trpc.calendar.*` and `trpc.activity.*` imported-activity queries/mutations.
 - Produces: Activities remains the activity-history UI, but no longer navigates to `/record` or starts manual collection.
 
-- [ ] **Step 1: Confirm passive sensor paths are independent**
+- [x] **Step 1: Confirm passive sensor paths are independent**
 
 Run:
 
@@ -123,22 +127,29 @@ Run:
 rtk rg -n "createInertialMeasurementUnitService|createHeartRateRecordingService|combineRecordingSensorServices|createLocationAdapter|createActivityRecorder" packages/mobile
 ```
 
-Expected: callers are the manual route/files listed above. Do not modify
-`background-accelerometer-sync.ts`, `background-watch-inertial-measurement-unit-sync.ts`, `background-whoop-ble-sync.ts`, watch-motion, health-kit, or any watchOS target file.
+Expected: callers are the manual route/files listed above. The retained passive
+WHOOP sync imports `InertialMeasurementUnitUploadClient` from the deleted
+recorder-owned service, so move that interface to `background-whoop-ble-sync.ts`
+and update its hook/tests to import it there. This approved dependency-boundary
+correction changes no passive runtime behavior. Do not modify
+`background-accelerometer-sync.ts`,
+`background-watch-inertial-measurement-unit-sync.ts`, watch-motion, health-kit,
+or any watchOS target file.
 
-- [ ] **Step 2: Remove the Activities entry point**
+- [x] **Step 2: Remove the Activities entry point**
 
-Remove `useRouter`, `const router = useRouter()`, the `TouchableOpacity` that
-pushes `/record`, and the `recordButton` / `recordButtonText` styles from
-`packages/mobile/app/(tabs)/activities.tsx`. Retain refresh, filters, selection,
-deletion, activity-detail navigation, imported-route display, and all other UI.
+Remove the `TouchableOpacity` that pushes `/record` and the `recordButton` /
+`recordButtonText` styles from `packages/mobile/app/(tabs)/activities.tsx`.
+Retain `useRouter` because it still powers required activity-detail navigation.
+Retain refresh, filters, selection, deletion, imported-route display, and all
+other UI.
 
-- [ ] **Step 3: Delete the manual route and dedicated services**
+- [x] **Step 3: Delete the manual route and dedicated services**
 
 Delete the five source/test file pairs listed in **Files**. Do not retain no-op
 exports or hidden route implementations.
 
-- [ ] **Step 4: Run active mobile regressions**
+- [x] **Step 4: Run active mobile regressions**
 
 Run:
 
@@ -150,7 +161,7 @@ rtk pnpm test:mobile
 Expected: PASS. Existing activity tests demonstrate imported data still renders;
 do not add an absence test for the retired recorder.
 
-- [ ] **Step 5: Audit stale recorder references**
+- [x] **Step 5: Audit stale recorder references**
 
 Run:
 
@@ -160,7 +171,7 @@ rtk rg -n -i "activity-recording|Record Activity|createActivityRecorder|createLo
 
 Expected: no output in source and tests.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```bash
 rtk git add packages/mobile/app/'(tabs)'/activities.tsx packages/mobile/app/record.tsx \
@@ -168,7 +179,10 @@ rtk git add packages/mobile/app/'(tabs)'/activities.tsx packages/mobile/app/reco
   packages/mobile/lib/location-service.ts packages/mobile/lib/location-service.test.ts \
   packages/mobile/lib/recording-sensor-service.ts packages/mobile/lib/recording-sensor-service.test.ts \
   packages/mobile/lib/heart-rate-recording-service.ts packages/mobile/lib/heart-rate-recording-service.test.ts \
-  packages/mobile/lib/inertial-measurement-unit-service.ts packages/mobile/lib/inertial-measurement-unit-service.test.ts
+  packages/mobile/lib/inertial-measurement-unit-service.ts packages/mobile/lib/inertial-measurement-unit-service.test.ts \
+  packages/mobile/lib/background-whoop-ble-sync.ts packages/mobile/lib/background-whoop-ble-sync.test.ts \
+  packages/mobile/lib/useWhoopBleSync.ts packages/mobile/lib/useWhoopBleSync.test.ts \
+  docs/superpowers/plans/2026-08-13-remove-ios-activity-recording.md
 rtk git commit -m "feat: remove iOS activity recording UI"
 rtk git push
 ```
@@ -247,11 +261,12 @@ Run:
 ```bash
 rtk git diff -- packages/mobile/targets packages/mobile/modules/watch-motion \
   packages/mobile/modules/health-kit packages/mobile/lib/background-accelerometer-sync.ts \
-  packages/mobile/lib/background-watch-inertial-measurement-unit-sync.ts \
-  packages/mobile/lib/background-whoop-ble-sync.ts
+  packages/mobile/lib/background-watch-inertial-measurement-unit-sync.ts
 ```
 
-Expected: no diff.
+Expected: no diff. Task 2's approved type-ownership correction in
+`background-whoop-ble-sync.ts` is the sole permitted passive WHOOP diff and
+must not alter runtime behavior.
 
 - [ ] **Step 6: Commit and push**
 
