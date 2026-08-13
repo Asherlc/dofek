@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   sourceConflictMessage: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
   sourceConflictSources: { color: colors.textTertiary, fontSize: 12 },
   loadingText: { color: colors.textSecondary, textAlign: "center", padding: 24 },
-  errorText: { color: colors.error, textAlign: "center", padding: 24 },
+  errorText: { color: colors.danger, textAlign: "center", padding: 24 },
   fatsecretAttributionLink: { alignItems: "center", paddingVertical: 8 },
   fatsecretAttribution: { color: colors.textTertiary, fontSize: 12 },
 });
