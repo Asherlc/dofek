@@ -184,14 +184,4 @@ final class HealthKitTypesTests: XCTestCase {
         }
     }
 
-    func testDietaryWriteQuantityTypeAllowsOnlyWritableDietaryIdentifiers() {
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryProtein.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryFatTotal.rawValue))
-
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.stepCount.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.heartRate.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: "not-a-healthkit-type"))
-    }
 }

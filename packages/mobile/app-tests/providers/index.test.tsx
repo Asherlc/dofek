@@ -263,7 +263,6 @@ vi.mock("../../modules/health-kit", () => ({
   queryWorkouts: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
-  writeDietarySamples: vi.fn().mockResolvedValue(true),
   deleteDietarySamples: vi.fn().mockResolvedValue(0),
 }));
 
@@ -271,16 +270,6 @@ const mockSyncHealthKit = vi.fn().mockResolvedValue({ inserted: 0, errors: [] })
 
 vi.mock("../../lib/health-kit-sync", () => ({
   syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKit(...args),
-}));
-
-const mockSyncDofekFoodToHealthKit = vi.fn().mockResolvedValue({
-  written: 0,
-  skipped: 0,
-  errors: [],
-});
-
-vi.mock("../../lib/health-kit-food-writeback", () => ({
-  syncDofekFoodToHealthKit: (...args: unknown[]) => mockSyncDofekFoodToHealthKit(...args),
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -959,11 +948,6 @@ describe("ProvidersScreen", () => {
     mockHasEverAuthorized.mockReset().mockReturnValue(true);
     mockRequestPermissions.mockReset().mockResolvedValue(true);
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
-    mockSyncDofekFoodToHealthKit.mockReset().mockResolvedValue({
-      written: 0,
-      skipped: 0,
-      errors: [],
-    });
     setupDefaultMocks();
   });
 
@@ -2671,27 +2655,6 @@ describe("ProvidersScreen", () => {
       expect(appleCard.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
-  });
-
-  it("writes direct Dofek food entries back to Apple Health when Sync is clicked", async () => {
-    await renderProvidersScreen();
-
-    await waitFor(() => {
-      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-      expect(appleCard.getByText("Sync")).toBeTruthy();
-    });
-
-    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-    fireEvent.click(appleCard.getByText("Sync"));
-
-    await waitFor(() => {
-      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        }),
-      );
-    });
   });
 
   it("shows Connect button when HealthKit was never authorized", async () => {

@@ -47,7 +47,6 @@ the exact section.
 | [chart-range-framework.md](chart-range-framework.md) | Backend framework for selected chart ranges, endpoint defaults, and All-history semantics. |
 | [daily-heart-rate.md](daily-heart-rate.md) | Daily Heart Rate navigation and local calendar-day semantics across web and mobile. |
 | [mcp.md](mcp.md) | Remote MCP endpoint setup, scopes, and tools. |
-| [nutrition-ai-input.md](nutrition-ai-input.md) | Web + iOS meal logging flow for natural-language AI input. |
 | [file-upload-architecture.md](file-upload-architecture.md) | Durable browser import uploads, R2 object verification, transactional outbox delivery, and recovery. |
 | [app-password-auth.md](app-password-auth.md) | Email/password login, password reset, and Settings password management. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |

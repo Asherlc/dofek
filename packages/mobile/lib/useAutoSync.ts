@@ -1,12 +1,9 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { deleteDietarySamples, writeDietarySamples } from "../modules/health-kit";
-import { AppleHealthAuthorizationService } from "./apple-health-provider";
-import { syncDofekFoodToHealthKit } from "./health-kit-food-writeback";
 import { invalidateSyncedHealthData } from "./invalidate-synced-health-data";
 import { runAfterUiIdle } from "./runAfterUiIdle";
-import { captureException, logger } from "./telemetry";
+import { captureException } from "./telemetry";
 import { trpc } from "./trpc";
 
 /** Check whether the latest data date is before today (stale). */
@@ -16,16 +13,10 @@ export function isDataStale(latestDate: string | null | undefined): boolean {
   return latestDate < today;
 }
 
-function todayYmd(): string {
-  return formatDateYmd();
-}
-
 /**
  * Auto-sync hook for the iOS overview screen.
  * When the app opens and data is stale, triggers:
  * 1. Server-side sync for all API providers (polls until complete, then invalidates cache)
- * 2. Direct Dofek food writeback to HealthKit
- *
  * HealthKit ingestion is owned by background-health-kit-sync so foreground startup
  * cannot launch a second copy of the same import and refetch cycle.
  */
@@ -88,42 +79,6 @@ export function useAutoSync(latestDate: string | null | undefined) {
           // Best-effort — auto-sync is not critical
           captureException(error, { source: "auto-sync-providers" });
         });
-
-      // HealthKit ingestion is initialized once by the root layout. This path only
-      // writes canonical Dofek nutrition entries out to HealthKit.
-      const appleHealthAuthorization = new AppleHealthAuthorizationService();
-      void appleHealthAuthorization
-        .resolve()
-        .then((authorizationState) => {
-          if (!authorizationState.canAttemptSync()) {
-            return null;
-          }
-          return syncDofekFoodToHealthKit({
-            trpcClient: trpcUtils.client,
-            healthKit: {
-              writeDietarySamples,
-              deleteDietarySamples,
-            },
-            startDate: latestDate,
-            endDate: todayYmd(),
-          });
-        })
-        .then((result) => {
-          if (!result) {
-            return;
-          }
-          logger.info(
-            "auto-sync",
-            `HealthKit food writeback complete: ${result.written} written, ${result.errors.length} errors`,
-          );
-        })
-        .catch((error: unknown) => {
-          logger.warn(
-            "auto-sync",
-            `HealthKit food writeback failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          captureException(error, { source: "auto-sync-healthkit-food-writeback" });
-        });
     });
 
     return () => {
@@ -135,7 +90,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
     activeSyncs.error,
     activeSyncs.data,
     triggerProviderSync,
-    trpcUtils,
     queryClient,
+    trpcUtils.sync.syncStatus.fetch,
   ]);
 }

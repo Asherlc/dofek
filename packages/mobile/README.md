@@ -10,9 +10,7 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Activity Recording**: Real-time GPS and sensor recording for workouts, utilizing native `CoreMotion` and `WatchMotion` modules.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
 - **Journal Trends**: Reviews server-authored numeric and Yes/No journal series with visible date bounds, explicit missing days, exact provider-attributed values, and the supported uncertainty status.
-- **Nutrition Logging**: Rapid meal entry, barcode scanning, and natural-language AI meal input that splits a single message into multiple food items.
-
-See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
+- **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
 ## Project Structure
 

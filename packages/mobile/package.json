@@ -62,7 +62,6 @@
     "expo": "57.0.12",
     "expo-apple-authentication": "57.0.1",
     "expo-build-properties": "57.0.10",
-    "expo-camera": "57.0.3",
     "expo-crypto": "57.0.1",
     "expo-dev-client": "57.0.11",
     "expo-document-picker": "57.0.1",

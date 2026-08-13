@@ -1,6 +1,5 @@
-import { formatDateYmd, formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
-import { autoMealType } from "@dofek/nutrition/meal";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
@@ -95,10 +94,6 @@ export default function TodayScreen() {
     invalidate: null,
   });
 
-  function handleLogFood() {
-    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}&mode=quickadd`);
-  }
-
   if (isError) {
     return (
       <View style={styles.container}>
@@ -172,18 +167,6 @@ export default function TodayScreen() {
           {formatSummaryDateContext(dashboardData.summaryDateContext)}
         </Text>
       ) : null}
-
-      {/* Log food */}
-      <TouchableOpacity
-        style={styles.quickAddButton}
-        onPress={handleLogFood}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Log Food"
-      >
-        <Text style={styles.quickAddPlus}>+</Text>
-        <Text style={styles.quickAddLabel}>Log Food</Text>
-      </TouchableOpacity>
 
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>

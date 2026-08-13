@@ -535,11 +535,6 @@ vi.mock("expo-apple-authentication", () => ({
   AppleAuthenticationButtonStyle: { WHITE: 0 },
 }));
 
-vi.mock("expo-camera", () => ({
-  CameraView: () => null,
-  useCameraPermissions: () => [{ granted: false }, vi.fn()],
-}));
-
 vi.mock("expo-haptics", () => ({
   selectionAsync: vi.fn(() => Promise.resolve()),
   impactAsync: vi.fn(() => Promise.resolve()),

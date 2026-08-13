@@ -62,7 +62,6 @@ vi.mock("../modules/health-kit", async () => {
     queryWorkouts: vi.fn(),
     querySleepSamples: vi.fn(),
     queryWorkoutRoutes: vi.fn(),
-    writeDietarySamples: vi.fn(),
     deleteDietarySamples: vi.fn(),
   };
 });
@@ -82,12 +81,6 @@ const mockSyncHealthKitToServer = vi.fn();
 
 vi.mock("./health-kit-sync", () => ({
   syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKitToServer(...args),
-}));
-
-const mockSyncDofekFoodToHealthKit = vi.fn();
-
-vi.mock("./health-kit-food-writeback", () => ({
-  syncDofekFoodToHealthKit: (...args: unknown[]) => mockSyncDofekFoodToHealthKit(...args),
 }));
 
 vi.mock("./invalidate-synced-health-data", () => ({
@@ -139,7 +132,6 @@ describe("useAutoSync", () => {
     mockIsAvailable.mockReturnValue(false);
     mockGetRequestStatus.mockResolvedValue("unnecessary");
     mockRequestPermissions.mockResolvedValue(true);
-    mockSyncDofekFoodToHealthKit.mockResolvedValue({ written: 0, skipped: 0, errors: [] });
     mockInvalidateSyncedHealthData.mockResolvedValue(undefined);
   });
 
@@ -349,64 +341,5 @@ describe("useAutoSync", () => {
     await act(() => vi.runAllTimersAsync());
 
     expect(mockMutateAsync).toHaveBeenCalledTimes(1);
-  });
-
-  describe("HealthKit food writeback", () => {
-    beforeEach(() => {
-      mockIsAvailable.mockReturnValue(true);
-      mockHasEverAuthorized.mockReturnValue(true);
-    });
-
-    it("writes direct Dofek food entries back to HealthKit", async () => {
-      renderHook(() => useAutoSync("2026-03-21"));
-      await act(() => vi.runAllTimersAsync());
-
-      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          startDate: "2026-03-21",
-          endDate: "2026-03-22",
-        }),
-      );
-    });
-
-    it("writes food when the legacy authorization flag is false", async () => {
-      mockHasEverAuthorized.mockReturnValue(false);
-
-      renderHook(() => useAutoSync("2026-03-21"));
-      await act(() => vi.runAllTimersAsync());
-
-      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalled();
-    });
-
-    it("writes food when new types need permission", async () => {
-      mockHasEverAuthorized.mockReturnValue(true);
-
-      renderHook(() => useAutoSync("2026-03-21"));
-      await act(() => vi.runAllTimersAsync());
-
-      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalled();
-    });
-
-    it("skips food writeback when HealthKit is not available", async () => {
-      mockIsAvailable.mockReturnValue(false);
-
-      renderHook(() => useAutoSync("2026-03-21"));
-      await act(() => vi.runAllTimersAsync());
-
-      expect(mockSyncDofekFoodToHealthKit).not.toHaveBeenCalled();
-    });
-
-    it("reports HealthKit food writeback failures", async () => {
-      const hkError = new Error("hk error");
-      mockSyncDofekFoodToHealthKit.mockRejectedValue(hkError);
-
-      renderHook(() => useAutoSync("2026-03-21"));
-      await act(() => vi.runAllTimersAsync());
-
-      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalled();
-      expect(mockCaptureException).toHaveBeenCalledWith(hkError, {
-        source: "auto-sync-healthkit-food-writeback",
-      });
-    });
   });
 });
