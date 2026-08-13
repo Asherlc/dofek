@@ -261,5 +261,4 @@ describe("remote account revocation", () => {
     expect(remoteMocks.revokeToken).toHaveBeenCalledTimes(2);
     expect(unregisterWebhook).toHaveBeenCalledWith("sub-1");
   });
-
 });

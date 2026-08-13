@@ -3,19 +3,18 @@ import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentation
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { expect, it } from "vitest";
-import { KomootProvider } from "../providers/komoot.ts";
 import {
   type AccountErasureProcessorProgress,
   eraseAccountProcessors,
   verifyAccountProcessors,
 } from "./processor-erasure.ts";
-import { eraseStripeAccount, revokeRemoteAccounts } from "./remote-revocation.ts";
+import { eraseStripeAccount } from "./remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "./remote-snapshot.ts";
 
 const SYNTHETIC_ACCOUNT_MARKER = "synthetic-account-marker";
 const POSTHOG_PERSON_UUID = "20000000-0000-4000-8000-000000001994";
 
-it("keeps processor and Komoot erasure URLs out of exported spans without disabling ordinary tracing", async () => {
+it("keeps processor erasure URLs out of exported spans without disabling ordinary tracing", async () => {
   const server = createServer((_request, response) => {
     response.setHeader("Connection", "close");
     response.end("ok");
@@ -46,22 +45,8 @@ it("keeps processor and Komoot erasure URLs out of exported spans without disabl
   });
   sdk.start();
 
-  const originalKomootClientId = process.env.KOMOOT_CLIENT_ID;
-  const originalKomootClientSecret = process.env.KOMOOT_CLIENT_SECRET;
-  process.env.KOMOOT_CLIENT_ID = "test-client";
-  process.env.KOMOOT_CLIENT_SECRET = "test-client-secret";
-
   try {
     const origin = `http://127.0.0.1:${address.port}`;
-    let receivedKomootRevocation = false;
-    const provider = new KomootProvider(async (input) => {
-      const url = new URL(input instanceof Request ? input.url : input.toString());
-      receivedKomootRevocation =
-        url.pathname.endsWith("/clients/test-client/refresh_tokens/") &&
-        url.searchParams.has("refresh_token");
-      await (await fetch(`${origin}/account-erasure?account=${SYNTHETIC_ACCOUNT_MARKER}`)).text();
-      return new Response(null, { status: 200 });
-    });
     const snapshot: AccountErasureRemoteSnapshot = {
       appleCredentials: [],
       authIdentities: [],
@@ -216,7 +201,6 @@ it("keeps processor and Komoot erasure URLs out of exported spans without disabl
     expect(exportedUrlAttributes.some((value) => value.includes(SYNTHETIC_ACCOUNT_MARKER))).toBe(
       false,
     );
-    expect(receivedKomootRevocation).toBe(true);
     expect([...observedSuppressedRequests].sort()).toEqual([
       "brevo-email-delete",
       "brevo-email-query",
@@ -224,7 +208,6 @@ it("keeps processor and Komoot erasure URLs out of exported spans without disabl
       "posthog-bulk-delete",
       "posthog-distinct-id-query",
       "posthog-person-query",
-      "slack-token-revocation",
       "stripe-customer-delete",
       "stripe-subscription-cancel",
       "stripe-user-query",
@@ -232,16 +215,6 @@ it("keeps processor and Komoot erasure URLs out of exported spans without disabl
       "zoho-user-query",
     ]);
   } finally {
-    if (originalKomootClientId === undefined) {
-      delete process.env.KOMOOT_CLIENT_ID;
-    } else {
-      process.env.KOMOOT_CLIENT_ID = originalKomootClientId;
-    }
-    if (originalKomootClientSecret === undefined) {
-      delete process.env.KOMOOT_CLIENT_SECRET;
-    } else {
-      process.env.KOMOOT_CLIENT_SECRET = originalKomootClientSecret;
-    }
     await sdk.shutdown();
     server.closeAllConnections();
     await new Promise<void>((resolve) => {

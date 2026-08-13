@@ -453,7 +453,6 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-
         {activeCategory === "privacy-export" ? (
           <PageSection title="Data Export" subtitle="Download all your data">
             <ExportPanel />

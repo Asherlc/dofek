@@ -926,7 +926,6 @@ describe("Router data coverage", () => {
       expect(keys).toContain("unitSystem");
       expect(keys).toContain("whoop.wearLocation");
     });
-
   });
 
   // ══════════════════════════════════════════════════════════════

@@ -686,7 +686,6 @@ describe("settingsRouter", () => {
       expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
   });
-
 });
 
 // ── Sleep Need Router ──

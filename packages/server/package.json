@@ -58,7 +58,6 @@
     "@types/express": "5.0.6",
     "@types/qrcode": "1.5.6",
     "tsx": "4.23.1",
-    "typescript": "6.0.3",
-    "undici": "7.29.0"
+    "typescript": "6.0.3"
   }
 }
