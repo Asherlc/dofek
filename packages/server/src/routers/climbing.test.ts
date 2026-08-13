@@ -176,7 +176,9 @@ describe("climbingRouter", () => {
         location_name: "Touchstone Pacific Pipe",
         attempt_count: 9,
         sent: true,
-        hardest_boulder_grade: "V4",
+        climb_type: "boulder",
+        grade_system: "v_scale",
+        grade: "V4",
       },
     ]);
 
@@ -263,7 +265,7 @@ describe("climbingRouter", () => {
     await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(6);
   });
 
   it("returns a controlled error when climbing data cannot load", async () => {

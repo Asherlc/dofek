@@ -11,12 +11,7 @@ import {
 } from "../repositories/climbing-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import {
-  type AuthenticatedContext,
-  CacheTTL,
-  cachedProtectedQuery,
-  router,
-} from "../trpc.ts";
+import { type AuthenticatedContext, CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 
