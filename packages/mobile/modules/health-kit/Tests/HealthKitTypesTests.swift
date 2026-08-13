@@ -183,5 +183,4 @@ final class HealthKitTypesTests: XCTestCase {
             XCTAssertFalse(writeTypes.contains(type), "writeTypes should not contain \(identifier.rawValue)")
         }
     }
-
 }
