@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import {
+  type InertialMeasurementUnitUploadClient,
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
-  type InertialMeasurementUnitUploadClient,
   type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync";

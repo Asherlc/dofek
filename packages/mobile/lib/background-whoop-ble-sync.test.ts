@@ -1,10 +1,10 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type InertialMeasurementUnitUploadClient,
   initBackgroundWhoopBleSync,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
-  type InertialMeasurementUnitUploadClient,
   type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
