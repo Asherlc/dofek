@@ -7,6 +7,15 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-12 — Dependabot CI rejected new static-analysis contracts
+
+- **Status:** Fixed in this workspace; exact-head Dependabot CI verification is pending.
+- **Symptoms / impact:** Dependabot PR [#2500](https://github.com/Asherlc/dofek/pull/2500) failed Dockerfile lint, and PR [#2496](https://github.com/Asherlc/dofek/pull/2496) failed root and heart-rate-variability TypeScript checks, blocking both dependency updates. No production impact occurred.
+- **Evidence / root cause:** PR #2500's first fatal line was `Dockerfile:232 DL3066 info: Non-numeric user-id may not be resolvable by host system`; Hadolint v2.15.0, introduced by the action update, correctly rejects `USER node` at the configured `info` threshold. PR #2496's first fatal line was `Type 'Stats | BigIntStats | undefined' does not satisfy the constraint 'object'` in `garmin-dump.test.ts`; Node 26 declarations permit the mocked `stat()` return to be undefined while the fixture test assumed an object.
+- **Fix / mitigation:** Replaced the Docker image's named runtime user with the equivalent verified Node 26 Alpine UID/GID `1000:1000`. Narrowed the test-only filesystem-stat mock after an explicit fixture-presence guard. No threshold reduction, ignore rule, retry, timeout, or warning-only behavior was added.
+- **Validation:** Hadolint v2.15.0 passes at the `info` threshold after the change; the Garmin dump unit suite passes 30 tests; root and heart-rate-variability typechecks pass in the exact PR #2496 dependency set with `@types/node` 26.1.2.
+- **Remaining risk / follow-up:** Confirm the refreshed exact-head CI jobs on both Dependabot PRs; investigate only a different first fatal line.
+
 ## 2026-08-12 — Providers incorrectly marked stale from dashboard coverage
 
 - **Status:** Root cause fixed in this workspace; deployment and production

@@ -236,8 +236,8 @@ RUN mkdir -p /app/job-files && chown node:node /app/job-files
 # Create updates directory for OTA bundles (bind mount point)
 RUN mkdir -p /app/updates && chown node:node /app/updates
 
-# Run as non-root user (node user is built into node:26-alpine, uid 1000)
-USER node
+# Run as non-root user (node user is built into node:26-alpine, uid/gid 1000)
+USER 1000:1000
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["sync"]
