@@ -491,8 +491,8 @@ describe("ActivityDetailScreen", () => {
     const rerendered = render(React.createElement(ActivityDetailScreen));
     rerendered.rerender(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockHangboardDetailsQuery.mock.calls.at(-1)?.[1])).toBe(true);
-    expect(screen.getByText("Hangboarding")).toBeTruthy();
-    expect(screen.getByText("Imported 7/3")).toBeTruthy();
+    expect(screen.getAllByText("Hangboarding").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Imported 7/3").length).toBeGreaterThanOrEqual(2);
   });
 
   it("renders the activity's stored session perceived exertion", async () => {

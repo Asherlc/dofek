@@ -65,6 +65,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
         providerId: provider.id,
         sinceDays: fullSync ? undefined : days,
         userId,
+        origin: "manual",
       } satisfies SyncJobData),
     ),
   );

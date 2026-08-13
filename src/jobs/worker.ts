@@ -74,7 +74,7 @@ import {
   ZIP_ENTRY_EXTRACT_QUEUE,
   type ZipEntryExtractJobData,
 } from "./queues.ts";
-import { setupScheduledSync } from "./scheduled-sync.ts";
+import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES, setupScheduledSync } from "./scheduled-sync.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
@@ -102,7 +102,9 @@ let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | n
 
 const rawSyncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES;
 const syncIntervalMinutes =
-  rawSyncIntervalMinutes === undefined ? 30 : Number(rawSyncIntervalMinutes);
+  rawSyncIntervalMinutes === undefined
+    ? DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES
+    : Number(rawSyncIntervalMinutes);
 try {
   if (!Number.isFinite(syncIntervalMinutes) || syncIntervalMinutes <= 0) {
     throw new Error(

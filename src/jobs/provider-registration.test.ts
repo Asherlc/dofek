@@ -13,6 +13,7 @@ const mockProviders = {
   peloton: { id: "peloton" },
   fatsecret: { id: "fatsecret" },
   whoop: { id: "whoop" },
+  kaya: { id: "kaya" },
   "ride-with-gps": { id: "ride-with-gps" },
   "strong-csv": { id: "strong-csv" },
   polar: { id: "polar" },
@@ -32,6 +33,7 @@ const mockProviders = {
   "cycling-analytics": { id: "cycling-analytics" },
   wger: { id: "wger" },
   velohero: { id: "velohero" },
+  "mountain-project": { id: "mountain-project" },
   "auto-supplements": { id: "auto-supplements" },
   "amazfit-zepp": { id: "amazfit-zepp" },
   "kaya-export": { id: "kaya-export" },
@@ -52,6 +54,9 @@ vi.mock("../providers/fatsecret/provider.ts", () => ({
 }));
 vi.mock("../providers/whoop/provider.ts", () => ({
   WhoopProvider: vi.fn(() => mockProviders.whoop),
+}));
+vi.mock("../providers/kaya-sync.ts", () => ({
+  KayaSyncProvider: vi.fn(() => mockProviders.kaya),
 }));
 vi.mock("../providers/ride-with-gps.ts", () => ({
   RideWithGpsProvider: vi.fn(() => mockProviders["ride-with-gps"]),
@@ -109,6 +114,9 @@ vi.mock("../providers/wger.ts", () => ({
 }));
 vi.mock("../providers/velohero.ts", () => ({
   VeloHeroProvider: vi.fn(() => mockProviders.velohero),
+}));
+vi.mock("../providers/mountain-project.ts", () => ({
+  MountainProjectProvider: vi.fn(() => mockProviders["mountain-project"]),
 }));
 vi.mock("../providers/auto-supplements.ts", () => ({
   AutoSupplementsProvider: vi.fn(() => mockProviders["auto-supplements"]),

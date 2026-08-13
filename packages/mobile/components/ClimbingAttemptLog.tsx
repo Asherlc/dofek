@@ -1,3 +1,10 @@
+import {
+  type ClimbingGradePreference,
+  type ClimbingGradeSystem,
+  DEFAULT_CLIMBING_GRADE_PREFERENCE,
+  gradeOptionsForSystem,
+  gradeSystemLabel,
+} from "@dofek/training/climbing-grades";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -34,7 +41,7 @@ export interface ClimbingSessionSubmission {
     }>;
     climbType: "boulder" | "route";
     grade: string;
-    gradeSystem: "v_scale" | "yds";
+    gradeSystem: ClimbingGradeSystem;
     holdType: HoldType;
     routeName: string | null;
     wallAngleDegrees: number;
@@ -46,10 +53,12 @@ export interface ClimbingSessionSubmission {
 
 export function ClimbingAttemptLog({
   errorMessage,
+  gradePreference = DEFAULT_CLIMBING_GRADE_PREFERENCE,
   onSubmit,
   submitting,
 }: {
   errorMessage: string | null;
+  gradePreference?: ClimbingGradePreference;
   onSubmit: (input: ClimbingSessionSubmission) => void;
   submitting: boolean;
 }) {
@@ -71,6 +80,8 @@ export function ClimbingAttemptLog({
     );
   }
 
+  const gradeSystem = gradePreference[climbType];
+
   return (
     <View style={styles.card}>
       <Text style={styles.description}>
@@ -78,14 +89,22 @@ export function ClimbingAttemptLog({
       </Text>
       <OptionGroup
         label="Climb type"
-        onSelect={setClimbType}
+        onSelect={(nextClimbType) => {
+          setClimbType(nextClimbType);
+          setGrade("");
+        }}
         options={[
           { label: "Boulder", value: "boulder" },
           { label: "Route", value: "route" },
         ]}
         selected={climbType}
       />
-      <Input label="Grade" onChangeText={setGrade} value={grade} />
+      <OptionGroup
+        label={`Grade (${gradeSystemLabel(gradeSystem)})`}
+        onSelect={setGrade}
+        options={gradeOptionsForSystem(gradeSystem).map((value) => ({ label: value, value }))}
+        selected={grade}
+      />
       <Input label="Wall angle (degrees)" onChangeText={setWallAngle} value={wallAngle} />
       <Input label="Route or problem name" onChangeText={setRouteName} value={routeName} />
       <Input label="Location" onChangeText={setLocationName} value={locationName} />
@@ -154,7 +173,7 @@ export function ClimbingAttemptLog({
                   })),
                   climbType,
                   grade,
-                  gradeSystem: climbType === "boulder" ? "v_scale" : "yds",
+                  gradeSystem,
                   holdType,
                   routeName: routeName.trim() || null,
                   wallAngleDegrees: Number(wallAngle),

@@ -190,6 +190,7 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: 7,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -202,11 +203,13 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: 7,
       userId: "test-user",
+      origin: "manual",
     });
     expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
       providerId: "wahoo",
       sinceDays: 7,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -298,6 +301,7 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: undefined,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -308,6 +312,7 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: 30,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -324,6 +329,7 @@ describe("handleSyncCommand", () => {
         providerId: "strava",
         sinceDays: 7,
         userId: "env-user-123",
+        origin: "manual",
       });
       expect(mockDbExecute).not.toHaveBeenCalled();
     } finally {

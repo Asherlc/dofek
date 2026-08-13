@@ -27,6 +27,10 @@ const providerActivitySyncMocks = vi.hoisted(() => ({
   scope: undefined satisfies ProviderActivityListSyncScope | undefined,
 }));
 
+const hangTenIntervalMocks = vi.hoisted(() => ({
+  replace: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   ProviderActivityListSync: class {
     constructor(scope: { windowStart: Date; windowEnd: Date }) {
@@ -37,6 +41,10 @@ vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   },
   finishProviderActivityListSync: vi.fn(),
   upsertProviderActivity: vi.fn(),
+}));
+
+vi.mock("../../../../src/providers/apple-health/hang-ten-intervals.ts", () => ({
+  replaceHangTenIntervals: hangTenIntervalMocks.replace,
 }));
 
 const heartRateSample = {
@@ -129,13 +137,14 @@ describe("processBodyMeasurements", () => {
 
 describe("processWorkouts", () => {
   it("reconciles apple_health workouts missing from the HealthKit sync window", async () => {
+    hangTenIntervalMocks.replace.mockClear();
     providerActivitySyncMocks.reconcile.mockClear();
     providerActivitySyncMocks.upsert.mockClear();
     providerActivitySyncMocks.scope = undefined;
     const execute = vi.fn(async () => []);
 
     await processWorkouts(
-      { execute },
+      makeTransactionalTestDatabase({ execute }),
       "00000000-0000-0000-0000-000000000001",
       [
         {
@@ -169,6 +178,7 @@ describe("processWorkouts", () => {
         endUtcOffsetMinutes: -420,
         localTimeSource: "device_offset",
       }),
+      expect.anything(),
     );
     expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
     expect(providerActivitySyncMocks.scope?.windowStart.toISOString()).toBe(
@@ -180,11 +190,12 @@ describe("processWorkouts", () => {
   });
 
   it("persists unknown local-time context when a workout boundary lacks an offset", async () => {
+    hangTenIntervalMocks.replace.mockClear();
     providerActivitySyncMocks.upsert.mockClear();
     const execute = vi.fn(async () => []);
 
     await processWorkouts(
-      { execute },
+      makeTransactionalTestDatabase({ execute }),
       "00000000-0000-0000-0000-000000000001",
       [
         {
@@ -213,6 +224,145 @@ describe("processWorkouts", () => {
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining(unknownContext),
       expect.objectContaining(unknownContext),
+      expect.anything(),
     );
+  });
+
+  it("commits each workout independently before reconciling the sync window", async () => {
+    hangTenIntervalMocks.replace.mockClear();
+    providerActivitySyncMocks.reconcile.mockClear();
+    providerActivitySyncMocks.upsert.mockClear();
+    const execute = vi.fn(async () => []);
+    const db = makeTransactionalTestDatabase({ execute });
+    const transaction = vi.spyOn(db, "transaction");
+
+    await processWorkouts(
+      db,
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "workout-1",
+          workoutType: "13",
+          startDate: "2026-06-20T21:49:00.000Z",
+          endDate: "2026-06-20T22:17:59.000Z",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+        },
+        {
+          uuid: "workout-2",
+          workoutType: "13",
+          startDate: "2026-06-20T23:49:00.000Z",
+          endDate: "2026-06-21T00:17:59.000Z",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+        },
+      ],
+      {
+        windowStart: "2026-06-13T00:00:00.000Z",
+        windowEnd: "2026-06-21T00:00:00.000Z",
+      },
+    );
+
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes Hang Ten metadata before writing its activity intervals", async () => {
+    hangTenIntervalMocks.replace.mockClear();
+    const execute = vi.fn(async () => []);
+    const db = makeTransactionalTestDatabase({ execute });
+
+    await processWorkouts(
+      db,
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "hang-ten-workout",
+          workoutType: "20",
+          startDate: "2026-06-20T21:49:00.000Z",
+          endDate: "2026-06-20T22:17:59.000Z",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+          metadata: {
+            HKMetadataKeyWorkoutBrandName: "Hang Ten",
+            "HangTen.PlanName": "Max Hangs",
+            "HangTen.ActivitySegments": JSON.stringify({ version: 1, segments: [] }),
+          },
+        },
+      ],
+      {
+        windowStart: "2026-06-13T00:00:00.000Z",
+        windowEnd: "2026-06-21T00:00:00.000Z",
+      },
+    );
+
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: expect.objectContaining({ canonicalType: "hangboard" }),
+        sourceName: "Hang Ten",
+        raw: expect.objectContaining({
+          hangTen: expect.objectContaining({ planName: "Max Hangs" }),
+        }),
+      }),
+      expect.anything(),
+      db,
+    );
+    expect(hangTenIntervalMocks.replace).toHaveBeenCalledWith(
+      db,
+      "activity-id",
+      expect.objectContaining({
+        hangTen: expect.objectContaining({ planName: "Max Hangs" }),
+      }),
+    );
+  });
+
+  it("writes Hang Ten intervals only when the activity upsert returns a row", async () => {
+    hangTenIntervalMocks.replace.mockClear();
+    providerActivitySyncMocks.upsert.mockResolvedValueOnce(undefined);
+    const execute = vi.fn(async () => []);
+    const db = makeTransactionalTestDatabase({ execute });
+
+    await processWorkouts(
+      db,
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "unpersisted-hang-ten-workout",
+          workoutType: "20",
+          startDate: "2026-06-20T21:49:00.000Z",
+          endDate: "2026-06-20T22:17:59.000Z",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+          metadata: {
+            HKMetadataKeyWorkoutBrandName: "Hang Ten",
+            "HangTen.PlanName": "Max Hangs",
+          },
+        },
+        {
+          uuid: "persisted-cycling-workout",
+          workoutType: "13",
+          startDate: "2026-06-20T23:49:00.000Z",
+          endDate: "2026-06-21T00:17:59.000Z",
+          duration: 1738,
+          totalDistance: null,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+        },
+      ],
+      {
+        windowStart: "2026-06-13T00:00:00.000Z",
+        windowEnd: "2026-06-21T00:00:00.000Z",
+      },
+    );
+
+    expect(hangTenIntervalMocks.replace).not.toHaveBeenCalled();
   });
 });

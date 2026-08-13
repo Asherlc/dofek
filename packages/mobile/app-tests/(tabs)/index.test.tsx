@@ -13,6 +13,7 @@ const mockTodayPlanUseQuery = vi.fn();
 const mockAnomalyUseQuery = vi.fn();
 const mockDataHealthUseQuery = vi.fn();
 const mockInvalidate = vi.fn();
+const mockUseHealthKitFoodWriteback = vi.fn();
 const mockUseRefresh = vi.fn((_options: unknown) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -123,8 +124,8 @@ vi.mock("../../lib/trpc", () => ({
   },
 }));
 
-vi.mock("../../lib/useAutoSync", () => ({
-  useAutoSync: vi.fn(),
+vi.mock("../../lib/useHealthKitFoodWriteback", () => ({
+  useHealthKitFoodWriteback: (...args: unknown[]) => mockUseHealthKitFoodWriteback(...args),
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
@@ -280,6 +281,14 @@ describe("TodayScreen independent loading states", () => {
     mockDataHealthUseQuery.mockClear();
     mockDataHealthRefetch.mockClear();
     mockUseRefresh.mockClear();
+    mockUseHealthKitFoodWriteback.mockClear();
+  });
+
+  it("passes dashboard coverage to HealthKit food writeback", async () => {
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(mockUseHealthKitFoodWriteback).toHaveBeenCalledWith("2026-03-21");
   });
 
   it("shows data readiness when dashboard summaries are stale", async () => {
