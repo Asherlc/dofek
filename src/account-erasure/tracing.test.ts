@@ -87,7 +87,6 @@ it("keeps processor and Komoot erasure URLs out of exported spans without disabl
           scopes: "profile",
         },
       ],
-      slackInstallations: [],
       stripe: null,
       webhooks: [],
     };
@@ -170,29 +169,6 @@ it("keeps processor and Komoot erasure URLs out of exported spans without disabl
       fetchFn: processorFetch,
       zohoDesk,
     });
-    const remoteFetch: typeof globalThis.fetch = async (input) => {
-      const url = new URL(input instanceof Request ? input.url : input.toString());
-      if (url.hostname !== "slack.com" || url.pathname !== "/api/auth.revoke") {
-        throw new Error("Unexpected remote account-erasure request");
-      }
-      await recordSuppressedRequest("slack-token-revocation");
-      return Response.json({ ok: true, revoked: true });
-    };
-    await revokeRemoteAccounts(
-      {
-        ...snapshot,
-        slackInstallations: [
-          {
-            botToken: "xoxb-sensitive-token",
-            memberCount: 1,
-            slackUserId: "U-SENSITIVE",
-            teamId: "T-SENSITIVE",
-          },
-        ],
-      },
-      [provider],
-      remoteFetch,
-    );
     const stripeSnapshot: AccountErasureRemoteSnapshot = {
       ...snapshot,
       providerConnections: [],

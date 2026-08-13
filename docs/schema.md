@@ -223,7 +223,7 @@ documentation.
 `food_entry_nutrient`. Daily totals are derived from those rows instead of
 inserted separately.
 
-**FatSecret**, manual food logging, and Slack meal logging write `itemized`
+**FatSecret** and manual food logging write `itemized`
 entries through the normalized food path. Supplement schedules do not create
 food entries. Their nutrients enter
 `fitness.v_nutrition_canonical_nutrient` only while the current dose-event

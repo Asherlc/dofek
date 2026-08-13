@@ -43,7 +43,6 @@ overrides:
   "@grpc/grpc-js": 1.14.4
   "@opentelemetry/core": 2.9.0
   "@protobufjs/utf8": 1.1.2
-  "@slack/bolt>path-to-regexp": 8.4.2
   "@xmldom/xmldom": 0.9.10
   "archiver@<8.0.0": 8.0.0
   axios: 1.18.1

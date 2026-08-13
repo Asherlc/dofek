@@ -95,9 +95,6 @@ vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
 vi.mock("../components/AccountErasurePanel.tsx", () => ({
   AccountErasurePanel: () => <div>AccountErasurePanel</div>,
 }));
-vi.mock("../components/SlackIntegrationPanel.tsx", () => ({
-  SlackIntegrationPanel: () => <div>SlackIntegrationPanel</div>,
-}));
 vi.mock("../components/UnitSystemToggle.tsx", () => ({
   UnitSystemToggle: () => <div>UnitSystemToggle</div>,
 }));

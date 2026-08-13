@@ -12,7 +12,6 @@ import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import {
   clearWebBillingCheckoutOperation,
@@ -444,11 +443,6 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeCategory === "data-sources" ? (
-          <PageSection title="Integrations" subtitle="Connect external services">
-            <SlackIntegrationPanel />
-          </PageSection>
-        ) : null}
 
         {activeCategory === "privacy-export" ? (
           <PageSection title="Data Export" subtitle="Download all your data">

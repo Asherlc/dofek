@@ -309,7 +309,7 @@ export const foodRouter = router({
       );
     }),
 
-  /** Analyze a natural-language meal and return parsed per-item nutrition entries (Slack parser). */
+  /** Analyze a natural-language meal and return parsed per-item nutrition entries. */
   analyzeItemsWithAi: protectedProcedure
     .input(z.object({ description: z.string().min(1).max(500) }))
     .mutation(async ({ ctx, input }) => {
