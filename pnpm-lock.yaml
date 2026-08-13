@@ -834,6 +834,12 @@ importers:
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
+      '@openbeta/sandbag':
+        specifier: 0.0.55
+        version: 0.0.55
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/trainingpeaks-connect:
     dependencies:
