@@ -44,6 +44,8 @@ export interface AppleHealthProviderCard {
   authStatus: "connected" | "not_connected";
   authType: "none";
   lastSyncAt: null;
+  lastSuccessfulSyncAt: null;
+  syncFreshness: null;
   importOnly: false;
   pushOnly: false;
 }
@@ -207,6 +209,8 @@ export class AppleHealthProviderModel {
       authStatus: connected ? "connected" : "not_connected",
       authType: "none",
       lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
       importOnly: false,
       pushOnly: false,
     };

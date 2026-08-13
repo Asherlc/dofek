@@ -1,3 +1,4 @@
+import { resolveClimbingGradePreference } from "@dofek/training/climbing-grades";
 import { useEffect, useRef } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import {
@@ -15,7 +16,11 @@ export default function ClimbingLogScreen() {
   const units = useUnitConverter();
   const utils = trpc.useUtils();
   const history = trpc.climbing.fingerLoadingHistory.useQuery({ days: 90 });
+  const gradePreferenceSetting = trpc.settings.get.useQuery({ key: "climbingGradeSystems" });
   const lastHistoryError = useRef<unknown>(null);
+  const gradePreference = gradePreferenceSetting.data
+    ? resolveClimbingGradePreference(gradePreferenceSetting.data.value)
+    : null;
 
   useEffect(() => {
     if (history.error && lastHistoryError.current !== history.error) {
@@ -74,11 +79,21 @@ export default function ClimbingLogScreen() {
         <Text style={styles.subtitle}>
           Capture the wall, holds, result, and reason for every attempt.
         </Text>
-        <ClimbingAttemptLog
-          errorMessage={climbingMutation.error?.message ?? null}
-          onSubmit={(input: ClimbingSessionSubmission) => climbingMutation.mutate(input)}
-          submitting={climbingMutation.isPending}
-        />
+        {gradePreferenceSetting.error && !gradePreference ? (
+          <QueryStatePanel
+            message={getQueryErrorMessage(gradePreferenceSetting.error)}
+            variant="error"
+          />
+        ) : gradePreference ? (
+          <ClimbingAttemptLog
+            errorMessage={climbingMutation.error?.message ?? null}
+            gradePreference={gradePreference}
+            onSubmit={(input: ClimbingSessionSubmission) => climbingMutation.mutate(input)}
+            submitting={climbingMutation.isPending}
+          />
+        ) : (
+          <QueryStatePanel variant="loading" />
+        )}
       </View>
     </ScrollView>
   );

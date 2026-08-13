@@ -23,7 +23,6 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { SkeletonCircle } from "../../components/Skeleton";
 import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
-import { useAutoSync } from "../../lib/useAutoSync";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
@@ -65,9 +64,6 @@ export default function TodayScreen() {
   // Derived strain
   const strainResult = dashboardData?.strain;
   const dailyStrain = strainResult?.dailyStrain ?? 0;
-
-  // Auto-sync when data is stale
-  useAutoSync(dashboardData?.latestDate ?? undefined);
 
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;

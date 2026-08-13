@@ -2,7 +2,7 @@ import { BODY_TREND_WEIGHT_DECISION_COPY } from "@dofek/format/body-decision-con
 import { formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 import { BodyDecisionContext } from "../components/BodyDecisionContext.tsx";
 import { BodyFatPercentageChart } from "../components/BodyFatPercentageChart.tsx";
@@ -47,6 +47,11 @@ const dailyMetricRowSchema = z.object({
   steps: z.number().nullable(),
 });
 
+const BODY_TREND_METRIC_OPTIONS = [
+  { metric: "weight", label: "Weight" },
+  { metric: "bodyFat", label: "Body Fat" },
+] satisfies ReadonlyArray<{ metric: "weight" | "bodyFat"; label: string }>;
+
 function isBodyInsight(metric: string): boolean {
   return /hrv|resting.?hr|heart.?rate|weight|body.?fat|bmi|spo2|skin.?temp/i.test(metric);
 }
@@ -86,6 +91,7 @@ export function BodyPage() {
   const units = useUnitConverter();
   const { days, description, setDays } = useBodyDays();
   const endDate = useTodayQueryDate();
+  const [bodyTrendMetric, setBodyTrendMetric] = useState<"weight" | "bodyFat">("weight");
 
   const trends = trpc.dailyMetrics.trends.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({
@@ -152,6 +158,16 @@ export function BodyPage() {
   }, [insightsQuery.data]);
 
   const weightPredictionDisplay = weightOverview.data?.prediction ?? null;
+  const bodyFatTrendData = weightOverview.data?.bodyFatTrend ?? [];
+  const bodyFatPredictionDisplay = weightOverview.data?.bodyFatPrediction ?? null;
+  const displayedBodyTrendMetric =
+    bodyTrendMetric === "weight"
+      ? smoothedWeightData.length > 0 || bodyFatTrendData.length === 0
+        ? "weight"
+        : "bodyFat"
+      : bodyFatTrendData.length > 0 || smoothedWeightData.length === 0
+        ? "bodyFat"
+        : "weight";
 
   const predictionSectionError =
     weightOverview.isSuccess && weightOverview.data.prediction == null
@@ -307,38 +323,76 @@ export function BodyPage() {
       <PageSection title="Body Composition" card={false}>
         <div className="card p-2 sm:p-4 mb-4">
           <div className="mb-2 flex items-center justify-between">
-            <h4 className="text-xs font-medium text-subtle uppercase">Weight Prediction</h4>
-            <GoalWeightInput />
+            <h4 className="text-xs font-medium text-subtle uppercase">Trend</h4>
+            <div className="flex items-center gap-2">
+              <fieldset className="flex rounded-lg border border-border-strong p-0.5">
+                <legend className="sr-only">Body trend metric</legend>
+                {BODY_TREND_METRIC_OPTIONS.map(({ metric, label }) => (
+                  <button
+                    key={metric}
+                    type="button"
+                    aria-pressed={displayedBodyTrendMetric === metric}
+                    className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                      displayedBodyTrendMetric === metric
+                        ? "bg-accent text-accent-foreground"
+                        : "text-subtle hover:bg-surface-hover"
+                    }`}
+                    onClick={() => setBodyTrendMetric(metric)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </fieldset>
+              {displayedBodyTrendMetric === "weight" && <GoalWeightInput />}
+            </div>
           </div>
           {weightOverview.isPending ? (
             <ChartLoadingSkeleton height={48} />
           ) : weightOverviewUnavailable ? (
             <BodySectionUnavailable label="Body composition" />
-          ) : predictionSectionError ? (
+          ) : displayedBodyTrendMetric === "weight" && predictionSectionError ? (
             <QueryStatePanel error={predictionSectionError} height={48} />
-          ) : weightPredictionDisplay ? (
+          ) : displayedBodyTrendMetric === "weight" && weightPredictionDisplay ? (
             <WeightPredictionSummary
               prediction={weightPredictionDisplay}
-              hasWeightTrendData={smoothedWeightData.length > 0}
+              hasTrendData={smoothedWeightData.length > 0}
+            />
+          ) : displayedBodyTrendMetric === "bodyFat" && bodyFatPredictionDisplay ? (
+            <WeightPredictionSummary
+              metric="bodyFat"
+              prediction={bodyFatPredictionDisplay}
+              hasTrendData={bodyFatTrendData.length > 0}
             />
           ) : null}
         </div>
         {!weightOverviewUnavailable && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center gap-2">
-                <h4 className="text-xs font-medium text-subtle uppercase">Trend Weight</h4>
-                <ChartDescriptionTooltip description={BODY_TREND_WEIGHT_DECISION_COPY} />
+                <h4 className="text-xs font-medium text-subtle uppercase">
+                  {displayedBodyTrendMetric === "weight" ? "Trend Weight" : "Trend Body Fat"}
+                </h4>
+                {displayedBodyTrendMetric === "weight" && (
+                  <ChartDescriptionTooltip description={BODY_TREND_WEIGHT_DECISION_COPY} />
+                )}
               </div>
-              {weightOverview.isPending ? (
+              {displayedBodyTrendMetric === "weight" && weightOverview.isPending ? (
                 <SmoothedWeightChart data={[]} loading />
-              ) : (
+              ) : displayedBodyTrendMetric === "weight" ? (
                 <SmoothedWeightChart
                   data={smoothedWeightData}
                   prediction={weightPredictionDisplay}
                 />
+              ) : (
+                <BodyFatPercentageChart
+                  data={bodyFatTrendData}
+                  prediction={bodyFatPredictionDisplay}
+                  loading={weightOverview.isLoading}
+                />
               )}
-              <BodyDecisionContext context={weightOverview.data?.decisionContext ?? null} />
+              {displayedBodyTrendMetric === "weight" && (
+                <BodyDecisionContext context={weightOverview.data?.decisionContext ?? null} />
+              )}
             </div>
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center gap-2">
@@ -355,7 +409,8 @@ export function BodyPage() {
                 <h4 className="text-xs font-medium text-subtle uppercase">Body Fat Percentage</h4>
               </div>
               <BodyFatPercentageChart
-                data={weightOverview.data?.recomposition ?? []}
+                data={bodyFatTrendData}
+                prediction={bodyFatPredictionDisplay}
                 loading={weightOverview.isLoading}
               />
             </div>
