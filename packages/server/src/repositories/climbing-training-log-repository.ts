@@ -25,10 +25,6 @@ export const fingerLoadingGripPositionSchema = z.enum([
   "two_finger_pocket",
 ]);
 export const fingerLoadingLateralitySchema = z.enum(["both", "left", "right"]);
-export const climbingHoldTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
-export const climbingAttemptOutcomeSchema = z.enum(["sent", "failed"]);
-export const climbingFailureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
-
 const fingerLoadingRowSchema = z.object({
   activity_id: z.string(),
   started_at: timestampStringSchema,

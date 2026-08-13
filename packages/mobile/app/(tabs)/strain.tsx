@@ -36,6 +36,7 @@ import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCa
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
+import { isTransientNetworkError } from "../../lib/query-client";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -156,7 +157,13 @@ const reportedTrainingErrors = new WeakSet<object>();
 
 function useReportQueryError(query: { isError: boolean; error: object | null }) {
   useEffect(() => {
-    if (!query.isError || !query.error || reportedTrainingErrors.has(query.error)) return;
+    if (
+      !query.isError ||
+      !query.error ||
+      isTransientNetworkError(query.error) ||
+      reportedTrainingErrors.has(query.error)
+    )
+      return;
     reportedTrainingErrors.add(query.error);
     captureException(query.error);
   }, [query.isError, query.error]);

@@ -97,7 +97,7 @@ describe("climbingRouter", () => {
       id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
     });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         id: "entry-1",
@@ -124,20 +124,19 @@ describe("climbingRouter", () => {
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V4",
-        grade_sort_value: 4,
       },
     ]);
 
     const result: ClimbingGradeProgressionRow[] = await caller.gradeProgression({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         date: "2026-07-09",
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V4",
-        gradeSortValue: 4,
+        gradeSortValue: 65,
       },
     ]);
   });
@@ -148,7 +147,6 @@ describe("climbingRouter", () => {
         climb_type: "route",
         grade_system: "yds",
         grade: "5.10c",
-        grade_sort_value: 5103,
         attempts: 3,
         sends: 2,
       },
@@ -156,13 +154,13 @@ describe("climbingRouter", () => {
 
     const result: ClimbingVolumeByGradeRow[] = await caller.volumeByGrade({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         climbType: "route",
         gradeSystem: "yds",
         grade: "5.10c",
-        gradeSortValue: 5103,
+        gradeSortValue: 64.5,
         attempts: 3,
         sends: 2,
       },
@@ -176,18 +174,15 @@ describe("climbingRouter", () => {
         session_date: "2026-07-09",
         name: "Kaya climbing at Touchstone Pacific Pipe",
         location_name: "Touchstone Pacific Pipe",
-        attempts: 9,
-        sends: 6,
+        attempt_count: 9,
+        sent: true,
         hardest_boulder_grade: "V4",
-        hardest_boulder_grade_sort_value: 4,
-        hardest_route_grade: null,
-        hardest_route_grade_sort_value: null,
       },
     ]);
 
     const result: ClimbingSessionSummaryRow[] = await caller.sessionSummary({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         activityId: "activity-1",
@@ -195,9 +190,9 @@ describe("climbingRouter", () => {
         name: "Kaya climbing at Touchstone Pacific Pipe",
         locationName: "Touchstone Pacific Pipe",
         attempts: 9,
-        sends: 6,
+        sends: 1,
         hardestBoulderGrade: "V4",
-        hardestBoulderGradeSortValue: 4,
+        hardestBoulderGradeSortValue: 65,
         hardestRouteGrade: null,
         hardestRouteGradeSortValue: null,
       },
