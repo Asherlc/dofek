@@ -34,7 +34,6 @@ const fingerLoadingInputSchema = z
     laterality: fingerLoadingLateralitySchema,
     notes: nullableNoteSchema,
     restIntervalSeconds: z.number().int().min(0).max(3_600),
-    rpe: z.number().min(0).max(10).nullable().default(null),
     setCount: z.number().int().min(1).max(100),
     startedAt: z.iso.datetime(),
   })

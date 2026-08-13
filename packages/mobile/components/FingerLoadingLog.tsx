@@ -22,7 +22,6 @@ export interface FingerLoadingSubmission {
   laterality: Laterality;
   notes: string | null;
   restIntervalSeconds: number;
-  rpe: number | null;
   setCount: number;
   startedAt: string;
 }
@@ -70,7 +69,6 @@ export function FingerLoadingLog({
   const [setCount, setSetCount] = useState("5");
   const [holdDuration, setHoldDuration] = useState("10");
   const [restInterval, setRestInterval] = useState("180");
-  const [rpe, setRpe] = useState("8");
   const [notes, setNotes] = useState("");
 
   function applyPreset(preset: FingerLoadingPreset): void {
@@ -83,7 +81,6 @@ export function FingerLoadingLog({
     setSetCount(String(preset.setCount));
     setHoldDuration(String(preset.holdDurationSeconds));
     setRestInterval(String(preset.restIntervalSeconds));
-    setRpe(String(preset.rpe ?? 8));
     setNotes(preset.notes ?? "");
   }
 
@@ -144,7 +141,6 @@ export function FingerLoadingLog({
           onChangeText={setRestInterval}
           value={restInterval}
         />
-        <Input label="Effort (0–10)" onChangeText={setRpe} value={rpe} />
         <Input label="Notes" onChangeText={setNotes} value={notes} />
       </View>
       <View style={styles.actions}>
@@ -174,7 +170,6 @@ export function FingerLoadingLog({
               laterality,
               notes: notes.trim() || null,
               restIntervalSeconds: Number(restInterval),
-              rpe: Number(rpe),
               setCount: Number(setCount),
               startedAt: new Date().toISOString(),
             })

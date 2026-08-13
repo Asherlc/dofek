@@ -835,7 +835,7 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
-      <ActivityPerceivedExertion activityId={id ?? ""} value={activity.perceivedExertion} />
+      <ActivityPerceivedExertion value={activity.perceivedExertion} />
 
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>

@@ -32,7 +32,6 @@ export interface FingerLoadingSubmission {
   laterality: Laterality;
   notes: string | null;
   restIntervalSeconds: number;
-  rpe: number | null;
   setCount: number;
   startedAt: string;
 }
@@ -78,7 +77,6 @@ export function FingerLoadingLog({
   const [setCount, setSetCount] = useState(5);
   const [holdDurationSeconds, setHoldDurationSeconds] = useState(10);
   const [restIntervalSeconds, setRestIntervalSeconds] = useState(180);
-  const [rpe, setRpe] = useState(8);
   const [notes, setNotes] = useState("");
 
   const weightToKg = (weight: number) => (units.weightLabel === "lbs" ? weight / 2.20462 : weight);
@@ -93,7 +91,6 @@ export function FingerLoadingLog({
     setSetCount(preset.setCount);
     setHoldDurationSeconds(preset.holdDurationSeconds);
     setRestIntervalSeconds(preset.restIntervalSeconds);
-    setRpe(preset.rpe ?? 8);
     setNotes(preset.notes ?? "");
   }
 
@@ -116,7 +113,6 @@ export function FingerLoadingLog({
           laterality,
           notes: notes.trim() || null,
           restIntervalSeconds,
-          rpe,
           setCount,
           startedAt: new Date().toISOString(),
         });
@@ -204,14 +200,6 @@ export function FingerLoadingLog({
           min={0}
           value={restIntervalSeconds}
           onChange={setRestIntervalSeconds}
-        />
-        <NumberField
-          label="Effort (0–10)"
-          min={0}
-          max={10}
-          step={0.5}
-          value={rpe}
-          onChange={setRpe}
         />
       </div>
       <Field label="Notes">

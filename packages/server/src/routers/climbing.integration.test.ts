@@ -385,7 +385,6 @@ describe("climbing router integration", () => {
       laterality: "both",
       notes: "Felt controlled",
       restIntervalSeconds: 180,
-      rpe: 8,
       setCount: 5,
       startedAt: new Date().toISOString(),
     });

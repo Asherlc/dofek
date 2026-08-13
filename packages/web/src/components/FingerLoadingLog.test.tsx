@@ -20,7 +20,6 @@ describe("FingerLoadingLog", () => {
           laterality: "both",
           notes: null,
           restIntervalSeconds: 180,
-          rpe: 8,
           setCount: 5,
         }}
         loading={false}

@@ -46,7 +46,6 @@ export interface FingerLoadingInput {
   laterality: z.infer<typeof fingerLoadingLateralitySchema>;
   notes: string | null;
   restIntervalSeconds: number;
-  rpe: number | null;
   setCount: number;
   startedAt: string;
 }
@@ -210,7 +209,6 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
             set_count,
             hold_duration_seconds,
             rest_interval_seconds,
-            rpe,
             notes
           ) VALUES (
             ${activity.id}::uuid,
@@ -223,7 +221,6 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
             ${input.setCount},
             ${input.holdDurationSeconds},
             ${input.restIntervalSeconds},
-            ${input.rpe},
             ${input.notes}
           )`);
       return activity.id;
