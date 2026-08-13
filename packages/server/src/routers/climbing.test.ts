@@ -273,12 +273,14 @@ describe("climbingRouter", () => {
         sessionCount: 1,
         totalDurationSeconds: 600,
         totalRestDurationSeconds: null,
-        totalWorkDurationSeconds: "invalid",
+        totalWorkDurationSeconds: Number.NaN,
         workIntervalCount: null,
-      } as never);
+      });
 
     try {
-      await expect(caller.hangboardingSummary({ days: 30 })).rejects.toMatchObject<Partial<TRPCError>>({
+      await expect(caller.hangboardingSummary({ days: 30 })).rejects.toMatchObject<
+        Partial<TRPCError>
+      >({
         code: "INTERNAL_SERVER_ERROR",
       });
     } finally {
