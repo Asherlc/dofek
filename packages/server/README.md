@@ -17,7 +17,6 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 
 - **Safe SQL**: Uses `executeWithSchema` (in `src/lib/typed-sql.ts`) which combines Drizzle's `sql` template literal with Zod schema validation to ensure runtime type safety and catch schema drift.
 - **Caching**: Implements a `queryCache` middleware for tRPC procedures (`src/trpc.ts`), with per-user isolation and configurable TTLs.
-- **Nutrition AI Parsing**: `food.analyzeWithAi` estimates one entry, while `food.analyzeItemsWithAi` parses a natural-language meal into multiple itemized entries for client-side logging flows.
 - **Cycle estimate provenance**: `menstrualCycle.currentPhase` counts the cycle
   day from the latest recorded period start, matching
   [ACOG's first-day-to-first-day cycle definition](https://www.acog.org/womens-health/faqs/your-first-period).
@@ -120,7 +119,6 @@ display unit and format dates, but they render the supplied direction and summar
 a trend from the observations. The responsive chart selects one exercise at a time so long exercise
 lists stay readable without hiding the time axis.
 
-See `../../docs/nutrition-ai-input.md` for full client/server flow details.
 
 ## Development
 

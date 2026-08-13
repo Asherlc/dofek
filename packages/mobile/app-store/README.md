@@ -23,7 +23,6 @@ Output: `packages/mobile/app-store/screenshots/` (1284×2778 PNGs for 6.5" displ
 | `02-recovery-trends.png` | Track HRV, resting heart rate, and recovery trends |
 | `03-training-load.png` | Balance training load with recovery |
 | `04-activities-map.png` | Review every workout with route previews |
-| `05-nutrition-logging.png` | Log meals and track macros in one place |
 | `06-connected-providers.png` | Connect Strava, WHOOP, Apple Health, and more |
 | `07-heart-rate-zones.png` | Inspect heart rate zone distribution |
 
@@ -53,7 +52,7 @@ Suggested preview sequence:
 
 1. **Today tab** — scroll through readiness, sleep, and strain cards.
 2. **Activities** — open a workout, show map and stats.
-3. **Nutrition** — log a meal or scan a barcode.
+3. **Nutrition** — review nutrition history, totals, and analytics.
 
 Apple permits up to three app previews per supported device size. Follow the
 [App Store Connect upload workflow](https://developer.apple.com/help/app-store-connect/manage-app-information/upload-app-previews-and-screenshots)

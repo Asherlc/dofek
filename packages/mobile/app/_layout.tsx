@@ -604,24 +604,6 @@ function AuthGate() {
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
-            name="food/add"
-            options={({ navigation }) => ({
-              presentation: "fullScreenModal",
-              title: "Add Food",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cancel adding food"
-                >
-                  <Text style={{ color: colors.accent, fontSize: 17 }}>Cancel</Text>
-                </Pressable>
-              ),
-            })}
-          />
-          <Stack.Screen
             name="providers"
             options={{
               headerShown: false,
