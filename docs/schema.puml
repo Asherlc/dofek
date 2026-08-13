@@ -1088,6 +1088,7 @@ entity "sync_log" {
   user_id : uuid <<FK>>
   data_type : text
   status : text
+  origin : text
   record_count : integer
   error_message : text
   auth_failure_reason : text

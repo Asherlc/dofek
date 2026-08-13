@@ -539,6 +539,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         authFailureReason,
         durationMs,
         userId: job.data.userId,
+        origin: job.data.origin ?? "unknown",
       });
 
       const status = hasErrors ? "error" : "success";
@@ -572,6 +573,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           errorMessage: err.message,
           durationMs,
           userId: job.data.userId,
+          origin: job.data.origin ?? "unknown",
         });
 
         syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
@@ -626,6 +628,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         authFailureReason,
         durationMs,
         userId: job.data.userId,
+        origin: job.data.origin ?? "unknown",
       });
 
       syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });

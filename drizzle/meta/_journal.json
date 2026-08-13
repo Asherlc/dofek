@@ -624,6 +624,13 @@
       "when": 1786487760586,
       "tag": "0086_climbing-entry-lead",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1786569600000,
+      "tag": "0087_sync_log_origin",
+      "breakpoints": true
     }
   ]
 }

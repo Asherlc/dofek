@@ -22,6 +22,7 @@ type MockCooldownRecord = {
 };
 
 const MockJobDataSchema = z.object({
+  origin: z.enum(["manual", "scheduled"]).optional(),
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
   sinceIso: z.string().optional(),
@@ -301,6 +302,7 @@ const mockDb: SyncDatabase & { transaction: ReturnType<typeof vi.fn> } = {
 interface MockJob {
   id?: string;
   data: {
+    origin?: "manual" | "scheduled";
     providerId?: string;
     sinceDays?: number;
     sinceIso?: string;
@@ -316,6 +318,7 @@ interface MockJob {
 
 function createMockJob(
   data: {
+    origin?: "manual" | "scheduled";
     providerId?: string;
     sinceDays?: number;
     sinceIso?: string;
@@ -947,6 +950,7 @@ describe("processSyncJob", () => {
       errorMessage: "Garmin API rate limit exceeded (429): limited",
       durationMs: 0,
       userId: "user-1",
+      origin: "unknown",
     });
 
     // Metrics are tagged with the provider, not an empty options object.
@@ -1188,11 +1192,11 @@ describe("processSyncJob", () => {
     });
   });
 
-  it("logs success to sync log with userId", async () => {
+  it("logs a scheduled sync with its scheduled origin", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob({ userId: "user-1" }), mockDb);
+    await runSyncJob(createMockJob({ userId: "user-1", origin: "scheduled" }), mockDb);
 
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
@@ -1203,6 +1207,7 @@ describe("processSyncJob", () => {
         recordCount: 5,
         errorMessage: undefined,
         userId: "user-1",
+        origin: "scheduled",
       }),
     );
   });
@@ -1243,6 +1248,7 @@ describe("processSyncJob", () => {
         errorMessage: "API timeout",
         durationMs: expect.any(Number),
         userId: "user-1",
+        origin: "unknown",
       }),
     );
 
