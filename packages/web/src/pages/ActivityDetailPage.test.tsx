@@ -232,13 +232,6 @@ vi.mock("../lib/trpc.ts", () => ({
       stream: { useQuery: mockStreamUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
-      setPerceivedExertion: {
-        useMutation: () => ({
-          mutate: vi.fn(),
-          isPending: false,
-          error: null,
-        }),
-      },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       hangboardDetails: { useQuery: mockHangboardDetailsUseQuery },
       recompute: {
