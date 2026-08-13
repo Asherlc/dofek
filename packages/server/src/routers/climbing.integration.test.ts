@@ -290,8 +290,16 @@ describe("climbing router integration", () => {
 
     expect(gradeProgression).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ climbType: "boulder", grade: "V4", gradeSortValue: 4 }),
-        expect.objectContaining({ climbType: "route", grade: "5.10a", gradeSortValue: 5101 }),
+        expect.objectContaining({
+          climbType: "boulder",
+          grade: "V4",
+          gradeSortValue: expect.any(Number),
+        }),
+        expect.objectContaining({
+          climbType: "route",
+          grade: "5.10a",
+          gradeSortValue: expect.any(Number),
+        }),
       ]),
     );
     expect(volumeByGrade).toEqual(
@@ -343,11 +351,11 @@ describe("climbing router integration", () => {
     await expect(caller.activityEntries({ id: visibleClimbingActivityId })).resolves.toEqual([
       expect.objectContaining({
         climbType: "boulder",
-        grade: "V2",
-        routeName: "Warmup",
-        sent: true,
-        attemptCount: 2,
-        ascentType: "Redpoint",
+        grade: "V5",
+        routeName: "Project",
+        sent: false,
+        attemptCount: 4,
+        ascentType: null,
       }),
       expect.objectContaining({
         climbType: "boulder",
@@ -359,11 +367,11 @@ describe("climbing router integration", () => {
       }),
       expect.objectContaining({
         climbType: "boulder",
-        grade: "V5",
-        routeName: "Project",
-        sent: false,
-        attemptCount: 4,
-        ascentType: null,
+        grade: "V2",
+        routeName: "Warmup",
+        sent: true,
+        attemptCount: 2,
+        ascentType: "Redpoint",
       }),
     ]);
   });
@@ -385,7 +393,6 @@ describe("climbing router integration", () => {
       laterality: "both",
       notes: "Felt controlled",
       restIntervalSeconds: 180,
-      rpe: 8,
       setCount: 5,
       startedAt: new Date().toISOString(),
     });

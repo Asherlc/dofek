@@ -214,10 +214,11 @@ export class ProviderActivityListSync {
   async upsert(
     values: ProviderActivityInsert,
     update: ProviderActivityConflictUpdate,
+    db: SyncDatabase = this.#scope.db,
   ): Promise<{ id: string } | undefined> {
     const normalizedExternalId = requireExternalId(values.externalId);
     const row = await upsertProviderActivity(
-      this.#scope.db,
+      db,
       { ...values, externalId: normalizedExternalId },
       update,
     );

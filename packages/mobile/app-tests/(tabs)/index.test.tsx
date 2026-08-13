@@ -123,10 +123,6 @@ vi.mock("../../lib/trpc", () => ({
   },
 }));
 
-vi.mock("../../lib/useAutoSync", () => ({
-  useAutoSync: vi.fn(),
-}));
-
 vi.mock("../../lib/useRefresh", () => ({
   useRefresh: (options: unknown) => mockUseRefresh(options),
 }));
