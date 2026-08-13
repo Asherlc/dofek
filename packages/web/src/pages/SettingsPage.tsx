@@ -2,6 +2,7 @@ import { formatDateMedium, parseValidDate } from "@dofek/format/format";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AccountErasurePanel } from "../components/AccountErasurePanel.tsx";
+import { ClimbingGradeSystemToggle } from "../components/ClimbingGradeSystemToggle.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
@@ -374,6 +375,15 @@ export function SettingsPage() {
         {activeCategory === "goals-models" ? (
           <PageSection title="Units" subtitle="Choose how measurements are displayed">
             <UnitSystemToggle />
+          </PageSection>
+        ) : null}
+
+        {activeCategory === "goals-models" ? (
+          <PageSection
+            title="Climbing grades"
+            subtitle="Choose the grade systems used for boulders and routes"
+          >
+            <ClimbingGradeSystemToggle />
           </PageSection>
         ) : null}
 

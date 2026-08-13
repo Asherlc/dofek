@@ -190,6 +190,7 @@ describe("drizzleSchema", () => {
       "grade",
       "sent",
       "attempt_count",
+      "lead",
       "wall_angle_degrees",
       "hold_type",
       "route_name",
@@ -240,6 +241,11 @@ describe("drizzleSchema", () => {
       attempt_count: {
         columnType: "PgInteger",
         hasDefault: true,
+        notNull: false,
+      },
+      lead: {
+        columnType: "PgBoolean",
+        hasDefault: false,
         notNull: false,
       },
       wall_angle_degrees: {
@@ -328,6 +334,16 @@ describe("drizzleSchema", () => {
     expect(climbingClimbTypeEnum.enumName).toBe("climbing_climb_type");
     expect(climbingClimbTypeEnum.enumValues).toEqual(["boulder", "route"]);
     expect(climbingGradeSystemEnum.enumName).toBe("climbing_grade_system");
-    expect(climbingGradeSystemEnum.enumValues).toEqual(["v_scale", "yds"]);
+    expect(climbingGradeSystemEnum.enumValues).toEqual([
+      "v_scale",
+      "font",
+      "yds",
+      "french",
+      "uiaa",
+      "ewbank",
+      "saxon",
+      "norwegian",
+      "brazilian_crux",
+    ]);
   });
 });

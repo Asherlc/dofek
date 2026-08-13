@@ -87,6 +87,12 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:packages/heart-rate-variability
+      '@dofek/kaya-client':
+        specifier: workspace:*
+        version: link:packages/kaya-client
+      '@dofek/mountain-project':
+        specifier: workspace:*
+        version: link:packages/mountain-project-client
       '@dofek/peloton':
         specifier: workspace:*
         version: link:packages/peloton-client
@@ -208,8 +214,8 @@ importers:
         specifier: 15.1.3
         version: 15.1.3
       sax:
-        specifier: 1.6.0
-        version: 1.6.0
+        specifier: 1.6.1
+        version: 1.6.1
       stripe:
         specifier: 22.3.2
         version: 22.3.2(@types/node@22.19.15)
@@ -278,8 +284,8 @@ importers:
         specifier: 10.0.1
         version: 10.0.1
       cypress:
-        specifier: 15.19.0
-        version: 15.19.0
+        specifier: 15.20.0
+        version: 15.20.0
       dependency-cruiser:
         specifier: 17.3.10
         version: 17.3.10
@@ -391,6 +397,12 @@ importers:
 
   packages/imu: {}
 
+  packages/kaya-client:
+    dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/mobile:
     dependencies:
       '@bacons/apple-targets':
@@ -472,8 +484,8 @@ importers:
         specifier: 8.20.0
         version: 8.20.0(@expo/env@2.4.2)(dotenv@16.6.1)(expo@57.0.12)(react-native@0.86.2)(react@19.2.3)
       '@tanstack/query-async-storage-persister':
-        specifier: 5.101.2
-        version: 5.101.2
+        specifier: 5.101.4
+        version: 5.101.4
       '@tanstack/react-query':
         specifier: 5.101.2
         version: 5.101.2(react@19.2.3)
@@ -550,8 +562,8 @@ importers:
         specifier: 57.0.2
         version: 57.0.2(expo@57.0.12)(react-native@0.86.2)
       posthog-react-native:
-        specifier: 4.61.2
-        version: 4.61.2(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4)
+        specifier: 4.61.4
+        version: 4.61.4(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4)
       react:
         specifier: 19.2.3
         version: 19.2.3
@@ -628,6 +640,19 @@ importers:
       expo-modules-core:
         specifier: '>=2.0.0'
         version: 57.0.7(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)
+
+  packages/mountain-project-client:
+    dependencies:
+      '@dofek/training':
+        specifier: workspace:*
+        version: link:../training
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 3.2.6
+        version: 3.2.6(@types/node@26.1.1)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11)(supports-color@11.0.0)(terser@5.47.1)(tsx@4.23.1)(yaml@2.9.0)
 
   packages/nutrition:
     dependencies:
@@ -831,6 +856,12 @@ importers:
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
+      '@openbeta/sandbag':
+        specifier: 0.0.55
+        version: 0.0.55
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/trainingpeaks-connect:
     dependencies:
@@ -991,8 +1022,8 @@ importers:
         specifier: 10.5.4
         version: 10.5.4(@types/react@19.2.18)(prettier@3.9.5)(react-dom@19.2.3)(react@19.2.3)
       tailwindcss:
-        specifier: 4.3.2
-        version: 4.3.2
+        specifier: 4.3.3
+        version: 4.3.3
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -3971,6 +4002,10 @@ packages:
   '@open-draft/until@2.1.0':
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
 
+  '@openbeta/sandbag@0.0.55':
+    resolution: {integrity: sha512-mHRK0uY/DpwstuTws6rJ89XwqJxkGKuJo9SWnLWqoWo51ITaXAHkPn4dwa1y3K4OJ+yoBl5SQuETB4JvbzgZhg==}
+    engines: {node: '>=14'}
+
   '@opentelemetry/api-logs@0.207.0':
     resolution: {integrity: sha512-lAb0jQRVyleQQGiuuvCOTDVspc14nx6XJjP4FspJ1sNARo3Regq4ZZbrc3rN4b1TYSuUCvgH+UXUPug4SLOqEQ==}
     engines: {node: '>=8.0.0'}
@@ -5117,11 +5152,14 @@ packages:
   '@posthog/core@1.46.1':
     resolution: {integrity: sha512-EoCFduRkvrg9E5ylMi4QnZCjlAdRJCq6tJouWfngBVR79XSI4iPvIWYA+CdzokAjk+TfSVBFVJ++4Im3r+T0Dg==}
 
+  '@posthog/core@1.47.0':
+    resolution: {integrity: sha512-LW62V+9yx7G7mLd+EYpwW0PiaPZI8XRJ1tLuhw+9fXHpugLp8XQD5JuCQ2kIXvoUfyx1DpKfGQY3dUnzMOIn7Q==}
+
   '@posthog/types@1.374.2':
     resolution: {integrity: sha512-ZghQSFMi+HFJNPvPjBoyY/jWQ+q6mSQVtWQxOHMSbBidUZjsyYbxYxBFbHy2qWLNe4mEpX+Wqir2Q4I/4AVvJQ==}
 
-  '@posthog/types@1.399.0':
-    resolution: {integrity: sha512-/WDwBzqIPko8VJ1B+0rlso2XQEz9+2sqtsY9Tqy3p1GhgTqsFakcz/PmMpAnA321LTEZVRcO6x5hAwABV4yrDw==}
+  '@posthog/types@1.402.2':
+    resolution: {integrity: sha512-ZZTiS4dLwF4/D0YTzS3gGSLFnhuNOY5yu4d9VGS9trGe5GW6FjIXo20p18K5BPW2RZSYSld8sdnSAY3AUXleUQ==}
 
   '@prisma/instrumentation@7.4.2':
     resolution: {integrity: sha512-r9JfchJF1Ae6yAxcaLu/V1TGqBhAuSDe3mRNOssBfx1rMzfZ4fdNvrgUBwyb/TNTGXFxlH9AZix5P257x07nrg==}
@@ -8083,14 +8121,20 @@ packages:
     resolution: {integrity: sha512-79pf/RkhteYZTRgcR4F9kbk84P2N8rugQJswxfIqovlbRiT3yI7eBE+5QorIrZaOKktsgzRlXh1l/du/xpl4iA==}
     engines: {node: '>=20.19'}
 
-  '@tanstack/query-async-storage-persister@5.101.2':
-    resolution: {integrity: sha512-jf7zvVKZ5q2j/xuhbTIBUpw5xt6cw/ioOFQquxK7fRY0AmMQP8A0JVMOgYoeQLA4PKdeT7RxsuLAF0Lft9oJ8Q==}
+  '@tanstack/query-async-storage-persister@5.101.4':
+    resolution: {integrity: sha512-ROenNOVvxIZ1zKsBAiIvvslLo2xD8Me/vFz/tChdmuI7ciU+ET63yRrQ01W899Tx1ayQXdsGQJqYqjjVZk+OBQ==}
 
   '@tanstack/query-core@5.101.2':
     resolution: {integrity: sha512-hH5MLoJhF7KaIGd7q3xTXGXvslI+GYlM1Z/35aSHHWaCJWB7XvTSHYuV3eM7tw+aE0mT/xMro4M4Q9rCGHT0lw==}
 
+  '@tanstack/query-core@5.101.4':
+    resolution: {integrity: sha512-gNwcvOJcRbLWPOLG/2OBm+zM+Yv+MKsXKEOWC57USuZDEsI71hEErQsiEGx5wX9rzWWkfwM0fVSPoiIFSsxfiw==}
+
   '@tanstack/query-persist-client-core@5.101.2':
     resolution: {integrity: sha512-rgMsbvBVpSPDUsprC9FYxojdG0Q1LH6yq1i3DXz2aps4VEqv2l4Msj3YDqIifU3xkl/DrYe9YWntZAJLrM6xTg==}
+
+  '@tanstack/query-persist-client-core@5.101.4':
+    resolution: {integrity: sha512-Bmu+RfWhwYEyYZEwSeKC0gX4+KTkiEB3yO8oz9BfAY/Jfe3ndz9EnYVhihIZPmWIr8NXayF7JuraNQcrXQQCCg==}
 
   '@tanstack/react-query-persist-client@5.101.2':
     resolution: {integrity: sha512-19UpaRtf0lvB2QAJ2MoixxtGf3osMOd508g99EsttUj4+3eLs+ulnNgYjB7AkQMHrRlcbVXqpVNqWkB4a7g8Zw==}
@@ -8823,8 +8867,8 @@ packages:
   aproba@2.1.0:
     resolution: {integrity: sha512-tLIEcj5GuR2RSTnxNKdkK0dJ/GrC7P38sUkiDmDuHfsHmbagTFAxDVIBltoklXEVIQ/f14IL8IMJ5pn9Hez1Ew==}
 
-  arch@2.2.0:
-    resolution: {integrity: sha512-Of/R0wqp83cgHozfIYLbBMnej79U/SVGOOyuB3VVFv1NRM/PSFMK12x9KVtiYzJqmnU5WR2qp0Z5rHb7sWGnFQ==}
+  arch@3.0.0:
+    resolution: {integrity: sha512-AmIAC+Wtm2AU8lGfTtHsw0Y9Qtftx2YXEEtiBP10xFUtMOA+sHHx6OAddyL52mUKh1vsXQ6/w1mVDptZCyUt4Q==}
 
   archiver@8.0.0:
     resolution: {integrity: sha512-fV1orZfsnPn9BaSByR/qE67rJCLJEy2Ox5bq7nJh+jquWaNh6Sfec75kJ2T6PtdGUbPQlrVoSVCEOa5SdiTQ1g==}
@@ -9916,8 +9960,8 @@ packages:
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
-  cypress@15.19.0:
-    resolution: {integrity: sha512-kjy1u3SWlMRWS5qffH3U+bXx1PqPP7qwhIzEY3UtERcW2r/8zy5uk6uSwa75pYXJyYFVP1SO8mAn/avZUvUbfg==}
+  cypress@15.20.0:
+    resolution: {integrity: sha512-yrt6z9YERlggq5FReDx+PkbjrNoEQPeM03MQC1GvLlFGItk8ervC0A/7fjzWoWVRRXjsem+Pj3cunknARl/37g==}
     engines: {node: ^20.1.0 || ^22.0.0 || >=24.0.0}
     hasBin: true
 
@@ -13813,8 +13857,8 @@ packages:
       rxjs:
         optional: true
 
-  posthog-react-native@4.61.2:
-    resolution: {integrity: sha512-AaLU4Lyst9M4E16kqf5F7fdxuOFu8g9m6mH2pJydXsWUx/Rm6aLk6CZ1/EpfspCKaAhO32TVoQkBI/x4ZpVbMw==}
+  posthog-react-native@4.61.4:
+    resolution: {integrity: sha512-8l9wZ1boR27hRuEH41dF/BtUdwm7VTyzFykRKXphFXYKqygrO4Cxr2xyuwqFVSnbnu4S/NKWFuWxK4bk98clpw==}
     hasBin: true
     peerDependencies:
       '@posthog/react-native-plugin': '>= 2.2.0'
@@ -14634,8 +14678,8 @@ packages:
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
 
-  sax@1.6.0:
-    resolution: {integrity: sha512-6R3J5M4AcbtLUdZmRv2SygeVaM7IhrLXu9BmnOGmmACak8fiUtOsYNWUS4uK7upbmHIBbLBeFeI//477BKLBzA==}
+  sax@1.6.1:
+    resolution: {integrity: sha512-42tBVwLWnaQvW5zc4HbZrTuWccECCZfBi92FDuwtqxasH+JbPB3/FOKb1m222K42R4WxuxzzMsTswfzgtSu64Q==}
     engines: {node: '>=11.0.0'}
 
   saxes@6.0.0:
@@ -15336,6 +15380,9 @@ packages:
 
   tailwindcss@4.3.2:
     resolution: {integrity: sha512-WtctNNSH8A9jlMIqxzuYumOHU5uGZyRv0Q5svQl+oEPy5w84YpBxdb7MdqyiSPQge5jTJ6zFQLq0PFygdccSBA==}
+
+  tailwindcss@4.3.3:
+    resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
 
   tapable@2.3.0:
     resolution: {integrity: sha512-g9ljZiwki/LfxmQADO3dEY1CbpmXT5Hm2fJ+QaGKwSXUylMybePR7/67YW7jOrrvjEgL1Fmz5kzyAjWVWLlucg==}
@@ -17147,7 +17194,7 @@ snapshots:
 
   '@babel/helper-annotate-as-pure@7.29.7':
     dependencies:
-      '@babel/types': 7.29.7
+      '@babel/types': 7.29.8
 
   '@babel/helper-compilation-targets@7.29.7':
     dependencies:
@@ -17233,7 +17280,7 @@ snapshots:
       '@babel/core': 7.29.7(supports-color@11.0.0)
       '@babel/helper-member-expression-to-functions': 7.29.7(supports-color@11.0.0)
       '@babel/helper-optimise-call-expression': 7.29.7
-      '@babel/traverse': 7.29.7(supports-color@11.0.0)
+      '@babel/traverse': 7.29.8(supports-color@11.0.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -17449,7 +17496,7 @@ snapshots:
       '@babel/helper-globals': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
       '@babel/helper-replace-supers': 7.29.7(@babel/core@7.29.7)(supports-color@11.0.0)
-      '@babel/traverse': 7.29.7(supports-color@11.0.0)
+      '@babel/traverse': 7.29.8(supports-color@11.0.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -20073,6 +20120,8 @@ snapshots:
 
   '@open-draft/until@2.1.0': {}
 
+  '@openbeta/sandbag@0.0.55': {}
+
   '@opentelemetry/api-logs@0.207.0':
     dependencies:
       '@opentelemetry/api': 1.9.1
@@ -21303,11 +21352,15 @@ snapshots:
 
   '@posthog/core@1.46.1':
     dependencies:
-      '@posthog/types': 1.399.0
+      '@posthog/types': 1.402.2
+
+  '@posthog/core@1.47.0':
+    dependencies:
+      '@posthog/types': 1.402.2
 
   '@posthog/types@1.374.2': {}
 
-  '@posthog/types@1.399.0': {}
+  '@posthog/types@1.402.2': {}
 
   '@prisma/instrumentation@7.4.2(@opentelemetry/api@1.9.1)(supports-color@11.0.0)':
     dependencies:
@@ -21649,7 +21702,7 @@ snapshots:
   '@react-native/codegen@0.86.2(@babel/core@7.29.7)':
     dependencies:
       '@babel/core': 7.29.7(supports-color@11.0.0)
-      '@babel/parser': 7.29.7
+      '@babel/parser': 7.29.8
       hermes-parser: 0.36.0
       invariant: 2.2.4
       nullthrows: 1.1.1
@@ -24919,16 +24972,22 @@ snapshots:
 
   '@tanstack/history@1.162.0': {}
 
-  '@tanstack/query-async-storage-persister@5.101.2':
+  '@tanstack/query-async-storage-persister@5.101.4':
     dependencies:
-      '@tanstack/query-core': 5.101.2
-      '@tanstack/query-persist-client-core': 5.101.2
+      '@tanstack/query-core': 5.101.4
+      '@tanstack/query-persist-client-core': 5.101.4
 
   '@tanstack/query-core@5.101.2': {}
+
+  '@tanstack/query-core@5.101.4': {}
 
   '@tanstack/query-persist-client-core@5.101.2':
     dependencies:
       '@tanstack/query-core': 5.101.2
+
+  '@tanstack/query-persist-client-core@5.101.4':
+    dependencies:
+      '@tanstack/query-core': 5.101.4
 
   '@tanstack/react-query-persist-client@5.101.2(@tanstack/react-query@5.101.2)(react@19.2.3)':
     dependencies:
@@ -25803,7 +25862,7 @@ snapshots:
 
   aproba@2.1.0: {}
 
-  arch@2.2.0: {}
+  arch@3.0.0: {}
 
   archiver@8.0.0:
     dependencies:
@@ -27079,14 +27138,14 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  cypress@15.19.0:
+  cypress@15.20.0:
     dependencies:
       '@cypress/request': 4.0.1
       '@cypress/xvfb': 1.2.4(supports-color@8.1.1)
       '@types/sinonjs__fake-timers': 8.1.1
       '@types/sizzle': 2.3.10
       '@types/tmp': 0.2.6
-      arch: 2.2.0
+      arch: 3.0.0
       blob-util: 2.0.2
       bluebird: 3.7.2
       buffer: 5.7.1
@@ -27117,7 +27176,6 @@ snapshots:
       systeminformation: 5.33.1
       tmp: 0.2.7
       tree-kill: 1.2.2
-      tslib: 1.14.1
       untildify: 4.0.0
       yauzl: 3.4.0
 
@@ -30400,8 +30458,8 @@ snapshots:
 
   metro-source-map@0.84.4(supports-color@11.0.0):
     dependencies:
-      '@babel/traverse': 7.29.7(supports-color@11.0.0)
-      '@babel/types': 7.29.7
+      '@babel/traverse': 7.29.8(supports-color@11.0.0)
+      '@babel/types': 7.29.8
       flow-enums-runtime: 0.0.6
       invariant: 2.2.4
       metro-symbolicate: 0.84.4(supports-color@11.0.0)
@@ -31788,10 +31846,10 @@ snapshots:
     optionalDependencies:
       rxjs: 7.8.2
 
-  posthog-react-native@4.61.2(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4):
+  posthog-react-native@4.61.4(@react-native-async-storage/async-storage@2.2.0)(expo-application@57.0.2)(expo-file-system@57.0.2)(react-native-safe-area-context@5.7.0)(react-native-svg@15.15.4):
     dependencies:
-      '@posthog/core': 1.46.1
-      '@posthog/types': 1.399.0
+      '@posthog/core': 1.47.0
+      '@posthog/types': 1.402.2
     optionalDependencies:
       '@react-native-async-storage/async-storage': 2.2.0(react-native@0.86.2)
       expo-application: 57.0.2(expo@57.0.12)
@@ -32159,7 +32217,7 @@ snapshots:
       '@babel/plugin-transform-template-literals': 7.29.7(@babel/core@7.29.7)
       '@babel/plugin-transform-unicode-regex': 7.29.7(@babel/core@7.29.7)
       '@babel/preset-typescript': 7.28.5(@babel/core@7.29.7)(supports-color@11.0.0)
-      '@babel/types': 7.29.7
+      '@babel/types': 7.29.8
       '@react-native/metro-config': 0.86.2(@babel/core@7.29.7)(supports-color@11.0.0)
       convert-source-map: 2.0.0
       react: 19.2.3
@@ -32682,7 +32740,7 @@ snapshots:
 
   safer-buffer@2.1.2: {}
 
-  sax@1.6.0: {}
+  sax@1.6.1: {}
 
   saxes@6.0.0:
     dependencies:
@@ -33524,6 +33582,8 @@ snapshots:
   tagged-tag@1.0.0: {}
 
   tailwindcss@4.3.2: {}
+
+  tailwindcss@4.3.3: {}
 
   tapable@2.3.0: {}
 
@@ -34728,7 +34788,7 @@ snapshots:
 
   xml2js@0.6.0:
     dependencies:
-      sax: 1.6.0
+      sax: 1.6.1
       xmlbuilder: 11.0.1
 
   xmlbuilder@11.0.1: {}

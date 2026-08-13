@@ -1,4 +1,5 @@
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import type { ClimbingGradeSystem } from "@dofek/training/climbing-grades";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -46,7 +47,6 @@ export interface FingerLoadingInput {
   laterality: z.infer<typeof fingerLoadingLateralitySchema>;
   notes: string | null;
   restIntervalSeconds: number;
-  rpe: number | null;
   setCount: number;
   startedAt: string;
 }
@@ -61,7 +61,7 @@ export interface ClimbInput {
   attempts: ClimbingAttemptInput[];
   climbType: "boulder" | "route";
   grade: string;
-  gradeSystem: "v_scale" | "yds";
+  gradeSystem: ClimbingGradeSystem;
   holdType: z.infer<typeof climbingHoldTypeSchema> | null;
   routeName: string | null;
   wallAngleDegrees: number | null;
@@ -210,7 +210,6 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
             set_count,
             hold_duration_seconds,
             rest_interval_seconds,
-            rpe,
             notes
           ) VALUES (
             ${activity.id}::uuid,
@@ -223,7 +222,6 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
             ${input.setCount},
             ${input.holdDurationSeconds},
             ${input.restIntervalSeconds},
-            ${input.rpe},
             ${input.notes}
           )`);
       return activity.id;

@@ -16,7 +16,6 @@ const meta = {
       laterality: "both",
       notes: "Controlled",
       restIntervalSeconds: 180,
-      rpe: 8,
       setCount: 5,
     },
     loading: false,

@@ -607,8 +607,36 @@
     {
       "idx": 86,
       "version": "7",
-      "when": 1786380100000,
-      "tag": "0074_remove_slack_storage",
+      "when": 1786466044000,
+      "tag": "0074_climbing_grade_systems",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1786467000000,
+      "tag": "0075_hang_ten_activity_priority",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1786487760586,
+      "tag": "0086_climbing-entry-lead",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1786569600000,
+      "tag": "0087_sync_log_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1786570000000,
+      "tag": "0088_remove_slack_storage",
       "breakpoints": true
     }
   ]

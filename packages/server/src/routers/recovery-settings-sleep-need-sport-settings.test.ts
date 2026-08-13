@@ -622,6 +622,31 @@ describe("settingsRouter", () => {
       expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
     });
 
+    it("invalidates all grade-dependent queries after changing climbing grade systems", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([
+          { key: "climbingGradeSystems", value: { boulder: "font", route: "french" } },
+        ]);
+      const invalidateByPrefix = vi.mocked(queryCache.invalidateByPrefix);
+      invalidateByPrefix.mockClear();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
+      });
+
+      await caller.set({
+        key: "climbingGradeSystems",
+        value: { boulder: "font", route: "french" },
+      });
+
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.");
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.training");
+    });
+
     it("throws when upsert fails", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
