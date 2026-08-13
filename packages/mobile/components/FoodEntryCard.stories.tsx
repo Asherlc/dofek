@@ -17,8 +17,6 @@ const meta = {
       sodium_mg: 640,
       potassium_mg: 520,
     },
-    onDelete: (id: string) => void id,
-    deleting: false,
   },
 } satisfies Meta<typeof FoodEntryCard>;
 
@@ -42,12 +40,6 @@ export const NoDescription: Story = {
       fiber_g: 4,
       sugar_g: 19,
     },
-  },
-};
-
-export const Deleting: Story = {
-  args: {
-    deleting: true,
   },
 };
 
