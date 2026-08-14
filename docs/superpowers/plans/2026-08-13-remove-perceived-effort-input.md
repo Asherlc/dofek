@@ -28,18 +28,19 @@
 - Delete: `packages/mobile/components/ActivityPerceivedExertion.test.tsx`
 - Delete: `packages/mobile/components/ActivityPerceivedExertion.stories.tsx`
 - Modify: `packages/mobile/app/activity/[id].tsx:32,838`
+- Modify: `packages/mobile/app-tests/activity/[id].test.tsx:504-516`
 
 **Interfaces:**
 - Consumes: Existing `ActivityDetailPage` and mobile activity-detail screen, which currently import and render `ActivityPerceivedExertion`.
 - Produces: Activity-detail screens with no session-RPE input; all activity data and APIs retain their existing types and behavior.
 
-- [ ] **Step 1: Confirm the affected code is exclusively the deleted input**
+- [x] **Step 1: Confirm the affected code is exclusively the deleted input**
 
 Run: `rtk rg -n "ActivityPerceivedExertion" packages/web/src packages/mobile`
 
 Expected: Only the two page imports/render calls and the six component, test, and Storybook files are returned. Do not alter `FingerLoadingLog`, strength-set RPE presentation, or server RPE code.
 
-- [ ] **Step 2: Delete the web input and its ownership references**
+- [x] **Step 2: Delete the web input and its ownership references**
 
 Delete `packages/web/src/components/ActivityPerceivedExertion.tsx`, its colocated test, and its Storybook story. In `packages/web/src/pages/ActivityDetailPage.tsx`, remove exactly:
 
@@ -53,7 +54,7 @@ and:
 <ActivityPerceivedExertion activityId={id} value={activity.perceivedExertion} />
 ```
 
-- [ ] **Step 3: Delete the mobile input and its ownership references**
+- [x] **Step 3: Delete the mobile input and its ownership references**
 
 Delete `packages/mobile/components/ActivityPerceivedExertion.tsx`, its colocated test, and its Storybook story. In `packages/mobile/app/activity/[id].tsx`, remove exactly:
 
@@ -67,7 +68,9 @@ and:
 <ActivityPerceivedExertion activityId={id ?? ""} value={activity.perceivedExertion} />
 ```
 
-- [ ] **Step 4: Verify deletion and client integrity**
+Delete the existing `renders the activity's session perceived exertion control` test from `packages/mobile/app-tests/activity/[id].test.tsx`; it tests only the intentionally removed control.
+
+- [x] **Step 4: Verify deletion and client integrity**
 
 Run:
 
@@ -86,6 +89,7 @@ Expected: The search has no matches; the activity-detail test files pass; typech
 rtk git add \
   packages/web/src/pages/ActivityDetailPage.tsx \
   packages/mobile/app/activity/[id].tsx \
+  packages/mobile/app-tests/activity/[id].test.tsx \
   packages/web/src/components/ActivityPerceivedExertion.tsx \
   packages/web/src/components/ActivityPerceivedExertion.test.tsx \
   packages/web/src/components/ActivityPerceivedExertion.stories.tsx \

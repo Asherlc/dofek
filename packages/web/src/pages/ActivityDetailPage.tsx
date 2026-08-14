@@ -33,7 +33,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
-import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
@@ -221,8 +220,6 @@ export function ActivityDetailPage() {
       ) : null}
 
       <ActivityHeader activity={activity} units={units} />
-      <ActivityPerceivedExertion activityId={id} value={activity.perceivedExertion} />
-
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
       {stream.error ? (

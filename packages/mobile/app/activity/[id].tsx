@@ -29,7 +29,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -835,8 +834,6 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
-      <ActivityPerceivedExertion activityId={id ?? ""} value={activity.perceivedExertion} />
-
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>
           <Text style={hangboardingStyles.title}>Hangboarding</Text>
