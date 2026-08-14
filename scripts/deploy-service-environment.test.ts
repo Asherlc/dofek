@@ -83,13 +83,7 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "ZOHO_DESK_REFRESH_TOKEN",
 ] as const;
 
-const WEB_ONLY_ENVIRONMENT_KEYS = [
-  "GEMINI_API_KEY",
-  "MISTRAL_API_KEY",
-  "SLACK_CLIENT_ID",
-  "SLACK_CLIENT_SECRET",
-  "SLACK_SIGNING_SECRET",
-] as const;
+const WEB_ONLY_ENVIRONMENT_KEYS = ["GEMINI_API_KEY", "MISTRAL_API_KEY"] as const;
 
 const CDC_ENVIRONMENT_KEYS = [
   "PEERDB_CDC_CLICKHOUSE_HOST",
@@ -190,7 +184,6 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(worker).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
     expect(worker).not.toHaveProperty("GEMINI_API_KEY");
     expect(worker).not.toHaveProperty("OTA_PRIVATE_KEY_B64");
-    expect(worker).not.toHaveProperty("SLACK_CLIENT_SECRET");
 
     expect(parseEnv(readFileSync(paths.analyticsWorker, "utf8"))).toEqual({
       CLICKHOUSE_PASSWORD: "clickhouse_password-value",

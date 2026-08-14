@@ -34,7 +34,6 @@ import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
 import {
@@ -802,17 +801,6 @@ export default function SettingsScreen() {
           </Text>
           <View style={styles.card}>
             <PersonalizationPanel />
-          </View>
-        </View>
-      ) : null}
-
-      {/* ── Integrations ── */}
-      {activeCategory === "data-sources" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Integrations</Text>
-          <Text style={styles.sectionDescription}>Connect external services</Text>
-          <View style={styles.card}>
-            <SlackIntegrationPanel />
           </View>
         </View>
       ) : null}

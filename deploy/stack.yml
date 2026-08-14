@@ -66,7 +66,6 @@ services:
       EXPORT_R2_BUCKET: dofek-exports
       IMPORT_R2_BUCKET: dofek-imports
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
-      SLACK_MODE: http
     volumes:
       - job_files:/app/job-files
     healthcheck:

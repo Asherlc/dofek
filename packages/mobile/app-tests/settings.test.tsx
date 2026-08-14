@@ -56,10 +56,6 @@ vi.mock("../components/AccountErasurePanel", () => ({
   AccountErasurePanel: () => React.createElement("div", null, "AccountErasurePanel"),
 }));
 
-vi.mock("../components/SlackIntegrationPanel", () => ({
-  SlackIntegrationPanel: () => React.createElement("div", null, "SlackIntegrationPanel"),
-}));
-
 vi.mock("../components/ProviderLogo", () => ({
   ProviderLogo: ({ provider }: { provider: string }) =>
     React.createElement("span", { "data-testid": `provider-logo-${provider}` }),

@@ -13,7 +13,6 @@ import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import {
   clearWebBillingCheckoutOperation,
@@ -451,12 +450,6 @@ export function SettingsPage() {
             subtitle="Parameters are automatically learned from your data to improve accuracy"
           >
             <PersonalizationPanel />
-          </PageSection>
-        ) : null}
-
-        {activeCategory === "data-sources" ? (
-          <PageSection title="Integrations" subtitle="Connect external services">
-            <SlackIntegrationPanel />
           </PageSection>
         ) : null}
 

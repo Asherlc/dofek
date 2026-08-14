@@ -73,11 +73,6 @@ export const settingsRouter = router({
     return result;
   }),
 
-  slackStatus: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
-    const repo = new SettingsRepository(ctx.db, ctx.userId);
-    return repo.slackStatus();
-  }),
-
   deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     await repo.deleteAllUserData(PROVIDER_ACCOUNT_TABLES);
