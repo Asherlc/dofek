@@ -528,9 +528,6 @@ importers:
       expo-linking:
         specifier: 57.0.5
         version: 57.0.5(expo@57.0.12)(react-native@0.86.2)(react@19.2.3)(supports-color@11.0.0)
-      expo-location:
-        specifier: 57.0.9
-        version: 57.0.9(expo@57.0.12)(supports-color@11.0.0)(typescript@6.0.3)
       expo-modules-core:
         specifier: 57.0.10
         version: 57.0.10(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)
@@ -549,9 +546,6 @@ importers:
       expo-splash-screen:
         specifier: 57.0.6
         version: 57.0.6(expo@57.0.12)(supports-color@11.0.0)(typescript@6.0.3)
-      expo-task-manager:
-        specifier: 57.0.9
-        version: 57.0.9(expo@57.0.12)(react-native@0.86.2)
       expo-updates:
         specifier: 57.0.13
         version: 57.0.13(expo-dev-client@57.0.11)(expo@57.0.12)(react-native@0.86.2)(react@19.2.3)(supports-color@11.0.0)
@@ -10783,11 +10777,6 @@ packages:
       react: 19.2.3
       react-native: '*'
 
-  expo-location@57.0.9:
-    resolution: {integrity: sha512-NfTBIgpHDagevd8gz3zSU2dcA+2KjDZPsK8/A57BPKeApcgFzh44QpzYDgSOc01sLNa3DxIsgQSWdSXXpj7IXg==}
-    peerDependencies:
-      expo: '*'
-
   expo-manifests@57.0.1:
     resolution: {integrity: sha512-qB/mDG2dYdl+EvUeQuqP8KFYCFgFCQjJYdWIHo8SFBgDzMYmdF286DFY2M1M9Okr99wkb5M4tgA3aCcwv3aEQA==}
     peerDependencies:
@@ -10891,12 +10880,6 @@ packages:
       expo: '*'
       expo-font: '*'
       react: 19.2.3
-      react-native: '*'
-
-  expo-task-manager@57.0.9:
-    resolution: {integrity: sha512-98L0EIexQkAxJ1GKPAev9rJcEJvZDfZOF8vmanvXisvfpC/Z0Rsel4vzV1bVldzXwQ4rMBu3V5C9evFJQMh1PA==}
-    peerDependencies:
-      expo: '*'
       react-native: '*'
 
   expo-updates-interface@57.0.1:
@@ -15758,9 +15741,6 @@ packages:
   unicorn-magic@0.4.0:
     resolution: {integrity: sha512-wH590V9VNgYH9g3lH9wWjTrUoKsjLF6sGLjhR4sH1LWpLmCOH0Zf7PukhDA8BiS7KHe4oPNkcTHqYkj7SOGUOw==}
     engines: {node: '>=20'}
-
-  unimodules-app-loader@57.0.1:
-    resolution: {integrity: sha512-wey5ChoJkCTq0j0JWdIMu2QB81vVrdhmrNAP14ZZ6WDslnZ7ff7Ezv8rMdEnVHaCKz3xK4mIVXbVU51xHgdyCA==}
 
   unique-filename@1.1.1:
     resolution: {integrity: sha512-Vmp0jIp2ln35UTXuryvjzkjGdRyf9b2lTXuSYUiPmzRcl3FDtYqAwOnTJkAngD9SWhnoJzDbTKwaOrZ+STtxNQ==}
@@ -27979,14 +27959,6 @@ snapshots:
       - expo
       - supports-color
 
-  expo-location@57.0.9(expo@57.0.12)(supports-color@11.0.0)(typescript@6.0.3):
-    dependencies:
-      '@expo/image-utils': 0.11.4(supports-color@11.0.0)(typescript@6.0.3)
-      expo: 57.0.12(@babel/core@7.29.7)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@57.0.9)(expo-router@57.0.12)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)(supports-color@11.0.0)(typescript@6.0.3)
-    transitivePeerDependencies:
-      - supports-color
-      - typescript
-
   expo-manifests@57.0.1(expo@57.0.12):
     dependencies:
       expo: 57.0.12(@babel/core@7.29.7)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@57.0.9)(expo-router@57.0.12)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)(supports-color@11.0.0)(typescript@6.0.3)
@@ -28129,12 +28101,6 @@ snapshots:
       react: 19.2.3
       react-native: 0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(@types/react@19.2.18)(react@19.2.3)(supports-color@11.0.0)
       sf-symbols-typescript: 2.2.0
-
-  expo-task-manager@57.0.9(expo@57.0.12)(react-native@0.86.2):
-    dependencies:
-      expo: 57.0.12(@babel/core@7.29.7)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@57.0.9)(expo-router@57.0.12)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)(supports-color@11.0.0)(typescript@6.0.3)
-      react-native: 0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(@types/react@19.2.18)(react@19.2.3)(supports-color@11.0.0)
-      unimodules-app-loader: 57.0.1
 
   expo-updates-interface@57.0.1(expo@57.0.12):
     dependencies:
@@ -33918,8 +33884,6 @@ snapshots:
   unicorn-magic@0.3.0: {}
 
   unicorn-magic@0.4.0: {}
-
-  unimodules-app-loader@57.0.1: {}
 
   unique-filename@1.1.1:
     dependencies:

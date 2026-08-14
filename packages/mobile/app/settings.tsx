@@ -11,7 +11,7 @@ import {
 } from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +28,7 @@ import {
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
+import { HeartRateDeviceCard } from "../components/HeartRateDeviceCard";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
@@ -36,6 +37,12 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
+import {
+  connectBleHeartRateMonitor,
+  disconnectBleHeartRateMonitor,
+  getBleHeartRateSyncState,
+  subscribeBleHeartRateSyncState,
+} from "../lib/background-ble-heart-rate-sync";
 import {
   clearMobileBillingCheckoutOperation,
   getOrCreateMobileBillingCheckoutOperationId,
@@ -213,6 +220,23 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
+  const heartRateMonitor = useSyncExternalStore(
+    subscribeBleHeartRateSyncState,
+    getBleHeartRateSyncState,
+    getBleHeartRateSyncState,
+  );
+
+  const handleConnectHeartRateMonitor = async (): Promise<void> => {
+    try {
+      await connectBleHeartRateMonitor();
+    } catch (error: unknown) {
+      captureException(error, { context: "settings-connect-heart-rate-monitor" });
+      Alert.alert(
+        "No heart-rate monitor found",
+        "Make sure your monitor is on, worn, and nearby, then try again.",
+      );
+    }
+  };
 
   // ── Data Sources ──
   const providers = trpc.sync.providers.useQuery();
@@ -623,6 +647,23 @@ export default function SettingsScreen() {
       ) : null}
 
       {activeCategory === "data-sources" ? <ZeppPairingCard /> : null}
+
+      {activeCategory === "data-sources" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Bluetooth Heart Rate</Text>
+          <Text style={styles.sectionDescription}>
+            Capture heart rate and beat intervals from a standard Bluetooth monitor
+          </Text>
+          <HeartRateDeviceCard
+            bluetoothAvailable={heartRateMonitor.bluetoothAvailable}
+            connectionState={heartRateMonitor.connectionState}
+            deviceName={heartRateMonitor.device?.name}
+            liveBpm={heartRateMonitor.liveBpm}
+            onConnect={() => void handleConnectHeartRateMonitor()}
+            onDisconnect={disconnectBleHeartRateMonitor}
+          />
+        </View>
+      ) : null}
 
       {/* ── Primary Goal ── */}
       {activeCategory === "goals-models" ? (
