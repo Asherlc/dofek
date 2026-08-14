@@ -11,13 +11,24 @@ const mocks = vi.hoisted(() => ({
   kayaClient: vi.fn(),
   listSessions: vi.fn(),
   loadTokens: vi.fn(),
+  refreshAccessToken: vi.fn(),
+  saveTokens: vi.fn(),
   signIn: vi.fn(),
   upsertActivity: vi.fn(),
 }));
 
 vi.mock("@dofek/kaya-client", () => {
+  class KayaApiError extends Error {
+    status: number | undefined;
+
+    constructor(message: string, status?: number) {
+      super(message);
+      this.status = status;
+    }
+  }
   class KayaInvalidCredentialsError extends Error {}
   return {
+    KayaApiError,
     KayaClient: class {
       constructor(...args: unknown[]) {
         mocks.kayaClient(...args);
@@ -27,6 +38,7 @@ vi.mock("@dofek/kaya-client", () => {
       listAscents = mocks.ascents;
     },
     KayaInvalidCredentialsError,
+    refreshKayaAccessToken: mocks.refreshAccessToken,
     signInToKaya: mocks.signIn,
   };
 });
@@ -37,10 +49,11 @@ vi.mock("../db/provider-activity-sync.ts", () => ({
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: mocks.ensureProvider,
   loadTokens: mocks.loadTokens,
+  saveTokens: mocks.saveTokens,
 }));
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
 
-import { KayaInvalidCredentialsError } from "@dofek/kaya-client";
+import { KayaApiError, KayaInvalidCredentialsError } from "@dofek/kaya-client";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -231,6 +244,86 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 0,
       errors: [{ message: expect.stringContaining("account identity") }],
     });
+  });
+
+  it("refreshes an expired Kaya access token before syncing and persists it", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-08-01T12:00:00.000Z").valueOf());
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date("2026-08-01T11:59:59.999Z"),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.refreshAccessToken.mockResolvedValue("refreshed-access-token");
+    mocks.listSessions.mockResolvedValue([]);
+    mocks.ascents.mockResolvedValue([]);
+
+    await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({
+      recordsSynced: 0,
+      errors: [],
+    });
+
+    expect(mocks.refreshAccessToken).toHaveBeenCalledWith("refresh-token", expect.any(Function));
+    expect(mocks.saveTokens).toHaveBeenCalledWith(
+      db,
+      "kaya",
+      expect.objectContaining({
+        accessToken: "refreshed-access-token",
+        refreshToken: "refresh-token",
+        expiresAt: new Date("2026-08-01T12:25:00.000Z"),
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      }),
+      userId,
+    );
+    expect(mocks.kayaClient).toHaveBeenCalledWith("refreshed-access-token", expect.any(Function));
+  });
+
+  it("refreshes and retries once when Kaya rejects an unexpired access token", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "rejected-access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date("2026-08-01T13:00:00.000Z"),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.refreshAccessToken.mockResolvedValue("refreshed-access-token");
+    mocks.listSessions
+      .mockRejectedValueOnce(new KayaApiError("Kaya API request failed (401)", 401))
+      .mockResolvedValueOnce([]);
+    mocks.ascents.mockResolvedValue([]);
+
+    await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({
+      recordsSynced: 0,
+      errors: [],
+    });
+
+    expect(mocks.refreshAccessToken).toHaveBeenCalledWith("refresh-token", expect.any(Function));
+    expect(mocks.listSessions).toHaveBeenCalledTimes(2);
+    expect(mocks.saveTokens).toHaveBeenCalledWith(
+      db,
+      "kaya",
+      expect.objectContaining({ accessToken: "refreshed-access-token" }),
+      userId,
+    );
+  });
+
+  it("requires a Kaya reconnect when the stored refresh token is rejected", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-access-token",
+      refreshToken: "revoked-refresh-token",
+      expiresAt: new Date("2026-08-01T11:59:59.999Z"),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.refreshAccessToken.mockRejectedValue(
+      new KayaApiError("Kaya token refresh failed (401)", 401),
+    );
+
+    await expect(new KayaSyncProvider().sync(run(database()))).resolves.toMatchObject({
+      recordsSynced: 0,
+      errors: [{ message: "Kaya refresh token was revoked or expired." }],
+    });
+    expect(mocks.captureException).not.toHaveBeenCalled();
   });
 
   it("captures upstream sync failures in the result", async () => {
