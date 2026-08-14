@@ -4,6 +4,7 @@ import {
   type KayaApiError,
   KayaClient,
   KayaInvalidCredentialsError,
+  refreshKayaAccessToken,
   signInToKaya,
 } from "./client.ts";
 
@@ -141,6 +142,48 @@ describe("KayaClient", () => {
         vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ message: "no" })),
       ),
     ).rejects.toBeInstanceOf(KayaInvalidCredentialsError);
+  });
+
+  it("refreshes the access token with Kaya's observed refresh-token endpoint", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ message: "ok", token: "refreshed-kaya-access-token" }));
+
+    await expect(refreshKayaAccessToken("kaya-refresh-token", fetchFn)).resolves.toEqual(
+      "refreshed-kaya-access-token",
+    );
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      "https://kaya-beta.kayaclimb.com/api/user/refresh-token",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://kaya-app.kayaclimb.com",
+          referer: "https://kaya-app.kayaclimb.com/",
+        },
+        body: JSON.stringify({ refresh_token: "kaya-refresh-token" }),
+      }),
+    );
+  });
+
+  it("rejects failed and malformed Kaya token refresh responses", async () => {
+    await expect(
+      refreshKayaAccessToken(
+        "kaya-refresh-token",
+        vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 })),
+      ),
+    ).rejects.toMatchObject<KayaApiError>({
+      message: "Kaya token refresh failed (401)",
+      status: 401,
+    });
+
+    await expect(
+      refreshKayaAccessToken(
+        "kaya-refresh-token",
+        vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ message: "ok" })),
+      ),
+    ).rejects.toThrow("Kaya token refresh returned an invalid response");
   });
 
   it("preserves credential error metadata", () => {
