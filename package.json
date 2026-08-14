@@ -289,7 +289,7 @@
     "@testing-library/jest-dom": "7.0.0",
     "@testing-library/react": "16.3.2",
     "@types/archiver": "8.0.0",
-    "@types/node": "22.19.15",
+    "@types/node": "26.1.2",
     "@types/nodemailer": "8.0.0",
     "@types/pg": "8.15.5",
     "@types/sax": "1.2.7",
