@@ -975,14 +975,6 @@ describe("Router data coverage", () => {
   // Food — search, quickAdd, update, delete, list with meal filter
   // ══════════════════════════════════════════════════════════════
   describe("food", () => {
-    it("search returns matching food entries", async () => {
-      const result = await query<{ food_name: string }[]>("food.search", { query: "Oatmeal" });
-      expect(result.length).toBeGreaterThan(0);
-      for (const row of result) {
-        expect(row.food_name.toLowerCase()).toContain("oatmeal");
-      }
-    });
-
     it("list with meal filter returns only matching entries", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -996,78 +988,6 @@ describe("Router data coverage", () => {
       for (const row of result) {
         expect(row.meal).toBe("lunch");
       }
-    });
-
-    it("quickAdd creates a food entry with minimal fields", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await mutate<{ id: string; food_name: string; calories: number }>(
-        "food.quickAdd",
-        {
-          date: today,
-          meal: "snack",
-          foodName: "Protein Bar",
-          calories: 200,
-          proteinG: 20,
-        },
-      );
-      expect(result.food_name).toBe("Protein Bar");
-      expect(Number(result.calories)).toBe(200);
-    });
-
-    it("update modifies a food entry", async () => {
-      // Get a food entry id
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      expect(result.entries.length).toBeGreaterThan(0);
-      const entryId = result.entries[0]?.id;
-      expect(entryId).toBeTruthy();
-
-      const updated = await mutate<{ id: string; calories: number } | null>("food.update", {
-        id: entryId,
-        calories: 999,
-      });
-      expect(updated).not.toBeNull();
-      expect(Number(updated?.calories)).toBe(999);
-    });
-
-    it("update with date field modification", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      const entryId = result.entries[0]?.id;
-
-      // Update date and set some fields to null (covers null-clearing branches)
-      const updated = await mutate<{ id: string } | null>("food.update", {
-        id: entryId,
-        date: today,
-        foodDescription: null,
-        proteinG: null,
-      });
-      expect(updated).not.toBeNull();
-    });
-
-    it("update with no fields returns null", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const selectedDate = await query<{ entries: { id: string }[] }>("food.byDate", {
-        date: today,
-      });
-      const entryId = selectedDate.entries[0]?.id;
-      const result = await mutate<null>("food.update", { id: entryId });
-      expect(result).toBeNull();
-    });
-
-    it("delete removes a food entry", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const before = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      const countBefore = before.entries.length;
-      expect(countBefore).toBeGreaterThan(0);
-
-      const entryId = before.entries[0]?.id;
-      const deleteResult = await mutate<{ success: boolean }>("food.delete", { id: entryId });
-      expect(deleteResult.success).toBe(true);
-
-      await queryCache.invalidateAll();
-      const after = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      expect(after.entries.length).toBe(countBefore - 1);
     });
 
     it("dailyTotals aggregates calories and macros by day", async () => {

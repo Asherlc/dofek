@@ -6,6 +6,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
 import { NutritionIntakeContext } from "../../components/NutritionIntakeContext";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { openExternalUrl } from "../../lib/open-external-url";
 import { safeParseData } from "../../lib/safe-parse";
 import { logger } from "../../lib/telemetry";
@@ -63,9 +64,6 @@ export default function FoodScreen() {
     isFetching: foodQuery.isFetching,
     isLoading: foodQuery.isLoading,
   });
-  const foodError = foodQuery.error ?? selectedDateFood.error;
-  const foodErrorMessage =
-    foodError instanceof Error ? foodError.message : "Failed to load food entries.";
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntryRow[]>();
     for (const entry of entries) {
@@ -205,9 +203,16 @@ export default function FoodScreen() {
         )}
 
         {isFoodBlockingLoading ? (
-          <Text style={styles.loadingText}>Loading...</Text>
+          <QueryStatePanel variant="loading" />
         ) : foodQuery.isError || selectedDateFood.error || !resolution ? (
-          <Text style={styles.errorText}>{foodErrorMessage}</Text>
+          <QueryStatePanel
+            variant="error"
+            message={
+              foodQuery.error
+                ? getQueryErrorMessage(foodQuery.error, "Failed to load food entries.")
+                : "Food entries could not be read."
+            }
+          />
         ) : (
           MEALS.map(({ key, label }) => (
             <MealSection
@@ -289,8 +294,6 @@ const styles = StyleSheet.create({
   sourceConflictTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
   sourceConflictMessage: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
   sourceConflictSources: { color: colors.textTertiary, fontSize: 12 },
-  loadingText: { color: colors.textSecondary, textAlign: "center", padding: 24 },
-  errorText: { color: colors.danger, textAlign: "center", padding: 24 },
   fatsecretAttributionLink: { alignItems: "center", paddingVertical: 8 },
   fatsecretAttribution: { color: colors.textTertiary, fontSize: 12 },
 });

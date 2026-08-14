@@ -17,7 +17,6 @@ const toolTestMocks = vi.hoisted(() => {
     dailyMetricsListRange: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
     fingerLoadingRange: vi.fn(),
-    foodCreate: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
     getAllProviders: vi.fn(),
     getConnectedProviderIds: vi.fn(),
@@ -62,7 +61,6 @@ vi.mock("../repositories/daily-metrics-repository.ts", () => ({
 
 vi.mock("../repositories/food-repository.ts", () => ({
   FoodRepository: vi.fn(() => ({
-    create: toolTestMocks.foodCreate,
     dailyTotalsRange: toolTestMocks.foodDailyTotalsRange,
   })),
 }));
@@ -195,7 +193,6 @@ const mcpScopes = [
   "health:read",
   "activity:read",
   "nutrition:read",
-  "nutrition:write",
   "providers:read",
   "sync:write",
 ] as const;
@@ -300,7 +297,6 @@ describe("createMcpRouter", () => {
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
-    toolTestMocks.foodCreate.mockResolvedValue(null);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
     toolTestMocks.fingerLoadingRange.mockResolvedValue([]);
     toolTestMocks.getAllProviders.mockReturnValue([]);
@@ -529,15 +525,6 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "get_body_metrics").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
-      type: "object",
-    });
-    expect(findListedTool(tools, "log_food").inputSchema).toMatchObject({
-      properties: {
-        mealType: { enum: ["breakfast", "lunch", "dinner", "snack", "other"], type: "string" },
-        occurredAt: { format: "date-time", type: "string" },
-        text: { maxLength: 500, minLength: 1, type: "string" },
-      },
-      required: ["text"],
       type: "object",
     });
     expect(findListedTool(tools, "list_providers").inputSchema).toMatchObject({
@@ -1296,34 +1283,6 @@ describe("createMcpRouter", () => {
     expect(parseToolCallText(response.text)).toEqual({
       items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 2,
-    });
-  });
-
-  it("logs food entries with the requested meal type and local date", async () => {
-    authorizeMcpToken();
-    toolTestMocks.foodCreate.mockResolvedValue({
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
-    });
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("log_food", {
-        mealType: "breakfast",
-        occurredAt: "2026-05-20T08:30:00.000Z",
-        text: "oatmeal with berries",
-      }),
-    });
-
-    expect(parseToolCallText(response.text)).toEqual({
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
-    });
-    expect(toolTestMocks.foodCreate).toHaveBeenCalledWith({
-      date: "2026-05-20",
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
-      nutrients: {},
     });
   });
 

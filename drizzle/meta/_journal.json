@@ -645,6 +645,13 @@
       "when": 1786716655000,
       "tag": "0089_remove_cycle_tracking_and_breathwork",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1786726296000,
+      "tag": "0090_remove_nutrition_write_scope",
+      "breakpoints": true
     }
   ]
 }

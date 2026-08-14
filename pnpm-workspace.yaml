@@ -56,6 +56,7 @@ overrides:
   "gel>shell-quote": 1.10.0
   hono: 4.12.25
   ip-address: 10.4.0
+  "inquirer@0.11.0>lodash": 4.18.1
   "lerna>minimatch": 3.1.4
   "minimatch@3>brace-expansion": 1.1.18
   minimatch: 10.2.5
@@ -105,36 +106,37 @@ minimumReleaseAgeExclude:
   - '@ai-sdk/otel@1.0.47'
   - '@ai-sdk/provider-utils@5.0.18'
   - ai@7.0.47
-  - '@expo/cli@57.0.11 || 57.0.12 || 57.0.13 || 57.0.14'
+  - '@expo/cli@57.0.11 || 57.0.12 || 57.0.13 || 57.0.14 || 57.0.15'
   - '@expo/inline-modules@0.1.4 || 0.1.5'
   - '@expo/local-build-cache-provider@57.0.5 || 57.0.6'
   - '@expo/log-box@57.0.2'
-  - '@expo/metro-runtime@57.0.8 || 57.0.9'
-  - '@expo/prebuild-config@57.0.10 || 57.0.11'
-  - '@expo/ui@57.0.8 || 57.0.9 || 57.0.10'
-  - babel-preset-expo@57.0.5 || 57.0.6
-  - expo@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12
-  - expo-asset@57.0.8 || 57.0.9 || 57.0.10
-  - expo-build-properties@57.0.8 || 57.0.9 || 57.0.10
-  - expo-constants@57.0.8 || 57.0.9 || 57.0.10
-  - expo-dev-client@57.0.10 || 57.0.11
-  - expo-dev-launcher@57.0.10 || 57.0.11
-  - expo-dev-menu@57.0.10 || 57.0.11
-  - expo-modules-core@57.0.8 || 57.0.9 || 57.0.10
-  - expo-notifications@57.0.8 || 57.0.9 || 57.0.10
-  - expo-router@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12
-  - expo-sharing@57.0.8 || 57.0.10 || 57.0.11
-  - expo-updates@57.0.11 || 57.0.12 || 57.0.13
+  - '@expo/metro-runtime@57.0.8 || 57.0.9 || 57.0.10'
+  - '@expo/prebuild-config@57.0.10 || 57.0.11 || 57.0.12'
+  - '@expo/ui@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11'
+  - babel-preset-expo@57.0.5 || 57.0.6 || 57.0.7
+  - expo@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12 || 57.0.13
+  - expo-asset@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11
+  - expo-build-properties@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11
+  - expo-constants@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11
+  - expo-dev-client@57.0.10 || 57.0.11 || 57.0.12
+  - expo-dev-launcher@57.0.10 || 57.0.11 || 57.0.12
+  - expo-dev-menu@57.0.10 || 57.0.11 || 57.0.12
+  - expo-modules-core@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11
+  - expo-notifications@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11
+  - expo-router@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12 || 57.0.13
+  - expo-sharing@57.0.8 || 57.0.10 || 57.0.11 || 57.0.12
+  - expo-updates@57.0.11 || 57.0.12 || 57.0.13 || 57.0.14
   - '@posthog/core@1.46.1'
   - posthog-node@5.47.3
   - posthog-react-native@4.61.2
-  - '@expo/router-server@57.0.5'
-  - expo-linking@57.0.5
-  - '@expo/config-plugins@57.0.7'
-  - expo-file-system@57.0.2
+  - '@expo/router-server@57.0.5 || 57.0.6'
+  - expo-linking@57.0.5 || 57.0.6
+  - '@expo/config-plugins@57.0.7 || 57.0.8'
+  - expo-file-system@57.0.2 || 57.0.4
   - expo-symbols@57.0.2
   - nanoid@3.3.18
   - '@expo/fingerprint@0.20.7'
   - '@expo/metro-config@57.0.8'
-  - expo-server@57.0.2
+  - expo-server@57.0.2 || 57.0.3
   - expo-splash-screen@57.0.6
+  - expo-modules-autolinking@57.0.10
