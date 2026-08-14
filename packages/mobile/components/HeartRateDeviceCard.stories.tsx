@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { HeartRateDeviceCard } from "./HeartRateDeviceCard";
 
 const meta = {
-  title: "Recording/HeartRateDeviceCard",
+  title: "Settings/HeartRateDeviceCard",
   component: HeartRateDeviceCard,
   decorators: [(Story) => <View style={{ width: 360, padding: 16 }}>{Story()}</View>],
   args: {

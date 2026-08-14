@@ -6,7 +6,11 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.
 - **WHOOP BLE Sync**: High-resolution sensor data capture (IMU - accelerometer + gyroscope) from WHOOP straps via `WhoopBleModule`.
-- **Bluetooth Heart-Rate Monitors**: Live heart rate + R-R intervals from any standard Bluetooth heart-rate strap via `BleHeartRateModule`, using the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/) (`0x180D`) / Heart Rate Measurement (`0x2A37`) GATT profile. See `../../docs/ble-heart-rate.md`.
+- **Bluetooth Heart-Rate Monitors**: Pair in Settings and passively upload live
+  heart rate + R-R intervals from any standard Bluetooth heart-rate strap via
+  `BleHeartRateModule`, using the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/)
+  (`0x180D`) / Heart Rate Measurement (`0x2A37`) GATT profile. See
+  `../../docs/ble-heart-rate.md`.
 - **Activity History**: Displays workouts and GPS routes imported from Apple
   Health and connected providers.
 - **Passive Motion Sync**: Core Motion and WatchMotion provide background motion
