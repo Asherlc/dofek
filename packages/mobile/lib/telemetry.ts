@@ -5,7 +5,7 @@ import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
 import PostHog from "posthog-react-native";
-import { shouldSuppressBackgroundHealthKitTransientNetworkError } from "./health-kit-errors";
+import { shouldSuppressBackgroundTransientNetworkError } from "./health-kit-errors";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
 const SENTRY_RELEASE: string | undefined = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
@@ -215,10 +215,7 @@ export function captureException(error: unknown, context: Record<string, unknown
   // Sentry's beforeSend) keeps Sentry and PostHog consistent — otherwise the PostHog
   // capture path silently mints error-tracking issues for errors Sentry drops. Logs
   // and breadcrumbs below still record the failure for observability.
-  const captureToErrorTracking = !shouldSuppressBackgroundHealthKitTransientNetworkError(
-    error,
-    source,
-  );
+  const captureToErrorTracking = !shouldSuppressBackgroundTransientNetworkError(error, source);
   if (captureToErrorTracking) {
     Sentry.captureException(error, {
       ...(source ? { tags: { source } } : {}),

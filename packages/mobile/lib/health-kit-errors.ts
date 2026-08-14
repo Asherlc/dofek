@@ -36,22 +36,24 @@ export function isBackgroundHealthKitTransientNetworkError(error: unknown): bool
 
 export const HEALTHKIT_BACKGROUND_SENTRY_SOURCE = "bg-healthkit-sync";
 
-function isHealthKitSentrySource(source: string | undefined): boolean {
+function isBackgroundSyncSentrySource(source: string | undefined): boolean {
   return (
-    source === HEALTHKIT_BACKGROUND_SENTRY_SOURCE || (source?.startsWith("health-kit-") ?? false)
+    source === HEALTHKIT_BACKGROUND_SENTRY_SOURCE ||
+    source === "bg-accel-sync" ||
+    (source?.startsWith("health-kit-") ?? false)
   );
 }
 
 /**
- * A background HealthKit sync that fails on a transient network error (timeout or
+ * A background sensor sync that fails on a transient network error (timeout or
  * dropped connection) is not actionable — the next foreground delivery retries and
  * succeeds. These must be dropped from every error-tracking destination (Sentry and
  * PostHog), not just Sentry, so the check lives here rather than in Sentry's
  * `beforeSend`.
  */
-export function shouldSuppressBackgroundHealthKitTransientNetworkError(
+export function shouldSuppressBackgroundTransientNetworkError(
   error: unknown,
   source: string | undefined,
 ): boolean {
-  return isHealthKitSentrySource(source) && isBackgroundHealthKitTransientNetworkError(error);
+  return isBackgroundSyncSentrySource(source) && isBackgroundHealthKitTransientNetworkError(error);
 }
