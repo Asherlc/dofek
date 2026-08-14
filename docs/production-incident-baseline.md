@@ -23366,3 +23366,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-08-14 — Legacy Hang Ten Apple Health workouts classified as strength
+
+- **Status:** Resolved with a direct, atomic production data correction; no
+  deployment was required.
+- **Symptoms / impact:** Two historical Hang Ten workouts appeared as
+  strength activities instead of Hangboarding. No Strong- or WHOOP-attributed
+  workout was affected.
+- **Evidence / root cause:** The exact six-month predicate found two active
+  `apple_health` strength rows below 20 minutes (8.25 and 7.68 minutes). Both
+  retained `raw.sourceName = 'Hang Ten'`, reflecting imports that predated the
+  canonical Hang Ten reclassification path.
+- **Fix / mitigation:** In one transaction, updated only those rows'
+  `fitness.activity.canonical_type` from `strength` to `hangboard`. The
+  predicate excludes Strong and WHOOP in both `source_name` and
+  `raw.sourceName`, and requires a non-negative duration under 20 minutes.
+- **Validation:** The transaction updated two rows and the same post-update
+  predicate returned zero rows. The canonical production SSH alias was also
+  restored using GitHub's current `ORACLE_SERVER_HOST`; the stale Infisical
+  `SERVER_HOST` value was not used.
+- **Remaining risk / follow-up:** PeerDB CDC will replicate the Postgres
+  activity update to ClickHouse asynchronously. Replace the stale
+  `scripts/make-admin.sh` host lookup with the documented canonical production
+  host source before the next operator-run database action.
