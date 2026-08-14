@@ -841,42 +841,6 @@ export default function RecoveryScreen() {
             </Card>
           )}
 
-          {latestBodyFat != null && (
-            <Card title="Body Fat %">
-              <View style={styles.weightRow}>
-                <Text style={styles.weightValue}>
-                  {formatBodyCompositionNumber(latestBodyFat)}%
-                </Text>
-                {bodyFatData.length >= 2 && (
-                  <View
-                    accessible
-                    accessibilityRole="image"
-                    accessibilityLabel={`Body fat trend: ${bodyFatData
-                      .map(
-                        ({ date, bodyFatPct }) =>
-                          `${date} ${formatBodyCompositionNumber(bodyFatPct)}%`,
-                      )
-                      .join("; ")}.`}
-                    style={styles.sparkContainer}
-                  >
-                    <View
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                    >
-                      <SparkLine
-                        data={bodyFatData.map((row) => row.bodyFatPct)}
-                        height={50}
-                        color={colors.purple}
-                        showYAxis
-                        formatYLabel={(value) => `${formatBodyCompositionNumber(value)}%`}
-                      />
-                    </View>
-                  </View>
-                )}
-              </View>
-            </Card>
-          )}
-
           {/* Daily Steps */}
           {latestSteps != null && (
             <Card title="Daily Steps">
