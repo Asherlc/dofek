@@ -167,6 +167,25 @@ describe("KayaClient", () => {
     );
   });
 
+  it("rejects failed and malformed Kaya token refresh responses", async () => {
+    await expect(
+      refreshKayaAccessToken(
+        "kaya-refresh-token",
+        vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 })),
+      ),
+    ).rejects.toMatchObject<KayaApiError>({
+      message: "Kaya token refresh failed (401)",
+      status: 401,
+    });
+
+    await expect(
+      refreshKayaAccessToken(
+        "kaya-refresh-token",
+        vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ message: "ok" })),
+      ),
+    ).rejects.toThrow("Kaya token refresh returned an invalid response");
+  });
+
   it("preserves credential error metadata", () => {
     const cause = new Error("network");
     const error = new KayaInvalidCredentialsError({ cause });
