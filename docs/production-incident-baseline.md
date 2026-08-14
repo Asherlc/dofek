@@ -23367,22 +23367,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
-## 2026-08-14 — Legacy Hang Ten Apple Health workouts classified as strength
+## 2026-08-14 — Short Hang Ten/WHOOP strength workouts classified as strength
 
 - **Status:** Resolved with a direct, atomic production data correction; no
   deployment was required.
-- **Symptoms / impact:** Two historical Hang Ten workouts appeared as
-  strength activities instead of Hangboarding. No Strong- or WHOOP-attributed
-  workout was affected.
-- **Evidence / root cause:** The exact six-month predicate found two active
-  `apple_health` strength rows below 20 minutes (8.25 and 7.68 minutes). Both
-  retained `raw.sourceName = 'Hang Ten'`, reflecting imports that predated the
-  canonical Hang Ten reclassification path.
-- **Fix / mitigation:** In one transaction, updated only those rows'
-  `fitness.activity.canonical_type` from `strength` to `hangboard`. The
-  predicate excludes Strong and WHOOP in both `source_name` and
-  `raw.sourceName`, and requires a non-negative duration under 20 minutes.
-- **Validation:** The transaction updated two rows and the same post-update
+- **Symptoms / impact:** Twenty-one historical Hang Ten or WHOOP workouts
+  appeared as strength activities instead of Hangboarding. Four Peloton
+  strength workouts meeting the same duration threshold were deliberately left
+  unchanged.
+- **Evidence / root cause:** The six-month query found two active
+  `apple_health` rows with `raw.sourceName = 'Hang Ten'` (8.25 and 7.68
+  minutes), nine Apple Health rows attributed to WHOOP, and ten direct WHOOP
+  rows, including functional-fitness provider types. Each retained canonical
+  `strength` rather than the intended `hangboard` classification.
+- **Fix / mitigation:** In atomic transactions, updated those 21 rows'
+  `fitness.activity.canonical_type` from `strength` to `hangboard`. The final
+  predicate includes only `apple_health`, `apple_health_kit`, and `whoop`;
+  excludes Strong in both `source_name` and `raw.sourceName`; and requires a
+  non-negative duration under 20 minutes.
+- **Validation:** The first transaction updated two Hang Ten rows; the
+  corrected transaction updated 19 Apple Health/WHOOP rows. The final
   predicate returned zero rows. The canonical production SSH alias was also
   restored using GitHub's current `ORACLE_SERVER_HOST`; the stale Infisical
   `SERVER_HOST` value was not used.
