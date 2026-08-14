@@ -52,8 +52,8 @@ import { addBackgroundRefreshListener } from "../modules/background-refresh";
 import {
   addConnectionStateListener as addHeartRateConnectionStateListener,
   addHeartRateListener,
-  clearBufferedSamples as clearHeartRateBufferedSamples,
   confirmSamplesDrain as confirmHeartRateSamplesDrain,
+  disconnectAndClearBufferedSamples as disconnectAndClearHeartRateBufferedSamples,
   disconnect as disconnectHeartRate,
   isBluetoothAvailable as isHeartRateBluetoothAvailable,
   peekBufferedSamples as peekHeartRateSamples,
@@ -184,7 +184,7 @@ const bleHeartRateDeps = {
   scanAndConnect: scanAndConnectHeartRate,
   peekBufferedSamples: peekHeartRateSamples,
   confirmSamplesDrain: confirmHeartRateSamplesDrain,
-  clearBufferedSamples: clearHeartRateBufferedSamples,
+  disconnectAndClearBufferedSamples: disconnectAndClearHeartRateBufferedSamples,
   addConnectionStateListener: addHeartRateConnectionStateListener,
   addHeartRateListener,
   disconnect: disconnectHeartRate,

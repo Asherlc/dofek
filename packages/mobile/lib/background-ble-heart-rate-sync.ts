@@ -28,7 +28,7 @@ export interface BleHeartRateSyncDeps {
   scanAndConnect(): Promise<BleHeartRateDevice>;
   peekBufferedSamples(maxCount?: number): Promise<BleHeartRateSample[]>;
   confirmSamplesDrain(count: number): void;
-  clearBufferedSamples(): void;
+  disconnectAndClearBufferedSamples(): Promise<void>;
   addConnectionStateListener(callback: (event: ConnectionStateEvent) => void): {
     remove(): void;
   };
@@ -69,6 +69,8 @@ interface BleHeartRateSyncSession {
 }
 
 let currentSession: BleHeartRateSyncSession | null = null;
+let lifecycleGeneration = 0;
+let pendingNativeTeardown: Promise<void> = Promise.resolve();
 
 function publishState(next: Partial<BleHeartRateSyncState>): void {
   state = { ...state, ...next };
@@ -184,8 +186,11 @@ export async function initBackgroundBleHeartRateSync(
   uploadClient: BleHeartRateUploadClient,
   deps: BleHeartRateSyncDeps,
 ): Promise<void> {
-  teardownBackgroundBleHeartRateSync();
-  deps.clearBufferedSamples();
+  const generation = ++lifecycleGeneration;
+  const endingSession = detachCurrentSession();
+  await enqueueNativeTeardown(endingSession?.deps ?? deps);
+  if (generation !== lifecycleGeneration) return;
+
   const session: BleHeartRateSyncSession = { uploadClient, deps, activeDrain: null };
   currentSession = session;
 
@@ -270,8 +275,7 @@ export async function syncBleHeartRate(): Promise<void> {
   }
 }
 
-/** Stop the authenticated BLE heart-rate lifecycle and release its connection. */
-export function teardownBackgroundBleHeartRateSync(): void {
+function detachCurrentSession(): BleHeartRateSyncSession | null {
   const endingSession = currentSession;
   currentSession = null;
   stopForegroundTimers();
@@ -281,12 +285,31 @@ export function teardownBackgroundBleHeartRateSync(): void {
   appStateSubscription = null;
   connectionStateSubscription = null;
   heartRateSubscription = null;
-  endingSession?.deps.disconnect();
-  endingSession?.deps.clearBufferedSamples();
   publishState({
     bluetoothAvailable: false,
     connectionState: "disconnected",
     device: null,
     liveBpm: null,
   });
+  return endingSession;
+}
+
+function enqueueNativeTeardown(deps: BleHeartRateSyncDeps): Promise<void> {
+  const teardown = pendingNativeTeardown.then(() => deps.disconnectAndClearBufferedSamples());
+  pendingNativeTeardown = teardown.then(
+    () => undefined,
+    () => undefined,
+  );
+  return teardown;
+}
+
+/** Stop the authenticated BLE heart-rate lifecycle and fence its native samples. */
+export async function teardownBackgroundBleHeartRateSync(): Promise<void> {
+  lifecycleGeneration += 1;
+  const endingSession = detachCurrentSession();
+  if (!endingSession) {
+    await pendingNativeTeardown;
+    return;
+  }
+  await enqueueNativeTeardown(endingSession.deps);
 }

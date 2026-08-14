@@ -9,7 +9,7 @@ import type {
 
 const { mockInit, mockTeardown } = vi.hoisted(() => ({
   mockInit: vi.fn().mockResolvedValue(undefined),
-  mockTeardown: vi.fn(),
+  mockTeardown: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./background-ble-heart-rate-sync", () => ({
@@ -34,7 +34,7 @@ const deps = {
   scanAndConnect: vi.fn().mockResolvedValue({ id: "polar-123", name: "Polar H10" }),
   peekBufferedSamples: vi.fn().mockResolvedValue([]),
   confirmSamplesDrain: vi.fn(),
-  clearBufferedSamples: vi.fn(),
+  disconnectAndClearBufferedSamples: vi.fn().mockResolvedValue(undefined),
   addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
   addHeartRateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
   disconnect: vi.fn(),

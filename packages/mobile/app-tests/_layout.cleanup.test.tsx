@@ -222,7 +222,7 @@ vi.mock("../modules/whoop-ble", () => ({
 vi.mock("../modules/ble-heart-rate", () => ({
   addConnectionStateListener: vi.fn(),
   addHeartRateListener: vi.fn(),
-  clearBufferedSamples: vi.fn(),
+  disconnectAndClearBufferedSamples: vi.fn(() => Promise.resolve()),
   confirmSamplesDrain: vi.fn(),
   disconnect: vi.fn(),
   isBluetoothAvailable: vi.fn(),

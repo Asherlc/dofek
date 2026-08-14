@@ -636,7 +636,7 @@ vi.mock("./modules/ble-heart-rate", () => ({
   getBufferedSampleCount: vi.fn(() => 0),
   peekBufferedSamples: vi.fn(() => Promise.resolve([])),
   confirmSamplesDrain: vi.fn(),
-  clearBufferedSamples: vi.fn(),
+  disconnectAndClearBufferedSamples: vi.fn(() => Promise.resolve()),
   disconnect: vi.fn(),
   addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
   addHeartRateListener: vi.fn(() => ({ remove: vi.fn() })),

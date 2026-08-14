@@ -74,9 +74,9 @@ export function confirmSamplesDrain(count: number): void {
   BleHeartRateModule.confirmSamplesDrain(count);
 }
 
-/** Discard every buffered sample when authenticated session ownership changes. */
-export function clearBufferedSamples(): void {
-  BleHeartRateModule.clearBufferedSamples();
+/** Await native disconnect and discard all samples owned by the ending session. */
+export async function disconnectAndClearBufferedSamples(): Promise<void> {
+  await BleHeartRateModule.disconnectAndClearBufferedSamples();
 }
 
 /** Disconnect from the heart-rate monitor. */

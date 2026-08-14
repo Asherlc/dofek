@@ -17,6 +17,10 @@ export function useBleHeartRateSync(
       captureException(error, { source: "ble-heart-rate-sync-init" });
     });
 
-    return () => teardownBackgroundBleHeartRateSync();
+    return () => {
+      void teardownBackgroundBleHeartRateSync().catch((error: unknown) => {
+        captureException(error, { source: "ble-heart-rate-sync-teardown" });
+      });
+    };
   }, [uploadClient, deps]);
 }
