@@ -50,6 +50,30 @@ them, and the durability work they suggest.
   [CDC health runbook](clickhouse-cdc-health-runbook.md) before attempting any
   mirror recreation.
 
+## 2026-08-14 — Breathwork outcome schema drift
+
+- **Status:** Resolved. [DOFEK-SERVER-62](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-62)
+  was closed after the tracked migration was applied and its serving query was
+  verified in production.
+- **Symptoms / user impact:** `breathwork.outcomes` failed for users requesting
+  breathwork outcome summaries because PostgreSQL reported that
+  `stress_before` did not exist on `fitness.breathwork_session`.
+- **Evidence / root cause:** The error occurred in production release
+  `64ef0ac673f6ee96154c8cb6b15a2686d7489c21`. Direct production inspection
+  found the four columns from `0065_breathwork_outcome_reports.sql` absent even
+  though the migration journal contained the current 96 entries. This was
+  schema drift: migration history and the physical table disagreed.
+- **Fix / mitigation:** Applied the exact tracked
+  `drizzle/0065_breathwork_outcome_reports.sql` DDL directly to the production
+  database. The four outcome columns and their three check constraints are now
+  present; no fallback, retry, or application-side compatibility path was
+  added.
+- **Validation:** A read-only production outcome aggregation query completed
+  successfully after the repair. The reported Sentry issue is resolved.
+- **Remaining risk / follow-up:** Determine how the migration journal drifted
+  before adding any preventive automation. The next release should continue to
+  be observed for outcome-query errors.
+
 ## 2026-08-12 — Dependabot CI rejected new static-analysis contracts
 
 - **Status:** Fixed in this workspace; exact-head Dependabot CI verification is pending.
