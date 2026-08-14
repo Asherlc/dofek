@@ -9,6 +9,7 @@ const captureException = vi.hoisted(() => vi.fn());
 const loggerError = vi.hoisted(() => vi.fn());
 const operationRevision = "1000000000000000";
 const kafkaConsumerConnect = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerOn = vi.hoisted(() => vi.fn());
 const kafkaConsumerSubscribe = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerRun = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaAdminConnect = vi.hoisted(() => vi.fn(async () => undefined));
@@ -20,6 +21,14 @@ const kafkaProducerSend = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerFactory = vi.hoisted(() =>
   vi.fn(() => ({
     connect: kafkaConsumerConnect,
+    events: {
+      CRASH: "consumer.crash",
+      DISCONNECT: "consumer.disconnect",
+      GROUP_JOIN: "consumer.group_join",
+      REBALANCING: "consumer.rebalancing",
+      STOP: "consumer.stop",
+    },
+    on: kafkaConsumerOn,
     subscribe: kafkaConsumerSubscribe,
     run: kafkaConsumerRun,
   })),
@@ -124,6 +133,7 @@ describe("runMetricStreamEventConsumer", () => {
       topic: "metric-stream-v1",
       partition: 2,
       eventOffsets: ["12"],
+      heartbeat,
     });
     expect(resolveOffset).toHaveBeenCalledWith("12");
     expect(commitOffsetsIfNecessary).toHaveBeenCalled();
@@ -135,6 +145,7 @@ describe("runMetricStreamEventConsumer", () => {
       operationRevision,
     );
     const handleEvents = vi.fn(async () => undefined);
+    const heartbeat = vi.fn(async () => undefined);
     const quarantine = {
       connect: vi.fn(async () => undefined),
       write: vi.fn(async () => undefined),
@@ -159,7 +170,7 @@ describe("runMetricStreamEventConsumer", () => {
             ],
           },
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
-          heartbeat: vi.fn(async () => undefined),
+          heartbeat,
           resolveOffset: vi.fn(),
         });
       }),
@@ -176,6 +187,7 @@ describe("runMetricStreamEventConsumer", () => {
       topic: "metric-stream-v1",
       partition: 2,
       eventOffsets: ["20", "21"],
+      heartbeat,
     });
   });
 
@@ -386,6 +398,7 @@ describe("runMetricStreamEventConsumer", () => {
   it("writes malformed payloads durably before handling later events and committing", async () => {
     const order: string[] = [];
     const resolveOffset = vi.fn((offset: string) => order.push(`resolve:${offset}`));
+    const heartbeat = vi.fn(async () => undefined);
     const handleEvents = vi.fn(async () => {
       order.push("handle");
     });
@@ -411,7 +424,7 @@ describe("runMetricStreamEventConsumer", () => {
           commitOffsetsIfNecessary: vi.fn(async () => {
             order.push("commit");
           }),
-          heartbeat: vi.fn(async () => undefined),
+          heartbeat,
           resolveOffset,
         });
       }),
@@ -435,6 +448,7 @@ describe("runMetricStreamEventConsumer", () => {
       topic: "metric-stream-v1",
       partition: 2,
       eventOffsets: ["15"],
+      heartbeat,
     });
     expect(order).toEqual(["quarantine", "handle", "resolve:14", "resolve:15", "commit"]);
   });
@@ -445,6 +459,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     kafkaConstructor.mockClear();
     kafkaConsumerFactory.mockClear();
     kafkaConsumerConnect.mockClear();
+    kafkaConsumerOn.mockClear();
     kafkaConsumerSubscribe.mockClear();
     kafkaConsumerRun.mockClear();
     kafkaAdminConnect.mockClear();
@@ -541,5 +556,40 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       ],
     });
     expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+  });
+
+  it("forwards Kafka group lifecycle events to sink readiness", () => {
+    const { consumer } = createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
+      METRIC_STREAM_TOPIC: "metric-stream-v1",
+      REDPANDA_BROKERS: "redpanda:9092",
+    });
+    const readiness = {
+      markGroupJoined: vi.fn(),
+      markUnavailable: vi.fn(),
+    };
+
+    consumer.observeGroupLifecycle?.(readiness);
+
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.group_join", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.rebalancing", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.disconnect", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.stop", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.crash", expect.any(Function));
+
+    const groupJoinListener = kafkaConsumerOn.mock.calls.find(
+      ([eventName]) => eventName === "consumer.group_join",
+    )?.[1];
+    const unavailableListener = kafkaConsumerOn.mock.calls.find(
+      ([eventName]) => eventName === "consumer.rebalancing",
+    )?.[1];
+    if (typeof groupJoinListener !== "function" || typeof unavailableListener !== "function") {
+      throw new Error("expected Kafka lifecycle listeners");
+    }
+
+    groupJoinListener();
+    unavailableListener();
+
+    expect(readiness.markGroupJoined).toHaveBeenCalledOnce();
+    expect(readiness.markUnavailable).toHaveBeenCalledOnce();
   });
 });

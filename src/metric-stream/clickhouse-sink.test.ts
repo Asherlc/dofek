@@ -11,6 +11,7 @@ import {
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
 } from "./clickhouse-table.ts";
+import { MetricStreamConsumerReadiness } from "./consumer-readiness.ts";
 import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
@@ -163,6 +164,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("acknowledges a correlated batch only after its rows are applied", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
+    const heartbeat = vi.fn(async () => undefined);
     const query = makeEmptyGenerationQuery();
     const marker = createMetricStreamBatchCompletedEvent(
       {
@@ -180,11 +182,15 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         topic: "metric-stream-v1",
         partition: 2,
         eventOffsets: ["41", "42"],
+        heartbeat,
       },
     );
 
     expect(applied).toBe(1);
     expect(insert.mock.invocationCallOrder[0]).toBeLessThan(
+      command.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(heartbeat.mock.invocationCallOrder[0]).toBeLessThan(
       command.mock.invocationCallOrder[0] ?? 0,
     );
     expect(command).toHaveBeenCalledWith({
@@ -241,7 +247,12 @@ describe("applyMetricStreamEventsToClickHouse", () => {
           insert: vi.fn(async () => undefined),
         },
         [marker],
-        { topic: "metric-stream-v1", partition: 2, eventOffsets: [] },
+        {
+          topic: "metric-stream-v1",
+          partition: 2,
+          eventOffsets: [],
+          heartbeat: vi.fn(async () => undefined),
+        },
       ),
     ).rejects.toThrow("processing marker is missing its Kafka offset");
   });
@@ -261,6 +272,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         topic: "metric-stream-v1",
         partition: 2,
         eventOffsets: ["42"],
+        heartbeat: vi.fn(async () => undefined),
       }),
     ).rejects.toThrow(
       "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
@@ -626,6 +638,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     };
     const consumer = {
       connect: vi.fn(async () => undefined),
+      observeGroupLifecycle: vi.fn(),
       subscribe: vi.fn(async () => undefined),
       run: vi.fn(async () => undefined),
     };
@@ -651,7 +664,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
 
     const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
 
-    await runMetricStreamClickHouseSinkFromEnv();
+    await runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness());
 
     expect(createKafkaMetricStreamConsumerFromEnv).toHaveBeenCalledWith(
       "metric-stream-clickhouse-sink",
@@ -660,6 +673,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
       consumer,
       quarantine: expect.any(Object),
       topic: "metric-stream-v1",
+      lifecycleListener: expect.any(Object),
       handleEvents: expect.any(Function),
     });
 
@@ -671,6 +685,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
       topic: "metric-stream-v1",
       partition: 2,
       eventOffsets: ["42"],
+      heartbeat: vi.fn(async () => undefined),
     });
     expect(client.insert).toHaveBeenCalledOnce();
   });
@@ -686,8 +701,8 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
 
     const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
 
-    await expect(runMetricStreamClickHouseSinkFromEnv()).rejects.toThrow(
-      "ClickHouse metric-stream sink requires an insert-capable client",
-    );
+    await expect(
+      runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
+    ).rejects.toThrow("ClickHouse metric-stream sink requires an insert-capable client");
   });
 });

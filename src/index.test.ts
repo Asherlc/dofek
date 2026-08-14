@@ -124,7 +124,7 @@ vi.mock("./providers/apple-health/import.ts", () => ({
 
 const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefined);
 vi.mock("./metric-stream/clickhouse-sink.ts", () => ({
-  runMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
+  startMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
 }));
 
 // Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)

@@ -23664,3 +23664,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   confirm subsequent Wahoo runs complete without `access_token_expired` failures
   or reconnect prompts. If the refresh endpoint rejects a credential, retain the
   existing reconnect flow rather than retrying it.
+
+## 2026-08-14 — Withings data remained delayed behind the metric-stream sink
+
+- **Status:** Fixed in the workspace; production deployment and post-deploy
+  drain verification are pending.
+- **Symptoms / impact:** A completed Withings operation remained delayed for
+  activities, sleep, recovery, training, body, and data sources. Its relational
+  writes completed, but none of its four metric-stream processing batches had a
+  ClickHouse acknowledgement, so the dashboard continued to show data last
+  ready 17 hours earlier.
+- **Evidence / root cause:** The exact unhealthy dependency was
+  `metric-stream-clickhouse-sink`: its consumer group had 3,744,376 records of
+  lag while the required Withings offsets remained retained. The first recurring
+  sink error was `Response Heartbeat(...) error: "The coordinator is not aware
+  of this member"`, followed by failed offset commits and group rejoins. The
+  sink only called KafkaJS `heartbeat()` after its full ClickHouse batch handler
+  returned, so slow writes exceeded the consumer session window. KafkaJS
+  documents that `eachBatch` handlers must heartbeat during slow work
+  ([KafkaJS consumer guide](https://kafka.js.org/docs/2.0.0/consuming)). The R2
+  archive independently failed on delete events with `key interpolation:
+  method string: lower slice bound 11 must be lower than or equal to upper
+  bound (4) and target length (4)`: delete payloads deliberately have no
+  `recordedAt`, which evaluated as `null`. Redpanda Connect supplies Kafka
+  record timestamp metadata for every input message
+  ([Redpanda Connect input metadata](https://docs.redpanda.com/connect/components/inputs/redpanda/)).
+- **Fix / mitigation:** Pass the Kafka heartbeat through the consumer batch
+  context and heartbeat after bounded ClickHouse writes and control operations.
+  Add a sink `/readyz` endpoint driven by Kafka group join/rebalance/disconnect
+  lifecycle events and make Swarm health checks call it. Partition R2 object
+  keys from Kafka record timestamps rather than payload `recordedAt`, and rotate
+  the immutable Swarm config to `metric_stream_r2_archive_config_v3`. No retry,
+  timeout extension, or failure suppression was added.
+- **Validation:** New readiness and heartbeat regressions pass (121 selected
+  tests), TypeScript typecheck passes, and Redpanda Connect 4.99.0 lint accepts
+  the archive configuration with a representative environment. Production
+  verification must confirm a healthy sink task, falling ClickHouse group lag,
+  fresh R2 objects, and the four Withings processing acknowledgements.
+- **Remaining risk / follow-up:** The R2 consumer offset predates Redpanda's
+  retained range, so historical archive objects for the expired range require a
+  separately approved recovery plan. Production also lacks
+  `WITHINGS_CLIENT_ID`; it is not the cause of this completed operation but must
+  be provisioned before a future Withings authorization or token refresh.

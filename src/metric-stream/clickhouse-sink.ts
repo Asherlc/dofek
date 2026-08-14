@@ -10,6 +10,10 @@ import {
   PROVIDER_DATA_GENERATION_TABLE,
 } from "./clickhouse-table.ts";
 import {
+  createMetricStreamConsumerReadinessServer,
+  MetricStreamConsumerReadiness,
+} from "./consumer-readiness.ts";
+import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
   type MetricStreamBatchCompletedEventV1,
@@ -60,6 +64,8 @@ export interface ClickHouseMetricStreamRow {
   is_deleted: 0 | 1;
   version: number | string;
 }
+
+const MAX_METRIC_STREAM_ROWS_PER_WRITE = 1_000;
 
 function isClickHouseReplicatedEvent(event: MetricStreamRowEvent): boolean {
   return event.channel !== "imu";
@@ -497,6 +503,11 @@ export async function applyMetricStreamEventsToClickHouse(
 ): Promise<number> {
   let inserted = 0;
   let rowBuffer: MetricStreamRowEvent[] = [];
+  const heartbeat = async (): Promise<void> => {
+    if (context) {
+      await context.heartbeat();
+    }
+  };
   const flushRows = async () => {
     if (rowBuffer.length === 0) return;
     const replicatedEvents = rowBuffer.filter(isClickHouseReplicatedEvent);
@@ -517,6 +528,7 @@ export async function applyMetricStreamEventsToClickHouse(
     await tombstoneMetricStreamIds(client, staleEventIds);
     inserted += currentGenerationEvents.length;
     rowBuffer = [];
+    await heartbeat();
   };
 
   const acknowledgeProcessingBatch = async (
@@ -571,12 +583,16 @@ export async function applyMetricStreamEventsToClickHouse(
   for (const [eventIndex, event] of events.entries()) {
     if (isMetricStreamBatchCompletedEvent(event)) {
       await flushRows();
+      await heartbeat();
       await acknowledgeProcessingBatch(event, eventIndex);
+      await heartbeat();
       continue;
     }
     if (isMetricStreamDeletedEvent(event)) {
       await flushRows();
+      await heartbeat();
       if ("eventId" in event && (await isMetricStreamDeletionAcknowledged(client, event.eventId))) {
+        await heartbeat();
         continue;
       }
       await markMetricStreamScopeDeletedInClickHouse(
@@ -585,9 +601,13 @@ export async function applyMetricStreamEventsToClickHouse(
         "eventId" in event ? event.eventId : undefined,
         "operationRevision" in event ? event.operationRevision : undefined,
       );
+      await heartbeat();
       continue;
     }
     rowBuffer.push(event);
+    if (rowBuffer.length >= MAX_METRIC_STREAM_ROWS_PER_WRITE) {
+      await flushRows();
+    }
   }
 
   await flushRows();
@@ -600,7 +620,9 @@ function hasClickHouseInsertClient(
   return typeof client.insert === "function";
 }
 
-export async function runMetricStreamClickHouseSinkFromEnv(): Promise<void> {
+export async function runMetricStreamClickHouseSinkFromEnv(
+  readiness: MetricStreamConsumerReadiness,
+): Promise<void> {
   const client = createClickHouseClientFromEnv();
   if (!hasClickHouseInsertClient(client)) {
     throw new Error("ClickHouse metric-stream sink requires an insert-capable client");
@@ -609,13 +631,24 @@ export async function runMetricStreamClickHouseSinkFromEnv(): Promise<void> {
   const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv(
     "metric-stream-clickhouse-sink",
   );
-
+  if (!consumer.observeGroupLifecycle) {
+    throw new Error("ClickHouse metric-stream sink requires Kafka group lifecycle events");
+  }
   await runMetricStreamEventConsumer({
     consumer,
     quarantine,
     topic,
+    lifecycleListener: readiness,
     handleEvents: async (events, context) => {
       await applyMetricStreamEventsToClickHouse(client, events, context);
     },
   });
+}
+
+export async function startMetricStreamClickHouseSinkFromEnv(): Promise<void> {
+  const readiness = new MetricStreamConsumerReadiness();
+  const readinessServer = createMetricStreamConsumerReadinessServer(readiness);
+  readinessServer.listen(3001, "0.0.0.0");
+  readinessServer.unref();
+  await runMetricStreamClickHouseSinkFromEnv(readiness);
 }

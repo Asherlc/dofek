@@ -360,7 +360,11 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f metric-stream-clickhouse-sink || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "node -e 'fetch(\"http://127.0.0.1:3001/readyz\").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -385,7 +389,7 @@ services:
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
     configs:
-      - source: metric_stream_r2_archive_config_v2
+      - source: metric_stream_r2_archive_config_v3
         target: /connect/metric-stream-r2-archive.connect.yml
         mode: 0444
     deploy:
@@ -755,5 +759,5 @@ configs:
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and
   # the service rolls onto it — same convention as netdata_db_limits_v2.
-  metric_stream_r2_archive_config_v2:
+  metric_stream_r2_archive_config_v3:
     file: ./redpanda/metric-stream-r2-archive.connect.yml
