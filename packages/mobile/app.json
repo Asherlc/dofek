@@ -71,12 +71,6 @@
         }
       ],
       [
-        "expo-camera",
-        {
-          "cameraPermission": "Dofek uses the camera to scan food barcodes."
-        }
-      ],
-      [
         "expo-notifications",
         {
           "enableBackgroundRemoteNotifications": false
