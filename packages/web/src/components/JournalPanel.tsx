@@ -7,7 +7,6 @@ import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
-import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 import { ChartRangeProvider } from "./DofekChart.tsx";
 import { PaginationControls } from "./PaginationControls.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -109,7 +108,6 @@ type JournalEntry = z.infer<typeof entrySchema>;
 const JOURNAL_PAGE_SIZE = 20;
 
 function JournalLog({ days }: { days: TimeRangeDays }) {
-  const [showModal, setShowModal] = useState(false);
   const [page, setPage] = useState(0);
   const utils = trpc.useUtils();
   const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
@@ -151,16 +149,6 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
 
   return (
     <div>
-      <div className="flex justify-end mb-3">
-        <button
-          type="button"
-          className="px-3 py-1.5 rounded-md text-sm font-medium bg-accent/15 text-accent hover:bg-accent/25"
-          onClick={() => setShowModal(true)}
-        >
-          + Add Entry
-        </button>
-      </div>
-
       {entriesQuery.isLoading && entriesQuery.data === undefined && (
         <QueryStatePanel variant="loading" height={96} />
       )}
@@ -209,17 +197,6 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
       {deleteMutation.error ? (
         <p className="text-xs text-red-400 mt-3">{deleteMutation.error.message}</p>
       ) : null}
-
-      {showModal && (
-        <AddJournalEntryModal
-          isOpen={showModal}
-          onClose={() => setShowModal(false)}
-          onSuccess={() => {
-            setShowModal(false);
-            utils.journal.entries.invalidate();
-          }}
-        />
-      )}
     </div>
   );
 }
