@@ -2,7 +2,6 @@ import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getMobileAuthExchangeStoreRef,
-  getOAuthStateStoreRef,
   getPendingEmailSignupStoreRef,
   oauthSuccessHtml,
 } from "./auth/shared.ts";
@@ -647,6 +646,10 @@ describe("createAuthRouter", () => {
       });
       const { app, fakeDb } = createTestApp();
       vi.mocked(fakeDb.execute).mockResolvedValue([]);
+      const res = await request(app, "get", "/api/auth/me");
+      expect(res.status).toBe(401);
+    });
+
   describe("GET /callback", () => {
     it("returns OK for bare GET with no params", async () => {
       const { app } = createTestApp();
