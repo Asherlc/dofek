@@ -631,6 +631,13 @@
       "when": 1786569600000,
       "tag": "0087_sync_log_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1786573200000,
+      "tag": "0088_external_write_api",
+      "breakpoints": true
     }
   ]
 }

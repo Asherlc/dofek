@@ -9,6 +9,25 @@ The public protocol is versioned REST at `/api/external/v1`, described by
 tRPC remains the internal first-party API and is not a public integration
 contract.
 
+## Client credentials and browser authorization
+
+An administrator provisions an external client with
+`POST /api/external/v1/clients` using the existing Dofek `session` cookie. The
+response contains a client ID and client secret exactly once. Dofek stores only
+a SHA-256 hash of the secret; logs and database rows never contain the raw
+value. Clients send `Authorization: Bearer <clientId>.<clientSecret>`.
+Administrators can rotate or revoke credentials through the corresponding
+session-authenticated routes; revocation immediately revokes all grants for
+that client.
+
+`link/start` stores an S256 PKCE challenge and returns a short-lived
+authorization URL. The URL requires an existing Dofek browser session and
+displays a consent form. Approval posts to `link/authorize`, which redirects
+to the exact URI registered at start with `code`, `link_id`, and optional
+`state`. The random code is hashed at rest, expires after 60 seconds, and is
+consumed once. Exchange requires the original client credential, link ID, code,
+verifier, and application-owned external subject.
+
 ## Ownership boundary
 
 External applications own their provider credentials, installations, pending
@@ -131,6 +150,14 @@ replayed events are rejected. This follows the raw-body and timestamp replay
 protection pattern documented by
 [Slack](https://api.slack.com/docs/verifying-requests-from-slack), without
 making Slack a Dofek API dependency.
+
+The first implementation deliberately defers callback delivery and callback
+registration. The contract does not yet define callback URL registration,
+secret provisioning and rotation, retry policy, delivery status, or whether a
+callback may be delivered after every grant is revoked. The implemented
+`erasure/ack` route remains available for a separately delivered event, but no
+server-side callback worker or ungrounded delivery route is added until those
+semantics are specified.
 
 ## Error envelope
 

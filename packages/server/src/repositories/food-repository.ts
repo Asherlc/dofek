@@ -360,6 +360,7 @@ export class FoodSearchResult {
 // ---------------------------------------------------------------------------
 
 export interface CreateFoodEntryInput {
+  externalId?: string | null;
   date: string;
   meal?: string | null;
   foodName: string;
@@ -807,10 +808,10 @@ export class FoodRepository {
       nutrientValueClauses.length > 0
         ? sql`WITH new_entry AS (
           INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description,
+            user_id, provider_id, external_id, date, meal, food_name, food_description,
             category, number_of_units, nutrition_grain
           ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
             ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
             ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
           ) RETURNING id
@@ -823,10 +824,10 @@ export class FoodRepository {
         )
         SELECT id FROM new_entry`
         : sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description,
+            user_id, provider_id, external_id, date, meal, food_name, food_description,
             category, number_of_units, nutrition_grain
           ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
             ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
             ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
           ) RETURNING id`,
