@@ -13832,7 +13832,7 @@ packages:
         optional: true
 
   posthog-react-native@4.61.2:
-    resolution: {integrity: sha512-AaLU4Lyst9M4E16kqf5F7fdxuOFQv8g9m6mH2pJydXsWUx/Rm6aLk6CZ1/EpfspCKaAhO32TVoQkBI/x4ZpVbMw==}
+    resolution: {integrity: sha512-AaLU4Lyst9M4E16kqf5F7fdxuOFu8g9m6mH2pJydXsWUx/Rm6aLk6CZ1/EpfspCKaAhO32TVoQkBI/x4ZpVbMw==}
     hasBin: true
     peerDependencies:
       '@posthog/react-native-plugin': '>= 2.2.0'
