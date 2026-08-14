@@ -98,8 +98,7 @@ Compose config plus container inspection before changing the profile. Do not
 add retries or waits to the review workflow.
 
 This topology currently validates browser paths. It is not a complete mobile
-write-path environment because the metric-stream broker prerequisites are
-missing; that confirmed gap is tracked in
+write-path environment; that confirmed gap is tracked in
 [#1806](https://github.com/Asherlc/dofek/issues/1806).
 
 ### Native FIT Decoder
