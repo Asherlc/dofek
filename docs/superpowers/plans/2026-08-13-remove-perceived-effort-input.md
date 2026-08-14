@@ -83,7 +83,7 @@ rtk pnpm lint
 
 Expected: The search has no matches; the activity-detail test files pass; typecheck and lint exit successfully. The project rule against absence tests applies, so no new test is introduced solely to assert that the input is gone.
 
-- [ ] **Step 5: Commit and push only this task's files**
+- [x] **Step 5: Commit and push only this task's files**
 
 ```bash
 rtk git add \
