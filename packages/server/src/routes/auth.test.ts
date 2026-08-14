@@ -505,7 +505,6 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain("oauth.example.com/authorize");
     });
-
   });
 
   describe("POST /auth/login/password", () => {
