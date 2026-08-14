@@ -22,13 +22,6 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   ownership for exercises and provider aliases from historical strength sets,
   in bounded batches, then verifies that no attributable rows were missed.
   - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
-- `backfill-slack-team-memberships.ts`: Verifies every stored Slack bot token
-  against its recorded workspace, uses team-qualified Slack API responses to
-  reconstruct legacy Dofek memberships, and fails before writing on missing
-  scopes or ambiguous identities. It defaults to a dry run.
-  - Dry run: `DATABASE_URL=... pnpm backfill:slack-team-memberships`
-  - Execute: `DATABASE_URL=... pnpm backfill:slack-team-memberships -- --execute`
-
 ## Environment & Secrets
 
 - `dev-environment.ts`: Idempotent bootstrap and verification for the
@@ -65,11 +58,6 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Docker documents [Compose project-name isolation](https://docs.docker.com/compose/how-tos/project-name/) and the [`--project-directory` option](https://docs.docker.com/reference/cli/docker/compose/).
 - `compose-env.ts`: Generates workspace-specific ports and connection URLs in `.env.local`; `--up` also starts Postgres, ClickHouse, and Redis through the pinned Compose identity.
 - `run-tests.ts`: Starts the workspace Compose dependencies, validates `.env.local`, and runs the requested integration-inclusive Vitest tier with `TEST_DATABASE_URL` set.
-- `conductor-archive.ts`: Conductor archive hook that removes Docker Compose resources for the current workspace Compose project.
-  - Runs `docker compose down --remove-orphans --volumes` for the default compose file and `docker-compose.e2e.yml` using the physical workspace identity.
-  - Removes any remaining containers labeled with the current workspace's Compose project name.
-  - Preserves shared images and build cache; Docker documents the exact [`down --volumes` scope](https://docs.docker.com/reference/cli/docker/compose/down/).
-  - Usage: `pnpm tsx scripts/conductor-archive.ts`
 - `check-dns-records.sh`: Validates that every domain in `deploy/stack.yml` has a matching record in `deploy/dns.tf`. Prevents 521 errors due to missing DNS records.
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema modules (`src/db/schema/`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.

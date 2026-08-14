@@ -158,6 +158,9 @@ export const fileUploadOutbox = fitness.table(
 // Sync log — tracks reliability per provider per data type
 // ============================================================
 
+export const syncLogOrigins = ["manual", "scheduled", "unknown"] as const;
+export type SyncLogOrigin = (typeof syncLogOrigins)[number];
+
 export const syncLog = fitness.table(
   "sync_log",
   {
@@ -171,6 +174,7 @@ export const syncLog = fitness.table(
       .references(() => userProfile.id),
     dataType: text("data_type").notNull(),
     status: text("status").notNull(),
+    origin: text("origin").notNull().default("unknown"),
     recordCount: integer("record_count").default(0),
     errorMessage: text("error_message"),
     authFailureReason: text("auth_failure_reason"),
@@ -184,8 +188,16 @@ export const syncLog = fitness.table(
       table.providerId,
       table.syncedAt.desc(),
     ),
+    index("sync_log_user_origin_status_provider_synced_at_idx").on(
+      table.userId,
+      table.origin,
+      table.status,
+      table.providerId,
+      table.syncedAt.desc(),
+    ),
     index("sync_log_provider_type_idx").on(table.providerId, table.dataType, table.syncedAt),
     index("sync_log_synced_at_idx").on(table.syncedAt),
+    check("sync_log_origin_valid", sql`${table.origin} IN ('manual', 'scheduled', 'unknown')`),
   ],
 );
 

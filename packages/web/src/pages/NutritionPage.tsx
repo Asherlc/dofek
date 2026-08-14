@@ -16,19 +16,16 @@ import {
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useMemo, useState } from "react";
 import { z } from "zod";
-import { AddFoodModal, type FoodFormData, type MealType } from "../components/AddFoodModal.tsx";
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
 import { NutritionIntakeContext } from "../components/NutritionIntakeContext.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { locallyReportedErrorMeta } from "../lib/query-client.ts";
-import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
-const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "other"];
+const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
 
-const MEAL_LABELS: Record<MealType, string> = {
+const MEAL_LABELS: Record<(typeof MEAL_ORDER)[number], string> = {
   breakfast: "Breakfast",
   lunch: "Lunch",
   dinner: "Dinner",
@@ -68,11 +65,7 @@ export function getFoodEntryNutrientDetails(entry: FoodEntry): FoodEntryNutrient
 
 export function NutritionPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalMealType, setModalMealType] = useState<MealType>("breakfast");
   const [collapsedMeals, setCollapsedMeals] = useState<Set<string>>(new Set());
-  const [aiMealInput, setAiMealInput] = useState("");
-  const [aiMealInputError, setAiMealInputError] = useState<string | null>(null);
 
   const dateString = formatDateForQuery(selectedDate);
 
@@ -80,26 +73,6 @@ export function NutritionPage() {
     { date: dateString },
     { placeholderData: (previousData) => previousData },
   );
-  const createMutation = trpc.food.create.useMutation({
-    onSuccess: () => {
-      foodQuery.refetch();
-      setModalOpen(false);
-    },
-  });
-  const deleteMutation = trpc.food.delete.useMutation({
-    onSuccess: () => {
-      foodQuery.refetch();
-    },
-  });
-  const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation({
-    meta: locallyReportedErrorMeta,
-  });
-  const createAiEntryMutation = trpc.food.create.useMutation({
-    meta: locallyReportedErrorMeta,
-  });
-  type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
-  const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
-
   const selectedDateFood =
     foodQuery.data === undefined ? undefined : selectedDateFoodV2Schema.parse(foodQuery.data);
   const entries = selectedDateFood?.entries ?? [];
@@ -140,29 +113,6 @@ export function NutritionPage() {
     setSelectedDate(new Date());
   }
 
-  function openAddFood(mealType: MealType) {
-    setModalMealType(mealType);
-    setModalOpen(true);
-  }
-
-  function handleAddFood(data: FoodFormData) {
-    createMutation.mutate({
-      date: dateString,
-      foodName: data.foodName,
-      meal: data.meal,
-      calories: data.calories,
-      proteinG: data.proteinG,
-      carbsG: data.carbsG,
-      fatG: data.fatG,
-      foodDescription: data.foodDescription || null,
-      nutrients: data.nutrients,
-    });
-  }
-
-  function handleDeleteFood(id: string) {
-    deleteMutation.mutate({ id });
-  }
-
   function toggleMeal(mealType: string) {
     setCollapsedMeals((prev) => {
       const next = new Set(prev);
@@ -172,383 +122,238 @@ export function NutritionPage() {
     });
   }
 
-  async function handleAiMealSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedInput = aiMealInput.trim();
-    if (!trimmedInput) return;
-
-    setAiMealInputError(null);
-    try {
-      const parsedResult = await analyzeItemsMutation.mutateAsync({ description: trimmedInput });
-      setPendingAiMealItems(parsedResult.items);
-    } catch (error) {
-      captureException(error, { context: "nutrition-ai-meal-input" });
-      const errorMessage =
-        error instanceof Error ? error.message : "Could not log this meal with AI input";
-      setAiMealInputError(errorMessage);
-    }
-  }
-
-  async function handleConfirmAiMeal() {
-    if (pendingAiMealItems.length === 0) return;
-
-    setAiMealInputError(null);
-    try {
-      for (const parsedItem of pendingAiMealItems) {
-        await createAiEntryMutation.mutateAsync({
-          date: dateString,
-          nutrients: {},
-          ...parsedItem,
-        });
-      }
-      await foodQuery.refetch();
-      setAiMealInput("");
-      setPendingAiMealItems([]);
-    } catch (error) {
-      captureException(error, { context: "nutrition-ai-meal-confirm" });
-      const errorMessage =
-        error instanceof Error ? error.message : "Could not log this meal with AI input";
-      setAiMealInputError(errorMessage);
-    }
-  }
-
-  function handleAiMealInputChange(value: string) {
-    setAiMealInput(value);
-    setPendingAiMealItems([]);
-  }
-
   return (
-    <>
-      <div className="mx-auto max-w-3xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        {/* Date selector */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={goToPreviousDay}
-              className="rounded-lg p-2 text-muted hover:text-foreground hover:bg-accent/10 transition-colors"
-              aria-label="Previous day"
+    <div className="mx-auto max-w-3xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+      {/* Date selector */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={goToPreviousDay}
+            className="rounded-lg p-2 text-muted hover:text-foreground hover:bg-accent/10 transition-colors"
+            aria-label="Previous day"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="w-5 h-5"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="w-5 h-5"
-              >
-                <title>Previous day</title>
-                <path
-                  fillRule="evenodd"
-                  d="M11.78 5.22a.75.75 0 010 1.06L8.06 10l3.72 3.72a.75.75 0 11-1.06 1.06l-4.25-4.25a.75.75 0 010-1.06l4.25-4.25a.75.75 0 011.06 0z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
-            <h2 className="text-lg font-semibold">{formatDateForDisplay(selectedDate)}</h2>
-            <button
-              type="button"
-              onClick={goToNextDay}
-              className="rounded-lg p-2 text-muted hover:text-foreground hover:bg-accent/10 transition-colors"
-              aria-label="Next day"
+              <title>Previous day</title>
+              <path
+                fillRule="evenodd"
+                d="M11.78 5.22a.75.75 0 010 1.06L8.06 10l3.72 3.72a.75.75 0 11-1.06 1.06l-4.25-4.25a.75.75 0 010-1.06l4.25-4.25a.75.75 0 011.06 0z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+          <h2 className="text-lg font-semibold">{formatDateForDisplay(selectedDate)}</h2>
+          <button
+            type="button"
+            onClick={goToNextDay}
+            className="rounded-lg p-2 text-muted hover:text-foreground hover:bg-accent/10 transition-colors"
+            aria-label="Next day"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="w-5 h-5"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="w-5 h-5"
-              >
-                <title>Next day</title>
-                <path
-                  fillRule="evenodd"
-                  d="M8.22 5.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 010-1.06z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
-          </div>
-          {!isToday(selectedDate) && (
-            <button
-              type="button"
-              onClick={goToToday}
-              className="rounded-lg border border-border-strong px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/10 transition-colors"
-            >
-              Today
-            </button>
-          )}
+              <title>Next day</title>
+              <path
+                fillRule="evenodd"
+                d="M8.22 5.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 010-1.06z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
         </div>
+        {!isToday(selectedDate) && (
+          <button
+            type="button"
+            onClick={goToToday}
+            className="rounded-lg border border-border-strong px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/10 transition-colors"
+          >
+            Today
+          </button>
+        )}
+      </div>
 
-        {/* Loading state */}
-        {isFoodBlockingLoading && <ChartLoadingSkeleton height={200} />}
+      {/* Loading state */}
+      {isFoodBlockingLoading && <ChartLoadingSkeleton height={200} />}
 
-        {foodQuery.error && <QueryStatePanel error={foodQuery.error} height={200} />}
+      {foodQuery.error && <QueryStatePanel error={foodQuery.error} height={200} />}
 
-        {selectedDateFood && (
-          <>
-            {/* Daily summary */}
-            {selectedDateFood.intakeContext && (
-              <NutritionIntakeContext context={selectedDateFood.intakeContext} />
-            )}
+      {selectedDateFood && (
+        <>
+          {/* Daily summary */}
+          {selectedDateFood.intakeContext && (
+            <NutritionIntakeContext context={selectedDateFood.intakeContext} />
+          )}
 
-            {selectedDateFood.resolution.sourceProviders.length > 0 &&
-              selectedDateFood.resolution.status === "available" && (
-                <section
-                  className="rounded-xl border border-border bg-surface-solid px-4 py-3"
-                  aria-label="Nutrition source resolution"
-                >
-                  <p className="text-xs font-medium uppercase tracking-wide text-subtle">
-                    Source coverage
-                  </p>
-                  {selectedDateFood.resolution.contributionLabel && (
-                    <p className="mt-1 font-medium text-foreground">
-                      {selectedDateFood.resolution.contributionLabel}
-                    </p>
-                  )}
-                  <p className="mt-1 text-sm text-muted">{selectedDateFood.resolution.message}</p>
-                  {selectedDateFood.resolution.excludedSourceLabels.length > 0 && (
-                    <p className="mt-1 text-xs text-subtle">
-                      Excluded overlapping sources:{" "}
-                      {selectedDateFood.resolution.excludedSourceLabels.join(", ")}
-                    </p>
-                  )}
-                </section>
-              )}
-
-            {selectedDateFood.resolution.status === "source_conflict" && (
-              <div
-                role="alert"
-                className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-foreground"
-              >
-                <p className="font-medium">Nutrition source conflict</p>
-                <p className="mt-1 text-muted">{selectedDateFood.resolution.message}</p>
-                <p className="mt-2 text-xs text-subtle">
-                  Sources: {selectedDateFood.resolution.sourceLabels.join(", ")}
-                </p>
-              </div>
-            )}
-
-            {selectedDateFood.summary && (
+          {selectedDateFood.resolution.sourceProviders.length > 0 &&
+            selectedDateFood.resolution.status === "available" && (
               <section
-                className="rounded-xl border border-border bg-surface-solid p-5 space-y-5"
-                aria-labelledby="nutrition-composition-heading"
+                className="rounded-xl border border-border bg-surface-solid px-4 py-3"
+                aria-label="Nutrition source resolution"
               >
-                {/* Macro bars */}
-                <div className="space-y-3">
-                  <p
-                    id="nutrition-composition-heading"
-                    className="text-xs font-medium uppercase tracking-wide text-subtle"
-                  >
-                    Observed intake composition
+                <p className="text-xs font-medium uppercase tracking-wide text-subtle">
+                  Source coverage
+                </p>
+                {selectedDateFood.resolution.contributionLabel && (
+                  <p className="mt-1 font-medium text-foreground">
+                    {selectedDateFood.resolution.contributionLabel}
                   </p>
-                  <div>
-                    <h3 className="text-sm font-medium text-foreground">Share of energy</h3>
-                    <p className="text-xs text-subtle">Logged grams are shown separately.</p>
-                  </div>
-                  <MacroBar
-                    label="Protein"
-                    grams={selectedDateFood.summary.macros.protein.grams}
-                    energySharePercentage={
-                      selectedDateFood.summary.macros.protein.energySharePercentage
-                    }
-                    color="blue"
-                  />
-                  <MacroBar
-                    label="Carbs"
-                    grams={selectedDateFood.summary.macros.carbs.grams}
-                    energySharePercentage={
-                      selectedDateFood.summary.macros.carbs.energySharePercentage
-                    }
-                    color="purple"
-                  />
-                  <MacroBar
-                    label="Fat"
-                    grams={selectedDateFood.summary.macros.fat.grams}
-                    energySharePercentage={
-                      selectedDateFood.summary.macros.fat.energySharePercentage
-                    }
-                    color="teal"
-                  />
-                </div>
+                )}
+                <p className="mt-1 text-sm text-muted">{selectedDateFood.resolution.message}</p>
+                {selectedDateFood.resolution.excludedSourceLabels.length > 0 && (
+                  <p className="mt-1 text-xs text-subtle">
+                    Excluded overlapping sources:{" "}
+                    {selectedDateFood.resolution.excludedSourceLabels.join(", ")}
+                  </p>
+                )}
               </section>
             )}
 
-            {/* Meal sections */}
-            {!isFoodBlockingLoading &&
-              MEAL_ORDER.map((mealType) => {
-                const mealEntries = mealGroups.get(mealType) ?? [];
-                const mealCalories = selectedDateFood.summary?.mealCalories[mealType] ?? null;
-                const isCollapsed = collapsedMeals.has(mealType);
-
-                return (
-                  <div
-                    key={mealType}
-                    className="rounded-xl border border-border bg-surface-solid overflow-hidden"
-                  >
-                    {/* Meal header */}
-                    <button
-                      type="button"
-                      onClick={() => toggleMeal(mealType)}
-                      className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-hover transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className={`w-4 h-4 text-subtle transition-transform ${isCollapsed ? "" : "rotate-90"}`}
-                        >
-                          <title>Toggle meal section</title>
-                          <path
-                            fillRule="evenodd"
-                            d="M8.22 5.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 010-1.06z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        <span className="text-sm font-medium text-foreground">
-                          {MEAL_LABELS[mealType]}
-                        </span>
-                        {mealEntries.length > 0 && (
-                          <span className="text-xs text-subtle">
-                            ({mealEntries.length} {mealEntries.length === 1 ? "item" : "items"})
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-sm text-muted tabular-nums">
-                        {mealCalories != null && mealCalories > 0
-                          ? formatCalories(mealCalories)
-                          : ""}
-                      </span>
-                    </button>
-
-                    {/* Meal entries */}
-                    {!isCollapsed && (
-                      <div className="border-t border-border">
-                        {mealEntries.length > 0 ? (
-                          <div className="px-2 py-1">
-                            {mealEntries.map((entry) => (
-                              <FoodEntryRow
-                                key={entry.id}
-                                foodName={entry.food_name ?? "Unnamed nutrition entry"}
-                                servingDescription={entry.food_description}
-                                calories={entry.calories ?? 0}
-                                nutrients={getFoodEntryNutrientDetails(entry)}
-                                onDelete={() => handleDeleteFood(entry.id)}
-                                deleting={deleteMutation.isPending}
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="px-5 py-4 text-sm text-dim">No entries yet</div>
-                        )}
-
-                        {/* Add food button */}
-                        <div className="border-t border-border px-5 py-2">
-                          <button
-                            type="button"
-                            onClick={() => openAddFood(mealType)}
-                            className="text-sm text-accent hover:text-accent-secondary transition-colors"
-                          >
-                            + Add food
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-          </>
-        )}
-
-        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-3">
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">AI meal input</h3>
-            <p className="text-xs text-subtle">
-              Describe what you ate and automatically split it into items to log.
-            </p>
-          </div>
-          <form onSubmit={handleAiMealSubmit} className="space-y-3">
-            <textarea
-              value={aiMealInput}
-              onChange={(event) => handleAiMealInputChange(event.target.value)}
-              placeholder='e.g. "two eggs, toast with butter, and coffee with milk"'
-              className="h-24 w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-            {aiMealInputError && (
-              <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
-                {aiMealInputError}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={
-                !aiMealInput.trim() ||
-                analyzeItemsMutation.isPending ||
-                createAiEntryMutation.isPending
-              }
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          {selectedDateFood.resolution.status === "source_conflict" && (
+            <div
+              role="alert"
+              className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-foreground"
             >
-              {analyzeItemsMutation.isPending || createAiEntryMutation.isPending
-                ? "Logging..."
-                : "Log with AI"}
-            </button>
-          </form>
-          {pendingAiMealItems.length > 0 && (
-            <div className="rounded-lg border border-border bg-page/60 p-3 space-y-3">
-              <div className="text-sm font-semibold text-foreground">Review AI meal</div>
-              <div className="space-y-2">
-                {pendingAiMealItems.map((item) => (
-                  <div
-                    key={`${item.meal}-${item.foodName}-${item.foodDescription}`}
-                    className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface-solid px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground">{item.foodName}</div>
-                      <div className="text-xs text-subtle">{item.foodDescription}</div>
-                    </div>
-                    <div className="text-xs font-semibold text-foreground whitespace-nowrap">
-                      {formatCalories(item.calories)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPendingAiMealItems([])}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmAiMeal}
-                  disabled={createAiEntryMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
-                </button>
-              </div>
+              <p className="font-medium">Nutrition source conflict</p>
+              <p className="mt-1 text-muted">{selectedDateFood.resolution.message}</p>
+              <p className="mt-2 text-xs text-subtle">
+                Sources: {selectedDateFood.resolution.sourceLabels.join(", ")}
+              </p>
             </div>
           )}
-        </div>
 
-        <div className="text-center text-xs font-medium text-subtle">
-          <a
-            href="https://www.fatsecret.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="transition-colors hover:text-foreground"
-          >
-            Powered by fatsecret Platform API
-          </a>
-        </div>
+          {selectedDateFood.summary && (
+            <section
+              className="rounded-xl border border-border bg-surface-solid p-5 space-y-5"
+              aria-labelledby="nutrition-composition-heading"
+            >
+              {/* Macro bars */}
+              <div className="space-y-3">
+                <p
+                  id="nutrition-composition-heading"
+                  className="text-xs font-medium uppercase tracking-wide text-subtle"
+                >
+                  Observed intake composition
+                </p>
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">Share of energy</h3>
+                  <p className="text-xs text-subtle">Logged grams are shown separately.</p>
+                </div>
+                <MacroBar
+                  label="Protein"
+                  grams={selectedDateFood.summary.macros.protein.grams}
+                  energySharePercentage={
+                    selectedDateFood.summary.macros.protein.energySharePercentage
+                  }
+                  color="blue"
+                />
+                <MacroBar
+                  label="Carbs"
+                  grams={selectedDateFood.summary.macros.carbs.grams}
+                  energySharePercentage={
+                    selectedDateFood.summary.macros.carbs.energySharePercentage
+                  }
+                  color="purple"
+                />
+                <MacroBar
+                  label="Fat"
+                  grams={selectedDateFood.summary.macros.fat.grams}
+                  energySharePercentage={selectedDateFood.summary.macros.fat.energySharePercentage}
+                  color="teal"
+                />
+              </div>
+            </section>
+          )}
+
+          {/* Meal sections */}
+          {!isFoodBlockingLoading &&
+            MEAL_ORDER.map((mealType) => {
+              const mealEntries = mealGroups.get(mealType) ?? [];
+              const mealCalories = selectedDateFood.summary?.mealCalories[mealType] ?? null;
+              const isCollapsed = collapsedMeals.has(mealType);
+
+              return (
+                <div
+                  key={mealType}
+                  className="rounded-xl border border-border bg-surface-solid overflow-hidden"
+                >
+                  {/* Meal header */}
+                  <button
+                    type="button"
+                    onClick={() => toggleMeal(mealType)}
+                    className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-hover transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className={`w-4 h-4 text-subtle transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+                      >
+                        <title>Toggle meal section</title>
+                        <path
+                          fillRule="evenodd"
+                          d="M8.22 5.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 010-1.06z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      <span className="text-sm font-medium text-foreground">
+                        {MEAL_LABELS[mealType]}
+                      </span>
+                      {mealEntries.length > 0 && (
+                        <span className="text-xs text-subtle">
+                          ({mealEntries.length} {mealEntries.length === 1 ? "item" : "items"})
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm text-muted tabular-nums">
+                      {mealCalories != null && mealCalories > 0 ? formatCalories(mealCalories) : ""}
+                    </span>
+                  </button>
+
+                  {/* Meal entries */}
+                  {!isCollapsed && (
+                    <div className="border-t border-border">
+                      {mealEntries.length > 0 ? (
+                        <div className="px-2 py-1">
+                          {mealEntries.map((entry) => (
+                            <FoodEntryRow
+                              key={entry.id}
+                              foodName={entry.food_name ?? "Unnamed nutrition entry"}
+                              servingDescription={entry.food_description}
+                              calories={entry.calories ?? 0}
+                              nutrients={getFoodEntryNutrientDetails(entry)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="px-5 py-4 text-sm text-dim">No entries yet</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </>
+      )}
+
+      <div className="text-center text-xs font-medium text-subtle">
+        <a
+          href="https://www.fatsecret.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="transition-colors hover:text-foreground"
+        >
+          Powered by fatsecret Platform API
+        </a>
       </div>
-
-      <AddFoodModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSubmit={handleAddFood}
-        defaultMealType={modalMealType}
-        submitting={createMutation.isPending}
-      />
-    </>
+    </div>
   );
 }

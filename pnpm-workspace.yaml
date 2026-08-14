@@ -23,8 +23,10 @@ packages:
   - packages/eight-sleep
   - packages/zwift-client
   - packages/zepp-client
+  - packages/kaya-client
   - packages/trainerroad-client
   - packages/velohero-client
+  - packages/mountain-project-client
   - packages/garmin-connect
   - packages/trainingpeaks-connect
   - packages/peloton-client
@@ -43,7 +45,6 @@ overrides:
   "@grpc/grpc-js": 1.14.4
   "@opentelemetry/core": 2.9.0
   "@protobufjs/utf8": 1.1.2
-  "@slack/bolt>path-to-regexp": 8.4.2
   "@xmldom/xmldom": 0.9.10
   "archiver@<8.0.0": 8.0.0
   axios: 1.18.1
@@ -119,12 +120,10 @@ minimumReleaseAgeExclude:
   - expo-dev-client@57.0.10 || 57.0.11
   - expo-dev-launcher@57.0.10 || 57.0.11
   - expo-dev-menu@57.0.10 || 57.0.11
-  - expo-location@57.0.7 || 57.0.8 || 57.0.9
   - expo-modules-core@57.0.8 || 57.0.9 || 57.0.10
   - expo-notifications@57.0.8 || 57.0.9 || 57.0.10
   - expo-router@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12
   - expo-sharing@57.0.8 || 57.0.10 || 57.0.11
-  - expo-task-manager@57.0.7 || 57.0.8 || 57.0.9
   - expo-updates@57.0.11 || 57.0.12 || 57.0.13
   - '@posthog/core@1.46.1'
   - posthog-node@5.47.3

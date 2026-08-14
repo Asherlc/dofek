@@ -20,7 +20,7 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Zwift.
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Zwift.
 - **Internal schedule providers**: Auto-Supplements materializes bounded,
   user-scoped supplement dose occurrences. It never writes food entries or
   infers that a planned dose was taken.

@@ -145,7 +145,7 @@ let backgroundDeliveryTypes: Set<HKSampleType> = {
     return types
 }()
 
-/// Types we want to write (dietary data back to HealthKit)
+/// Types used to remove legacy Dofek-written dietary samples from HealthKit.
 let writeTypes: Set<HKSampleType> = {
     var types = Set<HKSampleType>()
     let dietaryTypes: [HKQuantityTypeIdentifier] = [
@@ -161,10 +161,3 @@ let writeTypes: Set<HKSampleType> = {
     }
     return types
 }()
-
-func dietaryWriteQuantityType(for typeIdentifier: String) -> HKQuantityType? {
-    guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
-        return nil
-    }
-    return writeTypes.contains(quantityType) ? quantityType : nil
-}

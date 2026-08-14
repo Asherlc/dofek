@@ -445,6 +445,25 @@ describe("Apple Health Provider -- parsing", () => {
       );
     });
 
+    it("ignores non-text Hang Ten activity segment metadata", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": 1,
+        },
+      );
+
+      expect(result.hangTen?.rawActivitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toBeUndefined();
+    });
+
     it("accepts an empty Hang Ten activity segment array", () => {
       const result = parseWorkout(
         {

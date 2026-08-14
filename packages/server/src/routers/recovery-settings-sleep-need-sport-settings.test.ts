@@ -622,6 +622,31 @@ describe("settingsRouter", () => {
       expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
     });
 
+    it("invalidates all grade-dependent queries after changing climbing grade systems", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([
+          { key: "climbingGradeSystems", value: { boulder: "font", route: "french" } },
+        ]);
+      const invalidateByPrefix = vi.mocked(queryCache.invalidateByPrefix);
+      invalidateByPrefix.mockClear();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
+      });
+
+      await caller.set({
+        key: "climbingGradeSystems",
+        value: { boulder: "font", route: "french" },
+      });
+
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.");
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.training");
+    });
+
     it("throws when upsert fails", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -659,135 +684,6 @@ describe("settingsRouter", () => {
       expect(deleteQueries).toHaveLength(PROVIDER_ACCOUNT_TABLES.length + 5);
       expectCallsUseNonEmptySql(txExecute);
       expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
-    });
-  });
-
-  describe("slackStatus", () => {
-    const slackEnvKeys = [
-      "SLACK_CLIENT_ID",
-      "SLACK_SIGNING_SECRET",
-      "SLACK_BOT_TOKEN",
-      "SLACK_APP_TOKEN",
-    ] as const;
-
-    function withCleanSlackEnv() {
-      const previousValues = new Map<(typeof slackEnvKeys)[number], string | undefined>();
-      for (const key of slackEnvKeys) {
-        previousValues.set(key, process.env[key]);
-      }
-
-      for (const key of slackEnvKeys) {
-        delete process.env[key];
-      }
-
-      return () => {
-        for (const key of slackEnvKeys) {
-          const value = previousValues.get(key);
-          if (value === undefined) {
-            delete process.env[key];
-          } else {
-            process.env[key] = value;
-          }
-        }
-      };
-    }
-
-    it("returns slack status", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore([]),
-      });
-      const result = await caller.slackStatus();
-      expect(result).toHaveProperty("configured");
-      expect(result).toHaveProperty("connected");
-      expect(result.configured).toBe(false);
-      expect(result.connected).toBe(false);
-      restoreEnv();
-    });
-
-    it("returns connected when slack account exists", async () => {
-      const rows = [{ provider_account_id: "slack-123" }];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.slackStatus();
-      expect(result.connected).toBe(true);
-    });
-
-    it("returns configured when Socket Mode env vars are set", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_BOT_TOKEN = "xoxb-test";
-        process.env.SLACK_APP_TOKEN = "xapp-test";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(true);
-      } finally {
-        restoreEnv();
-      }
-    });
-
-    it("returns configured when OAuth env vars are set", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_CLIENT_ID = "client-id";
-        process.env.SLACK_SIGNING_SECRET = "signing-secret";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(true);
-      } finally {
-        restoreEnv();
-      }
-    });
-
-    it("requires both OAuth env vars", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_CLIENT_ID = "client-id";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        restoreEnv();
-      }
-    });
-
-    it("requires both Socket Mode env vars", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_BOT_TOKEN = "xoxb-test";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        restoreEnv();
-      }
     });
   });
 });

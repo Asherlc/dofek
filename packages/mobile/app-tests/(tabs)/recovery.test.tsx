@@ -103,7 +103,13 @@ function createRecoveryFixture(
     trends: null,
     dailyMetrics: [],
     weight: [],
-    bodyFat: [],
+    bodyFatTrend: [],
+    bodyFatPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      projectionLine: [],
+    },
     decisionContext: null,
     weightPrediction: {
       ratePerWeek: null,
@@ -355,19 +361,67 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(mockTodayPlanQueryCalls).toEqual([{ days: 30, endDate: "2026-07-26" }]);
   });
 
-  it("renders the server-authored body fat history", async () => {
+  it("toggles the shared trend card and chart between weight and body fat", async () => {
     mockRecoveryData = createRecoveryFixture({
-      bodyFat: [
-        { date: "2026-03-10", bodyFatPct: 21.4 },
-        { date: "2026-03-20", bodyFatPct: 20.9 },
+      weight: [
+        {
+          date: "2026-03-10",
+          rawWeight: 80.4,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
+          smoothedWeight: 80.2,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+        {
+          date: "2026-03-20",
+          rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
+          smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
       ],
+      bodyFatTrend: [
+        {
+          date: "2026-03-10",
+          rawBodyFatPct: 21.4,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 21.4,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+        {
+          date: "2026-03-20",
+          rawBodyFatPct: 20.9,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 20.9,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      bodyFatPrediction: {
+        ratePerWeek: -0.2,
+        rateConfidence: 0.8,
+        periodDeltas: { days7: -0.2, days14: -0.4, days30: -0.8 },
+        projectionLine: [],
+      },
     });
 
     const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
     render(<RecoveryScreen />);
 
-    expect(screen.getByText("BODY FAT %")).toBeTruthy();
+    expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
+    expect(screen.getByText("79.8 kg")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
+
+    expect(screen.getByText("TREND BODY FAT")).toBeTruthy();
     expect(screen.getByText("20.9%")).toBeTruthy();
+    expect(screen.getByText("-0.2%/wk")).toBeTruthy();
     expect(sparkLinePropsCalls.some((props) => props.data?.join(",") === "21.4,20.9")).toBe(true);
     const bodyFatTrend = screen.getByLabelText(
       "Body fat trend: 2026-03-10 21.4%; 2026-03-20 20.9%.",
@@ -375,6 +429,59 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(bodyFatTrend).toBeTruthy();
     expect(bodyFatTrend.style.flex).toBe("1 1 0%");
     expect(bodyFatTrend.style.marginLeft).toBe("16px");
+  });
+
+  it("switches the body trend from weight to body fat", async () => {
+    mockRecoveryData = createRecoveryFixture({
+      weight: [
+        {
+          date: "2026-03-20",
+          rawWeight: 80,
+          rawWeightStatus: { kind: "observed", label: "Observed" },
+          smoothedWeight: 79.8,
+          smoothedWeightStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      bodyFatTrend: [
+        {
+          date: "2026-03-10",
+          rawBodyFatPct: 21.4,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 21.4,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+        {
+          date: "2026-03-20",
+          rawBodyFatPct: 20.9,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 20.9,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      bodyFatPrediction: {
+        ratePerWeek: -0.2,
+        rateConfidence: 0.8,
+        periodDeltas: { days7: -0.2, days14: -0.4, days30: -0.8 },
+        projectionLine: [],
+      },
+    });
+
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("79.8 kg")).toBeTruthy();
+    expect(screen.queryByText("20.9%")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
+
+    expect(screen.queryByText("79.8 kg")).toBeNull();
+    expect(screen.getByText("20.9%")).toBeTruthy();
   });
 
   it("does not consume cached default-range data during preference hydration", async () => {

@@ -879,7 +879,7 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Settings — get, set, getAll, slackStatus
+  // Settings — get, set, getAll
   // ══════════════════════════════════════════════════════════════
   describe("settings", () => {
     it("set creates a setting and get retrieves it", async () => {
@@ -925,16 +925,6 @@ describe("Router data coverage", () => {
       const keys = result.map((r) => r.key);
       expect(keys).toContain("unitSystem");
       expect(keys).toContain("whoop.wearLocation");
-    });
-
-    it("slackStatus returns configured and connected booleans", async () => {
-      const result = await query<{ configured: boolean; connected: boolean }>(
-        "settings.slackStatus",
-      );
-      expect(typeof result.configured).toBe("boolean");
-      expect(typeof result.connected).toBe("boolean");
-      // Environment-dependent, just ensure they are booleans
-      expect(result.connected).toBe(false);
     });
   });
 
