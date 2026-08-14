@@ -526,17 +526,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
-  it("opens breathwork from recovery tools", async () => {
-    mockRecoveryData = {};
-
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
-    render(<RecoveryScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Breathwork" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/breathwork");
-  });
-
   it("opens behavior associations from recovery tools", async () => {
     mockRecoveryData = {};
 

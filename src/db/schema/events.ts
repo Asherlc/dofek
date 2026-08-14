@@ -448,46 +448,6 @@ export const personalExperimentCheckIn = fitness.table(
 );
 
 // ============================================================
-// Breathwork sessions
-// ============================================================
-
-export const breathworkSession = fitness.table(
-  "breathwork_session",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => userProfile.id),
-    techniqueId: text("technique_id").notNull(),
-    rounds: integer("rounds").notNull(),
-    durationSeconds: integer("duration_seconds").notNull(),
-    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
-    notes: text("notes"),
-    stressBefore: bigint("stress_before", { mode: "number" }),
-    stressAfter: bigint("stress_after", { mode: "number" }),
-    dizzinessAfter: boolean("dizziness_after"),
-    perceivedEffect: text("perceived_effect"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("breathwork_session_user_idx").on(table.userId),
-    index("breathwork_session_started_at_idx").on(table.startedAt.desc()),
-    check(
-      "breathwork_session_stress_before_range",
-      sql`${table.stressBefore} IS NULL OR ${table.stressBefore} BETWEEN 0 AND 10`,
-    ),
-    check(
-      "breathwork_session_stress_after_range",
-      sql`${table.stressAfter} IS NULL OR ${table.stressAfter} BETWEEN 0 AND 10`,
-    ),
-    check(
-      "breathwork_session_perceived_effect_valid",
-      sql`${table.perceivedEffect} IS NULL OR ${table.perceivedEffect} IN ('better', 'same', 'worse')`,
-    ),
-  ],
-);
-
-// ============================================================
 // Shared health reports
 // ============================================================
 
@@ -505,28 +465,6 @@ export const sharedReport = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("shared_report_user_idx").on(table.userId)],
-);
-
-// ============================================================
-// Menstrual cycle tracking
-// ============================================================
-
-export const menstrualPeriod = fitness.table(
-  "menstrual_period",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => userProfile.id),
-    startDate: date("start_date").notNull(),
-    endDate: date("end_date"),
-    notes: text("notes"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("menstrual_period_user_start_idx").on(table.userId, table.startDate),
-    index("menstrual_period_user_idx").on(table.userId),
-  ],
 );
 
 // ============================================================

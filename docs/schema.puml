@@ -743,29 +743,6 @@ entity "session" {
   created_at : timestamp
 }
 
-entity "slack_installation" {
-  * id : uuid <<PK>>
-  --
-  team_id : text
-  team_name : text
-  bot_token : text
-  bot_id : text
-  bot_user_id : text
-  app_id : text
-  installer_slack_user_id : text
-  raw_installation : jsonb
-  installed_at : timestamp
-  updated_at : timestamp
-}
-
-entity "slack_team_membership" {
-  team_id : text <<FK>>
-  user_id : uuid <<FK>>
-  slack_user_id : text
-  created_at : timestamp
-  updated_at : timestamp
-}
-
 entity "stripe_webhook_event" {
   * event_id : text <<PK>>
   --
@@ -821,22 +798,6 @@ entity "body_region" {
   label : text
   kind : text
   sort_order : bigint
-}
-
-entity "breathwork_session" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  technique_id : text
-  rounds : integer
-  duration_seconds : integer
-  started_at : timestamp
-  notes : text
-  stress_before : bigint
-  stress_after : bigint
-  dizziness_after : boolean
-  perceived_effect : text
-  created_at : timestamp
 }
 
 entity "dexa_scan" {
@@ -991,16 +952,6 @@ entity "life_events" {
   ongoing : boolean
   notes : text
   personal_experiment_id : uuid <<FK>>
-  created_at : timestamp
-}
-
-entity "menstrual_period" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  start_date : date
-  end_date : date
-  notes : text
   created_at : timestamp
 }
 
@@ -1241,14 +1192,11 @@ user_profile ||--o{ mcp_oauth_refresh_token
 mcp_access_token ||--o{ mcp_oauth_refresh_token
 mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
-slack_installation ||--o{ slack_team_membership
-user_profile ||--o{ slack_team_membership
 user_profile ||--o{ user_billing
 user_profile ||--o{ user_external_effect
 user_profile ||--o{ user_password_credential
 user_profile ||--o{ user_settings
 body_region ||--o{ body_region
-user_profile ||--o{ breathwork_session
 provider ||--o{ dexa_scan
 user_profile ||--o{ dexa_scan
 dexa_scan ||--o{ dexa_scan_region
@@ -1262,7 +1210,6 @@ user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
 user_profile ||--o{ life_events
 personal_experiment ||--o{ life_events
-user_profile ||--o{ menstrual_period
 user_profile ||--o{ personal_experiment
 personal_experiment ||--o{ personal_experiment_check_in
 user_profile ||--o{ provider_data_deletion_outbox

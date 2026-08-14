@@ -7,6 +7,15 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-14 — Mobile typecheck blocked the feature-removal PR after merge resolution
+
+- **Status:** Fixed in commit `d90d132`; exact-head hosted CI verification is pending.
+- **Symptoms / impact:** PR [#2523](https://github.com/Asherlc/dofek/pull/2523) could not merge because its mobile typecheck failed, which in turn blocked the Test and CI aggregate gates. No production impact occurred.
+- **Evidence / root cause:** The [failed typecheck job](https://github.com/Asherlc/dofek/actions/runs/31810561788/job/94800482631) ran `pnpm run typecheck` and first reported that `bodyFatPct` did not exist on the current `bodyFatTrend` row. Conflict resolution retained the current server trend contract (`smoothedBodyFatPct`) while preserving an obsolete mobile card that consumed the former field.
+- **Fix / mitigation:** Updated the mobile recovery trend rendering to consume `smoothedBodyFatPct` and removed the redundant legacy body-fat card, leaving the switchable trend card as the sole presentation. No retry, timeout, skip, or error suppression was added.
+- **Validation:** `pnpm typecheck`, the mobile recovery UI suite (26 tests), `pnpm lint`, and `git diff --check` pass locally.
+- **Remaining risk / follow-up:** Confirm the fresh exact-head CI run; investigate only a different first fatal diagnostic.
+
 ## 2026-08-14 — Sentry triage: inactive CDC slots, Kaya authentication, and mobile transport noise
 
 - **Status:** CDC is resolved after the canonical production deployment and a

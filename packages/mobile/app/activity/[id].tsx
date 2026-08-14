@@ -870,6 +870,17 @@ export default function ActivityDetailScreen() {
         </View>
       )}
 
+      {isHangboardingActivity && (
+        <View style={hangboardingStyles.container}>
+          <Text style={hangboardingStyles.title}>Hangboarding</Text>
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
+        </View>
+      )}
+
       {/* Route Map */}
       {hasGps && <RouteMap points={points} hoveredPosition={hoveredPosition} />}
 

@@ -638,6 +638,13 @@
       "when": 1786570000000,
       "tag": "0088_remove_slack_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1786716655000,
+      "tag": "0089_remove_cycle_tracking_and_breathwork",
+      "breakpoints": true
     }
   ]
 }

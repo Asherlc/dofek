@@ -9,7 +9,6 @@ import { billingRouter } from "./routers/billing.ts";
 import { bleHeartRateSyncRouter } from "./routers/ble-heart-rate-sync.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
-import { breathworkRouter } from "./routers/breathwork.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { climbingRouter } from "./routers/climbing.ts";
 import { companionPairingRouter } from "./routers/companion-pairing.ts";
@@ -36,7 +35,6 @@ import { journalRouter } from "./routers/journal.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
-import { menstrualCycleRouter } from "./routers/menstrual-cycle.ts";
 import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
 import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
@@ -81,7 +79,6 @@ const appRouterProcedures = {
   behaviorImpact: behaviorImpactRouter,
   billing: billingRouter,
   bleHeartRateSync: bleHeartRateSyncRouter,
-  breathwork: breathworkRouter,
   personalization: personalizationRouter,
   auth: authRouter,
   sleep: sleepRouter,
@@ -134,7 +131,6 @@ const appRouterProcedures = {
   todayPlan: todayPlanRouter,
   healthReport: healthReportRouter,
   healthspan: healthspanRouter,
-  menstrualCycle: menstrualCycleRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
   mcp: mcpRouter,
   monthlyReport: monthlyReportRouter,

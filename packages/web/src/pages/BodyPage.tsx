@@ -366,7 +366,7 @@ export function BodyPage() {
           ) : null}
         </div>
         {!weightOverviewUnavailable && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center gap-2">
                 <h4 className="text-xs font-medium text-subtle uppercase">

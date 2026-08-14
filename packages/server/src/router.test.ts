@@ -18,7 +18,6 @@ vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
 vi.mock("./routers/behavior-impact.ts", () => ({ behaviorImpactRouter: mockRouter }));
 vi.mock("./routers/billing.ts", () => ({ billingRouter: mockRouter }));
 vi.mock("./routers/ble-heart-rate-sync.ts", () => ({ bleHeartRateSyncRouter: mockRouter }));
-vi.mock("./routers/breathwork.ts", () => ({ breathworkRouter: mockRouter }));
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
 vi.mock("./routers/calendar.ts", () => ({ calendarRouter: mockRouter }));
@@ -43,7 +42,6 @@ vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
 vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
 vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
 vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
-vi.mock("./routers/menstrual-cycle.ts", () => ({ menstrualCycleRouter: mockRouter }));
 vi.mock("./routers/medication-dose-events.ts", () => ({ medicationDoseEventsRouter: mockRouter }));
 vi.mock("./routers/mcp.ts", () => ({ mcpRouter: mockRouter }));
 vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
@@ -130,7 +128,6 @@ describe("appRouter", () => {
       "behaviorImpact",
       "billing",
       "bleHeartRateSync",
-      "breathwork",
       "companionPairing",
       "companionToken",
       "personalExperiments",
@@ -179,7 +176,6 @@ describe("appRouter", () => {
       "stress",
       "todayPlan",
       "healthspan",
-      "menstrualCycle",
       "medicationDoseEvents",
       "mcp",
       "mobileDashboard",
