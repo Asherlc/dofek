@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import type { InertialMeasurementUnitSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type InertialMeasurementUnitAdapter,
   type InertialMeasurementUnitSyncTrpcClient,
@@ -44,6 +44,10 @@ function makeSamples(count: number): InertialMeasurementUnitSample[] {
 }
 
 describe("syncInertialMeasurementUnitToServer", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns zero when accelerometer is not available", async () => {
     const coreMotion = makeAdapter({
       isAccelerometerRecordingAvailable: () => false,
@@ -82,6 +86,89 @@ describe("syncInertialMeasurementUnitToServer", () => {
     expect(fromDate).toBe(lastSync);
   });
 
+  it("keeps CoreMotion queries inside the retained sensor history window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T19:00:00.000Z"));
+
+    const queryRecordedData = vi.fn().mockResolvedValue([]);
+    const staleLastSync = new Date("2026-05-10T19:00:00.000Z").toISOString();
+    const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => staleLastSync,
+      queryRecordedData,
+    });
+    const trpcClient = makeTrpcClient();
+
+    await syncInertialMeasurementUnitToServer({
+      trpcClient,
+      coreMotion,
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+    });
+
+    expect(queryRecordedData).toHaveBeenCalledTimes(1);
+    const [fromDate] = queryRecordedData.mock.calls[0];
+    expect(fromDate).toBe("2026-05-17T21:24:00.000Z");
+  });
+
+  it("never uploads Core Motion history from before a deleted account cutoff", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T13:00:00.000Z"));
+    const cutoff = "2026-05-20T12:00:00.000Z";
+    const queryRecordedData = vi.fn().mockResolvedValue([
+      { timestamp: "2026-05-20T11:59:59.999Z", x: 1, y: 1, z: 1 },
+      { timestamp: cutoff, x: 2, y: 2, z: 2 },
+      { timestamp: "2026-05-20T12:00:00.001Z", x: 3, y: 3, z: 3 },
+    ]);
+    const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => "2026-05-20T11:00:00.000Z",
+      queryRecordedData,
+    });
+    const trpcClient = makeTrpcClient({ pushResult: { inserted: 1 } });
+
+    await syncInertialMeasurementUnitToServer({
+      trpcClient,
+      coreMotion,
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+      minimumSampleDate: cutoff,
+    });
+
+    expect(queryRecordedData).toHaveBeenCalledWith(cutoff, "2026-05-20T12:10:00.000Z");
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+      samples: [{ timestamp: "2026-05-20T12:00:00.001Z", x: 3, y: 3, z: 3 }],
+    });
+  });
+
+  it("limits each CoreMotion query to ten minutes while catching up", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T19:00:00.000Z"));
+
+    const queryRecordedData = vi.fn().mockResolvedValue([]);
+    const setLastSyncTimestamp = vi.fn();
+    const lastSync = new Date("2026-05-20T18:00:00.000Z").toISOString();
+    const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => lastSync,
+      queryRecordedData,
+      setLastSyncTimestamp,
+    });
+    const trpcClient = makeTrpcClient();
+
+    await syncInertialMeasurementUnitToServer({
+      trpcClient,
+      coreMotion,
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+    });
+
+    expect(queryRecordedData).toHaveBeenCalledTimes(1);
+    const [fromDate, toDate] = queryRecordedData.mock.calls[0];
+    expect(fromDate).toBe("2026-05-20T18:00:00.000Z");
+    expect(toDate).toBe("2026-05-20T18:10:00.000Z");
+    expect(setLastSyncTimestamp).toHaveBeenCalledWith("2026-05-20T18:10:00.000Z");
+  });
+
   it("uploads samples in batches of 5000", async () => {
     const samples = makeSamples(7500);
     const coreMotion = makeAdapter({
@@ -111,9 +198,14 @@ describe("syncInertialMeasurementUnitToServer", () => {
   });
 
   it("advances sync cursor only after all batches succeed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T19:00:00.000Z"));
+
     const samples = makeSamples(100);
     const setLastSyncTimestamp = vi.fn();
+    const lastSync = new Date("2026-05-20T18:59:00.000Z").toISOString();
     const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => lastSync,
       queryRecordedData: vi.fn().mockResolvedValue(samples),
       setLastSyncTimestamp,
     });
@@ -127,9 +219,7 @@ describe("syncInertialMeasurementUnitToServer", () => {
     });
 
     expect(setLastSyncTimestamp).toHaveBeenCalledTimes(1);
-    // Should be called with a recent timestamp (within last second)
-    const savedTimestamp = new Date(setLastSyncTimestamp.mock.calls[0][0]).getTime();
-    expect(savedTimestamp).toBeGreaterThan(Date.now() - 2000);
+    expect(setLastSyncTimestamp).toHaveBeenCalledWith("2026-05-20T19:00:00.000Z");
   });
 
   it("does not advance cursor when upload fails", async () => {

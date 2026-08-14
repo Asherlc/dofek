@@ -1,9 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { detectUnitSystem, UnitConverter } from "./units.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { detectUnitSystem, formatMeasurementText, UnitConverter } from "./units.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("UnitConverter", () => {
   const metric = new UnitConverter("metric");
   const imperial = new UnitConverter("imperial");
+
+  it("sets the unit system", () => {
+    expect(new UnitConverter("metric").system).toBe("metric");
+    expect(new UnitConverter("imperial").system).toBe("imperial");
+  });
 
   describe("weight (kg input)", () => {
     it("returns kg unchanged for metric", () => {
@@ -103,6 +112,9 @@ describe("unit labels", () => {
     expect(metric.distanceLabel).toBe("km");
     expect(metric.elevationLabel).toBe("m");
     expect(metric.temperatureLabel).toBe("°C");
+    expect(metric.percentageLabel).toBe("%");
+    expect(metric.calorieLabel).toBe("kcal");
+    expect(metric.caloriesPerDayLabel).toBe("kcal/day");
     expect(metric.speedLabel).toBe("km/h");
     expect(metric.heightLabel).toBe("cm");
     expect(metric.paceLabel).toBe("/km");
@@ -124,33 +136,78 @@ describe("format functions", () => {
   const imperial = new UnitConverter("imperial");
 
   it("formats weight with appropriate precision", () => {
-    expect(metric.formatWeight(80.5)).toBe("80.5 kg");
-    expect(imperial.formatWeight(80.5)).toBe("177.5 lbs");
+    expect(formatMeasurementText(metric.formatWeight(80.5))).toBe("80.5 kg");
+    expect(formatMeasurementText(imperial.formatWeight(80.5))).toBe("177.5 lb");
   });
 
   it("formats distance with 1 decimal", () => {
-    expect(metric.formatDistance(10.123)).toBe("10.1 km");
-    expect(imperial.formatDistance(10.123)).toBe("6.3 mi");
+    expect(formatMeasurementText(metric.formatDistance(10.123))).toBe("10.1 km");
+    expect(formatMeasurementText(imperial.formatDistance(10.123))).toBe("6.3 mi");
   });
 
   it("formats elevation with no decimals", () => {
-    expect(metric.formatElevation(1000)).toBe("1000 m");
-    expect(imperial.formatElevation(1000)).toBe("3281 ft");
+    expect(formatMeasurementText(metric.formatElevation(1000))).toBe("1000 m");
+    expect(formatMeasurementText(imperial.formatElevation(1000))).toBe("3281 ft");
   });
 
   it("formats temperature with 1 decimal", () => {
-    expect(metric.formatTemperature(37)).toBe("37.0 °C");
-    expect(imperial.formatTemperature(37)).toBe("98.6 °F");
+    expect(formatMeasurementText(metric.formatTemperature(37))).toBe("37.0°C");
+    expect(formatMeasurementText(imperial.formatTemperature(37))).toBe("98.6°F");
+    expect(metric.formatTemperature(37)).toEqual({
+      text: "37.0°C",
+      parts: [
+        { type: "integer", value: "37" },
+        { type: "decimal", value: "." },
+        { type: "fraction", value: "0" },
+        { type: "unit", value: "°C" },
+      ],
+    });
+    expect(imperial.formatTemperature(37)).toEqual({
+      text: "98.6°F",
+      parts: [
+        { type: "integer", value: "98" },
+        { type: "decimal", value: "." },
+        { type: "fraction", value: "6" },
+        { type: "unit", value: "°F" },
+      ],
+    });
+  });
+
+  it("formats temperature deltas without applying the absolute-temperature offset", () => {
+    expect(formatMeasurementText(metric.formatTemperatureDelta(1))).toBe("1.0°C");
+    expect(formatMeasurementText(imperial.formatTemperatureDelta(1))).toBe("1.8°F");
   });
 
   it("formats speed with 1 decimal", () => {
-    expect(metric.formatSpeed(5.5)).toBe("5.5 km/h");
-    expect(imperial.formatSpeed(5.5)).toBe("3.4 mph");
+    expect(formatMeasurementText(metric.formatSpeed(5.5))).toBe("5.5 km/h");
+    expect(formatMeasurementText(imperial.formatSpeed(5.5))).toBe("3.4 mph");
+  });
+
+  it("formats heart rate with beats per minute", () => {
+    expect(formatMeasurementText(metric.formatHeartRate(172))).toBe("172 bpm");
+    expect(formatMeasurementText(imperial.formatHeartRate(172))).toBe("172 bpm");
   });
 
   it("formats height with 1 decimal", () => {
-    expect(metric.formatHeight(170)).toBe("170.0 cm");
-    expect(imperial.formatHeight(170)).toBe("66.9 in");
+    expect(formatMeasurementText(metric.formatHeight(170))).toBe("170.0 cm");
+    expect(formatMeasurementText(imperial.formatHeight(170))).toBe("66.9 in");
+  });
+
+  it("falls back to numeric label formatting when Intl unit formatting is unsupported", async () => {
+    vi.resetModules();
+    const OriginalNumberFormat = Intl.NumberFormat;
+    vi.spyOn(Intl, "NumberFormat").mockImplementation((locale, options) => {
+      if (options?.style === "unit") {
+        throw new RangeError("unit formatting unsupported");
+      }
+      return new OriginalNumberFormat(locale, options);
+    });
+    const { formatMeasurementText: freshFormatMeasurementText, UnitConverter: FreshUnitConverter } =
+      await import("./units.ts");
+
+    expect(freshFormatMeasurementText(new FreshUnitConverter("metric").formatWeight(80))).toBe(
+      "80.0 kg",
+    );
   });
 });
 

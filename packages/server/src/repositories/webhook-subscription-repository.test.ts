@@ -1,0 +1,75 @@
+import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it, vi } from "vitest";
+import {
+  type UpsertWebhookSubscriptionInput,
+  WebhookSubscriptionRepository,
+} from "./webhook-subscription-repository.ts";
+
+vi.mock("dofek/security/credential-encryption", () => ({
+  decryptCredentialValue: vi.fn(async (value: string) => value),
+  encryptCredentialValue: vi.fn(async (value: string) => `encrypted:${value}`),
+}));
+
+const dialect = new PgDialect();
+
+function makeRepository() {
+  const execute = vi.fn().mockResolvedValue([]);
+  return {
+    execute,
+    repository: new WebhookSubscriptionRepository({ execute }),
+  };
+}
+
+function makeInput(
+  overrides: Partial<UpsertWebhookSubscriptionInput> = {},
+): UpsertWebhookSubscriptionInput {
+  return {
+    userId: null,
+    providerId: null,
+    providerName: "test-provider",
+    subscriptionExternalId: "subscription-1",
+    verifyToken: "verify-token",
+    signingSecret: "signing-secret",
+    expiresAt: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
+describe("WebhookSubscriptionRepository", () => {
+  it.each([
+    { userId: "user-1", providerId: null },
+    { userId: null, providerId: "provider-1" },
+  ])("rejects a partial user/provider identity: %o", async (identity) => {
+    const { execute, repository } = makeRepository();
+
+    await expect(repository.upsertActiveSubscription(makeInput(identity))).rejects.toThrow(
+      "Webhook subscriptions require both userId and providerId, or neither",
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("uses the user-scoped conflict key when both identity fields are present", async () => {
+    const { execute, repository } = makeRepository();
+
+    await repository.upsertActiveSubscription(
+      makeInput({ userId: "user-1", providerId: "provider-1" }),
+    );
+
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("user_id, provider_id");
+    expect(query.sql).toContain("ON CONFLICT (user_id, provider_id)");
+    expect(query.params).toContain("user-1");
+    expect(query.params).toContain("provider-1");
+  });
+
+  it("uses the app-scoped conflict key when both identity fields are absent", async () => {
+    const { execute, repository } = makeRepository();
+
+    await repository.upsertActiveSubscription(makeInput());
+
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).not.toContain("user_id, provider_id");
+    expect(query.sql).toContain("ON CONFLICT (provider_name)");
+  });
+});

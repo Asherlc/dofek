@@ -1,0 +1,75 @@
+name: Detect Changes
+
+on:
+  workflow_call:
+    outputs:
+      analytics:
+        value: ${{ jobs.detect.outputs.analytics }}
+      docker_ml:
+        value: ${{ jobs.detect.outputs.docker_ml }}
+      docker_server:
+        value: ${{ jobs.detect.outputs.docker_server }}
+      e2e_web:
+        value: ${{ jobs.detect.outputs.e2e_web }}
+      ml:
+        value: ${{ jobs.detect.outputs.ml }}
+      mobile:
+        value: ${{ jobs.detect.outputs.mobile }}
+      storybook_mobile:
+        value: ${{ jobs.detect.outputs.storybook_mobile }}
+      storybook_web:
+        value: ${{ jobs.detect.outputs.storybook_web }}
+      terraform:
+        value: ${{ jobs.detect.outputs.terraform }}
+      web:
+        value: ${{ jobs.detect.outputs.web }}
+      zepp:
+        value: ${{ jobs.detect.outputs.zepp }}
+
+jobs:
+  detect:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      analytics: ${{ steps.detect.outputs.analytics }}
+      docker_ml: ${{ steps.detect.outputs.docker_ml }}
+      docker_server: ${{ steps.detect.outputs.docker_server }}
+      e2e_web: ${{ steps.detect.outputs.e2e_web }}
+      ml: ${{ steps.detect.outputs.ml }}
+      mobile: ${{ steps.detect.outputs.mobile }}
+      storybook_mobile: ${{ steps.detect.outputs.storybook_mobile }}
+      storybook_web: ${{ steps.detect.outputs.storybook_web }}
+      terraform: ${{ steps.detect.outputs.terraform }}
+      web: ${{ steps.detect.outputs.web }}
+      zepp: ${{ steps.detect.outputs.zepp }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Detect changed areas
+        id: detect
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          arguments=()
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            arguments+=(--all)
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            arguments+=(--diff-range "origin/${BASE_REF}...HEAD")
+          elif [ -z "${BEFORE_SHA:-}" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            arguments+=(--all)
+          else
+            arguments+=(--diff-range "${BEFORE_SHA}...${CURRENT_SHA}")
+          fi
+
+          pnpm tsx scripts/detect-ci-changes.ts "${arguments[@]}"

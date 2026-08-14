@@ -1,3 +1,5 @@
+import { getPublicUrlBase } from "../lib/public-url.ts";
+
 export interface StripeBillingConfig {
   secretKey: string;
   webhookSecret: string;
@@ -16,6 +18,6 @@ export function getStripeBillingConfig(): StripeBillingConfig {
     secretKey: requiredEnv("STRIPE_SECRET_KEY"),
     webhookSecret: requiredEnv("STRIPE_WEBHOOK_SECRET"),
     priceId: requiredEnv("STRIPE_PRICE_ID"),
-    appBaseUrl: requiredEnv("APP_BASE_URL"),
+    appBaseUrl: getPublicUrlBase(),
   };
 }

@@ -1,5 +1,16 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import type { SyncOptions, SyncRun } from "./sync-run.ts";
+
+export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+export type {
+  SyncCheckpointStore,
+  SyncOptions,
+  SyncProgressCallback,
+  SyncRun,
+} from "./sync-run.ts";
 
 /**
  * OAuth 1.0 3-legged flow (e.g. FatSecret).
@@ -22,6 +33,7 @@ export interface OAuth1Flow {
 export interface ProviderIdentity {
   providerAccountId: string;
   email: string | null;
+  emailVerified: boolean;
   name: string | null;
 }
 
@@ -31,18 +43,42 @@ export interface ProviderIdentityCapabilities {
 }
 
 /**
- * Auth setup returned by providers that use OAuth.
+ * Auth setup returned by providers that require user connection.
+ * OAuth providers supply oauthConfig + exchangeCode; credential providers use automatedLogin only.
  */
 export interface ProviderAuthSetup {
-  oauthConfig: OAuthConfig;
+  oauthConfig?: OAuthConfig;
   /** Override the authorization URL (e.g. with PKCE challenge baked in) */
   authUrl?: string;
-  exchangeCode: (code: string, codeVerifier?: string) => Promise<TokenSet>;
-  /** Provider-specific cleanup before exchanging a new auth code. */
+  exchangeCode?: (
+    code: string,
+    codeVerifier?: string,
+    onTokensIssued?: (tokens: TokenSet) => void,
+  ) => Promise<TokenSet>;
+  /** Provider-specific cleanup for an existing authorization. */
   revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
+  /**
+   * Provider-specific revocation semantics for durable account-erasure replay.
+   * This must accept only provider-documented terminal outcomes.
+   */
+  revokeTokensForAccountErasure?: (tokens: TokenSet) => Promise<void>;
+  /**
+   * Provider-specific reconnect lifecycle.
+   * `revoke-then-replace` revokes before exchange.
+   * `deauthorize-on-token-limit` exchanges first and deauthorizes only after
+   * the provider explicitly rejects the exchange for too many active tokens.
+   * The default exchanges and persists the replacement before cleaning up old tokens.
+   */
+  reconnectStrategy?: "deauthorize-on-token-limit" | "revoke-then-replace";
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
+  /** User-supplied API token flow for providers that issue personal tokens. */
+  manualToken?: {
+    label: string;
+    instructionsUrl: `https://${string}`;
+    exchangeToken: (token: string) => Promise<TokenSet>;
+  };
   /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */
   oauth1Flow?: OAuth1Flow;
   /** Extract user identity from this provider (enables using it as a login provider) */
@@ -58,21 +94,18 @@ export interface SyncResult {
   provider: string;
   recordsSynced: number;
   errors: SyncError[];
+  degradations?: SyncDegradation[];
   duration: number;
+  /** When true, more BullMQ jobs will run to finish this sync run. */
+  continued?: boolean;
 }
 
 export interface SyncError {
   message: string;
   externalId?: string;
   cause?: unknown;
+  context?: Record<string, string | number | boolean | null>;
 }
-
-/**
- * Progress callback for reporting sync progress from within a provider.
- * @param percentage - Percentage complete (0–100)
- * @param message - Human-readable status message
- */
-export type SyncProgressCallback = (percentage: number, message: string) => void;
 
 // ============================================================
 // Provider auth type discrimination
@@ -82,10 +115,44 @@ export type SyncProgressCallback = (percentage: number, message: string) => void
  * How a provider authenticates users.
  * - 'oauth': Standard OAuth 2.0 redirect flow (Strava, Fitbit, etc.)
  * - 'credential': User provides username/password, server authenticates (Eight Sleep, Zwift, etc.)
+ * - 'token': User supplies a provider-issued personal token
  * - 'file-import': No authentication needed, user uploads files
  * - 'oauth1': OAuth 1.0 3-legged flow (FatSecret)
  */
-export type ProviderAuthType = "oauth" | "credential" | "file-import" | "oauth1";
+export type ProviderAuthType = "oauth" | "credential" | "token" | "file-import" | "oauth1";
+
+export interface ProviderAuthCapabilities {
+  automatedLogin: boolean;
+  manualToken: boolean;
+  oauth1: boolean;
+  oauth: boolean;
+}
+
+/**
+ * Canonical precedence for providers that expose more than one connection flow.
+ * Personal tokens are the public self-service path when OAuth is also available.
+ */
+export function classifyProviderAuth(
+  capabilities: ProviderAuthCapabilities,
+): ProviderAuthType | "none" {
+  if (capabilities.automatedLogin) return "credential";
+  if (capabilities.oauth1) return "oauth1";
+  if (capabilities.manualToken) return "token";
+  if (capabilities.oauth) return "oauth";
+  return "none";
+}
+
+export function getProviderAuthTypeFromSetup(
+  setup: ProviderAuthSetup | undefined,
+): ProviderAuthType | "none" {
+  if (!setup) return "none";
+  return classifyProviderAuth({
+    automatedLogin: Boolean(setup.automatedLogin),
+    oauth1: Boolean(setup.oauth1Flow),
+    manualToken: Boolean(setup.manualToken),
+    oauth: Boolean(setup.oauthConfig && setup.exchangeCode),
+  });
+}
 
 /**
  * Common fields shared by all providers (sync and import).
@@ -96,6 +163,9 @@ interface BaseProvider {
 
   /** Human-readable name */
   readonly name: string;
+
+  /** Optional explicit processing-status scope for custom providers and tests. */
+  readonly processingDatasetKeys?: readonly ProcessingDatasetKey[];
 
   /**
    * Validate that the provider is configured (API keys present, etc.)
@@ -118,27 +188,24 @@ interface BaseProvider {
 }
 
 /**
- * Options for a sync run, passed as a bag so we can extend without adding positional params.
- */
-export interface SyncOptions {
-  /** Callback to report progress (0–100%) */
-  onProgress?: SyncProgressCallback;
-  /** User ID for attributing sync log entries */
-  userId?: string;
-}
-
-/**
  * A provider that syncs data from an API on a schedule.
  * The sync framework calls `sync()` periodically.
+ *
+ * New sync providers must authenticate per user via `authSetup()` and load
+ * credentials with `loadTokens()` during sync. See `docs/adding-a-provider.md`.
  */
 export interface SyncProvider extends BaseProvider {
   /**
-   * Pull data from the provider API and upsert into the database.
-   * @param db - Drizzle database instance
-   * @param since - Only sync data after this date (incremental sync)
-   * @param options - Optional sync options (progress callback, userId, etc.)
+   * Number of days scheduled sync jobs should request by default.
+   * Omit to use the framework default.
    */
-  sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult>;
+  readonly scheduledSyncLookbackDays?: number;
+
+  /**
+   * Pull data from the provider API and upsert into the database.
+   * @param run - Sync invocation context (db, window, and per-run options)
+   */
+  sync(run: SyncRun): Promise<SyncResult>;
 }
 
 /**
@@ -298,9 +365,5 @@ export function getProviderAuthType(provider: Provider): ProviderAuthType | "non
   } catch {
     return "none";
   }
-  if (!setup) return "none";
-  if (setup.automatedLogin) return "credential";
-  if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig) return "oauth";
-  return "none";
+  return getProviderAuthTypeFromSetup(setup);
 }

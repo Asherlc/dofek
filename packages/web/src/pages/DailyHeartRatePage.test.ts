@@ -1,9 +1,201 @@
-import { describe, expect, it } from "vitest";
+/** @vitest-environment jsdom */
+import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
+
+interface DailyBySourceQueryResult {
+  data: HeartRateSourceSeries[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+}
+
+const { mockDailyBySourceQuery, mockDofekChart } = vi.hoisted(() => ({
+  mockDailyBySourceQuery: vi.fn<(input: { date: string }) => DailyBySourceQueryResult>(() => ({
+    data: [
+      {
+        providerId: "apple_health",
+        providerLabel: "Apple Health",
+        sampleCount: 12,
+        minHeartRate: 55,
+        avgHeartRate: 63,
+        maxHeartRate: 89,
+        samples: [
+          { time: "2026-07-19T10:00:00.000Z", heartRate: 70 },
+          { time: "2026-07-19T10:01:00.000Z", heartRate: 72 },
+        ],
+      },
+    ],
+    isLoading: false,
+    isError: false,
+    error: null,
+  })),
+  mockDofekChart: vi.fn<(props: { timeRangeMode?: "context" | "data" }) => null>(() => null),
+}));
+
+vi.mock("../components/DofekChart.tsx", () => ({
+  DofekChart: mockDofekChart,
+}));
+
+vi.mock("../lib/trpc.ts", () => ({
+  trpc: {
+    heartRate: {
+      dailyBySource: { useQuery: mockDailyBySourceQuery },
+    },
+  },
+}));
+
+import { DailyHeartRatePage } from "./DailyHeartRatePage.tsx";
 
 describe("DailyHeartRatePage", () => {
-  it("exports the page component", async () => {
-    const mod = await import("./DailyHeartRatePage.tsx");
-    expect(mod.DailyHeartRatePage).toBeDefined();
-    expect(typeof mod.DailyHeartRatePage).toBe("function");
+  it("nests its title below the Body page heading", () => {
+    mockDailyBySourceQuery.mockReturnValue({
+      data: [],
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    render(createElement(DailyHeartRatePage));
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Daily Heart Rate by Source" }),
+    ).toBeTruthy();
+  });
+
+  beforeEach(() => {
+    mockDailyBySourceQuery.mockClear();
+    mockDofekChart.mockClear();
+    mockDailyBySourceQuery.mockReturnValue({
+      data: [
+        {
+          providerId: "apple_health",
+          providerLabel: "Apple Health",
+          sampleCount: 12,
+          minHeartRate: 55,
+          avgHeartRate: 63,
+          maxHeartRate: 89,
+          samples: [
+            { time: "2026-07-19T10:00:00.000Z", heartRate: 70 },
+            { time: "2026-07-19T10:01:00.000Z", heartRate: 72 },
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fits the time axis to the selected day's samples", () => {
+    render(createElement(DailyHeartRatePage));
+
+    expect(mockDofekChart.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ timeRangeMode: "data" }),
+    );
+  });
+
+  it("provides accessible day navigation and identifies the local timezone", () => {
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+    expect(
+      screen.getByText(`Local day in ${Intl.DateTimeFormat().resolvedOptions().timeZone}`),
+    ).toBeTruthy();
+  });
+
+  it("queries the previous day and returns to today through the controls", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 12, 12));
+
+    const today = formatDateYmd();
+    const previousDate = shiftDateYmd(today, -1);
+    render(createElement(DailyHeartRatePage));
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({
+      date: previousDate,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
+  });
+
+  it("refreshes today navigation after local midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 12, 23, 59, 58));
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+
+    expect(screen.getByRole("button", { name: "Next day" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).not.toBeDisabled();
+  });
+
+  it("rejects future dates from the date input", () => {
+    render(createElement(DailyHeartRatePage));
+
+    const today = formatDateYmd();
+    const futureDate = `${Number(today.slice(0, 4)) + 1}-01-01`;
+    const dateInput = screen.getByLabelText("Date");
+
+    fireEvent.change(dateInput, { target: { value: futureDate } });
+
+    expect(dateInput).toHaveValue(today);
+    expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
+  });
+
+  it("renders the canonical server-provided source summary", () => {
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByText("55 bpm")).toBeTruthy();
+    expect(screen.getByText("63 bpm")).toBeTruthy();
+    expect(screen.getByText("89 bpm")).toBeTruthy();
+    expect(screen.queryByText("2")).toBeNull();
+    expect(screen.queryByText("71 bpm")).toBeNull();
+  });
+
+  it("renders an explicit loading state before data is available", () => {
+    mockDailyBySourceQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+    });
+
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("No heart rate data for this day")).toBeNull();
+  });
+
+  it("renders the server error instead of the empty state when the query fails", () => {
+    mockDailyBySourceQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("ClickHouse heart-rate query failed"),
+    });
+
+    render(createElement(DailyHeartRatePage));
+
+    expect(screen.getByText("ClickHouse heart-rate query failed")).toBeTruthy();
+    expect(screen.queryByText("No heart rate data for this day")).toBeNull();
   });
 });

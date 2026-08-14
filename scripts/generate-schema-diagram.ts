@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pgGenerate } from "drizzle-dbml-generator";
 import plantumlEncoder from "plantuml-encoder";
-import * as schema from "../src/db/schema.ts";
+import { drizzleSchema as schema } from "../src/db/drizzle-schema.ts";
 
 const dbmlPath = "docs/schema.dbml";
 const pumlPath = "docs/schema.puml";
@@ -24,6 +24,14 @@ export interface Ref {
   fromCol: string;
   toTable: string;
   toCol: string;
+}
+
+export function normalizeGeneratedDbml(dbml: string): string {
+  return `${dbml
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trimEnd()}\n`;
 }
 
 /** Extract table blocks from DBML by tracking brace depth */
@@ -51,12 +59,17 @@ export function parseColumnLine(line: string): Column | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed === "}") return null;
 
-  const colMatch = trimmed.match(/^(\w+)\s+(.+?)(?:\s*\[(.+)])?$/);
+  const colMatch = trimmed.match(/^(\w+)\s+(.+)$/);
   if (!colMatch) return null;
 
   const colName = colMatch[1];
-  const rawType = colMatch[2].replace(/"/g, "");
-  const attrs = colMatch[3] ?? "";
+  const typeAndAttrs = colMatch[2];
+  const attrsStart = typeAndAttrs.indexOf(" [");
+  const rawType = (attrsStart === -1 ? typeAndAttrs : typeAndAttrs.slice(0, attrsStart)).replace(
+    /"/g,
+    "",
+  );
+  const attrs = attrsStart === -1 ? "" : typeAndAttrs.slice(attrsStart + 1);
   const pk = attrs.includes("pk");
 
   // Simplify types for readability
@@ -138,7 +151,8 @@ export function buildPlantUml(tables: Table[], refs: Ref[]): string {
 function main() {
   // Generate DBML from Drizzle schema (also writes the .dbml file)
   pgGenerate({ schema, out: dbmlPath, relational: false });
-  const dbml = readFileSync(dbmlPath, "utf-8");
+  const dbml = normalizeGeneratedDbml(readFileSync(dbmlPath, "utf-8"));
+  writeFileSync(dbmlPath, dbml);
 
   const tables = parseTables(dbml);
   const refs = parseRefs(dbml, tables);

@@ -1,0 +1,167 @@
+import { describe, expect, it, vi } from "vitest";
+import type { ActivityOverviewComparison } from "./activity-overview.ts";
+import {
+  activityOverviewChangeForKey,
+  activityOverviewComparisonSchema,
+  createActivityOverviewComparisonFormatters,
+  formatActivityOverviewChange,
+  formatActivityOverviewDistance,
+  formatActivityOverviewElevation,
+} from "./activity-overview.ts";
+import { UnitConverter } from "./units.ts";
+
+describe("activity overview availability formatting", () => {
+  it("uses shared copy when a measurement was not recorded", () => {
+    const formatMeasured = vi.fn((value: number) => `${value}`);
+
+    expect(formatActivityOverviewDistance(null, formatMeasured)).toBe("Distance not recorded");
+    expect(formatActivityOverviewElevation(null, formatMeasured)).toBe("Elevation unavailable");
+    expect(formatMeasured).not.toHaveBeenCalled();
+  });
+
+  it("formats measured zero values normally", () => {
+    const formatMeasured = vi.fn((value: number) => `${value} measured`);
+
+    expect(formatActivityOverviewDistance(0, formatMeasured)).toBe("0 measured");
+    expect(formatActivityOverviewElevation(0, formatMeasured)).toBe("0 measured");
+    expect(formatMeasured).toHaveBeenCalledTimes(2);
+  });
+
+  it("formats server-authored period changes without deriving direction", () => {
+    const formatMagnitude = vi.fn((value: number) => `${value} units`);
+
+    expect(
+      formatActivityOverviewChange(
+        { magnitude: 2, trend: "higher" },
+        "previous 4 weeks",
+        formatMagnitude,
+      ),
+    ).toBe("2 units more vs previous 4 weeks");
+    expect(
+      formatActivityOverviewChange(
+        { magnitude: 3, trend: "lower" },
+        "previous 4 weeks",
+        formatMagnitude,
+      ),
+    ).toBe("3 units less vs previous 4 weeks");
+    expect(
+      formatActivityOverviewChange(
+        { magnitude: 0, trend: "unchanged" },
+        "previous 4 weeks",
+        formatMagnitude,
+      ),
+    ).toBe("No change vs previous 4 weeks");
+    expect(formatMagnitude).toHaveBeenCalledWith(2);
+    expect(formatMagnitude).toHaveBeenCalledWith(3);
+  });
+
+  it("treats an unavailable trend or magnitude as unavailable independently", () => {
+    const formatMagnitude = vi.fn((value: number | null) => `${value} units`);
+
+    expect(
+      formatActivityOverviewChange(
+        { magnitude: 2, trend: "unavailable" },
+        "previous 4 weeks",
+        formatMagnitude,
+      ),
+    ).toBe("Comparison unavailable vs previous 4 weeks");
+    expect(
+      formatActivityOverviewChange(
+        { magnitude: null, trend: "higher" },
+        "previous 4 weeks",
+        formatMagnitude,
+      ),
+    ).toBe("Comparison unavailable vs previous 4 weeks");
+    expect(formatMagnitude).not.toHaveBeenCalled();
+  });
+
+  it("explains when a comparison measurement is unavailable", () => {
+    expect(
+      formatActivityOverviewChange(
+        {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "missing", reason: "Previous period: Distance not recorded" },
+        },
+        "previous 4 weeks",
+        (value) => `${value}`,
+      ),
+    ).toBe("Comparison unavailable: Previous period: Distance not recorded");
+
+    expect(
+      formatActivityOverviewChange(
+        {
+          magnitude: null,
+          trend: "unavailable",
+          state: { status: "available" },
+        },
+        "previous 4 weeks",
+        (value) => `${value}`,
+      ),
+    ).toBe("Comparison unavailable vs previous 4 weeks");
+  });
+
+  it("maps each stable overview key to its server-authored comparison", () => {
+    const comparison: ActivityOverviewComparison = {
+      periodLabel: "previous 4 weeks",
+      activityCount: { magnitude: 1, trend: "higher" },
+      totalMinutes: { magnitude: 2, trend: "lower" },
+      totalDistanceMeters: {
+        magnitude: 3,
+        trend: "unchanged",
+        state: { status: "available" },
+      },
+      totalElevationGainM: {
+        magnitude: null,
+        trend: "unavailable",
+        state: { status: "missing", reason: "No elevation" },
+      },
+    };
+
+    expect(activityOverviewChangeForKey(comparison, "activityCount")).toBe(
+      comparison.activityCount,
+    );
+    expect(activityOverviewChangeForKey(comparison, "totalMinutes")).toBe(comparison.totalMinutes);
+    expect(activityOverviewChangeForKey(comparison, "totalDistanceMeters")).toBe(
+      comparison.totalDistanceMeters,
+    );
+    expect(activityOverviewChangeForKey(comparison, "totalElevationGainM")).toBe(
+      comparison.totalElevationGainM,
+    );
+  });
+
+  it("validates the shared comparison contract used by the calendar router", () => {
+    const comparison: ActivityOverviewComparison = {
+      periodLabel: "previous 4 weeks",
+      activityCount: { magnitude: 1, trend: "higher" },
+      totalMinutes: { magnitude: 2, trend: "lower" },
+      totalDistanceMeters: {
+        magnitude: 3,
+        trend: "unchanged",
+        state: { status: "available" },
+      },
+      totalElevationGainM: {
+        magnitude: null,
+        trend: "unavailable",
+        state: { status: "missing", reason: "No elevation" },
+      },
+    };
+
+    expect(activityOverviewComparisonSchema.parse(comparison)).toEqual(comparison);
+    expect(() =>
+      activityOverviewComparisonSchema.parse({
+        ...comparison,
+        activityCount: { magnitude: -1, trend: "higher" },
+      }),
+    ).toThrow();
+  });
+
+  it("provides stable-key comparison magnitude formatters for both clients", () => {
+    const formatters = createActivityOverviewComparisonFormatters(new UnitConverter("metric"));
+
+    expect(formatters.activityCount(2)).toBe("2");
+    expect(formatters.totalMinutes(90)).toBe("1h 30m");
+    expect(formatters.totalDistanceMeters(1200)).toBe("1.2 km");
+    expect(formatters.totalElevationGainM(125)).toBe("125 m");
+  });
+});

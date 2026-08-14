@@ -3,6 +3,21 @@
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "codegraph": {
+      "command": "mise",
+      "args": ["exec", "--", "codegraph", "serve", "--mcp"]
+    },
+    "xcodebuildmcp": {
+      "command": "pnpm",
+      "args": ["dlx", "xcodebuildmcp@2.6.2", "mcp"]
+    },
+    "axiom": {
+      "command": "sh",
+      "args": [
+        "-lc",
+        "set -e; axiom_env=\"$(axiom config export --force)\"; eval \"$(printf '%s\\n' \"$axiom_env\" | grep '^export AXIOM_')\"; : \"${AXIOM_TOKEN:?Missing AXIOM_TOKEN}\"; : \"${AXIOM_URL:?Missing AXIOM_URL}\"; : \"${AXIOM_ORG_ID:?Missing AXIOM_ORG_ID}\"; exec npx -y mcp-server-axiom"
+      ]
     }
   }
 }

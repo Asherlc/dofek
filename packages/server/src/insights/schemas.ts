@@ -8,11 +8,10 @@ export const dailyRowSchema = z.object({
   hrv: z.number().nullable(),
   spo2_avg: z.number().nullable(),
   steps: z.number().nullable(),
-  active_energy_kcal: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
 });
 
-/** Zod schema for rows from fitness.v_sleep used by insights/correlation queries. */
+/** Zod schema for sleep rows used by insights/correlation queries. */
 export const sleepRowSchema = z.object({
   started_at: timestampStringSchema,
   duration_minutes: z.number().nullable(),
@@ -24,14 +23,15 @@ export const sleepRowSchema = z.object({
   is_nap: z.boolean(),
 });
 
-/** Zod schema for rows from fitness.v_activity used by insights/correlation queries. */
+/** Zod schema for activity rows used by insights/correlation queries. */
 export const activityRowSchema = z.object({
+  date: dateStringSchema.optional(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
 });
 
-/** Zod schema for rows from fitness.nutrition_daily used by insights/correlation queries. */
+/** Zod schema for rows from fitness.v_nutrition_daily used by insights/correlation queries. */
 export const nutritionRowSchema = z.object({
   date: dateStringSchema,
   calories: z.number().nullable(),
@@ -40,11 +40,4 @@ export const nutritionRowSchema = z.object({
   fat_g: z.number().nullable(),
   fiber_g: z.number().nullable(),
   water_ml: z.number().nullable(),
-});
-
-/** Zod schema for rows from fitness.v_body_measurement used by insights/correlation queries. */
-export const bodyCompRowSchema = z.object({
-  recorded_at: timestampStringSchema,
-  weight_kg: z.number().nullable(),
-  body_fat_pct: z.number().nullable(),
 });

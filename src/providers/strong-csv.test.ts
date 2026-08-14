@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  importStrongCsv,
   isStrongCsvFormat,
   parseDurationString,
   parseOptionalFloat,
@@ -8,7 +9,13 @@ import {
   parseStrongExerciseName,
   parseStrongText,
   parseStrongTextDate,
+  STRONG_PROVIDER_ID,
+  StrongCsvProvider,
 } from "./strong-csv.ts";
+
+vi.mock("../db/tokens.ts", () => ({
+  ensureProvider: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe("parseStrongExerciseName", () => {
   it("splits name and equipment from parens", () => {
@@ -43,6 +50,15 @@ describe("parseStrongExerciseName", () => {
     expect(parseStrongExerciseName("Leg Press (Machine)")).toEqual({
       exerciseName: "Leg Press",
       equipment: "Machine",
+    });
+  });
+
+  it("handles long names without pathological parsing time", () => {
+    const longName = `${"a".repeat(10_000)}${" ".repeat(10_000)}b`;
+
+    expect(parseStrongExerciseName(longName)).toEqual({
+      exerciseName: longName,
+      equipment: null,
     });
   });
 
@@ -83,6 +99,64 @@ describe("parseDurationString", () => {
   it("parses HH:MM:SS format", () => {
     expect(parseDurationString("01:03:00")).toBe(3780);
     expect(parseDurationString("00:45:00")).toBe(2700);
+  });
+});
+
+describe("importStrongCsv", () => {
+  it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockResolvedValue(undefined),
+      });
+    const db = {
+      execute,
+      insert,
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+          }),
+        }),
+      }),
+    };
+
+    await Reflect.apply(importStrongCsv, undefined, [
+      db,
+      [
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE",
+        '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",1,24,8,,,,',
+      ].join("\n"),
+      "user-1",
+      "kg",
+    ]);
+
+    const exerciseStatement = sqlText(execute.mock.calls[0]?.[0]);
+    expect(exerciseStatement).toContain("muscle_groups = COALESCE(");
+    expect(exerciseStatement).toContain("ARRAY[");
+    expect(exerciseStatement).toContain("fitness.exercise_source");
+    expect(exerciseStatement).toContain("fitness.exercise_alias_source");
   });
 });
 
@@ -453,15 +527,16 @@ describe("parseStrongCsv — field-level assertions", () => {
 // ============================================================
 
 describe("isStrongCsvFormat", () => {
+  const strongCsvHeader =
+    "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE";
+
   it("returns true for standard CSV header", () => {
-    const csv =
-      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,";
+    const csv = `${strongCsvHeader}\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,`;
     expect(isStrongCsvFormat(csv)).toBe(true);
   });
 
   it("returns true for CSV with BOM", () => {
-    const csv =
-      "\uFEFFDate,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,";
+    const csv = `\uFEFF${strongCsvHeader}\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,`;
     expect(isStrongCsvFormat(csv)).toBe(true);
   });
 
@@ -474,7 +549,36 @@ describe("isStrongCsvFormat", () => {
   it("returns false for empty input", () => {
     expect(isStrongCsvFormat("")).toBe(false);
   });
+
+  it("only treats a BOM as removable when it starts the input", () => {
+    expect(isStrongCsvFormat(`x\uFEFF${strongCsvHeader}`)).toBe(false);
+  });
 });
+
+function sqlText(query: unknown): string {
+  if (!hasQueryChunks(query)) return "";
+  return query.queryChunks
+    .map((chunk) => {
+      if (typeof chunk === "string") return chunk;
+      if (hasQueryChunks(chunk)) return sqlText(chunk);
+      if (!hasValue(chunk)) return "";
+      return Array.isArray(chunk.value) ? chunk.value.join("") : "";
+    })
+    .join("");
+}
+
+function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
+  return (
+    query !== null &&
+    typeof query === "object" &&
+    "queryChunks" in query &&
+    Array.isArray(query.queryChunks)
+  );
+}
+
+function hasValue(chunk: unknown): chunk is { value: unknown } {
+  return chunk !== null && typeof chunk === "object" && "value" in chunk;
+}
 
 // ============================================================
 // parseStrongTextDate
@@ -523,6 +627,11 @@ describe("parseStrongTextDate", () => {
 
   it("returns Invalid Date for unrecognized format", () => {
     const date = parseStrongTextDate("not a date");
+    expect(Number.isNaN(date.getTime())).toBe(true);
+  });
+
+  it("returns Invalid Date for unknown month names in the expected format", () => {
+    const date = parseStrongTextDate("Monday, Summer 1, 2026 at 12:00");
     expect(Number.isNaN(date.getTime())).toBe(true);
   });
 });
@@ -708,6 +817,71 @@ Set 1: 67.5 kg × 8`;
     const result = parseStrongText(text);
     expect(result.groups[0]?.sets[0]?.weight).toBe(67.5);
   });
+
+  it("trims workout name, date, and exercise lines", () => {
+    const text = `  Workout  
+  Monday, January 5, 2026 at 9:00  
+
+  Bench Press (Barbell)  
+Set 1: 67.5 kg × 8`;
+    const result = parseStrongText(text);
+    expect(result.groups[0]?.workoutName).toBe("Workout");
+    expect(result.groups[0]?.sets[0]?.exerciseName).toBe("Bench Press (Barbell)");
+    expect(result.groups[0]?.date).toBe("2026-01-05 09:00:00");
+  });
+
+  it("keeps the current exercise across blank lines before sets", () => {
+    const text = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+
+Set 1: 67.5 kg × 8`;
+    const result = parseStrongText(text);
+    expect(result.groups[0]?.sets[0]?.exerciseName).toBe("Bench Press (Barbell)");
+  });
+
+  it("ignores share URLs before later sets", () => {
+    const text = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+http://link.strong.app/plain
+Set 1: 67.5 kg × 8
+https://link.strong.app/secure
+Set 2: 70 kg × 6`;
+    const result = parseStrongText(text);
+    expect(result.groups[0]?.sets.map((set) => set.exerciseName)).toEqual([
+      "Bench Press (Barbell)",
+      "Bench Press (Barbell)",
+    ]);
+  });
+
+  it("keeps the first detected weight unit when later sets use a different unit", () => {
+    const poundsFirstText = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+Set 1: 100 lb × 8
+Set 2: 50 kg × 8`;
+    expect(parseStrongText(poundsFirstText).weightUnit).toBe("lbs");
+
+    const kilogramsFirstText = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+Set 1: 50 kg × 8
+Set 2: 100 lb × 8`;
+    expect(parseStrongText(kilogramsFirstText).weightUnit).toBe("kg");
+  });
+
+  it("returns empty groups when text contains no set lines", () => {
+    const text = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)`;
+    expect(parseStrongText(text).groups).toEqual([]);
+  });
 });
 
 describe("parseOptionalFloat", () => {
@@ -775,5 +949,81 @@ describe("parseOptionalInt", () => {
 
   it("handles leading whitespace", () => {
     expect(parseOptionalInt("  7")).toBe(7);
+  });
+});
+
+describe("StrongCsvProvider", () => {
+  it("has correct id and name", () => {
+    const provider = new StrongCsvProvider();
+    expect(provider.id).toBe(STRONG_PROVIDER_ID);
+    expect(provider.name).toBe("Strong");
+  });
+
+  it("validate always returns null", () => {
+    const provider = new StrongCsvProvider();
+    expect(provider.validate()).toBeNull();
+  });
+
+  it("is an import-only provider", () => {
+    const provider = new StrongCsvProvider();
+    expect(provider.importOnly).toBe(true);
+  });
+});
+
+describe("parseStrongExerciseName — additional cases", () => {
+  it("handles multiple parenthetical entries", () => {
+    const result = parseStrongExerciseName("Curl (Dumbbell)");
+    expect(result.exerciseName).toBe("Curl");
+    expect(result.equipment).toBe("Dumbbell");
+  });
+
+  it.each([
+    "Curl",
+    "Curl (Dumbbell",
+    "(Dumbbell)",
+    "Curl ()",
+  ])("does not invent equipment for malformed parentheses: %s", (name) => {
+    expect(parseStrongExerciseName(name)).toEqual({
+      equipment: null,
+      exerciseName: name,
+    });
+  });
+});
+
+describe("parseDurationString — additional cases", () => {
+  it("parses hours with zero minutes", () => {
+    expect(parseDurationString("1h 0m")).toBe(3600);
+  });
+});
+
+describe("parseStrongCsv — additional cases", () => {
+  const header =
+    "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE";
+
+  it("parses distance and seconds fields", () => {
+    const row = "2026-03-01 10:00:00,Cardio,30m,Treadmill Run,1,,,,1800,,,";
+    const csv = `${header}\n${row}`;
+    const groups = parseStrongCsv(csv);
+
+    expect(groups[0]?.sets[0]?.seconds).toBe(1800);
+    expect(groups[0]?.sets[0]?.weight).toBeNull();
+    expect(groups[0]?.sets[0]?.reps).toBeNull();
+  });
+
+  it("parses notes and workout notes", () => {
+    const row = "2026-03-01 10:00:00,Test,30m,Curl (Dumbbell),1,20,12,,,Set note,Workout note,8";
+    const csv = `${header}\n${row}`;
+    const groups = parseStrongCsv(csv);
+
+    expect(groups[0]?.sets[0]?.notes).toBe("Set note");
+    expect(groups[0]?.workoutNotes).toBe("Workout note");
+    expect(groups[0]?.sets[0]?.rpe).toBe(8);
+  });
+
+  it("handles distance field", () => {
+    const row = "2026-03-01 10:00:00,Cardio,30m,Walk,1,,,2.5,1800,,,";
+    const csv = `${header}\n${row}`;
+    const groups = parseStrongCsv(csv);
+    expect(groups[0]?.sets[0]?.distance).toBe(2.5);
   });
 });

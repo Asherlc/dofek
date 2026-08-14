@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type {
   ZwiftActivityDetail,
   ZwiftActivitySummary,
@@ -34,7 +35,7 @@ export class ZwiftClient {
   ) {
     this.#accessToken = accessToken;
     this.#athleteId = athleteId;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "zwift" });
   }
 
   async #get<T>(path: string): Promise<T> {
@@ -97,7 +98,8 @@ export class ZwiftClient {
     password: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
-    const response = await fetchFn(ZWIFT_AUTH_URL, {
+    const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "zwift" });
+    const response = await rateLimitFetchFn(ZWIFT_AUTH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -125,7 +127,8 @@ export class ZwiftClient {
     refreshToken: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
-    const response = await fetchFn(ZWIFT_AUTH_URL, {
+    const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "zwift" });
+    const response = await rateLimitFetchFn(ZWIFT_AUTH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({

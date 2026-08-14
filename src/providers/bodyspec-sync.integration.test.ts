@@ -1,11 +1,13 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { dexaScan, dexaScanRegion } from "../db/schema.ts";
+import { dexaScan, dexaScanRegion } from "../db/schema/events.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { BodySpecProvider } from "./bodyspec.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Fake BodySpec API responses
@@ -141,15 +143,6 @@ const fakeVisceralFat = {
   vat_volume_cm3: 480.2,
 };
 
-const fakeRmr = {
-  result_id: "result-1",
-  section_name: "rmr" as const,
-  estimates: [
-    { formula: "ten Haaf (2014)", kcal_per_day: 1720 },
-    { formula: "Cunningham (1980)", kcal_per_day: 1680 },
-  ],
-};
-
 function bodyspecHandlers(opts?: { apiError?: boolean }) {
   return [
     // Token refresh
@@ -193,11 +186,6 @@ function bodyspecHandlers(opts?: { apiError?: boolean }) {
       return HttpResponse.json(fakeVisceralFat);
     }),
 
-    // RMR
-    http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
-      return HttpResponse.json(fakeRmr);
-    }),
-
     // Percentiles (404 is ok, optional endpoint)
     http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
       return new HttpResponse(null, { status: 404 });
@@ -218,8 +206,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     server.resetHandlers();
+    if (ctx) await ctx.cleanup();
   });
 
   afterAll(() => {
@@ -244,7 +233,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
     });
 
     // Sync
-    const result = await provider.sync(ctx.db, new Date("2026-02-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     expect(result.provider).toBe("bodyspec");
     expect(result.recordsSynced).toBe(1);
@@ -262,7 +253,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
     expect(scan.androidGynoidRatio).toBe(0.62);
     expect(scan.visceralFatMassKg).toBe(0.45);
     expect(scan.totalBoneMineralDensity).toBe(1.25);
-    expect(scan.restingMetabolicRateKcal).toBe(1720);
 
     // Verify regions were stored
     const regions = await ctx.db.select().from(dexaScanRegion);
@@ -286,7 +276,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, new Date("2026-02-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
@@ -303,7 +295,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, new Date("2026-04-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-04-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -345,9 +339,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
           return new HttpResponse(null, { status: 404 });
         },
       ),
-      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
-        return new HttpResponse(null, { status: 404 });
-      }),
       http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
         return new HttpResponse(null, { status: 404 });
       }),
@@ -363,7 +354,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, new Date("2026-02-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     expect(result.provider).toBe("bodyspec");
     expect(result.recordsSynced).toBe(1);
@@ -380,7 +373,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
     // Optional fields should be null
     expect(scan.totalBoneMineralDensity).toBeNull();
     expect(scan.visceralFatMassKg).toBeNull();
-    expect(scan.restingMetabolicRateKcal).toBeNull();
     expect(scan.percentiles).toBeNull();
   });
 
@@ -420,9 +412,6 @@ describe("BodySpecProvider.sync() (integration)", () => {
           return HttpResponse.json(fakeVisceralFat);
         },
       ),
-      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
-        return HttpResponse.json(fakeRmr);
-      }),
       http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
         return new HttpResponse(null, { status: 404 });
       }),
@@ -438,7 +427,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, new Date("2026-02-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     // The 500 error should be captured, not silently swallowed
     expect(result.recordsSynced).toBe(0);

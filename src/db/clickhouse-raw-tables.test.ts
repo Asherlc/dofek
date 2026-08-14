@@ -1,0 +1,69 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildPostgresFitnessProviderConnectionRawTableStatement,
+  buildPostgresFitnessProviderRawTableStatement,
+  buildPostgresFitnessRawTableStatements,
+} from "./clickhouse-raw-tables.ts";
+
+describe("buildPostgresFitnessProviderConnectionRawTableStatement", () => {
+  it("builds the canonical provider connection mirror", () => {
+    const statement = buildPostgresFitnessProviderConnectionRawTableStatement();
+
+    expect(statement).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection");
+    expect(statement).toContain("ORDER BY (user_id, provider_id)");
+    expect(statement).toContain("SETTINGS allow_nullable_key = 1");
+  });
+});
+
+describe("buildPostgresFitnessProviderRawTableStatement", () => {
+  it("builds the canonical provider table by default", () => {
+    const statement = buildPostgresFitnessProviderRawTableStatement();
+
+    expect(statement).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.provider");
+    expect(statement).toContain("user_id Nullable(UUID)");
+    expect(statement).toContain("ORDER BY (id)");
+  });
+
+  it("builds a required replacement table for migrations", () => {
+    const statement = buildPostgresFitnessProviderRawTableStatement({
+      tableName: "postgres_fitness.provider_catalog_next",
+      ifNotExists: false,
+    });
+
+    expect(statement).toContain("CREATE TABLE postgres_fitness.provider_catalog_next");
+    expect(statement).not.toContain("CREATE TABLE IF NOT EXISTS");
+  });
+
+  it("retains idempotent creation when explicitly requested", () => {
+    const statement = buildPostgresFitnessProviderRawTableStatement({
+      tableName: "postgres_fitness.provider_catalog_next",
+      ifNotExists: true,
+    });
+
+    expect(statement).toContain(
+      "CREATE TABLE IF NOT EXISTS postgres_fitness.provider_catalog_next",
+    );
+  });
+});
+
+describe("buildPostgresFitnessRawTableStatements", () => {
+  it("creates the exact processing marker mirror used for relational CDC evidence", () => {
+    const markerTable = buildPostgresFitnessRawTableStatements().find((statement) =>
+      statement.includes("postgres_fitness.processing_flow_marker"),
+    );
+
+    expect(markerTable).toContain("operation_id UUID");
+    expect(markerTable).toContain("dataset_key String");
+    expect(markerTable).toContain("flow_name String");
+    expect(markerTable).toContain("batch_key String");
+    expect(markerTable).toContain("source_watermark String");
+    expect(markerTable).toContain("_peerdb_synced_at DateTime64(9)");
+
+    const providerInventoryMarkerTable = buildPostgresFitnessRawTableStatements().find(
+      (statement) =>
+        statement.includes("postgres_fitness.processing_flow_marker_provider_inventory"),
+    );
+    expect(providerInventoryMarkerTable).toContain("operation_id UUID");
+    expect(providerInventoryMarkerTable).toContain("flow_name String");
+  });
+});

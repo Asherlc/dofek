@@ -1,22 +1,31 @@
 import {
+  formatCalories,
   formatDateForDisplay,
   formatDateYmd as formatDateForQuery,
   isToday,
 } from "@dofek/format/format";
+import {
+  type FoodEntryNutrientDetail,
+  foodEntryNutrientDetailsFromLegacyColumns,
+} from "@dofek/nutrition/food-entry-nutrition";
+import {
+  nutritionSourceResolutionSchema,
+  selectedDateNutritionIntakeContextSchema,
+  selectedDateNutritionSummarySchema,
+} from "@dofek/nutrition/selected-date-summary";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
+import { NutritionIntakeContext } from "../components/NutritionIntakeContext.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
 
-const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
-
 const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
-type MealType = (typeof MEAL_ORDER)[number];
 
-const MEAL_LABELS: Record<MealType, string> = {
+const MEAL_LABELS: Record<(typeof MEAL_ORDER)[number], string> = {
   breakfast: "Breakfast",
   lunch: "Lunch",
   dinner: "Dinner",
@@ -24,52 +33,54 @@ const MEAL_LABELS: Record<MealType, string> = {
   other: "Other",
 };
 
-export const foodEntrySchema = z.object({
-  id: z.string(),
-  food_name: z.string(),
-  meal: z.string(),
-  calories: z.number().nullable(),
-  protein_g: z.number().nullable(),
-  carbs_g: z.number().nullable(),
-  fat_g: z.number().nullable(),
-  food_description: z.string().nullable(),
-});
+export const foodEntrySchema = z
+  .object({
+    id: z.string(),
+    food_name: z.string().nullable(),
+    meal: z.string().nullable(),
+    calories: z.number().nullable(),
+    protein_g: z.number().nullable(),
+    carbs_g: z.number().nullable(),
+    fat_g: z.number().nullable(),
+    food_description: z.string().nullable(),
+  })
+  .passthrough();
 export type FoodEntry = z.infer<typeof foodEntrySchema>;
 
-export function computeDailyTotals(entries: FoodEntry[]) {
-  let totalCalories = 0;
-  let totalProtein = 0;
-  let totalCarbs = 0;
-  let totalFat = 0;
+export const selectedDateFoodSchema = z.object({
+  entries: z.array(foodEntrySchema),
+  summary: selectedDateNutritionSummarySchema,
+});
 
-  for (const entry of entries) {
-    totalCalories += entry.calories ?? 0;
-    totalProtein += entry.protein_g ?? 0;
-    totalCarbs += entry.carbs_g ?? 0;
-    totalFat += entry.fat_g ?? 0;
-  }
+export const selectedDateFoodV2Schema = z.object({
+  entries: z.array(foodEntrySchema),
+  summary: selectedDateNutritionSummarySchema.nullable(),
+  resolution: nutritionSourceResolutionSchema,
+  intakeContext: selectedDateNutritionIntakeContextSchema.nullable(),
+});
 
-  return { totalCalories, totalProtein, totalCarbs, totalFat };
-}
-
-export function computeMealCalories(entries: FoodEntry[]): number {
-  return entries.reduce((sum, e) => sum + (e.calories ?? 0), 0);
+export function getFoodEntryNutrientDetails(entry: FoodEntry): FoodEntryNutrientDetail[] {
+  return foodEntryNutrientDetailsFromLegacyColumns(entry);
 }
 
 export function NutritionPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [collapsedMeals, setCollapsedMeals] = useState<Set<string>>(new Set());
 
-  const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
-  const calorieGoal = Number(calorieGoalQuery.data?.value ?? 2000);
-
   const dateString = formatDateForQuery(selectedDate);
 
-  const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
-
-  const entries = foodQuery.error ? [] : z.array(foodEntrySchema).parse(foodQuery.data ?? []);
-
-  const dailyTotals = useMemo(() => computeDailyTotals(entries), [entries]);
+  const foodQuery = trpc.food.byDateV2.useQuery(
+    { date: dateString },
+    { placeholderData: (previousData) => previousData },
+  );
+  const selectedDateFood =
+    foodQuery.data === undefined ? undefined : selectedDateFoodV2Schema.parse(foodQuery.data);
+  const entries = selectedDateFood?.entries ?? [];
+  const isFoodBlockingLoading = shouldShowBlockingLoading({
+    data: entries,
+    isFetching: foodQuery.isFetching,
+    isLoading: foodQuery.isLoading,
+  });
 
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntry[]>();
@@ -110,9 +121,6 @@ export function NutritionPage() {
       return next;
     });
   }
-
-  const calorieProgress = Math.min((dailyTotals.totalCalories / calorieGoal) * 100, 100);
-  const calorieColor = dailyTotals.totalCalories > calorieGoal ? "bg-red-500" : "bg-emerald-500";
 
   return (
     <div className="mx-auto max-w-3xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
@@ -173,68 +181,102 @@ export function NutritionPage() {
       </div>
 
       {/* Loading state */}
-      {foodQuery.isLoading && <ChartLoadingSkeleton height={200} />}
+      {isFoodBlockingLoading && <ChartLoadingSkeleton height={200} />}
 
-      {foodQuery.error ? (
-        <QueryStatePanel error={foodQuery.error} height={200} />
-      ) : (
+      {foodQuery.error && <QueryStatePanel error={foodQuery.error} height={200} />}
+
+      {selectedDateFood && (
         <>
           {/* Daily summary */}
-          <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm font-medium text-muted">Calories</span>
-                <span className="text-sm text-muted tabular-nums">
-                  <span className="text-xl font-semibold text-foreground">
-                    {dailyTotals.totalCalories}
-                  </span>
-                  <span className="ml-1">/ {calorieGoal} kcal</span>
-                </span>
-              </div>
-              <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${calorieColor} transition-all duration-300`}
-                  style={{ width: `${calorieProgress}%` }}
+          {selectedDateFood.intakeContext && (
+            <NutritionIntakeContext context={selectedDateFood.intakeContext} />
+          )}
+
+          {selectedDateFood.resolution.sourceProviders.length > 0 &&
+            selectedDateFood.resolution.status === "available" && (
+              <section
+                className="rounded-xl border border-border bg-surface-solid px-4 py-3"
+                aria-label="Nutrition source resolution"
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-subtle">
+                  Source coverage
+                </p>
+                {selectedDateFood.resolution.contributionLabel && (
+                  <p className="mt-1 font-medium text-foreground">
+                    {selectedDateFood.resolution.contributionLabel}
+                  </p>
+                )}
+                <p className="mt-1 text-sm text-muted">{selectedDateFood.resolution.message}</p>
+                {selectedDateFood.resolution.excludedSourceLabels.length > 0 && (
+                  <p className="mt-1 text-xs text-subtle">
+                    Excluded overlapping sources:{" "}
+                    {selectedDateFood.resolution.excludedSourceLabels.join(", ")}
+                  </p>
+                )}
+              </section>
+            )}
+
+          {selectedDateFood.resolution.status === "source_conflict" && (
+            <div
+              role="alert"
+              className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-foreground"
+            >
+              <p className="font-medium">Nutrition source conflict</p>
+              <p className="mt-1 text-muted">{selectedDateFood.resolution.message}</p>
+              <p className="mt-2 text-xs text-subtle">
+                Sources: {selectedDateFood.resolution.sourceLabels.join(", ")}
+              </p>
+            </div>
+          )}
+
+          {selectedDateFood.summary && (
+            <section
+              className="rounded-xl border border-border bg-surface-solid p-5 space-y-5"
+              aria-labelledby="nutrition-composition-heading"
+            >
+              {/* Macro bars */}
+              <div className="space-y-3">
+                <p
+                  id="nutrition-composition-heading"
+                  className="text-xs font-medium uppercase tracking-wide text-subtle"
+                >
+                  Observed intake composition
+                </p>
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">Share of energy</h3>
+                  <p className="text-xs text-subtle">Logged grams are shown separately.</p>
+                </div>
+                <MacroBar
+                  label="Protein"
+                  grams={selectedDateFood.summary.macros.protein.grams}
+                  energySharePercentage={
+                    selectedDateFood.summary.macros.protein.energySharePercentage
+                  }
+                  color="blue"
+                />
+                <MacroBar
+                  label="Carbs"
+                  grams={selectedDateFood.summary.macros.carbs.grams}
+                  energySharePercentage={
+                    selectedDateFood.summary.macros.carbs.energySharePercentage
+                  }
+                  color="purple"
+                />
+                <MacroBar
+                  label="Fat"
+                  grams={selectedDateFood.summary.macros.fat.grams}
+                  energySharePercentage={selectedDateFood.summary.macros.fat.energySharePercentage}
+                  color="teal"
                 />
               </div>
-              <div className="text-xs text-subtle tabular-nums">
-                {calorieGoal - dailyTotals.totalCalories > 0
-                  ? `${calorieGoal - dailyTotals.totalCalories} kcal remaining`
-                  : `${dailyTotals.totalCalories - calorieGoal} kcal over goal`}
-              </div>
-            </div>
-
-            {/* Macro bars */}
-            <div className="space-y-3">
-              <MacroBar
-                label="Protein"
-                grams={Math.round(dailyTotals.totalProtein)}
-                caloriesFromMacro={dailyTotals.totalProtein * CALORIES_PER_GRAM.protein}
-                totalCalories={dailyTotals.totalCalories}
-                color="blue"
-              />
-              <MacroBar
-                label="Carbs"
-                grams={Math.round(dailyTotals.totalCarbs)}
-                caloriesFromMacro={dailyTotals.totalCarbs * CALORIES_PER_GRAM.carbs}
-                totalCalories={dailyTotals.totalCalories}
-                color="amber"
-              />
-              <MacroBar
-                label="Fat"
-                grams={Math.round(dailyTotals.totalFat)}
-                caloriesFromMacro={dailyTotals.totalFat * CALORIES_PER_GRAM.fat}
-                totalCalories={dailyTotals.totalCalories}
-                color="red"
-              />
-            </div>
-          </div>
+            </section>
+          )}
 
           {/* Meal sections */}
-          {!foodQuery.isLoading &&
+          {!isFoodBlockingLoading &&
             MEAL_ORDER.map((mealType) => {
               const mealEntries = mealGroups.get(mealType) ?? [];
-              const mealCalories = computeMealCalories(mealEntries);
+              const mealCalories = selectedDateFood.summary?.mealCalories[mealType] ?? null;
               const isCollapsed = collapsedMeals.has(mealType);
 
               return (
@@ -272,7 +314,7 @@ export function NutritionPage() {
                       )}
                     </div>
                     <span className="text-sm text-muted tabular-nums">
-                      {mealCalories > 0 ? `${mealCalories} kcal` : ""}
+                      {mealCalories != null && mealCalories > 0 ? formatCalories(mealCalories) : ""}
                     </span>
                   </button>
 
@@ -284,9 +326,10 @@ export function NutritionPage() {
                           {mealEntries.map((entry) => (
                             <FoodEntryRow
                               key={entry.id}
-                              foodName={entry.food_name}
+                              foodName={entry.food_name ?? "Unnamed nutrition entry"}
                               servingDescription={entry.food_description}
                               calories={entry.calories ?? 0}
+                              nutrients={getFoodEntryNutrientDetails(entry)}
                             />
                           ))}
                         </div>
@@ -300,6 +343,17 @@ export function NutritionPage() {
             })}
         </>
       )}
+
+      <div className="text-center text-xs font-medium text-subtle">
+        <a
+          href="https://www.fatsecret.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="transition-colors hover:text-foreground"
+        >
+          Powered by fatsecret Platform API
+        </a>
+      </div>
     </div>
   );
 }

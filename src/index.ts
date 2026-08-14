@@ -8,15 +8,23 @@ import { parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
+import {
+  createAccountErasureWorkLockPoolFromEnv,
+  runQueuedUserWorkUnlessAccountErasing,
+} from "./jobs/account-erasure-work-guard.ts";
+import { processFitFileImportJob } from "./jobs/process-fit-file-import-job.ts";
 import { processSyncJob } from "./jobs/process-sync-job.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
 import {
   createSyncQueue,
+  FIT_FILE_IMPORT_QUEUE,
+  type FitFileImportJobData,
   getRedisConnection,
   SYNC_QUEUE,
   type SyncJobData,
 } from "./jobs/queues.ts";
 import { logger } from "./logger.ts";
+import { runMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
 import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
 
 async function resolveCliUserId(db: ReturnType<typeof createDatabaseFromEnv>): Promise<string> {
@@ -46,6 +54,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   }
 
   const db = createDatabaseFromEnv();
+  const accountErasureWorkLockPool = createAccountErasureWorkLockPoolFromEnv();
   const connection = getRedisConnection();
   const queue = createSyncQueue(connection);
   const userId = await resolveCliUserId(db);
@@ -56,6 +65,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
         providerId: provider.id,
         sinceDays: fullSync ? undefined : days,
         userId,
+        origin: "manual",
       } satisfies SyncJobData),
     ),
   );
@@ -63,9 +73,32 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   logger.info(`[sync] Enqueued ${jobs.length} sync job(s), one per provider — ${label}`);
 
   // Process the job inline with a temporary worker
-  const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
-    connection,
-  });
+  const worker = new Worker<SyncJobData>(
+    SYNC_QUEUE,
+    (job) =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "CLI provider sync",
+        () => processSyncJob(job, db),
+      ),
+    {
+      connection,
+    },
+  );
+  const fitFileImportWorker = new Worker<FitFileImportJobData>(
+    FIT_FILE_IMPORT_QUEUE,
+    (job) =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "CLI FIT file import",
+        () => processFitFileImportJob(job, db),
+      ),
+    { connection },
+  );
   const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
 
   try {
@@ -81,8 +114,10 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
     return 1;
   } finally {
     await worker.close();
+    await fitFileImportWorker.close();
     await queueEvents.close();
     await queue.close();
+    await accountErasureWorkLockPool.close();
   }
 }
 
@@ -116,13 +151,18 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
     );
     return 1;
   }
-  const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
   let tokens: import("./auth/oauth.ts").TokenSet;
+  const { apiBaseUrl } = setup;
 
   // OAuth 1.0 3-legged flow (FatSecret)
   if (setup.oauth1Flow) {
+    if (!setup.oauthConfig) {
+      logger.error(`[auth] Provider ${providerArg} requires oauthConfig for OAuth 1.0`);
+      return 1;
+    }
     const oauth1 = setup.oauth1Flow;
+    const { oauthConfig } = setup;
 
     const callbackUrl = oauthConfig.redirectUri;
     const callbackParsed = new URL(callbackUrl);
@@ -169,6 +209,13 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
     logger.info(`[auth] Logging in as ${email}...`);
     tokens = await setup.automatedLogin(email, password);
   } else {
+    if (!setup.oauthConfig || !setup.exchangeCode) {
+      logger.error(
+        `[auth] Provider ${providerArg} requires oauthConfig and exchangeCode for OAuth 2.0`,
+      );
+      return 1;
+    }
+    const { oauthConfig, exchangeCode } = setup;
     // Browser-based OAuth 2.0 flow
     const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
     logger.info(`[auth] Opening browser...\n\n  ${authUrl}\n`);
@@ -181,9 +228,12 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
     const { code, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, {
       https: useHttps,
     });
-    logger.info("[auth] Received authorization code. Exchanging for tokens...");
-    tokens = await exchangeCode(code);
-    cleanupServer();
+    try {
+      logger.info("[auth] Received authorization code. Exchanging for tokens...");
+      tokens = await exchangeCode(code);
+    } finally {
+      cleanupServer();
+    }
   }
 
   logger.info(`[auth] Authorized! Token expires at ${tokens.expiresAt.toISOString()}`);
@@ -230,7 +280,7 @@ export async function handleImportCommand(args: string[]): Promise<number> {
   return 1;
 }
 
-async function main() {
+export async function main() {
   const command = process.argv[2] ?? "sync";
 
   if (command === "sync") {
@@ -245,7 +295,14 @@ async function main() {
     process.exit(await handleImportCommand(process.argv));
   }
 
-  logger.error(`Unknown command: ${command}\nUsage: health-data <sync|auth|import>`);
+  if (command === "metric-stream-clickhouse-sink") {
+    await runMetricStreamClickHouseSinkFromEnv();
+    return;
+  }
+
+  logger.error(
+    `Unknown command: ${command}\nUsage: health-data <sync|auth|import|metric-stream-clickhouse-sink>`,
+  );
   process.exit(1);
 }
 

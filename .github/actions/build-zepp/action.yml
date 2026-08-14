@@ -1,0 +1,10 @@
+name: Build Zepp ZAB
+description: Build the Zepp ZAB package with the local Zeus CLI dependency
+
+runs:
+  using: composite
+  steps:
+    - name: Build ZAB package
+      shell: bash
+      working-directory: packages/zepp
+      run: pnpm build

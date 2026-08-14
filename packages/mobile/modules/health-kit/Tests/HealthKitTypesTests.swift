@@ -21,9 +21,6 @@ final class HealthKitTypesTests: XCTestCase {
             .height,
             .stepCount,
             .distanceWalkingRunning,
-            .distanceCycling,
-            .activeEnergyBurned,
-            .basalEnergyBurned,
             .flightsClimbed,
             .appleExerciseTime,
             .appleStandTime,
@@ -32,6 +29,7 @@ final class HealthKitTypesTests: XCTestCase {
             .walkingStepLength,
             .walkingDoubleSupportPercentage,
             .walkingAsymmetryPercentage,
+            .appleWalkingSteadiness,
             .dietaryEnergyConsumed,
             .dietaryProtein,
             .dietaryCarbohydrates,
@@ -108,14 +106,42 @@ final class HealthKitTypesTests: XCTestCase {
     }
 
     func testReadTypesTotalCount() {
-        // 51 quantity types + 5 category types + 1 workout type + 1 workout route = 58
-        var expectedCount = 58
+        // 49 quantity types + 5 category types + 1 workout type + 1 workout route = 56
+        var expectedCount = 55
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
         if #available(iOS 15.0, *) { expectedCount += 1 } // coverage
         #endif
         XCTAssertEqual(readTypes.count, expectedCount)
+    }
+
+    // MARK: - backgroundDeliveryTypes
+
+    func testBackgroundDeliveryTypesContainsSyncedTypes() {
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .stepCount)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .heartRate)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKWorkoutType.workoutType()))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKSeriesType.workoutRoute()))
+    }
+
+    func testBackgroundDeliveryTypesExcludeSamplesTheSyncPipelineDoesNotConsume() {
+        XCTAssertFalse(
+            backgroundDeliveryTypes.contains(
+                HKQuantityType.quantityType(forIdentifier: .dietaryProtein)!
+            )
+        )
+        XCTAssertFalse(
+            backgroundDeliveryTypes.contains(
+                HKCategoryType.categoryType(forIdentifier: .mindfulSession)!
+            )
+        )
+    }
+
+    func testBackgroundDeliveryTypesTotalCount() {
+        // 18 quantity types + sleep + workout + workout route.
+        XCTAssertEqual(backgroundDeliveryTypes.count, 21)
     }
 
     // MARK: - writeTypes
@@ -144,7 +170,6 @@ final class HealthKitTypesTests: XCTestCase {
             .restingHeartRate,
             .bodyMass,
             .stepCount,
-            .activeEnergyBurned,
             .vo2Max,
         ]
 

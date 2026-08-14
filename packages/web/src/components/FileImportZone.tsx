@@ -1,232 +1,339 @@
 import { formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import {
+  type FileUploadApi,
+  type FileUploadPhase,
+  indexedDbUploadSessionStore,
+  runResumableFileUpload,
+  type UploadImportType,
+} from "../lib/resumable-file-upload.ts";
+import { captureException } from "../lib/telemetry.ts";
+import { trpc } from "../lib/trpc.ts";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
+import { FileImportButton } from "./FileImportButton.tsx";
+import { OperationProgressBar } from "./OperationProgressBar.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
 
+type DisplayPhase = FileUploadPhase | "idle";
+
 export interface FileImportZoneProps {
   providerId?: string;
+  importType: UploadImportType;
   title: string;
   description: string;
   accept: string;
-  uploadUrl: string;
-  statusUrl: string;
-  chunked?: boolean;
+  fullSync?: boolean;
+  weightUnit?: "kg" | "lbs";
   stats?: ProviderStats;
   recentLogs?: SyncLogEntry[];
+  showDetailsLink?: boolean;
+  activeImport?: {
+    jobId: string;
+    status: "queued" | "running" | "completed" | "failed";
+    percentage?: number;
+    message?: string;
+    failedCount?: number;
+  };
+}
+
+function syncStatus(phase: DisplayPhase): SyncStatus {
+  if (phase === "completed") return "done";
+  if (phase === "failed") return "error";
+  if (["preparing", "uploading", "verifying", "queueing", "processing"].includes(phase)) {
+    return "syncing";
+  }
+  return "idle";
+}
+
+function uploadIdFromJobId(jobId: string): string | null {
+  return jobId.startsWith("file-import-") ? jobId.slice("file-import-".length) : null;
 }
 
 export function FileImportZone({
   providerId,
+  importType,
   title,
   description,
   accept,
-  uploadUrl,
-  statusUrl,
-  chunked,
+  fullSync,
+  weightUnit,
   stats,
   recentLogs = [],
+  showDetailsLink = true,
+  activeImport,
 }: FileImportZoneProps) {
-  const [state, setState] = useState<{ status: SyncStatus; progress?: number; message?: string }>({
-    status: "idle",
-  });
+  const [state, setState] = useState<{
+    phase: DisplayPhase;
+    progress: number;
+    message?: string;
+    failedCount?: number;
+  }>({ phase: "idle", progress: 0 });
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cancelledRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const currentUploadIdRef = useRef<string | null>(null);
+  const cancelledUploadIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stoppedRef = useRef(false);
+  const validProviderId = providerId?.length ? providerId : null;
+  const sessionKey = providerId ?? importType;
+  const { mutateAsync: initiateUpload } = trpc.fileUpload.initiate.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const { mutateAsync: authorizeUploadParts } = trpc.fileUpload.authorizeParts.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const { mutateAsync: completeUpload } = trpc.fileUpload.complete.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const { mutateAsync: abortUpload } = trpc.fileUpload.abort.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const trpcUtils = trpc.useUtils();
 
-  useEffect(() => {
-    return () => {
-      cancelledRef.current = true;
-      if (timerRef.current !== null) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, []);
+  const invalidateImportedData = useCallback(async () => {
+    if (!validProviderId) return;
+    try {
+      await Promise.all([
+        trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId: validProviderId }),
+        trpcUtils.providerDetail.logs.invalidate({ providerId: validProviderId }),
+        trpcUtils.providerDetail.records.invalidate(),
+        trpcUtils.sync.providerStats.invalidate(),
+      ]);
+    } catch (error) {
+      captureException(error, { tags: { providerId: validProviderId } });
+    }
+  }, [trpcUtils, validProviderId]);
 
-  const pollStatus = useCallback(
-    async (jobId: string) => {
-      cancelledRef.current = false;
-      while (!cancelledRef.current) {
+  const uploadApi = useMemo<FileUploadApi>(
+    () => ({
+      initiate: initiateUpload,
+      authorizeParts: authorizeUploadParts,
+      complete: completeUpload,
+      abort: abortUpload,
+      resume: (input) => trpcUtils.client.fileUpload.resume.query(input),
+    }),
+    [abortUpload, authorizeUploadParts, completeUpload, initiateUpload, trpcUtils],
+  );
+
+  const waitForNextPoll = useCallback(
+    () =>
+      new Promise<void>((resolve) => {
+        timerRef.current = setTimeout(() => {
+          timerRef.current = null;
+          resolve();
+        }, 1_000);
+      }),
+    [],
+  );
+
+  const pollUpload = useCallback(
+    async (uploadId: string, signal?: AbortSignal) => {
+      currentUploadIdRef.current = uploadId;
+      while (!stoppedRef.current && !signal?.aborted) {
+        let result: Awaited<ReturnType<FileUploadApi["resume"]>>;
         try {
-          const resp = await fetch(`${statusUrl}/${jobId}`);
-          if (!resp.ok) throw new Error("Failed to get status");
-          const data = await resp.json();
-
-          if (cancelledRef.current) return;
-
-          if (data.status === "done") {
-            setState({ status: "done", progress: 100, message: data.message });
-            return;
-          }
-          if (data.status === "error") {
-            setState({ status: "error", message: data.message ?? "Import failed" });
-            return;
-          }
-
+          result = await uploadApi.resume({ uploadId });
+        } catch (error) {
+          if (stoppedRef.current || signal?.aborted) return;
+          captureException(error, { tags: { uploadId } });
           setState({
-            status: "syncing",
-            progress: data.progress ?? 0,
-            message: data.message ?? "Processing...",
+            phase: "failed",
+            progress: 0,
+            message: error instanceof Error ? error.message : "Upload status is unavailable",
           });
-
-          await new Promise<void>((resolve) => {
-            timerRef.current = setTimeout(() => {
-              timerRef.current = null;
-              resolve();
-            }, 1000);
-          });
-        } catch {
-          if (!cancelledRef.current) {
-            setState({ status: "error", message: "Lost connection to server" });
-          }
           return;
         }
+        if (stoppedRef.current || signal?.aborted) return;
+        const upload = result.upload;
+        if (upload.state === "completed") {
+          setState({ phase: "completed", progress: 100, message: "Import completed" });
+          await invalidateImportedData();
+          return;
+        }
+        if (upload.state === "failed") {
+          setState({
+            phase: "failed",
+            progress: upload.progressPercent,
+            message: upload.errorMessage ?? "Import failed",
+          });
+          return;
+        }
+        if (upload.state === "aborted" || upload.state === "expired") {
+          setState({
+            phase: "cancelled",
+            progress: upload.progressPercent,
+            message: upload.state === "expired" ? "Upload expired" : "Upload cancelled",
+          });
+          return;
+        }
+        setState({
+          phase: upload.state === "queued" ? "queueing" : "processing",
+          progress: upload.progressPercent,
+          message: upload.state === "queued" ? "Import queued..." : "Processing import...",
+        });
+        await waitForNextPoll();
       }
     },
-    [statusUrl],
+    [invalidateImportedData, uploadApi, waitForNextPoll],
   );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+    stoppedRef.current = false;
+    void indexedDbUploadSessionStore
+      .get(sessionKey)
+      .then((session) => {
+        if (session && !stoppedRef.current && !signal.aborted) {
+          currentUploadIdRef.current = session.uploadId;
+          setState({
+            phase: "cancelled",
+            progress: 0,
+            message: "Select the same file to resume upload",
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (stoppedRef.current || signal.aborted) return;
+        captureException(error, { tags: { uploadId: "pending" } });
+        setState({
+          phase: "failed",
+          progress: 0,
+          message: error instanceof Error ? error.message : "Upload session storage is unavailable",
+        });
+      });
+    const activeUploadId = activeImport ? uploadIdFromJobId(activeImport.jobId) : null;
+    if (activeUploadId && activeUploadId !== cancelledUploadIdRef.current) {
+      void pollUpload(activeUploadId, signal);
+    }
+    return () => {
+      stoppedRef.current = true;
+      controller.abort();
+      abortControllerRef.current?.abort();
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [activeImport, pollUpload, sessionKey]);
 
   const uploadFile = useCallback(
     async (file: File) => {
-      setState({ status: "syncing", progress: 0, message: `Uploading ${file.name}...` });
-
-      const MAX_RETRIES = 3;
-
-      async function fetchWithRetry(
-        url: string,
-        init: RequestInit,
-        attempt = 0,
-      ): Promise<Response> {
-        try {
-          const resp = await fetch(url, init);
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ error: resp.statusText }));
-            throw new Error(err.error ?? `Upload failed (HTTP ${resp.status})`);
-          }
-          return resp;
-        } catch (err) {
-          const isNetworkError =
-            err instanceof TypeError ||
-            (err instanceof Error && err.message.includes("NetworkError"));
-          if (isNetworkError && attempt < MAX_RETRIES) {
-            const delay = 1000 * 2 ** attempt;
-            await new Promise((r) => setTimeout(r, delay));
-            return fetchWithRetry(url, init, attempt + 1);
-          }
-          throw err;
-        }
-      }
-
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+      stoppedRef.current = false;
       try {
-        let jobId: string | null = null;
-
-        if (chunked) {
-          const CHUNK_SIZE = 50 * 1024 * 1024;
-          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-          const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const fileExt = file.name.endsWith(".xml") ? ".xml" : ".zip";
-
-          for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const chunk = file.slice(start, end);
-            const uploadPct = Math.round(((i + 1) / totalChunks) * 50);
+        const completed = await runResumableFileUpload({
+          api: uploadApi,
+          file,
+          importType,
+          providerId: sessionKey,
+          sessionStore: indexedDbUploadSessionStore,
+          signal: abortController.signal,
+          fullSync,
+          weightUnit,
+          onProgress: (progress) =>
             setState({
-              status: "syncing",
-              progress: uploadPct,
-              message:
-                totalChunks > 1
-                  ? `Uploading chunk ${i + 1}/${totalChunks}...`
-                  : `Uploading ${file.name}...`,
-            });
-
-            const resp = await fetchWithRetry(uploadUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/octet-stream",
-                "x-upload-id": uploadId,
-                "x-chunk-index": String(i),
-                "x-chunk-total": String(totalChunks),
-                "x-file-ext": fileExt,
-              },
-              body: chunk,
-            });
-            const data = await resp.json();
-            if (data.jobId) jobId = data.jobId;
-          }
-        } else {
-          const resp = await fetchWithRetry(uploadUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/octet-stream" },
-            body: file,
-          });
-          const data = await resp.json();
-          jobId = data.jobId ?? null;
+              phase: progress.phase,
+              progress: progress.percentage,
+              message: progress.message,
+            }),
+        });
+        currentUploadIdRef.current = completed.uploadId;
+        setState({ phase: "processing", progress: 0, message: "Processing import..." });
+        await pollUpload(completed.uploadId, abortController.signal);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setState({ phase: "cancelled", progress: 0, message: "Upload cancelled" });
+          return;
         }
-
-        if (jobId) {
-          setState({ status: "syncing", progress: 50, message: "Processing import..." });
-          await pollStatus(jobId);
-        }
-      } catch (err: unknown) {
-        const message =
-          err instanceof TypeError
-            ? "Network error — check your connection and try again"
-            : err instanceof Error
-              ? err.message
-              : "Upload failed";
-        setState({ status: "error", message });
+        captureException(error, { tags: { uploadId: currentUploadIdRef.current ?? "pending" } });
+        setState({
+          phase: "failed",
+          progress: 0,
+          message: error instanceof Error ? error.message : "Upload failed",
+        });
+      } finally {
+        abortControllerRef.current = null;
       }
     },
-    [uploadUrl, chunked, pollStatus],
+    [fullSync, importType, pollUpload, sessionKey, uploadApi, weightUnit],
   );
 
+  const cancelUpload = useCallback(async () => {
+    abortControllerRef.current?.abort();
+    stoppedRef.current = true;
+    const uploadId = currentUploadIdRef.current;
+    cancelledUploadIdRef.current = uploadId;
+    let cancellationError: unknown;
+    if (uploadId) {
+      try {
+        await uploadApi.abort({ uploadId });
+      } catch (error) {
+        cancellationError = error;
+        captureException(error, { tags: { uploadId } });
+      }
+      try {
+        await indexedDbUploadSessionStore.delete(sessionKey);
+      } catch (error) {
+        captureException(error, { tags: { uploadId } });
+        setState({
+          phase: "failed",
+          progress: 0,
+          message: error instanceof Error ? error.message : "Local upload cleanup failed",
+        });
+        return;
+      }
+    }
+    setState({
+      phase: "cancelled",
+      progress: 0,
+      message:
+        cancellationError instanceof Error
+          ? `Upload cancelled locally. ${cancellationError.message}`
+          : "Upload cancelled",
+    });
+  }, [sessionKey, uploadApi]);
+
   const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) uploadFile(file);
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) void uploadFile(file);
     },
     [uploadFile],
   );
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
+    (event: React.DragEvent) => {
+      event.preventDefault();
       setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file) uploadFile(file);
+      const file = event.dataTransfer.files[0];
+      if (file) void uploadFile(file);
     },
     [uploadFile],
   );
+
+  const status = syncStatus(state.phase);
+  const active = status === "syncing";
 
   return (
     <div className="rounded-lg border border-border bg-surface px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
         {providerId && <ProviderLogo provider={providerId} size={18} />}
-        <StatusDot status={state.status} />
+        <StatusDot status={status} />
         <span className="text-sm font-medium text-foreground">{title}</span>
       </div>
-      <button
-        type="button"
-        tabIndex={0}
-        onDragOver={(e) => {
-          e.preventDefault();
+      <section
+        aria-label={`${title} file drop zone`}
+        onDragOver={(event) => {
+          event.preventDefault();
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            fileInputRef.current?.click();
-          }
-        }}
         className={`rounded border-2 border-dashed p-3 text-center cursor-pointer transition-colors ${
           dragOver
             ? "border-blue-500 bg-blue-500/10"
@@ -240,50 +347,43 @@ export function FileImportZone({
           onChange={handleFileSelect}
           className="hidden"
         />
-        {state.status === "syncing" ? (
+        {active ? (
           <div>
-            <div className="text-xs text-subtle">{state.message}</div>
-            {state.progress != null && (
-              <div className="mt-2 w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${state.progress}%` }}
-                />
+            <OperationProgressBar percentage={state.progress} message={state.message} />
+            <button type="button" className="mt-2 text-xs text-red-400" onClick={cancelUpload}>
+              Cancel
+            </button>
+            {typeof state.failedCount === "number" && state.failedCount > 0 && (
+              <div className="mt-1 text-xs text-amber-400">
+                {state.failedCount.toLocaleString()} file
+                {state.failedCount === 1 ? "" : "s"} failed
               </div>
             )}
           </div>
         ) : (
-          <div className="text-xs text-dim">{description}</div>
+          <div className="space-y-2">
+            <div className="text-xs text-dim">{state.message ?? description}</div>
+            <FileImportButton onClick={() => fileInputRef.current?.click()} />
+          </div>
         )}
-      </button>
-      {state.status !== "idle" && state.status !== "syncing" && (
-        <div
-          className={`mt-1.5 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}
-        >
-          {state.message}
-        </div>
-      )}
-
-      {/* Stats summary */}
+      </section>
       {stats && <ProviderStatsBreakdown stats={stats} />}
-
-      {/* Recent sync dots + details link */}
       <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
-          {recentLogs.map((l) => (
+          {recentLogs.map((logEntry) => (
             <span
-              key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
+              key={`${logEntry.syncedAt}-${logEntry.status}-${logEntry.recordCount}-${logEntry.durationMs}`}
               className={`w-1.5 h-1.5 rounded-full ${
-                l.status === "success" ? "bg-emerald-400" : "bg-red-400"
+                logEntry.status === "success" ? "bg-emerald-400" : "bg-red-400"
               }`}
-              title={`${l.status} — ${formatTime(l.syncedAt)}`}
+              title={`${logEntry.status} — ${formatTime(logEntry.syncedAt)}`}
             />
           ))}
         </div>
-        {providerId && (
+        {validProviderId && showDetailsLink && (
           <Link
             to="/providers/$id"
-            params={{ id: providerId }}
+            params={{ id: validProviderId }}
             className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details

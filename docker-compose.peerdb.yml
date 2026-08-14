@@ -1,0 +1,208 @@
+services:
+  peerdb-catalog:
+    image: postgres:18-alpine
+    environment:
+      PGUSER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --locale=C.UTF-8
+    volumes:
+      - peerdb_catalog_data:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+
+  peerdb-temporal:
+    image: temporalio/auto-setup:1.29
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-health}
+      POSTGRES_SEEDS: peerdb-catalog
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/docker.yaml
+      TEMPORAL_BROADCAST_HOST: "127.0.0.1"
+    restart: unless-stopped
+    depends_on:
+      peerdb-catalog:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "peerdb-temporal:7233"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  peerdb-temporal-admin-tools:
+    image: temporalio/admin-tools:1.31
+    environment:
+      TEMPORAL_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_SHOW_STACKS: "1"
+
+  # Registers the MirrorName search attribute that PeerDB workflows require.
+  # Runs once after Temporal is healthy, then exits.
+  peerdb-temporal-init:
+    image: temporalio/admin-tools:1.31
+    environment:
+      TEMPORAL_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
+    depends_on:
+      peerdb-temporal:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: /bin/sh
+    command:
+      - -euc
+      - |
+        temporal_address=peerdb-temporal:7233
+        search_attributes="$$(temporal operator search-attribute list \
+          --address "$$temporal_address" --namespace default --output json)"
+        if printf '%s\n' "$$search_attributes" | \
+          grep -Eq '"MirrorName"[[:space:]]*:[[:space:]]*"INDEXED_VALUE_TYPE_TEXT"'; then
+          exit 0
+        fi
+        if printf '%s\n' "$$search_attributes" | grep -Eq '"MirrorName"[[:space:]]*:'; then
+          echo "Temporal search attribute MirrorName must have type Text" >&2
+          exit 1
+        fi
+        temporal operator search-attribute create \
+          --address "$$temporal_address" --namespace default \
+          --name MirrorName --type Text
+        search_attributes="$$(temporal operator search-attribute list \
+          --address "$$temporal_address" --namespace default --output json)"
+        if ! printf '%s\n' "$$search_attributes" | \
+          grep -Eq '"MirrorName"[[:space:]]*:[[:space:]]*"INDEXED_VALUE_TYPE_TEXT"'; then
+          echo "Temporal search attribute MirrorName was not registered as Text" >&2
+          exit 1
+        fi
+
+  peerdb-minio:
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    environment:
+      MINIO_ROOT_USER: peerdb
+      # MinIO requires a root password of at least 8 characters; do not reuse
+      # POSTGRES_PASSWORD here since the local default ("health") is too short.
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-peerdblocaldev}
+      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 15m
+      PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled"}]}'
+    volumes:
+      - peerdb_minio_data:/data
+    restart: unless-stopped
+    entrypoint: >
+      /bin/sh -euc "
+      minio server /data --console-address=:36987 &
+      attempts=0;
+      until mc alias set peerdb-minio http://peerdb-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        attempts=$$((attempts + 1));
+        if [ $$attempts -ge 30 ]; then
+          echo peerdb-minio did not become ready in time >&2;
+          exit 1;
+        fi;
+        sleep 1;
+      done;
+      mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      printf '%s\n' "$$PEERDB_STAGE_LIFECYCLE_CONFIG" |
+        mc ilm rule import peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      wait
+      "
+
+  peerdb-flow-api:
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.3
+    environment: &peerdb-flow-environment
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      PEERDB_CATALOG_DATABASE: postgres
+      TEMPORAL_HOST_PORT: peerdb-temporal:7233
+      TEMPORAL_CLIENT_CERT: ""
+      TEMPORAL_CLIENT_KEY: ""
+      PEERDB_TEMPORAL_NAMESPACE: default
+      PEERDB_ALLOWED_TARGETS: ""
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ACCESS_KEY_ID: peerdb
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-peerdblocaldev}
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_REGION: us-east-1
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ENDPOINT_URL_S3: http://peerdb-minio:9000
+      PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_REGION: ""
+      AWS_ENDPOINT: ""
+    restart: unless-stopped
+    depends_on:
+      peerdb-catalog:
+        condition: service_healthy
+      peerdb-temporal:
+        condition: service_started
+      peerdb-temporal-init:
+        condition: service_completed_successfully
+      peerdb-minio:
+        condition: service_started
+
+  peerdb-flow-snapshot-worker:
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.3
+    environment: *peerdb-flow-environment
+    restart: unless-stopped
+    depends_on:
+      peerdb-flow-api:
+        condition: service_started
+
+  peerdb-flow-worker:
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.3
+    environment: *peerdb-flow-environment
+    restart: unless-stopped
+    depends_on:
+      peerdb-flow-api:
+        condition: service_started
+
+  peerdb:
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.3
+    stop_signal: SIGINT
+    environment:
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      PEERDB_CATALOG_DATABASE: postgres
+      PEERDB_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      PEERDB_FLOW_SERVER_ADDRESS: grpc://peerdb-flow-api:8112
+      RUST_LOG: info
+      RUST_BACKTRACE: "1"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9900:9900"
+    depends_on:
+      peerdb-catalog:
+        condition: service_healthy
+      peerdb-flow-api:
+        condition: service_started
+
+  peerdb-ui:
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.3
+    environment:
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      PEERDB_CATALOG_DATABASE: postgres
+      PEERDB_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      PEERDB_FLOW_SERVER_HTTP: http://peerdb-flow-api:8113
+      NEXTAUTH_SECRET: ${PEERDB_UI_NEXTAUTH_SECRET:-local-dev-peerdb-ui-nextauth-secret-rotate-before-shared-use}
+      NEXTAUTH_URL: ${PEERDB_UI_PUBLIC_URL:-http://localhost:3001}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PEERDB_UI_PORT:-3001}:3000"
+    depends_on:
+      peerdb-flow-api:
+        condition: service_started
+
+volumes:
+  peerdb_catalog_data:
+  peerdb_minio_data:

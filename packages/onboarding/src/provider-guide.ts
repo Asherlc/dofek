@@ -28,9 +28,10 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
       "komoot",
       "mapmyfitness",
       "ride-with-gps",
-      "cycling-analytics",
+      "cycling_analytics",
       "xert",
       "velohero",
+      "mountain-project",
       "decathlon",
       "wger",
     ],
@@ -38,7 +39,7 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
   {
     title: "Sleep & Recovery",
     description: "Track sleep stages, quality, and recovery metrics",
-    providerIds: ["oura", "whoop", "eight-sleep", "garmin", "fitbit", "ultrahuman"],
+    providerIds: ["oura", "whoop", "eight-sleep", "garmin", "fitbit", "ultrahuman", "amazfit-zepp"],
   },
   {
     title: "Nutrition",
@@ -48,12 +49,12 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
   {
     title: "Body Composition",
     description: "Monitor weight, body fat percentage, and trends over time",
-    providerIds: ["withings", "garmin", "fitbit"],
+    providerIds: ["withings", "garmin", "fitbit", "bodyspec"],
   },
   {
     title: "Health Metrics",
     description: "Heart rate variability, resting HR, blood oxygen, and skin temperature",
-    providerIds: ["oura", "whoop", "garmin", "fitbit", "ultrahuman", "withings"],
+    providerIds: ["oura", "whoop", "garmin", "fitbit", "ultrahuman", "amazfit-zepp", "withings"],
   },
 ];
 

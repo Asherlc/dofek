@@ -1,6 +1,6 @@
-import { formatDurationMinutes, formatSleepDebtInline, isToday } from "@dofek/format/format";
-import { readinessLevelColor } from "@dofek/scoring/scoring";
-import type { NextWorkoutRecommendation } from "dofek-server/types";
+import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -17,34 +17,17 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
+import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
-import { useAutoSync } from "../../lib/useAutoSync";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
-
-function todayString(): string {
-  const now = new Date();
-  return now.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function recommendationTypeColor(type: NextWorkoutRecommendation["recommendationType"]): string {
-  if (type === "rest") return colors.orange;
-  if (type === "strength") return colors.positive;
-  return colors.blue;
-}
-
-function capitalize(value: string): string {
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
-}
 
 export default function TodayScreen() {
   const router = useRouter();
@@ -52,8 +35,22 @@ export default function TodayScreen() {
   const endDate = useTodayQueryDate();
 
   // Consolidated dashboard data fetch
-  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery({ endDate });
+  const dashboardQuery = trpc.mobileDashboard.dashboardV2.useQuery(
+    { endDate },
+    { placeholderData: (previousData) => previousData },
+  );
+  const todayPlanQuery = trpc.todayPlan.get.useQuery(
+    { endDate },
+    { placeholderData: (previousData) => previousData },
+  );
+  const processingStatusQuery = useProcessingStatus({
+    datasets: ["activity", "sleep", "recovery", "training", "body"],
+  });
   const dashboardData = dashboardQuery.data;
+  const anomalyQuery = trpc.anomalyDetection.check.useQuery(
+    { endDate },
+    { staleTime: 10 * 60 * 1000, enabled: dashboardData != null },
+  );
 
   // Derived readiness/recovery
   const todayReadiness = dashboardData?.readiness ?? undefined;
@@ -68,20 +65,29 @@ export default function TodayScreen() {
   const strainResult = dashboardData?.strain;
   const dailyStrain = strainResult?.dailyStrain ?? 0;
 
-  // Auto-sync when data is stale
-  useAutoSync(dashboardData?.latestDate ?? undefined);
-
-  // Recommendations and alerts from consolidated query
-  const nextWorkout = dashboardData?.nextWorkout;
+  // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
-  const anomalies = dashboardData?.anomalies;
+  const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
+  const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
-  const isLoading = dashboardQuery.isLoading;
-  const isError = dashboardQuery.isError;
+  const isLoading = shouldShowBlockingLoading({
+    data: dashboardData,
+    isFetching: dashboardQuery.isFetching,
+    isLoading: dashboardQuery.isLoading,
+  });
+  const isError = dashboardQuery.isError && dashboardData == null;
+  const hasBackgroundError = dashboardQuery.isError && dashboardData != null;
 
-  const triggerSync = trpc.sync.triggerSync.useMutation();
-  const { refreshing, onRefresh } = useRefresh(() => {
-    triggerSync.mutate({ sinceDays: 1 });
+  const { refreshing, onRefresh } = useRefresh({
+    refresh: async () => {
+      await Promise.all([
+        dashboardQuery.refetch(),
+        todayPlanQuery.refetch(),
+        anomalyQuery.refetch(),
+        processingStatusQuery.refetch(),
+      ]);
+    },
+    invalidate: null,
   });
 
   if (isError) {
@@ -112,6 +118,35 @@ export default function TodayScreen() {
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
+      {providerGuide.error ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not refresh provider setup"
+          message={getQueryErrorMessage(providerGuide.error)}
+          minHeight={72}
+        />
+      ) : null}
+
+      <ProcessingStatusWidget
+        data={processingStatusQuery.data}
+        error={processingStatusQuery.error}
+        loading={processingStatusQuery.isLoading}
+      />
+
+      <TodayPlanCard
+        plan={todayPlanQuery.data}
+        loading={todayPlanQuery.isLoading}
+        error={todayPlanQuery.error}
+      />
+
+      {hasBackgroundError ? (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(dashboardQuery.error, "Failed to refresh dashboard.")}
+          minHeight={72}
+        />
+      ) : null}
+
       {/* Anomaly Alert Banner */}
       {anomalies != null && anomalies.anomalies.length > 0 && (
         <View style={styles.anomalyBanner}>
@@ -123,47 +158,61 @@ export default function TodayScreen() {
         </View>
       )}
 
-      <Text style={styles.date}>{todayString()}</Text>
+      {dashboardData?.summaryDateContext ? (
+        <Text style={styles.date}>
+          {formatSummaryDateContext(dashboardData.summaryDateContext)}
+        </Text>
+      ) : null}
 
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>
-        <TouchableOpacity
-          style={styles.ringSection}
-          onPress={() => router.navigate("/(tabs)/recovery")}
-          activeOpacity={0.7}
-        >
+        <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Recovery"
             description="This ring visualizes your readiness score based on recovery-related signals."
             textStyle={styles.sectionLabel}
           />
-          {isLoading ? (
-            <SkeletonCircle size={180} />
-          ) : recoveryScore != null ? (
-            <RecoveryRing score={recoveryScore} size={180} />
-          ) : (
-            <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
-              <Text style={styles.emptyRingText}>--</Text>
-              <Text style={styles.emptyRingSubtext}>No data yet</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.ringSection}
-          onPress={() => router.navigate("/(tabs)/strain")}
-          activeOpacity={0.7}
-        >
+          <TouchableOpacity
+            style={styles.ringTouchTarget}
+            onPress={() => router.navigate("/(tabs)/recovery")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Recovery"
+            accessibilityState={{ busy: isLoading }}
+          >
+            {isLoading ? (
+              <SkeletonCircle size={180} />
+            ) : recoveryScore != null ? (
+              <RecoveryRing score={recoveryScore} size={180} />
+            ) : (
+              <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
+                <Text style={styles.emptyRingText}>--</Text>
+                <Text style={styles.emptyRingSubtext}>No data yet</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Strain"
             description="This gauge shows your most recent daily training strain relative to your recent baseline."
             textStyle={styles.sectionLabel}
           />
-          {isLoading ? (
-            <SkeletonCircle size={120} />
-          ) : (
-            <StrainGauge strain={dailyStrain} size={120} />
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.ringTouchTarget}
+            onPress={() => router.navigate("/(tabs)/strain")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Strain"
+            accessibilityState={{ busy: isLoading }}
+          >
+            {isLoading ? (
+              <SkeletonCircle size={120} />
+            ) : (
+              <StrainGauge strain={dailyStrain} size={120} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Recovery components breakdown */}
@@ -201,139 +250,139 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep summary */}
-      {!isLoading && lastNight && (
+      {!isLoading && isSleepDataMissing && (
         <Animated.View
           entering={FadeInUp.delay(160)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/sleep")}>
-            <Card title="Last Night">
-              <SleepBar
-                durationMinutes={lastNight.durationMinutes}
-                deepPercentage={lastNight.deepPct}
-                remPercentage={lastNight.remPct}
-                lightPercentage={lastNight.lightPct}
-                awakePercentage={lastNight.awakePct}
-              />
-              {sleepDebt > 0 && (
-                <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
-              )}
-            </Card>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
-
-      {/* Next Workout */}
-      {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
-        <Animated.View
-          entering={FadeInUp.delay(240)
-            .duration(duration.slow)
-            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
-        >
-          <Card title="Next Workout">
-            <View style={styles.nextWorkoutHeader}>
-              <View style={styles.nextWorkoutTitleWrap}>
-                <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
-              </View>
-              <View
-                style={[
-                  styles.nextWorkoutTypeBadge,
-                  {
-                    borderColor: recommendationTypeColor(nextWorkout.recommendationType),
-                    backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.nextWorkoutTypeLabel,
-                    { color: recommendationTypeColor(nextWorkout.recommendationType) },
-                  ]}
-                >
-                  {capitalize(nextWorkout.recommendationType)}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
-            <Text
-              style={[
-                styles.nextWorkoutReadiness,
-                { color: readinessLevelColor(nextWorkout.readiness.level) },
-              ]}
-            >
-              Readiness:{" "}
-              {nextWorkout.readiness.score != null
-                ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
-                : "Unavailable"}
-            </Text>
-
-            {nextWorkout.cardio != null && (
-              <Text style={styles.nextWorkoutMeta}>
-                Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
-              </Text>
-            )}
-            {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
-              <Text style={styles.nextWorkoutMeta}>
-                Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
-              </Text>
-            )}
-
-            {nextWorkout.details.length > 0 && (
-              <View style={styles.nextWorkoutList}>
-                <Text style={styles.nextWorkoutListTitle}>Plan</Text>
-                {nextWorkout.details.slice(0, 3).map((detail) => (
-                  <Text key={detail} style={styles.nextWorkoutListItem}>
-                    {"\u2022"} {detail}
-                  </Text>
-                ))}
-              </View>
-            )}
+          <Card title="Sleep Data Needed">
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus?.label}</Text>
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
           </Card>
         </Animated.View>
       )}
 
-      {/* Sleep Coach */}
-      {!isLoading && sleepNeed && (
+      {!isLoading && !isSleepDataMissing && (
+        <Animated.View
+          entering={FadeInUp.delay(160)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          {lastNight ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push("/sleep")}
+              accessibilityRole="button"
+              accessibilityLabel="Open last night sleep details"
+            >
+              <Card title="Last Night">
+                {dashboardData?.summaryDateContext ? (
+                  <Text style={styles.sleepDate}>
+                    Night of{" "}
+                    {formatSummaryDateContext({
+                      ...dashboardData.summaryDateContext,
+                      effectiveDate: lastNight.date,
+                    })}
+                  </Text>
+                ) : null}
+                {lastNight.stagingAvailable ? (
+                  <SleepBar
+                    durationMinutes={lastNight.durationMinutes}
+                    deepPercentage={lastNight.deepPct ?? 0}
+                    remPercentage={lastNight.remPct ?? 0}
+                    lightPercentage={lastNight.lightPct ?? 0}
+                    awakePercentage={lastNight.awakePct ?? 0}
+                  />
+                ) : (
+                  <Text style={styles.noDataText}>
+                    {formatDurationMinutes(lastNight.durationMinutes)} recorded. Sleep stages were
+                    not reported.
+                  </Text>
+                )}
+                {sleepDebt > 0 && (
+                  <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
+                )}
+              </Card>
+            </TouchableOpacity>
+          ) : (
+            <Card title="Last Night">
+              <Text style={styles.noDataText}>No sleep data</Text>
+            </Card>
+          )}
+        </Animated.View>
+      )}
+
+      {/* Sleep estimate */}
+      {!isLoading && !isSleepDataMissing && (sleepNeed || !lastNight) && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
-          <Card title="Sleep Coach">
-            {sleepNeed.canRecommend ? (
+          <Card title="Sleep Estimate">
+            {sleepNeed == null ? (
+              <Text style={styles.noDataText}>No sleep data</Text>
+            ) : sleepNeed.availability === "available" ? (
               <>
+                <Text style={styles.sleepNeedSubtitle}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.sleepNeedTotal}>
-                  {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                  {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
-                <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+                <Text style={styles.sleepNeedSubtitle}>
+                  {sleepNeed.estimateMetadata.summaryLabel}
+                </Text>
+                <View style={styles.sleepNeedBreakdown}>
+                  <View style={styles.sleepNeedRow}>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.baseline}
+                    </Text>
+                    <Text style={styles.sleepNeedValue}>
+                      {formatDurationMinutes(sleepNeed.baselineMinutes)}
+                    </Text>
+                  </View>
+                  <View style={styles.sleepNeedRow}>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.strainDebt}
+                    </Text>
+                    <Text style={styles.sleepNeedValue}>
+                      +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
+                    </Text>
+                  </View>
+                  <View style={styles.sleepNeedRow}>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.debtRecovery}
+                    </Text>
+                    <Text style={styles.sleepNeedValue}>
+                      +{formatDurationMinutes(sleepNeed.debtRecoveryMinutes)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.sleepNeedMetadata}>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.basisLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.coverageLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.methodLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.uncertaintyLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.limitationLabel}
+                  </Text>
+                </View>
               </>
             ) : (
-              <Text style={styles.sleepNeedMissing}>
-                Need last night's sleep for recommendation
-              </Text>
+              <>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus.label}</Text>
+                <Text style={styles.noDataText}>{sleepNeed.message}</Text>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
+              </>
             )}
-            <View style={styles.sleepNeedBreakdown}>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Baseline need</Text>
-                <Text style={styles.sleepNeedValue}>
-                  {formatDurationMinutes(sleepNeed.baselineMinutes)}
-                </Text>
-              </View>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Strain debt</Text>
-                <Text style={styles.sleepNeedValue}>
-                  +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
-                </Text>
-              </View>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
-                <Text style={styles.sleepNeedValue}>
-                  +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
-                </Text>
-              </View>
-            </View>
           </Card>
         </Animated.View>
       )}
@@ -426,6 +475,30 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: "500",
   },
+  sleepDate: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  quickAddButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    gap: 10,
+  },
+  quickAddPlus: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: colors.accent,
+    width: 28,
+    textAlign: "center",
+  },
+  quickAddLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
   emptyRing: {
     alignItems: "center",
     justifyContent: "center",
@@ -455,6 +528,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+  ringTouchTarget: {
+    alignItems: "center",
+  },
   ringState: {
     width: 180,
   },
@@ -476,6 +552,10 @@ const styles = StyleSheet.create({
     color: colors.orange,
     marginTop: 4,
   },
+  noDataText: {
+    fontSize: 15,
+    color: colors.textTertiary,
+  },
   // Anomaly banner
   anomalyBanner: {
     flexDirection: "row",
@@ -495,63 +575,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text,
     fontWeight: "500",
-  },
-  // Next workout
-  nextWorkoutHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  nextWorkoutTitleWrap: {
-    flex: 1,
-    gap: 6,
-  },
-  nextWorkoutTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  nextWorkoutTypeBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginTop: 2,
-  },
-  nextWorkoutTypeLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  nextWorkoutSummary: {
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 20,
-  },
-  nextWorkoutReadiness: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  nextWorkoutMeta: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  nextWorkoutList: {
-    gap: 6,
-    marginTop: 2,
-  },
-  nextWorkoutListTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  nextWorkoutListItem: {
-    fontSize: 13,
-    color: colors.text,
-    lineHeight: 19,
   },
   // Sleep coach
   sleepNeedTotal: {
@@ -587,5 +610,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
     fontVariant: ["tabular-nums"],
+  },
+  sleepNeedMetadata: {
+    gap: 4,
+    marginTop: 8,
+  },
+  sleepNeedMetadataText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
   },
 });

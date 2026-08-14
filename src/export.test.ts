@@ -1,8 +1,7 @@
-import { Readable } from "node:stream";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock archiver
+// Mock Archiver
 const mockArchive = {
   pipe: vi.fn(),
   append: vi.fn(),
@@ -10,7 +9,7 @@ const mockArchive = {
   on: vi.fn(),
 };
 vi.mock("archiver", () => ({
-  default: vi.fn(() => mockArchive),
+  ZipArchive: vi.fn(() => mockArchive),
 }));
 
 // Mock fs
@@ -73,118 +72,70 @@ describe("generateExport", () => {
   });
 
   it("exports all tables and returns result with counts", async () => {
-    // 17 tables in EXPORT_TABLES, last one is batched (metric-streams)
-    // For non-batched: 16 calls returning rows
-    // For batched: 1 count query + batched stream reads
     const rows = [{ id: "1" }];
     const executeResults: Record<string, unknown>[][] = [];
-    // 16 non-batched tables each return 1 row
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push(rows);
     }
-    // metric-streams count query
-    executeResults.push([{ count: "3" }]);
-    // metric-streams batch query (called by the stream)
-    executeResults.push([{ id: "ms1" }, { id: "ms2" }, { id: "ms3" }]);
-    // second batch read returns empty (end of data)
-    executeResults.push([]);
 
     setupMockDb(executeResults);
     const progress: Array<{ percentage: number; message: string }> = [];
-
-    // For the batched stream, we need to handle archive.append receiving a Readable
-    // and the test needs the stream to emit "end"
-    mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
-      if (content instanceof Readable) {
-        // Consume the stream so it finishes
-        content.on("data", () => {});
-        // The stream will emit "end" naturally once done
-      }
-    });
 
     const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", (info) => {
       progress.push(info);
     });
 
-    expect(result.tableCount).toBe(17);
-    // 16 non-batched tables * 1 row each + 3 from batched count
-    expect(result.totalRecords).toBe(19);
+    expect(result.tableCount).toBe(15);
+    expect(result.totalRecords).toBe(15);
     expect(progress.length).toBeGreaterThan(0);
     expect(progress[progress.length - 1]).toEqual({ percentage: 100, message: "Export complete" });
   });
 
   it("handles empty tables correctly", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    // 16 non-batched tables returning empty
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push([]);
     }
-    // metric-streams count query
-    executeResults.push([{ count: "0" }]);
-    // metric-streams batch (empty)
-    executeResults.push([]);
 
     setupMockDb(executeResults);
 
-    mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
-      if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
-
     const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
-    expect(result.tableCount).toBe(17);
+    expect(result.tableCount).toBe(15);
     expect(result.totalRecords).toBe(0);
   });
 
   it("reports progress for each table", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push([]);
     }
-    executeResults.push([{ count: "0" }]);
-    executeResults.push([]);
 
     setupMockDb(executeResults);
     const progress: Array<{ percentage: number; message: string }> = [];
-
-    mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
-      if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", (info) => {
       progress.push(info);
     });
 
-    // Should have progress for each of the 17 tables + final 100%
-    expect(progress.length).toBe(18);
+    // Should have progress for each of the 15 tables + final 100%
+    expect(progress.length).toBe(16);
     // First progress should be 0%
     expect(progress[0]?.percentage).toBe(0);
     expect(progress[0]?.message).toContain("Exporting");
-    expect(progress[1]?.percentage).toBe(6);
-    expect(progress[8]?.percentage).toBe(47);
+    expect(progress[1]?.percentage).toBe(7);
+    expect(progress[9]?.percentage).toBe(60);
     // Last progress should be 100%
-    expect(progress[17]?.percentage).toBe(100);
+    expect(progress[15]?.percentage).toBe(100);
   });
 
   it("includes metadata file in the archive", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push([]);
     }
-    executeResults.push([{ count: "0" }]);
-    executeResults.push([]);
 
     setupMockDb(executeResults);
-
-    mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
-      if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
@@ -200,47 +151,33 @@ describe("generateExport", () => {
 
     const metadata = JSON.parse(String(metadataCall?.[0]));
     expect(metadata.userId).toBe("user-1");
-    expect(metadata.tables).toHaveLength(17);
+    expect(metadata.tables).toHaveLength(15);
     expect(metadata.tables[0]).toBe("user-profile.csv");
-    expect(metadata.tables).toContain("metric-streams.csv");
+    expect(metadata.tables).not.toContain("metric-streams.csv");
     expect(metadata.totalRecords).toBe(0);
     expect(metadata.exportedAt).toBeDefined();
   });
 
   it("creates a compressed ZIP archive", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+    for (let tableIndex = 0; tableIndex < 15; tableIndex++) {
       executeResults.push([]);
     }
-    executeResults.push([{ count: "0" }]);
-    executeResults.push([]);
 
     setupMockDb(executeResults);
-    mockArchive.append.mockImplementation((content: unknown) => {
-      if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
-    expect(archiver).toHaveBeenCalledWith("zip", { zlib: { level: 6 } });
+    expect(ZipArchive).toHaveBeenCalledWith({ zlib: { level: 6 } });
   });
 
   it("writes empty CSV files for empty regular tables", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+    for (let tableIndex = 0; tableIndex < 15; tableIndex++) {
       executeResults.push([]);
     }
-    executeResults.push([{ count: "0" }]);
-    executeResults.push([]);
 
     setupMockDb(executeResults);
-    mockArchive.append.mockImplementation((content: unknown) => {
-      if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
@@ -262,18 +199,11 @@ describe("generateExport", () => {
         },
       ],
     ];
-    for (let tableIndex = 1; tableIndex < 16; tableIndex++) {
+    for (let tableIndex = 1; tableIndex < 15; tableIndex++) {
       executeResults.push([]);
     }
-    executeResults.push([{ count: "0" }]);
-    executeResults.push([]);
 
     setupMockDb(executeResults);
-    mockArchive.append.mockImplementation((content: unknown) => {
-      if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
@@ -285,110 +215,20 @@ describe("generateExport", () => {
     expect(findArchiveEntry("user-profile.json")).toBeUndefined();
   });
 
-  it("streams metric streams as CSV", async () => {
-    const executeResults: Record<string, unknown>[][] = [];
-    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
-      executeResults.push([]);
-    }
-    executeResults.push([{ count: "2" }]);
-    executeResults.push([
-      {
-        recorded_at: new Date("2024-01-15T10:00:00.000Z"),
-        provider_id: "test-provider",
-        source_type: "api",
-        channel: "heart_rate",
-        scalar: 145,
-      },
-      {
-        recorded_at: new Date("2024-01-15T10:00:01.000Z"),
-        provider_id: "test-provider",
-        source_type: "api",
-        channel: "power",
-        scalar: 200,
-      },
-    ]);
-
-    setupMockDb(executeResults);
-    let metricStreamContent: Promise<string> | undefined;
-    mockArchive.append.mockImplementation((content: unknown, options: unknown) => {
-      if (
-        content instanceof Readable &&
-        options != null &&
-        typeof options === "object" &&
-        "name" in options &&
-        options.name === "metric-streams.csv"
-      ) {
-        const chunks: string[] = [];
-        metricStreamContent = new Promise((resolve, reject) => {
-          content.on("data", (chunk) => chunks.push(String(chunk)));
-          content.on("end", () => resolve(chunks.join("")));
-          content.on("error", reject);
-        });
-      } else if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
+  it("exports raw food-entry provenance instead of the serving aggregate", async () => {
+    setupMockDb(Array.from({ length: 15 }, () => []));
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
-    expect(metricStreamContent).toBeDefined();
-    if (!metricStreamContent) throw new Error("Expected metric-streams.csv stream");
-    await expect(metricStreamContent).resolves.toBe(
-      "recorded_at,provider_id,source_type,channel,scalar\n2024-01-15T10:00:00.000Z,test-provider,api,heart_rate,145\n2024-01-15T10:00:01.000Z,test-provider,api,power,200",
+    const execute = vi.mocked(mockDb.execute);
+    const nutritionDailyQuery = JSON.stringify(
+      Reflect.get(execute.mock.calls[4]?.[0] ?? {}, "queryChunks") ?? [],
     );
-  });
-
-  it("streams metric streams across multiple cursor batches", async () => {
-    const executeResults: Record<string, unknown>[][] = [];
-    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
-      executeResults.push([]);
-    }
-    executeResults.push([{ count: "50001" }]);
-    executeResults.push(
-      Array.from({ length: 50_000 }, (_, index) => ({
-        recorded_at: new Date(1_704_108_000_000 + index * 1000),
-        provider_id: "test-provider",
-        source_type: "api",
-        channel: "heart_rate",
-        scalar: index,
-      })),
+    const foodEntryQuery = JSON.stringify(
+      Reflect.get(execute.mock.calls[5]?.[0] ?? {}, "queryChunks") ?? [],
     );
-    executeResults.push([
-      {
-        recorded_at: new Date("2024-01-02T00:00:00.000Z"),
-        provider_id: "test-provider",
-        source_type: "api",
-        channel: "heart_rate",
-        scalar: 50_000,
-      },
-    ]);
-
-    setupMockDb(executeResults);
-    let metricStreamContent = "";
-    mockArchive.append.mockImplementation((content: unknown, options: unknown) => {
-      if (
-        content instanceof Readable &&
-        options != null &&
-        typeof options === "object" &&
-        "name" in options &&
-        options.name === "metric-streams.csv"
-      ) {
-        content.on("data", (chunk) => {
-          metricStreamContent += String(chunk);
-        });
-      } else if (content instanceof Readable) {
-        content.on("data", () => {});
-      }
-    });
-
-    const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
-
-    expect(result.totalRecords).toBe(50_001);
-    expect(
-      metricStreamContent.startsWith("recorded_at,provider_id,source_type,channel,scalar\n"),
-    ).toBe(true);
-    expect(metricStreamContent).toContain(",0\n");
-    expect(metricStreamContent.endsWith(",50000")).toBe(true);
-    expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(19);
+    expect(nutritionDailyQuery).toContain("fitness.v_nutrition_provider_daily");
+    expect(foodEntryQuery).toContain("fitness.food_entry");
+    expect(foodEntryQuery).not.toContain("fitness.v_nutrition_daily");
   });
 });

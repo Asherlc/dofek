@@ -1,6 +1,16 @@
+import { randomUUID } from "node:crypto";
+import {
+  fetchWithRateLimitHandling,
+  isServiceUnavailableStatus,
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+  parseRetryAfterHeader,
+} from "@dofek/provider-http/rate-limit";
+import { z } from "zod";
 import type {
   WhoopAuthToken,
   WhoopCycle,
+  WhoopDeveloperWorkoutListResponse,
   WhoopHrValue,
   WhoopMetricResponse,
   WhoopMetricValue,
@@ -12,12 +22,63 @@ import type {
 
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const WHOOP_API_VERSION = "7";
+const WHOOP_DEVELOPER_WORKOUT_PATH = "/developer/v2/activity/workout";
+/** Minimum delay between consecutive WHOOP API requests (ms). */
+export const WHOOP_API_THROTTLE_MS = 1_000;
+const WHOOP_AUTH_ORIGIN = "https://id.whoop.com";
+const WHOOP_AUTH_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0";
+const WHOOP_AUTH_AMZ_USER_AGENT =
+  "aws-sdk-js/3.848.0 ua/2.1 os/macOS#10.15 lang/js md/browser#Firefox_150.0 api/cognito-identity-provider#3.848.0 m/N,E";
 
-export class WhoopRateLimitError extends Error {
-  constructor(message: string) {
-    super(message);
+export class WhoopRateLimitError extends ProviderRateLimitError {
+  constructor(
+    message: string,
+    responseBody = "",
+    retryAfterSeconds?: number | null,
+    userId?: string | null,
+  ) {
+    super({
+      message,
+      providerId: "whoop",
+      statusCode: 429,
+      responseBody,
+      retryAfterSeconds,
+      scope: userId != null ? "user" : "provider",
+      userId: userId ?? null,
+    });
     this.name = "WhoopRateLimitError";
   }
+}
+
+/** Thrown when metrics-service rejects a metric name (400/404). */
+export class WhoopMetricUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WhoopMetricUnavailableError";
+  }
+}
+
+function createWhoopRateLimitError(response: Response, responseBody: string): WhoopRateLimitError {
+  const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
+  return new WhoopRateLimitError(
+    `WHOOP API rate limit exceeded (${response.status}): ${responseBody}`,
+    responseBody,
+    retryAfterSeconds,
+  );
+}
+
+function createWhoopServiceUnavailableError(
+  response: Response,
+  responseBody: string,
+): ProviderServiceUnavailableError {
+  return new ProviderServiceUnavailableError({
+    message: `WHOOP API service unavailable (${response.status}): ${responseBody}`,
+    providerId: "whoop",
+    statusCode: response.status,
+    responseBody,
+    retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
+  });
 }
 
 // Cognito auth config (from id.whoop.com web app)
@@ -36,10 +97,38 @@ function getNumber(obj: Record<string, unknown>, key: string): number | undefine
   return typeof val === "number" ? val : undefined;
 }
 
+/** Extract the Cognito AuthenticationResult.ExpiresIn (seconds) and validate it. */
+function getExpiresInSeconds(authResult: Record<string, unknown>): number {
+  const expiresInSeconds = getNumber(authResult, "ExpiresIn");
+  if (!expiresInSeconds || expiresInSeconds <= 0) {
+    throw new Error("WHOOP auth: Cognito response missing valid ExpiresIn");
+  }
+  return expiresInSeconds;
+}
+
 /** Type guard: checks if a value is a non-null, non-array object (Record-like) */
 function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
 }
+
+const whoopDeveloperWorkoutRecordSchema = z
+  .object({
+    id: z.string(),
+    start: z.string(),
+    end: z.string(),
+    timezone_offset: z.string().optional(),
+    sport_name: z.string().optional(),
+    sport_id: z.number().optional(),
+    score_state: z.string().optional(),
+  })
+  .passthrough();
+
+const whoopDeveloperWorkoutListResponseSchema = z
+  .object({
+    records: z.array(whoopDeveloperWorkoutRecordSchema),
+    next_token: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 /** Safely extract a nested record from an untyped record */
 function getRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
@@ -53,14 +142,34 @@ async function cognitoCall(
   body: Record<string, unknown>,
   fetchFn: typeof globalThis.fetch,
 ): Promise<Record<string, unknown>> {
-  const response = await fetchFn(COGNITO_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-amz-json-1.1",
-      "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
+  const response = await fetchWithRateLimitHandling(
+    fetchFn,
+    COGNITO_ENDPOINT,
+    {
+      method: "POST",
+      headers: {
+        Accept: "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Content-Type": "application/x-amz-json-1.1",
+        Origin: WHOOP_AUTH_ORIGIN,
+        Priority: "u=4",
+        Referer: `${WHOOP_AUTH_ORIGIN}/`,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "User-Agent": WHOOP_AUTH_USER_AGENT,
+        "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
+        "amz-sdk-invocation-id": randomUUID(),
+        "amz-sdk-request": "attempt=1; max=3",
+        "x-amz-user-agent": WHOOP_AUTH_AMZ_USER_AGENT,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    {
+      createRateLimitError: createWhoopRateLimitError,
+      createServiceUnavailableError: createWhoopServiceUnavailableError,
+    },
+  );
 
   // Read body as text first — the proxy may return non-JSON errors
   const bodyText = await response.text();
@@ -148,6 +257,7 @@ export class WhoopClient {
     if (!authResult || !accessToken) {
       throw new Error("WHOOP sign-in: no tokens in response");
     }
+    const expiresInSeconds = getExpiresInSeconds(authResult);
 
     const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
     if (!userId) {
@@ -162,6 +272,7 @@ export class WhoopClient {
         accessToken,
         refreshToken,
         userId,
+        expiresInSeconds,
       },
     };
   }
@@ -197,6 +308,7 @@ export class WhoopClient {
     if (!authResult || !accessToken) {
       throw new Error("WHOOP verification: no tokens in response");
     }
+    const expiresInSeconds = getExpiresInSeconds(authResult);
 
     const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
     if (!userId) {
@@ -207,6 +319,7 @@ export class WhoopClient {
       accessToken,
       refreshToken: (authResult ? getString(authResult, "RefreshToken") : undefined) ?? "",
       userId,
+      expiresInSeconds,
     };
   }
 
@@ -216,7 +329,12 @@ export class WhoopClient {
   static async refreshAccessToken(
     refreshToken: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<{ accessToken: string; refreshToken: string; userId: number | null }> {
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    userId: number | null;
+    expiresInSeconds: number;
+  }> {
     const data = await cognitoCall(
       "InitiateAuth",
       {
@@ -234,6 +352,7 @@ export class WhoopClient {
     if (!authResult || !accessToken) {
       throw new Error("WHOOP token refresh: no tokens in response");
     }
+    const expiresInSeconds = getExpiresInSeconds(authResult);
 
     // Best-effort: try to get userId from bootstrap. Returns null if it fails —
     // caller should fall back to the stored userId from the original auth.
@@ -245,6 +364,7 @@ export class WhoopClient {
       refreshToken:
         (authResult ? getString(authResult, "RefreshToken") : undefined) ?? refreshToken,
       userId,
+      expiresInSeconds,
     };
   }
 
@@ -269,12 +389,17 @@ export class WhoopClient {
     accessToken: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<number | null> {
-    const response = await fetchFn(
+    const response = await fetchWithRateLimitHandling(
+      fetchFn,
       `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
+      },
+      {
+        createRateLimitError: createWhoopRateLimitError,
+        createServiceUnavailableError: createWhoopServiceUnavailableError,
       },
     );
 
@@ -295,7 +420,7 @@ export class WhoopClient {
     return userId;
   }
 
-  async #get<T>(url: string, params?: Record<string, string>): Promise<T> {
+  async #get<T>(url: string, params?: Record<string, string>, attempt = 0): Promise<T> {
     const requestUrl = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -304,46 +429,65 @@ export class WhoopClient {
     }
     requestUrl.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const maxRetries = 3;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const response = await this.#fetchFn(requestUrl.toString(), {
-        headers: {
-          Authorization: `Bearer ${this.#accessToken}`,
-          "User-Agent": "WHOOP/4.0",
-        },
-      });
+    const response = await this.#fetchFn(requestUrl.toString(), {
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        "User-Agent": "WHOOP/4.0",
+      },
+    });
 
-      const retryAfterHeader = response.status === 429 ? response.headers.get("Retry-After") : null;
-      const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+    const retryAfterSeconds =
+      response.status === 429 ? parseRetryAfterHeader(response.headers.get("Retry-After")) : null;
 
-      this.#onRequest?.({
-        userId: this.#userId,
-        endpoint: requestUrl.pathname,
-        status: response.status,
-        attempt,
-        retryAfterSeconds,
-        timestamp: new Date(),
-      });
+    this.#onRequest?.({
+      userId: this.#userId,
+      endpoint: requestUrl.pathname,
+      status: response.status,
+      attempt,
+      retryAfterSeconds,
+      timestamp: new Date(),
+    });
 
-      if (response.ok) {
-        return response.json();
-      }
-
-      if (response.status === 429) {
-        if (attempt === maxRetries) {
-          const text = await response.text();
-          throw new WhoopRateLimitError(`WHOOP API rate limit exceeded (429): ${text}`);
-        }
-        const delaySeconds = retryAfterSeconds ?? 2 ** attempt;
-        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
-        continue;
-      }
-
-      const text = await response.text();
-      throw new Error(`WHOOP API error (${response.status}): ${text}`);
+    if (response.ok) {
+      return response.json();
     }
 
-    throw new Error("unreachable");
+    if (response.status === 429) {
+      const text = await response.text();
+      throw new WhoopRateLimitError(
+        `WHOOP API rate limit exceeded (429): ${text}`,
+        text,
+        retryAfterSeconds,
+      );
+    }
+
+    const text = await response.text();
+    if (
+      isServiceUnavailableStatus(response.status) ||
+      (requestUrl.pathname === WHOOP_DEVELOPER_WORKOUT_PATH && response.status === 500)
+    ) {
+      throw createWhoopServiceUnavailableError(response, text);
+    }
+    throw new Error(`WHOOP API error (${response.status}): ${text}`);
+  }
+
+  async #getWithRateLimitRetry<T>(
+    url: string,
+    params?: Record<string, string>,
+    maxRetries = 3,
+  ): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await this.#get<T>(url, params, attempt);
+      } catch (err) {
+        if (err instanceof ProviderServiceUnavailableError && attempt < maxRetries) {
+          attempt++;
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
@@ -354,20 +498,36 @@ export class WhoopClient {
     return this.getMetricValues("steps", start, end, step);
   }
 
+  /** Strain deep-dive BFF — includes daily step count in CONTRIBUTORS_TILE_STEPS. */
+  async getStrainDeepDive(date: string): Promise<unknown> {
+    return this.#get<unknown>(`${WHOOP_API_BASE}/home-service/v1/deep-dive/strain`, { date });
+  }
+
   async getMetricValues(
     name: "heart_rate" | "steps",
     start: string,
     end: string,
     step: number,
   ): Promise<WhoopMetricValue[]> {
-    const response = await this.#get<WhoopMetricResponse>(
-      `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.#userId}`,
-      { start, end, step: String(step), name },
-    );
-    return response.values ?? [];
+    try {
+      const response = await this.#get<WhoopMetricResponse>(
+        `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.#userId}`,
+        { start, end, step: String(step), name },
+      );
+      return response.values ?? [];
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        (err.message.includes("WHOOP API error (400)") ||
+          err.message.includes("WHOOP API error (404)"))
+      ) {
+        throw new WhoopMetricUnavailableError(err.message);
+      }
+      throw err;
+    }
   }
 
-  async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
+  async getCycles(start: string, end: string, limit = 200): Promise<WhoopCycle[]> {
     const raw = await this.#get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
       id: String(this.#userId),
       startTime: start,
@@ -390,6 +550,75 @@ export class WhoopClient {
       }
     }
     return [];
+  }
+
+  /**
+   * List workouts from the developer API. Paginated via next_token.
+   * Unlike the cycles BFF embed, this list omits workouts deleted in WHOOP.
+   */
+  async listDeveloperWorkouts(options?: {
+    limit?: number;
+    nextToken?: string;
+  }): Promise<WhoopDeveloperWorkoutListResponse> {
+    const params: Record<string, string> = {};
+    if (options?.limit != null) {
+      params.limit = String(options.limit);
+    }
+    if (options?.nextToken) {
+      params.next_token = options.nextToken;
+    }
+    const raw = await this.#getWithRateLimitRetry<unknown>(
+      `${WHOOP_API_BASE}${WHOOP_DEVELOPER_WORKOUT_PATH}`,
+      params,
+    );
+    const parsed = whoopDeveloperWorkoutListResponseSchema.parse(raw);
+    return {
+      records: parsed.records,
+      next_token: parsed.next_token ?? null,
+    };
+  }
+
+  /**
+   * Collect workout IDs present in WHOOP for a sync window using the developer
+   * workout list (authoritative for deletions).
+   */
+  async listDeveloperWorkoutIdsInWindow(windowStart: Date, windowEnd: Date): Promise<Set<string>> {
+    const presentExternalIds = new Set<string>();
+    const pageLimit = 25;
+    let nextToken: string | undefined;
+    let reachedWindowStart = false;
+
+    do {
+      const page = await this.listDeveloperWorkouts({ limit: pageLimit, nextToken });
+      if (page.records.length === 0) {
+        break;
+      }
+
+      let oldestStartMs = Number.POSITIVE_INFINITY;
+      for (const record of page.records) {
+        const workoutStartMs = Date.parse(record.start);
+        if (!Number.isFinite(workoutStartMs)) {
+          continue;
+        }
+        oldestStartMs = Math.min(oldestStartMs, workoutStartMs);
+        if (workoutStartMs >= windowStart.getTime() && workoutStartMs < windowEnd.getTime()) {
+          if (record.id) {
+            presentExternalIds.add(record.id);
+          }
+        }
+      }
+
+      if (oldestStartMs < windowStart.getTime()) {
+        reachedWindowStart = true;
+      }
+
+      nextToken = page.next_token ?? undefined;
+      if (reachedWindowStart || !nextToken) {
+        break;
+      }
+    } while (nextToken);
+
+    return presentExternalIds;
   }
 
   async getSleep(sleepId: string | number): Promise<WhoopSleepRecord> {
@@ -417,12 +646,31 @@ export class WhoopClient {
     );
     requestUrl.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.#fetchFn(requestUrl.toString(), {
-      headers: {
-        Authorization: `Bearer ${this.#accessToken}`,
-        "User-Agent": "WHOOP/4.0",
+    const response = await fetchWithRateLimitHandling(
+      this.#fetchFn,
+      requestUrl.toString(),
+      {
+        headers: {
+          Authorization: `Bearer ${this.#accessToken}`,
+          "User-Agent": "WHOOP/4.0",
+        },
       },
-    });
+      {
+        createRateLimitError: (response, responseBody) => {
+          const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
+          this.#onRequest?.({
+            userId: this.#userId,
+            endpoint: requestUrl.pathname,
+            status: response.status,
+            attempt: 0,
+            retryAfterSeconds,
+            timestamp: new Date(),
+          });
+          return createWhoopRateLimitError(response, responseBody);
+        },
+        createServiceUnavailableError: createWhoopServiceUnavailableError,
+      },
+    );
 
     if (response.status === 404) return null;
 

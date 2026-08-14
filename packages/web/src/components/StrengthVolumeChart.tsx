@@ -1,6 +1,13 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatNumber } from "@dofek/format/format";
 import type { VolumeOverTimeRow } from "dofek-server/types";
-import { chartColors, dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  chartColors,
+  dofekAxis,
+  dofekGrid,
+  dofekSeries,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StrengthVolumeChartProps {
@@ -18,12 +25,8 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
         const index = first.dataIndex;
         const dataPoint = data[index];
         if (!dataPoint) return "";
-        const dateLabel = new Date(dataPoint.week).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
-        return `<strong>${dateLabel ?? ""}</strong><br/>
+        const dateLabel = formatDateMedium(dataPoint.week);
+        return `<strong>${escapeTooltipHtml(dateLabel ?? "")}</strong><br/>
           Volume: ${Math.round(dataPoint.totalVolumeKg).toLocaleString()} kg<br/>
           Sets: ${dataPoint.setCount}`;
       },

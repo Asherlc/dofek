@@ -9,7 +9,6 @@ function makeInput(overrides: Partial<RecommendationInput> = {}): Recommendation
   return {
     today: "2026-03-19",
     readinessScore: 75,
-    workloadRatio: 1.0,
     trainingStressBalance: 0,
     sleepDebtMinutes: 0,
     recentActivities: [],
@@ -45,10 +44,11 @@ describe("recommendNextWorkout", () => {
       expect(result.cardioEasyDetail?.durationMinutes).toBe(30);
     });
 
-    it("recommends active recovery when workload ratio is dangerously high", () => {
-      const result = recommendNextWorkout(makeInput({ workloadRatio: 1.7 }));
-      expect(result.type).toBe("active_recovery");
-      expect(result.reasoning.some((r) => r.includes("injury risk"))).toBe(true);
+    it("does not prescribe recovery from workload ratio alone", () => {
+      const input = { ...makeInput(), workloadRatio: 1.7 };
+      const result = recommendNextWorkout(input);
+      expect(result.type).not.toBe("active_recovery");
+      expect(result.reasoning.every((reason) => !reason.includes("injury risk"))).toBe(true);
     });
 
     it("proceeds with normal recommendation when readiness is null (insufficient data)", () => {
@@ -524,11 +524,10 @@ describe("recommendNextWorkout", () => {
       expect(["cardio_easy", "cardio_intervals"]).toContain(result.type);
     });
 
-    it("works with null readiness and null workload ratio", () => {
+    it("works with null readiness and training stress balance", () => {
       const result = recommendNextWorkout(
         makeInput({
           readinessScore: null,
-          workloadRatio: null,
           trainingStressBalance: null,
         }),
       );

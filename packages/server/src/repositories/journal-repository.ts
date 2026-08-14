@@ -1,7 +1,15 @@
+import { type ProviderProvenance, resolveProviderProvenance } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  currentDateRangePredicate,
+  dateWindowEnd,
+  dateWindowStartPredicate,
+  type RangeDays,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,11 +44,6 @@ const journalEntryRowSchema = z.object({
   impact_score: z.coerce.number().nullable(),
 });
 
-const trendPointSchema = z.object({
-  date: dateStringSchema,
-  value: z.coerce.number().nullable(),
-});
-
 const journalEntryFullRowSchema = z.object({
   id: z.string(),
   date: dateStringSchema,
@@ -57,9 +60,11 @@ const journalEntryFullRowSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export type JournalQuestionRow = z.infer<typeof journalQuestionRowSchema>;
-export type JournalEntryRow = z.infer<typeof journalEntryRowSchema>;
-export type TrendPoint = z.infer<typeof trendPointSchema>;
+type JournalEntryRow = z.infer<typeof journalEntryRowSchema>;
 export type JournalEntryFullRow = z.infer<typeof journalEntryFullRowSchema>;
+export type JournalEntryDetail = Omit<JournalEntryRow, "provider_id"> & {
+  source: ProviderProvenance;
+};
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -77,11 +82,12 @@ export class JournalRepository {
 
   /** Ensure the 'dofek' provider row exists (for manual entries). */
   async ensureDofekProvider(): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#db,
+      providerId: DOFEK_PROVIDER_ID,
+      providerName: "Dofek App",
+      userId: this.#userId,
+    });
   }
 
   /** List all available journal questions ordered by sort_order. */
@@ -96,8 +102,8 @@ export class JournalRepository {
   }
 
   /** Get journal entries for a date range, joined with question metadata. */
-  async listEntries(days: number): Promise<JournalEntryRow[]> {
-    return executeWithSchema(
+  async listEntries(days: RangeDays): Promise<JournalEntryDetail[]> {
+    const rows = await executeWithSchema(
       this.#db,
       journalEntryRowSchema,
       sql`SELECT
@@ -115,26 +121,45 @@ export class JournalRepository {
           FROM fitness.journal_entry je
           JOIN fitness.journal_question jq ON jq.slug = je.question_slug
           WHERE je.user_id = ${this.#userId}
-            AND je.date >= (CURRENT_DATE - ${days}::int)
+            ${currentDateRangePredicate(sql`je.date`, days, ">=")}
           ORDER BY je.date DESC, jq.sort_order, jq.display_name`,
     );
+    return rows.map(({ provider_id: providerId, ...entry }) => ({
+      ...entry,
+      source: resolveProviderProvenance(providerId),
+    }));
   }
 
-  /** Time-series trend data for a specific question. */
-  async listTrends(questionSlug: string, days: number): Promise<TrendPoint[]> {
-    return executeWithSchema(
+  /** Exact chartable journal observations inside the requested trend window. */
+  async listTrendEntries(days: RangeDays, endDate: string): Promise<JournalEntryDetail[]> {
+    const rows = await executeWithSchema(
       this.#db,
-      trendPointSchema,
+      journalEntryRowSchema,
       sql`SELECT
+            je.id,
             je.date,
-            je.answer_numeric AS value
+            je.provider_id,
+            je.question_slug,
+            jq.display_name,
+            jq.category,
+            jq.data_type,
+            jq.unit,
+            je.answer_text,
+            je.answer_numeric,
+            je.impact_score
           FROM fitness.journal_entry je
+          JOIN fitness.journal_question jq ON jq.slug = je.question_slug
           WHERE je.user_id = ${this.#userId}
-            AND je.question_slug = ${questionSlug}
-            AND je.date >= (CURRENT_DATE - ${days}::int)
+            ${dateWindowStartPredicate(sql`je.date`, endDate, days)}
+            AND je.date <= ${dateWindowEnd(endDate)}
             AND je.answer_numeric IS NOT NULL
-          ORDER BY je.date`,
+            AND jq.data_type IN ('boolean', 'numeric')
+          ORDER BY jq.sort_order, jq.display_name, je.date, je.provider_id`,
     );
+    return rows.map(({ provider_id: providerId, ...entry }) => ({
+      ...entry,
+      source: resolveProviderProvenance(providerId),
+    }));
   }
 
   /** Create (or upsert) a manual journal entry. */

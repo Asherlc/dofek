@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -13,8 +13,12 @@ import {
   parseAuth0FormHtml,
   pelotonAutomatedLogin,
 } from "./peloton.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
 // Helpers
@@ -93,6 +97,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -165,7 +173,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // Should have fetched page 1 but stopped there (not page 2)
@@ -220,7 +234,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Performance graph was called
     expect(callCount).toBe(1);
@@ -273,7 +293,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -283,15 +309,14 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       .from(activity)
       .where(eq(activity.externalId, "ext-meditation"));
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.activityType).toBe("meditation");
+    expect(rows[0]?.canonicalType).toBe("meditation");
 
-    // No metric_stream rows for this activity (empty metrics)
+    // No metric stream events for this activity (empty metrics)
     const activityId = rows[0]?.id;
     if (activityId) {
-      const streams = await ctx.db
-        .select()
-        .from(metricStream)
-        .where(eq(metricStream.activityId, activityId));
+      const streams = metricStreamCapture.publishedMetricStreamRows.filter(
+        (row) => row.activityId === activityId,
+      );
       expect(streams).toHaveLength(0);
     }
   });
@@ -356,11 +381,17 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
-    // Each sample has heart_rate and power, so we should store 1200 metric_stream rows.
+    // Each sample has heart_rate and power, so we should publish 1200 metric stream events.
     const activityRows = await ctx.db
       .select()
       .from(activity)
@@ -369,10 +400,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     const activityId = activityRows[0]?.id;
     if (activityId) {
-      const streams = await ctx.db
-        .select()
-        .from(metricStream)
-        .where(eq(metricStream.activityId, activityId));
+      const streams = metricStreamCapture.publishedMetricStreamRows.filter(
+        (row) => row.activityId === activityId,
+      );
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
       const powerSamples = streams.filter((sample) => sample.channel === "power");
       expect(heartRateSamples).toHaveLength(largeSampleCount);
@@ -380,7 +410,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     }
   });
 
-  it("deletes old metric_stream rows on re-sync before inserting new ones", async () => {
+  it("publishes metric stream events on each re-sync", async () => {
     await saveTokens(ctx.db, "peloton", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -431,22 +461,33 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     const since = new Date("2024-01-01T00:00:00Z");
 
     // Sync twice
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
-    // Should have exactly 2 heart-rate metric_stream rows (not 4)
+    // Redpanda is an append log, so both sync attempts publish their raw events.
     const activityRows = await ctx.db
       .select()
       .from(activity)
       .where(eq(activity.externalId, "ext-resync-workout"));
     const activityId = activityRows[0]?.id;
     if (activityId) {
-      const streams = await ctx.db
-        .select()
-        .from(metricStream)
-        .where(eq(metricStream.activityId, activityId));
+      const streams = metricStreamCapture.publishedMetricStreamRows.filter(
+        (row) => row.activityId === activityId,
+      );
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
-      expect(heartRateSamples).toHaveLength(2);
+      expect(heartRateSamples).toHaveLength(4);
     }
   });
 
@@ -503,7 +544,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -553,6 +600,7 @@ describe("pelotonAutomatedLogin", () => {
     `;
 
     let step = 0;
+    let tokenRequestBody: string | null = null;
 
     loginServer.use(
       http.get("https://auth.onepeloton.com/authorize", () => {
@@ -592,8 +640,9 @@ describe("pelotonAutomatedLogin", () => {
           },
         });
       }),
-      http.post("https://auth.onepeloton.com/oauth/token", () => {
+      http.post("https://auth.onepeloton.com/oauth/token", async ({ request }) => {
         step = 6;
+        tokenRequestBody = await request.text();
         return HttpResponse.json({
           access_token: "new-access-token",
           refresh_token: "new-refresh-token",
@@ -608,6 +657,10 @@ describe("pelotonAutomatedLogin", () => {
     expect(step).toBe(6);
     expect(tokens.accessToken).toBe("new-access-token");
     expect(tokens.refreshToken).toBe("new-refresh-token");
+    expect(tokenRequestBody).toContain("code_verifier=");
+    const verifierMatch = /(?:^|&)code_verifier=([^&]+)/.exec(tokenRequestBody ?? "");
+    expect(verifierMatch?.[1]).toBeDefined();
+    expect(verifierMatch?.[1]).not.toBe("undefined");
   });
 
   it("throws when injectedConfig is not found in login page", async () => {

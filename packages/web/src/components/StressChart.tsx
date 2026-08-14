@@ -1,8 +1,15 @@
-import { formatNumber, isToday } from "@dofek/format/format";
+import { formatDateShort, formatNumber, isToday } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { StressScore, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
-import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StressChartProps {
@@ -46,13 +53,10 @@ export function StressChart({ data, loading }: StressChartProps) {
         const idx = params[0].dataIndex;
         const day = data.daily[idx];
         if (!day) return "";
-        const date = new Date(day.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
-        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        const date = formatDateShort(day.date);
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(date)}</div>`;
         const dayStress = new StressScore(day.stressScore);
-        html += `<div>Stress: <b style="color:${dayStress.color}">${formatNumber(day.stressScore)} (${dayStress.label})</b></div>`;
+        html += `<div>Stress: <b style="color:${escapeTooltipHtml(dayStress.color)}">${formatNumber(day.stressScore)} (${escapeTooltipHtml(dayStress.label)})</b></div>`;
         if (day.hrvDeviation != null)
           html += `<div>Heart rate variability deviation: <b>${day.hrvDeviation > 0 ? "+" : ""}${day.hrvDeviation}</b>\u03C3</div>`;
         if (day.restingHrDeviation != null)

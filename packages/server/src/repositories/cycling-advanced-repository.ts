@@ -1,226 +1,44 @@
+import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  clickHouseDateRangeLowerBound,
+  clickHouseIntervalDayLowerBound,
+  clickHouseMondayDateRangeLowerBound,
+  type RangeDays,
+  rangeDaysOrNullAdd,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { activityRepositoryFor } from "./activity-repository.ts";
+import {
+  ActivityVariabilityModel,
+  PedalDynamicsModel,
+  type RampRateResultData,
+  RampRateWeekModel,
+  TrainingMonotonyWeekModel,
+  VerticalAscentModel,
+} from "./cycling-advanced-models.ts";
 
-// ---------------------------------------------------------------------------
-// Domain models
-// ---------------------------------------------------------------------------
+const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
-export interface RampRateWeekRow {
-  week: string;
-  ctlStart: number;
-  ctlEnd: number;
-  rampRate: number;
-}
-
-/** A single week in the ramp rate timeline. */
-export class RampRateWeekModel {
-  readonly #row: RampRateWeekRow;
-
-  constructor(row: RampRateWeekRow) {
-    this.#row = row;
-  }
-
-  get week(): string {
-    return this.#row.week;
-  }
-
-  get ctlStart(): number {
-    return this.#row.ctlStart;
-  }
-
-  get ctlEnd(): number {
-    return this.#row.ctlEnd;
-  }
-
-  get rampRate(): number {
-    return this.#row.rampRate;
-  }
-
-  toDetail() {
-    return {
-      week: this.#row.week,
-      ctlStart: this.#row.ctlStart,
-      ctlEnd: this.#row.ctlEnd,
-      rampRate: this.#row.rampRate,
-    };
-  }
-}
-
-export interface RampRateResultData {
-  weeks: RampRateWeekModel[];
-  currentRampRate: number;
-  recommendation: string;
-}
-
-export interface TrainingMonotonyWeekRow {
-  week: string;
-  monotony: number;
-  strain: number;
-  weeklyLoad: number;
-}
-
-/** Weekly training monotony and strain. */
-export class TrainingMonotonyWeekModel {
-  readonly #row: TrainingMonotonyWeekRow;
-
-  constructor(row: TrainingMonotonyWeekRow) {
-    this.#row = row;
-  }
-
-  toDetail() {
-    return {
-      week: this.#row.week,
-      monotony: this.#row.monotony,
-      strain: this.#row.strain,
-      weeklyLoad: this.#row.weeklyLoad,
-    };
-  }
-}
-
-export interface ActivityVariabilityRowData {
-  activityId: string;
-  date: string;
-  activityName: string;
-  normalizedPower: number;
-  averagePower: number;
-}
-
-/** A single activity with variability and intensity factor metrics. */
-export class ActivityVariabilityModel {
-  readonly #row: ActivityVariabilityRowData;
-  readonly #ftp: number;
-
-  constructor(row: ActivityVariabilityRowData, ftp: number) {
-    this.#row = row;
-    this.#ftp = ftp;
-  }
-
-  get date(): string {
-    return this.#row.date;
-  }
-
-  get activityId(): string {
-    return this.#row.activityId;
-  }
-
-  get activityName(): string {
-    return this.#row.activityName;
-  }
-
-  get normalizedPower(): number {
-    return this.#row.normalizedPower;
-  }
-
-  get averagePower(): number {
-    return this.#row.averagePower;
-  }
-
-  get variabilityIndex(): number {
-    return Math.round((this.#row.normalizedPower / this.#row.averagePower) * 1000) / 1000;
-  }
-
-  get intensityFactor(): number {
-    return Math.round((this.#row.normalizedPower / this.#ftp) * 1000) / 1000;
-  }
-
-  toDetail() {
-    return {
-      activityId: this.activityId,
-      date: this.date,
-      activityName: this.activityName,
-      normalizedPower: this.normalizedPower,
-      averagePower: this.averagePower,
-      variabilityIndex: this.variabilityIndex,
-      intensityFactor: this.intensityFactor,
-    };
-  }
-}
-
-export interface VerticalAscentRowData {
-  date: string;
-  activityName: string;
-  elevationGainMeters: number;
-  climbingSeconds: number;
-}
-
-/** An activity with vertical ascent rate (VAM) for climbing segments. */
-export class VerticalAscentModel {
-  readonly #row: VerticalAscentRowData;
-
-  constructor(row: VerticalAscentRowData) {
-    this.#row = row;
-  }
-
-  get date(): string {
-    return this.#row.date;
-  }
-
-  get activityName(): string {
-    return this.#row.activityName;
-  }
-
-  get elevationGainMeters(): number {
-    return this.#row.elevationGainMeters;
-  }
-
-  get climbingMinutes(): number {
-    return Math.round((this.#row.climbingSeconds / 60) * 10) / 10;
-  }
-
-  get verticalAscentRate(): number {
-    return this.#row.climbingSeconds > 0
-      ? Math.round((this.#row.elevationGainMeters / (this.#row.climbingSeconds / 3600)) * 10) / 10
-      : 0;
-  }
-
-  toDetail() {
-    return {
-      date: this.date,
-      activityName: this.activityName,
-      verticalAscentRate: this.verticalAscentRate,
-      elevationGainMeters: this.elevationGainMeters,
-      climbingMinutes: this.climbingMinutes,
-    };
-  }
-}
-
-export interface PedalDynamicsRowData {
-  date: string;
-  activityName: string;
-  leftRightBalance: number;
-  avgTorqueEffectiveness: number;
-  avgPedalSmoothness: number;
-}
-
-/** An activity with pedal dynamics metrics. */
-export class PedalDynamicsModel {
-  readonly #row: PedalDynamicsRowData;
-
-  constructor(row: PedalDynamicsRowData) {
-    this.#row = row;
-  }
-
-  toDetail() {
-    return {
-      date: this.#row.date,
-      activityName: this.#row.activityName,
-      leftRightBalance: this.#row.leftRightBalance,
-      avgTorqueEffectiveness: this.#row.avgTorqueEffectiveness,
-      avgPedalSmoothness: this.#row.avgPedalSmoothness,
-    };
-  }
-}
+export type ActivityVariabilityEmptyReason =
+  | "no_cycling_activities"
+  | "no_ftp_estimate"
+  | "no_normalized_power";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
 
-const dailyLoadSchema = z.object({
-  day: dateStringSchema,
-  trimp: z.coerce.number(),
+const rampRateRowSchema = z.object({
+  week: dateStringSchema,
+  ctl_start: z.coerce.number(),
+  ctl_end: z.coerce.number(),
+  ramp_rate: z.coerce.number(),
 });
 
 const monotonyRowSchema = z.object({
@@ -228,6 +46,8 @@ const monotonyRowSchema = z.object({
   monotony: z.coerce.number(),
   strain: z.coerce.number(),
   weekly_load: z.coerce.number(),
+  daily_mean_load: z.coerce.number(),
+  daily_load_standard_deviation: z.coerce.number(),
 });
 
 const ftpSchema = z.object({ ftp: z.coerce.number() });
@@ -241,11 +61,15 @@ const variabilityRowSchema = z.object({
   total_count: z.coerce.number(),
 });
 
+const variabilityCountSchema = z.object({ total: z.coerce.number() });
+
 const vamRowSchema = z.object({
   date: dateStringSchema,
   name: z.string(),
+  canonical_type: z.string(),
+  modality: z.enum(ACTIVITY_MODALITIES).nullable(),
   elevation_gain: z.coerce.number(),
-  climbing_seconds: z.coerce.number(),
+  elapsed_seconds: z.coerce.number(),
 });
 
 const pedalRowSchema = z.object({
@@ -265,127 +89,140 @@ export class CyclingAdvancedRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
-  async getRampRate(days: number): Promise<RampRateResultData> {
-    const dailyLoads = await executeWithSchema(
-      this.#db,
-      dailyLoadSchema,
-      sql`SELECT
-            (asum.started_at AT TIME ZONE ${this.#timezone})::date AS day,
-            SUM(
-              CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
-                -- Bannister TRIMP normalized to hrTSS (matches PMC router)
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val))
-                * 0.64 * exp(1.92 * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val)))
-                / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
-                * 100
-              ELSE 0 END
-            ) AS trimp
-          FROM fitness.activity_summary asum
-          JOIN fitness.user_profile up ON up.id = asum.user_id
-          CROSS JOIN LATERAL (
-            SELECT COALESCE(up.resting_hr, (
-              SELECT dm.resting_hr FROM fitness.v_daily_metrics dm
-              WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
-              ORDER BY dm.date DESC LIMIT 1
-            ), 60)::float AS val
-          ) rhr
-          WHERE up.id = ${this.#userId}
-            AND up.max_hr IS NOT NULL
-            AND asum.started_at > NOW() - (${days} + 42)::int * INTERVAL '1 day'
-            AND ${enduranceTypeFilter("asum")}
-            AND asum.ended_at IS NOT NULL
-            AND asum.avg_hr IS NOT NULL
-            AND asum.avg_hr > 0
-          GROUP BY 1
-          ORDER BY day`,
+  async getRampRate(days: RangeDays): Promise<RampRateResultData> {
+    const loadDays = rangeDaysOrNullAdd(days, 42);
+    const loadRangeFilter = clickHouseDateRangeLowerBound(loadDays, "load.date", "loadDays");
+    const displayRangeFilter = clickHouseMondayDateRangeLowerBound(days, "ramp.week");
+    const rows = await this.#sensorStore.query(
+      rampRateRowSchema,
+      `WITH cycling_daily_load AS (
+        SELECT
+          load.user_id AS user_id,
+          assumeNotNull(load.date) AS load_date,
+          sum(load.training_load) AS training_load
+        FROM analytics.daily_endurance_load AS load FINAL
+        INNER JOIN analytics.activity_summary AS activity
+          ON activity.activity_id = load.activity_id
+         AND activity.user_id = load.user_id
+        WHERE load.user_id = {userId:UUID}
+          AND load.is_deleted = 0
+          AND load.date IS NOT NULL
+          ${loadRangeFilter}
+          AND has({activityTypes:Array(String)}, activity.canonical_type)
+        GROUP BY
+          load.user_id,
+          load_date
+      ),
+      date_bounds AS (
+        SELECT
+          user_id,
+          min(load_date) AS first_load_date,
+          max(load_date) AS latest_load_date
+        FROM cycling_daily_load
+        GROUP BY user_id
+      ),
+      date_series AS (
+        SELECT
+          user_id,
+          first_load_date + INTERVAL date_offset DAY AS date
+        FROM date_bounds
+        ARRAY JOIN range(
+          toUInt32(dateDiff('day', first_load_date, latest_load_date) + 1)
+        ) AS date_offset
+      ),
+      ctl_by_date AS (
+        SELECT
+          date_series.user_id AS user_id,
+          date_series.date AS date,
+          sum(
+            cycling_daily_load.training_load
+            * (1.0 / 42.0)
+            * pow(41.0 / 42.0, dateDiff('day', cycling_daily_load.load_date, date_series.date))
+          ) AS ctl
+        FROM date_series
+        LEFT JOIN cycling_daily_load
+          ON cycling_daily_load.user_id = date_series.user_id
+         AND cycling_daily_load.load_date <= date_series.date
+        GROUP BY
+          date_series.user_id,
+          date_series.date
+      ),
+      weekly_ctl AS (
+        SELECT
+          user_id,
+          toMonday(date) AS week,
+          argMax(ctl, date) AS ctl_end
+        FROM ctl_by_date
+        GROUP BY
+          user_id,
+          toMonday(date)
+      ),
+      weekly_with_previous AS (
+        SELECT
+          user_id,
+          week,
+          ctl_end,
+          lagInFrame(toNullable(ctl_end), 1, CAST(NULL, 'Nullable(Float64)')) OVER (
+            PARTITION BY user_id ORDER BY week
+          ) AS previous_ctl_end
+        FROM weekly_ctl
+      ),
+      ramp AS (
+        SELECT
+          user_id,
+          week,
+          round(previous_ctl_end, 2) AS ctl_start,
+          round(ctl_end, 2) AS ctl_end,
+          round(ctl_end - previous_ctl_end, 2) AS ramp_rate,
+          0 AS is_deleted
+        FROM weekly_with_previous
+        WHERE previous_ctl_end IS NOT NULL
+      )
+      SELECT
+        toString(ramp.week) AS week,
+        ramp.ctl_start AS ctl_start,
+        ramp.ctl_end AS ctl_end,
+        ramp.ramp_rate AS ramp_rate
+      FROM ramp
+      WHERE ramp.user_id = {userId:UUID}
+        AND ramp.is_deleted = 0
+        ${displayRangeFilter}
+      ORDER BY ramp.week`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        ...rangeDaysParams(days),
+        ...rangeDaysParams(loadDays, "loadDays"),
+        activityTypes: CYCLING_TYPES,
+      },
     );
 
-    if (dailyLoads.length === 0)
-      return { weeks: [], currentRampRate: 0, recommendation: "No data" };
+    if (rows.length === 0) return { weeks: [], currentRampRate: 0, recommendation: "No data" };
 
-    // Fill in zero-load days and compute CTL (42-day EWMA)
-    const loadMap = new Map<string, number>();
-    for (const row of dailyLoads) {
-      loadMap.set(row.day, row.trimp);
-    }
-
-    const firstLoad = dailyLoads[0];
-    const lastLoad = dailyLoads[dailyLoads.length - 1];
-    if (!firstLoad || !lastLoad)
-      return { weeks: [], currentRampRate: 0, recommendation: "No data" };
-    const startDate = new Date(firstLoad.day);
-    const endDate = new Date(lastLoad.day);
-    const ctlByDate = new Map<string, number>();
-    let ctl = 0;
-
-    for (
-      let current = new Date(startDate);
-      current <= endDate;
-      current.setDate(current.getDate() + 1)
-    ) {
-      const key = current.toISOString().slice(0, 10);
-      const load = loadMap.get(key) ?? 0;
-      ctl = ctl + (load - ctl) / 42;
-      ctlByDate.set(key, ctl);
-    }
-
-    // Group into weeks and compute ramp rate
-    const ctlEntries = [...ctlByDate.entries()].sort(([dateA], [dateB]) =>
-      dateA.localeCompare(dateB),
-    );
-
-    // Filter to only the requested date range (exclude the 42-day warmup)
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
-    const filtered = ctlEntries.filter(([dateStr]) => dateStr >= cutoffStr);
-
-    // Group by ISO week
-    const weekMap = new Map<string, { first: number; last: number }>();
-    for (const [dateStr, ctlValue] of filtered) {
-      const dateObj = new Date(dateStr);
-      const dayOfWeek = dateObj.getDay();
-      const monday = new Date(dateObj);
-      monday.setDate(dateObj.getDate() - ((dayOfWeek + 6) % 7));
-      const weekKey = monday.toISOString().slice(0, 10);
-
-      const existing = weekMap.get(weekKey);
-      if (!existing) {
-        weekMap.set(weekKey, { first: ctlValue, last: ctlValue });
-      } else {
-        existing.last = ctlValue;
-      }
-    }
-
-    const weeks: RampRateWeekModel[] = [];
-    const weekKeys = [...weekMap.keys()].sort();
-    for (let idx = 1; idx < weekKeys.length; idx++) {
-      const prevKey = weekKeys[idx - 1];
-      const currKey = weekKeys[idx];
-      if (!prevKey || !currKey) continue;
-      const prevWeek = weekMap.get(prevKey);
-      const currWeek = weekMap.get(currKey);
-      if (!prevWeek || !currWeek) continue;
-
-      const rampRate = Math.round((currWeek.last - prevWeek.last) * 100) / 100;
-      weeks.push(
+    const weeks = rows.map(
+      (row) =>
         new RampRateWeekModel({
-          week: currKey,
-          ctlStart: Math.round(prevWeek.last * 100) / 100,
-          ctlEnd: Math.round(currWeek.last * 100) / 100,
-          rampRate,
+          week: row.week,
+          ctlStart: row.ctl_start,
+          ctlEnd: row.ctl_end,
+          rampRate: row.ramp_rate,
         }),
-      );
-    }
+    );
 
     const currentRampRate = weeks.length > 0 ? (weeks[weeks.length - 1]?.rampRate ?? 0) : 0;
 
@@ -402,58 +239,95 @@ export class CyclingAdvancedRepository {
   }
 
   /** Training monotony: weekly monotony (mean daily load / stdev) and strain. */
-  async getTrainingMonotony(days: number): Promise<TrainingMonotonyWeekModel[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+  async getTrainingMonotony(days: RangeDays): Promise<TrainingMonotonyWeekModel[]> {
+    const rangeFilter = clickHouseMondayDateRangeLowerBound(days, "monotony.week", "days", ">=");
+    const rows = await this.#sensorStore.query(
       monotonyRowSchema,
-      sql`WITH daily_loads AS (
-            SELECT
-              (asum.started_at AT TIME ZONE ${this.#timezone})::date AS day,
-              SUM(
-                CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
-                  -- Bannister TRIMP normalized to hrTSS (matches PMC router)
-                  EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                  * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val))
-                  * 0.64 * exp(1.92 * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val)))
-                  / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
-                  * 100
-                ELSE 0 END
-              ) AS trimp
-            FROM fitness.activity_summary asum
-            JOIN fitness.user_profile up ON up.id = asum.user_id
-            CROSS JOIN LATERAL (
-              SELECT COALESCE(up.resting_hr, (
-                SELECT dm.resting_hr FROM fitness.v_daily_metrics dm
-                WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
-                ORDER BY dm.date DESC LIMIT 1
-              ), 60)::float AS val
-            ) rhr
-            WHERE up.id = ${this.#userId}
-              AND up.max_hr IS NOT NULL
-              AND asum.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("asum")}
-              AND asum.ended_at IS NOT NULL
-              AND asum.avg_hr IS NOT NULL
-              AND asum.avg_hr > 0
-            GROUP BY 1
-          ),
-          weekly_stats AS (
-            SELECT
-              date_trunc('week', day)::date AS week,
-              AVG(trimp) AS mean_load,
-              STDDEV_POP(trimp) AS stdev_load,
-              SUM(trimp) AS weekly_load
-            FROM daily_loads
-            GROUP BY date_trunc('week', day)
-            HAVING STDDEV_POP(trimp) > 0
-          )
-          SELECT
-            week,
-            ROUND((mean_load / stdev_load)::numeric, 2) AS monotony,
-            ROUND((weekly_load * (mean_load / stdev_load))::numeric, 1) AS strain,
-            ROUND(weekly_load::numeric, 1) AS weekly_load
-          FROM weekly_stats
-          ORDER BY week`,
+      `WITH cycling_daily_load AS (
+        SELECT
+          load.user_id AS user_id,
+          assumeNotNull(load.date) AS load_date,
+          sum(load.training_load) AS training_load
+        FROM analytics.daily_endurance_load AS load FINAL
+        INNER JOIN analytics.activity_summary AS activity
+          ON activity.activity_id = load.activity_id
+         AND activity.user_id = load.user_id
+        WHERE load.user_id = {userId:UUID}
+          AND load.is_deleted = 0
+          AND load.date IS NOT NULL
+          AND has({activityTypes:Array(String)}, activity.canonical_type)
+        GROUP BY
+          load.user_id,
+          load_date
+      ),
+      week_bounds AS (
+        SELECT
+          user_id,
+          toMonday(min(load_date)) AS first_week,
+          toMonday(max(load_date)) AS latest_week
+        FROM cycling_daily_load
+        GROUP BY user_id
+      ),
+      calendar_dates AS (
+        SELECT
+          user_id,
+          first_week + INTERVAL date_offset DAY AS load_date
+        FROM week_bounds
+        ARRAY JOIN range(toUInt32(dateDiff('day', first_week, latest_week + INTERVAL 6 DAY) + 1)) AS date_offset
+      ),
+      load_by_calendar_date AS (
+        SELECT
+          calendar_dates.user_id AS user_id,
+          calendar_dates.load_date AS load_date,
+          coalesce(cycling_daily_load.training_load, 0) AS training_load
+        FROM calendar_dates
+        LEFT JOIN cycling_daily_load
+          ON cycling_daily_load.user_id = calendar_dates.user_id
+         AND cycling_daily_load.load_date = calendar_dates.load_date
+      ),
+      weekly_stats AS (
+        SELECT
+          user_id,
+          toMonday(load_date) AS week,
+          avg(training_load) AS mean_load,
+          stddevPop(training_load) AS stdev_load,
+          sum(training_load) AS weekly_load
+        FROM load_by_calendar_date
+        GROUP BY
+          user_id,
+          toMonday(load_date)
+        HAVING stddevPop(training_load) > 1e-6
+      ),
+      monotony AS (
+        SELECT
+          user_id,
+          week,
+          round(mean_load / stdev_load, 2) AS monotony,
+          round(weekly_load * (mean_load / stdev_load), 1) AS strain,
+          round(weekly_load, 1) AS weekly_load,
+          round(mean_load, 2) AS daily_mean_load,
+          round(stdev_load, 2) AS daily_load_standard_deviation,
+          0 AS is_deleted
+        FROM weekly_stats
+      )
+      SELECT
+        toString(monotony.week) AS week,
+        monotony.monotony AS monotony,
+        monotony.strain AS strain,
+        monotony.weekly_load AS weekly_load,
+        monotony.daily_mean_load AS daily_mean_load,
+        monotony.daily_load_standard_deviation AS daily_load_standard_deviation
+      FROM monotony
+      WHERE monotony.user_id = {userId:UUID}
+        AND monotony.is_deleted = 0
+        ${rangeFilter}
+      ORDER BY monotony.week`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        ...rangeDaysParams(days),
+        activityTypes: CYCLING_TYPES,
+      },
     );
 
     return rows.map(
@@ -463,104 +337,103 @@ export class CyclingAdvancedRepository {
           monotony: row.monotony,
           strain: row.strain,
           weeklyLoad: row.weekly_load,
+          dailyMeanLoad: row.daily_mean_load,
+          dailyLoadStandardDeviation: row.daily_load_standard_deviation,
         }),
     );
   }
 
   /** Estimate FTP as 95% of best 20-minute average power. */
-  async getEstimatedFtp(days: number): Promise<number | null> {
-    const ftpResult = await executeWithSchema(
-      this.#db,
+  async getEstimatedFtp(days: RangeDays): Promise<number | null> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
+    const ftpResult = await this.#sensorStore.query(
       ftpSchema,
-      sql`WITH activity_power AS (
-            SELECT
-              ds.activity_id,
-              ds.recorded_at,
-              ROW_NUMBER() OVER (
-                PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-              ) AS rn,
-              SUM(COALESCE(ds.scalar, 0)) OVER (
-                PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-              ) AS cumsum
-            FROM fitness.deduped_sensor ds
-            JOIN fitness.v_activity a ON a.id = ds.activity_id
-            WHERE ds.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND ds.channel = 'power'
-          ),
-          sample_rate AS (
-            SELECT activity_id,
-                   GREATEST(ROUND(
-                     EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
-                     / NULLIF(COUNT(*) - 1, 0)
-                   )::int, 1) AS interval_s
-            FROM activity_power
-            GROUP BY activity_id
-            HAVING COUNT(*) > 1
-          )
-          SELECT ROUND((MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s)) * 0.95)::numeric, 1) AS ftp
-          FROM activity_power ap
-          JOIN sample_rate sr ON sr.activity_id = ap.activity_id
-          JOIN activity_power prev
-            ON prev.activity_id = ap.activity_id
-            AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
-          WHERE ap.rn >= ROUND(1200.0 / sr.interval_s)::int`,
+      `SELECT
+        round(max(asum.best_twenty_minute_power) * 0.95, 1) AS ftp
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
+        ${rangeFilter}
+        AND asum.best_twenty_minute_power IS NOT NULL`,
+      {
+        userId: this.#userId,
+        ...rangeDaysParams(days),
+        activityTypes: CYCLING_TYPES,
+      },
     );
     return ftpResult[0]?.ftp ?? null;
   }
 
   /** Activity variability: NP, VI, IF per activity. */
   async getActivityVariability(
-    days: number,
+    days: RangeDays,
     limit: number,
     offset: number,
-  ): Promise<{ models: ActivityVariabilityModel[]; totalCount: number }> {
-    const ftp = await this.getEstimatedFtp(days);
-    if (!ftp) return { models: [], totalCount: 0 };
+  ): Promise<{
+    models: ActivityVariabilityModel[];
+    totalCount: number;
+    emptyReason: ActivityVariabilityEmptyReason | null;
+  }> {
+    if ((await this.#loadRawActivityCount(days)) === 0) {
+      return { models: [], totalCount: 0, emptyReason: "no_cycling_activities" };
+    }
 
-    const rows = await executeWithSchema(
-      this.#db,
+    const ftp = await this.getEstimatedFtp(days);
+    if (!ftp) return { models: [], totalCount: 0, emptyReason: "no_ftp_estimate" };
+
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
+    const rows = await this.#sensorStore.query(
       variabilityRowSchema,
-      sql`WITH rolling AS (
-            SELECT
-              ds.activity_id,
-              AVG(ds.scalar) OVER (
-                PARTITION BY ds.activity_id
-                ORDER BY ds.recorded_at
-                RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
-              ) AS rolling_30s_power
-            FROM fitness.deduped_sensor ds
-            JOIN fitness.v_activity a ON a.id = ds.activity_id
-            WHERE ds.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND ds.channel = 'power'
-              AND ds.scalar > 0
-          ),
-          grouped AS (
-            SELECT
-              a.id AS activity_id,
-              (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-              a.name,
-              a.started_at,
-              ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np,
-              ROUND(AVG(r.rolling_30s_power)::numeric, 1) AS avg_power
-            FROM rolling r
-            JOIN fitness.v_activity a ON a.id = r.activity_id
-            GROUP BY a.id, a.started_at, a.name
-            HAVING COUNT(*) >= 60
-          )
-          SELECT activity_id, date, name, np, avg_power,
-                 COUNT(*) OVER()::int AS total_count
-          FROM grouped
-          ORDER BY started_at DESC
-          LIMIT ${limit}
-          OFFSET ${offset}`,
+      `SELECT
+        toString(asum.activity_id) AS activity_id,
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        asum.name AS name,
+        round(asum.normalized_power, 1) AS np,
+        round(asum.smoothed_avg_power, 1) AS avg_power,
+        toInt32(count() OVER ()) AS total_count
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
+        ${rangeFilter}
+        AND asum.normalized_power IS NOT NULL
+      ORDER BY asum.started_at DESC
+      LIMIT {limit:Int32}
+      OFFSET {offset:Int32}`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        ...rangeDaysParams(days),
+        activityTypes: CYCLING_TYPES,
+        limit,
+        offset,
+      },
     );
 
-    const totalCount = rows[0]?.total_count ?? 0;
+    let totalCount = rows[0]?.total_count ?? 0;
+    let emptyReason: ActivityVariabilityEmptyReason | null = null;
+
+    if (rows.length === 0) {
+      // The count() OVER () total is absent on an empty page, so it cannot
+      // distinguish "no normalized power data" from "offset past the data".
+      // Re-query the count so pagination stays correct and the UI shows the
+      // right empty state instead of a misleading "no_normalized_power".
+      const countRows = await this.#sensorStore.query(
+        variabilityCountSchema,
+        `SELECT count() AS total
+        FROM analytics.activity_summary asum
+        WHERE asum.user_id = {userId:UUID}
+          AND has({activityTypes:Array(String)}, asum.canonical_type)
+          ${rangeFilter}
+          AND asum.normalized_power IS NOT NULL`,
+        {
+          userId: this.#userId,
+          ...rangeDaysParams(days),
+          activityTypes: CYCLING_TYPES,
+        },
+      );
+      totalCount = countRows[0]?.total ?? 0;
+      emptyReason = totalCount === 0 ? "no_normalized_power" : null;
+    }
 
     return {
       models: rows.map(
@@ -577,118 +450,81 @@ export class CyclingAdvancedRepository {
           ),
       ),
       totalCount,
+      emptyReason,
     };
   }
 
-  /** Vertical ascent rate (VAM) for climbing segments.
-   *  Use nearby grade samples when an activity has grade data; otherwise fall back to altitude gain. */
-  async getVerticalAscentRates(days: number): Promise<VerticalAscentModel[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+  /** Whole-activity vertical ascent rate (VAM) from elevation gain over elapsed duration. */
+  async getVerticalAscentRates(days: RangeDays): Promise<VerticalAscentModel[]> {
+    if ((await this.#loadRawActivityCount(days)) === 0) {
+      return [];
+    }
+
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
+    const rows = await this.#sensorStore.query(
       vamRowSchema,
-      sql`WITH altitude_points AS (
-            SELECT
-              alt.activity_id,
-              alt.scalar AS altitude,
-              alt.recorded_at,
-              LAG(alt.scalar) OVER (
-                PARTITION BY alt.activity_id ORDER BY alt.recorded_at
-              ) AS prev_altitude,
-              LAG(alt.recorded_at) OVER (
-                PARTITION BY alt.activity_id ORDER BY alt.recorded_at
-              ) AS prev_recorded_at
-            FROM fitness.deduped_sensor alt
-            JOIN fitness.v_activity a ON a.id = alt.activity_id
-            WHERE a.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND alt.channel = 'altitude'
-          ),
-          grade_activities AS (
-            SELECT DISTINCT grd.activity_id
-            FROM fitness.deduped_sensor grd
-            JOIN fitness.v_activity a ON a.id = grd.activity_id
-            WHERE a.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND grd.channel = 'grade'
-          ),
-          climbing_segments AS (
-            SELECT
-              ap.activity_id,
-              ap.recorded_at,
-              ap.altitude,
-              ap.prev_altitude,
-              ap.prev_recorded_at,
-              nearest_grade.grade,
-              ga.activity_id IS NOT NULL AS has_grade_samples
-            FROM altitude_points ap
-            LEFT JOIN grade_activities ga ON ga.activity_id = ap.activity_id
-            LEFT JOIN LATERAL (
-              SELECT grd.scalar AS grade
-              FROM fitness.deduped_sensor grd
-              WHERE grd.activity_id = ap.activity_id
-                AND grd.channel = 'grade'
-                AND grd.recorded_at BETWEEN
-                  ap.recorded_at - INTERVAL '5 seconds' AND ap.recorded_at + INTERVAL '5 seconds'
-              ORDER BY
-                ABS(EXTRACT(EPOCH FROM (grd.recorded_at - ap.recorded_at))),
-                grd.recorded_at
-              LIMIT 1
-            ) nearest_grade ON true
-          )
-          SELECT
-            (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-            a.name,
-            ROUND(SUM(
-              cs.altitude - cs.prev_altitude
-            )::numeric, 1) AS elevation_gain,
-            SUM(
-              EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))
-            )::int AS climbing_seconds
-          FROM climbing_segments cs
-          JOIN fitness.v_activity a ON a.id = cs.activity_id
-          WHERE cs.prev_altitude IS NOT NULL
-            AND cs.prev_recorded_at IS NOT NULL
-            AND cs.altitude > cs.prev_altitude
-            AND (NOT cs.has_grade_samples OR cs.grade > 3)
-          GROUP BY a.id, a.started_at, a.name
-          HAVING SUM(EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))) > 60
-          ORDER BY a.started_at`,
+      `SELECT
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        coalesce(nullIf(asum.name, ''), asum.canonical_type) AS name,
+        asum.canonical_type AS canonical_type,
+        asum.modality AS modality,
+        round(asum.elevation_gain_m, 1) AS elevation_gain,
+        greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0) AS elapsed_seconds
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
+        ${rangeFilter}
+        AND asum.elevation_gain_m > 0
+      ORDER BY asum.started_at`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        ...rangeDaysParams(days),
+        activityTypes: CYCLING_TYPES,
+      },
     );
 
-    return rows.map(
-      (row) =>
-        new VerticalAscentModel({
-          date: row.date,
-          activityName: row.name,
-          elevationGainMeters: row.elevation_gain,
-          climbingSeconds: row.climbing_seconds,
-        }),
-    );
+    return rows
+      .filter((row) => !isIndoorCyclingModality(row.modality))
+      .map(
+        (row) =>
+          new VerticalAscentModel({
+            date: row.date,
+            activityName: row.name,
+            activityType: row.canonical_type,
+            modality: row.modality,
+            elevationGainMeters: row.elevation_gain,
+            elapsedSeconds: row.elapsed_seconds,
+          }),
+      );
   }
 
   /** Pedal dynamics: left/right balance, torque effectiveness, pedal smoothness. */
-  async getPedalDynamics(days: number): Promise<PedalDynamicsModel[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+  async getPedalDynamics(days: RangeDays): Promise<PedalDynamicsModel[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
+    const rows = await this.#sensorStore.query(
       pedalRowSchema,
-      sql`SELECT
-            (asum.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-            asum.name,
-            ROUND(asum.avg_left_balance::numeric, 1) AS avg_balance,
-            ROUND(
-              ((asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2)::numeric, 1
-            ) AS avg_torque_effectiveness,
-            ROUND(
-              ((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2)::numeric, 1
-            ) AS avg_pedal_smoothness
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${this.#userId}
-            AND asum.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ${enduranceTypeFilter("asum")}
-            AND asum.avg_left_balance IS NOT NULL
-          ORDER BY asum.started_at`,
+      `SELECT
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        asum.name AS name,
+        round(asum.avg_left_balance, 1) AS avg_balance,
+        round((asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2, 1) AS avg_torque_effectiveness,
+        round((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2, 1) AS avg_pedal_smoothness
+      FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
+      WHERE asum.user_id = {userId:UUID}
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
+        ${rangeFilter}
+        AND asum.avg_left_balance IS NOT NULL
+      ORDER BY asum.started_at`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        ...rangeDaysParams(days),
+        activityTypes: CYCLING_TYPES,
+      },
     );
 
     return rows.map(
@@ -701,5 +537,12 @@ export class CyclingAdvancedRepository {
           avgPedalSmoothness: row.avg_pedal_smoothness,
         }),
     );
+  }
+
+  async #loadRawActivityCount(days: RangeDays): Promise<number> {
+    return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
+      days,
+      activityTypes: CYCLING_TYPES,
+    });
   }
 }

@@ -3,7 +3,7 @@ import { NutritionRepository } from "../repositories/nutrition-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const nutritionRouter = router({
-  daily: cachedProtectedQuery(CacheTTL.MEDIUM)
+  daily: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const startDate = computeStartDate(input.endDate, input.days);

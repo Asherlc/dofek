@@ -14,12 +14,13 @@ describe("ProviderLogo", () => {
       expect(img?.getAttribute("source")).toBeTruthy();
     });
 
-    it("renders an Image for providers with SVG logos", () => {
-      const { container } = render(
+    it("renders a letter fallback for providers with SVG logos", () => {
+      const { container, getByText } = render(
         <ProviderLogo provider="strava" serverUrl="https://example.com" />,
       );
       const img = container.querySelector("Image");
-      expect(img).toBeTruthy();
+      expect(img).toBeNull();
+      expect(getByText("S")).toBeTruthy();
     });
 
     it("does not render a letter fallback for PNG providers", () => {
@@ -30,11 +31,13 @@ describe("ProviderLogo", () => {
       expect(queryByText("W")).toBeNull();
     });
 
-    it("does not render a letter fallback for SVG providers", () => {
+    it("uses the default fallback color for SVG provider fallbacks", () => {
       const { queryByText } = render(
         <ProviderLogo provider="strava" serverUrl="https://example.com" />,
       );
-      expect(queryByText("S")).toBeNull();
+      expect(queryByText("S")?.parentElement?.getAttribute("style")).toContain(
+        "rgb(107, 138, 107)",
+      );
     });
 
     it("respects the size prop", () => {

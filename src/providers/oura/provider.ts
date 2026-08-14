@@ -2,7 +2,13 @@ import { z } from "zod";
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
+import {
+  finishProviderActivityListSync,
+  hasProviderActivityListSyncErrors,
+} from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -38,7 +44,7 @@ export class OuraProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("oura", fetchFn);
   }
 
   validate(): string | null {
@@ -189,6 +195,7 @@ export class OuraProvider implements WebhookProvider {
         return {
           providerAccountId: data.id,
           email: data.email ?? null,
+          emailVerified: false,
           name: null,
         };
       },
@@ -206,7 +213,8 @@ export class OuraProvider implements WebhookProvider {
     return tokens.accessToken;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -222,8 +230,11 @@ export class OuraProvider implements WebhookProvider {
     }
 
     const client = new OuraClient(accessToken, this.#fetchFn);
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const todayDate = formatDate(new Date());
+    const syncWindowEnd = window.until;
+    const todayDate = formatDate(syncWindowEnd);
+    const activityPresentExternalIds = new Set<string>();
 
     const context = {
       db,
@@ -233,6 +244,7 @@ export class OuraProvider implements WebhookProvider {
       todayDate,
       errors,
       options,
+      activityPresentExternalIds,
     };
 
     // 1. Sync sleep sessions
@@ -243,6 +255,25 @@ export class OuraProvider implements WebhookProvider {
 
     // 3. Sync sessions (meditation, breathing, etc.) → activity table
     recordsSynced += await syncSessions(context);
+
+    if (!hasProviderActivityListSyncErrors(errors, ["workouts:", "sessions:"])) {
+      try {
+        await finishProviderActivityListSync(db, {
+          providerId: this.id,
+          userId: options?.userId,
+          windowStart: since,
+          windowEnd: syncWindowEnd,
+          presentExternalIds: activityPresentExternalIds,
+        });
+      } catch (err) {
+        errors.push({
+          message: `activity absence reconciliation: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          cause: err,
+        });
+      }
+    }
 
     // 4. Sync heart rate → metric_stream table (batched)
     recordsSynced += await syncHeartRate(context, since);

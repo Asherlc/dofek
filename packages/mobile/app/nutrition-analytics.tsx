@@ -1,6 +1,11 @@
-import { formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
-import { useState } from "react";
+import { formatCalories, formatNumber, formatNutritionNumber } from "@dofek/format/format";
+import {
+  DAILY_VALUE_TARGET_LABEL,
+  upperLimitIntakeScopeLabel,
+  upperLimitStatusLabel,
+} from "@dofek/nutrition/nutrient-safety";
+import { operationalStatusColors, statusColors } from "@dofek/scoring/colors";
+import { useRouter } from "expo-router";
 import {
   RefreshControl,
   ScrollView,
@@ -10,10 +15,19 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Svg, { Line, Rect } from "react-native-svg";
+import type {
+  AdaptiveTdeeResult,
+  MacroRatioRow,
+  MicronutrientSafetyReviewResult,
+} from "../../server/src/routers/nutrition-analytics";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { DaySelector } from "../components/DaySelector";
+import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPanel";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
+import { useUnitConverter } from "../lib/units";
 import { useRefresh } from "../lib/useRefresh";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
 import { colors } from "../theme";
 
 // ── Types ──
@@ -27,11 +41,149 @@ const DAY_OPTIONS = [
 
 // ── Helpers ──
 
-function nutrientBarColor(percentRda: number): string {
-  if (percentRda >= 100) return statusColors.positive;
-  if (percentRda >= 75) return statusColors.warning;
-  if (percentRda >= 50) return statusColors.elevated;
-  return statusColors.danger;
+function nutrientBarColor(
+  safetyStatus:
+    | "at_or_above_upper_limit"
+    | "upper_limit_not_evaluable"
+    | "within_upper_limit"
+    | "no_upper_limit_in_ruleset",
+): string {
+  if (safetyStatus === "at_or_above_upper_limit") {
+    return operationalStatusColors.danger.indicator;
+  }
+  if (safetyStatus === "upper_limit_not_evaluable") {
+    return operationalStatusColors.warning.indicator;
+  }
+  return operationalStatusColors.info.indicator;
+}
+
+function selectedWindowLabel(selectedWindowDays: number | null): string {
+  return selectedWindowDays == null
+    ? "all available days"
+    : `a ${selectedWindowDays}-day selected window`;
+}
+
+function targetStatusLabel(status: "below_daily_value" | "at_or_above_daily_value"): string {
+  return status === "at_or_above_daily_value" ? "Meets or exceeds target" : "Below target";
+}
+
+function targetSummary(nutrient: MicronutrientSafetyReviewResult["nutrients"][number]): string {
+  if (nutrient.adequacy == null) {
+    return `No ${DAILY_VALUE_TARGET_LABEL} target is available for this nutrient.`;
+  }
+  if (nutrient.adequacy.status === "not_evaluable") {
+    return `${DAILY_VALUE_TARGET_LABEL} target not evaluable`;
+  }
+  return `${formatNutritionNumber(nutrient.adequacy.percentDailyValue)}% of ${DAILY_VALUE_TARGET_LABEL} (${formatNutritionNumber(nutrient.adequacy.reference.amount)} ${nutrient.unit}/day)`;
+}
+
+function targetStatusSummary(
+  nutrient: MicronutrientSafetyReviewResult["nutrients"][number],
+): string {
+  if (nutrient.adequacy?.status === "not_evaluable") return "Not evaluable";
+  if (nutrient.adequacy == null) return "No target available";
+  return targetStatusLabel(nutrient.adequacy.status);
+}
+
+function upperLimitSummary(nutrient: MicronutrientSafetyReviewResult["nutrients"][number]): string {
+  const upperLimit = nutrient.upperLimit;
+  if (upperLimit.status === "not_in_ruleset") {
+    return upperLimitStatusLabel(upperLimit.status);
+  }
+  if (upperLimit.status === "not_evaluable") {
+    return upperLimitStatusLabel(upperLimit.status);
+  }
+  return `Tolerable Upper Intake Level (UL): ${formatNutritionNumber(upperLimit.amount)} ${upperLimit.unit}/day for ${upperLimitIntakeScopeLabel(upperLimit.intakeScope)}`;
+}
+
+function nutrientContextCardStyle(
+  safetyStatus: MicronutrientSafetyReviewResult["nutrients"][number]["safetyStatus"],
+) {
+  if (safetyStatus === "at_or_above_upper_limit") return styles.nutrientContextDanger;
+  if (safetyStatus === "upper_limit_not_evaluable") return styles.nutrientContextWarning;
+  return undefined;
+}
+
+function nutrientContextAccessibilityLabel(
+  nutrient: MicronutrientSafetyReviewResult["nutrients"][number],
+  selectedWindowDays: number | null,
+): string {
+  const parts = [
+    nutrient.nutrient,
+    `Target: ${targetSummary(nutrient)}`,
+    nutrient.adequacy == null ? null : `Target status: ${targetStatusSummary(nutrient)}`,
+    nutrient.adequacy == null ? null : `Target source: ${nutrient.adequacy.reference.source.title}`,
+    nutrient.adequacy == null ? null : `Target guidance: ${nutrient.adequacy.message}`,
+    upperLimitSummary(nutrient),
+    nutrient.upperLimit.status === "not_in_ruleset"
+      ? null
+      : `UL status: ${upperLimitStatusLabel(nutrient.upperLimit.status)}`,
+    nutrient.upperLimit.status === "not_in_ruleset"
+      ? null
+      : `UL source: ${nutrient.upperLimit.source.title}`,
+    nutrient.upperLimit.status === "not_in_ruleset"
+      ? null
+      : `UL guidance: ${nutrient.upperLimit.message}`,
+    `Average over ${nutrient.intake.daysTracked} recorded days in ${selectedWindowLabel(selectedWindowDays)}`,
+  ];
+  return `${parts
+    .filter((part): part is string => part !== null)
+    .map((part) => part.replace(/\.$/, ""))
+    .join(". ")}.`;
+}
+
+function MicronutrientContextDetails({
+  nutrients,
+  selectedWindowDays,
+}: {
+  nutrients: MicronutrientSafetyReviewResult["nutrients"];
+  selectedWindowDays: number | null;
+}) {
+  return (
+    <View style={styles.nutrientContextDetails}>
+      {nutrients.map((nutrient) => (
+        <View
+          key={nutrient.nutrientId}
+          accessible
+          accessibilityLabel={nutrientContextAccessibilityLabel(nutrient, selectedWindowDays)}
+          style={[styles.nutrientContextCard, nutrientContextCardStyle(nutrient.safetyStatus)]}
+        >
+          <Text style={styles.nutrientContextTitle}>{nutrient.nutrient}</Text>
+          <Text style={styles.nutrientContextText}>Target: {targetSummary(nutrient)}</Text>
+          {nutrient.adequacy != null ? (
+            <>
+              <Text style={styles.nutrientContextText}>
+                Target status: {targetStatusSummary(nutrient)}
+              </Text>
+              <Text style={styles.nutrientContextText}>
+                Target source: {nutrient.adequacy.reference.source.title}
+              </Text>
+              <Text style={styles.nutrientContextText}>
+                Target guidance: {nutrient.adequacy.message}
+              </Text>
+            </>
+          ) : null}
+          <Text style={styles.nutrientContextText}>{upperLimitSummary(nutrient)}</Text>
+          {nutrient.upperLimit.status !== "not_in_ruleset" ? (
+            <>
+              <Text style={styles.nutrientContextText}>
+                UL status: {upperLimitStatusLabel(nutrient.upperLimit.status)}
+              </Text>
+              <Text style={styles.nutrientContextText}>
+                UL source: {nutrient.upperLimit.source.title}
+              </Text>
+              <Text style={styles.nutrientContextText}>
+                UL guidance: {nutrient.upperLimit.message}
+              </Text>
+            </>
+          ) : null}
+          <Text style={styles.nutrientContextText}>
+            {`Average over ${nutrient.intake.daysTracked} recorded days in ${selectedWindowLabel(selectedWindowDays)}.`}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
 }
 
 function proteinPerKgColor(value: number): string {
@@ -54,8 +206,29 @@ function LoadingText() {
 // ── Main Screen ──
 
 export default function NutritionAnalyticsScreen() {
-  const [days, setDays] = useState(90);
+  const { days, description, setDays } = useTimeRangePreference("nutrition");
+  const router = useRouter();
   const { refreshing, onRefresh } = useRefresh();
+  const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery({
+    days: Math.max(days, 90),
+  });
+  const macroRatios = trpc.nutritionAnalytics.macroRatios.useQuery({ days });
+  const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days });
+  const queryStates = [adaptiveTdee, macroRatios, micronutrients] as const;
+  const firstError = queryStates.find((query) => query.error != null)?.error ?? null;
+  const hasSuccessfulData = queryStates.some(
+    (query) => query.isSuccess || query.data !== undefined,
+  );
+  const retrying = queryStates.some((query) => query.isFetching);
+  const blockingError = firstError != null && !hasSuccessfulData;
+  const adaptiveTdeeHasSuccessfulData = adaptiveTdee.isSuccess || adaptiveTdee.data !== undefined;
+  const macroRatiosHaveSuccessfulData = macroRatios.isSuccess || macroRatios.data !== undefined;
+  const micronutrientsHaveSuccessfulData =
+    micronutrients.isSuccess || micronutrients.data !== undefined;
+
+  function retryAnalytics() {
+    void Promise.all([adaptiveTdee.refetch(), macroRatios.refetch(), micronutrients.refetch()]);
+  }
 
   return (
     <ScrollView
@@ -69,181 +242,153 @@ export default function NutritionAnalyticsScreen() {
         />
       }
     >
-      {/* Days selector */}
-      <View style={styles.daysRow}>
-        {DAY_OPTIONS.map((opt) => (
-          <TouchableOpacity
-            key={opt.value}
-            style={[styles.dayButton, days === opt.value && styles.dayButtonActive]}
-            onPress={() => setDays(opt.value)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.dayButtonText, days === opt.value && styles.dayButtonTextActive]}>
-              {opt.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <DaySelector days={days} description={description} onChange={setDays} options={DAY_OPTIONS} />
 
-      <AdaptiveTdeeSection days={days} />
-      <CaloricBalanceSection days={days} />
-      <MacroSummarySection days={days} />
-      <MicronutrientAdequacySection days={days} />
+      {firstError ? (
+        <View style={styles.recovery}>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load nutrition analytics"
+            message={getQueryErrorMessage(firstError)}
+            minHeight={blockingError ? 180 : 96}
+            onRetry={retryAnalytics}
+            retryLabel="Retry nutrition analytics"
+            retrying={retrying}
+          />
+          <TouchableOpacity
+            accessibilityLabel="Review data sources"
+            accessibilityRole="link"
+            activeOpacity={0.7}
+            onPress={() => router.push("/providers")}
+            style={styles.dataSourcesLink}
+          >
+            <Text style={styles.dataSourcesLinkText}>Review data sources</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {!blockingError ? (
+        <>
+          {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
+            <NutritionDataQualityPanel
+              dataQuality={micronutrients.data?.dataQuality}
+              loading={micronutrients.isLoading && micronutrients.data === undefined}
+            />
+          ) : null}
+          {adaptiveTdee.error == null || adaptiveTdeeHasSuccessfulData ? (
+            <AdaptiveTdeeSection
+              data={adaptiveTdee.data}
+              loading={adaptiveTdee.isLoading && adaptiveTdee.data === undefined}
+            />
+          ) : null}
+          {macroRatios.error == null || macroRatiosHaveSuccessfulData ? (
+            <MacroSummarySection
+              data={macroRatios.data}
+              loading={macroRatios.isLoading && macroRatios.data === undefined}
+            />
+          ) : null}
+          {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
+            <MicronutrientAdequacySection
+              data={micronutrients.data}
+              loading={micronutrients.isLoading && micronutrients.data === undefined}
+            />
+          ) : null}
+        </>
+      ) : null}
     </ScrollView>
   );
 }
 
 // ── Section 1: Adaptive TDEE ──
 
-function AdaptiveTdeeSection({ days }: { days: number }) {
-  const tdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery({ days: Math.max(days, 90) });
+function AdaptiveTdeeSection({
+  data,
+  loading,
+}: {
+  data: AdaptiveTdeeResult | undefined;
+  loading: boolean;
+}) {
+  const units = useUnitConverter();
 
-  if (tdee.isLoading) return <LoadingText />;
-
-  const data = tdee.data;
+  if (loading) return <LoadingText />;
 
   return (
     <View style={styles.card}>
       <ChartTitleWithTooltip
-        title="Adaptive TDEE Estimate"
-        description="This estimate shows your likely daily energy expenditure based on calorie intake and body-weight change."
+        title="Adaptive Total Daily Energy Expenditure (TDEE) Estimate"
+        description="Estimated from logged calorie intake and observed body-weight change."
         textStyle={styles.cardTitle}
       />
-      {data == null || data.estimatedTdee == null ? (
-        <Text style={styles.emptyText}>Not enough data</Text>
+      {data == null ? (
+        <Text style={styles.emptyText}>
+          Not enough data to estimate Total Daily Energy Expenditure (TDEE)
+        </Text>
       ) : (
         <>
-          <Text style={styles.bigValue}>{Math.round(data.estimatedTdee)} kcal/day</Text>
-          <View style={styles.tdeeDetails}>
-            <Text style={styles.cardSubtext}>Confidence: {Math.round(data.confidence)}%</Text>
-            <Text style={styles.cardSubtext}>Based on {data.dataPoints} data points</Text>
-          </View>
+          {data.estimatedTdee != null ? (
+            <>
+              <Text style={styles.bigValue}>{formatCalories(data.estimatedTdee)}/day</Text>
+              {data.estimateRange ? (
+                <Text style={styles.cardSubtext}>
+                  Observed rolling range: {formatNutritionNumber(data.estimateRange.minimum)}–
+                  {formatNutritionNumber(data.estimateRange.maximum)} {units.caloriesPerDayLabel}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.emptyText}>{data.unavailableReason}</Text>
+          )}
+          <AdaptiveTdeeEvidence data={data} />
         </>
       )}
     </View>
   );
 }
 
-// ── Section 2: Caloric Balance ──
-
-function CaloricBalanceSection({ days }: { days: number }) {
-  const { width: screenWidth } = useWindowDimensions();
-  const chartWidth = screenWidth - 64;
-
-  const balance = trpc.nutritionAnalytics.caloricBalance.useQuery({ days });
-
-  if (balance.isLoading) return <LoadingText />;
-
-  const data = balance.data ?? [];
-  if (data.length === 0) return null;
-
-  const avgBalance = data.reduce((sum, d) => sum + d.balance, 0) / data.length;
-  const latestRollingAvg = data[data.length - 1]?.rollingAvgBalance;
-
-  // Chart calculations
-  const maxAbs = Math.max(...data.map((d) => Math.abs(d.balance)), 1);
-  const chartHeight = 120;
-  const midY = chartHeight / 2;
-  const barWidth = Math.max(2, (chartWidth - data.length * 1) / data.length);
-
+function AdaptiveTdeeEvidence({ data }: { data: AdaptiveTdeeResult }) {
+  const evidence = data.evidence;
+  const exclusions = evidence.excludedDays;
   return (
-    <View>
-      <ChartTitleWithTooltip
-        title="Caloric Balance"
-        description="This section shows whether you are averaging a calorie surplus or deficit over the selected period."
-        textStyle={styles.sectionTitle}
-      />
-
-      {/* Summary cards */}
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Average Daily Balance</Text>
-          <Text
-            style={[
-              styles.summaryValue,
-              { color: avgBalance >= 0 ? statusColors.positive : statusColors.danger },
-            ]}
-          >
-            {avgBalance >= 0 ? "+" : ""}
-            {Math.round(avgBalance)} kcal
-          </Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Rolling Average</Text>
-          <Text
-            style={[
-              styles.summaryValue,
-              {
-                color:
-                  latestRollingAvg != null
-                    ? latestRollingAvg >= 0
-                      ? statusColors.positive
-                      : statusColors.danger
-                    : colors.text,
-              },
-            ]}
-          >
-            {latestRollingAvg != null
-              ? `${latestRollingAvg >= 0 ? "+" : ""}${Math.round(latestRollingAvg)} kcal`
-              : "--"}
-          </Text>
-        </View>
-      </View>
-
-      {/* Bar chart */}
-      <View style={styles.card}>
-        <ChartTitleWithTooltip
-          title="Daily Balance"
-          description="This chart shows day-by-day calorie surplus (above zero) or deficit (below zero)."
-          textStyle={styles.cardTitle}
-        />
-        <View style={styles.chartContainer}>
-          <Svg width={chartWidth} height={chartHeight}>
-            {/* Zero line */}
-            <Line
-              x1={0}
-              y1={midY}
-              x2={chartWidth}
-              y2={midY}
-              stroke={colors.textTertiary}
-              strokeWidth={StyleSheet.hairlineWidth}
-            />
-            {data.map((d, i) => {
-              const barH = (Math.abs(d.balance) / maxAbs) * (midY - 4);
-              const barX = i * (barWidth + 1);
-              const isPositive = d.balance >= 0;
-              const barY = isPositive ? midY - barH : midY;
-              return (
-                <Rect
-                  key={d.date}
-                  x={barX}
-                  y={barY}
-                  width={barWidth}
-                  height={Math.max(barH, 1)}
-                  rx={1}
-                  fill={isPositive ? statusColors.positive : statusColors.danger}
-                  opacity={0.8}
-                />
-              );
-            })}
-          </Svg>
-        </View>
-      </View>
+    <View style={styles.tdeeDetails}>
+      <Text style={styles.cardSubtext}>
+        {evidence.selectedWindowDays}-day evaluation · {evidence.observedDays} accessible calendar
+        days
+      </Text>
+      <Text style={styles.cardSubtext}>
+        {evidence.fitWindowDays}-day fit · at least {evidence.minimumCalorieDays} usable calorie
+        days
+      </Text>
+      <Text style={styles.cardSubtext}>
+        {evidence.calorieDays} calorie days · {evidence.weightDays} weight days ·{" "}
+        {evidence.acceptedWindows} accepted windows
+      </Text>
+      {exclusions.missingCalories > 0 ||
+      exclusions.sourceConflict > 0 ||
+      exclusions.lowerPrioritySources > 0 ? (
+        <Text style={styles.cardSubtext}>
+          Excluded: {exclusions.missingCalories} missing calorie days · {exclusions.sourceConflict}{" "}
+          source-conflict days · {exclusions.lowerPrioritySources} days with lower-priority sources
+        </Text>
+      ) : null}
     </View>
   );
 }
 
 // ── Section 3: Macro Summary ──
 
-function MacroSummarySection({ days }: { days: number }) {
-  const macros = trpc.nutritionAnalytics.macroRatios.useQuery({ days });
+function MacroSummarySection({
+  data,
+  loading,
+}: {
+  data: MacroRatioRow[] | undefined;
+  loading: boolean;
+}) {
+  if (loading) return <LoadingText />;
 
-  if (macros.isLoading) return <LoadingText />;
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
 
-  const data = macros.data ?? [];
-  if (data.length === 0) return null;
-
-  const latest = data[data.length - 1];
+  const latest = rows[rows.length - 1];
   const proteinPerKg = latest?.proteinPerKg;
 
   return (
@@ -268,19 +413,31 @@ function MacroSummarySection({ days }: { days: number }) {
 
 // ── Section 4: Micronutrient Adequacy ──
 
-function MicronutrientAdequacySection({ days }: { days: number }) {
+function MicronutrientAdequacySection({
+  data,
+  loading,
+}: {
+  data: MicronutrientSafetyReviewResult | undefined;
+  loading: boolean;
+}) {
   const { width: screenWidth } = useWindowDimensions();
   const barMaxWidth = screenWidth - 160;
 
-  const adequacy = trpc.nutritionAnalytics.micronutrientAdequacy.useQuery({ days });
+  if (loading) return <LoadingText />;
 
-  if (adequacy.isLoading) return <LoadingText />;
+  const visibleNutrients = (data?.nutrients ?? []).filter(
+    (nutrient) => nutrient.adequacy != null || nutrient.upperLimit.status !== "not_in_ruleset",
+  );
+  const evaluableNutrients = visibleNutrients.filter(
+    (nutrient) => nutrient.adequacy != null && nutrient.adequacy.status !== "not_evaluable",
+  );
+  if (visibleNutrients.length === 0) return null;
 
-  const data = adequacy.data ?? [];
-  if (data.length === 0) return null;
-
-  // Sort by percentRda ascending (worst first)
-  const sorted = [...data].sort((a, b) => a.percentRda - b.percentRda);
+  const sorted = [...evaluableNutrients].sort((a, b) => {
+    const first = a.adequacy?.status !== "not_evaluable" ? a.adequacy?.percentDailyValue : 0;
+    const second = b.adequacy?.status !== "not_evaluable" ? b.adequacy?.percentDailyValue : 0;
+    return (first ?? 0) - (second ?? 0);
+  });
 
   return (
     <View>
@@ -290,44 +447,96 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
         textStyle={styles.sectionTitle}
       />
       <Text style={styles.sectionSubtext}>
-        Average daily intake vs. Recommended Daily Allowance
+        Average over recorded days vs. {DAILY_VALUE_TARGET_LABEL}; not a personalized deficiency or
+        safety assessment
+      </Text>
+      <Text style={styles.sectionSubtext}>
+        The Daily Value target marker and any Tolerable Upper Intake Level (UL) are separate; see
+        each nutrient&apos;s target, source, and safety details below.
       </Text>
 
       {sorted.map((nutrient) => {
-        const percentage = Math.min(nutrient.percentRda, 150);
+        const percentDailyValue =
+          nutrient.adequacy?.status !== "not_evaluable"
+            ? (nutrient.adequacy?.percentDailyValue ?? 0)
+            : 0;
+        const percentage = Math.min(percentDailyValue, 150);
         const barFraction = percentage / 150;
-        const barColor = nutrientBarColor(nutrient.percentRda);
+        const barColor = nutrientBarColor(nutrient.safetyStatus);
 
         return (
-          <View key={nutrient.nutrient} style={styles.nutrientRow}>
-            <View style={styles.nutrientLabelContainer}>
-              <Text style={styles.nutrientLabel} numberOfLines={1}>
-                {nutrient.nutrient}
-              </Text>
-            </View>
-            <View style={styles.nutrientBarContainer}>
-              <View style={[styles.nutrientBarTrack, { width: barMaxWidth }]}>
-                <View
-                  style={[
-                    styles.nutrientBarFill,
-                    {
-                      width: `${barFraction * 100}%`,
-                      backgroundColor: barColor,
-                    },
-                  ]}
-                />
-                {/* 100% marker */}
-                <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
+          <View key={nutrient.nutrient} style={styles.nutrientGroup}>
+            <View style={styles.nutrientRow}>
+              <View style={styles.nutrientLabelContainer}>
+                <Text style={styles.nutrientLabel} numberOfLines={1}>
+                  {nutrient.nutrient}
+                </Text>
               </View>
-              <Text style={[styles.nutrientPct, { color: barColor }]}>
-                {Math.round(nutrient.percentRda)}%
+              <View style={styles.nutrientBarContainer}>
+                <View style={[styles.nutrientBarTrack, { width: barMaxWidth }]}>
+                  <View
+                    style={[
+                      styles.nutrientBarFill,
+                      {
+                        width: `${barFraction * 100}%`,
+                        backgroundColor: barColor,
+                      },
+                    ]}
+                  />
+                  <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
+                </View>
+                <Text style={[styles.nutrientPct, { color: barColor }]}>
+                  {formatNutritionNumber(percentDailyValue)}%
+                </Text>
+              </View>
+            </View>
+            <View style={styles.nutrientSourceDetails}>
+              <Text style={styles.nutrientSourceText}>
+                Itemized food: {formatNutritionNumber(nutrient.intake.foodDailyAverage)}{" "}
+                {nutrient.unit}/day
               </Text>
+              <Text style={styles.nutrientSourceText}>
+                Provider daily totals:{" "}
+                {formatNutritionNumber(nutrient.intake.providerDailyTotalAverage)} {nutrient.unit}
+                /day
+              </Text>
+              <Text style={styles.nutrientSourceText}>
+                Supplements: {formatNutritionNumber(nutrient.intake.supplementDailyAverage)}{" "}
+                {nutrient.unit}/day
+              </Text>
+              {nutrient.sourceBreakdown.map((source) => (
+                <Text
+                  key={`${source.providerId}:${source.sourceLabel}:${source.intakeType}`}
+                  style={styles.nutrientSourceText}
+                >
+                  {source.sourceLabel} · {intakeTypeLabel(source.intakeType)} ·{" "}
+                  {formatNutritionNumber(source.dailyAverageContribution)} {nutrient.unit}/day ·{" "}
+                  {source.daysTracked} {source.daysTracked === 1 ? "day" : "days"}
+                </Text>
+              ))}
             </View>
           </View>
         );
       })}
+      <MicronutrientContextDetails
+        nutrients={visibleNutrients}
+        selectedWindowDays={data?.dataQuality.selectedWindowDays ?? null}
+      />
     </View>
   );
+}
+
+function intakeTypeLabel(
+  intakeType: "itemized_food" | "provider_daily_total" | "supplement",
+): string {
+  switch (intakeType) {
+    case "itemized_food":
+      return "Itemized food";
+    case "provider_daily_total":
+      return "Provider daily total";
+    case "supplement":
+      return "Supplement";
+  }
 }
 
 // ── Styles ──
@@ -341,31 +550,20 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
-
-  // ── Days selector ──
-  daysRow: {
-    flexDirection: "row",
+  recovery: {
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  dayButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
+  dataSourcesLink: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 4,
+    paddingVertical: 4,
   },
-  dayButtonActive: {
-    backgroundColor: colors.accent,
-  },
-  dayButtonText: {
-    fontSize: 13,
+  dataSourcesLinkText: {
+    color: colors.accent,
+    fontSize: 14,
     fontWeight: "600",
-    color: colors.textSecondary,
   },
-  dayButtonTextActive: {
-    color: colors.text,
-  },
-
   // ── Sections ──
   sectionTitle: {
     fontSize: 18,
@@ -379,32 +577,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: 12,
     marginTop: -8,
-  },
-
-  // ── Summary row ──
-  summaryRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: "center",
-  },
-  summaryLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    marginBottom: 4,
-    textAlign: "center",
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: colors.text,
   },
 
   // ── Cards ──
@@ -437,17 +609,13 @@ const styles = StyleSheet.create({
     gap: 2,
   },
 
-  // ── Charts ──
-  chartContainer: {
-    marginTop: 12,
-    alignItems: "center",
-  },
-
   // ── Nutrient bars ──
+  nutrientGroup: {
+    marginBottom: 14,
+  },
   nutrientRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
   },
   nutrientLabelContainer: {
     width: 90,
@@ -486,6 +654,44 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     width: 40,
     textAlign: "right",
+  },
+  nutrientSourceDetails: {
+    gap: 2,
+    marginLeft: 90,
+    marginTop: 4,
+  },
+  nutrientSourceText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  nutrientContextDetails: {
+    gap: 8,
+    marginTop: 4,
+  },
+  nutrientContextCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    padding: 10,
+    gap: 2,
+  },
+  nutrientContextDanger: {
+    borderColor: operationalStatusColors.danger.border,
+    borderWidth: 1,
+  },
+  nutrientContextWarning: {
+    borderColor: operationalStatusColors.warning.border,
+    borderWidth: 1,
+  },
+  nutrientContextTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  nutrientContextText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
   },
 
   // ── Status text ──

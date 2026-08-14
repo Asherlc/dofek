@@ -1,4 +1,5 @@
-const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
+import { TEST_USER_ID } from "../support/test-user";
+import { formatLocalDate } from "./test-helpers";
 
 describe("Nutrition page", () => {
   beforeEach(() => {
@@ -22,25 +23,29 @@ describe("Nutrition page", () => {
   });
 
   it("renders food entries that have null calories without crashing", () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalDate(new Date());
 
     // Insert food entries with nutrition rows (one with calories, one without)
     cy.task("runQuery", {
       query: `
         WITH fe1 AS (
-          INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, meal)
-          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Chicken breast', 'lunch')
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, food_name, meal, nutrition_grain
+          )
+          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Chicken breast', 'lunch', 'itemized')
           RETURNING id
         ),
         fe2 AS (
-          INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, meal)
-          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Mystery food', 'dinner')
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, food_name, meal, nutrition_grain
+          )
+          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Mystery food', 'dinner', 'itemized')
           RETURNING id
         )
-        INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories, protein_g)
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
         VALUES
-          ((SELECT id FROM fe1), 350, 40),
-          ((SELECT id FROM fe2), NULL, NULL)
+          ((SELECT id FROM fe1), 'calories', 350),
+          ((SELECT id FROM fe1), 'protein', 40)
       `,
     });
 

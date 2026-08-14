@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./get-started-flow": "./src/get-started-flow.ts",
+    "./primary-goal": "./src/primary-goal.ts",
     "./provider-guide": "./src/provider-guide.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }

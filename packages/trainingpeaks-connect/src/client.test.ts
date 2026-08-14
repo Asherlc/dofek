@@ -1,11 +1,18 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { TrainingPeaksConnectClient } from "./client.ts";
 
-function mockFetch(response: {
-  status: number;
-  ok: boolean;
-  body: unknown;
-}): typeof globalThis.fetch {
+type TypedMockFetch = ReturnType<typeof vi.fn<typeof globalThis.fetch>> & typeof globalThis.fetch;
+
+function rateLimitedFetch(retryAfterSeconds: string): typeof globalThis.fetch {
+  return async () =>
+    new Response("Too Many Requests", {
+      status: 429,
+      headers: { "Retry-After": retryAfterSeconds },
+    });
+}
+
+function mockFetch(response: { status: number; ok: boolean; body: unknown }): TypedMockFetch {
   return vi.fn().mockResolvedValue({
     ok: response.ok,
     status: response.status,
@@ -40,10 +47,11 @@ describe("TrainingPeaksConnectClient.exchangeCookieForToken", () => {
     expect(result.accessToken).toBe("tp-access-token");
     expect(result.expiresIn).toBe(3600);
 
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toContain("/users/v3/token");
-    const headers = options.headers<string, string>;
-    expect(headers.Cookie).toBe("Production_tpAuth=my-cookie");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Cookie")).toBe("Production_tpAuth=my-cookie");
   });
 
   it("throws on non-200 response", async () => {
@@ -68,6 +76,17 @@ describe("TrainingPeaksConnectClient.exchangeCookieForToken", () => {
       TrainingPeaksConnectClient.exchangeCookieForToken("expired-cookie", fetchFn),
     ).rejects.toThrow("success=false");
   });
+
+  it("throws a trainingpeaks-scoped ProviderRateLimitError on 429", async () => {
+    const error = await TrainingPeaksConnectClient.exchangeCookieForToken(
+      "my-cookie",
+      rateLimitedFetch("30"),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "trainingpeaks");
+    expect(error).toHaveProperty("retryAfterSeconds", 30);
+  });
 });
 
 describe("TrainingPeaksConnectClient.refreshCookie", () => {
@@ -87,9 +106,10 @@ describe("TrainingPeaksConnectClient.refreshCookie", () => {
     const result = await TrainingPeaksConnectClient.refreshCookie("old-cookie", fetchFn);
 
     expect(result).toBe("new-cookie-value");
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toContain("/refresh");
-    expect(options.redirect).toBe("manual");
+    expect(options?.redirect).toBe("manual");
   });
 
   it("falls back to set-cookie header splitting when getSetCookie is not available", async () => {
@@ -141,6 +161,17 @@ describe("TrainingPeaksConnectClient.refreshCookie", () => {
       "did not return a new Production_tpAuth cookie",
     );
   });
+
+  it("throws a trainingpeaks-scoped ProviderRateLimitError on 429", async () => {
+    const error = await TrainingPeaksConnectClient.refreshCookie(
+      "old-cookie",
+      rateLimitedFetch("60"),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "trainingpeaks");
+    expect(error).toHaveProperty("retryAfterSeconds", 60);
+  });
 });
 
 // ============================================================
@@ -166,10 +197,21 @@ describe("TrainingPeaksConnectClient.getUser", () => {
     const result = await client.getUser();
 
     expect(result).toEqual(user);
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toContain("/users/v3/user");
-    const headers = options.headers<string, string>;
-    expect(headers.Authorization).toBe("Bearer test-token");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
+  });
+
+  it("throws a trainingpeaks-scoped ProviderRateLimitError on 429", async () => {
+    const client = new TrainingPeaksConnectClient("test-token", rateLimitedFetch("15"));
+
+    const error = await client.getUser().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "trainingpeaks");
+    expect(error).toHaveProperty("retryAfterSeconds", 15);
   });
 });
 
@@ -193,7 +235,7 @@ describe("TrainingPeaksConnectClient.getWorkouts", () => {
     const result = await client.getWorkouts(456, "2024-01-01", "2024-01-31");
 
     expect(result).toEqual(workouts);
-    const [url] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/fitness/v6/athletes/456/workouts/2024-01-01/2024-01-31");
   });
 
@@ -225,7 +267,7 @@ describe("TrainingPeaksConnectClient.getWorkout", () => {
     const result = await client.getWorkout(456, 789);
 
     expect(result).toEqual(workout);
-    const [url] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/fitness/v6/athletes/456/workouts/789");
   });
 });
@@ -249,13 +291,14 @@ describe("TrainingPeaksConnectClient.getPerformanceManagement", () => {
     const result = await client.getPerformanceManagement(456, "2024-01-01", "2024-01-31");
 
     expect(result).toEqual(pmcData);
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toContain(
       "/fitness/v1/athletes/456/reporting/performancedata/2024-01-01/2024-01-31",
     );
-    expect(options.method).toBe("POST");
+    expect(options?.method).toBe("POST");
 
-    const body = JSON.parse(String(options.body));
+    const body = JSON.parse(String(options?.body));
     expect(body.atlConstant).toBe(7);
     expect(body.ctlConstant).toBe(42);
     expect(body.atlStart).toBe(0);
@@ -275,8 +318,8 @@ describe("TrainingPeaksConnectClient.getPerformanceManagement", () => {
       workoutTypes: [2, 3],
     });
 
-    const [, options]: [string, RequestInit] = fetchFn.mock.calls[0];
-    const body = JSON.parse(String(options.body));
+    const options = fetchFn.mock.calls[0]?.[1];
+    const body = JSON.parse(String(options?.body));
     expect(body.atlConstant).toBe(14);
     expect(body.ctlConstant).toBe(56);
     expect(body.atlStart).toBe(10);
@@ -306,7 +349,7 @@ describe("TrainingPeaksConnectClient.getPersonalRecords", () => {
     const result = await client.getPersonalRecords(456, "Bike", "power20min");
 
     expect(result).toEqual(records);
-    const [url] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/personalrecord/v2/athletes/456/Bike");
     expect(url).toContain("prType=power20min");
     expect(url).not.toContain("startDate");
@@ -319,7 +362,7 @@ describe("TrainingPeaksConnectClient.getPersonalRecords", () => {
 
     await client.getPersonalRecords(456, "Run", "speed5K", "2024-01-01", "2024-12-31");
 
-    const [url] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
     expect(url).toContain("startDate=2024-01-01");
     expect(url).toContain("endDate=2024-12-31");
   });
@@ -335,7 +378,7 @@ describe("TrainingPeaksConnectClient.getCalendarNotes", () => {
     const result = await client.getCalendarNotes(456, "2024-01-01", "2024-01-31");
 
     expect(result).toEqual(notes);
-    const [url] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/fitness/v1/athletes/456/calendarNote/2024-01-01/2024-01-31");
   });
 });
@@ -359,12 +402,13 @@ describe("TrainingPeaksConnectClient.getWorkoutAnalysis", () => {
     const result = await client.getWorkoutAnalysis(789, 456);
 
     expect(result).toEqual(analysis);
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toContain("api.peakswaresb.com");
     expect(url).toContain("/workout-analysis/v1/analyze");
-    expect(options.method).toBe("POST");
+    expect(options?.method).toBe("POST");
 
-    const body = JSON.parse(String(options.body));
+    const body = JSON.parse(String(options?.body));
     expect(body.workoutId).toBe(789);
     expect(body.viewingPersonId).toBe(456);
   });
@@ -393,11 +437,11 @@ describe("TrainingPeaksConnectClient request headers", () => {
 
     await client.getUser();
 
-    const [, options]: [string, RequestInit] = fetchFn.mock.calls[0];
-    const headers = options.headers<string, string>;
-    expect(headers.Authorization).toBe("Bearer test-token");
-    expect(headers.Accept).toBe("application/json");
-    expect(headers.Origin).toContain("trainingpeaks.com");
+    const options = fetchFn.mock.calls[0]?.[1];
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
+    expect(headers.get("Accept")).toBe("application/json");
+    expect(headers.get("Origin")).toContain("trainingpeaks.com");
   });
 
   it("sends correct headers for POST requests", async () => {
@@ -406,9 +450,9 @@ describe("TrainingPeaksConnectClient request headers", () => {
 
     await client.getPerformanceManagement(456, "2024-01-01", "2024-01-31");
 
-    const [, options]: [string, RequestInit] = fetchFn.mock.calls[0];
-    const headers = options.headers<string, string>;
-    expect(headers["Content-Type"]).toBe("application/json");
-    expect(headers.Authorization).toBe("Bearer test-token");
+    const options = fetchFn.mock.calls[0]?.[1];
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
   });
 });

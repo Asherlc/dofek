@@ -1,7 +1,6 @@
-import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -108,62 +107,83 @@ function mapRow(row: z.infer<typeof trendDbSchema>): TrendRow {
 
 /** Data access for daily and weekly activity trend aggregates. */
 export class TrendsRepository {
-  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #sensorStore: Pick<ActivitySensorStore, "query">;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
-    this.#db = db;
+  constructor(userId: string, sensorStore: Pick<ActivitySensorStore, "query">) {
     this.#userId = userId;
+    this.#sensorStore = sensorStore;
   }
 
-  /** Daily activity metrics from the continuous aggregate. */
+  /** Daily activity metrics from the ClickHouse trend read model. */
   async getDaily(days: number): Promise<TrendRow[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       trendDbSchema,
-      sql`SELECT
-            bucket::date::text AS period,
-            avg_hr,
-            max_hr,
-            avg_power,
-            max_power,
-            avg_cadence,
-            avg_speed,
-            total_samples,
-            hr_samples,
-            power_samples,
-            activity_count
-          FROM fitness.cagg_metric_daily
-          WHERE user_id = ${this.#userId}
-            AND bucket > NOW() - ${days}::int * INTERVAL '1 day'
-          ORDER BY bucket ASC`,
+      `
+        SELECT
+          toString(bucket_date) AS period,
+          avg_hr,
+          max_hr,
+          avg_power,
+          max_power,
+          avg_cadence,
+          avg_speed,
+          total_samples,
+          hr_samples,
+          power_samples,
+          activity_count
+        FROM analytics.activity_trend_daily
+        WHERE user_id = {userId:UUID}
+          AND bucket_date > today() - toIntervalDay({days:UInt32})
+        ORDER BY bucket_date ASC
+      `,
+      { userId: this.#userId, days },
     );
 
     return rows.map(mapRow);
   }
 
-  /** Weekly activity metrics from the hierarchical continuous aggregate. */
+  /** Weekly activity metrics rolled up from the ClickHouse daily trend read model. */
   async getWeekly(weeks: number): Promise<TrendRow[]> {
     const days = weeks * 7;
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       trendDbSchema,
-      sql`SELECT
-            bucket::date::text AS period,
-            avg_hr,
-            max_hr,
-            avg_power,
-            max_power,
-            avg_cadence,
-            avg_speed,
-            total_samples,
-            hr_samples,
-            power_samples,
-            activity_count
-          FROM fitness.cagg_metric_weekly
-          WHERE user_id = ${this.#userId}
-            AND bucket > NOW() - ${days}::int * INTERVAL '1 day'
-          ORDER BY bucket ASC`,
+      `
+        SELECT
+          toString(week_start) AS period,
+          CAST(hr_weighted_sum / nullIf(weekly_hr_samples, 0), 'Nullable(Float64)') AS avg_hr,
+          max_hr,
+          CAST(power_weighted_sum / nullIf(weekly_power_samples, 0), 'Nullable(Float64)') AS avg_power,
+          max_power,
+          CAST(cadence_weighted_sum / nullIf(weekly_cadence_samples, 0), 'Nullable(Float64)') AS avg_cadence,
+          CAST(speed_weighted_sum / nullIf(weekly_speed_samples, 0), 'Nullable(Float64)') AS avg_speed,
+          weekly_total_samples AS total_samples,
+          weekly_hr_samples AS hr_samples,
+          weekly_power_samples AS power_samples,
+          weekly_activity_count AS activity_count
+        FROM (
+          SELECT
+            toStartOfWeek(bucket_date, 1) AS week_start,
+            sum(avg_hr * hr_samples) AS hr_weighted_sum,
+            max(max_hr) AS max_hr,
+            sum(avg_power * power_samples) AS power_weighted_sum,
+            max(max_power) AS max_power,
+            sum(avg_cadence * cadence_samples) AS cadence_weighted_sum,
+            sum(avg_speed * speed_samples) AS speed_weighted_sum,
+            sum(total_samples) AS weekly_total_samples,
+            sum(hr_samples) AS weekly_hr_samples,
+            sum(power_samples) AS weekly_power_samples,
+            sum(cadence_samples) AS weekly_cadence_samples,
+            sum(speed_samples) AS weekly_speed_samples,
+            sum(activity_count) AS weekly_activity_count
+          FROM analytics.activity_trend_daily
+          WHERE user_id = {userId:UUID}
+            AND bucket_date > today() - toIntervalDay({days:UInt32})
+          GROUP BY week_start
+        )
+        ORDER BY week_start ASC
+      `,
+      { userId: this.#userId, days },
     );
 
     return rows.map(mapRow);

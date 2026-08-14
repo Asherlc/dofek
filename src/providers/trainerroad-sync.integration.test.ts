@@ -1,11 +1,15 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { TrainerRoadProvider } from "./trainerroad.ts";
 
 // ============================================================
@@ -61,10 +65,14 @@ function fakeActivity(overrides: Partial<FakeTrainerRoadActivity> = {}): FakeTra
   };
 }
 
-function trainerroadHandlers(activities: FakeTrainerRoadActivity[]) {
+function trainerroadHandlers(
+  activities: FakeTrainerRoadActivity[],
+  onRequest?: (url: URL) => void,
+) {
   return [
     // Activities API
-    http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", () => {
+    http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", ({ request }) => {
+      onRequest?.(new URL(request.url));
       return HttpResponse.json(activities);
     }),
   ];
@@ -109,15 +117,24 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
       }),
     ];
 
-    server.use(...trainerroadHandlers(trActivities));
+    const requestedUrls: URL[] = [];
+    server.use(...trainerroadHandlers(trActivities, (url) => requestedUrls.push(url)));
 
     const provider = new TrainerRoadProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("trainerroad");
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+    expect(requestedUrls).toHaveLength(1);
+    expect(requestedUrls[0]?.pathname).toBe("/app/api/calendar/activities/testuser");
+    expect(requestedUrls[0]?.searchParams.get("startDate")).toBe("2026-02-01");
+    expect(requestedUrls[0]?.searchParams.get("endDate")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     // Verify activity rows
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "trainerroad"));
@@ -125,12 +142,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "5001");
     if (!ride) throw new Error("expected activity 5001");
-    expect(ride.activityType).toBe("virtual_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Baxter");
 
     const run = rows.find((r) => r.externalId === "5002");
     if (!run) throw new Error("expected activity 5002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Morning Run");
   });
 
@@ -147,10 +164,20 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     server.use(...trainerroadHandlers(trActivities));
 
     const provider = new TrainerRoadProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "trainerroad"));
     const countOf5001 = rows.filter((r) => r.externalId === "5001").length;
@@ -170,12 +197,16 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     });
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain(
-      "TrainerRoad session expired — please re-authenticate via Settings",
-    );
+    expect(result.errors[0]?.message).toContain("TrainerRoad session expired.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "session_expired" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -183,7 +214,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "trainerroad"));
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -199,10 +235,16 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     });
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("username not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -233,19 +275,55 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     server.use(...trainerroadHandlers(trActivities));
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "trainerroad"));
 
     const outdoorRide = rows.find((r) => r.externalId === "7001");
-    expect(outdoorRide?.activityType).toBe("cycling");
+    expect(outdoorRide?.canonicalType).toBe("cycling");
 
     const virtualRide = rows.find((r) => r.externalId === "7002");
-    expect(virtualRide?.activityType).toBe("virtual_cycling");
+    expect(virtualRide?.canonicalType).toBe("cycling");
 
     const swim = rows.find((r) => r.externalId === "7003");
-    expect(swim?.activityType).toBe("swimming");
+    expect(swim?.canonicalType).toBe("swimming");
+  });
+
+  it("surfaces a ProviderRateLimitError tagged with providerId when the API returns 429", async () => {
+    await saveTokens(ctx.db, "trainerroad", {
+      accessToken: "valid-cookie",
+      refreshToken: null,
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "username:testuser",
+    });
+
+    server.use(
+      http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", () => {
+        return new HttpResponse("rate limited", { status: 429 });
+      }),
+    );
+
+    const provider = new TrainerRoadProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    expect(cause).toBeInstanceOf(ProviderRateLimitError);
+    if (!(cause instanceof ProviderRateLimitError)) throw new Error("expected rate limit error");
+    expect(cause.providerId).toBe("trainerroad");
+    expect(cause.statusCode).toBe(429);
   });
 });

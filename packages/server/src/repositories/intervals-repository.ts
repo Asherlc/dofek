@@ -2,12 +2,13 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
 
-const intervalRowSchema = z.object({
+const intervalMetadataRowSchema = z.object({
   id: z.string(),
   interval_index: z.coerce.number(),
   label: z.string().nullable(),
@@ -15,33 +16,52 @@ const intervalRowSchema = z.object({
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   duration_seconds: z.coerce.number().nullable(),
-  avg_heart_rate: z.number().nullable(),
-  max_heart_rate: z.number().nullable(),
-  avg_power: z.number().nullable(),
-  max_power: z.number().nullable(),
-  avg_speed: z.number().nullable(),
-  max_speed: z.number().nullable(),
-  avg_cadence: z.number().nullable(),
-  distance_meters: z.number().nullable(),
-  elevation_gain: z.number().nullable(),
+});
+
+const sensorPointRowSchema = z.object({
+  recorded_at: z.string(),
+  heart_rate: z.coerce.number().nullable(),
+  power: z.coerce.number().nullable(),
+  speed: z.coerce.number().nullable(),
+  cadence: z.coerce.number().nullable(),
+  lat: z.coerce.number().nullable(),
+  lng: z.coerce.number().nullable(),
+  altitude: z.coerce.number().nullable(),
 });
 
 const minuteAggRowSchema = z.object({
-  minute_start: timestampStringSchema,
+  minute_start: z.string(),
   avg_power: z.coerce.number().nullable(),
   avg_hr: z.coerce.number().nullable(),
   avg_speed: z.coerce.number().nullable(),
   avg_cadence: z.coerce.number().nullable(),
-  max_power: z.number().nullable(),
-  max_hr: z.number().nullable(),
-  max_speed: z.number().nullable(),
+  max_power: z.coerce.number().nullable(),
+  max_hr: z.coerce.number().nullable(),
+  max_speed: z.coerce.number().nullable(),
 });
 
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
 
-export type IntervalRow = z.infer<typeof intervalRowSchema>;
+export interface IntervalRow {
+  id: string;
+  interval_index: number;
+  label: string | null;
+  interval_type: string | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  avg_heart_rate: number | null;
+  max_heart_rate: number | null;
+  avg_power: number | null;
+  max_power: number | null;
+  avg_speed: number | null;
+  max_speed: number | null;
+  avg_cadence: number | null;
+  distance_meters: number | null;
+  elevation_gain: number | null;
+}
 
 export interface DetectedInterval {
   intervalIndex: number;
@@ -60,7 +80,7 @@ export interface DetectedInterval {
 // Utility functions
 // ---------------------------------------------------------------------------
 
-const CHANGE_THRESHOLD = 0.15; // 15% change triggers new interval
+const CHANGE_THRESHOLD = 0.15;
 
 export function average(values: (number | null)[]): number | null {
   const valid = values.filter((v): v is number => v != null && v > 0);
@@ -109,25 +129,90 @@ export function summarizeSegment(
   };
 }
 
+const EARTH_RADIUS_METERS = 6_371_000;
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const chordSquared =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(chordSquared));
+}
+
+type SensorPoint = z.infer<typeof sensorPointRowSchema>;
+
+function aggregateInterval(points: SensorPoint[]): {
+  avg_heart_rate: number | null;
+  max_heart_rate: number | null;
+  avg_power: number | null;
+  max_power: number | null;
+  avg_speed: number | null;
+  max_speed: number | null;
+  avg_cadence: number | null;
+  distance_meters: number | null;
+  elevation_gain: number | null;
+} {
+  const hrs = points.map((p) => p.heart_rate);
+  const powers = points.map((p) => p.power).filter((v): v is number => v != null && v > 0);
+  const speeds = points.map((p) => p.speed);
+  const cadences = points.map((p) => p.cadence).filter((v): v is number => v != null && v > 0);
+
+  const validHrs = hrs.filter((v): v is number => v != null);
+  const validSpeeds = speeds.filter((v): v is number => v != null);
+
+  let distance = 0;
+  let elevationGain = 0;
+  for (let index = 1; index < points.length; index++) {
+    const prev = points[index - 1];
+    const curr = points[index];
+    if (!prev || !curr) continue;
+    if (prev.lat != null && prev.lng != null && curr.lat != null && curr.lng != null) {
+      distance += haversineMeters(prev.lat, prev.lng, curr.lat, curr.lng);
+    }
+    if (prev.altitude != null && curr.altitude != null) {
+      const delta = curr.altitude - prev.altitude;
+      if (delta > 0) elevationGain += delta;
+    }
+  }
+
+  const avg = (values: number[]) =>
+    values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
+
+  return {
+    avg_heart_rate: avg(validHrs),
+    max_heart_rate: validHrs.length > 0 ? Math.round(Math.max(...validHrs)) : null,
+    avg_power: avg(powers),
+    max_power: powers.length > 0 ? Math.round(Math.max(...powers)) : null,
+    avg_speed: avg(validSpeeds),
+    max_speed: validSpeeds.length > 0 ? Math.max(...validSpeeds) : null,
+    avg_cadence: avg(cadences),
+    distance_meters: points.length > 1 ? distance : null,
+    elevation_gain: points.length > 1 ? elevationGain : null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
 
-/** Data access for activity intervals and auto-detection from metric streams. */
+/** Data access for activity intervals and auto-detection from sensor streams. */
 export class IntervalsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, sensorStore: ActivitySensorStore) {
     this.#db = db;
     this.#userId = userId;
+    this.#sensorStore = sensorStore;
   }
 
   /** Get intervals/laps for a specific activity with computed per-interval metrics. */
   async getByActivity(activityId: string): Promise<IntervalRow[]> {
-    return executeWithSchema(
+    const intervals = await executeWithSchema(
       this.#db,
-      intervalRowSchema,
+      intervalMetadataRowSchema,
       sql`
         SELECT
           ai.id,
@@ -136,109 +221,146 @@ export class IntervalsRepository {
           ai.interval_type,
           ai.started_at,
           ai.ended_at,
-          EXTRACT(EPOCH FROM (ai.ended_at - ai.started_at)) AS duration_seconds,
-          im.avg_heart_rate,
-          im.max_heart_rate,
-          im.avg_power,
-          im.max_power,
-          im.avg_speed,
-          im.max_speed,
-          im.avg_cadence,
-          im.distance_meters,
-          im.elevation_gain
+          EXTRACT(EPOCH FROM (ai.ended_at - ai.started_at)) AS duration_seconds
         FROM fitness.activity_interval ai
-        JOIN fitness.activity a ON a.id = ai.activity_id
-        LEFT JOIN LATERAL (
-          SELECT
-            AVG(d.heart_rate)::REAL AS avg_heart_rate,
-            MAX(d.heart_rate)::SMALLINT AS max_heart_rate,
-            AVG(d.power) FILTER (WHERE d.power > 0)::REAL AS avg_power,
-            MAX(d.power) FILTER (WHERE d.power > 0)::SMALLINT AS max_power,
-            AVG(d.speed)::REAL AS avg_speed,
-            MAX(d.speed)::REAL AS max_speed,
-            AVG(d.cadence) FILTER (WHERE d.cadence > 0)::REAL AS avg_cadence,
-            SUM(CASE WHEN d.prev_lat IS NOT NULL THEN
-              2 * 6371000 * ASIN(SQRT(
-                POWER(SIN(RADIANS(d.lat - d.prev_lat) / 2), 2) +
-                COS(RADIANS(d.prev_lat)) * COS(RADIANS(d.lat)) *
-                POWER(SIN(RADIANS(d.lng - d.prev_lng) / 2), 2)
-              ))
-            ELSE 0 END)::REAL AS distance_meters,
-            SUM(CASE WHEN d.prev_alt IS NOT NULL AND d.altitude - d.prev_alt > 0
-              THEN d.altitude - d.prev_alt ELSE 0 END)::REAL AS elevation_gain
-          FROM (
-            SELECT
-              p.heart_rate, p.power, p.speed, p.cadence,
-              p.lat, p.lng, p.altitude,
-              LAG(p.lat) OVER w AS prev_lat,
-              LAG(p.lng) OVER w AS prev_lng,
-              LAG(p.altitude) OVER w AS prev_alt
-            FROM (
-              SELECT
-                ss.recorded_at,
-                MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate') AS heart_rate,
-                MAX(ss.scalar) FILTER (WHERE ss.channel = 'power') AS power,
-                MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
-                MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence') AS cadence,
-                MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
-                MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng,
-                MAX(ss.scalar) FILTER (WHERE ss.channel = 'altitude') AS altitude
-              FROM fitness.deduped_sensor ss
-              WHERE ss.activity_id = ${activityId}::uuid
-                AND ss.recorded_at >= ai.started_at
-                AND (ai.ended_at IS NULL OR ss.recorded_at <= ai.ended_at)
-                AND ss.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'lat', 'lng', 'altitude')
-              GROUP BY ss.recorded_at
-            ) p
-            WINDOW w AS (ORDER BY p.recorded_at)
-          ) d
-        ) im ON true
         WHERE ai.activity_id = ${activityId}::uuid
-          AND a.user_id = ${this.#userId}
+          AND EXISTS (
+            SELECT 1
+            FROM fitness.v_activity visible_activity
+            WHERE visible_activity.user_id = ${this.#userId}
+              AND ${activityId}::uuid = ANY(visible_activity.member_activity_ids)
+          )
         ORDER BY ai.interval_index
       `,
     );
+
+    if (intervals.length === 0) return [];
+
+    const samples = await this.#sensorStore.query(
+      sensorPointRowSchema,
+      `WITH
+      scalar_samples AS (
+        SELECT
+          recorded_at,
+          maxIf(scalar, channel = 'heart_rate') AS heart_rate,
+          maxIf(scalar, channel = 'power') AS power,
+          maxIf(scalar, channel = 'speed') AS speed,
+          maxIf(scalar, channel = 'cadence') AS cadence,
+          maxIf(scalar, channel = 'altitude') AS altitude
+        FROM analytics.deduped_sensor AS sensor_samples
+        INNER JOIN analytics.v_activity AS activity
+          ON activity.id = {activityId:UUID}
+         AND activity.user_id = sensor_samples.user_id
+         AND sensor_samples.recorded_at >= activity.started_at
+         AND sensor_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
+        WHERE sensor_samples.user_id = {userId:UUID}
+          AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
+          AND is_deleted = 0
+        GROUP BY recorded_at
+      ),
+      location_samples AS (
+        SELECT recorded_at, lat, lng
+        FROM analytics.deduped_location
+        WHERE activity_id = {activityId:UUID}
+          AND user_id = {userId:UUID}
+      ),
+      sample_times AS (
+        SELECT recorded_at FROM scalar_samples
+        UNION DISTINCT
+        SELECT recorded_at FROM location_samples
+      )
+      SELECT
+        formatDateTime(sample_times.recorded_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS recorded_at,
+        scalar_samples.heart_rate AS heart_rate,
+        scalar_samples.power AS power,
+        scalar_samples.speed AS speed,
+        scalar_samples.cadence AS cadence,
+        location_samples.lat AS lat,
+        location_samples.lng AS lng,
+        scalar_samples.altitude AS altitude
+      FROM sample_times
+      LEFT JOIN scalar_samples
+        ON scalar_samples.recorded_at = sample_times.recorded_at
+      LEFT JOIN location_samples
+        ON location_samples.recorded_at = sample_times.recorded_at
+      ORDER BY sample_times.recorded_at`,
+      { activityId, userId: this.#userId },
+    );
+
+    let sampleCursor = 0;
+    return intervals.map((interval) => {
+      const start = new Date(interval.started_at).getTime();
+      const end = interval.ended_at
+        ? new Date(interval.ended_at).getTime()
+        : Number.POSITIVE_INFINITY;
+      while (
+        sampleCursor < samples.length &&
+        new Date(samples[sampleCursor]?.recorded_at ?? "").getTime() < start
+      ) {
+        sampleCursor++;
+      }
+      const points: z.infer<typeof sensorPointRowSchema>[] = [];
+      for (let index = sampleCursor; index < samples.length; index++) {
+        const point = samples[index];
+        if (!point) continue;
+        const timestamp = new Date(point.recorded_at).getTime();
+        if (timestamp > end) break;
+        points.push(point);
+      }
+      const metrics = aggregateInterval(points);
+      return {
+        id: interval.id,
+        interval_index: interval.interval_index,
+        label: interval.label,
+        interval_type: interval.interval_type,
+        started_at: interval.started_at,
+        ended_at: interval.ended_at,
+        duration_seconds: interval.duration_seconds,
+        ...metrics,
+      };
+    });
   }
 
   /**
-   * Auto-detect intervals from metric_stream data for an activity.
+   * Auto-detect intervals from sensor stream data for an activity.
    * Splits activity into intervals based on significant changes in intensity.
    * Uses per-minute aggregates: when power or HR changes by > 15% from the
    * previous minute, a new interval boundary is created.
-   *
-   * Returns computed intervals without saving them.
    */
   async detect(activityId: string): Promise<DetectedInterval[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       minuteAggRowSchema,
-      sql`
-        WITH pivoted AS (
-          SELECT
-            ss.recorded_at,
-            MAX(ss.scalar) FILTER (WHERE ss.channel = 'power') AS power,
-            MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate') AS heart_rate,
-            MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
-            MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence') AS cadence
-          FROM fitness.deduped_sensor ss
-          WHERE ss.activity_id = ${activityId}::uuid
-            AND ss.user_id = ${this.#userId}
-            AND ss.channel IN ('power', 'heart_rate', 'speed', 'cadence')
-          GROUP BY ss.recorded_at
-        )
+      `WITH pivoted AS (
         SELECT
-          date_trunc('minute', p.recorded_at) AS minute_start,
-          ROUND(AVG(p.power) FILTER (WHERE p.power > 0)::numeric, 1) AS avg_power,
-          ROUND(AVG(p.heart_rate)::numeric, 1) AS avg_hr,
-          ROUND(AVG(p.speed)::numeric, 3) AS avg_speed,
-          ROUND(AVG(p.cadence) FILTER (WHERE p.cadence > 0)::numeric, 1) AS avg_cadence,
-          MAX(p.power) AS max_power,
-          MAX(p.heart_rate) AS max_hr,
-          MAX(p.speed) AS max_speed
-        FROM pivoted p
-        GROUP BY date_trunc('minute', p.recorded_at)
-        ORDER BY minute_start
-      `,
+          recorded_at,
+          maxIf(scalar, channel = 'power') AS power,
+          maxIf(scalar, channel = 'heart_rate') AS heart_rate,
+          maxIf(scalar, channel = 'speed') AS speed,
+          maxIf(scalar, channel = 'cadence') AS cadence
+        FROM analytics.deduped_sensor AS sensor_samples
+        INNER JOIN analytics.v_activity AS activity
+          ON activity.id = {activityId:UUID}
+         AND activity.user_id = sensor_samples.user_id
+         AND sensor_samples.recorded_at >= activity.started_at
+         AND sensor_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
+        WHERE sensor_samples.user_id = {userId:UUID}
+          AND channel IN ('power', 'heart_rate', 'speed', 'cadence')
+          AND is_deleted = 0
+        GROUP BY recorded_at
+      )
+      SELECT
+        formatDateTime(toStartOfMinute(recorded_at), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS minute_start,
+        round(avgIf(power, power > 0), 1) AS avg_power,
+        round(avg(heart_rate), 1) AS avg_hr,
+        round(avg(speed), 3) AS avg_speed,
+        round(avgIf(cadence, cadence > 0), 1) AS avg_cadence,
+        max(power) AS max_power,
+        max(heart_rate) AS max_hr,
+        max(speed) AS max_speed
+      FROM pivoted
+      GROUP BY toStartOfMinute(recorded_at)
+      ORDER BY minute_start`,
+      { activityId, userId: this.#userId },
     );
 
     if (rows.length === 0) return [];
@@ -281,7 +403,6 @@ export class IntervalsRepository {
       }
     }
 
-    // Final segment
     const remaining = rows.slice(segmentStart);
     if (remaining.length > 0) {
       const first = remaining[0];

@@ -29,7 +29,6 @@ export interface WorkoutSample {
   startDate: string;
   endDate: string;
   duration: number; // seconds
-  totalEnergyBurned: number | null; // kcal
   totalDistance: number | null; // meters
   sourceName: string;
   sourceBundle: string;
@@ -67,6 +66,11 @@ export interface SyncResult {
   endDate: string;
 }
 
+export interface HealthKitSampleUpdate {
+  typeIdentifier: string;
+  updateId: string;
+}
+
 /** Check whether HealthKit authorization has already been requested.
  * Returns "unnecessary" if the user has already been asked,
  * "shouldRequest" if permissions still need to be requested,
@@ -85,7 +89,8 @@ export async function requestPermissions(): Promise<boolean> {
 /** Check if the user has ever completed the HealthKit authorization flow.
  * Returns true even if new types have been added since the last authorization —
  * this ensures syncing of already-authorized types continues uninterrupted.
- * Use `getRequestStatus()` separately to determine if new permissions should be prompted. */
+ * Use `getRequestStatus()` separately to determine if current permissions are complete
+ * or if new permissions should be prompted. */
 export function hasEverAuthorized(): boolean {
   return HealthKitModule.hasEverAuthorized();
 }
@@ -134,26 +139,32 @@ export async function queryWorkoutRoutes(workoutUuid: string): Promise<RouteLoca
   return HealthKitModule.queryWorkoutRoutes(workoutUuid);
 }
 
-/** Write dietary energy consumed sample to HealthKit */
-export async function writeDietaryEnergy(calories: number, date: string): Promise<boolean> {
-  return HealthKitModule.writeDietaryEnergy(calories, date);
+/** Delete Dofek-owned dietary samples by HealthKit sync identifier */
+export async function deleteDietarySamples(syncIdentifiers: string[]): Promise<number> {
+  return HealthKitModule.deleteDietarySamples(syncIdentifiers);
 }
 
-/** Get the anchor for incremental syncing of a given type */
-export async function getAnchor(typeIdentifier: string): Promise<number> {
-  return HealthKitModule.getAnchor(typeIdentifier);
-}
-
-/** Query samples added/deleted since the last anchor (for incremental sync) */
+/** Query samples added/deleted since the last successful query.
+ * The native module persists HealthKit's opaque query anchor per type. */
 export async function queryAnchoredSamples(
   typeIdentifier: string,
-  anchor: number,
+  initialStartDate: string,
 ): Promise<{
+  queryId: string | null;
   samples: HealthKitSample[];
   deletedUUIDs: string[];
-  newAnchor: number;
 }> {
-  return HealthKitModule.queryAnchoredSamples(typeIdentifier, anchor);
+  return HealthKitModule.queryAnchoredSamples(typeIdentifier, initialStartDate);
+}
+
+/** Persist or discard the anchor returned by an incremental query.
+ * Anchors are committed only after the corresponding server mutation succeeds. */
+export async function completeAnchoredQuery(
+  typeIdentifier: string,
+  queryId: string,
+  succeeded: boolean,
+): Promise<boolean> {
+  return HealthKitModule.completeAnchoredQuery(typeIdentifier, queryId, succeeded);
 }
 
 /** Check if background delivery was previously enabled on this device */
@@ -172,10 +183,33 @@ export async function setupBackgroundObservers(): Promise<boolean> {
   return HealthKitModule.setupBackgroundObservers();
 }
 
+/** Complete specific HealthKit observer callbacks after their serialized sync settles. */
+export function completeObserverUpdates(updateIds: string[], succeeded: boolean): number {
+  return HealthKitModule.completeObserverUpdates(updateIds, succeeded);
+}
+
+/** Tell native observers whether JavaScript is still processing a delivery.
+ * Pass `true` when sync starts; pass `false` when sync finishes. Clearing to
+ * `false` is ignored while native still has pending observer updates or catch-up. */
+export function setObserverSyncInProgress(inProgress: boolean): void {
+  HealthKitModule.setObserverSyncInProgress(inProgress);
+}
+
+/** Stop native observer queries and complete every callback that is still pending. */
+export function teardownBackgroundObservers(): number {
+  return HealthKitModule.teardownBackgroundObservers();
+}
+
+/** Clear Dofek-owned observer, anchor, and background-delivery state.
+ * This does not delete HealthKit samples owned by iOS or other apps. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return HealthKitModule.purgeAccountState(deviceErasureCutoff);
+}
+
 /** Listen for HealthKit sample update events from background observers.
  * Returns a subscription that can be removed with `.remove()`. */
 export function addSampleUpdateListener(
-  callback: (event: { typeIdentifier: string }) => void,
+  callback: (event: HealthKitSampleUpdate) => void,
 ): EventSubscription {
   return HealthKitModule.addListener("onHealthKitSampleUpdate", callback);
 }

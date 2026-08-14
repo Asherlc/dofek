@@ -1,4 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("@sentry/node", () => ({
+  captureException: mockCaptureException,
+}));
+
 import {
   BodyAnalyticsRepository,
   ewmaSmooth,
@@ -220,18 +227,133 @@ describe("ewmaSmooth", () => {
 
 // ── Repository ──────────────────────────────────────────────────────
 
-function makeRepository(rows: Record<string, unknown>[] = []) {
+function makeRepository(
+  rows: Record<string, unknown>[] = [],
+  accessWindow?: ConstructorParameters<typeof BodyAnalyticsRepository>[3],
+) {
   const execute = vi.fn().mockResolvedValue(rows);
-  const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC");
-  return { repo, execute };
+  const query = vi.fn().mockResolvedValue(rows);
+  const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", accessWindow, { query });
+  return { repo, execute, query };
 }
 
 describe("BodyAnalyticsRepository", () => {
+  it("requires a ClickHouse body measurement store", () => {
+    expect(() => new BodyAnalyticsRepository({ execute: vi.fn() }, "user-1")).toThrow(
+      "body analytics require the ClickHouse body measurement store",
+    );
+  });
+
+  it("reuses identical non-body-fat body weight fetches within one repository instance", async () => {
+    const { repo, query } = makeRepository([
+      { date: "2024-01-01", weight_kg: "80" },
+      { date: "2024-01-02", weight_kg: "81" },
+    ]);
+
+    await repo.getSmoothedWeight(90, "2024-06-01");
+    await repo.getWeightPrediction(90, "2024-06-01", null);
+
+    expect(query).toHaveBeenCalledOnce();
+  });
+
+  it("builds decision context from the same trend series and body provenance", async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => {
+      const date = `2024-01-${String(index + 1).padStart(2, "0")}`;
+      return {
+        date,
+        weight_kg: 80 + index / 10,
+        recorded_at: `${date}T08:00:00.000Z`,
+        recorded_at_local: `${date} 08:00:00`,
+        provider_id: index === 7 ? "apple_health" : "withings",
+        source_name: index === 7 ? "Apple Watch" : "Body+",
+      };
+    });
+    const { repo } = makeRepository(rows);
+
+    const result = await repo.getBodyDecisionContext("2024-01-08");
+
+    expect(result.latestMeasurement).toMatchObject({
+      date: "2024-01-08",
+      recordedAtLocal: "2024-01-08 08:00:00",
+      providerId: "apple_health",
+      sourceName: "Apple Watch",
+    });
+    expect(result.variation.status).toBe("available");
+    expect(result.variation.observations).toBe(8);
+  });
+
+  it("evicts rejected body weight fetches from the per-instance cache", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary ClickHouse failure"))
+      .mockResolvedValueOnce([{ date: "2024-01-01", weight_kg: "80" }]);
+    const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", undefined, { query });
+
+    await expect(repo.getSmoothedWeight(90, "2024-06-01")).rejects.toThrow(
+      "temporary ClickHouse failure",
+    );
+    const result = await repo.getSmoothedWeight(null, "2024-06-01");
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(1);
+  });
+
+  it("reports rejected body weight fetches before rethrowing", async () => {
+    const fetchError = new Error("temporary ClickHouse failure");
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn().mockRejectedValueOnce(fetchError);
+    const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", undefined, { query });
+
+    await expect(repo.getSmoothedWeight(90, "2024-06-01")).rejects.toThrow(
+      "temporary ClickHouse failure",
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledWith(fetchError);
+  });
+
+  it("does not reuse non-body-fat rows for recomposition fetches", async () => {
+    const { repo, query } = makeRepository([
+      { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+    ]);
+
+    await repo.getSmoothedWeight(180, "2024-06-01");
+    await repo.getRecomposition(180, "2024-06-01");
+
+    expect(query).toHaveBeenCalledTimes(2);
+    const recompositionQuery = query.mock.calls[1]?.[1] ?? "";
+    expect(recompositionQuery).toMatch(
+      /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND body_fat_pct IS NOT NULL[\s\S]*\) AS body_rows[\s\S]*GROUP BY local_date/,
+    );
+  });
+
   describe("getSmoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getSmoothedWeight(90, "2024-06-01");
       expect(result).toEqual([]);
+    });
+
+    it("passes access window parameters to the body weight query", async () => {
+      const accessWindow = {
+        kind: "limited" as const,
+        paid: false,
+        reason: "free_signup_week" as const,
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      };
+      const { repo, query } = makeRepository([], accessWindow);
+
+      await repo.getSmoothedWeight(90, "2024-06-01");
+
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("local_date >= toDate({accessStart:String})"),
+        expect.objectContaining({
+          accessStart: "2026-04-10",
+          accessEnd: "2026-04-17",
+        }),
+      );
     });
 
     it("computes EWMA smoothed weight correctly", async () => {
@@ -241,15 +363,35 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-03", weight_kg: "79" },
       ]);
 
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
 
       expect(result).toHaveLength(3);
       expect(result[0]?.rawWeight).toBe(80);
       expect(result[0]?.smoothedWeight).toBe(80);
       // 0.1 * 81 + 0.9 * 80 = 80.1
       expect(result[1]?.smoothedWeight).toBe(80.1);
-      // 0.1 * 79 + 0.9 * 80.1 = 79.99
-      expect(result[2]?.smoothedWeight).toBe(79.99);
+      expect(result[2]?.smoothedWeight).toBe(80);
+    });
+
+    it("seeds the selected range from the full accessible weight history", async () => {
+      const rows = Array.from({ length: 10 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: index === 0 ? "100" : "110",
+      }));
+      const { repo, query } = makeRepository(rows);
+
+      const result = await repo.getSmoothedWeight(7, "2024-01-10");
+
+      expect(result[0]).toMatchObject({
+        date: "2024-01-04",
+        smoothedWeight: 102.7,
+      });
+      expect(result.at(-1)?.smoothedWeight).toBe(106.1);
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.not.stringContaining("subtractDays"),
+        expect.not.objectContaining({ days: expect.anything() }),
+      );
     });
 
     it("computes weekly change when enough data points exist", async () => {
@@ -260,7 +402,7 @@ describe("BodyAnalyticsRepository", () => {
       }));
 
       const { repo } = makeRepository(rows);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
 
       expect(result).toHaveLength(10);
       // First 7 entries should have null weeklyChange
@@ -278,7 +420,7 @@ describe("BodyAnalyticsRepository", () => {
         weight_kg: String(80 + index * 0.5),
       }));
       const { repo } = makeRepository(rows);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // Index 6 (7th entry) should still have null weeklyChange
       expect(result[6]?.weeklyChange).toBeNull();
       // Index 7 (8th entry) should have non-null weeklyChange
@@ -290,11 +432,16 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "80" },
         { date: "2024-01-02", weight_kg: "81" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       expect(result[0]?.interpolated).toBe(false);
       expect(result[1]?.interpolated).toBe(false);
       expect(result[0]?.rawWeight).not.toBeNull();
       expect(result[1]?.rawWeight).not.toBeNull();
+      expect(result[0]?.rawWeightStatus).toEqual({ kind: "observed", label: "Observed" });
+      expect(result[0]?.smoothedWeightStatus).toEqual({
+        kind: "estimated",
+        label: "Estimated",
+      });
     });
 
     it("fills missing days with interpolation and marks them", async () => {
@@ -302,15 +449,43 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "80" },
         { date: "2024-01-03", weight_kg: "82" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // Should have 3 rows: Jan 1 (real), Jan 2 (interpolated), Jan 3 (real)
       expect(result).toHaveLength(3);
       expect(result[0]?.interpolated).toBe(false);
       expect(result[0]?.rawWeight).toBe(80);
       expect(result[1]?.interpolated).toBe(true);
       expect(result[1]?.rawWeight).toBeNull();
+      expect(result[1]?.rawWeightStatus).toBeNull();
+      expect(result[1]?.smoothedWeightStatus).toEqual({
+        kind: "estimated",
+        label: "Estimated",
+      });
       expect(result[2]?.interpolated).toBe(false);
       expect(result[2]?.rawWeight).toBe(82);
+    });
+
+    it("does not report weekly change when the 7-day window is mostly interpolated", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "95" },
+        { date: "2024-01-02", weight_kg: "95" },
+        { date: "2024-01-20", weight_kg: "85" },
+      ]);
+      const result = await repo.getSmoothedWeight(90, "2024-01-20");
+
+      expect(result.at(-1)?.weeklyChange).toBeNull();
+    });
+
+    it("excludes non-positive weights from smoothing computation", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "0" },
+        { date: "2024-01-03", weight_kg: "82" },
+      ]);
+
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
+
+      expect(result.map((row) => row.rawWeight)).toEqual([80, null, 82]);
     });
 
     it("applies EWMA smoothing across interpolated days", async () => {
@@ -318,7 +493,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "80" },
         { date: "2024-01-04", weight_kg: "83" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // 4 days: 80, 81(interpolated), 82(interpolated), 83
       expect(result).toHaveLength(4);
       // Smoothed values should progress gradually (EWMA with alpha=0.1)
@@ -327,15 +502,71 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[3]?.smoothedWeight).toBeGreaterThan(result[2]?.smoothedWeight ?? 0);
     });
 
-    it("rounds values to 2 decimal places", async () => {
+    it("rounds values to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.123" },
         { date: "2024-01-02", weight_kg: "80.456" },
       ]);
 
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
-      expect(result[0]?.rawWeight).toBe(80.12);
-      expect(result[1]?.rawWeight).toBe(80.46);
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
+      expect(result[0]?.rawWeight).toBe(80.1);
+      expect(result[1]?.rawWeight).toBe(80.5);
+    });
+  });
+
+  describe("getSmoothedBodyFat", () => {
+    it("builds an interpolated, server-authored body-fat trend", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-03", weight_kg: "80", body_fat_pct: "22" },
+      ]);
+
+      const result = await repo.getSmoothedBodyFat(null, "2024-06-01");
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          date: "2024-01-01",
+          rawBodyFatPct: 20,
+          smoothedBodyFatPct: 20,
+          interpolated: false,
+        }),
+        expect.objectContaining({
+          date: "2024-01-02",
+          rawBodyFatPct: null,
+          smoothedBodyFatPct: 20.1,
+          interpolated: true,
+        }),
+        expect.objectContaining({
+          date: "2024-01-03",
+          rawBodyFatPct: 22,
+          smoothedBodyFatPct: 20.3,
+          interpolated: false,
+        }),
+      ]);
+    });
+
+    it("labels observed and interpolated body-fat points by provenance", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-03", weight_kg: "80", body_fat_pct: "22" },
+      ]);
+
+      const result = await repo.getSmoothedBodyFat(null, "2024-06-01");
+
+      expect(result).toMatchObject([
+        {
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+        {
+          rawBodyFatStatus: null,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+        {
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+      ]);
     });
   });
 
@@ -344,6 +575,18 @@ describe("BodyAnalyticsRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.getRecomposition(180, "2024-06-01");
       expect(result).toEqual([]);
+    });
+
+    it("requires body fat in the ClickHouse body query", async () => {
+      const { repo, query } = makeRepository([]);
+
+      await repo.getRecomposition(180, "2024-06-01");
+
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("AND body_fat_pct IS NOT NULL"),
+        expect.anything(),
+      );
     });
 
     it("computes fat and lean mass correctly", async () => {
@@ -377,10 +620,8 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.smoothedLeanMass).toBe(64);
 
       // Day 2: fatMass = 82 * 0.22 = 18.04, leanMass = 82 - 18.04 = 63.96
-      // smoothedFat = 0.15 * 18.04 + 0.85 * 16 = 16.306
-      expect(result[1]?.smoothedFatMass).toBeCloseTo(16.31, 2);
-      // smoothedLean = 0.15 * 63.96 + 0.85 * 64 = 63.994
-      expect(result[1]?.smoothedLeanMass).toBeCloseTo(63.99, 2);
+      expect(result[1]?.smoothedFatMass).toBe(16.3);
+      expect(result[1]?.smoothedLeanMass).toBe(64);
     });
 
     it("divides bodyFatPct by 100 for fat mass (not 10 or 1000)", async () => {
@@ -403,6 +644,18 @@ describe("BodyAnalyticsRepository", () => {
       // 18.25 rounded to 1 decimal = 18.3 (rounds up)
       expect(result[0]?.bodyFatPct).toBe(18.3);
     });
+
+    it("excludes non-positive weights from recomposition computation", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-02", weight_kg: "0", body_fat_pct: "13.2" },
+      ]);
+
+      const result = await repo.getRecomposition(180, "2024-06-01");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.date).toBe("2024-01-01");
+    });
   });
 
   describe("getWeightTrend", () => {
@@ -424,6 +677,25 @@ describe("BodyAnalyticsRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.getWeightTrend();
       expect(result.trend).toBe("insufficient");
+    });
+
+    it("threads the entitlement access window into the trend query", async () => {
+      const accessWindow = {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-01-01",
+        endDateExclusive: "2026-02-01",
+      } as const;
+      const { repo, query } = makeRepository([], accessWindow);
+
+      await repo.getWeightTrend();
+
+      expect(query.mock.calls[0]?.[2]).toMatchObject({
+        accessStart: "2026-01-01",
+        accessEnd: "2026-02-01",
+      });
+      expect(query.mock.calls[0]?.[1]).toContain("local_date >= toDate({accessStart:String})");
     });
 
     it("classifies gaining trend when weight increasing", async () => {
@@ -476,6 +748,23 @@ describe("BodyAnalyticsRepository", () => {
       }));
       const { repo } = makeRepository(rows);
       const result = await repo.getWeightTrend();
+      expect(result.trend).toBe("insufficient");
+    });
+
+    it("excludes non-positive weights from trend computation", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "80" },
+        { date: "2024-01-03", weight_kg: "80" },
+        { date: "2024-01-04", weight_kg: "80" },
+        { date: "2024-01-05", weight_kg: "80" },
+        { date: "2024-01-06", weight_kg: "80" },
+        { date: "2024-01-07", weight_kg: "0" },
+      ];
+      const { repo } = makeRepository(rows);
+
+      const result = await repo.getWeightTrend();
+
       expect(result.trend).toBe("insufficient");
     });
 
@@ -654,7 +943,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "100" },
         { date: "2024-01-02", weight_kg: "110" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // alpha=0.1: smoothed = 0.1 * 110 + 0.9 * 100 = 101
       expect(result[1]?.smoothedWeight).toBe(101);
     });
@@ -667,24 +956,20 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.date).toBe("2024-03-15");
     });
 
-    it("rounds rawWeight via Math.round(x * 100) / 100 (2 decimal places, not 1 or 3)", async () => {
+    it("rounds rawWeight to 1 decimal place", async () => {
       const { repo } = makeRepository([{ date: "2024-01-01", weight_kg: "80.1234" }]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
-      // Math.round(80.1234 * 100) / 100 = Math.round(8012.34) / 100 = 8012/100 = 80.12
-      expect(result[0]?.rawWeight).toBe(80.12);
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
+      expect(result[0]?.rawWeight).toBe(80.1);
     });
 
-    it("rounds smoothedWeight via Math.round(x * 100) / 100 (2 decimal places)", async () => {
+    it("rounds smoothedWeight to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.1234" },
         { date: "2024-01-02", weight_kg: "81.5678" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
-      // smoothed[0] = 80.1234, rounded = 80.12
-      expect(result[0]?.smoothedWeight).toBe(80.12);
-      // smoothed[1] = 0.1 * 81.5678 + 0.9 * 80.1234 = 8.15678 + 72.11106 = 80.26784
-      // Math.round(80.26784 * 100) / 100 = Math.round(8026.784) / 100 = 8027/100 = 80.27
-      expect(result[1]?.smoothedWeight).toBe(80.27);
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
+      expect(result[0]?.smoothedWeight).toBe(80.1);
+      expect(result[1]?.smoothedWeight).toBe(80.3);
     });
 
     it("rounds weeklyChange via Math.round(x * 100) / 100 (not *10/10 or *1000/1000)", async () => {
@@ -715,12 +1000,12 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.date).toBe("2024-05-20");
     });
 
-    it("rounds weightKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+    it("rounds weightKg to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.1234", body_fat_pct: "20" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      expect(result[0]?.weightKg).toBe(80.12);
+      expect(result[0]?.weightKg).toBe(80.1);
     });
 
     it("rounds bodyFatPct to 1 decimal via Math.round(x * 10) / 10 (not *100/100)", async () => {
@@ -732,34 +1017,29 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.bodyFatPct).toBe(18.5);
     });
 
-    it("rounds fatMassKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+    it("rounds fatMassKg to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      // fatMass = 80.5 * (18.3 / 100) = 80.5 * 0.183 = 14.7315
-      // Math.round(14.7315 * 100) / 100 = Math.round(1473.15) / 100 = 1473/100 = 14.73
-      expect(result[0]?.fatMassKg).toBe(14.73);
+      expect(result[0]?.fatMassKg).toBe(14.7);
     });
 
-    it("rounds leanMassKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+    it("rounds leanMassKg to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      // leanMass = 80.5 - 14.7315 = 65.7685
-      // Math.round(65.7685 * 100) / 100 = Math.round(6576.85) / 100 = 6577/100 = 65.77
-      expect(result[0]?.leanMassKg).toBe(65.77);
+      expect(result[0]?.leanMassKg).toBe(65.8);
     });
 
-    it("rounds smoothedFatMass and smoothedLeanMass to 2 decimals", async () => {
+    it("rounds smoothedFatMass and smoothedLeanMass to 1 decimal place", async () => {
       const { repo } = makeRepository([
-        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      // First entry: smoothed = raw
-      expect(result[0]?.smoothedFatMass).toBe(16);
-      expect(result[0]?.smoothedLeanMass).toBe(64);
+      expect(result[0]?.smoothedFatMass).toBe(14.7);
+      expect(result[0]?.smoothedLeanMass).toBe(65.8);
     });
   });
 
@@ -912,6 +1192,172 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.rateConfidence ?? 0).toBeGreaterThan(0.9);
     });
 
+    it("computes ratePerWeek from seven consecutive daily weigh-ins", async () => {
+      const rows = Array.from({ length: 7 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.ratePerWeek ?? 0).toBeLessThan(0);
+    });
+
+    it("falls back to 7-day smoothed delta when regression is unavailable", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "95" },
+        { date: "2024-01-08", weight_kg: "94" },
+        { date: "2024-01-14", weight_kg: "93" },
+        { date: "2024-01-17", weight_kg: "92.5" },
+        { date: "2024-01-18", weight_kg: "92" },
+        { date: "2024-01-19", weight_kg: "91.5" },
+        { date: "2024-01-20", weight_kg: "91" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.rateConfidence).toBeNull();
+      expect(result.impliedDailyCalories).not.toBeNull();
+      expect(result.ratePerWeek ?? 0).toBeLessThan(0);
+    });
+
+    it("does not overwrite a successful regression rate with the 7-day fallback", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.rateConfidence).not.toBeNull();
+      expect(result.ratePerWeek).toBe(-0.51);
+    });
+
+    it("skips the 7-day fallback when the trailing window has too few actual readings", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-02", weight_kg: "90" },
+        { date: "2024-01-03", weight_kg: "90" },
+        { date: "2024-01-14", weight_kg: "89" },
+        { date: "2024-01-16", weight_kg: "88.5" },
+        { date: "2024-01-18", weight_kg: "88" },
+        { date: "2024-01-20", weight_kg: "87.5" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.ratePerWeek).toBe(-0.77);
+      expect(result.impliedDailyCalories).toBe(-847);
+    });
+
+    it("computes the 7-day fallback rate from the trailing window, not the full history", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-05", weight_kg: "89.5" },
+        { date: "2024-01-09", weight_kg: "89" },
+        { date: "2024-01-13", weight_kg: "88.5" },
+        { date: "2024-01-27", weight_kg: "86" },
+        { date: "2024-01-28", weight_kg: "85.8" },
+        { date: "2024-01-29", weight_kg: "85.6" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-29", null);
+
+      expect(result.ratePerWeek).toBeNull();
+    });
+
+    it("computes the fallback goal projection from the weekly rate, not a distorted daily slope", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-02", weight_kg: "90" },
+        { date: "2024-01-03", weight_kg: "90" },
+        { date: "2024-01-14", weight_kg: "89" },
+        { date: "2024-01-16", weight_kg: "88.5" },
+        { date: "2024-01-18", weight_kg: "88" },
+        { date: "2024-01-20", weight_kg: "87.5" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", 80);
+
+      expect(result.goal?.daysRemaining).toBe(81);
+      expect(result.projectionLine[0]?.projectedWeight).toBe(88.7);
+    });
+
+    it("includes impliedDailyCalories when the rate is exactly at the reportable threshold", async () => {
+      const delta = 0.0008;
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-02", weight_kg: "90" },
+        { date: "2024-01-03", weight_kg: "90" },
+        { date: "2024-01-14", weight_kg: String(90 - delta * 6) },
+        { date: "2024-01-16", weight_kg: String(90 - delta * 15) },
+        { date: "2024-01-18", weight_kg: String(90 - delta * 17) },
+        { date: "2024-01-20", weight_kg: String(90 - delta * 19) },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", null);
+
+      expect(result.ratePerWeek).toBe(-0.01);
+      expect(result.impliedDailyCalories).toBe(-11);
+    });
+
+    it("omits impliedDailyCalories when rate of change is negligible", async () => {
+      const rows = Array.from({ length: 14 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-14", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(Math.abs(result.ratePerWeek ?? 0)).toBeLessThan(0.01);
+      expect(result.impliedDailyCalories).toBeNull();
+    });
+
+    it("does not report rate-derived prediction fields when recent weigh-ins are sparse", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "95" },
+        { date: "2024-01-02", weight_kg: "95" },
+        { date: "2024-01-03", weight_kg: "95" },
+        { date: "2024-01-04", weight_kg: "95" },
+        { date: "2024-01-05", weight_kg: "95" },
+        { date: "2024-01-06", weight_kg: "95" },
+        { date: "2024-01-20", weight_kg: "85" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", 82);
+
+      expect(result.ratePerWeek).toBeNull();
+      expect(result.rateConfidence).toBeNull();
+      expect(result.impliedDailyCalories).toBeNull();
+      expect(result.periodDeltas.days7).toBeNull();
+      expect(result.periodDeltas.days14).toBeNull();
+      expect(result.goal?.estimatedDate).toBeNull();
+      expect(result.goal?.daysRemaining).toBeNull();
+      expect(result.projectionLine).toEqual([]);
+    });
+
+    it("excludes non-positive weights from prediction computation", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "80" },
+        { date: "2024-01-03", weight_kg: "80" },
+        { date: "2024-01-04", weight_kg: "80" },
+        { date: "2024-01-05", weight_kg: "80" },
+        { date: "2024-01-06", weight_kg: "80" },
+        { date: "2024-01-07", weight_kg: "0" },
+      ];
+      const { repo } = makeRepository(rows);
+
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.ratePerWeek).toBeNull();
+      expect(result.projectionLine).toEqual([]);
+    });
+
     it("computes implied daily calories from rate", async () => {
       // Steady loss
       const rows = Array.from({ length: 20 }, (_, index) => ({
@@ -921,9 +1367,8 @@ describe("BodyAnalyticsRepository", () => {
       const { repo } = makeRepository(rows);
       const result = await repo.getWeightPrediction(90, "2024-06-01", null);
 
-      // 7700 kcal/kg: if losing ~0.7 kg/week → ~0.1 kg/day → ~770 kcal/day deficit
-      expect(result.impliedDailyCalories).not.toBeNull();
-      expect(result.impliedDailyCalories ?? 0).toBeLessThan(-500);
+      // 7700 kcal/kg: if losing ~0.5 kg/week → ~0.07 kg/day → ~561 kcal/day deficit
+      expect(result.impliedDailyCalories).toBe(-561);
     });
 
     it("returns goal projection when losing toward lower goal", async () => {
@@ -997,6 +1442,24 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.periodDeltas.days7).toBeNull();
       expect(result.periodDeltas.days14).toBeNull();
       expect(result.periodDeltas.days30).toBeNull();
+    });
+  });
+
+  describe("getBodyFatPrediction", () => {
+    it("predicts body-fat change from the smoothed history", async () => {
+      const rows = Array.from({ length: 14 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+        body_fat_pct: String(22 - index / 10),
+      }));
+      const { repo } = makeRepository(rows);
+
+      const result = await repo.getBodyFatPrediction(90, "2024-01-14");
+
+      expect(result.ratePerWeek).toBeLessThan(0);
+      expect(result.rateConfidence).not.toBeNull();
+      expect(result.periodDeltas.days7).toBeLessThan(0);
+      expect(result.projectionLine[0]).toEqual(expect.objectContaining({ date: "2024-01-15" }));
     });
   });
 });

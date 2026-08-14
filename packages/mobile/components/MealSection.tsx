@@ -1,3 +1,4 @@
+import { formatCalories } from "@dofek/format/format";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 import type { FoodEntry } from "./FoodEntryCard";
@@ -6,16 +7,17 @@ import { FoodEntryCard } from "./FoodEntryCard";
 interface MealSectionProps {
   mealName: string;
   entries: FoodEntry[];
+  totalCalories: number | null;
 }
 
-export function MealSection({ mealName, entries }: MealSectionProps) {
-  const totalCalories = entries.reduce((sum, entry) => sum + (entry.calories ?? 0), 0);
-
+export function MealSection({ mealName, entries, totalCalories }: MealSectionProps) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.mealName}>{mealName}</Text>
-        <Text style={styles.totalCalories}>{totalCalories > 0 ? `${totalCalories} cal` : ""}</Text>
+        <Text style={styles.totalCalories}>
+          {totalCalories != null && totalCalories > 0 ? formatCalories(totalCalories) : ""}
+        </Text>
       </View>
 
       {entries.length > 0 ? (

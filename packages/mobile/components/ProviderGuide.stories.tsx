@@ -26,7 +26,7 @@ const providerCatalog = [
     importOnly: true,
     authType: "file-import",
   },
-  { id: "fatsecret", name: "FatSecret", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "fatsecret", name: "fatsecret", authorized: false, importOnly: false, authType: "oauth" },
   { id: "withings", name: "Withings", authorized: false, importOnly: false, authType: "oauth" },
   {
     id: "ultrahuman",

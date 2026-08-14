@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { generateText, Output, type TelemetryOptions } from "ai";
 import { z } from "zod";
 import { runWithProviderFallback } from "./ai/fallback-runner.ts";
 import { getConfiguredAiProviders } from "./ai/providers.ts";
@@ -73,6 +73,8 @@ export const aiNutritionSchema = z.object({
   // Fatty acids
   omega3Mg: z.number().nonnegative().optional().describe("Omega-3 fatty acids in milligrams"),
   omega6Mg: z.number().nonnegative().optional().describe("Omega-6 fatty acids in milligrams"),
+  // Stimulants
+  caffeineMg: z.number().nonnegative().optional().describe("Caffeine in milligrams"),
 });
 
 export type AiNutritionResult = z.infer<typeof aiNutritionSchema>;
@@ -99,7 +101,7 @@ Guidelines:
 - For mixed dishes, estimate the combined nutritional content as a single entry.
 - Be conservative with calorie estimates — it's better to slightly overestimate than underestimate.
 - Use your knowledge of USDA food composition data and common nutrition databases.
-- Estimate all micronutrients (vitamins, minerals, omega fatty acids) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
+- Estimate detailed micronutrients (vitamins, minerals, omega fatty acids, and caffeine) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
 
 const MULTI_ITEM_SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of what someone ate, break it into individual food items and estimate the nutritional content of each — including both macronutrients and micronutrients.
 
@@ -114,7 +116,14 @@ Guidelines:
 - Round calories to the nearest integer and macros to one decimal place.
 - Be conservative with calorie estimates — slightly overestimate rather than underestimate.
 - Use your knowledge of USDA food composition data.
-- Estimate all micronutrients (vitamins, minerals, omega fatty acids) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
+- Estimate detailed micronutrients (vitamins, minerals, omega fatty acids, and caffeine) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
+
+const nutritionTelemetry = (functionId: string): TelemetryOptions => ({
+  functionId,
+  isEnabled: true,
+  recordInputs: false,
+  recordOutputs: false,
+});
 
 export interface AnalyzeResult {
   nutrition: AiNutritionResult;
@@ -132,6 +141,7 @@ export async function analyzeNutrition(description: string): Promise<AnalyzeResu
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionSchema }),
+        telemetry: nutritionTelemetry("nutrition.analyze"),
         system: SYSTEM_PROMPT,
         prompt: description,
       });
@@ -181,6 +191,7 @@ export async function refineNutritionItems(
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
+        telemetry: nutritionTelemetry("nutrition.refine_items"),
         system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.${localTime ? `\n\nThe user's local time is ${localTime}.` : ""}`,
         messages: [
           { role: "user", content: "Here's what I ate: the items below" },
@@ -217,6 +228,7 @@ export async function analyzeNutritionItems(
       const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
+        telemetry: nutritionTelemetry("nutrition.analyze_items"),
         system,
         prompt: description,
       });

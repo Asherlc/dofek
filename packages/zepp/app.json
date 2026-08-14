@@ -1,0 +1,655 @@
+{
+  "configVersion": "v3",
+  "app": {
+    "appId": 1118306,
+    "appName": "Dofek",
+    "appType": "app",
+    "version": {
+      "code": 1,
+      "name": "1.0.0"
+    },
+    "icon": "icon.png",
+    "vender": "local",
+    "description": "Logs raw accelerometer/gyroscope data to a phone-side file via BLE file transfer."
+  },
+  "permissions": [
+    "data:os.device.info",
+    "device:os.local_storage",
+    "device:os.accelerometer",
+    "device:os.gyroscope",
+    "device:os.bg_service",
+    "device:os.ble",
+    "data:user.hd.heart_rate",
+    "data:user.hd.step",
+    "data:user.hd.calorie",
+    "data:user.hd.sleep",
+    "data:user.hd.spo2",
+    "data:user.hd.body_temp",
+    "data:user.hd.stress",
+    "data:user.hd.stand",
+    "data:user.hd.pai",
+    "data:user.hd.fat_burning",
+    "data:user.hd.workout",
+    "device:os.alarm"
+  ],
+  "runtime": {
+    "apiVersion": {
+      "compatible": "3.0",
+      "target": "4.0",
+      "minVersion": "3.0"
+    }
+  },
+  "targets": {
+    "round-480": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Balance 3 CN",
+          "deviceSource": 11141376,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance 3",
+          "deviceSource": 11141377,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance 3 NFC",
+          "deviceSource": 11141379,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance Ultra CN",
+          "deviceSource": 11075840,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance Ultra",
+          "deviceSource": 11075841,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Cheetah 2 Ultra CN",
+          "deviceSource": 9961728,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Cheetah 2 Ultra",
+          "deviceSource": 9961729,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex Ultra 2 CN",
+          "deviceSource": 10879232,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex Ultra 2",
+          "deviceSource": 10879233,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex Ultra 2 NFC",
+          "deviceSource": 10879235,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Active Max",
+          "deviceSource": 10813697,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Active Max NFC",
+          "deviceSource": 10813699,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex 3 Pro 48mm CN",
+          "deviceSource": 10551552,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex 3 Pro 48mm",
+          "deviceSource": 10551553,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex 3 Pro 48mm NFC",
+          "deviceSource": 10551555,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance 2 CN",
+          "deviceSource": 9568512,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance 2",
+          "deviceSource": 9568513,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance 2 NFC",
+          "deviceSource": 9568515,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex 3 CN",
+          "deviceSource": 8716544,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex 3",
+          "deviceSource": 8716545,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit T-Rex 3 NFC",
+          "deviceSource": 8716547,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance CN",
+          "deviceSource": 8519936,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance",
+          "deviceSource": 8519937,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Balance NFC",
+          "deviceSource": 8519939,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Cheetah Pro CN",
+          "deviceSource": 8126720,
+          "st": "r",
+          "sr": "w480"
+        },
+        {
+          "name": "Amazfit Cheetah Pro",
+          "deviceSource": 8126721,
+          "st": "r",
+          "sr": "w480"
+        }
+      ],
+      "designWidth": 480
+    },
+    "round-466": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Cheetah 2 Pro CN",
+          "deviceSource": 11010304,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Cheetah 2 Pro",
+          "deviceSource": 11010305,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Cheetah 2 Pro NFC",
+          "deviceSource": 11010307,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 3 Premium CN",
+          "deviceSource": 10944768,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 3 Premium",
+          "deviceSource": 10944769,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 3 Premium NFC",
+          "deviceSource": 10944771,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 3 Premium LTE",
+          "deviceSource": 10948867,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit T-Rex 3 Pro 44mm CN",
+          "deviceSource": 10682624,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit T-Rex 3 Pro 44mm",
+          "deviceSource": 10682625,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit T-Rex 3 Pro 44mm NFC",
+          "deviceSource": 10682627,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round CN",
+          "deviceSource": 8913152,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round",
+          "deviceSource": 8913153,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round NFC",
+          "deviceSource": 8913155,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round LTE",
+          "deviceSource": 8913159,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round Premium CN",
+          "deviceSource": 10092800,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round Premium",
+          "deviceSource": 10092801,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round Premium NFC",
+          "deviceSource": 10092803,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 Round Premium LTE",
+          "deviceSource": 10092807,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit GTR 4 CN",
+          "deviceSource": 7930112,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit GTR 4",
+          "deviceSource": 7930113,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit GTR 4 Limited Edition",
+          "deviceSource": 7864577,
+          "st": "r",
+          "sr": "w466"
+        }
+      ],
+      "designWidth": 480
+    },
+    "round-454": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Cheetah Round CN",
+          "deviceSource": 8192256,
+          "st": "r",
+          "sr": "w454"
+        },
+        {
+          "name": "Amazfit Cheetah Round",
+          "deviceSource": 8192257,
+          "st": "r",
+          "sr": "w454"
+        },
+        {
+          "name": "Amazfit T-Rex Ultra CN",
+          "deviceSource": 6553856,
+          "st": "r",
+          "sr": "w454"
+        },
+        {
+          "name": "Amazfit T-Rex Ultra",
+          "deviceSource": 6553857,
+          "st": "r",
+          "sr": "w454"
+        }
+      ],
+      "designWidth": 480
+    },
+    "round-416": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Falcon CN",
+          "deviceSource": 414,
+          "st": "r",
+          "sr": "w416"
+        },
+        {
+          "name": "Amazfit Falcon",
+          "deviceSource": 415,
+          "st": "r",
+          "sr": "w416"
+        }
+      ],
+      "designWidth": 480
+    },
+    "round-360": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Active Edge CN",
+          "deviceSource": 8388864,
+          "st": "r",
+          "sr": "w360"
+        },
+        {
+          "name": "Amazfit Active Edge",
+          "deviceSource": 8388865,
+          "st": "r",
+          "sr": "w360"
+        }
+      ],
+      "designWidth": 480
+    },
+    "square-432x514": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Bip Max",
+          "deviceSource": 11206915,
+          "st": "s",
+          "sr": "w432"
+        }
+      ],
+      "designWidth": 432
+    },
+    "square-390x450": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Active 2 Square CN",
+          "deviceSource": 10223872,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Active 2 Square",
+          "deviceSource": 10223873,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Active 2 Square NFC",
+          "deviceSource": 10223875,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Bip 6 CN",
+          "deviceSource": 9765120,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Bip 6",
+          "deviceSource": 9765121,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Bip 6 NFC",
+          "deviceSource": 10158337,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Active CN",
+          "deviceSource": 8323328,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Active",
+          "deviceSource": 8323329,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit Cheetah Square",
+          "deviceSource": 8257793,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit GTS 4 CN",
+          "deviceSource": 7995648,
+          "st": "s",
+          "sr": "w390"
+        },
+        {
+          "name": "Amazfit GTS 4",
+          "deviceSource": 7995649,
+          "st": "s",
+          "sr": "w390"
+        }
+      ],
+      "designWidth": 390
+    },
+    "square-320x380": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/index"
+          ]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": [
+            "app-service/imu_service"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Bip 5 Unity",
+          "deviceSource": 8782081,
+          "st": "s",
+          "sr": "w320"
+        },
+        {
+          "name": "Amazfit Bip 5 Unity W",
+          "deviceSource": 8782088,
+          "st": "s",
+          "sr": "w320"
+        },
+        {
+          "name": "Amazfit Bip 5 Unity NFC",
+          "deviceSource": 8782089,
+          "st": "s",
+          "sr": "w320"
+        }
+      ],
+      "designWidth": 320
+    }
+  },
+  "i18n": {
+    "en-US": {
+      "appName": "Dofek"
+    }
+  },
+  "defaultLanguage": "en-US",
+  "debug": false
+}

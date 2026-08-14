@@ -1,10 +1,17 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseActivityPolarizationZone,
+  seedClickHouseMetricStreamRows,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests for router coverage gaps:
@@ -25,6 +32,8 @@ describe("Router coverage", () => {
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -48,19 +57,16 @@ describe("Router coverage", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // ── Daily metrics with HRV + resting HR for 90 days ──
+    // ── Daily metrics with HRV for 90 days ──
     for (let i = 90; i >= 0; i--) {
-      const rhr = 52 + Math.round(Math.cos(i * 0.3) * 3);
       const hrv = 55 + Math.round(Math.sin(i * 0.3) * 5);
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, hrv, steps, vo2max,
-              active_energy_kcal, basal_energy_kcal
+              date, provider_id, user_id, hrv, steps
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${TEST_USER_ID}, ${rhr}, ${hrv}, ${steps}, 45,
-              500, 1800
+              'test_provider', ${TEST_USER_ID}, ${hrv}, ${steps}
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -77,17 +83,36 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, sleep_type
+              awake_minutes, efficiency_pct, sleep_type, timezone,
+              start_utc_offset_minutes, end_utc_offset_minutes, local_time_source,
+              staging_available
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
-              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep'
+              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep',
+              'UTC', 0, 0, 'provider_timezone', true
             )`,
       );
+      const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
+      for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+        const recordedAt = new Date();
+        recordedAt.setHours(0, 0, 0, 0);
+        recordedAt.setDate(recordedAt.getDate() - i);
+        recordedAt.setHours(1, sampleIndex, 0, 0);
+        metricStreamSeedRows.push({
+          userId: TEST_USER_ID,
+          recordedAt: recordedAt.toISOString(),
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "heart_rate",
+          scalar: restingHeartRate,
+        });
+      }
     }
 
     // ── Cycling activities with metric_stream (1-second intervals) ──
+    let polarizationActivity: { id: string; startedAt: string } | null = null;
     for (let actIdx = 0; actIdx < 6; actIdx++) {
       const daysAgo = 5 + actIdx * 7;
       const durationSec = 1800;
@@ -96,9 +121,9 @@ describe("Router coverage", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`stress-ride-${actIdx}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
@@ -107,24 +132,46 @@ describe("Router coverage", () => {
       const actId = actResult[0]?.id;
 
       if (actId) {
-        for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
-          const batchEnd = Math.min(batchStart + 100, durationSec);
-          const sensorValues: string[] = [];
-          for (let s = batchStart; s < batchEnd; s++) {
-            const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
-            const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
-            const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
-            const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
-            sensorValues.push(
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
-            );
-          }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-              recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-            ) VALUES ${sensorValues.join(",\n")}`),
+        const activityStartedAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+        if (actIdx === 0) {
+          polarizationActivity = {
+            id: actId,
+            startedAt: activityStartedAt.toISOString(),
+          };
+        }
+        for (let s = 0; s < durationSec; s++) {
+          const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
+          const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
+          const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
+          const recordedAt = new Date(activityStartedAt.getTime() + s * 1000).toISOString();
+          metricStreamSeedRows.push(
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "heart_rate",
+              activityId: actId,
+              scalar: hr,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "power",
+              activityId: actId,
+              scalar: power,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "speed",
+              activityId: actId,
+              scalar: speed,
+            },
           );
         }
       }
@@ -156,14 +203,16 @@ describe("Router coverage", () => {
       for (let dayIdx = 0; dayIdx < 2; dayIdx++) {
         const daysAgo = weekIdx * 7 + dayIdx * 3 + 1;
         const workoutResult = await testCtx.db.execute<{ id: string }>(
-          sql`INSERT INTO fitness.strength_workout (
-                provider_id, user_id, external_id, started_at, ended_at, name
+          sql`INSERT INTO fitness.activity (
+                provider_id, user_id, external_id, started_at, ended_at, name, canonical_type, provider_type
               ) VALUES (
                 'test_provider', ${TEST_USER_ID},
                 ${`sw-cov-${weekIdx}-${dayIdx}`},
                 NOW() - ${daysAgo}::int * INTERVAL '1 day',
                 NOW() - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '1 hour',
-                'Full Body Workout'
+                'Full Body Workout',
+                'strength',
+                'strength'
               ) ON CONFLICT DO NOTHING
               RETURNING id`,
         );
@@ -181,7 +230,7 @@ describe("Router coverage", () => {
             const reps = 8 - Math.floor(weekIdx / 2); // reps decrease as weight goes up
             await testCtx.db.execute(
               sql`INSERT INTO fitness.strength_set (
-                    workout_id, exercise_id, exercise_index, set_index,
+                    activity_id, exercise_id, exercise_index, set_index,
                     set_type, weight_kg, reps
                   ) VALUES (
                     ${workoutId}::uuid, ${ex.id}::uuid, ${exerciseIndex}, ${setIdx},
@@ -197,23 +246,50 @@ describe("Router coverage", () => {
     // ── Nutrition data for predictions ──
     for (let i = 0; i < 30; i++) {
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.nutrition_daily (
-              user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              2200, 120, 250, 80
-            ) ON CONFLICT DO NOTHING`,
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed,
+                nutrition_grain
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true, 'daily_aggregate'
+              ) RETURNING id
+            )
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, nutrient_id, amount
+            FROM new_entry
+            CROSS JOIN (VALUES
+              ('calories', 2200::real),
+              ('protein', 120::real),
+              ('carbohydrate', 250::real),
+              ('fat', 80::real)
+            ) AS nutrient_values(nutrient_id, amount)
+            ON CONFLICT DO NOTHING`,
       );
     }
 
-    // ── Body measurement ──
-    await testCtx.db.execute(
-      sql`INSERT INTO fitness.body_measurement (
-            recorded_at, provider_id, user_id, weight_kg, body_fat_pct
-          ) VALUES (
-            NOW() - INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, 75, 18
-          )`,
+    // ── Body metrics ──
+    const bodyRecordedAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    metricStreamSeedRows.push(
+      {
+        userId: TEST_USER_ID,
+        recordedAt: bodyRecordedAt,
+        providerId: "test_provider",
+        externalId: "test-body-1",
+        sourceType: "api",
+        channel: "body_weight",
+        scalar: 75,
+      },
+      {
+        userId: TEST_USER_ID,
+        recordedAt: bodyRecordedAt,
+        providerId: "test_provider",
+        externalId: "test-body-1",
+        sourceType: "api",
+        channel: "body_fat_percentage",
+        scalar: 18,
+      },
     );
 
     // ── Food entries for nutrition analytics ──
@@ -221,41 +297,51 @@ describe("Router coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, meal, food_name, confirmed, nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
                 'breakfast', ${`Oatmeal ${i}`},
-                true
+                true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_c_mg, calcium_mg, iron_mg
-              )
-              SELECT id,
-                350, 12, 55, 8, 6,
-                15, 200, 4
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 350),
+                ('protein', 12),
+                ('carbohydrate', 55),
+                ('fat', 8),
+                ('fiber', 6),
+                ('vitamin_c', 15),
+                ('calcium', 200),
+                ('iron', 4)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
     }
 
-    // ── Refresh materialized views ──
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(
-      sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement`,
-    );
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    // ── Refresh Postgres sleep materialized view ──
 
     // Start server
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    if (!polarizationActivity) {
+      throw new Error("Polarization activity fixture was not created");
+    }
+    await seedClickHouseActivityPolarizationZone(testCtx, {
+      activityId: polarizationActivity.id,
+      userId: TEST_USER_ID,
+      startedAt: polarizationActivity.startedAt,
+      maxHr: 190,
+      z1Seconds: 600,
+      z2Seconds: 300,
+      z3Seconds: 900,
+    });
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -474,7 +560,7 @@ describe("Router coverage", () => {
       }
     });
 
-    it("workloadRatio returns acute:chronic workload ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
@@ -484,6 +570,12 @@ describe("Router coverage", () => {
           chronicLoad: number;
           workloadRatio: number | null;
         }[];
+        context: {
+          label: "Recent-to-baseline workload ratio";
+          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.";
+          recentDays: 7;
+          baselineDays: 28;
+        };
         displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });
@@ -513,11 +605,12 @@ describe("Router coverage", () => {
           date: string;
           durationMinutes: number;
           sleepMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
-          efficiency: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          efficiency: number | null;
+          stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
         sleepDebt: number;
@@ -531,9 +624,26 @@ describe("Router coverage", () => {
         // For non-Apple Health providers, sleepMinutes should equal durationMinutes
         expect(night.sleepMinutes).toBe(night.durationMinutes);
         // Stage percentages should roughly sum to 100
+        expect(night.stagingAvailable).toBe(true);
+        expect(night.deepPct).not.toBeNull();
+        expect(night.remPct).not.toBeNull();
+        expect(night.lightPct).not.toBeNull();
+        expect(night.awakePct).not.toBeNull();
+        if (
+          night.deepPct == null ||
+          night.remPct == null ||
+          night.lightPct == null ||
+          night.awakePct == null
+        ) {
+          throw new Error("Expected complete stage percentages");
+        }
         const totalPct = night.deepPct + night.remPct + night.lightPct + night.awakePct;
         expect(totalPct).toBeGreaterThan(90);
         expect(totalPct).toBeLessThan(110);
+        expect(night.efficiency).not.toBeNull();
+        if (night.efficiency == null) {
+          throw new Error("Expected provider-reported efficiency");
+        }
         expect(night.efficiency).toBeGreaterThan(0);
       }
 
@@ -558,22 +668,25 @@ describe("Router coverage", () => {
       const inBedDuration = deep + rem + light + awake; // 480
       const expectedSleepMinutes = deep + rem + light; // 390
 
-      // Use a future date so this is clearly the latest entry after all seeded data
+      const sleepDate = "2099-01-02";
+
+      // Use an explicit future sleep date so the query window contains only this
+      // row and does not depend on the suite's seeded current-date fixture.
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, sleep_type
+              awake_minutes, efficiency_pct, staging_available, sleep_type
             ) VALUES (
               'apple_health', ${TEST_USER_ID},
-              CURRENT_TIMESTAMP + INTERVAL '1 day',
-              CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '8 hours',
-              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
+              ${sleepDate}::date + INTERVAL '13 hours',
+              ${sleepDate}::date + INTERVAL '21 hours',
+              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, true, 'sleep'
             )`,
       );
 
-      // Refresh materialized view so v_sleep picks up the new row
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+      // Mirror the new row into ClickHouse so the analytics view sees it.
+      await syncClickHouseTestActivitySensorStore(testCtx);
 
       // Clear cache so the query hits the DB
       await queryCache.invalidateAll();
@@ -585,13 +698,13 @@ describe("Router coverage", () => {
           sleepMinutes: number;
         }[];
         sleepDebt: number;
-      }>("recovery.sleepAnalytics", { days: 1 });
+      }>("recovery.sleepAnalytics", { days: 1, endDate: sleepDate });
 
-      // Find the Apple Health night (latest entry)
-      const latest = result.nightly[result.nightly.length - 1];
-      expect(latest).toBeDefined();
-      expect(latest?.durationMinutes).toBe(inBedDuration);
-      expect(latest?.sleepMinutes).toBe(expectedSleepMinutes);
+      const appleHealthNight = result.nightly.find(
+        (night) =>
+          night.durationMinutes === inBedDuration && night.sleepMinutes === expectedSleepMinutes,
+      );
+      expect(appleHealthNight).toBeDefined();
     });
 
     it("readinessScore returns composite scores with component breakdown", async () => {
@@ -662,6 +775,13 @@ describe("Router coverage", () => {
             actualWeight: number;
             actualReps: number;
           }[];
+          trend: {
+            direction: "increasing" | "decreasing" | "stable";
+            summary: string;
+            changeMagnitudeKg: number;
+            firstDate: string;
+            latestDate: string;
+          };
         }[]
       >("strength.estimatedOneRepMax", { days: 90 });
 
@@ -671,6 +791,28 @@ describe("Router coverage", () => {
       for (const exercise of result) {
         expect(exercise.exerciseName).toBeTruthy();
         expect(exercise.history.length).toBeGreaterThanOrEqual(3);
+        const firstEntry = exercise.history[0];
+        const latestEntry = exercise.history.at(-1);
+        expect(firstEntry).toBeDefined();
+        expect(latestEntry).toBeDefined();
+        if (!firstEntry || !latestEntry) {
+          throw new Error("Estimated max history unexpectedly had no date bounds.");
+        }
+
+        const changeKg = Math.round((latestEntry.estimatedMax - firstEntry.estimatedMax) * 10) / 10;
+        const expectedDirection =
+          changeKg > 0 ? "increasing" : changeKg < 0 ? "decreasing" : "stable";
+        const expectedSummary = {
+          increasing: "Estimated max increased from first to latest estimate.",
+          decreasing: "Estimated max decreased from first to latest estimate.",
+          stable: "Estimated max did not change from first to latest estimate.",
+        } as const;
+
+        expect(exercise.trend.direction).toBe(expectedDirection);
+        expect(exercise.trend.summary).toBe(expectedSummary[expectedDirection]);
+        expect(exercise.trend.changeMagnitudeKg).toBe(Math.abs(changeKg));
+        expect(exercise.trend.firstDate).toBe(firstEntry.date);
+        expect(exercise.trend.latestDate).toBe(latestEntry.date);
 
         for (const entry of exercise.history) {
           expect(entry.date).toBeTruthy();
@@ -710,13 +852,21 @@ describe("Router coverage", () => {
       }
     });
 
-    it("progressiveOverload returns slope and progression status", async () => {
+    it("progressiveOverload returns dated evidence and descriptive direction", async () => {
       const result = await query<
         {
           exerciseName: string;
-          weeklyVolumes: number[];
+          observations: { week: string; totalVolumeKg: number }[];
+          period: {
+            startWeek: string;
+            endWeek: string;
+            observationCount: number;
+            elapsedWeekCount: number;
+          };
           slopeKgPerWeek: number;
-          isProgressing: boolean;
+          trend: "increasing" | "decreasing" | "stable";
+          interpretation: string;
+          deloadContext: string;
         }[]
       >("strength.progressiveOverload", { days: 90 });
 
@@ -725,13 +875,15 @@ describe("Router coverage", () => {
 
       for (const exercise of result) {
         expect(exercise.exerciseName).toBeTruthy();
-        expect(exercise.weeklyVolumes.length).toBeGreaterThanOrEqual(2);
+        expect(exercise.observations.length).toBeGreaterThanOrEqual(2);
+        expect(exercise.period.observationCount).toBe(exercise.observations.length);
+        expect(exercise.period.startWeek).toBe(exercise.observations[0]?.week);
+        expect(exercise.period.endWeek).toBe(exercise.observations.at(-1)?.week);
         expect(typeof exercise.slopeKgPerWeek).toBe("number");
-        expect(typeof exercise.isProgressing).toBe("boolean");
-        // With progressive overload built in (weight increases by 2.5 each week),
-        // volume should be increasing
-        expect(exercise.isProgressing).toBe(true);
+        expect(exercise.trend).toBe("increasing");
         expect(exercise.slopeKgPerWeek).toBeGreaterThan(0);
+        expect(exercise.interpretation).toContain("not inherently good or bad");
+        expect(exercise.deloadContext).toContain("planned deload");
       }
     });
 
@@ -919,12 +1071,19 @@ describe("Router coverage", () => {
   describe("nutritionAnalytics", () => {
     it("adaptiveTdee returns TDEE estimate with weight smoothing", async () => {
       const result = await query<{
+        status: "available" | "unavailable";
         estimatedTdee: number | null;
-        confidence: number;
-        dataPoints: number;
+        estimateRange: { minimum: number; maximum: number } | null;
+        unavailableReason: string | null;
+        evidence: {
+          fitWindowDays: number;
+          minimumCalorieDays: number;
+          acceptedWindows: number;
+        };
         dailyData: {
           date: string;
-          caloriesIn: number;
+          caloriesIn: number | null;
+          nutritionStatus: "available" | "source_conflict" | "missing";
           weightKg: number | null;
           smoothedWeight: number | null;
           estimatedTdee: number | null;
@@ -932,39 +1091,14 @@ describe("Router coverage", () => {
       }>("nutritionAnalytics.adaptiveTdee", { days: 90 });
 
       expect(Array.isArray(result.dailyData)).toBe(true);
-      expect(typeof result.confidence).toBe("number");
-      expect(result.confidence).toBeGreaterThanOrEqual(0);
-      expect(result.confidence).toBeLessThanOrEqual(1);
-      expect(typeof result.dataPoints).toBe("number");
+      expect(["available", "unavailable"]).toContain(result.status);
+      expect(result.evidence.fitWindowDays).toBe(28);
+      expect(result.evidence.minimumCalorieDays).toBe(20);
+      expect(typeof result.evidence.acceptedWindows).toBe("number");
 
       for (const day of result.dailyData) {
         expect(day.date).toBeTruthy();
-        expect(typeof day.caloriesIn).toBe("number");
-      }
-    });
-
-    it("caloricBalance returns daily calorie balance with rolling avg", async () => {
-      const result = await query<
-        {
-          date: string;
-          caloriesIn: number;
-          activeEnergy: number;
-          basalEnergy: number;
-          totalExpenditure: number;
-          balance: number;
-          rollingAvgBalance: number | null;
-        }[]
-      >("nutritionAnalytics.caloricBalance", { days: 30 });
-
-      expect(Array.isArray(result)).toBe(true);
-
-      for (const row of result) {
-        expect(row.date).toBeTruthy();
-        expect(typeof row.caloriesIn).toBe("number");
-        expect(typeof row.activeEnergy).toBe("number");
-        expect(typeof row.basalEnergy).toBe("number");
-        expect(typeof row.totalExpenditure).toBe("number");
-        expect(typeof row.balance).toBe("number");
+        expect(["available", "source_conflict", "missing"]).toContain(day.nutritionStatus);
       }
     });
 
@@ -1069,7 +1203,7 @@ describe("Router coverage", () => {
   describe("activity", () => {
     it("list returns recent activities", async () => {
       const result = await query<{
-        items: { id: string; activity_type: string }[];
+        items: { id: string; canonical_type: string }[];
         totalCount: number;
       }>("activity.list", {
         days: 90,
@@ -1082,7 +1216,10 @@ describe("Router coverage", () => {
 
     it("byId returns activity detail with summary data", async () => {
       // First get an activity id from list
-      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      const list = await query<{ items: { id: string }[] }>("activity.list", {
+        days: 90,
+        activityTypes: ["cycling"],
+      });
       expect(list.items.length).toBeGreaterThan(0);
       const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
@@ -1116,7 +1253,10 @@ describe("Router coverage", () => {
     });
 
     it("stream returns downsampled metric data for an activity", async () => {
-      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      const list = await query<{ items: { id: string }[] }>("activity.list", {
+        days: 90,
+        activityTypes: ["cycling"],
+      });
       const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
 
@@ -1138,14 +1278,19 @@ describe("Router coverage", () => {
       }
     });
 
-    it("hrZones returns 5-zone distribution for an activity", async () => {
+    it("hrZones returns zone 0 plus 5 training zones for an activity", async () => {
       const list = await query<{ items: { id: string; avg_hr: number | null }[] }>(
         "activity.list",
         { days: 90 },
       );
-      const activityWithHr = list.items.find((item) => item.avg_hr != null);
+      const activityWithHr = list.items
+        .filter((item) => item.avg_hr != null)
+        .sort((leftActivity, rightActivity) => {
+          return (rightActivity.avg_hr ?? 0) - (leftActivity.avg_hr ?? 0);
+        })[0];
       const activityId = activityWithHr?.id;
       expect(activityId).toBeTruthy();
+      expect(list.items.length).toBeGreaterThan(0);
 
       const result = await query<
         {
@@ -1157,10 +1302,10 @@ describe("Router coverage", () => {
         }[]
       >("activity.hrZones", { id: activityId });
 
-      expect(result).toHaveLength(5);
+      expect(result).toHaveLength(6);
 
       for (const zone of result) {
-        expect(zone.zone).toBeGreaterThanOrEqual(1);
+        expect(zone.zone).toBeGreaterThanOrEqual(0);
         expect(zone.zone).toBeLessThanOrEqual(5);
         expect(zone.label).toBeTruthy();
         expect(zone.seconds).toBeGreaterThanOrEqual(0);
@@ -1187,7 +1332,6 @@ describe("Router coverage", () => {
             bodyMeasurements: number;
             foodEntries: number;
             healthEvents: number;
-            metricStream: number;
             nutritionDaily: number;
             labPanels: number;
             labResults: number;
@@ -1201,7 +1345,6 @@ describe("Router coverage", () => {
         expect(testProvider.activities).toBeGreaterThan(0);
         expect(testProvider.dailyMetrics).toBeGreaterThan(0);
         expect(testProvider.sleepSessions).toBeGreaterThan(0);
-        expect(testProvider.metricStream).toBeGreaterThan(0);
       }
     });
 
@@ -1311,6 +1454,8 @@ describe("Router coverage", () => {
     });
 
     it("polarizationTrend returns weekly zone distribution", async () => {
+      await queryCache.invalidateByPrefix(`${TEST_USER_ID}:efficiency.polarizationTrend`);
+
       const result = await query<{
         maxHr: number | null;
         weeks: {
@@ -1323,14 +1468,13 @@ describe("Router coverage", () => {
       }>("efficiency.polarizationTrend", { days: 90 });
 
       expect(result.maxHr).toBe(190);
-      expect(Array.isArray(result.weeks)).toBe(true);
-
-      for (const week of result.weeks) {
-        expect(week.week).toBeTruthy();
-        expect(week.z1Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z2Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z3Seconds).toBeGreaterThanOrEqual(0);
-      }
+      expect(result.weeks).toHaveLength(1);
+      expect(result.weeks[0]).toMatchObject({
+        z1Seconds: 600,
+        z2Seconds: 300,
+        z3Seconds: 900,
+      });
+      expect(result.weeks[0]?.week).toBeTruthy();
     });
   });
 
@@ -1469,11 +1613,28 @@ describe("Router coverage", () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
-    it("unlinkAccount rejects when user has fewer than 2 accounts", async () => {
-      // With 0 or 1 accounts, unlinking should fail
+    it("unlinkAccount rejects when unlinking the only login account", async () => {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
+            VALUES ('google', 'only-login-account', ${TEST_USER_ID}, 'only@test.com', 'Only Login')
+            ON CONFLICT DO NOTHING`,
+      );
+      await queryCache.invalidateAll();
+
+      const accounts = await query<{ id: string; authProvider: string }[]>("auth.linkedAccounts");
+      const onlyLoginAccount = accounts.find((account) => account.authProvider === "google");
+      expect(onlyLoginAccount).toBeDefined();
+      if (!onlyLoginAccount) {
+        throw new Error("Expected the fixture Google account to be linked");
+      }
+
       await expect(
-        mutate("auth.unlinkAccount", { accountId: "00000000-0000-0000-0000-000000000099" }),
+        mutate("auth.unlinkAccount", { accountId: onlyLoginAccount.id }),
       ).rejects.toThrow(/Cannot unlink your only login method/);
+
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.auth_account WHERE auth_provider = 'google' AND user_id = ${TEST_USER_ID}`,
+      );
     });
 
     it("unlinkAccount succeeds when user has 2+ accounts", async () => {

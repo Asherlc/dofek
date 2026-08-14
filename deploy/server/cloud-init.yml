@@ -38,7 +38,6 @@ runcmd:
 
   # App directory (used for bind-mounted OTel config)
   - mkdir -p /opt/dofek
-  - mkdir -p /opt/dofek/traefik-dynamic
 
   # Restart Docker to pick up daemon.json log settings
   - systemctl restart docker
@@ -52,3 +51,7 @@ runcmd:
         docker swarm leave --force
       fi
       docker swarm init
+
+  # Configure kernel memory for Redis to prevent BGSAVE persistence failures
+  - sysctl -w vm.overcommit_memory=1
+  - sh -c 'echo "vm.overcommit_memory=1" > /etc/sysctl.d/99-redis.conf'

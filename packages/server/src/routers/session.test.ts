@@ -47,13 +47,12 @@ describe("session", () => {
 
   describe("validateSession", () => {
     it("returns userId when session is valid", async () => {
-      const db = createMockDb([
-        { user_id: "user-123", expires_at: new Date(Date.now() + 86400000) },
-      ]);
+      const createdAt = new Date("2026-07-27T12:34:56.000Z");
+      const db = createMockDb([{ created_at: createdAt, user_id: "user-123" }]);
 
       const result = await validateSession(db, "valid-session-id");
 
-      expect(result).toEqual({ userId: "user-123" });
+      expect(result).toEqual({ authenticatedAt: createdAt, userId: "user-123" });
     });
 
     it("returns null when session not found", async () => {

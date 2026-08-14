@@ -2,6 +2,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
 import { createApp } from "./index.ts";
+import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
+
+const noopSensorStore = {
+  query: async () => [],
+  getActivitySummaries: async () => [],
+  getPowerCurveSamples: async () => [],
+  getNormalizedPowerSamples: async () => [],
+  getVo2MaxEstimates: async () => [],
+  getHeartRateCurveRows: async () => [],
+  getPaceCurveRows: async () => [],
+  getStream: async () => [],
+  getHeartRateZoneSeconds: async () => [],
+  getPowerZoneSeconds: async () => [],
+  refreshBodyMeasurements: async () => {},
+} satisfies ActivitySensorStore;
 
 /**
  * Integration tests for the tRPC API layer.
@@ -21,7 +36,7 @@ describe("tRPC API", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, noopSensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -245,40 +260,6 @@ describe("tRPC API", () => {
     });
   });
 
-  describe("Upload status endpoints", () => {
-    it("GET /api/upload/apple-health/status/:jobId returns 404 for unknown job", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/apple-health/status/nonexistent`, {
-        headers: { Cookie: sessionCookie },
-      });
-      expect(res.status).toBe(404);
-      const data = await res.json();
-      expect(data.error).toBe("Unknown job");
-    });
-
-    it("GET /api/upload/strong-csv/status/:jobId returns 404 for unknown job", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/strong-csv/status/nonexistent`, {
-        headers: { Cookie: sessionCookie },
-      });
-      expect(res.status).toBe(404);
-      const data = await res.json();
-      expect(data.error).toBe("Unknown job");
-    });
-
-    it("GET /api/upload/cronometer-csv/status/:jobId returns 404 for unknown job", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/nonexistent`, {
-        headers: { Cookie: sessionCookie },
-      });
-      expect(res.status).toBe(404);
-      const data = await res.json();
-      expect(data.error).toBe("Unknown job");
-    });
-
-    it("GET /api/upload/apple-health/status/:jobId returns 401 without session", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/apple-health/status/nonexistent`);
-      expect(res.status).toBe(401);
-    });
-  });
-
   describe("OAuth callback", () => {
     it("GET /callback with no params returns OK (health check)", async () => {
       const res = await fetch(`${baseUrl}/callback`);
@@ -349,157 +330,6 @@ describe("tRPC API", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.ok).toBe(true);
-    });
-  });
-
-  describe("Apple Health upload", () => {
-    it("POST /api/upload/apple-health accepts non-chunked upload and returns jobId", async () => {
-      // Send a small body — the background import will fail but the endpoint should respond
-      const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream", Cookie: sessionCookie },
-        body: Buffer.from("fake-zip-data"),
-      });
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.status).toBe("processing");
-      expect(typeof data.jobId).toBe("string");
-
-      // The job should now appear in BullMQ status endpoint
-      const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${data.jobId}`, {
-        headers: { Cookie: sessionCookie },
-      });
-      expect(statusRes.status).toBe(200);
-      const statusData = await statusRes.json();
-      // BullMQ job is enqueued but worker may not be running — status is "processing"
-      expect(["processing", "error"]).toContain(statusData.status);
-    });
-
-    it("POST /api/upload/apple-health with fullSync=true uses epoch as since", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/apple-health?fullSync=true`, {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream", Cookie: sessionCookie },
-        body: Buffer.from("fake-zip-data"),
-      });
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.status).toBe("processing");
-      expect(data.jobId).toBeDefined();
-    });
-
-    it("POST /api/upload/apple-health returns 401 without session", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: Buffer.from("fake-zip-data"),
-      });
-      expect(res.status).toBe(401);
-    });
-
-    it("POST /api/upload/apple-health chunked upload receives first chunk", async () => {
-      const uploadId = `test-upload-${Date.now()}`;
-      const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          Cookie: sessionCookie,
-          "x-upload-id": uploadId,
-          "x-chunk-index": "0",
-          "x-chunk-total": "3",
-          "x-file-ext": ".zip",
-        },
-        body: Buffer.from("chunk-0-data"),
-      });
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.status).toBe("uploading");
-      expect(data.jobId).toBe(uploadId);
-      expect(data.received).toBe(1);
-      expect(data.total).toBe(3);
-    });
-
-    it("POST /api/upload/apple-health chunked upload assembles on last chunk", async () => {
-      const uploadId = `test-upload-assemble-${Date.now()}`;
-      // Send all 2 chunks
-      for (let i = 0; i < 2; i++) {
-        const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/octet-stream",
-            Cookie: sessionCookie,
-            "x-upload-id": uploadId,
-            "x-chunk-index": String(i),
-            "x-chunk-total": "2",
-            "x-file-ext": ".zip",
-          },
-          body: Buffer.from(`chunk-${i}-data`),
-        });
-        const data = await res.json();
-        if (i === 0) {
-          expect(data.status).toBe("uploading");
-        } else {
-          // Last chunk responds immediately with "assembling" status
-          expect(data.status).toBe("assembling");
-          // jobId is the upload ID for seamless polling
-          expect(data.jobId).toBe(uploadId);
-        }
-      }
-    });
-  });
-
-  describe("Strong CSV upload", () => {
-    it("POST /api/upload/strong-csv accepts upload and returns jobId", async () => {
-      const csvData =
-        "Date,Workout Name,Exercise Name,Set Order,Weight,Reps\n2024-01-01,Morning,Bench Press,1,100,10\n";
-      const res = await fetch(`${baseUrl}/api/upload/strong-csv`, {
-        method: "POST",
-        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
-        body: csvData,
-      });
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.status).toBe("processing");
-      expect(typeof data.jobId).toBe("string");
-
-      // BullMQ job status should be available
-      const statusRes = await fetch(`${baseUrl}/api/upload/strong-csv/status/${data.jobId}`, {
-        headers: { Cookie: sessionCookie },
-      });
-      expect(statusRes.status).toBe(200);
-    });
-
-    it("POST /api/upload/strong-csv respects units=lbs query param", async () => {
-      const csvData =
-        "Date,Workout Name,Exercise Name,Set Order,Weight,Reps\n2024-01-01,Morning,Squat,1,225,5\n";
-      const res = await fetch(`${baseUrl}/api/upload/strong-csv?units=lbs`, {
-        method: "POST",
-        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
-        body: csvData,
-      });
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.status).toBe("processing");
-    });
-  });
-
-  describe("Cronometer CSV upload", () => {
-    it("POST /api/upload/cronometer-csv accepts upload and returns jobId", async () => {
-      const csvData = "Day,Food Name,Amount,Energy (kcal)\n2024-01-01,Oatmeal,1 cup,150\n";
-      const res = await fetch(`${baseUrl}/api/upload/cronometer-csv`, {
-        method: "POST",
-        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
-        body: csvData,
-      });
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.status).toBe("processing");
-      expect(typeof data.jobId).toBe("string");
-
-      // BullMQ job status should be available
-      const statusRes = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/${data.jobId}`, {
-        headers: { Cookie: sessionCookie },
-      });
-      expect(statusRes.status).toBe(200);
     });
   });
 

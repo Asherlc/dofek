@@ -1,0 +1,102 @@
+name: Release npm Packages
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
+jobs:
+  verify-whoop-ble:
+    name: Verify WHOOP BLE Swift Package
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Test Swift package
+        working-directory: packages/mobile/modules/whoop-ble
+        run: swift test
+
+  publish:
+    name: Publish
+    needs: verify-whoop-ble
+    runs-on: ubuntu-24.04
+    permissions:
+      # `contents: write` pushes release tags. Tags are not covered by the branch
+      # rulesets, so this needs no elevated credential.
+      contents: write
+      # OIDC for npm trusted publishing; no npm token is involved.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Confirm the tested commit is current
+        id: current
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$(git rev-parse HEAD)" = "$TESTED_SHA" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "A newer commit is on main; its CI run will publish instead."
+          fi
+
+      - name: Set up Node.js and pnpm
+        if: steps.current.outputs.should_release == 'true'
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Verify public packages
+        if: steps.current.outputs.should_release == 'true'
+        run: |
+          pnpm release:npm:build
+          pnpm release:npm:test
+
+      # Version bumps reach main through the reviewed pull request opened by
+      # "Version npm Packages". Publishing is a no-op for any package whose
+      # version is already on the registry.
+      - name: Publish packages
+        if: steps.current.outputs.should_release == 'true'
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: pnpm release:npm:publish
+
+      - name: Tag published packages
+        if: steps.current.outputs.should_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          CREATED_TAGS=()
+          while read -r TAG; do
+            [ -n "$TAG" ] || continue
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              continue
+            fi
+            git tag "$TAG"
+            CREATED_TAGS+=("refs/tags/$TAG")
+          done < <(pnpm exec lerna list --json --loglevel silent | jq -r '.[] | "\(.name)@\(.version)"')
+          if [ "${#CREATED_TAGS[@]}" -eq 0 ]; then
+            echo "All package versions are already tagged."
+          else
+            git push origin "${CREATED_TAGS[@]}"
+            echo "Pushed ${#CREATED_TAGS[@]} release tag(s)."
+          fi

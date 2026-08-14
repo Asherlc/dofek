@@ -1,15 +1,10 @@
-import { eq } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
-import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import {
-  activity,
-  bodyMeasurement,
-  dailyMetrics,
-  metricStream,
-  sleepSession,
-} from "../../db/schema.ts";
+import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
 import type { SyncError } from "../types.ts";
 import type { FitbitActivity, FitbitClient } from "./client.ts";
@@ -21,18 +16,18 @@ import type {
 } from "./parsers.ts";
 
 const PROVIDER_ID = "fitbit";
-
 export async function persistActivity(
   db: SyncDatabase,
   parsed: ParsedFitbitActivity,
   raw: FitbitActivity,
   client?: FitbitClient,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<{ errors: SyncError[] }> {
   const errors: SyncError[] = [];
 
-  const [row] = await db
-    .insert(activity)
-    .values({
+  const row = await upsertProviderActivity(
+    db,
+    {
       providerId: PROVIDER_ID,
       externalId: parsed.externalId,
       activityType: parsed.activityType,
@@ -40,18 +35,15 @@ export async function persistActivity(
       endedAt: parsed.endedAt,
       name: parsed.name,
       raw: raw,
-    })
-    .onConflictDoUpdate({
-      target: [activity.userId, activity.providerId, activity.externalId],
-      set: {
-        activityType: parsed.activityType,
-        startedAt: parsed.startedAt,
-        endedAt: parsed.endedAt,
-        name: parsed.name,
-        raw: raw,
-      },
-    })
-    .returning({ id: activity.id });
+    },
+    {
+      activityType: parsed.activityType,
+      startedAt: parsed.startedAt,
+      endedAt: parsed.endedAt,
+      name: parsed.name,
+      raw: raw,
+    },
+  );
 
   const activityId = row?.id;
 
@@ -62,8 +54,13 @@ export async function persistActivity(
       const sampleRows = tcxToSensorSamples(trackpoints, PROVIDER_ID, activityId);
 
       if (sampleRows.length > 0) {
-        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-        await writeMetricStreamBatch(db, sampleRows, SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(
+          db,
+          { activityId },
+          sampleRows,
+          SOURCE_TYPE_API,
+          metricStreamPublisher,
+        );
         logger.info(
           `[fitbit] Inserted ${sampleRows.length} metric stream rows for activity ${parsed.externalId}`,
         );
@@ -93,8 +90,10 @@ export async function persistSleep(db: SyncDatabase, parsed: ParsedFitbitSleep):
       remMinutes: parsed.remMinutes,
       lightMinutes: parsed.lightMinutes,
       awakeMinutes: parsed.awakeMinutes,
+      stagingAvailable: parsed.stagingAvailable,
       efficiencyPct: parsed.efficiencyPct,
       sleepType: parsed.sleepType,
+      isNap: parsed.isNap,
     })
     .onConflictDoUpdate({
       target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -106,8 +105,10 @@ export async function persistSleep(db: SyncDatabase, parsed: ParsedFitbitSleep):
         remMinutes: parsed.remMinutes,
         lightMinutes: parsed.lightMinutes,
         awakeMinutes: parsed.awakeMinutes,
+        stagingAvailable: parsed.stagingAvailable,
         efficiencyPct: parsed.efficiencyPct,
         sleepType: parsed.sleepType,
+        isNap: parsed.isNap,
       },
     });
 }
@@ -122,8 +123,6 @@ export async function persistDailyMetrics(
       date: parsed.date,
       providerId: PROVIDER_ID,
       steps: parsed.steps,
-      restingHr: parsed.restingHr,
-      activeEnergyKcal: parsed.activeEnergyKcal,
       exerciseMinutes: parsed.exerciseMinutes,
       distanceKm: parsed.distanceKm,
       flightsClimbed: parsed.flightsClimbed,
@@ -137,8 +136,6 @@ export async function persistDailyMetrics(
       ],
       set: {
         steps: parsed.steps,
-        restingHr: parsed.restingHr,
-        activeEnergyKcal: parsed.activeEnergyKcal,
         exerciseMinutes: parsed.exerciseMinutes,
         distanceKm: parsed.distanceKm,
         flightsClimbed: parsed.flightsClimbed,
@@ -149,21 +146,21 @@ export async function persistDailyMetrics(
 export async function persistBodyMeasurement(
   db: SyncDatabase,
   parsed: ParsedFitbitBodyMeasurement,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<void> {
-  await db
-    .insert(bodyMeasurement)
-    .values({
-      providerId: PROVIDER_ID,
-      externalId: parsed.externalId,
-      recordedAt: parsed.recordedAt,
-      weightKg: parsed.weightKg,
-      bodyFatPct: parsed.bodyFatPct,
-    })
-    .onConflictDoUpdate({
-      target: [bodyMeasurement.userId, bodyMeasurement.providerId, bodyMeasurement.externalId],
-      set: {
+  await replaceMetricStreamBatch(
+    db,
+    { providerId: PROVIDER_ID, externalId: parsed.externalId },
+    [
+      {
+        providerId: PROVIDER_ID,
+        externalId: parsed.externalId,
+        recordedAt: parsed.recordedAt,
         weightKg: parsed.weightKg,
         bodyFatPct: parsed.bodyFatPct,
       },
-    });
+    ],
+    SOURCE_TYPE_API,
+    metricStreamPublisher,
+  );
 }

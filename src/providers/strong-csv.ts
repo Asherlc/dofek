@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import { eq } from "drizzle-orm";
+import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { exercise, exerciseAlias, strengthSet, strengthWorkout } from "../db/schema.ts";
+import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import { strengthSet } from "../db/schema/activity.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -47,11 +51,13 @@ export function parseStrongExerciseName(rawName: string): {
   equipment: string | null;
 } {
   const trimmed = rawName.trim();
-  const match = trimmed.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
-  if (match) {
-    const name = match[1];
-    const equip = match[2];
-    return { exerciseName: (name ?? trimmed).trim(), equipment: (equip ?? "").trim() || null };
+  if (trimmed.endsWith(")")) {
+    const openingParen = trimmed.lastIndexOf("(");
+    const exerciseName = trimmed.slice(0, openingParen).trim();
+    const equipment = trimmed.slice(openingParen + 1, -1).trim();
+    if (openingParen > 0 && exerciseName && equipment) {
+      return { exerciseName, equipment };
+    }
   }
   return { exerciseName: trimmed, equipment: null };
 }
@@ -111,14 +117,12 @@ function parseCsvLine(line: string): string[] {
 
 export function parseOptionalFloat(value: string): number | null {
   const trimmed = value.trim();
-  if (trimmed === "") return null;
   const num = Number.parseFloat(trimmed);
   return Number.isNaN(num) ? null : num;
 }
 
 export function parseOptionalInt(value: string): number | null {
   const trimmed = value.trim();
-  if (trimmed === "") return null;
   const num = Number.parseInt(trimmed, 10);
   return Number.isNaN(num) ? null : num;
 }
@@ -371,34 +375,32 @@ export async function importStrongCsv(
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
 
-      // Upsert workout
-      const [row] = await db
-        .insert(strengthWorkout)
-        .values({
+      const activityRow = await upsertProviderActivity(
+        db,
+        {
           providerId: STRONG_PROVIDER_ID,
           userId,
           externalId,
+          activityType: resolveProviderActivityType("strength", "strength"),
           startedAt,
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
-        })
-        .onConflictDoUpdate({
-          target: [strengthWorkout.userId, strengthWorkout.providerId, strengthWorkout.externalId],
-          set: {
-            startedAt,
-            endedAt,
-            name: group.workoutName,
-            notes: group.workoutNotes,
-          },
-        })
-        .returning({ id: strengthWorkout.id });
+        },
+        {
+          activityType: resolveProviderActivityType("strength", "strength"),
+          startedAt,
+          endedAt,
+          name: group.workoutName,
+          notes: group.workoutNotes,
+        },
+      );
 
-      const workoutId = row?.id;
-      if (!workoutId) continue;
+      const activityId = activityRow?.id;
+      if (!activityId) continue;
 
       // Delete old sets, re-insert
-      await db.delete(strengthSet).where(eq(strengthSet.workoutId, workoutId));
+      await db.delete(strengthSet).where(eq(strengthSet.activityId, activityId));
 
       // Track exercise index per exercise name within this workout
       const exerciseIndexMap = new Map<string, number>();
@@ -409,41 +411,21 @@ export async function importStrongCsv(
       for (const csvRow of group.sets) {
         const { exerciseName, equipment } = parseStrongExerciseName(csvRow.exerciseName);
         const cacheKey = `${exerciseName}|${equipment ?? ""}`;
+        const inferredMuscleGroups = lookupExerciseMuscleGroups(exerciseName);
 
         let exerciseId = exerciseCache.get(cacheKey);
         if (!exerciseId) {
-          // Upsert exercise
-          await db.insert(exercise).values({ name: exerciseName, equipment }).onConflictDoNothing();
-
-          const whereClause = equipment
-            ? and(eq(exercise.name, exerciseName), eq(exercise.equipment, equipment))
-            : and(eq(exercise.name, exerciseName));
-
-          const exerciseRows = await db
-            .select({ id: exercise.id })
-            .from(exercise)
-            .where(whereClause)
-            .limit(1);
-
-          exerciseId = exerciseRows[0]?.id;
-          if (exerciseId) {
-            exerciseCache.set(cacheKey, exerciseId);
-
-            // Upsert alias
-            await db
-              .insert(exerciseAlias)
-              .values({
-                exerciseId,
-                providerId: STRONG_PROVIDER_ID,
-                providerExerciseName: csvRow.exerciseName,
-              })
-              .onConflictDoNothing();
-          }
-        }
-
-        if (!exerciseId) {
-          errors.push({ message: `Could not resolve exercise: ${csvRow.exerciseName}` });
-          continue;
+          exerciseId = await resolveUserExerciseWithProvenance(db, {
+            equipment,
+            exerciseType: inferredMuscleGroups ? "STRENGTH" : null,
+            muscleGroups: inferredMuscleGroups,
+            name: exerciseName,
+            providerExerciseId: null,
+            providerExerciseName: csvRow.exerciseName,
+            providerId: STRONG_PROVIDER_ID,
+            userId,
+          });
+          exerciseCache.set(cacheKey, exerciseId);
         }
 
         // Compute exercise index (order of first appearance within workout)
@@ -462,7 +444,7 @@ export async function importStrongCsv(
         const distanceMeters = csvRow.distance !== null ? csvRow.distance * 1000 : null;
 
         setRows.push({
-          workoutId,
+          activityId,
           exerciseId,
           exerciseIndex,
           setIndex: csvRow.setOrder - 1, // Strong is 1-indexed

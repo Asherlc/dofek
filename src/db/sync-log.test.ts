@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
-import { logSync, withSyncLog } from "./sync-log.ts";
+import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
 
 describe("logSync", () => {
   let db: ReturnType<typeof createMockDatabase>;
@@ -18,6 +18,7 @@ describe("logSync", () => {
       recordCount: 42,
       durationMs: 1500,
       userId: "user-123",
+      origin: "manual",
     };
 
     await logSync(db.db, entry);
@@ -29,8 +30,11 @@ describe("logSync", () => {
       status: "success",
       recordCount: 42,
       errorMessage: undefined,
+      authFailureReason: undefined,
+      degradationKind: undefined,
       durationMs: 1500,
       userId: "user-123",
+      origin: "manual",
     });
   });
 
@@ -52,8 +56,57 @@ describe("logSync", () => {
       status: "error",
       recordCount: 0,
       errorMessage: "API timeout",
+      authFailureReason: undefined,
+      degradationKind: undefined,
       durationMs: 5000,
       userId: "user-456",
+      origin: "unknown",
+    });
+  });
+
+  it("inserts a structured auth failure reason", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "wahoo",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Wahoo access token expired.",
+      authFailureReason: "access_token_expired",
+      userId: "user-123",
+    };
+
+    await logSync(db.db, entry);
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authFailureReason: "access_token_expired",
+      }),
+    );
+  });
+
+  it("inserts a degraded log entry with degradation kind", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "whoop",
+      dataType: "developer_workouts",
+      status: "degraded",
+      recordCount: 25,
+      degradationKind: "pagination_stalled",
+      errorMessage: "WHOOP returned a repeated workout cursor",
+      userId: "user-123",
+    };
+
+    await logSync(db.db, entry);
+
+    expect(db.spies.values).toHaveBeenCalledWith({
+      providerId: "whoop",
+      dataType: "developer_workouts",
+      status: "degraded",
+      recordCount: 25,
+      errorMessage: "WHOOP returned a repeated workout cursor",
+      authFailureReason: undefined,
+      degradationKind: "pagination_stalled",
+      durationMs: undefined,
+      userId: "user-123",
+      origin: "unknown",
     });
   });
 
@@ -114,6 +167,35 @@ describe("withSyncLog", () => {
     );
   });
 
+  it("logs degraded when the operation returns a degradation", async () => {
+    const fn = vi.fn().mockResolvedValue({
+      recordCount: 10,
+      result: "data",
+      degradations: [
+        {
+          kind: "pagination_stalled",
+          providerId: "whoop",
+          stepName: "developer_workouts",
+          message: "WHOOP returned a repeated workout cursor",
+        },
+      ],
+    });
+
+    const result = await withSyncLog(db.db, "whoop", "developer_workouts", fn, "user-123");
+
+    expect(result).toBe("data");
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "whoop",
+        dataType: "developer_workouts",
+        status: "degraded",
+        recordCount: 10,
+        errorMessage: "WHOOP returned a repeated workout cursor",
+        degradationKind: "pagination_stalled",
+      }),
+    );
+  });
+
   it("logs error and re-throws on failure", async () => {
     const fn = vi.fn().mockRejectedValue(new Error("sync failed"));
 
@@ -127,6 +209,26 @@ describe("withSyncLog", () => {
         dataType: "sleep",
         status: "error",
         errorMessage: "sync failed",
+        authFailureReason: undefined,
+      }),
+    );
+  });
+
+  it("logs partial record counts on partial sync failure", async () => {
+    const cause = new Error("page failed");
+    const fn = vi.fn().mockRejectedValue(new PartialSyncError("activity: page failed", 3, cause));
+
+    await expect(withSyncLog(db.db, "komoot", "activity", fn, "user-123")).rejects.toThrow(
+      "activity: page failed",
+    );
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "komoot",
+        dataType: "activity",
+        status: "error",
+        recordCount: 3,
+        errorMessage: "activity: page failed",
       }),
     );
   });

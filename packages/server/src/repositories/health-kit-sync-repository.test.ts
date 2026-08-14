@@ -1,15 +1,66 @@
-import { describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
+import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import {
   aggregateDailyMetricSamples,
   categorize,
-  computeBoundsFromIsoTimestamps,
   deriveSleepSessionsFromStages,
   extractDate,
+  HealthKitDeletionTombstonesUnsupportedError,
   type HealthKitSample,
   HealthKitSyncRepository,
   isSleepStageValue,
   type SleepSample,
 } from "./health-kit-sync-repository.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
+
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: vi.fn(resolveProviderDataGenerationsForTest) };
+});
+
+type ProviderActivityListSyncScope = {
+  windowStart: Date;
+  windowEnd: Date;
+};
+
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+  lastScope: undefined satisfies ProviderActivityListSyncScope | undefined,
+}));
+
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    constructor(scope: {
+      windowStart: Date;
+      windowEnd: Date;
+    }) {
+      providerActivitySyncMocks.lastScope = scope;
+    }
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
+}));
+
+function makeMetricStreamPublisher() {
+  return {
+    publishRows: vi.fn(async (rows: readonly unknown[]) =>
+      rows.map((_, index) => ({ id: `event-${index}` })),
+    ),
+  };
+}
+
+function getPublishedRows(publisher: ReturnType<typeof makeMetricStreamPublisher>): unknown[] {
+  return publisher.publishRows.mock.calls.flatMap((call) => [...call[0]]);
+}
 
 // ---------------------------------------------------------------------------
 // Pure helper functions
@@ -151,12 +202,18 @@ describe("categorize", () => {
 
   it("categorizes additive daily metric types", () => {
     expect(categorize("HKQuantityTypeIdentifierStepCount")).toBe("additiveDailyMetric");
-    expect(categorize("HKQuantityTypeIdentifierActiveEnergyBurned")).toBe("additiveDailyMetric");
   });
 
   it("categorizes point-in-time daily metric types", () => {
-    expect(categorize("HKQuantityTypeIdentifierRestingHeartRate")).toBe("pointInTimeDailyMetric");
-    expect(categorize("HKQuantityTypeIdentifierVO2Max")).toBe("pointInTimeDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierWalkingSpeed")).toBe("pointInTimeDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierWalkingStepLength")).toBe("pointInTimeDailyMetric");
+  });
+
+  it("ignores provider-derived summaries", () => {
+    expect(categorize("HKQuantityTypeIdentifierActiveEnergyBurned")).toBe("ignored");
+    expect(categorize("HKQuantityTypeIdentifierBasalEnergyBurned")).toBe("ignored");
+    expect(categorize("HKQuantityTypeIdentifierRestingHeartRate")).toBe("ignored");
+    expect(categorize("HKQuantityTypeIdentifierVO2Max")).toBe("ignored");
   });
 
   it("categorizes metric stream types", () => {
@@ -234,23 +291,22 @@ describe("aggregateDailyMetricSamples", () => {
   it("handles point-in-time metrics (last value wins)", () => {
     const samples = [
       makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 60,
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.2,
         uuid: "1",
       }),
       makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 62,
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.4,
         uuid: "2",
       }),
     ];
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
-    // Last value overwrites
-    expect(accumulator?.restingHr).toBe(62);
+    expect(accumulator?.walkingSpeed).toBe(1.4);
   });
 
-  it("handles VO2Max as point-in-time", () => {
+  it("ignores provider VO2 Max as a daily metric", () => {
     const samples = [
       makeSample({
         type: "HKQuantityTypeIdentifierVO2Max",
@@ -260,7 +316,7 @@ describe("aggregateDailyMetricSamples", () => {
     ];
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
-    expect(accumulator?.vo2max).toBe(45.5);
+    expect(Object.hasOwn(accumulator ?? {}, "vo2max")).toBe(false);
   });
 
   it("uses += (accumulation) for additive metrics, not = (replacement)", () => {
@@ -287,25 +343,6 @@ describe("aggregateDailyMetricSamples", () => {
     // With +=: 1000 + 2000 + 500 = 3500
     // With =: only last value = 500
     expect(accumulator?.steps).toBe(3500);
-  });
-
-  it("accumulates active energy burned across multiple samples", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 200,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 350,
-        uuid: "2",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    // With +=: 200 + 350 = 550 (not just 350)
-    expect(accumulator?.activeEnergyKcal).toBe(550);
   });
 
   it("accumulates distance with transform (meters to km)", () => {
@@ -338,46 +375,8 @@ describe("aggregateDailyMetricSamples", () => {
     const result = aggregateDailyMetricSamples(samples);
     // An accumulator is created for the date/source, but the unknown type doesn't modify any field
     const accumulator = result.get("2024-01-15\0iPhone");
-    expect(accumulator?.steps).toBe(0);
-    expect(accumulator?.activeEnergyKcal).toBe(0);
-    expect(accumulator?.restingHr).toBeNull();
-  });
-
-  it("accumulates cycling distance with transform (meters to km)", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 10000,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 5000,
-        uuid: "2",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    // 10000/1000 + 5000/1000 = 10 + 5 = 15 km
-    expect(accumulator?.cyclingDistanceKm).toBeCloseTo(15.0);
-  });
-
-  it("accumulates basal energy burned", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-        value: 800,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-        value: 600,
-        uuid: "2",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    expect(accumulator?.basalEnergyKcal).toBe(1400);
+    expect(accumulator?.steps).toBeNull();
+    expect(Object.hasOwn(accumulator ?? {}, "restingHr")).toBe(false);
   });
 
   it("accumulates flights climbed", () => {
@@ -509,15 +508,10 @@ describe("aggregateDailyMetricSamples", () => {
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
     expect(accumulator?.steps).toBe(100);
-    expect(accumulator?.activeEnergyKcal).toBe(0);
-    expect(accumulator?.basalEnergyKcal).toBe(0);
-    expect(accumulator?.distanceKm).toBe(0);
-    expect(accumulator?.cyclingDistanceKm).toBe(0);
-    expect(accumulator?.flightsClimbed).toBe(0);
-    expect(accumulator?.exerciseMinutes).toBe(0);
-    expect(accumulator?.restingHr).toBeNull();
+    expect(accumulator?.distanceKm).toBeNull();
+    expect(accumulator?.flightsClimbed).toBeNull();
+    expect(accumulator?.exerciseMinutes).toBeNull();
     expect(accumulator?.hrv).toBeNull();
-    expect(accumulator?.vo2max).toBeNull();
     expect(accumulator?.walkingSpeed).toBeNull();
     expect(accumulator?.walkingStepLength).toBeNull();
     expect(accumulator?.walkingDoubleSupportPct).toBeNull();
@@ -527,21 +521,12 @@ describe("aggregateDailyMetricSamples", () => {
   it("uses = (replacement) for point-in-time metrics, not +=", () => {
     // Point-in-time metrics should replace, not accumulate
     const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 58,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 62,
-        uuid: "2",
-      }),
+      makeSample({ type: "HKQuantityTypeIdentifierWalkingSpeed", value: 1.2, uuid: "1" }),
+      makeSample({ type: "HKQuantityTypeIdentifierWalkingSpeed", value: 1.4, uuid: "2" }),
     ];
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
-    // Last value wins (= assignment), not sum (58 + 62 = 120)
-    expect(accumulator?.restingHr).toBe(62);
+    expect(accumulator?.walkingSpeed).toBe(1.4);
   });
 });
 
@@ -703,9 +688,60 @@ describe("HEALTHKIT_STAGE_MAP (via deriveSleepSessionsFromStages stage mapping)"
 });
 
 describe("HEALTHKIT_STAGE_MAP mapped values (via processSleepSamples)", () => {
+  async function getSleepSessionStageParams(stageValue?: string): Promise<unknown[]> {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-4000-8000-000000000001" }]);
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "inbed-quality",
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-16T06:00:00Z",
+        value: "inBed",
+        sourceName: "Watch",
+      },
+    ];
+    if (stageValue) {
+      samples.push({
+        uuid: `stage-${stageValue}`,
+        startDate: "2024-01-15T22:00:00Z",
+        endDate: "2024-01-15T23:00:00Z",
+        value: stageValue,
+        sourceName: "Watch",
+      });
+    }
+
+    await repo.processSleepSamples(samples);
+    const sleepInsert = execute.mock.calls.find((call) => {
+      const serialized = JSON.stringify(call[0]);
+      return serialized.includes("sleep_session") && serialized.includes("INSERT");
+    });
+    if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
+    return new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
+  }
+
+  it.each([
+    ["asleepCore", [0, 0, 60, 0, true]],
+    ["asleepDeep", [60, 0, 0, 0, true]],
+    ["asleepREM", [0, 60, 0, 0, true]],
+  ] as const)("stores %s as an available canonical stage bundle", async (stage, expected) => {
+    expect(await getSleepSessionStageParams(stage)).toEqual(expected);
+  });
+
+  it("does not treat generic asleep intervals as a canonical stage bundle", async () => {
+    expect(await getSleepSessionStageParams("asleep")).toEqual([null, null, null, null, false]);
+  });
+
+  it("preserves an awake-only measurement without claiming a stage bundle", async () => {
+    expect(await getSleepSessionStageParams("awake")).toEqual([null, null, null, 60, false]);
+  });
+
+  it("stores missing stages as null when no stage samples exist", async () => {
+    expect(await getSleepSessionStageParams()).toEqual([null, null, null, null, false]);
+  });
+
   async function getStageInsertSqlJson(stageValue: string): Promise<string> {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-1",
@@ -847,9 +883,14 @@ describe("MAX_SLEEP_SESSION_GAP_MS (90 minutes)", () => {
 });
 
 describe("workoutActivityTypeMap (via processWorkouts)", () => {
+  beforeEach(() => {
+    providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.reconcile.mockClear();
+  });
+
   it("maps type 37 to running", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-1",
@@ -861,15 +902,20 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    // The SQL should contain the mapped activity type "running"
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("running");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: { providerType: "37", canonicalType: "running", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "37", canonicalType: "running", modality: null },
+      }),
+      expect.anything(),
+    );
   });
 
   it("maps type 13 to cycling", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-2",
@@ -881,14 +927,20 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("cycling");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+      }),
+      expect.anything(),
+    );
   });
 
   it("maps type 24 to hiking", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-hike",
@@ -900,14 +952,20 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("hiking");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: { providerType: "24", canonicalType: "hiking", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "24", canonicalType: "hiking", modality: null },
+      }),
+      expect.anything(),
+    );
   });
 
   it("maps type 46 to swimming", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-swim",
@@ -919,14 +977,20 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("swimming");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: { providerType: "46", canonicalType: "swimming", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "46", canonicalType: "swimming", modality: null },
+      }),
+      expect.anything(),
+    );
   });
 
   it("maps unknown workout type to other", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processWorkouts([
       {
         uuid: "w-3",
@@ -938,16 +1002,22 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("other");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: { providerType: "9999", canonicalType: "other", modality: null },
+      }),
+      expect.objectContaining({
+        activityType: { providerType: "9999", canonicalType: "other", modality: null },
+      }),
+      expect.anything(),
+    );
   });
 });
 
 describe("INTEGER_DAILY_COLUMNS", () => {
   it("rounds steps to integer (not float)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierStepCount",
@@ -967,7 +1037,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
 
   it("processes flights climbed as integer column", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processDailyMetrics([
       {
         type: "HKQuantityTypeIdentifierFlightsClimbed",
@@ -985,7 +1055,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
 
   it("processes exercise minutes as integer column", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processDailyMetrics([
       {
         type: "HKQuantityTypeIdentifierAppleExerciseTime",
@@ -1001,9 +1071,9 @@ describe("INTEGER_DAILY_COLUMNS", () => {
     expect(execute).toHaveBeenCalled();
   });
 
-  it("processes resting HR as integer column", async () => {
+  it("does not process provider resting HR as a daily metric", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     await repo.processDailyMetrics([
       {
         type: "HKQuantityTypeIdentifierRestingHeartRate",
@@ -1016,7 +1086,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
         uuid: "int-rhr",
       },
     ]);
-    expect(execute).toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 });
 
@@ -1027,9 +1097,10 @@ describe("INTEGER_DAILY_COLUMNS", () => {
 describe("HealthKitSyncRepository", () => {
   function makeRepository() {
     const execute = vi.fn().mockResolvedValue([]);
-    const db = { execute };
-    const repository = new HealthKitSyncRepository(db, "user-1");
-    return { repository, execute };
+    const db = makeTransactionalTestDatabase({ execute });
+    const publisher = makeMetricStreamPublisher();
+    const repository = new HealthKitSyncRepository(db, "user-1", publisher);
+    return { repository, execute, publisher };
   }
 
   function makeSample(overrides: Partial<HealthKitSample> = {}): HealthKitSample {
@@ -1054,6 +1125,185 @@ describe("HealthKitSyncRepository", () => {
     });
   });
 
+  describe("processDeletedQuantitySamples", () => {
+    it("does nothing when the anchored query has no deleted UUIDs", async () => {
+      vi.mocked(getProviderDataGenerations).mockClear();
+      const { repository, execute } = makeRepository();
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierHeartRate", []),
+      ).resolves.toBe(0);
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(getProviderDataGenerations).not.toHaveBeenCalled();
+    });
+
+    it("fails when the metric stream publisher cannot emit deletion tombstones", async () => {
+      const repository = new HealthKitSyncRepository(
+        { execute: vi.fn().mockResolvedValue([]) },
+        "user-1",
+        { publishRows: vi.fn(async () => []) },
+      );
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierHeartRate", [
+          "heart-rate-1",
+        ]),
+      ).rejects.toBeInstanceOf(HealthKitDeletionTombstonesUnsupportedError);
+    });
+
+    it("publishes provider-scoped tombstones concurrently for unique UUIDs", async () => {
+      vi.mocked(getProviderDataGenerations).mockClear();
+      const releases: Array<() => void> = [];
+      const publisher: MetricStreamEventPublisher = {
+        publishRows: vi.fn(async () => []),
+        replaceRows: vi.fn(async (scope, rows, operationRevision) => {
+          await new Promise<void>((resolve) => releases.push(resolve));
+          return {
+            deleted: {
+              version: 3 as const,
+              eventType: "metric_stream_deleted" as const,
+              eventId: "00000000-0000-4000-8000-000000000001",
+              operationRevision,
+              scope,
+              partitionKey: "test",
+            },
+            rows: [...rows],
+          };
+        }),
+      };
+      const execute = vi.fn().mockResolvedValue([]);
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+        publisher,
+      );
+
+      const deletion = repository.processDeletedQuantitySamples(
+        "HKQuantityTypeIdentifierHeartRate",
+        ["heart-rate-1", "heart-rate-2", "heart-rate-1"],
+      );
+
+      await vi.waitFor(() => {
+        expect(publisher.replaceRows).toHaveBeenCalledTimes(2);
+      });
+      expect(getProviderDataGenerations).toHaveBeenLastCalledWith(
+        expect.objectContaining({ execute }),
+        [
+          {
+            providerId: "apple_health",
+            userId: "user-1",
+          },
+        ],
+      );
+      expect(publisher.replaceRows).toHaveBeenNthCalledWith(
+        1,
+        {
+          externalId: "hk:heart-rate-1",
+          providerId: "apple_health",
+          userId: "user-1",
+        },
+        [],
+        "1000000000000000",
+      );
+      expect(publisher.replaceRows).toHaveBeenNthCalledWith(
+        2,
+        {
+          externalId: "hk:heart-rate-2",
+          providerId: "apple_health",
+          userId: "user-1",
+        },
+        [],
+        "1000000000000000",
+      );
+
+      for (const release of releases) {
+        release();
+      }
+      await expect(deletion).resolves.toBe(2);
+    });
+
+    it("invokes tombstone publishing with the publisher instance bound", async () => {
+      const publisher: MetricStreamEventPublisher & { calls: number } = {
+        calls: 0,
+        publishRows: vi.fn(async () => []),
+        async replaceRows(scope, rows, operationRevision) {
+          this.calls += 1;
+          return {
+            deleted: {
+              version: 3 as const,
+              eventType: "metric_stream_deleted" as const,
+              eventId: "00000000-0000-4000-8000-000000000001",
+              operationRevision,
+              scope,
+              partitionKey: "test",
+            },
+            rows: [...rows],
+          };
+        },
+      };
+      const repository = new HealthKitSyncRepository(
+        { execute: vi.fn().mockResolvedValue([]) },
+        "user-1",
+        publisher,
+      );
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierHeartRate", [
+          "heart-rate-1",
+        ]),
+      ).resolves.toBe(1);
+      expect(publisher.calls).toBe(1);
+    });
+
+    it("deletes UUID-addressed HealthKit events through typed repository SQL", async () => {
+      const execute = vi.fn().mockResolvedValue([{ externalId: "hk:vo2-max-1" }]);
+      const publisher: MetricStreamEventPublisher = {
+        publishRows: vi.fn(async () => []),
+        replaceRows: vi.fn(),
+      };
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+        publisher,
+      );
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", ["vo2-max-1"]),
+      ).resolves.toBe(1);
+
+      expect(publisher.replaceRows).not.toHaveBeenCalled();
+      expect(JSON.stringify(execute.mock.calls)).toContain("fitness.health_event");
+      expect(JSON.stringify(execute.mock.calls)).toContain("hk:vo2-max-1");
+    });
+
+    it("returns the actual number of deleted HealthKit event rows", async () => {
+      const execute = vi.fn().mockResolvedValue([{ externalId: "hk:vo2-max-1" }]);
+      const repository = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+      );
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", [
+          "vo2-max-1",
+          "vo2-max-2",
+        ]),
+      ).resolves.toBe(1);
+    });
+
+    it("rejects an invalid typed deletion result", async () => {
+      const repository = new HealthKitSyncRepository(
+        { execute: vi.fn().mockResolvedValue([{}]) },
+        "user-1",
+      );
+
+      await expect(
+        repository.processDeletedQuantitySamples("HKQuantityTypeIdentifierVO2Max", ["vo2-max-1"]),
+      ).rejects.toBeInstanceOf(ZodError);
+    });
+  });
+
   describe("processBodyMeasurements", () => {
     it("returns 0 for empty samples", async () => {
       const { repository } = makeRepository();
@@ -1061,8 +1311,8 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(0);
     });
 
-    it("inserts body measurement samples", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes body measurement samples", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -1072,7 +1322,15 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({
+          providerId: "apple_health",
+          externalId: "hk:bm-1",
+          channel: "body_weight",
+          scalar: 75.5,
+        }),
+      ]);
     });
 
     it("skips samples with unknown type", async () => {
@@ -1089,7 +1347,7 @@ describe("HealthKitSyncRepository", () => {
     });
 
     it("applies body fat percentage transform (value * 100)", async () => {
-      const { repository, execute } = makeRepository();
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -1099,14 +1357,14 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
-      // The transformed value (0.185 * 100 = 18.5) is used in the SQL
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("18.5");
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.5 }),
+      ]);
     });
 
-    it("inserts BMI without transform", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes BMI without transform", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyMassIndex",
@@ -1116,11 +1374,14 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "body_mass_index", scalar: 23.4 }),
+      ]);
     });
 
-    it("inserts height without transform", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes height without transform", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeight",
@@ -1130,11 +1391,14 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "height", scalar: 175.5 }),
+      ]);
     });
 
     it("processes multiple body measurement samples in batch", async () => {
-      const { repository, execute } = makeRepository();
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -1150,6 +1414,7 @@ describe("HealthKitSyncRepository", () => {
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(2);
       expect(execute).toHaveBeenCalledTimes(2);
+      expect(getPublishedRows(publisher)).toHaveLength(2);
     });
   });
 
@@ -1191,8 +1456,8 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(0);
     });
 
-    it("inserts metric stream samples", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes metric stream samples", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRate",
@@ -1202,7 +1467,27 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
+      ]);
+    });
+
+    it("writes external IDs for retry-safe metric stream samples", async () => {
+      const { repository, publisher } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 72,
+          uuid: "hr-idempotent",
+        }),
+      ];
+
+      await repository.processMetricStream(samples);
+
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ externalId: "hk:hr-idempotent" }),
+      ]);
     });
 
     it("skips samples with unmapped type", async () => {
@@ -1219,7 +1504,7 @@ describe("HealthKitSyncRepository", () => {
     });
 
     it("rounds integer metric stream columns (heart_rate)", async () => {
-      const { repository, execute } = makeRepository();
+      const { repository, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRate",
@@ -1229,13 +1514,13 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      // heart_rate is in INTEGER_METRIC_STREAM_COLUMNS so it should be Math.round(72.7) = 73
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("73");
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "heart_rate", scalar: 73 }),
+      ]);
     });
 
-    it("inserts non-integer metric stream columns without rounding (spo2)", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes non-integer metric stream columns without rounding (spo2)", async () => {
+      const { repository, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierOxygenSaturation",
@@ -1245,13 +1530,13 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      // spo2 is NOT in INTEGER_METRIC_STREAM_COLUMNS, value should be passed as-is
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("0.975");
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "spo2", scalar: 0.975 }),
+      ]);
     });
 
-    it("inserts respiratory rate without rounding", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes respiratory rate without rounding", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierRespiratoryRate",
@@ -1261,7 +1546,10 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "respiratory_rate", scalar: 14.5 }),
+      ]);
     });
   });
 
@@ -1287,14 +1575,187 @@ describe("HealthKitSyncRepository", () => {
   });
 
   describe("processWorkouts", () => {
+    beforeEach(() => {
+      providerActivitySyncMocks.upsert.mockClear();
+      providerActivitySyncMocks.reconcile.mockClear();
+      providerActivitySyncMocks.lastScope = undefined;
+    });
+
     it("returns 0 for empty workouts", async () => {
       const { repository, execute } = makeRepository();
       const result = await repository.processWorkouts([]);
       expect(result).toBe(0);
       expect(execute).not.toHaveBeenCalled();
+      expect(providerActivitySyncMocks.upsert).not.toHaveBeenCalled();
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
     });
 
-    it("inserts workouts and links heart rate", async () => {
+    it("returns 0 for empty workouts without reconciling when explicit window options are provided", async () => {
+      const { repository } = makeRepository();
+      const result = await repository.processWorkouts([], {
+        windowStart: "2024-01-15T10:00:00Z",
+        windowEnd: "2024-01-15T11:00:00Z",
+      });
+      expect(result).toBe(0);
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("passes explicit workout window options to the shared processor", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-window",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts, {
+        windowStart: "2024-01-10T00:00:00Z",
+        windowEnd: "2024-01-20T00:00:00Z",
+      });
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-10T00:00:00Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-20T00:00:00Z"),
+      );
+    });
+
+    it("derives workout window bounds from workout timestamps when options are omitted", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-bounds-1",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+        {
+          uuid: "w-bounds-2",
+          workoutType: "13",
+          startDate: "2024-01-17T08:00:00Z",
+          endDate: "2024-01-17T09:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts);
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-15T10:00:00.000Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-17T09:00:00.000Z"),
+      );
+    });
+
+    it("derives missing windowEnd from workout timestamps when only windowStart is provided", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-partial-window",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts, {
+        windowStart: "2024-01-01T00:00:00Z",
+      });
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-01T00:00:00Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-15T11:00:00.000Z"),
+      );
+    });
+
+    it("throws when workout timestamps cannot derive bounds", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts([
+          {
+            uuid: "w-invalid",
+            workoutType: "35",
+            startDate: "invalid",
+            endDate: "invalid",
+            duration: 3600,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.Health",
+          },
+        ]),
+      ).rejects.toThrow("Cannot derive workout sync window from workout timestamps");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("throws when explicit workout sync window is invalid", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts(
+          [
+            {
+              uuid: "w-window",
+              workoutType: "35",
+              startDate: "2024-01-15T11:00:00Z",
+              endDate: "2024-01-15T12:00:00Z",
+              duration: 3600,
+              sourceName: "Apple Watch",
+              sourceBundle: "com.apple.Health",
+            },
+          ],
+          {
+            windowStart: "not-a-date",
+            windowEnd: "2024-01-15T12:00:00Z",
+          },
+        ),
+      ).rejects.toThrow("Invalid workout sync window");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("throws when explicit workout sync window ends before it starts", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts(
+          [
+            {
+              uuid: "w-window",
+              workoutType: "35",
+              startDate: "2024-01-15T10:00:00Z",
+              endDate: "2024-01-15T11:00:00Z",
+              duration: 3600,
+              sourceName: "Apple Watch",
+              sourceBundle: "com.apple.Health",
+            },
+          ],
+          {
+            windowStart: "2024-01-15T12:00:00Z",
+            windowEnd: "2024-01-15T10:00:00Z",
+          },
+        ),
+      ).rejects.toThrow("Invalid workout sync window");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("upserts workouts via shared processor without touching metric_stream", async () => {
       const { repository, execute } = makeRepository();
       const workouts = [
         {
@@ -1303,7 +1764,6 @@ describe("HealthKitSyncRepository", () => {
           startDate: "2024-01-15T10:00:00Z",
           endDate: "2024-01-15T11:00:00Z",
           duration: 3600,
-          totalEnergyBurned: 500,
           totalDistance: 10000,
           sourceName: "Apple Watch",
           sourceBundle: "com.apple.Health",
@@ -1311,8 +1771,9 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processWorkouts(workouts);
       expect(result).toBe(1);
-      // One insert for the workout + one update for linking heart-rate sensor rows.
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledTimes(1);
+      expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
     });
   });
 
@@ -1340,115 +1801,6 @@ describe("HealthKitSyncRepository", () => {
       const repository2 = new HealthKitSyncRepository(db, "user-1");
       const result = await repository2.processSleepSamples(samples);
       expect(result).toBe(1);
-    });
-  });
-
-  describe("linkUnassignedHeartRateToWorkouts", () => {
-    it("returns count of linked rows", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValue([
-          { recorded_at: "2024-01-15T10:30:00Z" },
-          { recorded_at: "2024-01-15T10:31:00Z" },
-        ]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      const result = await repository.linkUnassignedHeartRateToWorkouts({
-        startAt: "2024-01-15T10:00:00Z",
-        endAt: "2024-01-15T11:00:00Z",
-      });
-      expect(result).toBe(2);
-    });
-
-    it("returns 0 when no rows linked", async () => {
-      const { repository } = makeRepository();
-      const result = await repository.linkUnassignedHeartRateToWorkouts();
-      expect(result).toBe(0);
-    });
-
-    it("handles non-array return value gracefully", async () => {
-      const execute = vi.fn().mockResolvedValue(42);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      const result = await repository.linkUnassignedHeartRateToWorkouts();
-      // Non-array returns 0
-      expect(result).toBe(0);
-    });
-
-    it("includes startAt filter when bounds.startAt is provided", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      await repository.linkUnassignedHeartRateToWorkouts({
-        startAt: "2024-01-15T10:00:00Z",
-      });
-      expect(execute).toHaveBeenCalledTimes(1);
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("2024-01-15T10:00:00Z");
-    });
-
-    it("includes endAt filter when bounds.endAt is provided", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      await repository.linkUnassignedHeartRateToWorkouts({
-        endAt: "2024-01-15T11:00:00Z",
-      });
-      expect(execute).toHaveBeenCalledTimes(1);
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("2024-01-15T11:00:00Z");
-    });
-
-    it("works with both startAt and endAt bounds", async () => {
-      const execute = vi.fn().mockResolvedValue([{ recorded_at: "2024-01-15T10:30:00Z" }]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      const result = await repository.linkUnassignedHeartRateToWorkouts({
-        startAt: "2024-01-15T10:00:00Z",
-        endAt: "2024-01-15T11:00:00Z",
-      });
-      expect(result).toBe(1);
-    });
-  });
-
-  describe("aggregateSpO2ToDailyMetrics", () => {
-    it("executes the aggregation query", async () => {
-      const { repository, execute } = makeRepository();
-      await repository.aggregateSpO2ToDailyMetrics(
-        { startAt: "2024-01-15T00:00:00Z", endAt: "2024-01-15T23:59:59Z" },
-        "America/New_York",
-      );
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("aggregateSkinTempToDailyMetrics", () => {
-    it("executes the aggregation query", async () => {
-      const { repository, execute } = makeRepository();
-      await repository.aggregateSkinTempToDailyMetrics(
-        { startAt: "2024-01-15T00:00:00Z", endAt: "2024-01-15T23:59:59Z" },
-        "UTC",
-      );
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("refreshDailyMetricsView", () => {
-    it("refreshes materialized view concurrently", async () => {
-      const { repository, execute } = makeRepository();
-      await repository.refreshDailyMetricsView();
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-
-    it("falls back to non-concurrent refresh on error", async () => {
-      const execute = vi
-        .fn()
-        .mockRejectedValueOnce(new Error("concurrent refresh not possible"))
-        .mockResolvedValueOnce([]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      await repository.refreshDailyMetricsView();
-      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 });
@@ -1526,11 +1878,9 @@ describe("categorize (mutation-killing: priority order)", () => {
   });
 
   it("returns additiveDailyMetric for all additive types", () => {
-    expect(categorize("HKQuantityTypeIdentifierBasalEnergyBurned")).toBe("additiveDailyMetric");
     expect(categorize("HKQuantityTypeIdentifierDistanceWalkingRunning")).toBe(
       "additiveDailyMetric",
     );
-    expect(categorize("HKQuantityTypeIdentifierDistanceCycling")).toBe("additiveDailyMetric");
     expect(categorize("HKQuantityTypeIdentifierFlightsClimbed")).toBe("additiveDailyMetric");
     expect(categorize("HKQuantityTypeIdentifierAppleExerciseTime")).toBe("additiveDailyMetric");
   });
@@ -1588,20 +1938,6 @@ describe("aggregateDailyMetricSamples (mutation-killing: transforms)", () => {
     expect(accumulator?.distanceKm).toBe(5.0);
   });
 
-  it("cycling distance transform divides by 1000", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 7500,
-        uuid: "cd1",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    // 7500 / 1000 = 7.5
-    expect(accumulator?.cyclingDistanceKm).toBe(7.5);
-  });
-
   it("uses compound key with null separator (date\\0source)", () => {
     const samples = [
       makeSample({
@@ -1657,9 +1993,9 @@ describe("aggregateDailyMetricSamples (mutation-killing: transforms)", () => {
     // Should still create an accumulator but with all defaults
     const accumulator = result.get("2024-01-15\0iPhone");
     if (accumulator) {
-      expect(accumulator.steps).toBe(0);
-      expect(accumulator.restingHr).toBeNull();
-      expect(accumulator.vo2max).toBeNull();
+      expect(accumulator.steps).toBeNull();
+      expect(Object.hasOwn(accumulator, "restingHr")).toBe(false);
+      expect(Object.hasOwn(accumulator, "vo2max")).toBe(false);
     }
   });
 });
@@ -1829,9 +2165,14 @@ describe("deriveSleepSessionsFromStages (mutation-killing)", () => {
 });
 
 describe("HealthKitSyncRepository.processBodyMeasurements (mutation: body fat transform)", () => {
-  it("body fat percentage transform multiplies by 100 (not 10, 1000, or divides)", () => {
+  it("body fat percentage transform multiplies by 100 (not 10, 1000, or divides)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const publisher = makeMetricStreamPublisher();
+    const repo = new HealthKitSyncRepository(
+      makeTransactionalTestDatabase({ execute }),
+      "user-1",
+      publisher,
+    );
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -1844,17 +2185,18 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: body fat tr
         uuid: "bf-transform",
       },
     ];
-    repo.processBodyMeasurements(samples);
+    await repo.processBodyMeasurements(samples);
     // 0.22 * 100 = 22, not 2.2 or 220
-    const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-    expect(queryJson).toContain("22");
+    expect(getPublishedRows(publisher)).toEqual([
+      expect.objectContaining({ channel: "body_fat_percentage", scalar: 22 }),
+    ]);
   });
 });
 
 describe("HealthKitSyncRepository.processWorkouts (mutation: workout count)", () => {
   it("returns the count of workouts processed, not 0 or samples.length-1", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const workouts = [
       {
         uuid: "w-count-1",
@@ -1883,7 +2225,7 @@ describe("HealthKitSyncRepository.processWorkouts (mutation: workout count)", ()
 describe("HealthKitSyncRepository.processHealthEvents (mutation: event count)", () => {
   it("returns count matching input length", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierSomething",
@@ -1915,7 +2257,12 @@ describe("HealthKitSyncRepository.processHealthEvents (mutation: event count)", 
 describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)", () => {
   it("only counts samples with valid metric stream mapping", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const publisher = makeMetricStreamPublisher();
+    const repo = new HealthKitSyncRepository(
+      makeTransactionalTestDatabase({ execute }),
+      "user-1",
+      publisher,
+    );
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierHeartRate",
@@ -1949,23 +2296,26 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
       },
     ];
     const result = await repo.processMetricStream(samples);
-    // Only 2 have valid metricStream mapping (HR and SpO2), steps is skipped
     expect(result).toBe(2);
-    // 2 metric_stream inserts (one per mapped sample)
     expect(execute).toHaveBeenCalledTimes(2);
+    expect(getPublishedRows(publisher)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
+        expect.objectContaining({ channel: "spo2", scalar: 0.98 }),
+      ]),
+    );
   });
 });
 
 describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 guard)", () => {
-  it("skips additive fields with value 0 (only inserts when > 0)", async () => {
+  it("does not write absent additive fields when point-in-time values are present", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
-    // A point-in-time metric with value — should still insert even though steps=0
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 60,
-        unit: "count/min",
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.3,
+        unit: "m/s",
         startDate: "2024-01-15T10:00:00Z",
         endDate: "2024-01-15T10:00:00Z",
         sourceName: "iPhone",
@@ -1976,12 +2326,14 @@ describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 gu
     const result = await repo.processDailyMetrics(samples);
     expect(result).toBe(1);
     expect(execute).toHaveBeenCalledTimes(1);
+    const serialized = JSON.stringify(execute.mock.calls[0]?.[0]);
+    expect(serialized).not.toContain("steps");
+    expect(serialized).toContain("walking_speed");
   });
 
-  it("skips upsert when only zero-value additive fields and no point-in-time fields", async () => {
+  it("writes zero-value additive fields when a zero sample is present", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
-    // StepCount with value 0 — additive sum is 0, not > 0, so no set clause
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierStepCount",
@@ -1996,15 +2348,15 @@ describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 gu
     ];
     const result = await repo.processDailyMetrics(samples);
     expect(result).toBe(1);
-    // setClauses would be empty, so the upsert is skipped
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("steps");
   });
 });
 
 describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs derived inBed)", () => {
   it("uses explicit inBed samples when present (not deriveSleepSessionsFromStages)", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-explicit",
@@ -2027,7 +2379,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("falls back to deriveSleepSessionsFromStages when no explicit inBed", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "stage-only-1",
@@ -2044,7 +2396,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("calculates duration in minutes from session start/end", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "dur-test",
@@ -2063,9 +2415,37 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
     expect(insertCall).toContain("480");
   });
 
+  it.each([
+    ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00", [-480, -420, "device_offset"]],
+    ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00", [null, null, "unknown"]],
+  ])("stores record-local sleep context for %s to %s", async (startDate, endDate, expectedContext) => {
+    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
+    const samples: SleepSample[] = [
+      {
+        uuid: "sleep-local-time",
+        startDate,
+        endDate,
+        value: "inBed",
+        sourceName: "Watch",
+      },
+    ];
+
+    await repo.processSleepSamples(samples);
+
+    const sleepCall = execute.mock.calls.find((call) => {
+      const serialized = JSON.stringify(call[0]);
+      return serialized.includes("sleep_session") && serialized.includes("INSERT");
+    });
+    const serialized = JSON.stringify(sleepCall?.[0]);
+    for (const expected of expectedContext) {
+      expect(serialized).toContain(JSON.stringify(expected));
+    }
+  });
+
   it("filters out unmappable stage values from sleep_stage insert", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-filter",
@@ -2101,7 +2481,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("skips sleep_stage insert when all stages are unmappable", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-novalid",
@@ -2129,7 +2509,7 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
 
   it("inserts multiple sources as separate sleep session rows", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
     const samples: SleepSample[] = [
       {
         uuid: "inbed-multi",
@@ -2353,7 +2733,12 @@ describe("aggregateDailyMetricSamples (mutation: HRV special path)", () => {
 describe("HealthKitSyncRepository.processBodyMeasurements (mutation: batching)", () => {
   it("processes more than BATCH_SIZE samples correctly", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const publisher = makeMetricStreamPublisher();
+    const repo = new HealthKitSyncRepository(
+      makeTransactionalTestDatabase({ execute }),
+      "user-1",
+      publisher,
+    );
     // BATCH_SIZE is 500, create 501 samples
     const samples: HealthKitSample[] = Array.from({ length: 501 }, (_, index) => ({
       type: "HKQuantityTypeIdentifierBodyMass",
@@ -2367,7 +2752,10 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: batching)",
     }));
     const result = await repo.processBodyMeasurements(samples);
     expect(result).toBe(501);
-    expect(execute).toHaveBeenCalledTimes(501);
+    expect(execute).toHaveBeenCalledTimes(4);
+    expect(publisher.publishRows).toHaveBeenCalledTimes(2);
+    expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(500);
+    expect(publisher.publishRows.mock.calls[1]?.[0]).toHaveLength(1);
   });
 });
 

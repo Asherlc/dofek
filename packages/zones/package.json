@@ -1,9 +1,56 @@
 {
   "name": "@dofek/zones",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.12",
+  "description": "Heart-rate and cycling-power zone calculations and classification",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/zones"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/zones#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "heart-rate",
+    "power",
+    "cycling",
+    "training-zones",
+    "fitness"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
+    ".": "./src/zones.ts",
     "./zones": "./src/zones.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/zones.d.ts",
+        "import": "./dist/zones.js"
+      },
+      "./zones": {
+        "types": "./dist/zones.d.ts",
+        "import": "./dist/zones.js"
+      }
+    }
+  },
+  "dependencies": {
+    "@dofek/scoring": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit"
   }
 }

@@ -1,26 +1,39 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
-import type { SyncDatabase } from "../../db/index.ts";
+import type { Database, SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
+  writeMetricStreamBatchForScope,
 } from "../../db/metric-stream-writer.ts";
-import {
-  activity,
-  bodyMeasurement,
-  dailyMetrics,
-  healthEvent,
-  labResult,
-  nutritionDaily,
-  sleepSession,
-  sleepStage,
-} from "../../db/schema.ts";
+import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
+import { healthEvent, labResult } from "../../db/schema/clinical.ts";
+import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
-import type { HealthWorkout } from "./workouts.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
+
+type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
+  return "transaction" in db && typeof db.transaction === "function";
+}
+
+function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
+  if (!hasTransaction(db)) {
+    throw new Error("Apple Health workout upsert requires a transactional database");
+  }
+  return db;
+}
 
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
@@ -56,7 +69,7 @@ export async function insertWithDuplicateDiag<T extends Record<string, unknown>>
   await doInsert(uniqueRows);
 }
 
-// Records that map to metric_stream (granular time-series)
+// Records that map to metric stream channels (granular time-series)
 export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierHeartRate: "heartRate",
   HKQuantityTypeIdentifierOxygenSaturation: "spo2",
@@ -68,7 +81,7 @@ export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierElectrodermalActivity: "electrodermalActivity",
 };
 
-// Records that map to body_measurement
+// Records that map to metric stream body channels.
 export const BODY_MEASUREMENT_TYPES = new Set([
   "HKQuantityTypeIdentifierBodyMass",
   "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -84,14 +97,9 @@ export const BODY_MEASUREMENT_TYPES = new Set([
 // Records that map to daily_metrics (one value per day)
 // Additive types get summed; point-in-time types keep latest value
 export const DAILY_METRIC_TYPES = new Set([
-  "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-  "HKQuantityTypeIdentifierVO2Max",
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierDistanceCycling",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
   "HKQuantityTypeIdentifierAppleStandTime",
@@ -106,13 +114,18 @@ export const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierUVExposure",
 ]);
 
+// Provider-computed summaries that are derived from raw streams server-side.
+export const IGNORED_PROVIDER_DERIVED_TYPES = new Set([
+  "HKQuantityTypeIdentifierActiveEnergyBurned",
+  "HKQuantityTypeIdentifierBasalEnergyBurned",
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierVO2Max",
+]);
+
 // Additive daily metrics (summed across all records in a day)
 const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierDistanceCycling",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
   "HKQuantityTypeIdentifierAppleStandTime",
@@ -120,7 +133,7 @@ const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierDistanceWheelchair",
 ]);
 
-// Nutrition records -> nutritionDaily (aggregate by day)
+// Nutrition records -> foodEntry + foodEntryNutrient rows.
 export const NUTRITION_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierDietaryEnergyConsumed: "calories",
   HKQuantityTypeIdentifierDietaryProtein: "proteinG",
@@ -147,6 +160,7 @@ export const ALL_ROUTED_TYPES = new Set([
   ...Object.keys(METRIC_STREAM_TYPES),
   ...BODY_MEASUREMENT_TYPES,
   ...DAILY_METRIC_TYPES,
+  ...IGNORED_PROVIDER_DERIVED_TYPES,
   ...Object.keys(NUTRITION_TYPES),
   "HKCategoryTypeIdentifierSleepAnalysis", // handled separately in SAX parser
 ]);
@@ -161,6 +175,8 @@ export async function upsertMetricStreamBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  replacementScope?: MetricStreamDeleteScopeInput,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   const rows: MetricStreamSourceRow[] = [];
   for (const record of records) {
@@ -198,8 +214,11 @@ export async function upsertMetricStreamBatch(
     }
   }
 
-  // Metric rows now write directly to metric_stream.
-  await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE);
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(db, replacementScope, rows, SOURCE_TYPE_FILE, publisher);
+  } else {
+    await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE, undefined, publisher);
+  }
   return rows.length;
 }
 
@@ -207,6 +226,8 @@ export async function upsertBodyMeasurementBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  replacementScope?: MetricStreamDeleteScopeInput,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Group by timestamp to combine BP systolic + diastolic into one row
   const byTime = new Map<string, HealthRecord[]>();
@@ -218,12 +239,12 @@ export async function upsertBodyMeasurementBatch(
     byTime.set(key, group);
   }
 
-  const rows: (typeof bodyMeasurement.$inferInsert)[] = [];
+  const rows: MetricStreamSourceRow[] = [];
   for (const [, group] of byTime) {
     const first = group[0];
     if (!first) continue;
     const externalId = `ah:body:${first.startDate.toISOString()}`;
-    const row: typeof bodyMeasurement.$inferInsert = {
+    const row: MetricStreamSourceRow = {
       providerId,
       externalId,
       recordedAt: first.startDate,
@@ -265,47 +286,22 @@ export async function upsertBodyMeasurementBatch(
   // from multiple sources (Apple Watch + iPhone) with the same timestamp.
   // PostgreSQL rejects ON CONFLICT DO UPDATE when the same row appears twice
   // in a single INSERT statement.
-  const dedupMap = new Map<string, typeof bodyMeasurement.$inferInsert>();
+  const dedupMap = new Map<string, MetricStreamSourceRow>();
   for (const row of rows) {
     if (row.externalId) dedupMap.set(row.externalId, row);
   }
   const uniqueRows = [...dedupMap.values()];
 
-  // Multi-row upsert with COALESCE to preserve existing non-null values
-  for (let i = 0; i < uniqueRows.length; i += 500) {
-    const batch = uniqueRows.slice(i, i + 500);
-    await insertWithDuplicateDiag(
-      "body_measurement",
-      (row) => `${row.providerId}:${row.externalId}`,
-      batch,
-      (b) =>
-        db
-          .insert(bodyMeasurement)
-          .values(b)
-          .onConflictDoUpdate({
-            target: [
-              bodyMeasurement.userId,
-              bodyMeasurement.providerId,
-              bodyMeasurement.externalId,
-            ],
-            set: {
-              recordedAt: sql`excluded.recorded_at`,
-              weightKg: sql`coalesce(excluded.weight_kg, ${bodyMeasurement.weightKg})`,
-              bodyFatPct: sql`coalesce(excluded.body_fat_pct, ${bodyMeasurement.bodyFatPct})`,
-              muscleMassKg: sql`coalesce(excluded.muscle_mass_kg, ${bodyMeasurement.muscleMassKg})`,
-              boneMassKg: sql`coalesce(excluded.bone_mass_kg, ${bodyMeasurement.boneMassKg})`,
-              waterPct: sql`coalesce(excluded.water_pct, ${bodyMeasurement.waterPct})`,
-              bmi: sql`coalesce(excluded.bmi, ${bodyMeasurement.bmi})`,
-              heightCm: sql`coalesce(excluded.height_cm, ${bodyMeasurement.heightCm})`,
-              waistCircumferenceCm: sql`coalesce(excluded.waist_circumference_cm, ${bodyMeasurement.waistCircumferenceCm})`,
-              systolicBp: sql`coalesce(excluded.systolic_bp, ${bodyMeasurement.systolicBp})`,
-              diastolicBp: sql`coalesce(excluded.diastolic_bp, ${bodyMeasurement.diastolicBp})`,
-              heartPulse: sql`coalesce(excluded.heart_pulse, ${bodyMeasurement.heartPulse})`,
-              temperatureC: sql`coalesce(excluded.temperature_c, ${bodyMeasurement.temperatureC})`,
-              sourceName: sql`coalesce(excluded.source_name, ${bodyMeasurement.sourceName})`,
-            },
-          }),
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(
+      db,
+      replacementScope,
+      uniqueRows,
+      SOURCE_TYPE_FILE,
+      publisher,
     );
+  } else {
+    await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE, undefined, publisher);
   }
   return uniqueRows.length;
 }
@@ -367,29 +363,14 @@ export async function upsertDailyMetricsBatch(
 
     for (const [type, value] of metrics) {
       switch (type) {
-        case "HKQuantityTypeIdentifierRestingHeartRate":
-          row.restingHr = Math.round(value);
-          break;
         case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
           row.hrv = value;
-          break;
-        case "HKQuantityTypeIdentifierVO2Max":
-          row.vo2max = value;
           break;
         case "HKQuantityTypeIdentifierStepCount":
           row.steps = Math.round(value);
           break;
-        case "HKQuantityTypeIdentifierActiveEnergyBurned":
-          row.activeEnergyKcal = value;
-          break;
-        case "HKQuantityTypeIdentifierBasalEnergyBurned":
-          row.basalEnergyKcal = value;
-          break;
         case "HKQuantityTypeIdentifierDistanceWalkingRunning":
           row.distanceKm = value / 1000;
-          break;
-        case "HKQuantityTypeIdentifierDistanceCycling":
-          row.cyclingDistanceKm = value / 1000;
           break;
         case "HKQuantityTypeIdentifierFlightsClimbed":
           row.flightsClimbed = Math.round(value);
@@ -453,9 +434,7 @@ export async function upsertDailyMetricsBatch(
             ],
             set: {
               // Point-in-time metrics: prefer new value, fall back to existing
-              restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
               hrv: sql`coalesce(excluded.hrv, ${dailyMetrics.hrv})`,
-              vo2max: sql`coalesce(excluded.vo2max, ${dailyMetrics.vo2max})`,
               spo2Avg: sql`coalesce(excluded.spo2_avg, ${dailyMetrics.spo2Avg})`,
               respiratoryRateAvg: sql`coalesce(excluded.respiratory_rate_avg, ${dailyMetrics.respiratoryRateAvg})`,
               walkingSpeed: sql`coalesce(excluded.walking_speed, ${dailyMetrics.walkingSpeed})`,
@@ -466,10 +445,7 @@ export async function upsertDailyMetricsBatch(
               skinTempC: sql`coalesce(excluded.skin_temp_c, ${dailyMetrics.skinTempC})`,
               // Additive metrics: accumulate across batches (import.ts clears before import)
               steps: sql`coalesce(${dailyMetrics.steps}, 0) + coalesce(excluded.steps, 0)`,
-              activeEnergyKcal: sql`coalesce(${dailyMetrics.activeEnergyKcal}, 0) + coalesce(excluded.active_energy_kcal, 0)`,
-              basalEnergyKcal: sql`coalesce(${dailyMetrics.basalEnergyKcal}, 0) + coalesce(excluded.basal_energy_kcal, 0)`,
               distanceKm: sql`coalesce(${dailyMetrics.distanceKm}, 0) + coalesce(excluded.distance_km, 0)`,
-              cyclingDistanceKm: sql`coalesce(${dailyMetrics.cyclingDistanceKm}, 0) + coalesce(excluded.cycling_distance_km, 0)`,
               flightsClimbed: sql`coalesce(${dailyMetrics.flightsClimbed}, 0) + coalesce(excluded.flights_climbed, 0)`,
               exerciseMinutes: sql`coalesce(${dailyMetrics.exerciseMinutes}, 0) + coalesce(excluded.exercise_minutes, 0)`,
               standHours: sql`coalesce(${dailyMetrics.standHours}, 0) + coalesce(excluded.stand_hours, 0)`,
@@ -484,62 +460,104 @@ export async function upsertDailyMetricsBatch(
   return insertRows.length;
 }
 
+async function aggregateMetricRecordsToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  records: readonly HealthRecord[],
+  type: string,
+  column: "skinTempC" | "spo2Avg",
+  valueScale: number,
+): Promise<void> {
+  const userId = getTokenUserId();
+  if (!userId) {
+    throw new Error("apple-health import requires user context");
+  }
+  const groupedRecords = new Map<
+    string,
+    { date: string; total: number; count: number; sourceName: string }
+  >();
+
+  for (const record of records) {
+    if (record.type !== type) continue;
+    const date = dateToString(record.startDate);
+    const sourceName = record.sourceName ?? "unknown";
+    const key = `${date}\0${sourceName}`;
+    const grouped = groupedRecords.get(key) ?? {
+      date,
+      total: 0,
+      count: 0,
+      sourceName,
+    };
+    grouped.total += record.value * valueScale;
+    grouped.count++;
+    groupedRecords.set(key, grouped);
+  }
+
+  const rows = [...groupedRecords.values()].map((grouped) => ({
+    date: grouped.date,
+    providerId,
+    userId,
+    sourceName: grouped.sourceName,
+    [column]: grouped.total / grouped.count,
+  }));
+  if (rows.length === 0) return;
+
+  const set =
+    column === "spo2Avg"
+      ? { spo2Avg: sql`EXCLUDED.spo2_avg` }
+      : { skinTempC: sql`EXCLUDED.skin_temp_c` };
+
+  await db
+    .insert(dailyMetrics)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [
+        dailyMetrics.userId,
+        dailyMetrics.date,
+        dailyMetrics.providerId,
+        dailyMetrics.sourceName,
+      ],
+      set,
+    });
+}
+
 /**
- * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
- * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
- * the daily average to a percentage (0-100) for consistency with other providers
- * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
+ * Aggregate SpO2 readings from Apple Health metric records into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1); this converts the daily average
+ * to a percentage (0-100) for consistency with providers that report SpO2 as a percentage.
  */
 export async function aggregateSpO2ToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
-  since: Date,
+  records: readonly HealthRecord[],
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
-        SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) * 100 AS spo2_avg
-        FROM fitness.metric_stream
-        WHERE provider_id = ${providerId}
-          AND channel = 'spo2'
-          AND scalar IS NOT NULL
-          AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          spo2_avg = EXCLUDED.spo2_avg`,
+  await aggregateMetricRecordsToDailyMetrics(
+    db,
+    providerId,
+    records,
+    "HKQuantityTypeIdentifierOxygenSaturation",
+    "spo2Avg",
+    100,
   );
 }
 
 /**
- * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Aggregate wrist temperature readings from Apple Health metric records into daily_metrics.skin_temp_c.
  * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
  * average and stores it alongside other daily metrics.
  */
 export async function aggregateSkinTempToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
-  since: Date,
+  records: readonly HealthRecord[],
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
-        SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) AS skin_temp_c
-        FROM fitness.metric_stream
-        WHERE provider_id = ${providerId}
-          AND channel = 'skin_temperature'
-          AND scalar IS NOT NULL
-          AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          skin_temp_c = EXCLUDED.skin_temp_c`,
+  await aggregateMetricRecordsToDailyMetrics(
+    db,
+    providerId,
+    records,
+    "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+    "skinTempC",
+    1,
   );
 }
 
@@ -548,124 +566,84 @@ export async function upsertNutritionBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  // Aggregate nutrition by date
-  const byDate = new Map<string, Map<string, number>>();
+  let count = 0;
   for (const r of records) {
     const field = NUTRITION_TYPES[r.type];
     if (!field) continue;
     const dateKey = r.startDateCalendarDay ?? dateToString(r.startDate);
-    if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
-    const day = byDate.get(dateKey) ?? new Map();
-    day.set(field, (day.get(field) ?? 0) + r.value);
-  }
-
-  const rows: { row: typeof nutritionDaily.$inferInsert }[] = [];
-  for (const [dateKey, nutrients] of byDate) {
-    const row: typeof nutritionDaily.$inferInsert = {
-      date: dateKey,
-      providerId,
+    const externalId = [
+      "ah",
+      "nutrition",
+      r.type,
+      r.sourceName ?? "unknown-source",
+      r.startDate.toISOString(),
+      r.endDate.toISOString(),
+    ].join(":");
+    const raw = {
+      type: r.type,
+      unit: r.unit,
+      value: r.value,
+      sourceName: r.sourceName,
+      startDate: r.startDate.toISOString(),
+      endDate: r.endDate.toISOString(),
+      creationDate: r.creationDate?.toISOString(),
     };
+    const foodRows = await db
+      .insert(foodEntry)
+      .values([
+        {
+          providerId,
+          externalId,
+          date: dateKey,
+          nutritionGrain: "daily_aggregate",
+          foodName: null,
+          sourceName: r.sourceName,
+          loggedAt: r.creationDate ?? r.startDate,
+          startedAt: r.startDate,
+          endedAt: r.endDate,
+          raw,
+          confirmed: true,
+        },
+      ])
+      .onConflictDoUpdate({
+        target: [foodEntry.userId, foodEntry.providerId, foodEntry.externalId],
+        set: {
+          date: dateKey,
+          nutritionGrain: "daily_aggregate",
+          foodName: null,
+          sourceName: r.sourceName,
+          loggedAt: r.creationDate ?? r.startDate,
+          startedAt: r.startDate,
+          endedAt: r.endDate,
+          raw,
+          confirmed: true,
+        },
+      })
+      .returning({ id: foodEntry.id });
+    const foodEntryId = foodRows[0]?.id;
+    if (!foodEntryId) continue;
 
-    for (const [field, value] of nutrients) {
-      switch (field) {
-        case "calories":
-          row.calories = Math.round(value);
-          break;
-        case "waterMl":
-          row.waterMl = Math.round(value);
-          break;
-        case "proteinG":
-          row.proteinG = value;
-          break;
-        case "carbsG":
-          row.carbsG = value;
-          break;
-        case "fatG":
-          row.fatG = value;
-          break;
-        case "fiberG":
-          row.fiberG = value;
-          break;
-        case "sodiumMg":
-          row.sodiumMg = value;
-          break;
-        case "sugarG":
-          row.sugarG = value;
-          break;
-        case "cholesterolMg":
-          row.cholesterolMg = value;
-          break;
-        case "saturatedFatG":
-          row.saturatedFatG = value;
-          break;
-        case "potassiumMg":
-          row.potassiumMg = value;
-          break;
-        case "vitaminAMcg":
-          row.vitaminAMcg = value;
-          break;
-        case "vitaminCMg":
-          row.vitaminCMg = value;
-          break;
-        case "vitaminDMcg":
-          row.vitaminDMcg = value;
-          break;
-        case "calciumMg":
-          row.calciumMg = value;
-          break;
-        case "ironMg":
-          row.ironMg = value;
-          break;
-        case "magnesiumMg":
-          row.magnesiumMg = value;
-          break;
-        case "zincMg":
-          row.zincMg = value;
-          break;
-      }
-    }
-    rows.push({ row });
-  }
+    const nutrientId = NUTRIENT_ID_MAP[field];
+    if (!nutrientId) continue;
 
-  // Multi-row upsert with COALESCE to preserve existing non-null values
-  const insertRows = rows.map(({ row }) => row);
-  for (let i = 0; i < insertRows.length; i += 500) {
-    const batch = insertRows.slice(i, i + 500);
-    await insertWithDuplicateDiag(
-      "nutrition_daily",
-      (row) => `${row.date}:${row.providerId}`,
-      batch,
-      (b) =>
-        db
-          .insert(nutritionDaily)
-          .values(b)
-          .onConflictDoUpdate({
-            target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
-            set: {
-              // Nutrition is always additive (import.ts clears before import)
-              calories: sql`coalesce(${nutritionDaily.calories}, 0) + coalesce(excluded.calories, 0)`,
-              proteinG: sql`coalesce(${nutritionDaily.proteinG}, 0) + coalesce(excluded.protein_g, 0)`,
-              carbsG: sql`coalesce(${nutritionDaily.carbsG}, 0) + coalesce(excluded.carbs_g, 0)`,
-              fatG: sql`coalesce(${nutritionDaily.fatG}, 0) + coalesce(excluded.fat_g, 0)`,
-              fiberG: sql`coalesce(${nutritionDaily.fiberG}, 0) + coalesce(excluded.fiber_g, 0)`,
-              waterMl: sql`coalesce(${nutritionDaily.waterMl}, 0) + coalesce(excluded.water_ml, 0)`,
-              sodiumMg: sql`coalesce(${nutritionDaily.sodiumMg}, 0) + coalesce(excluded.sodium_mg, 0)`,
-              sugarG: sql`coalesce(${nutritionDaily.sugarG}, 0) + coalesce(excluded.sugar_g, 0)`,
-              cholesterolMg: sql`coalesce(${nutritionDaily.cholesterolMg}, 0) + coalesce(excluded.cholesterol_mg, 0)`,
-              saturatedFatG: sql`coalesce(${nutritionDaily.saturatedFatG}, 0) + coalesce(excluded.saturated_fat_g, 0)`,
-              potassiumMg: sql`coalesce(${nutritionDaily.potassiumMg}, 0) + coalesce(excluded.potassium_mg, 0)`,
-              vitaminAMcg: sql`coalesce(${nutritionDaily.vitaminAMcg}, 0) + coalesce(excluded.vitamin_a_mcg, 0)`,
-              vitaminCMg: sql`coalesce(${nutritionDaily.vitaminCMg}, 0) + coalesce(excluded.vitamin_c_mg, 0)`,
-              vitaminDMcg: sql`coalesce(${nutritionDaily.vitaminDMcg}, 0) + coalesce(excluded.vitamin_d_mcg, 0)`,
-              calciumMg: sql`coalesce(${nutritionDaily.calciumMg}, 0) + coalesce(excluded.calcium_mg, 0)`,
-              ironMg: sql`coalesce(${nutritionDaily.ironMg}, 0) + coalesce(excluded.iron_mg, 0)`,
-              magnesiumMg: sql`coalesce(${nutritionDaily.magnesiumMg}, 0) + coalesce(excluded.magnesium_mg, 0)`,
-              zincMg: sql`coalesce(${nutritionDaily.zincMg}, 0) + coalesce(excluded.zinc_mg, 0)`,
-            },
-          }),
-    );
+    await db
+      .insert(foodEntryNutrient)
+      .values([
+        {
+          foodEntryId,
+          nutrientId,
+          amount: field === "calories" || field === "waterMl" ? Math.round(r.value) : r.value,
+        },
+      ])
+      .onConflictDoUpdate({
+        target: [foodEntryNutrient.foodEntryId, foodEntryNutrient.nutrientId],
+        set: {
+          amount: sql`excluded.amount`,
+        },
+      });
+    count++;
   }
-  return insertRows.length;
+  return count;
 }
 
 export async function upsertHealthEventBatch(
@@ -701,55 +679,12 @@ export async function upsertHealthEventBatch(
   return rows.length;
 }
 
-export async function linkUnassignedHeartRateToActivities(
-  db: SyncDatabase,
-  providerId: string,
-  bounds?: { startAt?: Date; endAt?: Date },
-): Promise<number> {
-  const filters = [
-    sql`ss.provider_id = ${providerId}`,
-    sql`ss.activity_id IS NULL`,
-    sql`ss.channel = 'heart_rate'`,
-    sql`ss.scalar IS NOT NULL`,
-  ];
-  if (bounds?.startAt) {
-    filters.push(sql`ss.recorded_at >= ${bounds.startAt.toISOString()}::timestamptz`);
-  }
-  if (bounds?.endAt) {
-    filters.push(sql`ss.recorded_at <= ${bounds.endAt.toISOString()}::timestamptz`);
-  }
-
-  const linkedRows = await db.execute(
-    sql`UPDATE fitness.metric_stream ss
-        SET activity_id = (
-          SELECT a.id
-          FROM fitness.activity a
-          WHERE a.provider_id = ${providerId}
-            AND a.user_id = ss.user_id
-            AND ss.recorded_at >= a.started_at
-            AND ss.recorded_at <= a.ended_at
-          ORDER BY a.started_at DESC
-          LIMIT 1
-        )
-        WHERE ${sql.join(filters, sql` AND `)}
-          AND EXISTS (
-            SELECT 1
-            FROM fitness.activity a
-            WHERE a.provider_id = ${providerId}
-              AND a.user_id = ss.user_id
-              AND ss.recorded_at >= a.started_at
-              AND ss.recorded_at <= a.ended_at
-          )
-        RETURNING ss.recorded_at`,
-  );
-
-  return Array.isArray(linkedRows) ? linkedRows.length : 0;
-}
-
 export async function upsertWorkoutBatch(
   db: SyncDatabase,
   providerId: string,
   workouts: HealthWorkout[],
+  replacementScope?: MetricStreamDeleteScopeInput,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Deduplicate by externalId — Apple Health can export duplicate workouts
   // from multiple sources (Apple Watch + iPhone) with the same start time.
@@ -757,55 +692,51 @@ export async function upsertWorkoutBatch(
   // in a single INSERT statement.
   const dedupMap = new Map<string, HealthWorkout>();
   for (const w of workouts) {
-    dedupMap.set(`ah:workout:${w.startDate.toISOString()}`, w);
+    dedupMap.set(workoutExternalId(w), w);
   }
   const uniqueWorkouts = [...dedupMap.values()];
 
-  // Multi-row upsert with RETURNING to get all activity IDs in one statement
-  const activityResults: { activityId: string; workout: HealthWorkout }[] = [];
+  const transactionalDb = requireTransactionalDatabase(db);
+  // Keep activity metadata and Hang Ten intervals in the same transaction so a
+  // failed replacement cannot leave the activity row ahead of its intervals.
+  const activityResults = await transactionalDb.transaction(async (transactionDb) => {
+    const results: { activityId: string; workout: HealthWorkout }[] = [];
 
-  for (let i = 0; i < uniqueWorkouts.length; i += 500) {
-    const batch = uniqueWorkouts.slice(i, i + 500);
-    const insertRows = batch.map((w) => {
-      const raw: Record<string, number> = { durationSeconds: w.durationSeconds };
-      if (w.distanceMeters !== undefined) raw.distanceMeters = w.distanceMeters;
-      if (w.calories !== undefined) raw.calories = w.calories;
-      if (w.avgHeartRate !== undefined) raw.avgHeartRate = w.avgHeartRate;
-      if (w.maxHeartRate !== undefined) raw.maxHeartRate = w.maxHeartRate;
-      return {
+    for (const workout of uniqueWorkouts) {
+      const values = {
         providerId,
-        externalId: `ah:workout:${w.startDate.toISOString()}`,
-        activityType: w.activityType,
-        startedAt: w.startDate,
-        endedAt: w.endDate,
-        name: w.activityType,
-        sourceName: w.sourceName,
-        raw,
+        externalId: workoutExternalId(workout),
+        activityType: workout.activityType,
+        startedAt: workout.startDate,
+        endedAt: workout.endDate,
+        name: workoutName(workout),
+        sourceName: workout.sourceName,
+        raw: workoutRawPayload(workout),
       };
-    });
 
-    const returned = await db
-      .insert(activity)
-      .values(insertRows)
-      .onConflictDoUpdate({
-        target: [activity.userId, activity.providerId, activity.externalId],
-        set: {
-          activityType: sql`excluded.activity_type`,
-          endedAt: sql`excluded.ended_at`,
-          sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-          raw: sql`excluded.raw`,
-        },
-      })
-      .returning({ id: activity.id });
+      const returned = await upsertProviderActivity(transactionDb, values, {
+        activityType: values.activityType,
+        startedAt: values.startedAt,
+        endedAt: values.endedAt,
+        name: sql`CASE
+            WHEN excluded.canonical_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
+              THEN excluded.name
+            ELSE ${activity.name}
+          END`,
+        sourceName: values.sourceName,
+        raw: values.raw,
+      });
 
-    for (let j = 0; j < returned.length; j++) {
-      const ret = returned[j];
-      const work = batch[j];
-      if (ret && work) {
-        activityResults.push({ activityId: ret.id, workout: work });
+      if (returned) {
+        results.push({ activityId: returned.id, workout });
+        if (workout.hangTen) {
+          await replaceHangTenIntervals(transactionDb, returned.id, workout);
+        }
       }
     }
-  }
+
+    return results;
+  });
 
   // Batch all GPS route locations across all workouts
   const allGpsRows: MetricStreamSourceRow[] = [];
@@ -819,31 +750,40 @@ export async function upsertWorkoutBatch(
           lat: loc.lat,
           lng: loc.lng,
           altitude: loc.altitude,
-          speed: isIndoorCycling(workout.activityType) ? undefined : loc.speed,
-          gpsAccuracy:
-            loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+          speed: isIndoorCyclingModality(workout.activityType.modality) ? undefined : loc.speed,
+          horizontalAccuracy: loc.horizontalAccuracy,
           sourceName: workout.sourceName,
         });
       }
     }
   }
 
-  // GPS route points now write directly to metric_stream.
-  await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
-
-  // Link HR rows for this batch's time window. A global reconciliation pass also
-  // runs at end-of-import to catch async ordering/race edge cases.
-  if (activityResults.length > 0) {
-    const startAt = new Date(
-      Math.min(...activityResults.map(({ workout }) => workout.startDate.getTime())),
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(
+      db,
+      replacementScope,
+      allGpsRows,
+      SOURCE_TYPE_FILE,
+      publisher,
     );
-    const endAt = new Date(
-      Math.max(...activityResults.map(({ workout }) => workout.endDate.getTime())),
-    );
-    await linkUnassignedHeartRateToActivities(db, providerId, { startAt, endAt });
+  } else {
+    await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE, undefined, publisher);
   }
 
   return activityResults.length;
+}
+
+function workoutName(workout: HealthWorkout): string {
+  return workout.hangTen?.planName ?? workout.activityType.canonicalType;
+}
+
+function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
+  const raw: Record<string, unknown> = { durationSeconds: workout.durationSeconds };
+  if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
+  if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
+  if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
+  if (workout.hangTen) raw.hangTen = workout.hangTen;
+  return raw;
 }
 
 export async function upsertSleepBatch(
@@ -879,6 +819,9 @@ export async function upsertSleepBatch(
       (s) => s.startDate >= bed.startDate && s.endDate <= bed.endDate,
     );
 
+    const stagingAvailable = stages.some(
+      (stage) => stage.stage === "deep" || stage.stage === "rem" || stage.stage === "core",
+    );
     let deepMinutes = 0;
     let remMinutes = 0;
     let lightMinutes = 0;
@@ -910,6 +853,7 @@ export async function upsertSleepBatch(
       remMinutes,
       lightMinutes,
       awakeMinutes,
+      stagingAvailable,
       externalId,
     };
   });
@@ -921,10 +865,14 @@ export async function upsertSleepBatch(
     startedAt: s.bed.startDate,
     endedAt: s.bed.endDate,
     durationMinutes: s.bed.durationMinutes,
-    deepMinutes: s.deepMinutes,
-    remMinutes: s.remMinutes,
-    lightMinutes: s.lightMinutes,
-    awakeMinutes: s.awakeMinutes,
+    deepMinutes: s.stagingAvailable ? s.deepMinutes : null,
+    remMinutes: s.stagingAvailable ? s.remMinutes : null,
+    lightMinutes: s.stagingAvailable ? s.lightMinutes : null,
+    awakeMinutes:
+      s.stagingAvailable || s.stages.some((stage) => stage.stage === "awake")
+        ? s.awakeMinutes
+        : null,
+    stagingAvailable: s.stagingAvailable,
     sleepType: null,
     sourceName: s.bed.sourceName,
   }));
@@ -948,6 +896,7 @@ export async function upsertSleepBatch(
               remMinutes: sql`excluded.rem_minutes`,
               lightMinutes: sql`excluded.light_minutes`,
               awakeMinutes: sql`excluded.awake_minutes`,
+              stagingAvailable: sql`excluded.staging_available`,
               sleepType: sql`excluded.sleep_type`,
               sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
             },

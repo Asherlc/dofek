@@ -18,6 +18,7 @@ interface ActivityTableProps<Row> {
   containerClassName?: string;
   headerRowClassName?: string;
   rowClassName?: string | ((row: Row) => string);
+  onRowClick?: (row: Row) => void;
   footer?: ReactNode;
 }
 
@@ -30,11 +31,16 @@ export function ActivityTable<Row>({
   containerClassName = "overflow-x-auto",
   headerRowClassName = "border-b border-border text-left text-xs text-muted uppercase tracking-wider",
   rowClassName = "border-b border-border/50 hover:bg-surface-hover cursor-pointer",
+  onRowClick,
   footer,
 }: ActivityTableProps<Row>) {
   const navigate = useNavigate();
 
-  const navigateToActivity = (activityId: string) => {
+  const handleRowAction = (row: Row, activityId: string) => {
+    if (onRowClick) {
+      onRowClick(row);
+      return;
+    }
     navigate({ to: "/activity/$id", params: { id: activityId } });
   };
 
@@ -56,11 +62,11 @@ export function ActivityTable<Row>({
             return (
               <tr
                 key={getRowKey(row)}
-                onClick={() => navigateToActivity(activityId)}
+                onClick={() => handleRowAction(row, activityId)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    navigateToActivity(activityId);
+                    handleRowAction(row, activityId);
                   }
                 }}
                 tabIndex={0}

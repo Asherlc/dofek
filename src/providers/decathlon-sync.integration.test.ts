@@ -2,11 +2,14 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { DecathlonProvider } from "./decathlon.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Fake Decathlon API responses
@@ -117,7 +120,12 @@ describe("DecathlonProvider.sync() (integration)", () => {
     server.use(...decathlonHandlers([activities]));
 
     const provider = new DecathlonProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("decathlon");
     expect(result.recordsSynced).toBe(2);
@@ -129,12 +137,12 @@ describe("DecathlonProvider.sync() (integration)", () => {
 
     const run = rows.find((r) => r.externalId === "dec-act-1001");
     if (!run) throw new Error("expected activity dec-act-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Morning Run");
 
     const ride = rows.find((r) => r.externalId === "dec-act-1002");
     if (!ride) throw new Error("expected activity dec-act-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
   });
 
   it("handles cursor-based pagination", async () => {
@@ -153,7 +161,12 @@ describe("DecathlonProvider.sync() (integration)", () => {
     server.use(...decathlonHandlers([page1, page2]));
 
     const provider = new DecathlonProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
@@ -179,14 +192,24 @@ describe("DecathlonProvider.sync() (integration)", () => {
     server.use(...decathlonHandlers([activities]));
 
     const provider = new DecathlonProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again
     server.resetHandlers();
     server.use(...decathlonHandlers([activities]));
 
     const provider2 = new DecathlonProvider();
-    await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider2.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "decathlon"));
 
@@ -205,7 +228,12 @@ describe("DecathlonProvider.sync() (integration)", () => {
     server.use(...decathlonHandlers([[]]));
 
     const provider = new DecathlonProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const tokens = await loadTokens(ctx.db, "decathlon");
     expect(tokens?.accessToken).toBe("refreshed-token");
@@ -215,7 +243,12 @@ describe("DecathlonProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "decathlon"));
 
     const provider = new DecathlonProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -233,7 +266,12 @@ describe("DecathlonProvider.sync() (integration)", () => {
     server.use(...decathlonHandlers([], { apiError: true }));
 
     const provider = new DecathlonProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("Decathlon API error");

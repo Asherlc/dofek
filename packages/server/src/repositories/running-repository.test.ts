@@ -4,6 +4,10 @@ import {
   RunningDynamicsActivity,
   RunningRepository,
 } from "./running-repository.ts";
+import {
+  expectClickHouseFiniteDaysFilter,
+  expectClickHouseUnboundedDaysFilter,
+} from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -282,10 +286,27 @@ describe("PaceTrendActivity", () => {
 
 describe("RunningRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
+    const query = vi.fn().mockResolvedValue(rows);
+    const execute = vi
+      .fn()
+      .mockImplementation(async () =>
+        rows.flatMap((row) => (row.activity_id != null ? [{ id: String(row.activity_id) }] : [])),
+      );
     const db = { execute };
-    const repo = new RunningRepository(db, "user-1", "UTC");
-    return { repo, execute };
+    const sensorStore = {
+      query,
+      getActivitySummaries: vi.fn(),
+      getStream: vi.fn(),
+      getHeartRateZoneSeconds: vi.fn(),
+      getPowerZoneSeconds: vi.fn(),
+      getPowerCurveSamples: vi.fn(),
+      getNormalizedPowerSamples: vi.fn(),
+      getVo2MaxEstimates: vi.fn(),
+      getHeartRateCurveRows: vi.fn(),
+      getPaceCurveRows: vi.fn(),
+    };
+    const repo = new RunningRepository(db, "user-1", "UTC", sensorStore);
+    return { repo, execute: query, dbExecute: execute };
   }
 
   describe("getDynamics", () => {
@@ -321,6 +342,24 @@ describe("RunningRepository", () => {
       await repo.getDynamics(30);
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getDynamics(30);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getDynamics(null);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
+    });
   });
 
   describe("getPaceTrend", () => {
@@ -333,6 +372,7 @@ describe("RunningRepository", () => {
     it("returns PaceTrendActivity instances", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "run-3",
           date: "2024-06-10",
           name: "Evening Run",
           avg_speed: 4.0,
@@ -352,6 +392,24 @@ describe("RunningRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getPaceTrend(60);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getPaceTrend(30);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getPaceTrend(null);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
     });
   });
 });

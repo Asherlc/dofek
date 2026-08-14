@@ -1,4 +1,6 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it } from "vitest";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   MapMyFitnessClient,
   MapMyFitnessProvider,
@@ -12,12 +14,6 @@ import {
   SuuntoProvider,
   suuntoOAuthConfig,
 } from "./suunto.ts";
-import {
-  parseWgerWeightEntry,
-  parseWgerWorkoutSession,
-  WgerProvider,
-  wgerOAuthConfig,
-} from "./wger.ts";
 import { mapXertSport, XertProvider, xertOAuthConfig } from "./xert.ts";
 
 // ============================================================
@@ -123,8 +119,8 @@ describe("SuuntoProvider.authSetup()", () => {
     process.env.SUUNTO_CLIENT_SECRET = "test-secret";
     const provider = new SuuntoProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.oauthConfig.tokenAuthMethod).toBe("basic");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.tokenAuthMethod).toBe("basic");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("suunto.com");
   });
@@ -139,35 +135,35 @@ describe("SuuntoProvider.authSetup()", () => {
 
 describe("mapSuuntoActivityType — additional mappings", () => {
   it("maps walking (11)", () => {
-    expect(mapSuuntoActivityType(11)).toBe("walking");
+    expect(mapSuuntoActivityType(11).canonicalType).toBe("walking");
   });
 
   it("maps strength (14)", () => {
-    expect(mapSuuntoActivityType(14)).toBe("strength");
+    expect(mapSuuntoActivityType(14).canonicalType).toBe("strength");
   });
 
   it("maps yoga (23)", () => {
-    expect(mapSuuntoActivityType(23)).toBe("yoga");
+    expect(mapSuuntoActivityType(23).canonicalType).toBe("yoga");
   });
 
   it("maps trail_running (67)", () => {
-    expect(mapSuuntoActivityType(67)).toBe("trail_running");
+    expect(mapSuuntoActivityType(67).canonicalType).toBe("running");
   });
 
   it("maps rowing (69)", () => {
-    expect(mapSuuntoActivityType(69)).toBe("rowing");
+    expect(mapSuuntoActivityType(69).canonicalType).toBe("rowing");
   });
 
   it("maps virtual_cycling (82)", () => {
-    expect(mapSuuntoActivityType(82)).toBe("virtual_cycling");
+    expect(mapSuuntoActivityType(82).canonicalType).toBe("cycling");
   });
 
   it("maps virtual_running (83)", () => {
-    expect(mapSuuntoActivityType(83)).toBe("running");
+    expect(mapSuuntoActivityType(83).canonicalType).toBe("running");
   });
 
   it("maps cross_country_skiing (4)", () => {
-    expect(mapSuuntoActivityType(4)).toBe("cross_country_skiing");
+    expect(mapSuuntoActivityType(4).canonicalType).toBe("skiing");
   });
 });
 
@@ -211,131 +207,6 @@ describe("parseSuuntoWorkout — edge cases", () => {
     const result = parseSuuntoWorkout(workout);
     expect(result.raw.avgHeartRate).toBeUndefined();
     expect(result.raw.maxHeartRate).toBeUndefined();
-  });
-});
-
-// ============================================================
-// Wger
-// ============================================================
-
-describe("wgerOAuthConfig", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns null when WGER_CLIENT_ID is not set", () => {
-    delete process.env.WGER_CLIENT_ID;
-    delete process.env.WGER_CLIENT_SECRET;
-    expect(wgerOAuthConfig()).toBeNull();
-  });
-
-  it("returns null when WGER_CLIENT_SECRET is not set", () => {
-    process.env.WGER_CLIENT_ID = "test-id";
-    delete process.env.WGER_CLIENT_SECRET;
-    expect(wgerOAuthConfig()).toBeNull();
-  });
-
-  it("returns config when both env vars are set", () => {
-    process.env.WGER_CLIENT_ID = "test-id";
-    process.env.WGER_CLIENT_SECRET = "test-secret";
-    const config = wgerOAuthConfig();
-    expect(config).not.toBeNull();
-    expect(config?.clientId).toBe("test-id");
-    expect(config?.clientSecret).toBe("test-secret");
-    expect(config?.scopes).toContain("read");
-  });
-
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
-    process.env.WGER_CLIENT_ID = "test-id";
-    process.env.WGER_CLIENT_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
-    const config = wgerOAuthConfig();
-    expect(config?.redirectUri).toBe("https://example.com/callback");
-  });
-});
-
-describe("WgerProvider.validate()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns error when WGER_CLIENT_ID is missing", () => {
-    delete process.env.WGER_CLIENT_ID;
-    delete process.env.WGER_CLIENT_SECRET;
-    const provider = new WgerProvider();
-    expect(provider.validate()).toContain("WGER_CLIENT_ID");
-  });
-
-  it("returns error when WGER_CLIENT_SECRET is missing", () => {
-    process.env.WGER_CLIENT_ID = "test-id";
-    delete process.env.WGER_CLIENT_SECRET;
-    const provider = new WgerProvider();
-    expect(provider.validate()).toContain("WGER_CLIENT_SECRET");
-  });
-
-  it("returns null when both are set", () => {
-    process.env.WGER_CLIENT_ID = "test-id";
-    process.env.WGER_CLIENT_SECRET = "test-secret";
-    const provider = new WgerProvider();
-    expect(provider.validate()).toBeNull();
-  });
-});
-
-describe("WgerProvider.authSetup()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns auth setup with OAuth config", () => {
-    process.env.WGER_CLIENT_ID = "test-id";
-    process.env.WGER_CLIENT_SECRET = "test-secret";
-    const provider = new WgerProvider();
-    const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.oauthConfig.scopes).toContain("read");
-    expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toContain("wger.de");
-  });
-
-  it("throws when env vars are missing", () => {
-    delete process.env.WGER_CLIENT_ID;
-    delete process.env.WGER_CLIENT_SECRET;
-    const provider = new WgerProvider();
-    expect(() => provider.authSetup()).toThrow("WGER_CLIENT_ID");
-  });
-});
-
-describe("parseWgerWeightEntry — edge cases", () => {
-  it("handles weight with many decimal places", () => {
-    const entry = {
-      id: 200,
-      date: "2026-03-01",
-      weight: "82.123456",
-    };
-    const parsed = parseWgerWeightEntry(entry);
-    expect(parsed.weightKg).toBeCloseTo(82.123456);
-  });
-});
-
-describe("parseWgerWorkoutSession — edge cases", () => {
-  it("includes null time_start and time_end in raw", () => {
-    const session = {
-      id: 600,
-      date: "2026-03-01",
-      comment: "Leg day",
-      impression: "3",
-      time_start: null,
-      time_end: null,
-    };
-    const parsed = parseWgerWorkoutSession(session);
-    expect(parsed.raw.timeStart).toBeNull();
-    expect(parsed.raw.timeEnd).toBeNull();
   });
 });
 
@@ -394,7 +265,7 @@ describe("XertProvider.authSetup()", () => {
     delete process.env.XERT_CLIENT_SECRET;
     const provider = new XertProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("xert_public");
+    expect(setup.oauthConfig?.clientId).toBe("xert_public");
     expect(setup.automatedLogin).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("xertonline.com");
   });
@@ -402,7 +273,7 @@ describe("XertProvider.authSetup()", () => {
   it("exchangeCode throws (not supported for credential providers)", async () => {
     const provider = new XertProvider();
     const setup = provider.authSetup();
-    await expect(setup.exchangeCode("code")).rejects.toThrow();
+    await expect(setup.exchangeCode?.("code")).rejects.toThrow();
   });
 
   it("always works even without env vars", () => {
@@ -415,31 +286,31 @@ describe("XertProvider.authSetup()", () => {
 
 describe("mapXertSport — additional mappings", () => {
   it("maps Swimming", () => {
-    expect(mapXertSport("Swimming")).toBe("swimming");
+    expect(mapXertSport("Swimming").canonicalType).toBe("swimming");
   });
 
   it("maps Walking", () => {
-    expect(mapXertSport("Walking")).toBe("walking");
+    expect(mapXertSport("Walking").canonicalType).toBe("walking");
   });
 
   it("maps Hiking", () => {
-    expect(mapXertSport("Hiking")).toBe("hiking");
+    expect(mapXertSport("Hiking").canonicalType).toBe("hiking");
   });
 
   it("maps Rowing", () => {
-    expect(mapXertSport("Rowing")).toBe("rowing");
+    expect(mapXertSport("Rowing").canonicalType).toBe("rowing");
   });
 
   it("maps Skiing", () => {
-    expect(mapXertSport("Skiing")).toBe("skiing");
+    expect(mapXertSport("Skiing").canonicalType).toBe("skiing");
   });
 
   it("maps Trail Running", () => {
-    expect(mapXertSport("Trail Running")).toBe("trail_running");
+    expect(mapXertSport("Trail Running").canonicalType).toBe("running");
   });
 
   it("maps Cross Country Skiing", () => {
-    expect(mapXertSport("Cross Country Skiing")).toBe("cross_country_skiing");
+    expect(mapXertSport("Cross Country Skiing").canonicalType).toBe("skiing");
   });
 });
 
@@ -526,7 +397,7 @@ describe("MapMyFitnessProvider.authSetup()", () => {
     process.env.MAPMYFITNESS_CLIENT_SECRET = "test-secret";
     const provider = new MapMyFitnessProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("mapmyfitness.com");
   });
@@ -541,27 +412,27 @@ describe("MapMyFitnessProvider.authSetup()", () => {
 
 describe("mapMapMyFitnessActivityType — additional mappings", () => {
   it("maps Yoga", () => {
-    expect(mapMapMyFitnessActivityType("Yoga")).toBe("yoga");
+    expect(mapMapMyFitnessActivityType("Yoga").canonicalType).toBe("yoga");
   });
 
   it("maps Weight Training", () => {
-    expect(mapMapMyFitnessActivityType("Weight Training")).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Weight Training").canonicalType).toBe("strength");
   });
 
   it("maps Strength Training", () => {
-    expect(mapMapMyFitnessActivityType("Strength Training")).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Strength Training").canonicalType).toBe("strength");
   });
 
   it("maps Rowing", () => {
-    expect(mapMapMyFitnessActivityType("Rowing")).toBe("rowing");
+    expect(mapMapMyFitnessActivityType("Rowing").canonicalType).toBe("rowing");
   });
 
   it("maps Mountain Biking", () => {
-    expect(mapMapMyFitnessActivityType("Mountain Biking")).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Mountain Biking").canonicalType).toBe("cycling");
   });
 
   it("maps Bike Ride", () => {
-    expect(mapMapMyFitnessActivityType("Bike Ride")).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Bike Ride").canonicalType).toBe("cycling");
   });
 });
 
@@ -596,35 +467,7 @@ describe("parseMapMyFitnessWorkout — edge cases", () => {
     expect(result.endedAt).toEqual(result.startedAt);
   });
 
-  it("converts metabolic_energy_total joules to kcal", () => {
-    const workout = {
-      _links: { self: [{ id: "w-3" }] },
-      name: "Swim",
-      start_datetime: "2026-03-01T06:00:00+00:00",
-      start_locale_timezone: "UTC",
-      aggregates: {
-        metabolic_energy_total: 2092000, // ~500 kcal
-      },
-      activity_type: "Swimming",
-    };
-    const result = parseMapMyFitnessWorkout(workout);
-    expect(result.raw.calories).toBe(Math.round(2092000 / 4184));
-  });
-
-  it("returns undefined calories when metabolic_energy_total is missing", () => {
-    const workout = {
-      _links: { self: [{ id: "w-4" }] },
-      name: "Yoga Flow",
-      start_datetime: "2026-03-01T07:00:00+00:00",
-      start_locale_timezone: "UTC",
-      aggregates: {},
-      activity_type: "Yoga",
-    };
-    const result = parseMapMyFitnessWorkout(workout);
-    expect(result.raw.calories).toBeUndefined();
-  });
-
-  it("uses activity_type even when empty string (no fallback to name)", () => {
+  it("uses the workout name when activity_type is blank", () => {
     const workout = {
       _links: { self: [{ id: "w-5" }] },
       name: "Running Session",
@@ -634,8 +477,8 @@ describe("parseMapMyFitnessWorkout — edge cases", () => {
       activity_type: "",
     };
     const result = parseMapMyFitnessWorkout(workout);
-    // ?? only falls back on null/undefined, not empty string
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("running");
+    expect(result.activityType.providerType).toBe("Running Session");
   });
 });
 
@@ -646,9 +489,9 @@ describe("MapMyFitnessClient — error handling", () => {
     };
 
     const client = new MapMyFitnessClient("bad-token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (401)",
-    );
+    await expect(
+      client.getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z"),
+    ).rejects.toThrow("MapMyFitness API error (401)");
   });
 
   it("throws on 403 Forbidden", async () => {
@@ -657,9 +500,9 @@ describe("MapMyFitnessClient — error handling", () => {
     };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (403)",
-    );
+    await expect(
+      client.getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z"),
+    ).rejects.toThrow("MapMyFitness API error (403)");
   });
 
   it("throws on 500 server error", async () => {
@@ -668,9 +511,9 @@ describe("MapMyFitnessClient — error handling", () => {
     };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (500): Internal Server Error",
-    );
+    await expect(
+      client.getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z"),
+    ).rejects.toThrow("MapMyFitness API error (500): Internal Server Error");
   });
 
   it("includes error body text in thrown error", async () => {
@@ -678,9 +521,16 @@ describe("MapMyFitnessClient — error handling", () => {
       return new Response("Rate limit exceeded", { status: 429 });
     };
 
-    const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (429): Rate limit exceeded",
+    const client = new MapMyFitnessClient(
+      "token",
+      "client-id",
+      createProviderRateLimitFetch("mapmyfitness", mockFetch),
     );
+    const error = await client
+      .getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z")
+      .catch((caughtError: unknown) => caughtError);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "mapmyfitness");
+    expect(error).toHaveProperty("responseBody", "Rate limit exceeded");
   });
 });

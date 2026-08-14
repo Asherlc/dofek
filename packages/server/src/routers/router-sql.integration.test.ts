@@ -1,7 +1,9 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests that verify every tRPC query endpoint executes valid SQL.
@@ -20,11 +22,22 @@ describe("Router SQL validity", () => {
     testCtx = await setupTestDatabase();
 
     // Create a session for the fixture user so protected procedures work
-    const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+    const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${TEST_USER_ID}, 'Router SQL Test User')
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+          VALUES (${TEST_USER_ID}, 'existing_account')
+          ON CONFLICT (user_id) DO NOTHING`,
+    );
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -101,6 +114,7 @@ describe("Router SQL validity", () => {
     it("list", () =>
       expectValidSql("food.list", { startDate: "2025-01-01", endDate: "2025-01-31" }));
     it("byDate", () => expectValidSql("food.byDate", { date: "2025-01-15" }));
+    it("byDateV2", () => expectValidSql("food.byDateV2", { date: "2025-01-15" }));
     it("dailyTotals", () => expectValidSql("food.dailyTotals", { days: 30 }));
   });
 
@@ -114,7 +128,6 @@ describe("Router SQL validity", () => {
     it("weeklyVolume", () => expectValidSql("training.weeklyVolume", { days: 90 }));
     it("hrZones", () => expectValidSql("training.hrZones", { days: 90 }));
     it("activityStats", () => expectValidSql("training.activityStats", { days: 90 }));
-    it("nextWorkout", () => expectValidSql("training.nextWorkout"));
   });
 
   // ── Power ──
@@ -174,7 +187,8 @@ describe("Router SQL validity", () => {
   describe("nutritionAnalytics", () => {
     it("micronutrientAdequacy", () =>
       expectValidSql("nutritionAnalytics.micronutrientAdequacy", { days: 30 }));
-    it("caloricBalance", () => expectValidSql("nutritionAnalytics.caloricBalance", { days: 30 }));
+    it("micronutrientAdequacyV2", () =>
+      expectValidSql("nutritionAnalytics.micronutrientAdequacyV2", { days: 30 }));
     it("adaptiveTdee", () => expectValidSql("nutritionAnalytics.adaptiveTdee", { days: 90 }));
     it("macroRatios", () => expectValidSql("nutritionAnalytics.macroRatios", { days: 30 }));
   });
@@ -195,6 +209,9 @@ describe("Router SQL validity", () => {
   // ── Calendar ──
   describe("calendar", () => {
     it("calendarData", () => expectValidSql("calendar.calendarData", { days: 30 }));
+    it("weekList", () => expectValidSql("calendar.weekList", { weeks: 4, endDate: "2026-03-20" }));
+    it("activityOverview", () =>
+      expectValidSql("calendar.activityOverview", { weeks: 4, endDate: "2026-03-20" }));
   });
 
   // ── Weekly Report ──
@@ -244,6 +261,21 @@ describe("Router SQL validity", () => {
         metricY: "hrv",
         days: 30,
         lag: 0,
+      }));
+    it("computeV2", () =>
+      expectValidSql("correlation.computeV2", {
+        metricX: "protein",
+        metricY: "hrv",
+        days: 30,
+        lag: 0,
+      }));
+    it("observations", () =>
+      expectValidSql("correlation.observations", {
+        metricX: "protein",
+        metricY: "hrv",
+        days: 30,
+        lag: 0,
+        pageSize: 25,
       }));
   });
 });

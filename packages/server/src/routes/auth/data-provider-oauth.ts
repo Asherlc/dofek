@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import * as Sentry from "@sentry/node";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import { getSessionIdFromRequest, isValidMobileScheme } from "../../auth/cookies.ts";
 import { validateSession } from "../../auth/session.ts";
@@ -7,11 +7,42 @@ import type { OAuthStateEntry } from "../../lib/oauth-state-store.ts";
 import { logger } from "../../logger.ts";
 import {
   getDb,
+  getMobileAuthExchangeStoreRef,
   getOAuth1SecretStoreRef,
   getOAuthStateStoreRef,
   getSinglePathParam,
   sanitizeReturnTo,
 } from "./shared.ts";
+
+export async function handleMobileProviderHandoff(req: Request, res: Response): Promise<void> {
+  const providerId = getSinglePathParam(req.params.provider);
+  if (!providerId) {
+    res.status(400).json({ error: "Missing provider" });
+    return;
+  }
+  const sessionId = getSessionIdFromRequest(req);
+  if (!sessionId) {
+    res.status(401).json({ error: "You must be logged in to connect a provider" });
+    return;
+  }
+  const session = await validateSession(getDb(), sessionId);
+  if (!session) {
+    res.status(401).json({ error: "Session expired — please log in first" });
+    return;
+  }
+  const { getAllProviders } = await import("dofek/providers/registry");
+  await (await import("../../routers/sync-helpers.ts")).ensureProvidersRegistered();
+  if (!getAllProviders().some((provider) => provider.id === providerId)) {
+    res.status(404).json({ error: "Unknown provider" });
+    return;
+  }
+  const code = await getMobileAuthExchangeStoreRef().issue({
+    kind: "provider",
+    userId: session.userId,
+    providerId,
+  });
+  res.json({ code });
+}
 
 async function startDataProviderOAuth(
   req: Request,
@@ -20,7 +51,7 @@ async function startDataProviderOAuth(
   stateEntry: OAuthStateEntry,
 ): Promise<void> {
   const { getAllProviders } = await import("dofek/providers/registry");
-  const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+  const { ensureProvidersRegistered } = await import("../../routers/sync-helpers.ts");
   await ensureProvidersRegistered();
 
   const provider = getAllProviders().find((p) => p.id === providerId);
@@ -111,7 +142,7 @@ export async function handleDataLoginStart(req: Request, res: Response): Promise
       returnTo,
     });
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    captureException(err);
     logger.error(`[auth] Failed to start data provider login: ${err}`);
     res.status(500).send("Auth error: failed to start login flow");
   }
@@ -143,7 +174,7 @@ export async function handleDataLinkStart(req: Request, res: Response): Promise<
       userId: session.userId,
     });
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    captureException(err);
     logger.error(`[auth] Failed to start data provider link: ${err}`);
     res.status(500).send("Auth error: failed to start link flow");
   }
@@ -159,7 +190,7 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
     }
     // 1. Check if provider exists first (returns 404 if not)
     const { getAllProviders } = await import("dofek/providers/registry");
-    const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+    const { ensureProvidersRegistered } = await import("../../routers/sync-helpers.ts");
     await ensureProvidersRegistered();
     const provider = getAllProviders().find((candidate) => candidate.id === providerId);
     if (!provider) {
@@ -167,9 +198,23 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
       return;
     }
     // 2. Then check session (returns 401 if not logged in)
-    const sessionId = getSessionIdFromRequest(req);
+    const handoffCode = typeof req.query.code === "string" ? req.query.code : undefined;
+    const handoff = handoffCode ? await getMobileAuthExchangeStoreRef().consume(handoffCode) : null;
+    if (
+      handoffCode &&
+      (!handoff || handoff.kind !== "provider" || handoff.providerId !== providerId)
+    ) {
+      res.status(401).send("Invalid provider handoff code");
+      return;
+    }
+    const sessionId = handoff?.kind === "provider" ? undefined : getSessionIdFromRequest(req);
     const db = getDb();
-    const session = sessionId ? await validateSession(db, sessionId) : null;
+    const session =
+      handoff?.kind === "provider"
+        ? { userId: handoff.userId }
+        : sessionId
+          ? await validateSession(db, sessionId)
+          : null;
     if (!session) {
       res.status(401).send("You must be logged in to connect a provider");
       return;
@@ -182,7 +227,7 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
       userId,
     });
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    captureException(err);
     logger.error(`[auth] Failed to start OAuth flow: ${err}`);
     res.status(500).send("Auth error: failed to start OAuth flow");
   }

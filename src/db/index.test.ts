@@ -1,16 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockCaptureException = vi.fn();
+const mockLoggerError = vi.fn();
 const mockDrizzleReturn = {
   query: {},
   execute: vi.fn(),
+  transaction: vi.fn(),
   $client: { end: vi.fn() },
 };
 const mockDrizzle = vi.fn(() => mockDrizzleReturn);
-const mockPoolInstance = {};
+const mockPoolInstance = {
+  on: vi.fn(),
+  totalCount: 0,
+  idleCount: 0,
+  waitingCount: 0,
+};
 const mockPool = vi.fn(() => mockPoolInstance);
+const mockRegisterPostgresPoolMetrics = vi.fn();
+
+vi.mock("@sentry/node", () => ({
+  captureException: mockCaptureException,
+}));
 
 vi.mock("drizzle-orm/node-postgres", () => ({
   drizzle: mockDrizzle,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    error: mockLoggerError,
+  },
+}));
+
+vi.mock("./pool-metrics.ts", () => ({
+  registerPostgresPoolMetrics: mockRegisterPostgresPoolMetrics,
 }));
 
 vi.mock("pg", () => ({
@@ -21,6 +44,7 @@ describe("db/index", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDrizzleReturn.execute = vi.fn();
+    mockDrizzleReturn.transaction = vi.fn();
     mockDrizzleReturn.$client = { end: vi.fn() };
     delete process.env.DATABASE_URL;
   });
@@ -43,10 +67,38 @@ describe("db/index", () => {
 
     it("creates a drizzle instance with the pool and schema", async () => {
       const { createDatabase } = await import("./index.ts");
-      const schema = await import("./schema.ts");
+      const { drizzleSchema } = await import("./drizzle-schema.ts");
       createDatabase("postgres://localhost:5432/test");
 
-      expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema });
+      expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema: drizzleSchema });
+    });
+
+    it("registers observable pool state metrics", async () => {
+      const { createDatabase } = await import("./index.ts");
+
+      createDatabase("postgres://localhost:5432/test");
+
+      expect(mockRegisterPostgresPoolMetrics).toHaveBeenCalledWith(mockPoolInstance);
+    });
+
+    it("reports idle pool client errors", async () => {
+      const { createDatabase } = await import("./index.ts");
+      const error = new Error("Connection terminated unexpectedly");
+
+      createDatabase("postgres://localhost:5432/test");
+      const errorHandler = mockPoolInstance.on.mock.calls.find(
+        ([eventName]) => eventName === "error",
+      )?.[1];
+      expect(errorHandler).toBeTypeOf("function");
+
+      errorHandler?.(error);
+
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "[db] PostgreSQL pool idle client error: Connection terminated unexpectedly",
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(error, {
+        tags: { source: "postgres-pool" },
+      });
     });
 
     it("preserves the existing row-array execute contract", async () => {

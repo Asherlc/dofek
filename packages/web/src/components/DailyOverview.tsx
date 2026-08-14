@@ -1,4 +1,13 @@
-import { isToday, isYesterday } from "@dofek/format/format";
+import {
+  formatDateYmd,
+  formatDurationMinutes,
+  formatIntensity,
+  formatTrainingLoad,
+} from "@dofek/format/format";
+import {
+  formatSummaryDateContext,
+  type SummaryDateContext,
+} from "@dofek/format/summary-date-context";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
@@ -7,8 +16,8 @@ import {
   scoreLabel,
   sleepTierColor,
   sleepTierDescription,
-  WorkloadRatio,
 } from "@dofek/scoring/scoring";
+import { duration, easing } from "@dofek/scoring/tokens";
 import type {
   ReadinessRow,
   SleepPerformanceInfo,
@@ -18,15 +27,24 @@ import type {
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface DailyOverviewProps {
+  endDate?: string;
+  summaryDateContext?: SummaryDateContext;
   readiness: ReadinessRow[] | undefined;
   workloadRatio: WorkloadRatioResult | undefined;
   sleepPerformance: SleepPerformanceInfo | null | undefined;
-  strainTarget?: StrainTargetResult | undefined;
+  strainTarget?: StrainTargetResult | null;
   readinessLoading?: boolean;
   workloadLoading?: boolean;
+  strainTargetLoading?: boolean;
   sleepLoading?: boolean;
+  readinessError?: unknown;
+  workloadError?: unknown;
+  strainTargetError?: unknown;
+  sleepError?: unknown;
+  embedded?: boolean;
 }
 
 function ScoreRing({
@@ -97,7 +115,7 @@ function ScoreRing({
           strokeDashoffset={animatedOffset}
           strokeLinecap="round"
           transform={`rotate(-90 ${center} ${center})`}
-          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}
+          style={{ transition: `stroke-dashoffset ${duration.countUp}ms ${easing.out}` }}
         />
         {/* Target marker */}
         {targetFraction != null &&
@@ -158,7 +176,7 @@ function ComponentBar({ label, value, weight }: { label: string; value: number; 
   return (
     <div className="flex items-center gap-3">
       <span className="text-muted text-xs w-[7.5rem] shrink-0">
-        {label} <span className="text-dim">({Math.round(weight * 100)}%)</span>
+        {label} <span className="text-dim">({formatIntensity(weight * 100)})</span>
       </span>
       <div className="flex-1 bg-accent/10 rounded-full h-2 overflow-hidden">
         <div
@@ -203,7 +221,7 @@ function StrainBreakdown({
   strainTarget,
 }: {
   workloadRatio: WorkloadRatioResult;
-  strainTarget?: StrainTargetResult;
+  strainTarget?: StrainTargetResult | null;
 }) {
   const today = workloadRatio.timeSeries[workloadRatio.timeSeries.length - 1];
   const acuteLoad = today?.acuteLoad ?? 0;
@@ -256,33 +274,35 @@ function StrainBreakdown({
       {/* Load stats */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
-          <p className="text-sm font-bold text-foreground tabular-nums">{acuteLoad.toFixed(0)}</p>
-          <p className="text-[10px] text-subtle">Acute (7d)</p>
+          <p className="text-sm font-bold text-foreground tabular-nums">
+            {formatTrainingLoad(acuteLoad)}
+          </p>
+          <p className="text-[10px] text-subtle">
+            Recent {workloadRatio.context.recentDays}-day load
+          </p>
         </div>
         <div>
-          <p className="text-sm font-bold text-foreground tabular-nums">{chronicLoad.toFixed(0)}</p>
-          <p className="text-[10px] text-subtle">Chronic (28d)</p>
+          <p className="text-sm font-bold text-foreground tabular-nums">
+            {formatTrainingLoad(chronicLoad)}
+          </p>
+          <p className="text-[10px] text-subtle">
+            {workloadRatio.context.baselineDays}-day baseline load
+          </p>
         </div>
         <div>
-          <p
-            className="text-sm font-bold tabular-nums"
-            style={{ color: new WorkloadRatio(ratio ?? null).color }}
-          >
+          <p className="text-sm font-bold text-foreground tabular-nums">
             {ratio != null ? ratio.toFixed(2) : "--"}
           </p>
-          <p className="text-[10px] text-subtle">Workload Ratio</p>
+          <p className="text-[10px] text-subtle">{workloadRatio.context.label}</p>
         </div>
       </div>
+      <p className="text-[11px] text-dim">{workloadRatio.context.description}</p>
     </div>
   );
 }
 
 function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) {
   const { actualMinutes, neededMinutes, efficiency } = performance;
-  const actualHours = Math.floor(actualMinutes / 60);
-  const actualMins = Math.round(actualMinutes % 60);
-  const neededHours = Math.floor(neededMinutes / 60);
-  const neededMins = Math.round(neededMinutes % 60);
   const sufficiency = neededMinutes > 0 ? Math.min(actualMinutes / neededMinutes, 1) * 100 : 100;
 
   return (
@@ -295,7 +315,7 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
           <div className="h-full rounded-full bg-blue-400" style={{ width: `${sufficiency}%` }} />
         </div>
         <span className="text-foreground text-xs w-12 text-right font-medium tabular-nums">
-          {actualHours}h {actualMins}m
+          {formatDurationMinutes(actualMinutes)}
         </span>
       </div>
       <div className="flex items-center gap-3">
@@ -309,11 +329,21 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
           />
         </div>
         <span className="text-foreground text-xs w-12 text-right font-medium tabular-nums">
-          {Math.round(efficiency)}%
+          {formatIntensity(efficiency)}
         </span>
       </div>
       <p className="text-dim text-[11px]">
-        Need: {neededHours}h {neededMins}m &middot; Bedtime: {performance.recommendedBedtime}
+        <span className="block">
+          Night of{" "}
+          {formatSummaryDateContext({
+            ...performance.summaryDateContext,
+            effectiveDate: performance.sleepDate,
+          })}
+        </span>
+        <span>
+          Need: {formatDurationMinutes(neededMinutes)} &middot; Bedtime:{" "}
+          {performance.recommendedBedtime}
+        </span>
       </p>
     </div>
   );
@@ -403,7 +433,7 @@ function StrainRing({
   const strainScore = new StrainScore(strain);
   const color = strainScore.color;
   const ringLabel = strainScore.label;
-  const displayValue = useCountUp(strain, 1200, 1);
+  const displayValue = useCountUp(strain, duration.countUp, 1);
 
   return (
     <div className="flex flex-col items-center gap-2 max-w-[180px]">
@@ -448,8 +478,6 @@ function SleepRing({
 
   const color = sleepTierColor(tier);
 
-  const actualHours = Math.floor(actualMinutes / 60);
-  const actualMins = Math.round(actualMinutes % 60);
   const displayScore = useCountUp(clampedScore, 800);
 
   return (
@@ -474,7 +502,7 @@ function SleepRing({
         className="text-xs font-semibold px-2 py-0.5 rounded-full"
         style={{ backgroundColor: `${color}20`, color }}
       >
-        {tier} &middot; {actualHours}h {actualMins}m
+        {tier} &middot; {formatDurationMinutes(actualMinutes)}
       </span>
       <p className="text-[11px] text-subtle text-center leading-tight">
         {sleepTierDescription(tier)}
@@ -492,18 +520,41 @@ function RingSkeleton() {
   );
 }
 
+function RingQueryError({ label, error }: { label: string; error: unknown }) {
+  return (
+    <div className="max-w-[180px] text-center text-xs">
+      <QueryStatePanel contextLabel={label} error={error} height={72} />
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────
 
 type ExpandedRing = "recovery" | "strain" | "sleep" | null;
 
+function isRecentForAnchor(dateString: string, anchorDateString: string): boolean {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  const anchorDate = new Date(`${anchorDateString}T12:00:00Z`);
+  const diffDays = Math.round((anchorDate.getTime() - date.getTime()) / 86_400_000);
+  return diffDays >= 0 && diffDays <= 1;
+}
+
 export function DailyOverview({
+  endDate = formatDateYmd(),
+  summaryDateContext,
   readiness,
   workloadRatio,
   sleepPerformance,
   strainTarget,
-  readinessLoading,
-  workloadLoading,
-  sleepLoading,
+  readinessLoading = false,
+  workloadLoading = false,
+  strainTargetLoading = false,
+  sleepLoading = false,
+  readinessError,
+  workloadError,
+  strainTargetError,
+  sleepError,
+  embedded = false,
 }: DailyOverviewProps) {
   const [expandedRing, setExpandedRing] = useState<ExpandedRing>(null);
 
@@ -512,118 +563,158 @@ export function DailyOverview({
   const latestReadiness = readiness?.length ? readiness[readiness.length - 1] : undefined;
   const readinessIsFresh = (() => {
     if (!latestReadiness) return false;
-    const readinessDate = new Date(`${latestReadiness.date}T00:00:00`);
-    return isToday(readinessDate) || isYesterday(readinessDate);
+    return isRecentForAnchor(latestReadiness.date, endDate);
   })();
   const recoveryScore = readinessIsFresh ? (latestReadiness?.readinessScore ?? null) : null;
-  const strainIsToday = workloadRatio?.displayedDate
-    ? isToday(new Date(`${workloadRatio.displayedDate}T00:00:00`))
-    : false;
-  const strain = strainIsToday ? (workloadRatio?.displayedStrain ?? 0) : 0;
+  const strain =
+    strainTarget?.currentStrain ??
+    (workloadRatio?.displayedDate && workloadRatio.displayedDate === endDate
+      ? (workloadRatio?.displayedStrain ?? 0)
+      : 0);
   const sleepIsFresh = (() => {
     if (!sleepPerformance?.sleepDate) return false;
-    const sleepDate = new Date(`${sleepPerformance.sleepDate}T00:00:00`);
-    return isToday(sleepDate) || isYesterday(sleepDate);
+    return isRecentForAnchor(sleepPerformance.sleepDate, endDate);
   })();
   const freshSleepPerformance = sleepIsFresh ? sleepPerformance : null;
+  const strainLoading = workloadLoading || strainTargetLoading;
 
-  const allLoaded = !readinessLoading && !workloadLoading && !sleepLoading;
+  const allLoaded = !readinessLoading && !strainLoading && !sleepLoading;
   const hasAnyData =
     recoveryScore != null ||
     (workloadRatio?.timeSeries?.length ?? 0) > 0 ||
     freshSleepPerformance != null;
+  const hasAnyError =
+    readinessError != null ||
+    workloadError != null ||
+    strainTargetError != null ||
+    sleepError != null;
 
   // Hide the entire section only once all queries have resolved and none have data
-  if (allLoaded && !hasAnyData) {
+  if (allLoaded && !hasAnyData && !hasAnyError) {
     return null;
   }
 
   const targetFraction = strainTarget ? Math.min(strainTarget.targetStrain / 21, 1) : undefined;
 
   return (
-    <div className="card p-6">
+    <section
+      aria-label="Daily health summary"
+      className={
+        embedded
+          ? "rounded-lg border border-border bg-surface p-4 sm:p-5"
+          : "dashboard-hero card p-5 sm:p-6"
+      }
+    >
+      <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+            Daily summary
+          </p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+            Today&apos;s recovery picture
+          </h2>
+        </div>
+        <p className="text-xs text-subtle">
+          {summaryDateContext ? formatSummaryDateContext(summaryDateContext) : endDate}
+        </p>
+      </div>
+
       <div className="flex items-center justify-center gap-6 sm:gap-10 lg:gap-14 flex-wrap">
-        {readinessLoading ? (
-          <RingSkeleton />
-        ) : recoveryScore != null ? (
-          <ReadinessRing
-            score={recoveryScore}
-            onClick={() => toggle("recovery")}
-            expanded={expandedRing === "recovery"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={100}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {readinessLoading ? (
+            <RingSkeleton />
+          ) : recoveryScore != null ? (
+            <ReadinessRing
+              score={recoveryScore}
               onClick={() => toggle("recovery")}
               expanded={expandedRing === "recovery"}
-              label="Recovery"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Recovery
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+            />
+          ) : readinessError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={100}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("recovery")}
+                expanded={expandedRing === "recovery"}
+                label="Recovery"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Recovery
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {readinessError != null ? (
+            <RingQueryError label="Recovery" error={readinessError} />
+          ) : null}
+        </div>
 
-        {workloadLoading ? (
-          <RingSkeleton />
-        ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
-          <StrainRing
-            strain={strain}
-            targetFraction={targetFraction}
-            onClick={() => toggle("strain")}
-            expanded={expandedRing === "strain"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={21}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {strainLoading ? (
+            <RingSkeleton />
+          ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
+            <StrainRing
+              strain={strain}
+              targetFraction={targetFraction}
               onClick={() => toggle("strain")}
               expanded={expandedRing === "strain"}
-              label="Strain"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Strain
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+            />
+          ) : workloadError == null && strainTargetError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={21}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("strain")}
+                expanded={expandedRing === "strain"}
+                label="Strain"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Strain
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {workloadError != null ? <RingQueryError label="Strain" error={workloadError} /> : null}
+          {strainTargetError != null ? (
+            <RingQueryError label="Strain target" error={strainTargetError} />
+          ) : null}
+        </div>
 
-        {sleepLoading ? (
-          <RingSkeleton />
-        ) : freshSleepPerformance != null ? (
-          <SleepRing
-            performance={freshSleepPerformance}
-            onClick={() => toggle("sleep")}
-            expanded={expandedRing === "sleep"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={100}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {sleepLoading ? (
+            <RingSkeleton />
+          ) : freshSleepPerformance != null ? (
+            <SleepRing
+              performance={freshSleepPerformance}
               onClick={() => toggle("sleep")}
               expanded={expandedRing === "sleep"}
-              label="Sleep"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Sleep
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+            />
+          ) : sleepError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={100}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("sleep")}
+                expanded={expandedRing === "sleep"}
+                label="Sleep"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Sleep
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {sleepError != null ? <RingQueryError label="Sleep" error={sleepError} /> : null}
+        </div>
       </div>
 
       {/* Expandable breakdown panels — kept mounted for open/close animation */}
@@ -631,7 +722,7 @@ export function DailyOverview({
         {latestReadiness && readinessIsFresh ? (
           <RecoveryBreakdown readiness={latestReadiness} />
         ) : (
-          <EmptyBreakdown message="Recovery score needs HRV, resting heart rate, and sleep data from a connected wearable." />
+          <EmptyBreakdown message="Recovery score needs heart rate variability, resting heart rate, and sleep data from a connected wearable." />
         )}
       </ExpandableBreakdown>
 
@@ -650,6 +741,6 @@ export function DailyOverview({
           <EmptyBreakdown message="Sleep score combines how long you slept vs. how much you need (70%) and sleep efficiency (30%). Connect a sleep tracker to see your breakdown." />
         )}
       </ExpandableBreakdown>
-    </div>
+    </section>
   );
 }

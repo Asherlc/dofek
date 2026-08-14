@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -29,11 +30,11 @@ describe("wahooOAuthConfig", () => {
     expect(config?.tokenUrl).toBe("https://api.wahooligan.com/oauth/token");
   });
 
-  it("includes revokeUrl for Doorkeeper token revocation", () => {
+  it("does not expose Wahoo's undocumented token revocation endpoint", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
     const config = wahooOAuthConfig();
-    expect(config?.revokeUrl).toBe("https://api.wahooligan.com/oauth/revoke");
+    expect(config?.revokeUrl).toBeUndefined();
   });
 
   it("uses dynamic redirect URI based on host", () => {
@@ -109,7 +110,7 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
         const authHeader = request.headers.get("Authorization");
         // First call with expired token fails
         if (authHeader === "Bearer expired-access") {
-          return HttpResponse.json({ error: "Unauthorized" }, { status: 401 });
+          return HttpResponse.json({ error: "Access token has expired" }, { status: 401 });
         }
         // Second call with refreshed token succeeds
         if (authHeader === "Bearer refreshed-access") {
@@ -160,7 +161,7 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
     setupEnv();
     server.use(
       http.delete(`${WAHOO_API_BASE}/v1/permissions`, () => {
-        return HttpResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return HttpResponse.json({ error: "Access token has expired" }, { status: 401 });
       }),
     );
 
@@ -168,5 +169,41 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
     await expect(revokeExistingTokens({ ...expiredTokens, refreshToken: null })).rejects.toThrow(
       "Cannot revoke Wahoo tokens",
     );
+  });
+});
+
+describe("WahooProvider — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+  const server = setupServer();
+
+  beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+  afterEach(() => {
+    server.resetHandlers();
+    process.env = { ...originalEnv };
+  });
+  afterAll(() => server.close());
+
+  it("authSetup.exchangeCode surfaces a 429 as a ProviderRateLimitError tagged 'wahoo'", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+    server.use(
+      http.post(`${WAHOO_API_BASE}/oauth/token`, () =>
+        HttpResponse.text("rate limited", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        }),
+      ),
+    );
+
+    const setup = new WahooProvider().authSetup();
+    expect(setup.exchangeCode).toBeTypeOf("function");
+    if (!setup.exchangeCode) throw new Error("expected exchangeCode");
+    const err = await setup.exchangeCode("code").catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("wahoo");
+      expect(err.statusCode).toBe(429);
+    }
   });
 });

@@ -1,25 +1,85 @@
 # @dofek/scoring
 
-Domain logic for health scores, training metrics, and design tokens. Shared between web and mobile.
+Platform-agnostic TypeScript models for health scores, sleep and readiness
+presentation and shared design tokens. The package is used
+by both web and mobile clients but has no UI-framework dependency.
 
-## Implementation Details
+## Install
 
-### Scoring Models
+```sh
+npm install @dofek/scoring
+```
 
-- **Strain Score (`scoring.ts`)**: Implements a Whoop-like 0–21 scale. `StrainScore.fromRawLoad` uses logarithmic scaling (`3.5 * Math.log(1 + rawLoad)`) to represent diminishing returns of high-intensity efforts.
-- **Recovery & Readiness**:
-  - `zScoreToRecoveryScore` converts z-scores to a 0–100 scale using an asymmetric sigmoid centered at 62.
-  - `computeStrainTarget` recommends a daily target (Push/Maintain/Recovery) based on readiness and ACWR (Acute:Chronic Workload Ratio). Targets are capped if ACWR > 1.3 to prevent injury.
-- **Sleep Performance (`sleep-performance.ts`)**: Calculated as 70% sleep sufficiency (actual vs needed) and 30% sleep efficiency.
-- **Healthspan Years (`healthspan-years.ts`)**: Maps a 0–100 health score to a biological age delta (+3 to -2 years). The model is intentionally asymmetric, penalizing poor health more than rewarding peak fitness.
-- **Menstrual Cycle (`menstrual-cycle.ts`)**: Categorizes days into Menstrual, Follicular, Ovulatory, and Luteal phases using an estimated ovulation day of `cycleLength - 14`.
+Requires Node.js 22.14 or newer.
 
-### Design System & Tokens (`tokens.ts`, `colors.ts`)
+## Usage
 
-- **Semantic Colors**: Defines `statusColors` (positive, warning, danger) and platform-agnostic `chartColors`.
-- **Typography**: Standardized font families ("Inter" for body, "DM Mono" for metrics) and font sizes.
-- **Animation**: Shared durations for micro-interactions (`fast: 150ms`) and chart animations (`chart: 1200ms`).
-- **Spacing**: Consistent scales for layout (`xs: 4px` to `xl: 32px`) and border radii.
+There is no root export; import the subpath for the model you need.
 
-### Breathwork (`breathwork.ts`)
-Defines standard techniques (Box Breathing, 4-7-8, Coherent, Physiological Sigh, Wim Hof) with specific inhale/hold/exhale/hold durations.
+```ts
+import {
+  StrainScore,
+  zScoreToRecoveryScore,
+} from "@dofek/scoring/scoring";
+
+const strain = StrainScore.fromRawLoad(120);
+
+console.log({
+  strain: strain.value,
+  strainLabel: strain.label,
+  recovery: zScoreToRecoveryScore(0.75),
+});
+```
+
+## Public API
+
+| Subpath | Purpose |
+| --- | --- |
+| `@dofek/scoring/scoring` | Strain, recovery, trend, score-zone, and presentation helpers |
+| `@dofek/scoring/colors` | Semantic, chart, surface, text, sleep-stage, and activity colors |
+| `@dofek/scoring/tokens` | Framework-neutral typography, spacing, radius, animation, and chart tokens |
+| `@dofek/scoring/strain-target` | Daily strain-target calculation and result types |
+| `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, server-authored caveats, confidence, freshness, and shared presentation helpers |
+| `@dofek/scoring/epistemic-status` | Shared Observed / Estimated / Associated / Suggested / Unavailable status vocabulary |
+| `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
+| `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
+| `@dofek/scoring/loading-policy` | Blocking-loading state policy |
+| `@dofek/scoring/query-cache` | Shared query-cache age constant |
+
+## Model behavior
+
+- `StrainScore.fromRawLoad` applies logarithmic scaling, maps non-positive loads
+  to zero, and caps the result at 21.
+- `zScoreToRecoveryScore` uses a Dofek-defined asymmetric sigmoid where a
+  z-score of zero maps to 62.
+- Strain targets use Dofek-defined readiness bands.
+- Today Plan keeps Push and Recovery recommendations actionable while presenting
+  the Maintain band as the neutral “No change needs attention” state
+  ([rule builder](./src/today-plan.ts), [executable tests](./src/today-plan.test.ts)).
+- Ready Today Plan results include server-authored supporting observations and
+  caveats for missing or stale inputs; clients render these values without
+  deriving their meaning.
+- Sleep performance defaults to 70% sleep sufficiency and 30% efficiency. When
+  consistency or low-stress inputs are supplied, it averages all available
+  components equally.
+- Healthspan display deltas map scores from 0–100 onto +3 to -2 years.
+- The design-token modules contain values only; they do not install fonts or
+  render UI.
+- `operationalStatusColors` is the light-theme presentation palette for generic
+  application states. Its foregrounds meet the
+  [WCAG 2.2 normal-text contrast requirement](https://www.w3.org/TR/WCAG22/#contrast-minimum)
+  on paired surfaces, and its borders/indicators meet
+  [WCAG 2.2 non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast).
+  It does not classify health, nutrition, training, clinical, or scoring values;
+  those domain meanings remain with their owning models.
+
+The package performs no network requests and needs no authentication or runtime
+configuration. Validate untrusted input before calling the calculation
+functions. These models are for fitness software and are not medical advice.
+
+## License and contributing
+
+[MIT](./LICENSE). Source is in the
+[Dofek repository](https://github.com/Asherlc/dofek/tree/main/packages/scoring).
+Please [open an issue](https://github.com/Asherlc/dofek/issues) for bugs or API
+proposals, or [submit a pull request](https://github.com/Asherlc/dofek/pulls).

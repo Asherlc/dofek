@@ -12,8 +12,9 @@
  * Run:
  *   WHOOP_REFRESH_TOKEN=xxx WHOOP_USER_ID=123 pnpm vitest run src/providers/whoop-api-contract.test.ts
  */
+
+import { WhoopClient } from "@dofek/whoop/client";
 import { describe, expect, it } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
 import { inlineSleepSchema, parseInlineSleep } from "./whoop/parsing.ts";
 
@@ -115,7 +116,7 @@ const v2ActivitySchema = z.object({
 
 /** Cycle must have the structure our sync code navigates */
 const cycleSchema = z.object({
-  recovery: z.record(z.unknown()).nullable().optional(),
+  recovery: z.record(z.string(), z.unknown()).nullable().optional(),
   v2_activities: z.array(v2ActivitySchema).optional(),
   sleeps: z.array(z.unknown()).optional(),
   workouts: z.array(z.unknown()).optional(),
@@ -139,6 +140,7 @@ describe.skipIf(!hasCredentials)("WHOOP API contract", () => {
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
       userId: result.userId ?? USER_ID,
+      expiresInSeconds: result.expiresInSeconds,
     });
   });
 

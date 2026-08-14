@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { createReportEmptyState } from "dofek-server/report-empty-state";
 import { WeeklyReportCard } from "./WeeklyReportCard";
 
 const meta = {
@@ -15,7 +16,6 @@ const meta = {
         sleepPerformancePct: 92,
         avgRestingHr: 52,
         avgHrv: 65,
-        strainZone: "optimal",
         avgDailyLoad: 450,
         avgReadiness: 75,
       },
@@ -28,11 +28,30 @@ const meta = {
           sleepPerformancePct: 90,
           avgRestingHr: 53,
           avgHrv: 62,
-          strainZone: "optimal",
           avgDailyLoad: 420,
           avgReadiness: 72,
         },
       ],
+      decisionSupport: {
+        whatChanged: [
+          "Training was 8.5 hours, 13.3% more than the previous week.",
+          "Average nightly sleep was 7 hours 30 minutes, 20 minutes more than the previous week.",
+        ],
+        likelyAssociations: [
+          "Higher training coincided with more sleep and higher heart rate variability this week. This is a descriptive association, not evidence that one change caused another.",
+        ],
+        whatWorked: [
+          "You completed 6 activities while sleep and heart rate variability were stable or improved.",
+        ],
+        whatToTryNext: [
+          "Keep one major input steady next week—training volume or sleep schedule—so the following comparison is easier to interpret.",
+        ],
+        confidenceAndMissingData: [
+          "Confidence is limited because only 2 weekly periods are available.",
+          "These period averages can show co-movement, but they cannot establish cause and effect.",
+        ],
+      },
+      emptyState: createReportEmptyState("weekly"),
     },
   },
 } satisfies Meta<typeof WeeklyReportCard>;
@@ -46,5 +65,17 @@ export const Default: Story = {};
 export const Loading: Story = {
   args: {
     loading: true,
+  },
+};
+
+export const Empty: Story = {
+  tags: ["review-scenario", "review-scenario-empty-data"],
+  args: {
+    data: {
+      current: null,
+      history: [],
+      decisionSupport: null,
+      emptyState: createReportEmptyState("weekly"),
+    },
   },
 };

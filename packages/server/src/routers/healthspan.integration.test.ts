@@ -1,10 +1,16 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration test for healthspan zone time calculation.
@@ -39,14 +45,14 @@ describe("healthspan zone time with variable-interval HR data", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // Daily metrics with resting HR (needed for LATERAL join in healthspan query)
+    // Daily metrics with steps. Resting HR is derived from raw sleep-window HR samples.
     for (let i = 30; i >= 0; i--) {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, steps, vo2max
+              date, provider_id, user_id, steps
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${TEST_USER_ID}, ${RESTING_HR}, 10000, 45
+              'test_provider', ${TEST_USER_ID}, 10000
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -57,31 +63,33 @@ describe("healthspan zone time with variable-interval HR data", () => {
     // Last  300 seconds (60 samples): HR 175 (high intensity, above 162 threshold)
     const actResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'cycling',
+            'test_provider', ${TEST_USER_ID}, 'healthspan-apple-watch-hiit', 'cycling', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
-            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '600 seconds',
+            (CURRENT_TIMESTAMP - INTERVAL '2 days') + INTERVAL '600 seconds',
             'Apple Watch HIIT'
           ) RETURNING id`,
     );
     const actId = actResult[0]?.id;
     if (!actId) throw new Error("Failed to insert activity");
 
-    const sensorValues: string[] = [];
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+    const activityStartedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
     for (let sample = 0; sample < 120; sample++) {
       const offsetSeconds = sample * 5; // 5-second intervals
       const hr = sample < 60 ? 140 : 175; // first half aerobic, second half high intensity
-      const ts = `CURRENT_TIMESTAMP - INTERVAL '2 days' + ${offsetSeconds} * INTERVAL '1 second'`;
-      sensorValues.push(
-        `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-      );
+      const recordedAt = new Date(activityStartedAt.getTime() + offsetSeconds * 1000).toISOString();
+      metricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt,
+        providerId: "test_provider",
+        sourceType: "api",
+        channel: "heart_rate",
+        activityId: actId,
+        scalar: hr,
+      });
     }
-    await testCtx.db.execute(
-      sql.raw(`INSERT INTO fitness.metric_stream (
-        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-      ) VALUES ${sensorValues.join(",\n")}`),
-    );
 
     // Sleep data (needed to avoid CROSS JOIN eliminating the row)
     await testCtx.db.execute(
@@ -95,17 +103,34 @@ describe("healthspan zone time with variable-interval HR data", () => {
             480, 'sleep'
           )`,
     );
-
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
     await testCtx.db.execute(
-      sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement`,
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, started_at, ended_at,
+            duration_minutes, sleep_type
+          ) VALUES (
+            'test_provider', ${TEST_USER_ID},
+            CURRENT_DATE - INTERVAL '3 days' + INTERVAL '22 hours',
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '6 hours',
+            480, 'sleep'
+          )`,
     );
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    const restingSleepStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    restingSleepStart.setHours(restingSleepStart.getHours() + 1);
+    for (let index = 0; index < 30; index++) {
+      const recordedAt = new Date(restingSleepStart.getTime() + index * 60_000).toISOString();
+      metricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt,
+        providerId: "test_provider",
+        sourceType: "api",
+        channel: "heart_rate",
+        scalar: RESTING_HR,
+      });
+    }
 
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -235,8 +260,6 @@ describe("healthspan zone time with variable-interval HR data", () => {
       );
     }
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-
     const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
 
     const sleepConsistency = result.metrics.find((m) => m.name === "Sleep Consistency");
@@ -269,6 +292,51 @@ describe("healthspan zone time with variable-interval HR data", () => {
       const ratio = highIntensity.value / aerobic.value;
       expect(ratio).toBeGreaterThan(0.7);
       expect(ratio).toBeLessThan(1.3);
+    }
+  });
+
+  it("includes power zone high-intensity work when heart-rate samples are absent", async () => {
+    const actResult = await testCtx.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
+          ) VALUES (
+            'test_provider', ${TEST_USER_ID}, 'healthspan-power-zone-intervals', 'cycling', 'cycling',
+            CURRENT_TIMESTAMP - INTERVAL '1 day',
+            (CURRENT_TIMESTAMP - INTERVAL '1 day') + INTERVAL '600 seconds',
+            'Power Zone Intervals'
+          ) RETURNING id`,
+    );
+    const actId = actResult[0]?.id;
+    if (!actId) throw new Error("Failed to insert activity");
+
+    const powerActivityStartedAt = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+    const powerMetricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+    for (let sampleIndex = 0; sampleIndex < 120; sampleIndex++) {
+      const offsetSeconds = sampleIndex * 5;
+      const recordedAt = new Date(
+        powerActivityStartedAt.getTime() + offsetSeconds * 1000,
+      ).toISOString();
+      powerMetricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt,
+        providerId: "test_provider",
+        sourceType: "api",
+        channel: "power",
+        activityId: actId,
+        scalar: 230,
+      });
+    }
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, powerMetricStreamSeedRows);
+
+    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
+
+    const highIntensity = result.metrics.find((m) => m.name === "High Intensity");
+    expect(highIntensity).toBeDefined();
+    expect(highIntensity?.value).not.toBeNull();
+
+    if (highIntensity?.value != null) {
+      expect(highIntensity.value).toBeGreaterThan(3);
     }
   });
 });

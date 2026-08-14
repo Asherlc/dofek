@@ -1,29 +1,33 @@
 # Staging Environment
 
-Staging is a production-shaped deployment used to test full deploy, migration, and runtime behavior without writing test state into the production database.
+Staging is disabled. The old Hetzner staging server, block storage volume, DNS
+records, and deploy workflow output are no longer managed by the main
+`deploy/` Terraform root.
 
-## Shape
+## Historical Shape
 
-- App: `https://staging.dofek.asherlc.com`
-- OTA: `https://staging-ota.dofek.asherlc.com`
+- App: `staging.dofek.asherlc.com`
+- OTA: `staging-ota.dofek.asherlc.com`
 - Management:
-  - `https://staging-portainer.dofek.asherlc.com`
-  - `https://staging-netdata.dofek.asherlc.com`
-  - `https://staging-databasus.dofek.asherlc.com`
-  - `https://staging-pgadmin.dofek.asherlc.com`
+  - `staging-portainer.dofek.asherlc.com`
+  - `staging-netdata.dofek.asherlc.com`
+  - `staging-databasus.dofek.asherlc.com`
+  - `staging-pgadmin.dofek.asherlc.com`
 - Docker stack: `dofek-staging`
 - Infisical environment: `staging`
 
-Terraform provisions a separate Hetzner server and block storage volume for staging. The staging stack uses the same `deploy/stack.yml` as production with environment-specific host rules and public URLs passed by `.github/workflows/deploy-staging.yml`.
+These hosts are historical references only while staging remains disabled.
 
 ## Deploy
 
-Run **Deploy Staging** from GitHub Actions and choose an image tag, usually `sha-<commit>`.
+Staging deployments are disabled in **Deploy Web**. Successful main CI and
+manual deploys update production only.
 
-The workflow:
+When re-enabled, the workflow:
 
-1. Confirms the `dofek` and `dofek-ml` GHCR image tags exist.
-2. Applies Terraform and reads `staging_server_ip`.
+1. Confirms the `dofek` GHCR image tag exists.
+2. Provisions staging infrastructure in a dedicated Terraform root or explicitly
+   reintroduces staging resources to `deploy/`.
 3. Exports Infisical secrets from the `staging` environment.
 4. Deploys `deploy/stack.yml` as the `dofek-staging` Docker stack.
 5. Runs migrations against the staging database before updating services.

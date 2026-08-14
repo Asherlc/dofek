@@ -76,7 +76,7 @@ describe("parseVeloHeroWorkout", () => {
     const result = parseVeloHeroWorkout(makeWorkout());
 
     expect(result.externalId).toBe("1001");
-    expect(result.activityType).toBe("cycling");
+    expect(result.activityType.canonicalType).toBe("cycling");
     expect(result.name).toBe("Morning ride");
     expect(result.startedAt).toEqual(new Date("2024-01-15T08:00:00"));
     expect(result.endedAt).toEqual(new Date("2024-01-15T09:30:00"));
@@ -89,7 +89,6 @@ describe("parseVeloHeroWorkout", () => {
     expect(result.raw.maxPower).toBe(350);
     expect(result.raw.avgCadence).toBe(90);
     expect(result.raw.maxCadence).toBe(110);
-    expect(result.raw.calories).toBe(900);
     expect(result.raw.ascent).toBe(500);
     expect(result.raw.descent).toBe(480);
   });
@@ -121,7 +120,6 @@ describe("parseVeloHeroWorkout", () => {
         max_power: undefined,
         avg_cadence: undefined,
         max_cadence: undefined,
-        calories: undefined,
         ascent: undefined,
         descent: undefined,
       }),
@@ -133,7 +131,6 @@ describe("parseVeloHeroWorkout", () => {
     expect(result.raw.maxPower).toBeUndefined();
     expect(result.raw.avgCadence).toBeUndefined();
     expect(result.raw.maxCadence).toBeUndefined();
-    expect(result.raw.calories).toBeUndefined();
     expect(result.raw.ascent).toBeUndefined();
     expect(result.raw.descent).toBeUndefined();
   });
@@ -183,13 +180,13 @@ describe("parseVeloHeroWorkout", () => {
   it("maps unknown sport_id to other", () => {
     const result = parseVeloHeroWorkout(makeWorkout({ sport_id: "999" }));
 
-    expect(result.activityType).toBe("other");
+    expect(result.activityType.canonicalType).toBe("other");
   });
 
   it("maps running sport", () => {
     const result = parseVeloHeroWorkout(makeWorkout({ sport_id: "2" }));
 
-    expect(result.activityType).toBe("running");
+    expect(result.activityType.canonicalType).toBe("running");
   });
 
   it("converts distance km to meters with rounding", () => {

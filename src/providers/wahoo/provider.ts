@@ -6,7 +6,12 @@ import {
 } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
+import { fetchProviderPages } from "../../sync/pagination.ts";
+import { AccessTokenExpiredError } from "../auth-errors.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -21,9 +26,12 @@ import {
   WAHOO_API_BASE,
   WahooClient,
   type WahooWorkout,
+  type WahooWorkoutListResponse,
   wahooWebhookPayloadSchema,
 } from "./client.ts";
-import { parseWorkoutList, parseWorkoutSummary } from "./parsers.ts";
+import { type ParsedCardioActivity, parseWorkoutList, parseWorkoutSummary } from "./parsers.ts";
+
+const WAHOO_MAX_WORKOUT_PAGES = 100;
 
 export function wahooOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;
@@ -36,7 +44,6 @@ export function wahooOAuthConfig(host?: string): OAuthConfig | null {
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
     redirectUri: getOAuthRedirectUri(host),
     scopes: ["email", "user_read", "workouts_read", "offline_data"],
-    revokeUrl: `${WAHOO_API_BASE}/oauth/revoke`,
   };
 }
 
@@ -47,7 +54,7 @@ export class WahooProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("wahoo", fetchFn);
   }
 
   validate(): string | null {
@@ -57,7 +64,7 @@ export class WahooProvider implements WebhookProvider {
   }
 
   activityUrl(externalId: string): string {
-    return `https://cloud.wahoo.com/workouts/${externalId}`;
+    return `https://systm.wahoofitness.com/history/activity-details/${externalId}`;
   }
 
   // ── Webhook implementation ──
@@ -110,7 +117,7 @@ export class WahooProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    _options?: SyncOptions,
+    options?: SyncOptions,
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -162,12 +169,14 @@ export class WahooProvider implements WebhookProvider {
 
     const parsed = parseWorkoutSummary(workout);
     const client = new WahooClient("", this.#fetchFn);
-    const persister = new WahooActivityPersister(this.id, client, db);
-    const result = await persister.persist(parsed, {
-      deleteExistingSamples: true,
-      formatLogMessage: (rowCount, externalId) =>
-        `[wahoo] Webhook: inserted ${rowCount} metric stream rows for workout ${externalId}`,
-    });
+    const persister = new WahooActivityPersister(
+      this.id,
+      client,
+      db,
+      options?.userId,
+      options?.metricStreamPublisher,
+    );
+    const result = await persister.persist(parsed);
 
     if (result.synced) {
       recordsSynced++;
@@ -189,28 +198,25 @@ export class WahooProvider implements WebhookProvider {
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = wahooOAuthConfig(options?.host);
     if (!config) throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required");
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      reconnectStrategy: "deauthorize-on-token-limit",
       revokeExistingTokens: async (tokens) => {
-        // Try revoking with the stored access token first.
+        // Wahoo's documented DELETE endpoint removes every permission for this app and user.
         try {
           const client = new WahooClient(tokens.accessToken, this.#fetchFn);
           await client.revokeAuthorization();
           return;
         } catch (revokeError) {
-          // Only fall through to refresh on 401 (expired/invalid token).
-          // Rethrow on other failures (429, 5xx, network) so they're visible.
-          const message = revokeError instanceof Error ? revokeError.message : String(revokeError);
-          if (!message.includes("401")) {
+          // Refresh only when Wahoo confirms the stored access token expired.
+          if (!(revokeError instanceof AccessTokenExpiredError)) {
             throw revokeError;
           }
         }
 
-        // Refresh the access token, then use it to revoke ALL tokens.
-        // DELETE /v1/permissions revokes every token for this app+user,
-        // including orphaned tokens from previous sessions that we don't
-        // have stored. POST /oauth/revoke can only revoke known tokens.
+        // A refreshed bearer token is needed to call the all-permissions DELETE endpoint.
         if (tokens.refreshToken) {
           logger.info("[wahoo] Access token expired, refreshing to revoke all tokens...");
           const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.#fetchFn);
@@ -241,6 +247,7 @@ export class WahooProvider implements WebhookProvider {
         return {
           providerAccountId: String(user.id),
           email: null,
+          emailVerified: false,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },
@@ -250,17 +257,19 @@ export class WahooProvider implements WebhookProvider {
   /**
    * Resolve a valid access token — refreshing if expired.
    */
-  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase, forceRefresh = false): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => wahooOAuthConfig(),
       fetchFn: this.#fetchFn,
+      forceRefresh,
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const onProgress = options?.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -274,50 +283,95 @@ export class WahooProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new WahooClient(tokens.accessToken, this.#fetchFn);
-    const persister = new WahooActivityPersister(this.id, client, db);
+    let client = new WahooClient(tokens.accessToken, this.#fetchFn);
+    let retriedExpiredAccessToken = false;
+    const persister = new WahooActivityPersister(
+      this.id,
+      client,
+      db,
+      options?.userId,
+      options.metricStreamPublisher,
+    );
 
-    // Paginate through all workouts
-    let page = 1;
-    let hasMore = true;
+    const since = window.since;
+    const syncWindowEnd = window.until;
+    const presentActivityExternalIds = new Set<string>();
+    let totalWorkouts = 0;
+    let reachedSyncWindowStart = false;
 
-    while (hasMore) {
-      const response = await client.getWorkouts(page);
-      const parsed = parseWorkoutList(response);
-
-      const total = parsed.total;
-
-      for (const workout of parsed.workouts) {
-        // Skip workouts before our sync window
-        if (workout.startedAt < since) {
-          hasMore = false;
-          break;
-        }
-
-        const result = await persister.persist(workout);
-
-        if (result.synced) {
-          recordsSynced++;
-          // no-mutate: Progress reporting is UX-only and can't fail in a testable way
-          if (onProgress && total > 0) {
-            // no-mutate
-            onProgress(
-              Math.round((recordsSynced / total) * 100),
-              `${recordsSynced}/${total} workouts`,
-            );
+    const pages = await fetchProviderPages<ParsedCardioActivity, number>({
+      providerId: this.id,
+      stepName: "activity_list",
+      initialCursor: 1,
+      maxPages: WAHOO_MAX_WORKOUT_PAGES,
+      fetchPage: async (page) => {
+        let response: WahooWorkoutListResponse;
+        try {
+          response = await client.getWorkouts(page ?? 1);
+        } catch (error) {
+          if (!(error instanceof AccessTokenExpiredError) || retriedExpiredAccessToken) {
+            throw error;
           }
+          retriedExpiredAccessToken = true;
+          logger.info(
+            "[wahoo] API rejected access token, refreshing and retrying workout request...",
+          );
+          tokens = await this.#resolveTokens(db, true);
+          client = new WahooClient(tokens.accessToken, this.#fetchFn);
+          response = await client.getWorkouts(page ?? 1);
         }
-        errors.push(...result.errors);
-      }
+        const parsed = parseWorkoutList(response);
+        totalWorkouts = parsed.total;
+        const emptyPageWithExpectedRows =
+          parsed.workouts.length === 0 && parsed.total > (parsed.page - 1) * parsed.perPage;
+        return {
+          items: parsed.workouts,
+          nextCursor: parsed.hasMore || emptyPageWithExpectedRows ? parsed.page + 1 : null,
+        };
+      },
+      onPage: async (pageResult) => {
+        for (const workout of pageResult.items) {
+          if (workout.startedAt < since) {
+            reachedSyncWindowStart = true;
+            break;
+          }
+          if (workout.startedAt > syncWindowEnd) continue;
 
-      hasMore = hasMore && parsed.hasMore;
-      page++;
+          presentActivityExternalIds.add(workout.externalId);
+          const result = await persister.persist(workout);
+
+          if (result.synced) {
+            recordsSynced++;
+            // no-mutate: Progress reporting is UX-only and can't fail in a testable way
+            if (onProgress && totalWorkouts > 0) {
+              // no-mutate
+              onProgress(
+                Math.round((recordsSynced / totalWorkouts) * 100),
+                `${recordsSynced}/${totalWorkouts} workouts`,
+              );
+            }
+          }
+          errors.push(...result.errors);
+        }
+      },
+      shouldStopAfterPage: () => reachedSyncWindowStart,
+    });
+
+    if (pages.degradations.length === 0) {
+      await finishProviderActivityListSync(db, {
+        providerId: this.id,
+        userId: options?.userId,
+        windowStart: since,
+        windowEnd: syncWindowEnd,
+        presentExternalIds: presentActivityExternalIds,
+      });
     }
 
     return {
       provider: this.id,
       recordsSynced,
       errors,
+      degradations: pages.degradations.length > 0 ? pages.degradations : undefined,
       duration: Date.now() - start,
     };
   }

@@ -1,20 +1,34 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
 import {
-  type CanonicalActivityType,
-  createActivityTypeMapper,
-  STRAVA_ACTIVITY_TYPE_MAP,
-} from "@dofek/training/training";
-import { and, eq, sql } from "drizzle-orm";
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
+import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { type MetricStreamSourceRow, writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { activity, metricStream } from "../db/schema.ts";
+import {
+  type MetricStreamSourceRow,
+  replaceMetricStreamBatch,
+  writeMetricStreamBatch,
+} from "../db/metric-stream-writer.ts";
+import {
+  finishProviderActivityListSync,
+  markProviderActivityAbsent,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { activity } from "../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -114,8 +128,10 @@ const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
  * When sport_type is "Ride" and trainer is true, override to indoor_cycling
  * (covers spin bikes and other stationary trainers recorded via Strava).
  */
-export function mapStravaActivityType(sportType: string, trainer = false): CanonicalActivityType {
-  if (sportType === "Ride" && trainer) return "indoor_cycling";
+export function mapStravaActivityType(sportType: string, trainer = false): ProviderActivityType {
+  if (sportType === "Ride" && trainer) {
+    return resolveProviderActivityType(sportType, "indoor_cycling");
+  }
   return mapStravaType(sportType);
 }
 
@@ -125,7 +141,7 @@ export function mapStravaActivityType(sportType: string, trainer = false): Canon
 
 export interface ParsedStravaActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -160,7 +176,7 @@ export function parseStravaActivityList(
 }
 
 // ============================================================
-// Streams → metric_stream mapping
+// Streams → metric stream mapping
 // ============================================================
 
 export function stravaStreamsToMetricStream(
@@ -168,7 +184,7 @@ export function stravaStreamsToMetricStream(
   providerId: string,
   activityId: string,
   startedAt: Date,
-  activityType?: string,
+  activityType?: ProviderActivityType,
 ): MetricStreamSourceRow[] {
   // Scalar streams contain number[], latlng contains [number, number][]
   function isScalarArray(data: number[] | [number, number][]): data is number[] {
@@ -219,7 +235,8 @@ export function stravaStreamsToMetricStream(
       heartRate: heartrates?.[i],
       power: watts?.[i],
       cadence: cadences?.[i],
-      speed: activityType && isIndoorCycling(activityType) ? undefined : speeds?.[i],
+      speed:
+        activityType && isIndoorCyclingModality(activityType.modality) ? undefined : speeds?.[i],
       lat: latlng?.[0],
       lng: latlng?.[1],
       altitude: altitudes?.[i],
@@ -244,31 +261,15 @@ export const STRAVA_THROTTLE_MS = 10_000;
 export class StravaClient {
   #accessToken: string;
   #fetchFn: typeof globalThis.fetch;
-  #lastRequestTime = 0;
-  #throttleMs: number;
 
-  constructor(
-    accessToken: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-    throttleMs = STRAVA_THROTTLE_MS,
-  ) {
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = fetchFn;
-    this.#throttleMs = throttleMs;
-  }
-
-  async #throttle(): Promise<void> {
-    if (this.#throttleMs <= 0) return;
-    const now = Date.now();
-    const elapsed = now - this.#lastRequestTime;
-    if (this.#lastRequestTime > 0 && elapsed < this.#throttleMs) {
-      await new Promise((resolve) => setTimeout(resolve, this.#throttleMs - elapsed));
-    }
-    this.#lastRequestTime = Date.now();
+    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, {
+      createRateLimitError: createStravaRateLimitError,
+    });
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
-    await this.#throttle();
     const url = new URL(path, STRAVA_API_BASE);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -279,10 +280,6 @@ export class StravaClient {
     const response = await this.#fetchFn(url.toString(), {
       headers: { Authorization: `Bearer ${this.#accessToken}` },
     });
-
-    if (response.status === 429) {
-      throw new StravaRateLimitError(`Strava API rate limit exceeded (429)`);
-    }
 
     if (response.status === 401 || response.status === 403) {
       throw new StravaUnauthorizedError(
@@ -359,11 +356,29 @@ export class StravaClient {
   }
 }
 
-export class StravaRateLimitError extends Error {
-  constructor(message: string) {
-    super(message);
+export class StravaRateLimitError extends ProviderRateLimitError {
+  constructor(message: string, responseBody = "", retryAfterSeconds?: number | null) {
+    super({
+      message,
+      providerId: "strava",
+      statusCode: 429,
+      responseBody,
+      retryAfterSeconds,
+    });
     this.name = "StravaRateLimitError";
   }
+}
+
+function createStravaRateLimitError(
+  response: Response,
+  responseBody: string,
+): StravaRateLimitError {
+  const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
+  return new StravaRateLimitError(
+    `Strava API rate limit exceeded (${response.status}): ${responseBody}`,
+    responseBody,
+    retryAfterSeconds,
+  );
 }
 
 export class StravaUnauthorizedError extends Error {
@@ -385,6 +400,7 @@ export class StravaNotFoundError extends Error {
 // ============================================================
 
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
+const STRAVA_MAX_ACTIVITY_PAGES = 100;
 
 export function stravaOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
@@ -406,14 +422,11 @@ export class StravaProvider implements WebhookProvider {
   readonly name = "Strava";
   readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
-  #throttleMs: number;
 
-  constructor(
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-    throttleMs = STRAVA_THROTTLE_MS,
-  ) {
-    this.#fetchFn = fetchFn;
-    this.#throttleMs = throttleMs;
+  constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, {
+      createRateLimitError: createStravaRateLimitError,
+    });
   }
 
   validate(): string | null {
@@ -495,7 +508,7 @@ export class StravaProvider implements WebhookProvider {
         object_type: z.string(),
         owner_id: z.number(),
         subscription_id: z.number().optional(),
-        updates: z.record(z.unknown()).optional(),
+        updates: z.record(z.string(), z.unknown()).optional(),
       })
       .safeParse(body);
 
@@ -533,9 +546,28 @@ export class StravaProvider implements WebhookProvider {
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = stravaOAuthConfig(options?.host);
     if (!config) throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required");
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code),
+      reconnectStrategy: "revoke-then-replace",
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      revokeExistingTokens: async (tokens) => {
+        const token = tokens.refreshToken ?? tokens.accessToken;
+        const response = await fetchFn(`${STRAVA_AUTH_BASE}/revoke`, {
+          body: new URLSearchParams({
+            token,
+            token_type_hint: tokens.refreshToken ? "refresh_token" : "access_token",
+          }),
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          method: "POST",
+        });
+        if (response.status !== 200) {
+          throw new Error(`Strava token revocation failed (${response.status})`);
+        }
+      },
       apiBaseUrl: STRAVA_API_BASE,
       identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
@@ -556,6 +588,7 @@ export class StravaProvider implements WebhookProvider {
         return {
           providerAccountId: String(athlete.id),
           email: null,
+          emailVerified: false,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },
@@ -579,7 +612,7 @@ export class StravaProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    options?: SyncOptions,
+    options: SyncOptions = {},
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -590,31 +623,22 @@ export class StravaProvider implements WebhookProvider {
     }
 
     const activityExternalId = Number(event.objectId);
-    const scopedUserId = options?.userId ?? getTokenUserId();
+    const scopedUserId = options.userId ?? getTokenUserId();
 
     if (!scopedUserId) {
       throw new Error(`[strava] Cannot sync webhook event: no userId provided or in context`);
     }
 
-    // Handle delete events — remove the activity and its streams
+    // Handle delete events by preserving the raw row but hiding it from current activity views.
     if (event.eventType === "delete") {
-      const deleted = await db
-        .delete(activity)
-        .where(
-          and(
-            eq(activity.userId, scopedUserId),
-            eq(activity.providerId, this.id),
-            eq(activity.externalId, event.objectId),
-          ),
-        )
-        .returning({ id: activity.id });
-      const deletedRow = deleted[0];
-      if (deletedRow) {
-        await db.delete(metricStream).where(eq(metricStream.activityId, deletedRow.id));
-        logger.info(
-          `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
-        );
-      }
+      await markProviderActivityAbsent(db, {
+        providerId: this.id,
+        externalId: event.objectId,
+        userId: scopedUserId,
+      });
+      logger.info(
+        `[strava] Marked activity ${event.objectId} provider-absent via webhook for user ${scopedUserId}`,
+      );
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
 
@@ -626,16 +650,16 @@ export class StravaProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
+    const client = new StravaClient(tokens.accessToken, this.#fetchFn);
 
     // Fetch the single activity detail (1 API call)
     const detail = await client.getActivity(activityExternalId);
     const parsed = parseStravaActivity(detail);
 
     // Upsert the activity row
-    const [row] = await db
-      .insert(activity)
-      .values({
+    const row = await upsertProviderActivity(
+      db,
+      {
         providerId: this.id,
         externalId: parsed.externalId,
         activityType: parsed.activityType,
@@ -644,19 +668,16 @@ export class StravaProvider implements WebhookProvider {
         name: parsed.name,
         sourceName: detail.device_name,
         raw: detail,
-      })
-      .onConflictDoUpdate({
-        target: [activity.userId, activity.providerId, activity.externalId],
-        set: {
-          activityType: parsed.activityType,
-          startedAt: parsed.startedAt,
-          endedAt: parsed.endedAt,
-          name: parsed.name,
-          sourceName: detail.device_name,
-          raw: detail,
-        },
-      })
-      .returning({ id: activity.id });
+      },
+      {
+        activityType: parsed.activityType,
+        startedAt: parsed.startedAt,
+        endedAt: parsed.endedAt,
+        name: parsed.name,
+        sourceName: detail.device_name,
+        raw: detail,
+      },
+    );
 
     recordsSynced++;
     const activityId = row?.id;
@@ -677,8 +698,13 @@ export class StravaProvider implements WebhookProvider {
 
       if (metricRows.length > 0) {
         // Delete existing sensor rows then re-insert.
-        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-        await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(
+          db,
+          { activityId },
+          metricRows,
+          SOURCE_TYPE_API,
+          options.metricStreamPublisher,
+        );
         logger.info(
           `[strava] Webhook: inserted ${metricRows.length} metric stream rows for activity ${event.objectId}`,
         );
@@ -699,12 +725,9 @@ export class StravaProvider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  async sync(
-    db: SyncDatabase,
-    since: Date,
-    options?: import("./types.ts").SyncOptions,
-  ): Promise<SyncResult> {
-    const onProgress = options?.onProgress;
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const onProgress = options.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -717,7 +740,9 @@ export class StravaProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
+    const client = new StravaClient(tokens.accessToken, this.#fetchFn);
+    const since = window.since;
+    const syncWindowEnd = window.until;
 
     // Strava uses epoch seconds for the `after` parameter
     const afterEpoch = Math.floor(since.getTime() / 1000);
@@ -726,6 +751,8 @@ export class StravaProvider implements WebhookProvider {
     const perPage = 30;
     let hasMore = true;
     let shouldStop = false;
+    const degradations: SyncDegradation[] = [];
+    const presentActivityExternalIds = new Set<string>();
 
     while (hasMore && !shouldStop) {
       let rawActivities: StravaActivity[];
@@ -742,8 +769,8 @@ export class StravaProvider implements WebhookProvider {
         }
         if (err instanceof StravaUnauthorizedError) {
           errors.push({
-            message: "Strava authorization failed — run: health-data auth strava",
-            cause: err,
+            message: "Strava authorization failed.",
+            cause: new ProviderAuthorizationFailedError("Strava", { cause: err }),
           });
           shouldStop = true;
           break;
@@ -767,6 +794,7 @@ export class StravaProvider implements WebhookProvider {
       const parsed = parseStravaActivityList(rawActivities, perPage);
 
       for (const act of parsed.activities) {
+        presentActivityExternalIds.add(act.externalId);
         try {
           // Fetch detailed activity to get device_name for source tracking
           let sourceName: string | undefined = act.sourceName;
@@ -785,9 +813,8 @@ export class StravaProvider implements WebhookProvider {
             }
             if (detailErr instanceof StravaUnauthorizedError) {
               errors.push({
-                message:
-                  "Strava authorization failed while fetching activity detail — run: health-data auth strava",
-                cause: detailErr,
+                message: "Strava authorization failed while fetching activity detail.",
+                cause: new ProviderAuthorizationFailedError("Strava", { cause: detailErr }),
               });
               shouldStop = true;
               break;
@@ -803,9 +830,9 @@ export class StravaProvider implements WebhookProvider {
             }
           }
 
-          const [row] = await db
-            .insert(activity)
-            .values({
+          const row = await upsertProviderActivity(
+            db,
+            {
               providerId: this.id,
               externalId: act.externalId,
               activityType: act.activityType,
@@ -814,19 +841,16 @@ export class StravaProvider implements WebhookProvider {
               name: act.name,
               sourceName,
               raw: rawActivities.find((r) => String(r.id) === act.externalId),
-            })
-            .onConflictDoUpdate({
-              target: [activity.userId, activity.providerId, activity.externalId],
-              set: {
-                activityType: act.activityType,
-                startedAt: act.startedAt,
-                endedAt: act.endedAt,
-                name: act.name,
-                sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-                raw: rawActivities.find((r) => String(r.id) === act.externalId),
-              },
-            })
-            .returning({ id: activity.id });
+            },
+            {
+              activityType: act.activityType,
+              startedAt: act.startedAt,
+              endedAt: act.endedAt,
+              name: act.name,
+              sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
+              raw: rawActivities.find((r) => String(r.id) === act.externalId),
+            },
+          );
 
           recordsSynced++;
           // no-mutate: Progress reporting is UX-only and can't fail in a testable way
@@ -850,7 +874,13 @@ export class StravaProvider implements WebhookProvider {
             );
 
             if (metricRows.length > 0) {
-              await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+              await writeMetricStreamBatch(
+                db,
+                metricRows,
+                SOURCE_TYPE_API,
+                undefined,
+                options.metricStreamPublisher,
+              );
               logger.info(
                 `[strava] Inserted ${metricRows.length} metric stream rows for activity ${act.externalId}`,
               );
@@ -866,9 +896,8 @@ export class StravaProvider implements WebhookProvider {
             }
             if (streamErr instanceof StravaUnauthorizedError) {
               errors.push({
-                message:
-                  "Strava authorization failed while fetching streams — run: health-data auth strava",
-                cause: streamErr,
+                message: "Strava authorization failed while fetching streams.",
+                cause: new ProviderAuthorizationFailedError("Strava", { cause: streamErr }),
               });
               shouldStop = true;
               break;
@@ -893,13 +922,35 @@ export class StravaProvider implements WebhookProvider {
       }
 
       hasMore = parsed.hasMore && !shouldStop;
+      if (hasMore && page >= STRAVA_MAX_ACTIVITY_PAGES) {
+        degradations.push({
+          kind: "pagination_max_pages_exceeded",
+          providerId: this.id,
+          stepName: "activity_list",
+          message: "Strava activity pagination exceeded the maximum page guard",
+          context: { page, perPage },
+        });
+        shouldStop = true;
+        hasMore = false;
+      }
       page++;
+    }
+
+    if (!shouldStop) {
+      await finishProviderActivityListSync(db, {
+        providerId: this.id,
+        userId: options.userId,
+        windowStart: since,
+        windowEnd: syncWindowEnd,
+        presentExternalIds: presentActivityExternalIds,
+      });
     }
 
     return {
       provider: this.id,
       recordsSynced,
       errors,
+      degradations,
       duration: Date.now() - start,
     };
   }

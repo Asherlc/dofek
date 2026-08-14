@@ -1,12 +1,24 @@
 import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training/pmc";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 
-import { getEffectiveParams } from "dofek/personalization/params";
+import type { Database } from "dofek/db";
+import { type EffectiveParams, getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateStringSchema } from "../lib/typed-sql.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { activityRepositoryFor } from "./activity-repository.ts";
+import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
+import {
+  type PmcActivityRow,
+  type PmcNormalizedPowerRow,
+  PmcTrainingLoadCalculator,
+} from "./pmc-training-load-calculator.ts";
+import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
+
+const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -16,7 +28,7 @@ const combinedActivityRowSchema = z.object({
   global_max_hr: z.coerce.number().nullable(),
   resting_hr: z.coerce.number(),
   id: z.string(),
-  date: dateStringSchema,
+  date: z.string(),
   duration_min: z.coerce.number(),
   avg_hr: z.coerce.number(),
   max_hr: z.coerce.number(),
@@ -25,12 +37,73 @@ const combinedActivityRowSchema = z.object({
   hr_samples: z.coerce.number(),
 });
 
-type ActivityRow = z.infer<typeof combinedActivityRowSchema>;
-
 const normalizedPowerRowSchema = z.object({
   activity_id: z.string(),
   np: z.coerce.number(),
 });
+
+type PmcRepositoryChartResult = PmcChartResult & {
+  data: PmcDataPoint[];
+  model: TssModelInfo;
+};
+
+export async function buildPmcChartFromRows(input: {
+  db: Pick<Database, "execute">;
+  userId: string;
+  range: ChartRange;
+  activityRows: PmcActivityRow[];
+  normalizedPowerRows: PmcNormalizedPowerRow[];
+  parameters?: PmcChartParameters;
+}): Promise<PmcRepositoryChartResult> {
+  const parameters =
+    input.parameters ?? (await loadPmcChartParameters(input.db, input.userId, input.range));
+  const { effective, queryRange } = parameters;
+  const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
+  const { genderFactor, exponent } = effective.trainingImpulseConstants;
+  const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
+  const trainingLoadCalculator = new PmcTrainingLoadCalculator({
+    estimateThresholdPower: TrainingStressCalculator.estimateFtp,
+    computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) =>
+      trainingStressCalculator.computeTrimp(durationMin, avgHr, maxHr, restingHr),
+    computePowerTrainingStressScore: TrainingStressCalculator.computePowerTss,
+    computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) =>
+      trainingStressCalculator.computeHrTss(durationMin, avgHr, maxHr, restingHr),
+    buildTrainingStressModel: TrainingStressCalculator.buildTssModel,
+  });
+  const chartCalculator = new PmcChartCalculator({
+    chronicTrainingLoadDays,
+    acuteTrainingLoadDays,
+    trainingLoadCalculator,
+  });
+  const allTimeActivityDays = daysSinceEarliestActivity(input.activityRows);
+  return chartCalculator.buildChart({
+    activityRows: input.activityRows,
+    normalizedPowerRows: input.normalizedPowerRows,
+    queryDays: queryRange.days ?? allTimeActivityDays,
+    displayDays: input.range.days ?? allTimeActivityDays,
+  });
+}
+
+export interface PmcChartParameters {
+  effective: EffectiveParams;
+  queryRange: ChartRange;
+}
+
+export async function loadPmcChartParameters(
+  db: Pick<Database, "execute">,
+  userId: string,
+  range: ChartRange,
+): Promise<PmcChartParameters> {
+  const storedParams = await loadPersonalizedParams(db, userId);
+  const effective = getEffectiveParams(storedParams);
+  const displayRangeBaseDays = range.days === null ? null : Math.max(range.days, 365);
+  return {
+    effective,
+    queryRange: ChartRange.fromDays(displayRangeBaseDays).withWarmupDays(
+      effective.exponentialMovingAverage.chronicTrainingLoadDays,
+    ),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -38,268 +111,138 @@ const normalizedPowerRowSchema = z.object({
 
 /** Data access and computation for Performance Management Chart (PMC). */
 export class PmcRepository extends BaseRepository {
-  async getChart(days: number): Promise<PmcChartResult> {
-    // Load personalized algorithm parameters
-    const storedParams = await loadPersonalizedParams(this.db, this.userId);
-    const effective = getEffectiveParams(storedParams);
-    const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
-    const { genderFactor, exponent } = effective.trainingImpulseConstants;
-    const calculator = new TrainingStressCalculator(genderFactor, exponent);
+  readonly #sensorStore: ActivitySensorStore;
 
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+    accessWindow?: ConstructorParameters<typeof BaseRepository>[3],
+  ) {
+    super(db, userId, timezone, accessWindow);
+    this.#sensorStore = sensorStore;
+  }
+
+  async getChart(range: ChartRange): Promise<PmcRepositoryChartResult> {
     // Fetch enough history for EWMA convergence, regardless of display range.
-    const minHistoryDays = 365;
-    const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
+    const parameters = await loadPmcChartParameters(this.db, this.userId, range);
+    const { queryRange } = parameters;
+    const today = new Date().toISOString().slice(0, 10);
 
-    // QUERY 1: activities with HR data.
-    // Use COALESCE to fall back to the highest observed HR across all activities
-    // when user_profile.max_hr hasn't been populated yet.
-    // Wrapped in queryWithViewRefresh so stale materialized views are detected
-    // and refreshed automatically — without this, the chart silently shows empty.
-    // Custom base count SQL checks for activities with HR sensor data specifically,
-    // avoiding false-positive refreshes for users who have activities but no HR data.
-    const activityRows = await this.queryWithViewRefresh(
-      () =>
-        this.query(
-          combinedActivityRowSchema,
-          sql`SELECT
-                COALESCE(up.max_hr, (
-                  SELECT MAX(a2.max_hr)
-                  FROM fitness.activity_summary a2
-                  WHERE a2.user_id = ${this.userId} AND a2.max_hr IS NOT NULL
-                )) AS global_max_hr,
-                COALESCE(up.resting_hr, (
-                  SELECT resting_hr FROM fitness.v_daily_metrics
-                  WHERE user_id = ${this.userId} AND resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
-                ), 60) AS resting_hr,
-                asum.activity_id AS id,
-                (asum.started_at AT TIME ZONE ${this.timezone})::date AS date,
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60 AS duration_min,
-                asum.avg_hr,
-                asum.max_hr,
-                asum.avg_power,
-                asum.power_sample_count AS power_samples,
-                asum.hr_sample_count AS hr_samples
-              FROM fitness.activity_summary asum
-              JOIN fitness.user_profile up ON up.id = asum.user_id
-              WHERE up.id = ${this.userId}
-                AND asum.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-                AND asum.ended_at IS NOT NULL
-                AND asum.hr_sample_count > 0
-                ${this.timestampAccessPredicate(sql`asum.started_at`)}`,
-        ),
-      queryDays,
-      "pmcChart",
-      sql`SELECT count(*)::int AS count
-          FROM fitness.metric_stream
-          WHERE user_id = ${this.userId}
-            AND channel = 'heart_rate'
-            AND recorded_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-          LIMIT 1`,
-    );
-
-    const globalMaxHr = activityRows.length > 0 ? Number(activityRows[0]?.global_max_hr) : null;
-    if (!globalMaxHr) {
+    if ((await this.#loadRawActivityCount(queryRange)) === 0) {
       return {
         data: [],
         model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
       };
     }
 
-    const restingHr = activityRows.length > 0 ? Number(activityRows[0]?.resting_hr) : 60;
+    const activityRangeFilter = queryRange.clickHouseTimestampAfter("asum.started_at", "queryDays");
+    const rhrWindowStart = queryRange.windowStartString(today);
+    // QUERY 1: activities with HR data from analytics.activity_summary in CH.
+    // user_profile is accessed via ClickHouse read models.
+    // Sample counts come from the activity summary read model; do not recompute
+    // them by joining deduped_sensor on the request path.
+    const activityRows = await this.#sensorStore.query(
+      combinedActivityRowSchema,
+      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: !queryRange.isAll() })},
+      user_baseline AS (
+        SELECT
+          coalesce(nullIf(up.max_hr, 0), (
+            SELECT maxIf(max_hr, max_hr > 0) FROM analytics.activity_summary
+            WHERE user_id = {userId:UUID}
+              AND has({activityTypes:Array(String)}, canonical_type)
+          )) AS global_max_hr,
+          coalesce(nullIf(up.resting_hr, 0), (
+            SELECT resting_hr FROM resting_heart_rate
+            WHERE resting_hr IS NOT NULL AND resting_hr > 0
+            ORDER BY date DESC LIMIT 1
+          ), 60) AS resting_hr
+        FROM postgres_fitness.user_profile_current up
+        WHERE up.id = {userId:UUID}
+      )
+      SELECT
+        ub.global_max_hr AS global_max_hr,
+        ub.resting_hr AS resting_hr,
+        toString(asum.activity_id) AS id,
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        dateDiff('second', asum.started_at, asum.ended_at) / 60 AS duration_min,
+        asum.avg_hr AS avg_hr,
+        asum.max_hr AS max_hr,
+        asum.avg_power AS avg_power,
+        coalesce(asum.power_sample_count, 0) AS power_samples,
+        coalesce(asum.hr_sample_count, 0) AS hr_samples
+      FROM analytics.activity_summary asum
+      CROSS JOIN user_baseline ub
+      WHERE asum.user_id = {userId:UUID}
+        ${activityRangeFilter}
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
+        AND asum.ended_at IS NOT NULL
+        AND coalesce(asum.hr_sample_count, 0) > 0`,
+      {
+        userId: this.userId,
+        timezone: this.timezone,
+        ...queryRange.clickHouseParams("queryDays"),
+        activityTypes: CYCLING_TYPES,
+        rhrEndDate: today,
+        ...(rhrWindowStart ? { rhrWindowStart } : {}),
+      },
+    );
 
-    // QUERY 2: Normalized Power per activity from deduped sensor data
-    const npRows = await this.query(
+    const visibleActivityRows = await activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).filterToVisibleActivities(activityRows);
+
+    // QUERY 2: Normalized Power per activity from activity_summary (pre-computed by dbt).
+    const normalizedPowerRows = await this.#sensorStore.query(
       normalizedPowerRowSchema,
-      sql`WITH rolling AS (
-            SELECT
-              ds.activity_id,
-              AVG(ds.scalar) OVER (
-                PARTITION BY ds.activity_id
-                ORDER BY ds.recorded_at
-                RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
-              ) AS rolling_30s_power
-            FROM fitness.deduped_sensor ds
-            JOIN fitness.v_activity a ON a.id = ds.activity_id
-            WHERE ds.user_id = ${this.userId}
-              AND a.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              AND ds.channel = 'power'
-              AND ds.scalar > 0
-          )
-          SELECT
-            r.activity_id,
-            ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np
-          FROM rolling r
-          GROUP BY r.activity_id
-          HAVING COUNT(*) >= 60`,
-    );
-    const npByActivity = new Map(npRows.map((row) => [row.activity_id, Number(row.np)]));
-
-    // Estimate FTP and build regression model
-    const ftp = TrainingStressCalculator.estimateFtp(activityRows);
-    const { tssModel, pairedData } = this.#buildRegressionModel(
-      activityRows,
-      npByActivity,
-      ftp,
-      calculator,
-      globalMaxHr,
-      restingHr,
+      `SELECT
+        toString(activity_id) AS activity_id,
+        round(normalized_power, 1) AS np
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        ${queryRange.clickHouseTimestampAfter("started_at", "queryDays")}
+        AND has({activityTypes:Array(String)}, canonical_type)
+        AND normalized_power IS NOT NULL`,
+      {
+        userId: this.userId,
+        ...queryRange.clickHouseParams("queryDays"),
+        activityTypes: CYCLING_TYPES,
+      },
     );
 
-    // Compute TSS per activity and aggregate by day
-    const dailyLoad = this.#computeDailyLoad(
-      activityRows,
-      npByActivity,
-      ftp,
-      tssModel,
-      calculator,
-      globalMaxHr,
-      restingHr,
-    );
-
-    // Run EWMA and trim leading zeros
-    const result = this.#computeEwma(
-      dailyLoad,
-      queryDays,
-      days,
-      chronicTrainingLoadDays,
-      acuteTrainingLoadDays,
-    );
-
-    // Assemble model info
-    const modelInfo: TssModelInfo =
-      tssModel != null
-        ? {
-            type: "learned",
-            pairedActivities: pairedData.length,
-            r2: Math.round(tssModel.r2 * 1000) / 1000,
-            ftp,
-          }
-        : {
-            type: "generic",
-            pairedActivities: pairedData.length,
-            r2: null,
-            ftp,
-          };
-
-    return { data: result, model: modelInfo };
+    return buildPmcChartFromRows({
+      db: this.db,
+      userId: this.userId,
+      range,
+      activityRows: visibleActivityRows,
+      normalizedPowerRows,
+      parameters,
+    });
   }
 
-  // ── Private helpers ─────────────────────────────────────────────────
-
-  #buildRegressionModel(
-    activities: ActivityRow[],
-    npByActivity: Map<string, number>,
-    ftp: number | null,
-    calculator: TrainingStressCalculator,
-    globalMaxHr: number,
-    restingHr: number,
-  ): {
-    tssModel: { slope: number; intercept: number; r2: number } | null;
-    pairedData: { trimp: number; powerTss: number }[];
-  } {
-    const pairedData: { trimp: number; powerTss: number }[] = [];
-
-    if (ftp != null) {
-      for (const activity of activities) {
-        const durationMin = Number(activity.duration_min);
-        const avgHr = Number(activity.avg_hr);
-        const normalizedPower = npByActivity.get(activity.id);
-
-        if (normalizedPower != null && normalizedPower > 0) {
-          const trimp = calculator.computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
-          const powerTss = TrainingStressCalculator.computePowerTss(
-            normalizedPower,
-            ftp,
-            durationMin,
-          );
-          if (trimp > 0 && powerTss > 0) {
-            pairedData.push({ trimp, powerTss });
-          }
-        }
-      }
-    }
-
-    const tssModel = TrainingStressCalculator.buildTssModel(pairedData);
-    return { tssModel, pairedData };
+  async #loadRawActivityCount(range: ChartRange): Promise<number> {
+    return activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).countVisibleInWindow({
+      days: range.days,
+      activityTypes: CYCLING_TYPES,
+    });
   }
+}
 
-  #computeDailyLoad(
-    activities: ActivityRow[],
-    npByActivity: Map<string, number>,
-    ftp: number | null,
-    tssModel: { slope: number; intercept: number; r2: number } | null,
-    calculator: TrainingStressCalculator,
-    globalMaxHr: number,
-    restingHr: number,
-  ): Map<string, number> {
-    const dailyLoad = new Map<string, number>();
-
-    for (const activity of activities) {
-      const durationMin = Number(activity.duration_min);
-      const avgHr = Number(activity.avg_hr);
-      const normalizedPower = npByActivity.get(activity.id);
-
-      let tss: number;
-
-      if (ftp != null && normalizedPower != null && normalizedPower > 0) {
-        tss = TrainingStressCalculator.computePowerTss(normalizedPower, ftp, durationMin);
-      } else if (tssModel != null) {
-        const trimp = calculator.computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
-        tss = Math.max(0, tssModel.slope * trimp + tssModel.intercept);
-      } else {
-        tss = calculator.computeHrTss(durationMin, avgHr, globalMaxHr, restingHr);
-      }
-
-      const dateStr = String(activity.date);
-      dailyLoad.set(dateStr, (dailyLoad.get(dateStr) ?? 0) + tss);
-    }
-
-    return dailyLoad;
-  }
-
-  #computeEwma(
-    dailyLoad: Map<string, number>,
-    queryDays: number,
-    displayDays: number,
-    chronicTrainingLoadDays: number,
-    acuteTrainingLoadDays: number,
-  ): PmcDataPoint[] {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - queryDays);
-    const endDate = new Date();
-
-    const result: PmcDataPoint[] = [];
-    let ctl = 0;
-    let atl = 0;
-
-    const current = new Date(startDate);
-    const warmUpDays = queryDays - displayDays;
-    let dayIndex = 0;
-
-    while (current <= endDate) {
-      const dateStr = current.toISOString().split("T")[0] ?? "";
-      const load = dailyLoad.get(dateStr) ?? 0;
-
-      ctl = ctl + (load - ctl) / chronicTrainingLoadDays;
-      atl = atl + (load - atl) / acuteTrainingLoadDays;
-      const tsb = ctl - atl;
-
-      if (dayIndex >= warmUpDays) {
-        result.push({
-          date: dateStr,
-          load: Math.round(load * 10) / 10,
-          ctl: Math.round(ctl * 10) / 10,
-          atl: Math.round(atl * 10) / 10,
-          tsb: Math.round(tsb * 10) / 10,
-        });
-      }
-
-      dayIndex++;
-      current.setDate(current.getDate() + 1);
-    }
-
-    let firstMeaningfulIndex = result.findIndex((dataPoint) => dataPoint.ctl >= 0.1);
-    if (firstMeaningfulIndex < 0) firstMeaningfulIndex = 0;
-    return result.slice(firstMeaningfulIndex);
-  }
+function daysSinceEarliestActivity(activityRows: Array<{ date: string }>): number {
+  const earliestDate = activityRows
+    .map((row) => row.date)
+    .sort((left, right) => left.localeCompare(right))[0];
+  if (!earliestDate) return 0;
+  const earliest = new Date(`${earliestDate}T00:00:00Z`).getTime();
+  const today = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  return Math.max(0, Math.ceil((today - earliest) / 86_400_000));
 }

@@ -1,5 +1,5 @@
-import { formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
+import { formatDateMedium, formatNumber } from "@dofek/format/format";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { TrainingMonotonyWeek } from "dofek-server/types";
 import {
   chartColors,
@@ -8,8 +8,10 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface TrainingMonotonyChartProps {
   data: TrainingMonotonyWeek[];
@@ -17,6 +19,7 @@ interface TrainingMonotonyChartProps {
 }
 
 export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartProps) {
+  const method = data[0]?.method;
   const option = {
     grid: dofekGrid("dualAxis", { top: 50, bottom: 50 }),
     tooltip: dofekTooltip({
@@ -34,40 +37,43 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const idx = first.dataIndex;
         const dataPoint = data[idx];
         if (!dataPoint) return "";
-        const dateLabel = new Date(dataPoint.week).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
-        const monotonyColor = dataPoint.monotony > 2.0 ? statusColors.danger : chartColors.blue;
+        const dateLabel = formatDateMedium(dataPoint.week);
         return [
-          `<strong>${dateLabel}</strong>`,
-          `Monotony: <span style="color:${monotonyColor}">${formatNumber(dataPoint.monotony, 2)}</span>${dataPoint.monotony > 2.0 ? " (high!)" : ""}`,
-          `Strain: ${formatNumber(dataPoint.strain)}`,
+          `<strong>${escapeTooltipHtml(dateLabel)}</strong>`,
+          `${TRAINING_TERMINOLOGY.monotony.valueLabel}: <span style="color:${chartColors.blue}">${formatNumber(dataPoint.monotony, 2)}</span>`,
+          `${TRAINING_TERMINOLOGY.monotony.strainLabel}: ${formatNumber(dataPoint.strain)}`,
+          `Average daily cycling load: ${formatNumber(dataPoint.dailyMeanLoad, 2)}`,
+          `Daily load variation: ${formatNumber(dataPoint.dailyLoadStandardDeviation, 2)}`,
         ].join("<br/>");
       },
     }),
-    legend: dofekLegend(true, { data: ["Monotony", "Strain"] }),
+    legend: dofekLegend(true, {
+      data: [TRAINING_TERMINOLOGY.monotony.valueLabel, TRAINING_TERMINOLOGY.monotony.strainLabel],
+    }),
     xAxis: dofekAxis.time(),
     yAxis: [
-      dofekAxis.value({ name: "Monotony" }),
-      dofekAxis.value({ name: "Strain", position: "right", showSplitLine: false }),
+      dofekAxis.value({ name: TRAINING_TERMINOLOGY.monotony.valueLabel }),
+      dofekAxis.value({
+        name: TRAINING_TERMINOLOGY.monotony.strainLabel,
+        position: "right",
+        showSplitLine: false,
+      }),
     ],
     series: [
       {
         ...dofekSeries.bar(
-          "Monotony",
+          TRAINING_TERMINOLOGY.monotony.valueLabel,
           data.map((d) => ({
             value: [d.week, d.monotony],
             itemStyle: {
-              color: d.monotony > 2.0 ? statusColors.danger : chartColors.blue,
+              color: chartColors.blue,
             },
           })),
           {},
         ),
       },
       dofekSeries.line(
-        "Strain",
+        TRAINING_TERMINOLOGY.monotony.strainLabel,
         data.map((d) => [d.week, d.strain]),
         {
           color: chartColors.orange,
@@ -81,15 +87,26 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
 
   return (
     <div>
-      <p className="text-xs text-dim mb-2">
-        Monotony &gt; 2.0 (red) with high strain indicates elevated overtraining risk.
-      </p>
+      {method ? (
+        <MethodExplanation
+          className="mb-2"
+          technicalName={TRAINING_TERMINOLOGY.monotony.technicalName}
+          lines={[
+            TRAINING_TERMINOLOGY.monotony.details,
+            method.formula,
+            method.calendar,
+            method.activityScope,
+            method.interpretation,
+          ]}
+          source={method.source}
+        />
+      ) : null}
       <DofekChart
         option={option}
         loading={loading}
         empty={data.length === 0}
         height={300}
-        emptyMessage="No training monotony data available"
+        emptyMessage="No weekly training variety data available"
       />
     </div>
   );

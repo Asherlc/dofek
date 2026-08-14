@@ -1,12 +1,12 @@
-import * as Sentry from "@sentry/react-native";
 import { useEffect } from "react";
 import {
+  type InertialMeasurementUnitUploadClient,
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
   type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
+import { captureException } from "./telemetry";
 
 /**
  * Hook that starts WHOOP BLE sync for all available data streams:
@@ -27,7 +27,7 @@ export function useWhoopBleSync(
 ): void {
   useEffect(() => {
     initBackgroundWhoopBleSync(uploadClient, whoopDeps, realtimeClient).catch((error: unknown) => {
-      Sentry.captureException(error, { tags: { source: "whoop-ble-sync-init" } });
+      captureException(error, { source: "whoop-ble-sync-init" });
     });
 
     return () => {

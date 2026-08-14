@@ -1,20 +1,30 @@
-import { formatNumber, formatRelativeTime, formatTime } from "@dofek/format/format";
-import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
-import {
-  parseWhoopWearLocation,
-  WHOOP_WEAR_LOCATION_SETTING_KEY,
-  WHOOP_WEAR_LOCATIONS,
-  type WhoopWearLocation,
-} from "@dofek/providers/whoop";
+import { formatDateYmd, formatRelativeTime } from "@dofek/format/format";
+import { providerHealth } from "@dofek/providers/provider-health";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "../components/DataSourcesAuthModals.tsx";
+import { FileImportProviderCard } from "../components/FileImportProviderCard.tsx";
+import { getFileImportConfig } from "../components/file-import-configs.ts";
+import { OperationProgressBar } from "../components/OperationProgressBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
+import { ProviderDangerZone } from "./ProviderDangerZone.tsx";
+import { RecordsBrowser, SyncHistory } from "./provider-detail-data.tsx";
+import { WhoopWearLocationPicker } from "./WhoopWearLocationPicker.tsx";
 
 const oauthBroadcastMessage = z.object({
   type: z.literal("complete"),
@@ -26,8 +36,6 @@ const oauthPostMessage = z.object({
   providerId: z.string().optional(),
 });
 
-type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
-
 function formatProviderName(id: string): string {
   return id
     .split(/[_-]/)
@@ -35,68 +43,227 @@ function formatProviderName(id: string): string {
     .join(" ");
 }
 
+function hasValidDateInput(value: string | Date | null | undefined): value is string | Date {
+  if (!value) return false;
+  return !Number.isNaN(new Date(value).getTime());
+}
+
 export function ProviderDetailPage() {
   const { id: providerId } = useParams({ from: "/providers/$id" });
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
+  const processingStatus = useProcessingStatus({ providerId });
   const trpcUtils = trpc.useUtils();
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
   const providerStats = (stats.data ?? []).find((s) => s.providerId === providerId);
+  const importConfig = getFileImportConfig(providerId);
+  const hasFileImportConfig = importConfig !== undefined;
+  const activeImports = trpc.sync.activeImports.useQuery(undefined, {
+    enabled: hasFileImportConfig,
+    staleTime: 0,
+  });
+  const activeImport = (activeImports.data ?? []).find(
+    (importJob) => importJob.providerId === providerId,
+  );
+  const pushOnly = provider?.pushOnly === true;
+  const health = provider
+    ? providerHealth({
+        authorized: provider.authorized,
+        needsReauth: provider.needsReauth,
+        requiresAuthorization: provider.authType !== "none",
+      })
+    : null;
+  const lastSyncedRelative = hasValidDateInput(provider?.lastSyncedAt)
+    ? formatRelativeTime(provider.lastSyncedAt)
+    : null;
 
   // Sync state
-  const syncMutation = trpc.sync.triggerSync.useMutation();
+  const syncMutation = trpc.sync.triggerSync.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncPercentage, setSyncPercentage] = useState<number | undefined>(undefined);
+  const pollAbortControllers = useRef(new Set<AbortController>());
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      for (const controller of pollAbortControllers.current) {
+        controller.abort();
+      }
+      pollAbortControllers.current.clear();
+    };
+  }, []);
 
   // Date range sync
   const [sinceDays, setSinceDays] = useState("30");
+  const [rangeStartDate, setRangeStartDate] = useState(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    return formatDateYmd(start);
+  });
+  const [rangeEndDate, setRangeEndDate] = useState(() => formatDateYmd(new Date()));
 
-  // Disconnect
-  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
-  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
-
-  const handleSync = useCallback(
-    async (fullSync = false, customSinceDays?: number) => {
+  const runSyncJob = useCallback(
+    async (input: { sinceDays?: number; sinceDate?: string; untilDate?: string }) => {
       setSyncStatus("syncing");
       setSyncMessage(null);
+      setSyncPercentage(undefined);
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: fullSync ? undefined : (customSinceDays ?? 7),
+          ...input,
         });
-        await pollSyncJob({
-          jobId,
-          providerIds: [providerId],
-          fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
-          updateState: (_id, state) => {
-            if (state.status === "done") {
-              setSyncStatus("done");
-              setSyncMessage("Sync complete");
-            } else if (state.status === "error") {
-              setSyncStatus("error");
-              setSyncMessage(state.message ?? "Sync failed");
-            }
-          },
-          onComplete: () => {
-            trpcUtils.sync.providers.invalidate();
-            trpcUtils.sync.providerStats.invalidate();
-            trpcUtils.providerDetail.logs.invalidate();
-            trpcUtils.providerDetail.records.invalidate();
-          },
-        });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown") {
+          setSyncStatus("done");
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        if (providerResult?.status === "failed") {
+          setSyncStatus("error");
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
+        if (!jobId) return;
+        const controller = new AbortController();
+        if (isMounted.current) {
+          pollAbortControllers.current.add(controller);
+        } else {
+          controller.abort();
+        }
+        try {
+          await pollSyncJob({
+            jobId,
+            providerIds: [providerId],
+            fetchStatus: (id) =>
+              trpcUtils.sync.syncStatus.fetch(
+                { jobId: id },
+                { staleTime: 0, meta: locallyReportedErrorMeta },
+              ),
+            updateState: (_id, state) => {
+              setSyncPercentage(state.percentage);
+              if (state.message) setSyncMessage(state.message);
+              if (state.status === "done") {
+                setSyncStatus("done");
+                setSyncPercentage(undefined);
+                setSyncMessage("Sync complete");
+              } else if (state.status === "error") {
+                setSyncStatus("error");
+                setSyncPercentage(undefined);
+                setSyncMessage(state.message ?? "Sync failed");
+              }
+            },
+            onComplete: () => {
+              trpcUtils.processing.status.invalidate();
+              trpcUtils.sync.providers.invalidate();
+              trpcUtils.sync.providerStats.invalidate();
+              trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
+              trpcUtils.providerDetail.logs.invalidate();
+              trpcUtils.providerDetail.records.invalidate();
+            },
+            onError: (error) => {
+              captureException(error, {
+                operation: "sync.syncStatus",
+                providerId,
+              });
+            },
+            signal: controller.signal,
+          });
+        } finally {
+          pollAbortControllers.current.delete(controller);
+        }
       } catch (err: unknown) {
+        captureException(err, {
+          operation: "sync.triggerSync",
+          providerId,
+        });
         setSyncStatus("error");
+        setSyncPercentage(undefined);
         setSyncMessage(err instanceof Error ? err.message : "Sync failed");
       }
     },
     [providerId, syncMutation, trpcUtils],
   );
 
+  const handleSync = useCallback(
+    async (fullSync = false, customSinceDays?: number) => {
+      if (fullSync) {
+        await runSyncJob({});
+        return;
+      }
+      await runSyncJob({ sinceDays: customSinceDays ?? 7 });
+    },
+    [runSyncJob],
+  );
+
+  const handleSyncDateRange = useCallback(async () => {
+    if (!rangeStartDate || !rangeEndDate) return;
+    if (rangeStartDate > rangeEndDate) {
+      setSyncStatus("error");
+      setSyncMessage('"From" date must be on or before "To" date');
+      return;
+    }
+    await runSyncJob({ sinceDate: rangeStartDate, untilDate: rangeEndDate });
+  }, [rangeEndDate, rangeStartDate, runSyncJob]);
+  const [reconnectModal, setReconnectModal] = useState<
+    "credential" | "garmin" | "token" | "whoop" | null
+  >(null);
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
+
   const handleReauthorize = useCallback(() => {
     window.open(`/auth/provider/${providerId}`, "_blank");
   }, [providerId]);
+  const handleReconnect = useCallback(() => {
+    setReconnectError(null);
+    switch (provider?.authType) {
+      case "oauth":
+      case "oauth1":
+        handleReauthorize();
+        return;
+      case "credential":
+        setReconnectModal("credential");
+        return;
+      case "token": {
+        if (provider.tokenAuth) {
+          setReconnectModal("token");
+          return;
+        }
+        const error = new Error(
+          `${provider.name} personal-token authentication is unavailable. Refresh and try again.`,
+        );
+        captureException(error, {
+          operation: "reconnect-provider",
+          providerId: provider.id,
+        });
+        setReconnectError(error.message);
+        return;
+      }
+      case "custom:garmin":
+        setReconnectModal("garmin");
+        return;
+      case "custom:whoop":
+        setReconnectModal("whoop");
+        return;
+    }
+  }, [handleReauthorize, provider]);
+  const handleReconnectSuccess = useCallback(() => {
+    setReconnectModal(null);
+    setReconnectError(null);
+    trpcUtils.sync.providers.invalidate();
+    trpcUtils.processing.status.invalidate({ providerId });
+  }, [providerId, trpcUtils]);
 
   // Listen for OAuth completion (re-authorize flow)
   const lastOAuthHandledAt = useRef(0);
@@ -129,17 +296,34 @@ export function ProviderDetailPage() {
     };
   }, [trpcUtils]);
 
-  const handleDisconnect = useCallback(async () => {
-    await disconnectMutation.mutateAsync({ providerId });
-    trpcUtils.sync.providers.invalidate();
-    trpcUtils.sync.providerStats.invalidate();
-    setShowDisconnectConfirm(false);
-  }, [providerId, disconnectMutation, trpcUtils]);
-
-  if (providers.isLoading) {
+  if (providers.isLoading && providers.data === undefined) {
     return (
       <PageLayout>
         <div className="h-32 rounded-lg bg-skeleton animate-pulse" />
+      </PageLayout>
+    );
+  }
+
+  if (providers.error && providers.data === undefined) {
+    return (
+      <PageLayout>
+        <QueryStatePanel error={providers.error} />
+      </PageLayout>
+    );
+  }
+
+  if (!provider && !hasFileImportConfig) {
+    return (
+      <PageLayout>
+        <section className="space-y-2">
+          <h1 className="text-xl font-semibold">Provider not found</h1>
+          <p className="text-sm text-subtle">
+            This provider is unavailable. Return to Data Sources to choose another.
+          </p>
+          <Link to="/providers" className="text-sm text-accent hover:underline">
+            Back to Data Sources
+          </Link>
+        </section>
       </PageLayout>
     );
   }
@@ -155,6 +339,15 @@ export function ProviderDetailPage() {
         <span className="text-foreground">{provider?.name ?? formatProviderName(providerId)}</span>
       </div>
 
+      {providers.error ? (
+        <section className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Could not refresh provider details.</p>
+          <QueryStatePanel error={providers.error} height={96} />
+        </section>
+      ) : null}
+
+      {stats.error ? <QueryStatePanel error={stats.error} height={96} /> : null}
+
       {/* Provider header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -165,98 +358,260 @@ export function ProviderDetailPage() {
             </h1>
             {provider && (
               <div className="flex items-center gap-2 mt-0.5">
-                {provider.importOnly ? (
+                {provider.pushOnly ? (
+                  <>
+                    <span className="text-xs text-subtle">Mobile sync</span>
+                    {lastSyncedRelative && (
+                      <span className="text-xs text-dim">Last received: {lastSyncedRelative}</span>
+                    )}
+                  </>
+                ) : provider.importOnly ? (
                   <span className="text-xs text-subtle">Import only</span>
-                ) : provider.authorized ? (
-                  <span className="text-xs text-emerald-400">Connected</span>
                 ) : (
-                  <span className="text-xs text-subtle">Not connected</span>
+                  <dl className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <div className="flex items-center gap-1">
+                      <dt className="text-dim">Connection</dt>
+                      <dd
+                        className={
+                          health?.connection.status === "healthy"
+                            ? "text-emerald-400"
+                            : "text-subtle"
+                        }
+                      >
+                        {health?.connection.label}
+                      </dd>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <dt className="text-dim">Authorization</dt>
+                      <dd
+                        className={
+                          health?.authorization.status === "warning"
+                            ? "text-amber-400"
+                            : health?.authorization.status === "healthy"
+                              ? "text-emerald-400"
+                              : "text-subtle"
+                        }
+                      >
+                        {health?.authorization.label}
+                      </dd>
+                    </div>
+                  </dl>
                 )}
-                {!provider.importOnly &&
-                  provider.lastSyncedAt &&
-                  formatRelativeTime(provider.lastSyncedAt) && (
-                    <span className="text-xs text-dim">
-                      Last sync: {formatRelativeTime(provider.lastSyncedAt)}
-                    </span>
-                  )}
+                {!provider.pushOnly && !provider.importOnly && lastSyncedRelative && (
+                  <span className="text-xs text-dim">Last sync: {lastSyncedRelative}</span>
+                )}
               </div>
             )}
           </div>
         </div>
+        {provider && health?.requiresReconnect && !provider.importOnly && !provider.pushOnly ? (
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={handleReconnect}
+              className="rounded bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400"
+              aria-label={`Reconnect ${provider.name}`}
+            >
+              Reconnect {provider.name}
+            </button>
+            {reconnectError ? (
+              <p role="alert" className="max-w-sm text-right text-xs text-red-400">
+                {reconnectError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {/* Sync controls */}
-      {!provider?.importOnly && (
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+        contextLabel={`${formatProviderName(providerId)} data status`}
+        alwaysVisible
+      />
+
+      {importConfig && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-foreground">Import</h2>
+          <FileImportProviderCard
+            providerId={providerId}
+            {...importConfig}
+            stats={providerStats}
+            showDetailsLink={false}
+            activeImport={activeImport}
+          />
+        </section>
+      )}
+
+      {pushOnly && (
         <section className="card p-4 space-y-3">
-          <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
+          <div>
+            <h2 className="text-sm font-medium text-foreground">Mobile sync</h2>
+            <p className="text-xs text-subtle mt-1">
+              {provider.description ? `${provider.description} ` : null}Open the Dofek app on your
+              phone with your WHOOP nearby to stream RR intervals and orientation data.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* Sync controls */}
+      {provider?.authorized === true && !hasFileImportConfig && !pushOnly && (
+        <section className="card p-4 space-y-3">
+          <h2 className="text-sm font-medium text-foreground">
+            {health?.requiresReconnect ? "Connection Controls" : "Sync Controls"}
+          </h2>
           <div className="flex flex-wrap items-end gap-3">
-            <button
-              type="button"
-              onClick={() => handleSync(false)}
-              disabled={syncStatus === "syncing"}
-              className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-            >
-              {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSync(true)}
-              disabled={syncStatus === "syncing"}
-              className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-            >
-              Full Sync
-            </button>
-            <div className="flex items-end gap-1.5">
-              <div>
-                <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
-                  Days back
-                </label>
-                <input
-                  id="since-days"
-                  type="number"
-                  min="1"
-                  max="3650"
-                  value={sinceDays}
-                  onChange={(e) => setSinceDays(e.target.value)}
-                  className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => handleSync(false, Number(sinceDays))}
-                disabled={syncStatus === "syncing" || !sinceDays}
-                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-              >
-                Sync Range
-              </button>
-            </div>
+            {!health?.requiresReconnect ? (
+              <>
+                {providerId !== "whoop" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleSync(false)}
+                      disabled={syncStatus === "syncing"}
+                      className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                    >
+                      {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSync(true)}
+                      disabled={syncStatus === "syncing"}
+                      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                    >
+                      Full Sync
+                    </button>
+                    <div className="flex items-end gap-1.5">
+                      <div>
+                        <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
+                          Days back
+                        </label>
+                        <input
+                          id="since-days"
+                          type="number"
+                          min="1"
+                          max="3650"
+                          value={sinceDays}
+                          onChange={(event) => setSinceDays(event.target.value)}
+                          className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSync(false, Number(sinceDays))}
+                        disabled={syncStatus === "syncing" || !sinceDays}
+                        className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                      >
+                        Sync Range
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+                <div className="flex flex-wrap items-end gap-1.5">
+                  <div>
+                    <label htmlFor="range-start-date" className="block text-xs text-subtle mb-1">
+                      From
+                    </label>
+                    <input
+                      id="range-start-date"
+                      type="date"
+                      value={rangeStartDate}
+                      max={providerId === "whoop" ? rangeEndDate : undefined}
+                      onChange={(event) => setRangeStartDate(event.target.value)}
+                      className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="range-end-date" className="block text-xs text-subtle mb-1">
+                      To
+                    </label>
+                    <input
+                      id="range-end-date"
+                      type="date"
+                      value={rangeEndDate}
+                      min={providerId === "whoop" ? rangeStartDate : undefined}
+                      onChange={(event) => setRangeEndDate(event.target.value)}
+                      className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSyncDateRange()}
+                    disabled={syncStatus === "syncing" || !rangeStartDate || !rangeEndDate}
+                    className={
+                      providerId === "whoop"
+                        ? "px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        : "px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                    }
+                  >
+                    {providerId === "whoop"
+                      ? syncStatus === "syncing"
+                        ? "Syncing..."
+                        : "Sync"
+                      : "Sync Dates"}
+                  </button>
+                </div>
+              </>
+            ) : null}
             <div className="ml-auto flex items-center gap-3">
-              {provider?.authType === "oauth" && provider.authorized && (
-                <button
-                  type="button"
-                  onClick={handleReauthorize}
-                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
-                >
-                  Re-authorize
-                </button>
-              )}
-              <ProviderDisconnectControl
-                canDisconnect={Boolean(provider?.authorized)}
-                showConfirm={showDisconnectConfirm}
-                isPending={disconnectMutation.isPending}
-                onOpenConfirm={() => setShowDisconnectConfirm(true)}
-                onConfirm={handleDisconnect}
-                onCancel={() => setShowDisconnectConfirm(false)}
-              />
+              {!health?.requiresReconnect &&
+                (provider?.authType === "oauth" || provider?.authType === "oauth1") &&
+                provider.authorized && (
+                  <button
+                    type="button"
+                    onClick={handleReauthorize}
+                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+                  >
+                    Re-authorize
+                  </button>
+                )}
             </div>
           </div>
-          {syncMessage && (
+          {syncStatus === "syncing" ? (
+            <OperationProgressBar
+              percentage={syncPercentage}
+              message={syncMessage ?? "Syncing provider data..."}
+            />
+          ) : syncMessage ? (
             <div className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-accent"}`}>
               {syncMessage}
             </div>
-          )}
+          ) : null}
         </section>
       )}
+
+      {provider && reconnectModal === "credential" ? (
+        <CredentialAuthModal
+          providerId={provider.id}
+          providerName={provider.name}
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
+      {reconnectModal === "garmin" ? (
+        <GarminAuthModal
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
+      {provider?.tokenAuth && reconnectModal === "token" ? (
+        <TokenAuthModal
+          providerId={provider.id}
+          providerName={provider.name}
+          tokenLabel={provider.tokenAuth.label}
+          instructionsUrl={provider.tokenAuth.instructionsUrl}
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
+      {reconnectModal === "whoop" ? (
+        <WhoopAuthModal
+          onClose={() => setReconnectModal(null)}
+          onSuccess={handleReconnectSuccess}
+        />
+      ) : null}
 
       {/* WHOOP wear location */}
       {providerId === "whoop" && <WhoopWearLocationPicker />}
@@ -265,472 +620,38 @@ export function ProviderDetailPage() {
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      <SyncHistory providerId={providerId} />
+      {!pushOnly && (
+        <SyncHistory
+          key={`sync-history-${providerId}`}
+          providerId={providerId}
+          providerName={provider?.name ?? formatProviderName(providerId)}
+        />
+      )}
 
       {/* Records browser */}
-      <RecordsBrowser providerId={providerId} stats={providerStats} />
+      <RecordsBrowser
+        key={`records-browser-${providerId}`}
+        providerId={providerId}
+        stats={providerStats}
+      />
+
+      <ProviderDangerZone
+        canDisconnect={Boolean(provider?.authorized)}
+        providerId={providerId}
+        providerName={provider?.name ?? formatProviderName(providerId)}
+        additionalOperations={
+          syncStatus === "syncing"
+            ? [
+                {
+                  id: "provider-sync",
+                  label: "Provider sync",
+                  percentage: syncPercentage,
+                  message: syncMessage ?? "Syncing provider data...",
+                },
+              ]
+            : []
+        }
+      />
     </PageLayout>
   );
-}
-
-// ── Sync History ──
-
-function SyncHistory({ providerId }: { providerId: string }) {
-  const [page, setPage] = useState(0);
-  const pageSize = 20;
-
-  const logs = trpc.providerDetail.logs.useQuery({
-    providerId,
-    limit: pageSize,
-    offset: page * pageSize,
-  });
-
-  const rows = logs.data ?? [];
-
-  return (
-    <section>
-      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Sync History</h2>
-
-      {logs.isLoading ? (
-        <div className="text-xs text-subtle">Loading logs...</div>
-      ) : rows.length === 0 ? (
-        <div className="text-xs text-subtle">No sync history yet.</div>
-      ) : (
-        <>
-          <div className="card overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-subtle">
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Time
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Type
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="text-right px-4 py-2 font-medium">
-                    Records
-                  </th>
-                  <th scope="col" className="text-right px-4 py-2 font-medium">
-                    Duration
-                  </th>
-                  <th scope="col" className="text-left px-4 py-2 font-medium">
-                    Error
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-border/50 hover:bg-surface-hover transition-colors"
-                  >
-                    <td className="px-4 py-2 text-muted whitespace-nowrap">
-                      {formatTime(row.syncedAt)}
-                    </td>
-                    <td className="px-4 py-2 text-muted">{row.dataType}</td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`inline-flex items-center gap-1.5 ${
-                          row.status === "success" ? "text-emerald-400" : "text-red-400"
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            row.status === "success" ? "bg-emerald-400" : "bg-red-400"
-                          }`}
-                        />
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right text-foreground tabular-nums">
-                      {row.recordCount ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right text-muted tabular-nums">
-                      {row.durationMs != null ? `${formatNumber(row.durationMs / 1000)}s` : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
-                      {row.errorMessage ?? ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between mt-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-            >
-              Previous
-            </button>
-            <span className="text-xs text-subtle">Page {page + 1}</span>
-            <button
-              type="button"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={rows.length < pageSize}
-              className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-            >
-              Next
-            </button>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-// ── Records Browser ──
-
-function getStatCount(stats: ProviderStats, key: DataType): number {
-  return stats[key];
-}
-
-function RecordsBrowser({
-  providerId,
-  stats,
-}: {
-  providerId: string;
-  stats: ProviderStats | undefined;
-}) {
-  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
-    if (!stats) return true;
-    return getStatCount(stats, dt.key) > 0;
-  });
-
-  const [activeTab, setActiveTab] = useState<DataType>(availableTypes[0]?.key ?? "activities");
-
-  if (availableTypes.length === 0) {
-    return (
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
-        <div className="text-xs text-subtle">No records yet for this provider.</div>
-      </section>
-    );
-  }
-
-  return (
-    <section>
-      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
-
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-1 mb-3">
-        {availableTypes.map((dt) => (
-          <button
-            key={dt.key}
-            type="button"
-            onClick={() => setActiveTab(dt.key)}
-            className={`px-3 py-1.5 text-xs rounded transition-colors ${
-              activeTab === dt.key
-                ? "bg-accent/15 text-foreground"
-                : "bg-accent/10 text-subtle hover:text-foreground"
-            }`}
-          >
-            {dt.label}
-            {stats && (
-              <span className="ml-1 text-dim">
-                ({getStatCount(stats, dt.key).toLocaleString()})
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <RecordsTable providerId={providerId} dataType={activeTab} />
-    </section>
-  );
-}
-
-// ── Records Table ──
-
-function RecordsTable({ providerId, dataType }: { providerId: string; dataType: DataType }) {
-  const [page, setPage] = useState(0);
-  const [selectedRecord, setSelectedRecord] = useState<Record<string, unknown> | null>(null);
-  const pageSize = 25;
-
-  const records = trpc.providerDetail.records.useQuery({
-    providerId,
-    dataType,
-    limit: pageSize,
-    offset: page * pageSize,
-  });
-
-  const rows = records.data?.rows ?? [];
-
-  // Reset page when data type changes
-  const [lastDataType, setLastDataType] = useState(dataType);
-  if (dataType !== lastDataType) {
-    setPage(0);
-    setLastDataType(dataType);
-    setSelectedRecord(null);
-  }
-
-  if (records.isLoading) {
-    return <div className="text-xs text-subtle">Loading records...</div>;
-  }
-
-  if (rows.length === 0) {
-    return <div className="text-xs text-subtle">No records found.</div>;
-  }
-
-  // Get column names from the first row, excluding raw data and internal fields
-  const excludedColumns = new Set(["raw", "user_id"]);
-  const columns = Object.keys(rows[0] ?? {}).filter((col) => !excludedColumns.has(col));
-
-  // Prioritize certain columns
-  const priorityCols = ["id", "name", "date", "started_at", "recorded_at", "activity_type", "type"];
-  const sortedColumns = [
-    ...priorityCols.filter((c) => columns.includes(c)),
-    ...columns.filter((c) => !priorityCols.includes(c)),
-  ];
-
-  // Show only first few columns in the table
-  const visibleColumns = sortedColumns.slice(0, 6);
-  const hasRaw = Object.keys(rows[0] ?? {}).includes("raw");
-
-  return (
-    <>
-      <div className="card overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border text-subtle">
-              {visibleColumns.map((col) => (
-                <th
-                  key={col}
-                  scope="col"
-                  className="text-left px-3 py-2 font-medium whitespace-nowrap"
-                >
-                  {formatColumnName(col)}
-                </th>
-              ))}
-              {hasRaw && (
-                <th scope="col" className="text-left px-3 py-2 font-medium">
-                  Data
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => (
-              <tr
-                key={String(row.id ?? row.date ?? idx)}
-                className="border-b border-border/50 hover:bg-surface-hover transition-colors cursor-pointer"
-                onClick={() => setSelectedRecord(row)}
-              >
-                {visibleColumns.map((col) => (
-                  <td
-                    key={col}
-                    className="px-3 py-2 text-foreground whitespace-nowrap max-w-xs truncate"
-                  >
-                    {formatCellValue(row[col])}
-                  </td>
-                ))}
-                {hasRaw && (
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedRecord(row);
-                      }}
-                      className="text-xs text-dim hover:text-muted transition-colors"
-                    >
-                      View
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between mt-2">
-        <button
-          type="button"
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-          disabled={page === 0}
-          className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-        >
-          Previous
-        </button>
-        <span className="text-xs text-subtle">Page {page + 1}</span>
-        <button
-          type="button"
-          onClick={() => setPage((p) => p + 1)}
-          disabled={rows.length < pageSize}
-          className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-        >
-          Next
-        </button>
-      </div>
-
-      {/* Record detail modal */}
-      {selectedRecord && (
-        <RecordDetailModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />
-      )}
-    </>
-  );
-}
-
-// ── Record Detail Modal ──
-
-export function RecordDetailModal({
-  record,
-  onClose,
-}: {
-  record: Record<string, unknown>;
-  onClose: () => void;
-}) {
-  const rawValue = record.raw;
-  const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
-
-  // All fields except raw and user_id
-  const fields = Object.entries(record).filter(([key]) => key !== "raw" && key !== "user_id");
-  // Split into non-null and null fields so populated data is easy to find
-  const populatedFields = fields.filter(([, value]) => value !== null && value !== undefined);
-  const nullFields = fields.filter(([, value]) => value === null || value === undefined);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <button
-        type="button"
-        className="absolute inset-0 w-full h-full cursor-default"
-        onClick={onClose}
-        aria-label="Close dialog"
-      />
-      <div className="relative bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-foreground">Record Detail</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-subtle hover:text-foreground text-lg leading-none p-1"
-            aria-label="Close"
-          >
-            &times;
-          </button>
-        </div>
-
-        {/* Populated fields */}
-        <div className="mb-4">
-          <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Fields</h4>
-          <div className="rounded-lg border border-border bg-page divide-y divide-border/50">
-            {populatedFields.map(([key, value]) => (
-              <div key={key} className="flex gap-4 px-3 py-1.5 text-xs">
-                <span className="text-subtle shrink-0 w-48">{formatColumnName(key)}</span>
-                <span className="text-foreground break-all whitespace-pre-wrap min-w-0">
-                  {formatCellValue(value)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Null fields — collapsed by default */}
-        {nullFields.length > 0 && (
-          <details className="mb-4">
-            <summary className="text-xs font-medium text-subtle uppercase tracking-wider mb-2 cursor-pointer hover:text-muted">
-              Empty Fields ({nullFields.length})
-            </summary>
-            <div className="text-xs text-dim flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
-              {nullFields.map(([key]) => (
-                <span key={key}>{formatColumnName(key)}</span>
-              ))}
-            </div>
-          </details>
-        )}
-
-        {/* Raw provider data */}
-        {raw && (
-          <details open>
-            <summary className="text-xs font-medium text-muted uppercase tracking-wider mb-2 cursor-pointer hover:text-foreground">
-              Raw Provider Data
-            </summary>
-            <pre className="text-xs text-muted bg-page rounded-lg p-3 overflow-x-auto overflow-y-auto max-h-[60vh]">
-              {JSON.stringify(raw, null, 2)}
-            </pre>
-          </details>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── WHOOP Wear Location Picker ──
-
-function WhoopWearLocationPicker() {
-  const setting = trpc.settings.get.useQuery({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
-  const setSettingMutation = trpc.settings.set.useMutation();
-  const trpcUtils = trpc.useUtils();
-
-  const currentLocation = parseWhoopWearLocation(setting.data?.value);
-
-  const handleChange = (location: WhoopWearLocation) => {
-    trpcUtils.settings.get.setData(
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY },
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
-    );
-    setSettingMutation.mutate(
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
-      {
-        onSettled: () => {
-          trpcUtils.settings.get.invalidate({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
-        },
-      },
-    );
-  };
-
-  return (
-    <section className="card p-4 space-y-3">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Wear Location</h2>
-        <p className="text-xs text-subtle mt-0.5">
-          Where do you wear your WHOOP? This helps us interpret your sensor data.
-        </p>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {WHOOP_WEAR_LOCATIONS.map((location) => (
-          <button
-            key={location.id}
-            type="button"
-            onClick={() => handleChange(location.id)}
-            className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
-              currentLocation === location.id
-                ? "border-emerald-500 bg-emerald-500/10"
-                : "border-border-strong bg-accent/5 hover:bg-surface-hover"
-            }`}
-          >
-            <div className="text-xs font-medium text-foreground">{location.label}</div>
-            <div className="text-xs text-subtle mt-0.5">{location.description}</div>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// ── Helpers ──
-
-export function formatColumnName(col: string): string {
-  return col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-export function formatCellValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "object") return JSON.stringify(value);
-  const str = String(value);
-  // Format ISO dates
-  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
-    return formatTime(str);
-  }
-  return str;
 }

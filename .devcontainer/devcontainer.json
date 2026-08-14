@@ -1,0 +1,31 @@
+{
+  "name": "Dofek",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2.17.0": {
+      "version": "29.6.2",
+      "moby": true,
+      "mobyBuildxVersion": "0.35.0",
+      "dockerDashComposeVersion": "v2",
+      "installDockerBuildx": false
+    }
+  },
+  "containerEnv": {
+    "VCPKG_ROOT": "/opt/vcpkg"
+  },
+  "remoteEnv": {
+    "MISE_LOCKED": "1",
+    "PATH": "/home/vscode/.local/share/mise/shims:${containerEnv:PATH}"
+  },
+  "remoteUser": "vscode",
+  "onCreateCommand": "export MISE_LOCKED=1 && mise install --locked && mise run cloud:prebuild",
+  "postCreateCommand": "mise run agent:codex && mise run cloud:start",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}

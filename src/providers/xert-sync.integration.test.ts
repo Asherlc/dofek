@@ -2,10 +2,13 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { XertProvider } from "./xert.ts";
 
 // ============================================================
@@ -36,12 +39,14 @@ interface FakeActivityOverrides {
 }
 
 function fakeActivity(overrides: FakeActivityOverrides = {}) {
+  const startTimestamp = overrides.startTimestamp ?? 1709280000;
+  const endTimestamp = overrides.endTimestamp ?? startTimestamp + 3600;
   return {
     id: 9001,
     name: "Threshold Intervals",
     sport: "Cycling",
-    startTimestamp: 1709280000, // 2024-03-01T08:00:00Z (seconds)
-    endTimestamp: 1709283600, // 2024-03-01T09:00:00Z
+    startTimestamp, // Unix timestamp (seconds)
+    endTimestamp,
     duration: 3600,
     distance: 38000,
     power_avg: 230,
@@ -127,7 +132,12 @@ describe("XertProvider.sync() (integration)", () => {
     server.use(...xertHandlers([activities]));
 
     const provider = new XertProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("xert");
     expect(result.recordsSynced).toBe(2);
@@ -139,12 +149,12 @@ describe("XertProvider.sync() (integration)", () => {
 
     const cycling = rows.find((r) => r.externalId === "9001");
     if (!cycling) throw new Error("expected activity 9001");
-    expect(cycling.activityType).toBe("cycling");
+    expect(cycling.canonicalType).toBe("cycling");
     expect(cycling.name).toBe("Threshold Intervals");
 
     const running = rows.find((r) => r.externalId === "9002");
     if (!running) throw new Error("expected activity 9002");
-    expect(running.activityType).toBe("running");
+    expect(running.canonicalType).toBe("running");
     expect(running.name).toBe("Easy Run");
   });
 
@@ -161,14 +171,24 @@ describe("XertProvider.sync() (integration)", () => {
     server.use(...xertHandlers([activities]));
 
     const provider = new XertProvider();
-    await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again
     server.resetHandlers();
     server.use(...xertHandlers([activities]));
 
     const provider2 = new XertProvider();
-    await provider2.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider2.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "xert"));
 
@@ -197,7 +217,12 @@ describe("XertProvider.sync() (integration)", () => {
     server.use(...xertHandlers([page1, page2]));
 
     const provider = new XertProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
 
     // page1 has 2 items (< 50), so pagination stops after first page
     expect(result.recordsSynced).toBe(2);
@@ -223,25 +248,30 @@ describe("XertProvider.sync() (integration)", () => {
     server.use(...xertHandlers([activities]));
 
     const provider = new XertProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
     expect(result.recordsSynced).toBe(5);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "xert"));
 
     const swim = rows.find((r) => r.externalId === "8001");
-    expect(swim?.activityType).toBe("swimming");
+    expect(swim?.canonicalType).toBe("swimming");
 
     const virtualCycling = rows.find((r) => r.externalId === "8002");
-    expect(virtualCycling?.activityType).toBe("virtual_cycling");
+    expect(virtualCycling?.canonicalType).toBe("cycling");
 
     const mtb = rows.find((r) => r.externalId === "8003");
-    expect(mtb?.activityType).toBe("mountain_biking");
+    expect(mtb?.canonicalType).toBe("cycling");
 
     const trail = rows.find((r) => r.externalId === "8004");
-    expect(trail?.activityType).toBe("trail_running");
+    expect(trail?.canonicalType).toBe("running");
 
     const unknown = rows.find((r) => r.externalId === "8005");
-    expect(unknown?.activityType).toBe("other");
+    expect(unknown?.canonicalType).toBe("other");
   });
 
   it("stores Xert-specific fields in raw JSON", async () => {
@@ -265,7 +295,12 @@ describe("XertProvider.sync() (integration)", () => {
     server.use(...xertHandlers([activities]));
 
     const provider = new XertProvider();
-    await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "8801"));
     expect(rows).toHaveLength(1);
@@ -288,7 +323,12 @@ describe("XertProvider.sync() (integration)", () => {
     server.use(...xertHandlers([[]]));
 
     const provider = new XertProvider();
-    await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "xert");
@@ -299,7 +339,12 @@ describe("XertProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "xert"));
 
     const provider = new XertProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");

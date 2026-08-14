@@ -1,7 +1,15 @@
-import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  createReportEmptyState,
+  type MonthlyReportEmptyState,
+} from "../contracts/report-empty-state.ts";
+import { monthlyReportRecovery } from "../contracts/report-recovery.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  buildMonthlyDecisionSynthesis,
+  type ReportDecisionSynthesis,
+} from "./report-decision-synthesis.ts";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -23,6 +31,10 @@ export interface MonthSummary {
 export interface MonthlyReportResult {
   current: MonthSummary | null;
   history: MonthSummary[];
+  /** Server-owned interpretation rendered identically by every client. */
+  decisionSupport: ReportDecisionSynthesis | null;
+  /** Canonical readiness and value-free preview when no report exists. */
+  emptyState: MonthlyReportEmptyState;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,73 +125,99 @@ export class MonthRow {
 // ---------------------------------------------------------------------------
 
 export class MonthlyReportRepository {
-  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
-    this.#db = db;
+  constructor(userId: string, sensorStore: ActivitySensorStore) {
     this.#userId = userId;
+    this.#sensorStore = sensorStore;
   }
 
-  async getReport(months: number): Promise<MonthlyReportResult> {
-    const rows = await executeWithSchema(
-      this.#db,
+  async getReport(months: number, endDate: string): Promise<MonthlyReportResult> {
+    const recovery = monthlyReportRecovery(months, endDate);
+    const { startDate } = recovery.range;
+    const rows = await this.#sensorStore.query(
       monthRowSchema,
-      sql`WITH per_activity AS (
-            SELECT
-              a.started_at::date AS date,
-              EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 3600.0 AS hours,
-              EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                * a.avg_hr / NULLIF(a.max_hr, 0) AS load
-            FROM fitness.activity_summary a
-            WHERE a.user_id = ${this.#userId}
-              AND a.started_at >= date_trunc('month', CURRENT_DATE) - (${months}::int || ' months')::interval
-              AND a.ended_at IS NOT NULL
-              AND a.avg_hr IS NOT NULL
-          ),
-          daily_training AS (
-            SELECT date, SUM(hours) AS hours, COUNT(*) AS count, SUM(load) AS load
-            FROM per_activity
-            GROUP BY date
-          ),
-          sleep_raw AS (
-            SELECT
-              started_at::date AS date,
-              duration_minutes
-            FROM fitness.v_sleep
-            WHERE user_id = ${this.#userId}
-              AND is_nap = false
-              AND started_at >= date_trunc('month', CURRENT_DATE) - (${months}::int || ' months')::interval
-          ),
-          sleep_daily AS (
-            SELECT DISTINCT ON (date) date, duration_minutes
-            FROM sleep_raw
-            ORDER BY date, duration_minutes DESC NULLS LAST
-          ),
-          metrics_daily AS (
-            SELECT date, resting_hr, hrv
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
-              AND date >= date_trunc('month', CURRENT_DATE) - (${months}::int || ' months')::interval
-          )
-          SELECT
-            date_trunc('month', d.date)::date AS month_start,
-            COALESCE(SUM(dt.hours), 0) AS training_hours,
-            COALESCE(SUM(dt.count), 0)::int AS activity_count,
-            COALESCE(AVG(dt.load), 0) AS avg_daily_strain,
-            COALESCE(AVG(sl.duration_minutes), 0) AS avg_sleep_minutes,
-            AVG(m.resting_hr) AS avg_resting_hr,
-            AVG(m.hrv) AS avg_hrv
-          FROM generate_series(
-            date_trunc('month', CURRENT_DATE) - (${months}::int || ' months')::interval,
-            CURRENT_DATE,
-            '1 day'::interval
-          ) AS d(date)
-          LEFT JOIN daily_training dt ON dt.date = d.date::date
-          LEFT JOIN sleep_daily sl ON sl.date = d.date::date
-          LEFT JOIN metrics_daily m ON m.date = d.date::date
-          GROUP BY date_trunc('month', d.date)
-          ORDER BY month_start ASC`,
+      `WITH per_activity AS (
+        SELECT
+          toDate(asum.started_at) AS date,
+          dateDiff('second', asum.started_at, asum.ended_at) / 3600.0 AS hours,
+          dateDiff('second', asum.started_at, asum.ended_at) / 60.0
+            * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0) AS load
+          FROM analytics.activity_summary asum
+          WHERE asum.user_id = {userId:UUID}
+            AND asum.started_at >= toDate({startDate:String})
+            AND asum.started_at < toDate({endDate:String}) + INTERVAL 1 DAY
+            AND asum.ended_at IS NOT NULL
+            AND asum.avg_hr IS NOT NULL
+      ),
+      daily_training AS (
+        SELECT date, sum(hours) AS hours, toInt32(count()) AS count, sum(load) AS load
+        FROM per_activity
+        GROUP BY date
+      ),
+      sleep_raw AS (
+        SELECT date, duration_minutes
+        FROM analytics.daily_sleep FINAL
+        WHERE user_id = {userId:UUID}
+          AND is_deleted = 0
+          AND date >= toDate({startDate:String})
+          AND date <= toDate({endDate:String})
+      ),
+      sleep_daily AS (
+        SELECT date, max(duration_minutes) AS duration_minutes
+        FROM sleep_raw
+        GROUP BY date
+      ),
+      metrics_daily AS (
+        SELECT
+          recovery.date AS date,
+          recovery.resting_hr AS resting_hr,
+          recovery.hrv AS hrv
+        FROM analytics.daily_recovery AS recovery FINAL
+        WHERE recovery.user_id = {userId:UUID}
+          AND recovery.is_deleted = 0
+          AND recovery.date >= toDate({startDate:String})
+          AND recovery.date <= toDate({endDate:String})
+      ),
+      date_series AS (
+        SELECT toDate({startDate:String}) + INTERVAL number DAY AS date
+        FROM numbers(toUInt64(dateDiff('day', toDate({startDate:String}), toDate({endDate:String})) + 1))
+      ),
+      monthly AS (
+        SELECT
+          toStartOfMonth(d.date) AS month_start,
+          coalesce(sum(dt.hours), 0) AS training_hours,
+          toInt32(coalesce(sum(dt.count), 0)) AS activity_count,
+          coalesce(avg(dt.load), 0) AS avg_daily_strain,
+          coalesce(avg(sl.duration_minutes), 0) AS avg_sleep_minutes,
+          avg(m.resting_hr) AS avg_resting_hr,
+          avg(m.hrv) AS avg_hrv,
+          countIf(dt.date = d.date OR sl.date = d.date OR m.date = d.date) > 0 AS has_data
+        FROM date_series AS d
+        LEFT JOIN daily_training dt ON dt.date = d.date
+        LEFT JOIN sleep_daily sl ON sl.date = d.date
+        LEFT JOIN metrics_daily m ON m.date = d.date
+        GROUP BY toStartOfMonth(d.date)
+      ),
+      monthly_with_report_presence AS (
+        SELECT
+          *,
+          max(has_data) OVER () AS report_has_data
+        FROM monthly
+      )
+      SELECT
+        toString(month_start) AS month_start,
+        training_hours,
+        activity_count,
+        avg_daily_strain,
+        avg_sleep_minutes,
+        avg_resting_hr,
+        avg_hrv
+      FROM monthly_with_report_presence
+      WHERE report_has_data
+      ORDER BY month_start ASC`,
+      { userId: this.#userId, startDate, endDate },
     );
 
     const monthRows = rows.map((row) => new MonthRow(row));
@@ -191,6 +229,8 @@ export class MonthlyReportRepository {
     const current = summaries.length > 0 ? (summaries[summaries.length - 1] ?? null) : null;
     const history = summaries.slice(0, -1);
 
-    return { current, history };
+    const emptyState = createReportEmptyState("monthly");
+    const decisionSupport = current ? buildMonthlyDecisionSynthesis(current, history) : null;
+    return { current, history, decisionSupport, emptyState };
   }
 }

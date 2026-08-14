@@ -1,13 +1,13 @@
-# Training export worker — standalone Python container.
-# Consumes "training-export" jobs from BullMQ/Redis and writes Parquet files.
+# Local ML tooling image. The production training-export BullMQ worker was retired
+# with Postgres fitness.metric_stream.
 #
 # Build:
 #   docker build -t dofek-ml:local packages/ml
 #
 # Run:
-#   docker run -e REDIS_URL=redis://redis:6379 -e DATABASE_URL=postgres://... dofek-ml:local
+#   docker run dofek-ml:local dofek-export --output-dir /tmp/unused
 
-FROM python:3.12-slim AS base
+FROM python:3.14-slim AS base
 
 # libpq for psycopg native driver
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && \
@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && \
 
 WORKDIR /app
 
-# Install Python dependencies (without training extras like torch/sklearn)
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir .
@@ -27,4 +26,4 @@ RUN groupadd --gid 1000 appuser && \
 
 USER appuser
 
-ENTRYPOINT ["python", "-m", "dofek_ml.worker"]
+ENTRYPOINT ["dofek-export"]

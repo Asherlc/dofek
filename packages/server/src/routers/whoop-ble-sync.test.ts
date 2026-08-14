@@ -1,4 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
+
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 // Mock logger
 vi.mock("../logger.ts", () => ({
@@ -8,7 +16,9 @@ vi.mock("../logger.ts", () => ({
 // Mock trpc with a real tRPC setup
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string; timezone: string }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; metricStreamPublisher?: unknown; userId: string; timezone: string }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -20,43 +30,28 @@ vi.mock("../trpc.ts", async () => {
 
 import { whoopBleSyncRouter } from "./whoop-ble-sync.ts";
 
-function flattenSqlChunk(chunk: unknown): Array<string | number> {
-  if (typeof chunk === "string" || typeof chunk === "number") {
-    return [chunk];
-  }
-  if (Array.isArray(chunk)) {
-    return chunk.flatMap((item) => flattenSqlChunk(item));
-  }
-  if (typeof chunk !== "object" || chunk === null) {
-    return [];
-  }
-
-  const queryChunks = Reflect.get(chunk, "queryChunks");
-  if (Array.isArray(queryChunks)) {
-    return queryChunks.flatMap((item) => flattenSqlChunk(item));
-  }
-
-  const value = Reflect.get(chunk, "value");
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => flattenSqlChunk(item));
-  }
-
-  return [];
-}
-
-function getSqlParts(statement: unknown): Array<string | number> {
-  return flattenSqlChunk(statement);
-}
-
 function makeMockDb() {
+  return makeTransactionalTestDatabase({
+    execute: vi.fn(async () => []),
+  });
+}
+
+function makeMetricStreamPublisher() {
   return {
-    execute: vi.fn().mockResolvedValue({ rows: [] }),
+    publishRows: vi.fn(async (rows: readonly unknown[]) =>
+      rows.map((_, index) => ({ id: `event-${index}` })),
+    ),
   };
 }
 
-function makeCtx(database = makeMockDb()) {
+function getPublishedRows(publisher: ReturnType<typeof makeMetricStreamPublisher>): unknown[] {
+  return publisher.publishRows.mock.calls.flatMap((call) => [...call[0]]);
+}
+
+function makeCtx(database = makeMockDb(), metricStreamPublisher = makeMetricStreamPublisher()) {
   return {
     db: database,
+    metricStreamPublisher,
     userId: "test-user-id",
     timezone: "America/New_York",
   };
@@ -64,11 +59,13 @@ function makeCtx(database = makeMockDb()) {
 
 describe("whoopBleSyncRouter", () => {
   let mockDb: ReturnType<typeof makeMockDb>;
+  let metricStreamPublisher: ReturnType<typeof makeMetricStreamPublisher>;
   let ctx: ReturnType<typeof makeCtx>;
 
   beforeEach(() => {
     mockDb = makeMockDb();
-    ctx = makeCtx(mockDb);
+    metricStreamPublisher = makeMetricStreamPublisher();
+    ctx = makeCtx(mockDb, metricStreamPublisher);
   });
 
   describe("pushRealtimeData", () => {
@@ -100,10 +97,48 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // First db.execute call is the provider upsert (before any data inserts)
-      expect(mockDb.execute).toHaveBeenCalled();
-      // 3 calls: provider upsert + R-R interval metric_stream + orientation metric_stream
-      expect(mockDb.execute.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute.mock.invocationCallOrder[0]).toBeLessThan(
+        metricStreamPublisher.publishRows.mock.invocationCallOrder[0] ?? 0,
+      );
+    });
+
+    it("publishes realtime data through Redpanda without inserting metric stream rows into Postgres", async () => {
+      const trpcCaller = caller(ctx);
+
+      const result = await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            rrIntervalMs: 812,
+            quaternionW: 0.02,
+            quaternionX: 0.68,
+            quaternionY: -0.71,
+            quaternionZ: 0.2,
+          },
+        ],
+      });
+
+      expect(result).toEqual({ inserted: 2 });
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(JSON.stringify(mockDb.execute.mock.calls)).not.toContain("fitness.metric_stream");
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            providerId: "whoop_ble",
+            channel: "rr_interval_ms",
+            scalar: 812,
+          }),
+          expect.objectContaining({
+            providerId: "whoop_ble",
+            channel: "orientation",
+            vector: [0.02, 0.68, -0.71, 0.2],
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("stores R-R intervals without requiring or inserting device heart rate", async () => {
@@ -112,7 +147,7 @@ describe("whoopBleSyncRouter", () => {
         deviceId: "WHOOP Strap",
         samples: [
           {
-            timestamp: "2026-03-30T12:00:00.000Z",
+            timestamp: "2026-03-30T12:00:00Z",
             rrIntervalMs: 812,
             quaternionW: 0,
             quaternionX: 0,
@@ -122,10 +157,44 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
-      const allSqlParts = mockDb.execute.mock.calls.flatMap((call) => getSqlParts(call[0]));
-      expect(allSqlParts).toEqual(expect.arrayContaining(["rr_interval_ms", 812]));
-      expect(allSqlParts).not.toContain("heart_rate");
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({
+          channel: "rr_interval_ms",
+          scalar: 812,
+        }),
+      ]);
+      expect(JSON.stringify(getPublishedRows(metricStreamPublisher))).not.toContain("heart_rate");
+    });
+
+    it("writes deterministic external IDs and treats duplicate realtime samples as no-ops", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            rrIntervalMs: 812,
+            quaternionW: 0,
+            quaternionX: 0.5,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      const publishedRows = getPublishedRows(metricStreamPublisher);
+
+      expect(publishedRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            externalId: "whoop_ble:WHOOP Strap:rr_interval_ms:2026-03-30T12:00:00.000Z",
+          }),
+          expect.objectContaining({
+            externalId: "whoop_ble:WHOOP Strap:orientation:2026-03-30T12:00:00.000Z",
+          }),
+        ]),
+      );
     });
 
     it("ignores legacy heartRate fields instead of storing device-derived HR", async () => {
@@ -145,12 +214,17 @@ describe("whoopBleSyncRouter", () => {
         samples: [legacySample],
       });
 
-      const allSqlParts = mockDb.execute.mock.calls.flatMap((call) => getSqlParts(call[0]));
-      expect(allSqlParts).toEqual(expect.arrayContaining(["rr_interval_ms", 812]));
-      expect(allSqlParts).not.toContain("heart_rate");
+      const publishedRows = getPublishedRows(metricStreamPublisher);
+      expect(publishedRows).toEqual([
+        expect.objectContaining({
+          channel: "rr_interval_ms",
+          scalar: 812,
+        }),
+      ]);
+      expect(JSON.stringify(publishedRows)).not.toContain("heart_rate");
     });
 
-    it("inserts orientation data into metric_stream", async () => {
+    it("inserts orientation data into metric stream", async () => {
       const trpcCaller = caller(ctx);
       const result = await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -174,16 +248,18 @@ describe("whoopBleSyncRouter", () => {
 
       expect(result).toEqual({ inserted: 2 });
 
-      const orientationInsert = mockDb.execute.mock.calls[1]?.[0];
-      const sqlParts = getSqlParts(orientationInsert);
-
-      expect(sqlParts).toEqual(
+      expect(getPublishedRows(metricStreamPublisher)).toEqual(
         expect.arrayContaining([
-          "orientation",
-          "2026-03-30T12:00:00.000Z",
-          "2026-03-30T12:00:01.000Z",
-          0.5,
-          -0.5,
+          expect.objectContaining({
+            channel: "orientation",
+            recordedAt: "2026-03-30T12:00:00.000Z",
+            vector: [0.5, 0.5, 0.5, 0.5],
+          }),
+          expect.objectContaining({
+            channel: "orientation",
+            recordedAt: "2026-03-30T12:00:01.000Z",
+            vector: [0.5, 0.5, -0.5, 0.5],
+          }),
         ]),
       );
     });
@@ -204,8 +280,10 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 2 calls: ensure provider + R-R interval metric_stream
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "rr_interval_ms" }),
+      ]);
     });
 
     it("inserts R-R interval samples when samples include rrIntervalMs", async () => {
@@ -224,14 +302,17 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // ensure provider + rr_interval_ms + orientation
       expect(mockDb.execute).toHaveBeenCalledTimes(3);
 
-      const rrInsert = mockDb.execute.mock.calls[1]?.[0];
-      const sqlParts = getSqlParts(rrInsert);
-
-      expect(sqlParts).toEqual(
-        expect.arrayContaining(["rr_interval_ms", "2026-03-30T12:00:00.000Z", "WHOOP Strap", 812]),
+      expect(getPublishedRows(metricStreamPublisher)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            channel: "rr_interval_ms",
+            recordedAt: "2026-03-30T12:00:00.000Z",
+            deviceId: "WHOOP Strap",
+            scalar: 812,
+          }),
+        ]),
       );
     });
 
@@ -250,8 +331,10 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 2 calls: ensure provider + orientation metric_stream
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "orientation", vector: [0, 0.5, 0, 0] }),
+      ]);
     });
 
     it("inserts orientation when only quaternionY is non-zero", async () => {
@@ -269,7 +352,10 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "orientation", vector: [0, 0, 0.5, 0] }),
+      ]);
     });
 
     it("inserts orientation when only quaternionZ is non-zero", async () => {
@@ -287,7 +373,10 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "orientation", vector: [0, 0, 0, 0.5] }),
+      ]);
     });
 
     it("logs timestamps and sample count on successful push", async () => {
@@ -360,6 +449,28 @@ describe("whoopBleSyncRouter", () => {
       expect(result).toEqual({ inserted: 1 });
     });
 
+    it("returns zero inserted when duplicate realtime rows no-op", async () => {
+      metricStreamPublisher.publishRows.mockResolvedValue([]);
+      const trpcCaller = caller(ctx);
+
+      const result = await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            rrIntervalMs: 812,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      expect(result).toEqual({ inserted: 0 });
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+    });
+
     it("rejects invalid R-R interval values", async () => {
       const trpcCaller = caller(ctx);
 
@@ -391,6 +502,55 @@ describe("whoopBleSyncRouter", () => {
       ).rejects.toThrow();
     });
 
+    it("filters out samples more than five minutes in the future", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
+
+      const trpcCaller = caller(ctx);
+
+      try {
+        const result = await trpcCaller.pushRealtimeData({
+          deviceId: "WHOOP Strap",
+          samples: [
+            {
+              timestamp: "2026-03-30T12:06:00.001Z",
+              rrIntervalMs: 812,
+              quaternionW: 1.0,
+              quaternionX: 0.0,
+              quaternionY: 0.0,
+              quaternionZ: 0.0,
+            },
+          ],
+        });
+
+        expect(result.inserted).toBe(0);
+        expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("filters out malformed sample timestamps", async () => {
+      const trpcCaller = caller(ctx);
+
+      const result = await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "not-a-timestamp",
+            rrIntervalMs: 812,
+            quaternionW: 1.0,
+            quaternionX: 0.0,
+            quaternionY: 0.0,
+            quaternionZ: 0.0,
+          },
+        ],
+      });
+
+      expect(result.inserted).toBe(0);
+      expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+    });
+
     it("handles batch splitting for large sample arrays", async () => {
       const trpcCaller = caller(ctx);
       // Create 2500 samples (exceeds INSERT_BATCH_SIZE of 2000)
@@ -408,9 +568,11 @@ describe("whoopBleSyncRouter", () => {
         samples,
       });
 
-      expect(result).toEqual({ inserted: 2500 });
-      // 1 ensure provider + 2 batches × (R-R interval metric_stream + orientation metric_stream) = 5 calls
+      expect(result).toEqual({ inserted: 5000 });
       expect(mockDb.execute).toHaveBeenCalledTimes(5);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(2);
+      expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(4000);
+      expect(metricStreamPublisher.publishRows.mock.calls[1]?.[0]).toHaveLength(1000);
     });
   });
 });

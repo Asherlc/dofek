@@ -1,6 +1,30 @@
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import type { ActivityModality } from "@dofek/training/activity-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MetricStreamSourceRow } from "../db/metric-stream-writer.ts";
+import type { JsonValue } from "../metric-stream/events.ts";
 import type { ParsedFitRecord } from "./parser.ts";
+
+function toJsonCompatible(value: unknown): JsonValue {
+  if (value === null) return null;
+  switch (typeof value) {
+    case "boolean":
+    case "number":
+    case "string":
+      return value;
+    case "object":
+      if (value instanceof Date) {
+        return value.toISOString();
+      }
+      if (Array.isArray(value)) {
+        return value.map(toJsonCompatible);
+      }
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entryValue]) => [key, toJsonCompatible(entryValue)]),
+      );
+    default:
+      return null;
+  }
+}
 
 /**
  * Convert parsed FIT records into metric stream source rows.
@@ -10,9 +34,9 @@ export function fitRecordsToSensorSamples(
   records: ParsedFitRecord[],
   providerId: string,
   activityId: string,
-  activityType?: string,
+  modality?: ActivityModality | null,
 ): MetricStreamSourceRow[] {
-  const indoor = activityType ? isIndoorCycling(activityType) : false;
+  const indoor = isIndoorCyclingModality(modality ?? null);
   return records.map((record) => ({
     providerId,
     activityId,
@@ -41,6 +65,6 @@ export function fitRecordsToSensorSamples(
     leftPedalSmoothness: record.leftPedalSmoothness,
     rightPedalSmoothness: record.rightPedalSmoothness,
     combinedPedalSmoothness: record.combinedPedalSmoothness,
-    raw: record.raw,
+    raw: toJsonCompatible(record.raw),
   }));
 }

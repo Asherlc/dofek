@@ -1,13 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockAdd } = vi.hoisted(() => ({
-  mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
-}));
-vi.mock("dofek/jobs/queues", () => ({
-  createTrainingExportQueue: () => ({ add: mockAdd }),
-}));
-
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -15,7 +8,7 @@ vi.mock("../logger.ts", () => ({
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
     .create();
   return {
     router: trpc.router,
@@ -41,12 +34,70 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("dofek/admin/provider-rate-limit-status", () => ({
+  getProviderRateLimitStatusFromRedis: vi.fn(async () => [
+    {
+      providerId: "strava",
+      scope: "provider",
+      userId: null,
+      syncTier: "realtime",
+      concurrency: 2,
+      queueLimiterMax: 90,
+      queueLimiterDurationMs: 900_000,
+      defaultThrottleMs: 10_000,
+      throttleMs: 8_000,
+      inferredBudget: 35,
+      observedCooldownSeconds: 900,
+      requestCount: 12,
+      windowStartMs: Date.now(),
+      stravaShortUsage: 42,
+      stravaShortLimit: 100,
+      stravaDailyUsage: 120,
+      stravaDailyLimit: 1_000,
+      cooldownExpiresAt: null,
+      consecutiveHits: null,
+      hasLiveState: true,
+    },
+  ]),
+}));
+
 import { adminRouter } from "./admin.ts";
 
 const createCaller = createTestCallerFactory(adminRouter);
 
-function makeCaller(execute: ReturnType<typeof vi.fn>) {
-  return createCaller({ db: { execute }, userId: "admin-1", timezone: "UTC" });
+function makeCaller(
+  execute: ReturnType<typeof vi.fn>,
+  sensorQuery = vi.fn().mockResolvedValue([]),
+  timezone = "UTC",
+) {
+  return createCaller({
+    db: { execute },
+    sensorStore: { query: sensorQuery },
+    userId: "admin-1",
+    timezone,
+  });
+}
+
+function getSqlText(query: unknown): string {
+  if (typeof query !== "object" || query === null || !("queryChunks" in query)) {
+    return "";
+  }
+  const queryChunks = query.queryChunks;
+  if (!Array.isArray(queryChunks)) {
+    return "";
+  }
+  return queryChunks
+    .map((chunk) => {
+      if (typeof chunk === "string") {
+        return chunk;
+      }
+      if (typeof chunk !== "object" || chunk === null || !("value" in chunk)) {
+        return "";
+      }
+      const value = chunk.value;
+      return Array.isArray(value) ? value.join("") : "";
+    })
+    .join("");
 }
 
 /** Helper: mock db.execute that returns different values on successive calls */
@@ -66,7 +117,46 @@ describe("adminRouter", () => {
       ];
       const caller = makeCaller(vi.fn().mockResolvedValue(rows));
       const result = await caller.overview();
-      expect(result).toEqual(rows);
+      expect(result).toEqual([
+        { table_name: "activity", row_count: "1000" },
+        { table_name: "user_profile", row_count: "5" },
+      ]);
+    });
+
+    it("uses catalog estimates instead of live table counts", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      await caller.overview();
+
+      const sqlText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("pg_class");
+      expect(sqlText).toContain("reltuples");
+      expect(sqlText).not.toContain("COUNT(*)");
+    });
+
+    it("includes supplement dose events in the catalog overview", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      await caller.overview();
+
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("supplement_dose_event");
+    });
+
+    it("uses chunk estimates for metric stream hypertable counts", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      await caller.overview();
+
+      const sqlText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("metric_stream_chunk_estimates");
+      expect(sqlText).toContain("pg_inherits");
+      expect(sqlText).toContain("parent_class.relname = 'metric_stream'");
+      expect(sqlText).toContain(
+        "GREATEST(base_estimates.row_count, metric_stream_chunk_estimates.row_count)",
+      );
     });
   });
 
@@ -91,8 +181,32 @@ describe("adminRouter", () => {
   });
 
   describe("userDetail", () => {
-    it("returns accounts, providers, and sessions for a user", async () => {
+    it("returns profile, flags, billing, access, Stripe links, accounts, providers, and sessions for a user", async () => {
       const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-02T00:00:00Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([{ value: true }]);
+      execute.mockResolvedValueOnce([
+        {
+          user_id: "00000000-0000-0000-0000-000000000001",
+          stripe_customer_id: "cus_123",
+          stripe_subscription_id: "sub_123",
+          stripe_subscription_status: "active",
+          stripe_current_period_end: "2026-05-01T00:00:00Z",
+          paid_grant_reason: null,
+          created_at: "2024-01-03T00:00:00Z",
+          updated_at: "2024-01-04T00:00:00Z",
+        },
+      ]);
       execute.mockResolvedValueOnce([
         {
           id: "acc-1",
@@ -117,11 +231,114 @@ describe("adminRouter", () => {
       const result = await caller.userDetail({
         userId: "00000000-0000-0000-0000-000000000001",
       });
+      expect(result.profile.name).toBe("Test");
+      expect(result.flags.providerGuideDismissed).toBe(true);
+      expect(result.billing?.stripe_customer_id).toBe("cus_123");
+      expect(result.billing?.stripe_subscription_status).toBe("active");
+      expect(result.access).toEqual({
+        kind: "full",
+        paid: true,
+        reason: "stripe_subscription",
+      });
+      expect(result.stripeLinks).toEqual({
+        customer: "https://dashboard.stripe.com/customers/cus_123",
+        subscription: "https://dashboard.stripe.com/subscriptions/sub_123",
+      });
       expect(result.accounts).toHaveLength(1);
       expect(result.providers).toHaveLength(1);
       expect(result.sessions).toHaveLength(1);
       expect(result.accounts[0]?.auth_provider).toBe("google");
       expect(result.providers[0]?.id).toBe("whoop");
+    });
+
+    it("returns unpaid access and null Stripe links when billing is absent", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2026-07-21T01:30:00.000Z",
+          updated_at: "2026-07-21T01:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      const caller = makeCaller(execute, vi.fn().mockResolvedValue([]), "America/Los_Angeles");
+
+      const result = await caller.userDetail({
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result.flags.providerGuideDismissed).toBe(false);
+      expect(result.billing).toBeNull();
+      expect(result.access).toEqual({
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-07-20",
+        endDateExclusive: "2026-07-27",
+      });
+      expect(result.stripeLinks).toEqual({
+        customer: null,
+        subscription: null,
+      });
+    });
+
+    it("uses paid grant reason from billing when present", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2026-04-10T18:30:00.000Z",
+          updated_at: "2026-04-10T18:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([{ value: false }]);
+      execute.mockResolvedValueOnce([
+        {
+          user_id: "00000000-0000-0000-0000-000000000001",
+          stripe_customer_id: null,
+          stripe_subscription_id: null,
+          stripe_subscription_status: null,
+          stripe_current_period_end: null,
+          paid_grant_reason: "existing_account",
+          created_at: "2026-04-10T18:30:00.000Z",
+          updated_at: "2026-04-10T18:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.userDetail({
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result.flags.providerGuideDismissed).toBe(false);
+      expect(result.access).toEqual({ kind: "full", paid: true, reason: "paid_grant" });
+      expect(result.stripeLinks).toEqual({
+        customer: null,
+        subscription: null,
+      });
+    });
+
+    it("throws when the target user does not exist", async () => {
+      const caller = makeCaller(vi.fn().mockResolvedValueOnce([]));
+
+      await expect(
+        caller.userDetail({ userId: "00000000-0000-0000-0000-000000000099" }),
+      ).rejects.toThrow("User not found");
     });
   });
 
@@ -135,6 +352,58 @@ describe("adminRouter", () => {
       });
       expect(result).toEqual({ ok: true });
       expect(execute).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("setProviderGuideDismissed", () => {
+    it("stores provider guide dismissal for the target user", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.setProviderGuideDismissed({
+        userId: "00000000-0000-0000-0000-000000000002",
+        dismissed: true,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("fitness.user_settings");
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("ON CONFLICT");
+    });
+  });
+
+  describe("setPaidGrant", () => {
+    it("stores an admin grant when free access is enabled", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.setPaidGrant({
+        userId: "00000000-0000-0000-0000-000000000002",
+        enabled: true,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("fitness.user_billing");
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("paid_grant_reason");
+    });
+
+    it("clears only the local paid grant when free access is disabled", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.setPaidGrant({
+        userId: "00000000-0000-0000-0000-000000000002",
+        enabled: false,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(execute).toHaveBeenCalledOnce();
+      const queryText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("paid_grant_reason = null");
+      expect(queryText).not.toContain("stripe_customer_id");
+      expect(queryText).not.toContain("stripe_subscription_id");
+      expect(queryText).not.toContain("stripe_subscription_status");
     });
   });
 
@@ -181,7 +450,7 @@ describe("adminRouter", () => {
             user_id: "user-1",
             user_name: "Test",
             provider_id: "garmin",
-            activity_type: "running",
+            canonical_type: "running",
             name: "Morning Run",
             started_at: "2024-01-01T08:00:00Z",
             duration_seconds: "1800",
@@ -316,8 +585,9 @@ describe("adminRouter", () => {
 
   describe("bodyMeasurements", () => {
     it("returns paginated body measurements with total count", async () => {
-      const execute = mockPaginatedExecute(
-        [
+      const sensorQuery = vi
+        .fn()
+        .mockResolvedValueOnce([
           {
             id: "bm-1",
             user_id: "user-1",
@@ -326,19 +596,19 @@ describe("adminRouter", () => {
             source_name: "withings",
             provider_id: "withings",
           },
-        ],
-        [{ count: "300" }],
-      );
-      const caller = makeCaller(execute);
+        ])
+        .mockResolvedValueOnce([{ count: "300" }]);
+      const caller = makeCaller(vi.fn(), sensorQuery);
       const result = await caller.bodyMeasurements({ limit: 50, offset: 0 });
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.provider_id).toBe("withings");
       expect(result.total).toBe("300");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("FROM analytics.v_body_measurement");
     });
 
     it("returns zero total when count query returns empty", async () => {
-      const execute = mockPaginatedExecute([], []);
-      const caller = makeCaller(execute);
+      const sensorQuery = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      const caller = makeCaller(vi.fn(), sensorQuery);
       const result = await caller.bodyMeasurements({ limit: 50, offset: 0 });
       expect(result.rows).toHaveLength(0);
       expect(result.total).toBe(0);
@@ -420,89 +690,13 @@ describe("adminRouter", () => {
     });
   });
 
-  describe("triggerTrainingExport", () => {
-    it("enqueues a training export job and returns job ID", async () => {
-      const execute = vi.fn();
-      const caller = makeCaller(execute);
-      const result = await caller.triggerTrainingExport({
-        since: "2024-01-01",
-        until: "2024-02-01",
-      });
-      expect(result).toEqual({ jobId: "job-123" });
-      expect(mockAdd).toHaveBeenCalledWith("training-export", {
-        since: "2024-01-01",
-        until: "2024-02-01",
-      });
-    });
-  });
-
-  describe("refreshViews", () => {
-    it("refreshes all materialized views and returns view names", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      const caller = makeCaller(execute);
-      const result = await caller.refreshViews();
-      expect(result.refreshed).toEqual([
-        "fitness.v_activity",
-        "fitness.v_sleep",
-        "fitness.v_body_measurement",
-        "fitness.v_daily_metrics",
-        "fitness.deduped_sensor",
-        "fitness.activity_summary",
-        "fitness.provider_stats",
-      ]);
-      expect(result.failed).toEqual([]);
-      // 7 views × REFRESH MATERIALIZED VIEW CONCURRENTLY
-      expect(execute).toHaveBeenCalledTimes(7);
-    });
-
-    it("falls back to non-concurrent refresh on error", async () => {
-      const execute = vi
-        .fn()
-        .mockRejectedValueOnce(new Error("has not been populated"))
-        .mockResolvedValueOnce([]) // fallback non-concurrent
-        .mockResolvedValue([]); // remaining views
-      const caller = makeCaller(execute);
-      const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(7);
-      expect(result.failed).toHaveLength(0);
-      // 1 failed concurrent + 1 fallback + 6 remaining = 8
-      expect(execute).toHaveBeenCalledTimes(8);
-    });
-
-    it("reports failed views without aborting the rest", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      // Make the 3rd view (v_body_measurement) fail both concurrent and fallback
-      execute.mockResolvedValueOnce([]); // v_activity concurrent OK
-      execute.mockResolvedValueOnce([]); // v_sleep concurrent OK
-      execute.mockRejectedValueOnce(new Error("does not exist")); // v_body concurrent fail
-      execute.mockRejectedValueOnce(new Error("does not exist")); // v_body fallback fail
-      // remaining 3 views succeed
-      execute.mockResolvedValue([]);
-      const caller = makeCaller(execute);
-      const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(6);
-      expect(result.failed).toEqual([
-        {
-          view: "fitness.v_body_measurement",
-          error: "Failed to refresh fitness.v_body_measurement (both CONCURRENT and blocking)",
-        },
-      ]);
-    });
-  });
-
-  describe("trainingExportStatus", () => {
-    it("returns watermark data", async () => {
-      const rows = [
-        {
-          table_name: "activity",
-          last_exported_at: "2024-01-01T00:00:00Z",
-          row_count: 500,
-          updated_at: "2024-01-01T00:00:00Z",
-        },
-      ];
-      const caller = makeCaller(vi.fn().mockResolvedValue(rows));
-      const result = await caller.trainingExportStatus();
-      expect(result).toEqual({ watermarks: rows });
+  describe("rateLimits", () => {
+    it("returns live provider rate-limit estimations", async () => {
+      const caller = makeCaller(vi.fn());
+      const result = await caller.rateLimits();
+      expect(result).toHaveLength(1);
+      expect(result[0]?.providerId).toBe("strava");
+      expect(result[0]?.inferredBudget).toBe(35);
     });
   });
 });

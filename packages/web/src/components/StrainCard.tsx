@@ -1,9 +1,13 @@
-import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
+import { formatDateShort, formatIntensity, formatTrainingLoad } from "@dofek/format/format";
+import { StrainScore } from "@dofek/scoring/scoring";
+import { duration, easing } from "@dofek/scoring/tokens";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface StrainCardProps {
   data: WorkloadRatioResult | undefined;
@@ -28,7 +32,7 @@ function StrainRing({
   const targetOffset = circumference * (1 - fraction);
   const color = new StrainScore(strain).color;
   const center = size / 2;
-  const displayValue = useCountUp(strain, 1200, 1);
+  const displayValue = useCountUp(strain, duration.countUp, 1);
 
   // Animate ring draw-in
   const [animatedOffset, setAnimatedOffset] = useState(circumference);
@@ -66,7 +70,7 @@ function StrainRing({
           strokeDashoffset={animatedOffset}
           strokeLinecap="round"
           transform={`rotate(-90 ${center} ${center})`}
-          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}
+          style={{ transition: `stroke-dashoffset ${duration.countUp}ms ${easing.out}` }}
         />
         {/* Target marker */}
         {targetStrain != null &&
@@ -115,7 +119,9 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
   }
 
   const today = data.timeSeries[data.timeSeries.length - 1];
-  const strain = data.displayedStrain;
+  const strain =
+    strainTarget?.currentStrain ??
+    (data.displayedDate != null && data.displayedDate === today?.date ? data.displayedStrain : 0);
   const strainScore = new StrainScore(strain);
   const label = strainScore.label;
   const color = strainScore.color;
@@ -126,7 +132,7 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
       ? ""
       : data.displayedDate === today?.date
         ? "Today"
-        : `Last training: ${new Date(data.displayedDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+        : `Last training: ${formatDateShort(data.displayedDate)}`;
 
   return (
     <div className="card p-6">
@@ -147,26 +153,30 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
           <div className="grid grid-cols-3 gap-2">
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">
-                {today?.acuteLoad.toFixed(0) ?? "--"}
+                {formatTrainingLoad(today?.acuteLoad)}
               </p>
-              <p className="text-[10px] text-subtle">Acute (7d)</p>
+              <p className="text-[10px] text-subtle">Recent {data.context.recentDays}-day load</p>
             </div>
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">
-                {today?.chronicLoad.toFixed(0) ?? "--"}
+                {formatTrainingLoad(today?.chronicLoad)}
               </p>
-              <p className="text-[10px] text-subtle">Chronic (28d)</p>
+              <p className="text-[10px] text-subtle">
+                {data.context.baselineDays}-day baseline load
+              </p>
             </div>
             <div>
-              <p
-                className="text-lg font-bold tabular-nums"
-                style={{ color: new WorkloadRatio(workloadRatio ?? null).color }}
-              >
+              <p className="text-lg font-bold text-foreground tabular-nums">
                 {workloadRatio != null ? workloadRatio.toFixed(2) : "--"}
               </p>
-              <p className="text-[10px] text-subtle">Workload Ratio</p>
+              <p className="text-[10px] text-subtle">{data.context.label}</p>
             </div>
           </div>
+          <MethodExplanation
+            className="text-[11px]"
+            technicalName={TRAINING_TERMINOLOGY.workloadRatio.technicalName}
+            lines={[data.context.description]}
+          />
 
           {strainTarget && (
             <div className="mt-1 pt-2 border-t border-border">
@@ -176,7 +186,9 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
                   <span className="text-foreground font-medium">{strainTarget.targetStrain}</span> (
                   {strainTarget.zone})
                 </span>
-                <span className="text-subtle">{strainTarget.progressPercent}% reached</span>
+                <span className="text-subtle">
+                  {formatIntensity(strainTarget.progressPercent)} reached
+                </span>
               </div>
             </div>
           )}

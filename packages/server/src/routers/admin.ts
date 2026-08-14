@@ -1,13 +1,13 @@
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
-import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
-import { createTrainingExportQueue } from "dofek/jobs/queues";
+import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
+import { TRPCError } from "@trpc/server";
+import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-limit-status";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { logger } from "../logger.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
-
-const trainingExportQueue = createTrainingExportQueue();
 
 // ── Schemas for admin queries ──
 
@@ -22,6 +22,31 @@ const userRowSchema = z.object({
   email: z.string().nullable(),
   birth_date: z.string().nullable(),
   is_admin: z.boolean(),
+  created_at: timestampStringSchema,
+  updated_at: timestampStringSchema,
+});
+
+const userDetailProfileSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+  birth_date: z.string().nullable(),
+  is_admin: z.boolean(),
+  created_at: timestampStringSchema,
+  updated_at: timestampStringSchema,
+});
+
+const userDetailSettingsFlagSchema = z.object({
+  value: z.unknown(),
+});
+
+const userDetailBillingSchema = z.object({
+  user_id: z.string(),
+  stripe_customer_id: z.string().nullable(),
+  stripe_subscription_id: z.string().nullable(),
+  stripe_subscription_status: z.string().nullable(),
+  stripe_current_period_end: timestampStringSchema.nullable(),
+  paid_grant_reason: z.string().nullable(),
   created_at: timestampStringSchema,
   updated_at: timestampStringSchema,
 });
@@ -65,7 +90,9 @@ const activityRowSchema = z.object({
   user_id: z.string(),
   user_name: z.string().nullable(),
   provider_id: z.string(),
-  activity_type: z.string().nullable(),
+  canonical_type: z.string().nullable(),
+  provider_type: z.string(),
+  modality: z.string().nullable(),
   name: z.string().nullable(),
   started_at: timestampStringSchema,
   duration_seconds: z.coerce.number().nullable(),
@@ -96,7 +123,7 @@ const foodEntryRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   user_name: z.string().nullable(),
-  food_name: z.string(),
+  food_name: z.string().nullable(),
   calories: z.coerce.number().nullable(),
   protein_g: z.coerce.number().nullable(),
   meal: z.string().nullable(),
@@ -138,37 +165,95 @@ const paginationInput = z.object({
 
 const countSchema = z.object({ count: z.coerce.number() });
 
+function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefined) {
+  if (!sensorStore) {
+    throw new Error("admin body measurements require the ClickHouse body measurement store");
+  }
+  return sensorStore;
+}
+
 export const adminRouter = router({
   /** High-level overview: row counts for all key tables */
   overview: adminProcedure.query(async ({ ctx }) => {
-    const rows = await executeWithSchema(
-      ctx.db,
-      overviewCountSchema,
-      sql`SELECT table_name, row_count FROM (
-        SELECT 'user_profile' AS table_name, COUNT(*)::text AS row_count FROM fitness.user_profile
-        UNION ALL SELECT 'activity', COUNT(*)::text FROM fitness.activity
-        UNION ALL SELECT 'sleep_session', COUNT(*)::text FROM fitness.sleep_session
-        UNION ALL SELECT 'food_entry', COUNT(*)::text FROM fitness.food_entry
-        UNION ALL SELECT 'daily_metrics', COUNT(*)::text FROM fitness.daily_metrics
-        UNION ALL SELECT 'body_measurement', COUNT(*)::text FROM fitness.body_measurement
-        UNION ALL SELECT 'strength_workout', COUNT(*)::text FROM fitness.strength_workout
-        UNION ALL SELECT 'sync_log', COUNT(*)::text FROM fitness.sync_log
-        UNION ALL SELECT 'session', COUNT(*)::text FROM fitness.session
-        UNION ALL SELECT 'auth_account', COUNT(*)::text FROM fitness.auth_account
-        UNION ALL SELECT 'oauth_token', COUNT(*)::text FROM fitness.oauth_token
-        UNION ALL SELECT 'provider', COUNT(*)::text FROM fitness.provider
-        UNION ALL SELECT 'lab_panel', COUNT(*)::text FROM fitness.lab_panel
-        UNION ALL SELECT 'journal_entry', COUNT(*)::text FROM fitness.journal_entry
-        UNION ALL SELECT 'breathwork_session', COUNT(*)::text FROM fitness.breathwork_session
-        UNION ALL SELECT 'supplement', COUNT(*)::text FROM fitness.supplement
-        UNION ALL SELECT 'life_events', COUNT(*)::text FROM fitness.life_events
-        UNION ALL SELECT 'nutrition_data', COUNT(*)::text FROM fitness.nutrition_data
-        UNION ALL SELECT 'food_entry_nutrition', COUNT(*)::text FROM fitness.food_entry_nutrition
-        UNION ALL SELECT 'supplement_nutrition', COUNT(*)::text FROM fitness.supplement_nutrition
-        UNION ALL SELECT 'metric_stream', COUNT(*)::text FROM fitness.metric_stream
-      ) counts ORDER BY row_count DESC`,
-    );
-    return rows;
+    const bodyStore = requireBodyMeasurementStore(ctx.sensorStore);
+    const [rows, bodyRows] = await Promise.all([
+      executeWithSchema(
+        ctx.db,
+        overviewCountSchema,
+        sql`WITH target_tables(table_name) AS (
+          VALUES
+            ('user_profile'),
+            ('activity'),
+            ('sleep_session'),
+            ('food_entry'),
+            ('daily_metrics'),
+            ('sync_log'),
+            ('session'),
+            ('auth_account'),
+            ('oauth_token'),
+            ('provider'),
+            ('lab_panel'),
+            ('journal_entry'),
+            ('supplement'),
+            ('life_events'),
+            ('nutrient'),
+            ('food_entry_nutrient'),
+            ('supplement_definition'),
+            ('supplement_definition_nutrient'),
+            ('supplement_dose_event'),
+            ('metric_stream')
+        ),
+        base_estimates AS (
+          SELECT
+            target_tables.table_name,
+            GREATEST(pg_class.reltuples, 0)::bigint AS row_count
+          FROM target_tables
+          JOIN pg_class
+            ON pg_class.relname = target_tables.table_name
+          JOIN pg_namespace
+            ON pg_namespace.oid = pg_class.relnamespace
+           AND pg_namespace.nspname = 'fitness'
+        ),
+        metric_stream_chunk_estimates AS (
+          SELECT
+            COALESCE(SUM(GREATEST(chunk_class.reltuples, 0)), 0)::bigint AS row_count
+          FROM pg_inherits
+          JOIN pg_class AS parent_class
+            ON parent_class.oid = pg_inherits.inhparent
+          JOIN pg_namespace AS parent_namespace
+            ON parent_namespace.oid = parent_class.relnamespace
+           AND parent_namespace.nspname = 'fitness'
+          JOIN pg_class AS chunk_class
+            ON chunk_class.oid = pg_inherits.inhrelid
+          WHERE parent_class.relname = 'metric_stream'
+        )
+        SELECT
+          base_estimates.table_name,
+          CASE
+            WHEN base_estimates.table_name = 'metric_stream'
+              THEN GREATEST(
+                base_estimates.row_count,
+                metric_stream_chunk_estimates.row_count
+              )::text
+            ELSE base_estimates.row_count::text
+          END AS row_count
+        FROM base_estimates
+        CROSS JOIN metric_stream_chunk_estimates
+        ORDER BY CASE
+          WHEN base_estimates.table_name = 'metric_stream'
+            THEN GREATEST(base_estimates.row_count, metric_stream_chunk_estimates.row_count)
+          ELSE base_estimates.row_count
+        END DESC`,
+      ),
+      bodyStore.query(
+        overviewCountSchema,
+        `
+          SELECT 'body_metrics' AS table_name, count() AS row_count
+          FROM analytics.v_body_measurement
+        `,
+      ),
+    ]);
+    return [...rows, ...bodyRows].sort((left, right) => right.row_count - left.row_count);
   }),
 
   /** List all users with their profiles */
@@ -183,46 +268,143 @@ export const adminRouter = router({
   }),
 
   /** Detailed view of a single user: their accounts, providers, sessions */
-  userDetail: adminProcedure
-    .input(z.object({ userId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const [accounts, providers, sessions] = await Promise.all([
-        executeWithSchema(
-          ctx.db,
-          userDetailAccountSchema,
-          sql`SELECT id, auth_provider, provider_account_id, email, name, created_at::text
+  userDetail: adminProcedure.input(z.object({ userId: z.guid() })).query(async ({ ctx, input }) => {
+    const [profiles, flags, billingRows, accounts, providers, sessions] = await Promise.all([
+      executeWithSchema(
+        ctx.db,
+        userDetailProfileSchema,
+        sql`SELECT id, name, email, birth_date::text, is_admin, created_at::text, updated_at::text
+              FROM fitness.user_profile
+              WHERE id = ${input.userId}
+              LIMIT 1`,
+      ),
+      executeWithSchema(
+        ctx.db,
+        userDetailSettingsFlagSchema,
+        sql`SELECT value
+              FROM fitness.user_settings
+              WHERE user_id = ${input.userId}
+                AND key = ${PROVIDER_GUIDE_SETTINGS_KEY}
+              LIMIT 1`,
+      ),
+      executeWithSchema(
+        ctx.db,
+        userDetailBillingSchema,
+        sql`SELECT user_id,
+                     stripe_customer_id,
+                     stripe_subscription_id,
+                     stripe_subscription_status,
+                     stripe_current_period_end::text AS stripe_current_period_end,
+                     paid_grant_reason,
+                     created_at::text AS created_at,
+                     updated_at::text AS updated_at
+              FROM fitness.user_billing
+              WHERE user_id = ${input.userId}
+              LIMIT 1`,
+      ),
+      executeWithSchema(
+        ctx.db,
+        userDetailAccountSchema,
+        sql`SELECT id, auth_provider, provider_account_id, email, name, created_at::text
               FROM fitness.auth_account WHERE user_id = ${input.userId}
               ORDER BY created_at`,
-        ),
-        executeWithSchema(
-          ctx.db,
-          userDetailProviderSchema,
-          sql`SELECT p.id, p.name, MAX(ot.created_at)::text AS created_at
-              FROM fitness.oauth_token ot
-              JOIN fitness.provider p ON p.id = ot.provider_id
-              WHERE ot.user_id = ${input.userId}
-              GROUP BY p.id, p.name
-              ORDER BY created_at`,
-        ),
-        executeWithSchema(
-          ctx.db,
-          userDetailSessionSchema,
-          sql`SELECT id, created_at::text, expires_at::text
+      ),
+      executeWithSchema(
+        ctx.db,
+        userDetailProviderSchema,
+        sql`SELECT p.id, p.name, pc.created_at::text AS created_at
+              FROM fitness.provider_connection pc
+              JOIN fitness.provider p ON p.id = pc.provider_id
+              WHERE pc.user_id = ${input.userId}
+              ORDER BY pc.created_at`,
+      ),
+      executeWithSchema(
+        ctx.db,
+        userDetailSessionSchema,
+        sql`SELECT id, created_at::text, expires_at::text
               FROM fitness.session WHERE user_id = ${input.userId}
               ORDER BY created_at DESC LIMIT 20`,
-        ),
-      ]);
-      return { accounts, providers, sessions };
-    }),
+      ),
+    ]);
+    const profile = profiles[0];
+    if (!profile) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+    }
+    const billing = billingRows[0] ?? null;
+    const access = resolveAccessWindow({
+      userCreatedAt: profile.created_at,
+      timezone: ctx.timezone,
+      paidGrantReason: billing?.paid_grant_reason ?? null,
+      stripeSubscriptionStatus: billing?.stripe_subscription_status ?? null,
+    });
+    return {
+      profile,
+      flags: {
+        providerGuideDismissed: flags[0]?.value === true,
+      },
+      billing,
+      access,
+      stripeLinks: {
+        customer: billing?.stripe_customer_id
+          ? `https://dashboard.stripe.com/customers/${billing.stripe_customer_id}`
+          : null,
+        subscription: billing?.stripe_subscription_id
+          ? `https://dashboard.stripe.com/subscriptions/${billing.stripe_subscription_id}`
+          : null,
+      },
+      accounts,
+      providers,
+      sessions,
+    };
+  }),
 
   /** Toggle admin status for a user */
   setAdmin: adminProcedure
-    .input(z.object({ userId: z.string().uuid(), isAdmin: z.boolean() }))
+    .input(z.object({ userId: z.guid(), isAdmin: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db.execute(
         sql`UPDATE fitness.user_profile SET is_admin = ${input.isAdmin}, updated_at = NOW()
             WHERE id = ${input.userId}`,
       );
+      return { ok: true };
+    }),
+
+  /** Toggle the provider guide dismissal flag for a user */
+  setProviderGuideDismissed: adminProcedure
+    .input(z.object({ userId: z.guid(), dismissed: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.execute(
+        sql`INSERT INTO fitness.user_settings (user_id, key, value, updated_at)
+            VALUES (${input.userId}, ${PROVIDER_GUIDE_SETTINGS_KEY}, ${JSON.stringify(input.dismissed)}::jsonb, NOW())
+            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      );
+      await queryCache.invalidateByPrefix(`${input.userId}:providerGuide.`);
+      return { ok: true };
+    }),
+
+  /** Toggle local free-access grant without mutating Stripe */
+  setPaidGrant: adminProcedure
+    .input(z.object({ userId: z.guid(), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.enabled) {
+        await ctx.db.execute(
+          sql`INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+              VALUES (${input.userId}, 'admin_grant')
+              ON CONFLICT (user_id) DO UPDATE SET
+                paid_grant_reason = EXCLUDED.paid_grant_reason,
+                updated_at = NOW()`,
+        );
+        await invalidateAllUserQueries(input.userId);
+        return { ok: true };
+      }
+
+      await ctx.db.execute(
+        sql`UPDATE fitness.user_billing
+            SET paid_grant_reason = null,
+                updated_at = NOW()
+            WHERE user_id = ${input.userId}`,
+      );
+      await invalidateAllUserQueries(input.userId);
       return { ok: true };
     }),
 
@@ -256,18 +438,21 @@ export const adminRouter = router({
         ctx.db,
         activityRowSchema,
         sql`SELECT a.id, a.user_id, up.name AS user_name, a.provider_id,
-                   a.activity_type, a.name, a.started_at::text,
+                   a.canonical_type, a.provider_type, a.modality::text AS modality,
+                   a.name, a.started_at::text,
                    EXTRACT(EPOCH FROM (a.ended_at - a.started_at))::text AS duration_seconds,
                    a.source_name
             FROM fitness.activity a
             LEFT JOIN fitness.user_profile up ON up.id = a.user_id
+            WHERE a.provider_absent_at IS NULL
+              AND a.deleted_at IS NULL
             ORDER BY a.started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
       executeWithSchema(
         ctx.db,
         countSchema,
-        sql`SELECT COUNT(*)::text AS count FROM fitness.activity`,
+        sql`SELECT COUNT(*)::text AS count FROM fitness.activity WHERE provider_absent_at IS NULL AND deleted_at IS NULL`,
       ),
     ]);
     return { rows, total: countRows[0]?.count ?? 0 };
@@ -333,11 +518,10 @@ export const adminRouter = router({
         ctx.db,
         foodEntryRowSchema,
         sql`SELECT fe.id, fe.user_id, up.name AS user_name,
-                   fe.food_name, nd.calories::text, nd.protein_g::text, fe.meal,
+                   fe.food_name, fe.calories::text, fe.protein_g::text, fe.meal,
                    fe.logged_at::text, fe.provider_id
-            FROM fitness.food_entry fe
+            FROM fitness.v_food_entry_with_nutrition fe
             LEFT JOIN fitness.user_profile up ON up.id = fe.user_id
-            LEFT JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
             ORDER BY fe.logged_at DESC NULLS LAST
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
@@ -352,21 +536,33 @@ export const adminRouter = router({
 
   /** Paginated body measurements */
   bodyMeasurements: adminProcedure.input(paginationInput).query(async ({ ctx, input }) => {
+    const bodyStore = requireBodyMeasurementStore(ctx.sensorStore);
     const [rows, countRows] = await Promise.all([
-      executeWithSchema(
-        ctx.db,
+      bodyStore.query(
         bodyMeasurementRowSchema,
-        sql`SELECT bm.id, bm.user_id, up.name AS user_name,
-                   bm.recorded_at::text, bm.source_name, bm.provider_id
-            FROM fitness.body_measurement bm
-            LEFT JOIN fitness.user_profile up ON up.id = bm.user_id
-            ORDER BY bm.recorded_at DESC
-            LIMIT ${input.limit} OFFSET ${input.offset}`,
+        `
+          SELECT
+            toString(bm.id) AS id,
+            toString(bm.user_id) AS user_id,
+            up.name AS user_name,
+            toString(bm.recorded_at) AS recorded_at,
+            bm.source_name AS source_name,
+            bm.provider_id AS provider_id
+          FROM analytics.v_body_measurement AS bm
+          LEFT JOIN postgres_fitness.user_profile_current AS up
+            ON up.id = bm.user_id
+          ORDER BY bm.recorded_at DESC
+          LIMIT {limit:UInt32}
+          OFFSET {offset:UInt32}
+        `,
+        { limit: input.limit, offset: input.offset },
       ),
-      executeWithSchema(
-        ctx.db,
+      bodyStore.query(
         countSchema,
-        sql`SELECT COUNT(*)::text AS count FROM fitness.body_measurement`,
+        `
+          SELECT count() AS count
+          FROM analytics.v_body_measurement
+        `,
       ),
     ]);
     return { rows, total: countRows[0]?.count ?? 0 };
@@ -431,60 +627,8 @@ export const adminRouter = router({
     );
   }),
 
-  /** Trigger a global training data export */
-  triggerTrainingExport: adminProcedure
-    .input(
-      z.object({
-        since: z.string().optional(),
-        until: z.string().optional(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      const queue = trainingExportQueue;
-      const job = await queue.add("training-export", {
-        since: input.since,
-        until: input.until,
-      });
-      return { jobId: String(job.id) };
-    }),
-
-  /** Force-refresh all materialized views (dedup + rollup). */
-  refreshViews: adminProcedure.mutation(async ({ ctx }) => {
-    logger.info("[admin] Refreshing all materialized views");
-    const refreshed: string[] = [];
-    const failed: Array<{ view: string; error: string }> = [];
-    for (const view of ALL_MATERIALIZED_VIEWS) {
-      try {
-        await refreshMaterializedView(ctx.db, view, { source: "server.admin_refresh_views" });
-        refreshed.push(view);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error(`[admin] Failed to refresh ${view}: ${message}`);
-        failed.push({ view, error: message });
-      }
-    }
-    logger.info(
-      `[admin] Refreshed ${refreshed.length}/${ALL_MATERIALIZED_VIEWS.length} materialized views` +
-        (failed.length > 0 ? `, ${failed.length} failed` : ""),
-    );
-    return { refreshed, failed };
-  }),
-
-  /** Get training export watermark status */
-  trainingExportStatus: adminProcedure.query(async ({ ctx }) => {
-    const watermarkSchema = z.object({
-      table_name: z.string(),
-      last_exported_at: timestampStringSchema,
-      row_count: z.coerce.number(),
-      updated_at: timestampStringSchema,
-    });
-    const watermarks = await executeWithSchema(
-      ctx.db,
-      watermarkSchema,
-      sql`SELECT table_name, last_exported_at::text, row_count::text, updated_at::text
-          FROM fitness.training_export_watermark
-          ORDER BY table_name`,
-    );
-    return { watermarks };
+  /** Live provider rate-limit estimations from Redis adaptive state and cooldowns */
+  rateLimits: adminProcedure.query(async () => {
+    return getProviderRateLimitStatusFromRedis();
   }),
 });

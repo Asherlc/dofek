@@ -1,0 +1,35 @@
+# Oracle Cloud Always Free overrides applied on top of stack.yml.
+#
+# The Always Free Ampere A1 node has 24 GB RAM and 4 OCPUs, so the core app +
+# PeerDB CDC + ClickHouse + Postgres fit comfortably and we do NOT need to
+# tighten CPU the way staging does on its 4 GB box.
+#
+# What we do disable: operator/admin UIs that perform no background operational
+# work and aren't needed for a single-user free-tier deployment. Databasus
+# remains enabled because it owns the database backup schedule. Netdata is also
+# disabled to preserve memory. The services stay defined and can be re-enabled
+# by dropping this override. The PeerDB CDC pipeline itself stays running —
+# only its management UI is turned off.
+#
+# Apply with:
+#   docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
+services:
+  cloudbeaver:
+    deploy:
+      replicas: 0
+
+  netdata:
+    deploy:
+      replicas: 0
+
+  pgadmin:
+    deploy:
+      replicas: 0
+
+  portainer:
+    deploy:
+      replicas: 0
+
+  peerdb-ui:
+    deploy:
+      replicas: 0

@@ -1,26 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { reorderDashboardSections } from "../lib/dashboardGridPairs.ts";
 import {
   type DashboardLayout,
   DashboardLayoutContext,
   DEFAULT_LAYOUT,
 } from "../lib/dashboardLayoutContext.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const SETTINGS_KEY = "dashboardLayout";
 
-function isValidLayout(value: unknown): value is DashboardLayout {
-  if (typeof value !== "object" || value === null) return false;
-  return (
-    "order" in value &&
-    Array.isArray(value.order) &&
-    "hidden" in value &&
-    Array.isArray(value.hidden) &&
-    "collapsed" in value &&
-    typeof value.collapsed === "object" &&
-    value.collapsed !== null
-  );
-}
+const dashboardLayoutSchema = z.object({
+  order: z.array(z.string()),
+  hidden: z.array(z.string()),
+  collapsed: z.record(z.string(), z.boolean()),
+});
 
 function normalizeLayout(layout: DashboardLayout): DashboardLayout {
   const knownSections = new Set(DEFAULT_LAYOUT.order);
@@ -38,32 +33,75 @@ function normalizeLayout(layout: DashboardLayout): DashboardLayout {
   return { order, hidden, collapsed };
 }
 
-export function DashboardLayoutProvider({ children }: { children: React.ReactNode }) {
+export function DashboardLayoutProvider({
+  children,
+  settingsEnabled,
+}: {
+  children: React.ReactNode;
+  settingsEnabled: boolean;
+}) {
   const [layout, setLayoutState] = useState<DashboardLayout>(DEFAULT_LAYOUT);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const lastReadError = useRef<unknown>(null);
+  const lastInvalidValue = useRef<unknown>(null);
 
-  const setting = trpc.settings.get.useQuery({ key: SETTINGS_KEY });
+  const setting = trpc.settings.get.useQuery({ key: SETTINGS_KEY }, { enabled: settingsEnabled });
   const mutation = trpc.settings.set.useMutation();
   const utils = trpc.useUtils();
 
   // Load layout from server on mount
   useEffect(() => {
-    if (setting.data?.value) {
-      const parsed =
-        typeof setting.data.value === "string"
-          ? JSON.parse(setting.data.value)
-          : setting.data.value;
-      if (isValidLayout(parsed)) {
-        const normalized = normalizeLayout(parsed);
-        setLayoutState(normalized);
+    if (setting.data?.value == null) {
+      return;
+    }
+    let value = setting.data.value;
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+      } catch (error) {
+        if (lastInvalidValue.current !== setting.data.value) {
+          lastInvalidValue.current = setting.data.value;
+          captureException(error, { context: "dashboard-layout-parse" });
+        }
+        return;
       }
+    }
+    const parsed = dashboardLayoutSchema.safeParse(value);
+    if (parsed.success) {
+      setLayoutState(normalizeLayout(parsed.data));
+      return;
+    }
+    if (lastInvalidValue.current !== setting.data.value) {
+      lastInvalidValue.current = setting.data.value;
+      captureException(parsed.error, { context: "dashboard-layout-parse" });
     }
   }, [setting.data]);
 
+  useEffect(() => {
+    if (setting.error && lastReadError.current !== setting.error) {
+      lastReadError.current = setting.error;
+      captureException(setting.error, { context: "dashboard-layout-read" });
+    }
+  }, [setting.error]);
+
   const persist = useCallback(
-    (newLayout: DashboardLayout) => {
+    (newLayout: DashboardLayout, previousLayout: DashboardLayout) => {
+      const previousSetting = utils.settings.get.getData({ key: SETTINGS_KEY });
+      utils.settings.get.setData({ key: SETTINGS_KEY }, { key: SETTINGS_KEY, value: newLayout });
+      setWriteError(null);
       mutation.mutate(
-        { key: SETTINGS_KEY, value: JSON.stringify(newLayout) },
-        { onSuccess: () => utils.settings.get.invalidate({ key: SETTINGS_KEY }) },
+        { key: SETTINGS_KEY, value: newLayout },
+        {
+          onError: (error) => {
+            setLayoutState(previousLayout);
+            utils.settings.get.setData({ key: SETTINGS_KEY }, previousSetting);
+            setWriteError(error.message);
+            captureException(error, { context: "dashboard-layout-write" });
+          },
+          onSettled: () => {
+            void utils.settings.get.invalidate({ key: SETTINGS_KEY });
+          },
+        },
       );
     },
     [mutation, utils],
@@ -73,7 +111,7 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
     (order: string[]) => {
       setLayoutState((prev) => {
         const next = { ...prev, order };
-        persist(next);
+        persist(next, prev);
         return next;
       });
     },
@@ -87,7 +125,7 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
           ? prev.hidden.filter((h) => h !== id)
           : [...prev.hidden, id];
         const next = { ...prev, hidden };
-        persist(next);
+        persist(next, prev);
         return next;
       });
     },
@@ -101,7 +139,7 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
           ...prev,
           collapsed: { ...prev.collapsed, [id]: !prev.collapsed[id] },
         };
-        persist(next);
+        persist(next, prev);
         return next;
       });
     },
@@ -117,7 +155,7 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
         }
 
         const next = { ...prev, order };
-        persist(next);
+        persist(next, prev);
         return next;
       });
     },
@@ -125,15 +163,27 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
   );
 
   const resetLayout = useCallback(() => {
-    setLayoutState(DEFAULT_LAYOUT);
-    persist(DEFAULT_LAYOUT);
+    setLayoutState((previousLayout) => {
+      persist(DEFAULT_LAYOUT, previousLayout);
+      return DEFAULT_LAYOUT;
+    });
   }, [persist]);
 
   return (
-    <DashboardLayoutContext
-      value={{ layout, setOrder, toggleHidden, toggleCollapsed, moveSection, resetLayout }}
-    >
-      {children}
-    </DashboardLayoutContext>
+    <>
+      <DashboardLayoutContext
+        value={{ layout, setOrder, toggleHidden, toggleCollapsed, moveSection, resetLayout }}
+      >
+        {children}
+      </DashboardLayoutContext>
+      {(writeError ?? setting.error?.message) && (
+        <p
+          role="alert"
+          className="fixed bottom-4 right-4 z-50 rounded bg-red-950 px-3 py-2 text-sm text-red-200"
+        >
+          {writeError ?? setting.error?.message}
+        </p>
+      )}
+    </>
   );
 }

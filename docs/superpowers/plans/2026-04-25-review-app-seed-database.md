@@ -258,7 +258,7 @@ git commit -m "Seed recovery and training review data"
 
 - [ ] **Step 1: Add nutrition data**
 
-Create `seedNutrition(sql, random)` that inserts 90 days of `nutrition_daily`, recent `food_entry` rows with `food_entry_nutrition`, and at least three supplements with `supplement_nutrition`.
+Create `seedNutrition(sql, random)` that inserts 90 days of `nutrition_daily`, recent `food_entry` rows with `food_entry_nutrient`, and at least three supplement schedules with versioned `supplement_definition` and `supplement_definition_nutrient` rows.
 
 - [ ] **Step 2: Add body and health data**
 

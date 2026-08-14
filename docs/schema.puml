@@ -2,13 +2,158 @@
 !theme plain
 skinparam linetype ortho
 
+entity "device_priority" {
+  provider_id : text
+  source_name_pattern : text
+  priority : integer
+  sleep_priority : integer
+  body_priority : integer
+  recovery_priority : integer
+  daily_activity_priority : integer
+}
+
+entity "exercise" {
+  * id : uuid <<PK>>
+  --
+  name : text
+  muscle_group : text
+  muscle_groups : text_array
+  equipment : text
+  exercise_type : text
+  movement : text
+  created_at : timestamp
+}
+
+entity "exercise_alias" {
+  * id : uuid <<PK>>
+  --
+  exercise_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  provider_exercise_id : text
+  provider_exercise_name : text
+}
+
+entity "exercise_alias_source" {
+  alias_id : uuid
+  source_id : uuid
+  exercise_id : uuid
+  created_at : timestamp
+}
+
+entity "exercise_source" {
+  * id : uuid <<PK>>
+  --
+  exercise_id : uuid <<FK>>
+  source_kind : text
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  created_at : timestamp
+}
+
+entity "oauth_token" {
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  access_token : text
+  refresh_token : text
+  provider_account_id : text
+  expires_at : timestamp
+  scopes : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "provider" {
+  * id : text <<PK>>
+  --
+  name : text
+  api_base_url : text
+  user_id : uuid <<FK>>
+  created_at : timestamp
+}
+
+entity "provider_connection" {
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "provider_priority" {
+  * provider_id : text <<PK>>
+  --
+  priority : integer
+  sleep_priority : integer
+  body_priority : integer
+  recovery_priority : integer
+  daily_activity_priority : integer
+}
+
+entity "provider_priority_audit" {
+  * id : uuid <<PK>>
+  --
+  changed_at : timestamp
+  changed_by : text
+  priority_table : text
+  provider_id : text
+  source_name_pattern : text
+  channel : text
+  old_value : jsonb
+  new_value : jsonb
+  reason : text
+}
+
+entity "sensor_device_priority" {
+  provider_id : text
+  source_name_pattern : text
+  channel : text
+  priority : bigint
+}
+
+entity "sensor_provider_priority" {
+  provider_id : text
+  channel : text
+  priority : bigint
+}
+
+entity "user_profile" {
+  * id : uuid <<PK>>
+  --
+  name : text
+  email : text
+  birth_date : date
+  max_hr : smallint
+  resting_hr : smallint
+  ftp : smallint
+  is_admin : boolean
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "webhook_subscription" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid
+  provider_id : text <<FK>>
+  provider_name : text
+  subscription_external_id : text
+  verify_token : text
+  signing_secret : text
+  status : text
+  expires_at : timestamp
+  metadata : jsonb
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "activity" {
   * id : uuid <<PK>>
   --
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
   external_id : text
-  activity_type : activity_type
+  canonical_type : canonical_activity_type
+  provider_type : text
+  modality : activity_modality
   started_at : timestamp
   ended_at : timestamp
   name : text
@@ -16,8 +161,13 @@ entity "activity" {
   perceived_exertion : real
   source_name : text
   timezone : text
+  start_utc_offset_minutes : bigint
+  end_utc_offset_minutes : bigint
+  local_time_source : text
   strava_id : text
   raw : jsonb
+  provider_absent_at : timestamp
+  deleted_at : timestamp
   created_at : timestamp
 }
 
@@ -33,91 +183,32 @@ entity "activity_interval" {
   created_at : timestamp
 }
 
-entity "allergy_intolerance" {
+entity "climbing_attempt" {
   * id : uuid <<PK>>
   --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  name : text
-  type : text
-  clinical_status : text
-  verification_status : text
-  rxnorm_code : text
-  onset_date : date
-  reactions : jsonb
-  source_name : text
-  raw : jsonb
-  created_at : timestamp
-}
-
-entity "auth_account" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  auth_provider : text
-  provider_account_id : text
-  email : text
-  name : text
-  groups : text_array
-  created_at : timestamp
-}
-
-entity "body_measurement" {
-  * id : uuid <<PK>>
-  --
-  recorded_at : timestamp
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  weight_kg : real
-  body_fat_pct : real
-  muscle_mass_kg : real
-  bone_mass_kg : real
-  water_pct : real
-  bmi : real
-  height_cm : real
-  waist_circumference_cm : real
-  systolic_bp : integer
-  diastolic_bp : integer
-  heart_pulse : integer
-  temperature_c : real
-  source_name : text
-  created_at : timestamp
-}
-
-entity "body_measurement_value" {
-  body_measurement_id : uuid <<FK>>
-  measurement_type_id : text <<FK>>
-  value : real
-}
-
-entity "breathwork_session" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  technique_id : text
-  rounds : integer
-  duration_seconds : integer
-  started_at : timestamp
+  climbing_entry_id : uuid <<FK>>
+  attempt_index : integer
+  outcome : climbing_attempt_outcome
+  failure_reason : climbing_failure_reason
   notes : text
   created_at : timestamp
 }
 
-entity "condition" {
+entity "climbing_entry" {
   * id : uuid <<PK>>
   --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
+  activity_id : uuid <<FK>>
   external_id : text
-  name : text
-  clinical_status : text
-  verification_status : text
-  icd10_code : text
-  snomed_code : text
-  onset_date : date
-  abatement_date : date
-  recorded_date : date
+  climb_type : climbing_climb_type
+  grade_system : climbing_grade_system
+  grade : text
+  sent : boolean
+  attempt_count : integer
+  lead : boolean
+  wall_angle_degrees : real
+  hold_type : climbing_hold_type
+  route_name : text
+  location_name : text
   source_name : text
   raw : jsonb
   created_at : timestamp
@@ -146,16 +237,13 @@ entity "daily_metrics" {
   date : date
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
-  resting_hr : integer
   hrv : real
-  vo2max : real
   spo2_avg : real
   respiratory_rate_avg : real
   steps : integer
   active_energy_kcal : real
   basal_energy_kcal : real
   distance_km : real
-  cycling_distance_km : real
   flights_climbed : integer
   exercise_minutes : integer
   walking_speed : real
@@ -175,6 +263,408 @@ entity "daily_metrics" {
   created_at : timestamp
 }
 
+entity "finger_loading_entry" {
+  * id : uuid <<PK>>
+  --
+  activity_id : uuid <<FK>>
+  exercise : finger_loading_exercise
+  edge_size_mm : real
+  grip_position : finger_loading_grip_position
+  external_load_kg : real
+  bodyweight_kg : real
+  laterality : finger_loading_laterality
+  set_count : integer
+  hold_duration_seconds : real
+  rest_interval_seconds : integer
+  rpe : real
+  notes : text
+  created_at : timestamp
+}
+
+entity "sleep_session" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  started_at : timestamp
+  ended_at : timestamp
+  duration_minutes : integer
+  deep_minutes : integer
+  rem_minutes : integer
+  light_minutes : integer
+  awake_minutes : integer
+  efficiency_pct : real
+  staging_available : boolean
+  sleep_type : text
+  is_nap : boolean
+  sleep_need_baseline_minutes : integer
+  sleep_need_from_debt_minutes : integer
+  sleep_need_from_strain_minutes : integer
+  sleep_need_from_nap_minutes : integer
+  source_name : text
+  timezone : text
+  start_utc_offset_minutes : bigint
+  end_utc_offset_minutes : bigint
+  local_time_source : text
+  created_at : timestamp
+}
+
+entity "sleep_stage" {
+  * id : uuid <<PK>>
+  --
+  session_id : uuid <<FK>>
+  stage : sleep_stage_name
+  started_at : timestamp
+  ended_at : timestamp
+  source_name : text
+  created_at : timestamp
+}
+
+entity "sport_settings" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  sport : text
+  ftp : smallint
+  threshold_hr : smallint
+  threshold_pace_per_km : real
+  power_zone_pcts : jsonb
+  hr_zone_pcts : jsonb
+  pace_zone_pcts : jsonb
+  effective_from : date
+  notes : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "strength_set" {
+  * id : uuid <<PK>>
+  --
+  activity_id : uuid <<FK>>
+  exercise_id : uuid <<FK>>
+  exercise_index : integer
+  set_index : integer
+  set_type : set_type
+  weight_kg : real
+  reps : integer
+  distance_meters : real
+  duration_seconds : integer
+  strap_location : text
+  strap_location_laterality : text
+  rpe : real
+  notes : text
+  created_at : timestamp
+}
+
+entity "food_entry" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  date : date
+  nutrition_grain : nutrition_entry_grain
+  meal : meal
+  food_name : text
+  food_description : text
+  category : food_category
+  provider_food_id : text
+  provider_serving_id : text
+  number_of_units : real
+  logged_at : timestamp
+  source_name : text
+  started_at : timestamp
+  ended_at : timestamp
+  barcode : text
+  serving_unit : text
+  serving_weight_grams : real
+  raw : jsonb
+  confirmed : boolean
+  created_at : timestamp
+}
+
+entity "food_entry_nutrient" {
+  food_entry_id : uuid <<FK>>
+  nutrient_id : text <<FK>>
+  amount : real
+}
+
+entity "nutrient" {
+  * id : text <<PK>>
+  --
+  display_name : text
+  unit : text
+  category : text
+  rda : real
+  sort_order : integer
+  open_food_facts_key : text
+  conversion_factor : real
+}
+
+entity "supplement" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  sort_order : bigint
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "supplement_definition" {
+  * id : uuid <<PK>>
+  --
+  supplement_id : uuid <<FK>>
+  supersedes_definition_id : uuid
+  name : text
+  amount : real
+  unit : text
+  form : text
+  description : text
+  meal : meal
+  effective_from : date
+  effective_to : date
+  created_at : timestamp
+}
+
+entity "supplement_definition_nutrient" {
+  definition_id : uuid <<FK>>
+  nutrient_id : text <<FK>>
+  amount : real
+}
+
+entity "supplement_dose_event" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  supplement_id : uuid
+  definition_id : uuid
+  provider_id : text <<FK>>
+  external_id : text
+  scheduled_date : date
+  status : supplement_dose_status
+  supersedes_event_id : uuid
+  recorded_at : timestamp
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "allergy_intolerance" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  type : text
+  clinical_status : text
+  verification_status : text
+  rxnorm_code : text
+  onset_date : date
+  reactions : jsonb
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "condition" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  clinical_status : text
+  verification_status : text
+  icd10_code : text
+  snomed_code : text
+  onset_date : date
+  abatement_date : date
+  recorded_date : date
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "health_event" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  type : text
+  value : real
+  value_text : text
+  unit : text
+  source_name : text
+  start_date : timestamp
+  end_date : timestamp
+  created_at : timestamp
+}
+
+entity "lab_panel" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  loinc_code : text
+  status : lab_result_status
+  source_name : text
+  recorded_at : timestamp
+  issued_at : timestamp
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "lab_result" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  panel_id : uuid <<FK>>
+  external_id : text
+  test_name : text
+  loinc_code : text
+  value : real
+  value_text : text
+  unit : text
+  reference_range_low : real
+  reference_range_high : real
+  reference_range_text : text
+  status : lab_result_status
+  source_name : text
+  recorded_at : timestamp
+  issued_at : timestamp
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "medication" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  name : text
+  status : text
+  authored_on : date
+  start_date : date
+  end_date : date
+  dosage_text : text
+  route : text
+  form : text
+  rxnorm_code : text
+  prescriber_name : text
+  reason_text : text
+  reason_snomed_code : text
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "medication_dose_event" {
+  * id : uuid <<PK>>
+  --
+  provider_id : text <<FK>>
+  user_id : uuid <<FK>>
+  external_id : text
+  medication_name : text
+  medication_concept_id : text
+  dose_status : text
+  recorded_at : timestamp
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
+}
+
+entity "account_erasure_checkpoint" {
+  request_id : uuid <<FK>>
+  phase : text
+  details : jsonb
+  completed_at : timestamp
+}
+
+entity "account_erasure_identity_fence" {
+  request_id : uuid <<FK>>
+  identity_kind : text
+  key_id : text
+  identity_hash : text
+  created_at : timestamp
+}
+
+entity "account_erasure_outbox" {
+  * request_id : uuid <<PK>>
+  --
+  status : text
+  created_at : timestamp
+  dispatched_at : timestamp
+}
+
+entity "account_erasure_preparation" {
+  * user_id : uuid <<PK>>
+  --
+  request_id : uuid
+  preparation_token_hash : text
+  expires_at : timestamp
+  created_at : timestamp
+}
+
+entity "account_erasure_request" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid
+  user_hash : text
+  user_hash_key_id : text
+  write_fence_hash : text
+  preparation_token_hash : text
+  status_token_hash : text
+  status : text
+  current_phase : text
+  encrypted_remote_snapshot : text
+  requested_at : timestamp
+  replay_retained_until : timestamp
+  completion_deadline : timestamp
+  retry_at : timestamp
+  lease_owner : text
+  lease_expires_at : timestamp
+  phase_progress : jsonb
+  failure_count : bigint
+  recovered_from_restore : timestamp
+  started_at : timestamp
+  pii_scrubbed_at : timestamp
+  completed_at : timestamp
+  last_error : text
+  updated_at : timestamp
+}
+
+entity "auth_account" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  auth_provider : text
+  provider_account_id : text
+  email : text
+  name : text
+  groups : text_array
+  revocation_access_token : text
+  revocation_refresh_token : text
+  revocation_client_id : text
+  created_at : timestamp
+}
+
+entity "companion_token" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  connection_type : text
+  token_hash : text
+  created_at : timestamp
+  revoked_at : timestamp
+}
+
 entity "data_export" {
   * id : uuid <<PK>>
   --
@@ -188,6 +678,126 @@ entity "data_export" {
   completed_at : timestamp
   expires_at : timestamp
   error_message : text
+}
+
+entity "mcp_access_token" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  name : text
+  token_hash : text
+  scopes : text_array
+  created_at : timestamp
+  last_used_at : timestamp
+  expires_at : timestamp
+  revoked_at : timestamp
+  oauth_client_id : text
+  oauth_resource : text
+}
+
+entity "mcp_oauth_authorization_code" {
+  * id : uuid <<PK>>
+  --
+  code_hash : text
+  client_id : text
+  user_id : uuid <<FK>>
+  scopes : text_array
+  code_challenge : text
+  redirect_uri : text
+  resource : text
+  expires_at : timestamp
+  consumed_at : timestamp
+  created_at : timestamp
+}
+
+entity "mcp_oauth_client" {
+  * client_id : text <<PK>>
+  --
+  client_secret : text
+  client_metadata : jsonb
+  client_id_issued_at : bigint
+  client_secret_expires_at : bigint
+  created_at : timestamp
+}
+
+entity "mcp_oauth_refresh_token" {
+  * id : uuid <<PK>>
+  --
+  token_hash : text
+  client_id : text
+  user_id : uuid <<FK>>
+  access_token_id : uuid <<FK>>
+  parent_refresh_token_id : uuid <<FK>>
+  scopes : text_array
+  resource : text
+  expires_at : timestamp
+  revoked_at : timestamp
+  created_at : timestamp
+}
+
+entity "session" {
+  * id : text <<PK>>
+  --
+  user_id : uuid <<FK>>
+  expires_at : timestamp
+  created_at : timestamp
+}
+
+entity "stripe_webhook_event" {
+  * event_id : text <<PK>>
+  --
+  event_created : bigint
+  processed_at : timestamp
+}
+
+entity "user_billing" {
+  * user_id : uuid <<PK>>
+  --
+  stripe_customer_id : text
+  stripe_subscription_id : text
+  stripe_subscription_status : text
+  stripe_current_period_end : timestamp
+  stripe_subscription_event_id : text
+  stripe_subscription_event_created : bigint
+  paid_grant_reason : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "user_external_effect" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  system : text
+  resource_type : text
+  external_id : text
+  contact_email : text
+  created_at : timestamp
+}
+
+entity "user_password_credential" {
+  * user_id : uuid <<PK>>
+  --
+  email : text
+  password_hash : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "user_settings" {
+  user_id : uuid <<FK>>
+  key : text
+  value : jsonb
+  updated_at : timestamp
+}
+
+entity "body_region" {
+  * id : text <<PK>>
+  --
+  parent_id : text <<FK>>
+  label : text
+  kind : text
+  sort_order : bigint
 }
 
 entity "dexa_scan" {
@@ -235,129 +845,76 @@ entity "dexa_scan_region" {
   t_score_percentile : real
 }
 
-entity "exercise" {
+entity "file_upload" {
   * id : uuid <<PK>>
   --
-  name : text
-  muscle_group : text
-  muscle_groups : text_array
-  equipment : text
-  exercise_type : text
-  movement : text
-  created_at : timestamp
-}
-
-entity "exercise_alias" {
-  * id : uuid <<PK>>
-  --
-  exercise_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  provider_exercise_id : text
-  provider_exercise_name : text
-}
-
-entity "food_entry" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
   user_id : uuid <<FK>>
-  external_id : text
-  date : date
-  meal : meal
-  food_name : text
-  food_description : text
-  category : food_category
-  provider_food_id : text
-  provider_serving_id : text
-  number_of_units : real
-  logged_at : timestamp
-  barcode : text
-  serving_unit : text
-  serving_weight_grams : real
-  raw : jsonb
-  confirmed : boolean
-  created_at : timestamp
-}
-
-entity "food_entry_nutrient" {
-  food_entry_id : uuid <<FK>>
-  nutrient_id : text <<FK>>
-  amount : real
-}
-
-entity "food_entry_nutrition" {
-  * id : uuid <<PK>>
-  --
-  food_entry_id : uuid <<FK>>
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
+  import_type : text
+  object_key : text
+  original_filename : text
+  content_type : text
+  expected_size_bytes : bigint
+  expected_sha256 : text
+  verified_sha256 : text
+  r2_multipart_upload_id : text
+  state : text
+  version : bigint
+  part_size_bytes : bigint
+  completion_parts : jsonb
+  import_job_id : text
+  import_since : timestamp
+  weight_unit : text
+  progress_percent : bigint
+  error_code : text
+  error_message : text
   created_at : timestamp
   updated_at : timestamp
+  expires_at : timestamp
+  completed_at : timestamp
+  object_deleted_at : timestamp
 }
 
-entity "health_event" {
+entity "file_upload_outbox" {
+  * event_id : uuid <<PK>>
+  --
+  upload_id : uuid <<FK>>
+  import_job_id : text
+  status : text
+  created_at : timestamp
+  dispatched_at : timestamp
+  completed_at : timestamp
+  failure_reason : text
+  failed_at : timestamp
+}
+
+entity "imu_session" {
   * id : uuid <<PK>>
   --
-  provider_id : text <<FK>>
   user_id : uuid <<FK>>
+  provider_id : text
   external_id : text
-  type : text
-  value : real
-  value_text : text
-  unit : text
-  source_name : text
-  start_date : timestamp
-  end_date : timestamp
+  session_start_at : timestamp
+  sample_count : bigint
+  observed_hz : real
+  has_gyro : boolean
+  accel_freq_mode : bigint
+  gyro_freq_mode : bigint
+  raw_data : text
   created_at : timestamp
 }
 
-entity "inertial_measurement_unit_sample" {
-  recorded_at : timestamp
+entity "injury_event" {
+  * id : uuid <<PK>>
+  --
   user_id : uuid <<FK>>
-  device_id : text
-  device_type : text
-  provider_id : text <<FK>>
-  x : real
-  y : real
-  z : real
-  gyroscope_x : real
-  gyroscope_y : real
-  gyroscope_z : real
+  kind : text
+  body_region_id : text <<FK>>
+  onset_date : date
+  resolved_date : date
+  severity : bigint
+  description : text
+  created_at : timestamp
+  updated_at : timestamp
 }
 
 entity "journal_entry" {
@@ -384,45 +941,6 @@ entity "journal_question" {
   created_at : timestamp
 }
 
-entity "lab_panel" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  name : text
-  loinc_code : text
-  status : lab_result_status
-  source_name : text
-  recorded_at : timestamp
-  issued_at : timestamp
-  raw : jsonb
-  created_at : timestamp
-}
-
-entity "lab_result" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  panel_id : uuid <<FK>>
-  external_id : text
-  test_name : text
-  loinc_code : text
-  value : real
-  value_text : text
-  unit : text
-  reference_range_low : real
-  reference_range_high : real
-  reference_range_text : text
-  status : lab_result_status
-  source_name : text
-  recorded_at : timestamp
-  issued_at : timestamp
-  raw : jsonb
-  created_at : timestamp
-}
-
 entity "life_events" {
   * id : uuid <<PK>>
   --
@@ -433,217 +951,56 @@ entity "life_events" {
   category : text
   ongoing : boolean
   notes : text
+  personal_experiment_id : uuid <<FK>>
   created_at : timestamp
 }
 
-entity "measurement_type" {
-  * id : text <<PK>>
-  --
-  display_name : text
-  unit : text
-  category : text
-  sort_order : integer
-  is_integer : boolean
-}
-
-entity "medication" {
+entity "personal_experiment" {
   * id : uuid <<PK>>
   --
-  provider_id : text <<FK>>
   user_id : uuid <<FK>>
-  external_id : text
-  name : text
+  hypothesis : text
+  intervention : text
+  outcome_metric_id : text
+  lag_days : bigint
+  baseline_days : bigint
+  intervention_days : bigint
+  start_date : date
   status : text
-  authored_on : date
-  start_date : date
-  end_date : date
-  dosage_text : text
-  route : text
-  form : text
-  rxnorm_code : text
-  prescriber_name : text
-  reason_text : text
-  reason_snomed_code : text
-  source_name : text
-  raw : jsonb
+  stopped_at : date
   created_at : timestamp
 }
 
-entity "medication_dose_event" {
+entity "personal_experiment_check_in" {
   * id : uuid <<PK>>
   --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  medication_name : text
-  medication_concept_id : text
-  dose_status : text
-  recorded_at : timestamp
-  source_name : text
-  raw : jsonb
-  created_at : timestamp
-}
-
-entity "menstrual_period" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  start_date : date
-  end_date : date
-  notes : text
-  created_at : timestamp
-}
-
-entity "metric_stream" {
-  recorded_at : timestamp
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  device_id : text
-  source_type : text
-  channel : text
-  activity_id : uuid <<FK>>
-  scalar : real
-  vector : real[]
-}
-
-entity "nutrient" {
-  * id : text <<PK>>
-  --
-  display_name : text
-  unit : text
-  category : text
-  rda : real
-  sort_order : integer
-  open_food_facts_key : text
-  conversion_factor : real
-}
-
-entity "nutrition_daily" {
+  personal_experiment_id : uuid <<FK>>
   date : date
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
-  water_ml : integer
+  adherence : text
+  confounder : text
+  note : text
   created_at : timestamp
 }
 
-entity "nutrition_data" {
-  * id : uuid <<PK>>
+entity "provider_data_deletion_outbox" {
+  * event_id : uuid <<PK>>
   --
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
+  user_id : uuid <<FK>>
+  provider_id : text
+  generation : bigint
+  status : text
   created_at : timestamp
+  dispatched_at : timestamp
+  completed_at : timestamp
+  failure_reason : text
+  failed_at : timestamp
+}
+
+entity "provider_data_generation" {
+  user_id : uuid <<FK>>
+  provider_id : text
+  current_generation : bigint
   updated_at : timestamp
-}
-
-entity "oauth_token" {
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  access_token : text
-  refresh_token : text
-  expires_at : timestamp
-  scopes : text
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "orientation_sample" {
-  recorded_at : timestamp
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  device_id : text
-  quaternion_w : real
-  quaternion_x : real
-  quaternion_y : real
-  quaternion_z : real
-}
-
-entity "provider" {
-  * id : text <<PK>>
-  --
-  name : text
-  api_base_url : text
-  user_id : uuid <<FK>>
-  created_at : timestamp
-}
-
-entity "session" {
-  * id : text <<PK>>
-  --
-  user_id : uuid <<FK>>
-  expires_at : timestamp
-  created_at : timestamp
 }
 
 entity "shared_report" {
@@ -657,158 +1014,22 @@ entity "shared_report" {
   created_at : timestamp
 }
 
-entity "sleep_session" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  started_at : timestamp
-  ended_at : timestamp
-  duration_minutes : integer
-  deep_minutes : integer
-  rem_minutes : integer
-  light_minutes : integer
-  awake_minutes : integer
-  efficiency_pct : real
-  sleep_type : text
-  sleep_need_baseline_minutes : integer
-  sleep_need_from_debt_minutes : integer
-  sleep_need_from_strain_minutes : integer
-  sleep_need_from_nap_minutes : integer
-  source_name : text
-  created_at : timestamp
-}
-
-entity "sleep_stage" {
-  * id : uuid <<PK>>
-  --
-  session_id : uuid <<FK>>
-  stage : sleep_stage_name
-  started_at : timestamp
-  ended_at : timestamp
-  source_name : text
-  created_at : timestamp
-}
-
-entity "sport_settings" {
+entity "subjective_check_in" {
   * id : uuid <<PK>>
   --
   user_id : uuid <<FK>>
-  sport : text
-  ftp : smallint
-  threshold_hr : smallint
-  threshold_pace_per_km : real
-  power_zone_pcts : jsonb
-  hr_zone_pcts : jsonb
-  pace_zone_pcts : jsonb
-  effective_from : date
-  notes : text
+  date : date
   created_at : timestamp
   updated_at : timestamp
 }
 
-entity "strength_set" {
+entity "subjective_symptom" {
   * id : uuid <<PK>>
   --
-  workout_id : uuid <<FK>>
-  exercise_id : uuid <<FK>>
-  exercise_index : integer
-  set_index : integer
-  set_type : set_type
-  weight_kg : real
-  reps : integer
-  distance_meters : real
-  duration_seconds : integer
-  strap_location : text
-  strap_location_laterality : text
-  rpe : real
-  notes : text
-  created_at : timestamp
-}
-
-entity "strength_workout" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  started_at : timestamp
-  ended_at : timestamp
-  name : text
-  notes : text
-  raw_msk_strain_score : real
-  scaled_msk_strain_score : real
-  cardio_strain_score : real
-  cardio_strain_contribution_percent : real
-  msk_strain_contribution_percent : real
-  created_at : timestamp
-}
-
-entity "supplement" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  name : text
-  amount : real
-  unit : text
-  form : text
-  description : text
-  meal : meal
-  sort_order : integer
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "supplement_nutrient" {
-  supplement_id : uuid <<FK>>
-  nutrient_id : text <<FK>>
-  amount : real
-}
-
-entity "supplement_nutrition" {
-  * id : uuid <<PK>>
-  --
-  supplement_id : uuid <<FK>>
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
-  created_at : timestamp
-  updated_at : timestamp
+  check_in_id : uuid <<FK>>
+  body_region_id : text <<FK>>
+  kind : text
+  score : bigint
 }
 
 entity "sync_log" {
@@ -818,144 +1039,194 @@ entity "sync_log" {
   user_id : uuid <<FK>>
   data_type : text
   status : text
+  origin : text
   record_count : integer
   error_message : text
+  auth_failure_reason : text
+  degradation_kind : text
   duration_ms : integer
   synced_at : timestamp
 }
 
-entity "training_export_watermark" {
-  * id : uuid <<PK>>
-  --
-  table_name : text
-  last_exported_at : timestamp
-  row_count : bigint
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "user_billing" {
-  * user_id : uuid <<PK>>
-  --
-  stripe_customer_id : text
-  stripe_subscription_id : text
-  stripe_subscription_status : text
-  stripe_current_period_end : timestamp
-  paid_grant_reason : text
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "user_profile" {
-  * id : uuid <<PK>>
-  --
-  name : text
-  email : text
-  birth_date : date
-  max_hr : smallint
-  resting_hr : smallint
-  ftp : smallint
-  is_admin : boolean
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "user_settings" {
+entity "processing_alert_dismissal" {
   user_id : uuid <<FK>>
-  key : text
-  value : jsonb
-  updated_at : timestamp
+  operation_id : uuid <<FK>>
+  dismissed_at : timestamp
 }
 
-entity "webhook_subscription" {
+entity "processing_flow_marker" {
   * id : uuid <<PK>>
   --
-  provider_id : text <<FK>>
-  provider_name : text
-  subscription_external_id : text
-  verify_token : text
-  signing_secret : text
-  status : text
-  expires_at : timestamp
-  metadata : jsonb
+  operation_id : uuid <<FK>>
+  dataset_key : text
+  flow_name : text
+  batch_key : text
+  source_watermark : text
   created_at : timestamp
-  updated_at : timestamp
 }
 
+entity "processing_metric_stream_batch" {
+  * id : uuid <<PK>>
+  --
+  operation_id : uuid <<FK>>
+  batch_id : text
+  dataset_keys : text_array
+  expected_event_count : integer
+  published_at : timestamp
+}
+
+entity "processing_operation" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  provider_id : text
+  kind : text
+  external_correlation_key : text
+  dataset_keys : text_array
+  created_at : timestamp
+}
+
+entity "processing_operation_output" {
+  * id : uuid <<PK>>
+  --
+  operation_id : uuid <<FK>>
+  dataset_key : text
+  output_path : text
+  created_at : timestamp
+}
+
+entity "processing_queue_outbox" {
+  * id : uuid <<PK>>
+  --
+  operation_id : uuid <<FK>>
+  queue_name : text
+  job_id : text
+  status : text
+  created_at : timestamp
+  dispatched_at : timestamp
+}
+
+entity "processing_stage_event" {
+  * id : uuid <<PK>>
+  --
+  sequence : bigint
+  operation_id : uuid <<FK>>
+  stage : text
+  status : text
+  dataset_key : text
+  output_path : text
+  model_name : text
+  occurred_at : timestamp
+  progress_percentage : integer
+  source_watermark : text
+  serving_watermark : text
+  message : text
+  error_code : text
+  error_message : text
+  metadata_schema_version : integer
+  metadata : jsonb
+  idempotency_key : text
+}
+
+exercise ||--o{ exercise_alias
+provider ||--o{ exercise_alias
+exercise ||--o{ exercise_source
+user_profile ||--o{ exercise_source
+provider ||--o{ exercise_source
+user_profile ||--o{ oauth_token
+provider ||--o{ oauth_token
+user_profile ||--o{ provider
+user_profile ||--o{ provider_connection
+provider ||--o{ provider_connection
+provider ||--o{ webhook_subscription
 provider ||--o{ activity
 user_profile ||--o{ activity
 activity ||--o{ activity_interval
-provider ||--o{ allergy_intolerance
-user_profile ||--o{ allergy_intolerance
-user_profile ||--o{ auth_account
-provider ||--o{ body_measurement
-user_profile ||--o{ body_measurement
-body_measurement ||--o{ body_measurement_value
-measurement_type ||--o{ body_measurement_value
-user_profile ||--o{ breathwork_session
-provider ||--o{ condition
-user_profile ||--o{ condition
+climbing_entry ||--o{ climbing_attempt
+activity ||--o{ climbing_entry
 daily_metrics ||--o{ daily_metric_value
 daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
 user_profile ||--o{ daily_metrics
-user_profile ||--o{ data_export
-provider ||--o{ dexa_scan
-user_profile ||--o{ dexa_scan
-dexa_scan ||--o{ dexa_scan_region
-exercise ||--o{ exercise_alias
-provider ||--o{ exercise_alias
+activity ||--o{ finger_loading_entry
+provider ||--o{ sleep_session
+user_profile ||--o{ sleep_session
+sleep_session ||--o{ sleep_stage
+user_profile ||--o{ sport_settings
+activity ||--o{ strength_set
+exercise ||--o{ strength_set
 provider ||--o{ food_entry
 user_profile ||--o{ food_entry
 food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
-food_entry ||--o{ food_entry_nutrition
+user_profile ||--o{ supplement
+supplement ||--o{ supplement_definition
+supplement_definition ||--o{ supplement_definition_nutrient
+nutrient ||--o{ supplement_definition_nutrient
+user_profile ||--o{ supplement_dose_event
+provider ||--o{ supplement_dose_event
+provider ||--o{ allergy_intolerance
+user_profile ||--o{ allergy_intolerance
+provider ||--o{ condition
+user_profile ||--o{ condition
 provider ||--o{ health_event
 user_profile ||--o{ health_event
-user_profile ||--o{ inertial_measurement_unit_sample
-provider ||--o{ inertial_measurement_unit_sample
-provider ||--o{ journal_entry
-user_profile ||--o{ journal_entry
-journal_question ||--o{ journal_entry
 provider ||--o{ lab_panel
 user_profile ||--o{ lab_panel
 provider ||--o{ lab_result
 user_profile ||--o{ lab_result
 lab_panel ||--o{ lab_result
-user_profile ||--o{ life_events
 provider ||--o{ medication
 user_profile ||--o{ medication
 provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
-user_profile ||--o{ menstrual_period
-user_profile ||--o{ metric_stream
-provider ||--o{ metric_stream
-activity ||--o{ metric_stream
-provider ||--o{ nutrition_daily
-user_profile ||--o{ nutrition_daily
-user_profile ||--o{ oauth_token
-provider ||--o{ oauth_token
-user_profile ||--o{ orientation_sample
-provider ||--o{ orientation_sample
-user_profile ||--o{ provider
+account_erasure_request ||--o{ account_erasure_checkpoint
+account_erasure_request ||--o{ account_erasure_identity_fence
+account_erasure_request ||--o{ account_erasure_outbox
+user_profile ||--o{ auth_account
+user_profile ||--o{ companion_token
+user_profile ||--o{ data_export
+user_profile ||--o{ mcp_access_token
+user_profile ||--o{ mcp_oauth_authorization_code
+user_profile ||--o{ mcp_oauth_refresh_token
+mcp_access_token ||--o{ mcp_oauth_refresh_token
+mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
+user_profile ||--o{ user_billing
+user_profile ||--o{ user_external_effect
+user_profile ||--o{ user_password_credential
+user_profile ||--o{ user_settings
+body_region ||--o{ body_region
+provider ||--o{ dexa_scan
+user_profile ||--o{ dexa_scan
+dexa_scan ||--o{ dexa_scan_region
+user_profile ||--o{ file_upload
+file_upload ||--o{ file_upload_outbox
+user_profile ||--o{ imu_session
+user_profile ||--o{ injury_event
+body_region ||--o{ injury_event
+provider ||--o{ journal_entry
+user_profile ||--o{ journal_entry
+journal_question ||--o{ journal_entry
+user_profile ||--o{ life_events
+personal_experiment ||--o{ life_events
+user_profile ||--o{ personal_experiment
+personal_experiment ||--o{ personal_experiment_check_in
+user_profile ||--o{ provider_data_deletion_outbox
+user_profile ||--o{ provider_data_generation
 user_profile ||--o{ shared_report
-provider ||--o{ sleep_session
-user_profile ||--o{ sleep_session
-sleep_session ||--o{ sleep_stage
-user_profile ||--o{ sport_settings
-strength_workout ||--o{ strength_set
-exercise ||--o{ strength_set
-provider ||--o{ strength_workout
-user_profile ||--o{ strength_workout
-user_profile ||--o{ supplement
-supplement ||--o{ supplement_nutrient
-nutrient ||--o{ supplement_nutrient
-supplement ||--o{ supplement_nutrition
+user_profile ||--o{ subjective_check_in
+subjective_check_in ||--o{ subjective_symptom
+body_region ||--o{ subjective_symptom
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
-user_profile ||--o{ user_billing
-user_profile ||--o{ user_settings
-provider ||--o{ webhook_subscription
+user_profile ||--o{ processing_alert_dismissal
+processing_operation ||--o{ processing_alert_dismissal
+processing_operation ||--o{ processing_flow_marker
+processing_operation ||--o{ processing_metric_stream_batch
+user_profile ||--o{ processing_operation
+processing_operation ||--o{ processing_operation_output
+processing_operation ||--o{ processing_queue_outbox
+processing_operation ||--o{ processing_stage_event
 
 @enduml

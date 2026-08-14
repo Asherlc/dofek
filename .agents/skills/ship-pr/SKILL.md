@@ -1,7 +1,6 @@
 ---
 name: ship-pr
 description: Run all pre-push checks (lint, typecheck, tests), open a PR, and monitor CI until checks finish.
-disable-model-invocation: true
 ---
 
 # Ship PR
@@ -16,19 +15,37 @@ Run all checks, open a PR, and monitor CI to completion.
 
 ## Steps
 
-### 1. Pre-push checks
+### 1. Start checks
 
-Run all checks. If any fail, stop and fix or report:
+Run the fast checks first:
 
 ```
 pnpm lint
 pnpm tsc --noEmit
 cd packages/server && pnpm tsc --noEmit
 cd packages/web && pnpm tsc --noEmit
+```
+
+If any fast check fails, stop and fix or report before pushing. After the fast
+checks pass, start the longer test commands:
+
+```
 pnpm test
 ```
 
-ALL errors must be fixed before proceeding — regardless of whether they were introduced in this branch or already existed on main. Fix lint/type errors automatically. If tests fail, stop and report the failures to the user.
+Long-running checks such as integration tests and E2E tests do not need to
+finish before creating the PR. Once they are running, proceed with committing,
+pushing, and opening the PR while continuing to monitor their results. Do not
+report the PR as ready for review or merge until every required check passes.
+
+If the full workspace/PR diff contains only Markdown files (`*.md`), skip test
+commands such as `pnpm test`; report that tests were skipped because the change
+is documentation-only.
+
+ALL errors must be fixed before reporting the PR ready — regardless of whether
+they were introduced in this branch or already existed on main. Fix lint/type
+errors automatically. If a long-running test fails after the PR is opened, stop
+the readiness/merge workflow, report the failure, and fix it before continuing.
 
 ### 2. Push and open PR
 

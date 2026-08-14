@@ -9,6 +9,7 @@ import {
   setLastSyncTimestamp,
   startRecording,
 } from "../modules/core-motion";
+import { loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   type InertialMeasurementUnitSyncTrpcClient,
   syncInertialMeasurementUnitToServer,
@@ -32,6 +33,7 @@ export async function initBackgroundAccelerometerSync(
   trpcClient: InertialMeasurementUnitSyncTrpcClient,
 ): Promise<void> {
   if (!isAccelerometerRecordingAvailable()) return;
+  const minimumSampleDate = await loadDeviceErasureCutoff();
 
   let status = getMotionAuthorizationStatus();
   if (status === "notDetermined") {
@@ -68,6 +70,7 @@ export async function initBackgroundAccelerometerSync(
       },
       deviceId,
       deviceType: "iphone",
+      minimumSampleDate,
     })
       .catch((error: unknown) => {
         captureException(error, { source: TAG });

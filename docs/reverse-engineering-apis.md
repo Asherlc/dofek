@@ -76,20 +76,24 @@ jadx-gui app.apk
 
 **Dealing with app bundles (AAB/split APKs):**
 - Modern apps use Android App Bundles — APKMirror provides these as `.apks` (XAPK) bundles
-- Use [SAI](https://github.com/nicejjin/SAI) or `bundletool` to merge split APKs
+- Use [SAI](https://github.com/Aefyr/SAI) to install split APKs, or follow
+  Google's [bundletool guide](https://developer.android.com/tools/bundletool)
+  to generate, extract for inspection, or install APKs from an app bundle
 - Or just download the universal APK variant when available
 
 **Example — Eight Sleep:**
-```
+
+```text
 # Found in decompiled APK:
-CLIENT_ID = "0894c7f33bb94800a03f1f4df13a4f38"
-CLIENT_SECRET = "f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c76"
+CLIENT_ID = "<redacted>"
+CLIENT_SECRET = "<redacted>"
 AUTH_BASE = "https://auth-api.8slp.net/v1"
 API_BASE = "https://client-api.8slp.net/v1"
 ```
 
 **Example — WHOOP (discovered weightlifting endpoints):**
-```
+
+```text
 # Found in decompiled APK that web app doesn't expose:
 /weightlifting-service/v2/weightlifting-workout/{activityId}
 # Returns exercise-level data: sets, reps, weight per exercise
@@ -120,7 +124,8 @@ For platforms with web apps, Chrome DevTools Network tab reveals everything.
 - Date format expectations (ISO, UNIX seconds, YYYY-MM-DD)
 
 **Example — TrainerRoad:**
-```
+
+```text
 # Login flow discovered via browser:
 1. GET /app/login → extract __RequestVerificationToken from HTML
 2. POST /app/login (form-encoded with CSRF token)
@@ -329,6 +334,7 @@ APIs often use unexpected units:
 ### Custom User-Agent headers
 
 Some APIs check User-Agent and reject non-mobile clients:
+
 ```typescript
 headers: {
   "User-Agent": "okhttp/4.9.3",  // Eight Sleep expects Android HTTP client
@@ -357,7 +363,7 @@ For services without refresh tokens (Eight Sleep, TrainerRoad, VeloHero):
 
 Each reverse-engineered API gets its own standalone package under `packages/`. This keeps the client code reusable, testable, and decoupled from our sync framework.
 
-```
+```text
 packages/
   <service-name>/
     package.json          # name, version, exports, zero runtime deps

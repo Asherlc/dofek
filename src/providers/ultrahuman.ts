@@ -1,8 +1,11 @@
-import type { SyncDatabase } from "../db/index.ts";
-import { dailyMetrics, sleepSession } from "../db/schema.ts";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { SyncError, SyncOptions, SyncProvider, SyncResult } from "./types.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { authFailureReasonFromError, ProviderTokenRejectedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -107,17 +110,25 @@ export function parseUltrahumanMetrics(
 
 export class UltrahumanClient {
   #token: string;
-  #email: string;
+  #email: string | undefined;
   #fetchFn: typeof globalThis.fetch;
 
-  constructor(token: string, email: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+  constructor(
+    token: string,
+    email: string | undefined,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ) {
     this.#token = token;
     this.#email = email;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("ultrahuman", fetchFn);
   }
 
   async getDailyMetrics(date: string): Promise<UltrahumanDailyMetricsResponse> {
-    const url = `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?email=${encodeURIComponent(this.#email)}&date=${date}`;
+    const url = new URL(`${ULTRAHUMAN_API_BASE}/partner/daily_metrics`);
+    if (this.#email) {
+      url.searchParams.set("email", this.#email);
+    }
+    url.searchParams.set("date", date);
     const response = await this.#fetchFn(url, {
       headers: {
         Authorization: this.#token,
@@ -126,6 +137,12 @@ export class UltrahumanClient {
     });
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new ProviderTokenRejectedError(
+          "Ultrahuman",
+          "Create a new personal API token in Ultrahuman Vision and reconnect.",
+        );
+      }
       const text = await response.text();
       throw new Error(`Ultrahuman API error (${response.status}): ${text}`);
     }
@@ -152,16 +169,54 @@ export class UltrahumanProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("ultrahuman", fetchFn);
   }
 
   validate(): string | null {
-    if (!process.env.ULTRAHUMAN_API_TOKEN) return "ULTRAHUMAN_API_TOKEN is not set";
-    if (!process.env.ULTRAHUMAN_EMAIL) return "ULTRAHUMAN_EMAIL is not set";
     return null;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  authSetup(): ProviderAuthSetup {
+    const fetchFn = this.#fetchFn;
+    return {
+      manualToken: {
+        label: "Personal API token",
+        instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
+        exchangeToken: async (token) => {
+          const date = formatDate(new Date());
+          const response = await fetchFn(
+            `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?date=${date}`,
+            {
+              headers: {
+                Authorization: token,
+                Accept: "application/json",
+              },
+            },
+          );
+          if (response.status === 401 || response.status === 403) {
+            throw new ProviderTokenRejectedError(
+              this.name,
+              "Create a new personal API token in Ultrahuman Vision and try again.",
+            );
+          }
+          if (!response.ok) {
+            throw new Error(`Ultrahuman token validation failed (${response.status}). Try again.`);
+          }
+          return {
+            accessToken: token,
+            refreshToken: null,
+            expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+            scopes: "self",
+          };
+        },
+      },
+      apiBaseUrl: ULTRAHUMAN_API_BASE,
+    };
+  }
+
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -170,23 +225,23 @@ export class UltrahumanProvider implements SyncProvider {
 
     let client: UltrahumanClient;
     try {
-      // Try loading from stored tokens first (set via auth command)
-      const stored = await loadTokens(db, this.id);
-      const token = stored?.accessToken ?? process.env.ULTRAHUMAN_API_TOKEN;
-      const emailMatch = stored?.scopes?.match(/email:(\S+)/);
-      const email = emailMatch?.[1] ?? process.env.ULTRAHUMAN_EMAIL;
-
-      if (!token || !email) {
-        throw new Error("Ultrahuman API token and email required");
+      if (!options.userId) {
+        throw new Error("Ultrahuman sync requires an authenticated user ID.");
       }
-      client = new UltrahumanClient(token, email, this.#fetchFn);
+      const stored = await loadTokens(db, this.id, options.userId);
+      if (!stored) {
+        throw new Error(
+          "No Ultrahuman personal API token found. Connect Ultrahuman in Data Sources.",
+        );
+      }
+      client = new UltrahumanClient(stored.accessToken, undefined, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
     // Iterate day by day
-    const today = new Date();
+    const until = window.until;
     const currentDate = new Date(since);
 
     // 1. Sync daily metrics + sleep
@@ -198,7 +253,7 @@ export class UltrahumanProvider implements SyncProvider {
         async () => {
           let dailyCount = 0;
 
-          while (currentDate <= today) {
+          while (currentDate <= until) {
             const dateStr = formatDate(currentDate);
             try {
               const response = await client.getDailyMetrics(dateStr);
@@ -211,16 +266,19 @@ export class UltrahumanProvider implements SyncProvider {
               const { daily, sleep } = parseUltrahumanMetrics(dateStr, dayMetrics);
 
               // Upsert daily metrics
-              if (daily.restingHr || daily.hrv || daily.steps || daily.vo2max) {
+              const hasAnyDailyMetric =
+                daily.hrv !== undefined ||
+                daily.steps !== undefined ||
+                daily.exerciseMinutes !== undefined ||
+                daily.skinTempC !== undefined;
+              if (hasAnyDailyMetric) {
                 await db
                   .insert(dailyMetrics)
                   .values({
                     date: daily.date,
                     providerId: this.id,
-                    restingHr: daily.restingHr,
                     hrv: daily.hrv,
                     steps: daily.steps,
-                    vo2max: daily.vo2max,
                     exerciseMinutes: daily.exerciseMinutes,
                     skinTempC: daily.skinTempC,
                   })
@@ -232,10 +290,8 @@ export class UltrahumanProvider implements SyncProvider {
                       dailyMetrics.sourceName,
                     ],
                     set: {
-                      restingHr: daily.restingHr,
                       hrv: daily.hrv,
                       steps: daily.steps,
-                      vo2max: daily.vo2max,
                       exerciseMinutes: daily.exerciseMinutes,
                       skinTempC: daily.skinTempC,
                     },
@@ -254,16 +310,24 @@ export class UltrahumanProvider implements SyncProvider {
                     startedAt: new Date(`${dateStr}T00:00:00Z`),
                     endedAt: new Date(`${dateStr}T08:00:00Z`),
                     durationMinutes: sleep.durationMinutes,
+                    stagingAvailable: false,
                   })
                   .onConflictDoUpdate({
                     target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
                     set: {
                       durationMinutes: sleep.durationMinutes,
+                      stagingAvailable: false,
                     },
                   });
                 dailyCount++;
               }
             } catch (err) {
+              // Stop the day-by-day loop on a rate limit and let it propagate so
+              // the sync job can schedule a cooldown instead of hammering the API.
+              if (err instanceof ProviderRateLimitError) throw err;
+              // Authentication failures must reach withSyncLog so the clients can
+              // replace the Sync action with Reconnect.
+              if (authFailureReasonFromError(err)) throw err;
               errors.push({
                 message: `${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
                 cause: err,
@@ -279,6 +343,8 @@ export class UltrahumanProvider implements SyncProvider {
       );
       recordsSynced += count;
     } catch (err) {
+      // Propagate rate limits to the sync job's cooldown handler.
+      if (err instanceof ProviderRateLimitError) throw err;
       errors.push({
         message: `daily_metrics: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,

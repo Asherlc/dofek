@@ -1,6 +1,17 @@
 import type { EventSubscription } from "expo-modules-core";
 import WhoopBleModule from "./src/WhoopBleModule";
 
+/** A timestamped accelerometer and gyroscope sample from a WHOOP strap. */
+export interface WhoopImuSample {
+  timestamp: string;
+  x: number;
+  y: number;
+  z: number;
+  gyroscopeX: number;
+  gyroscopeY: number;
+  gyroscopeZ: number;
+}
+
 /** A discovered WHOOP strap */
 export interface WhoopDevice {
   id: string;
@@ -9,6 +20,7 @@ export interface WhoopDevice {
 
 /** A single realtime data sample from a 0x28 REALTIME_DATA packet */
 export interface WhoopRealtimeDataSample {
+  deviceId?: string;
   timestamp: string; // ISO 8601
   /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
   rrIntervalMs: number;
@@ -20,15 +32,28 @@ export interface WhoopRealtimeDataSample {
   opticalRawHex: string;
 }
 
-/** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */
-export interface WhoopImuSample {
-  timestamp: string; // ISO 8601
-  accelerometerX: number; // raw i16
+interface NativeWhoopSample {
+  deviceId: string;
+  timestamp: string;
+  accelerometerX: number;
   accelerometerY: number;
   accelerometerZ: number;
-  gyroscopeX: number; // raw i16
+  gyroscopeX: number;
   gyroscopeY: number;
   gyroscopeZ: number;
+}
+
+function mapNativeSample(native: NativeWhoopSample): WhoopImuSample & { deviceId: string } {
+  return {
+    deviceId: native.deviceId,
+    timestamp: native.timestamp,
+    x: native.accelerometerX,
+    y: native.accelerometerY,
+    z: native.accelerometerZ,
+    gyroscopeX: native.gyroscopeX,
+    gyroscopeY: native.gyroscopeY,
+    gyroscopeZ: native.gyroscopeZ,
+  };
 }
 
 /** Check whether Bluetooth is powered on and available. */
@@ -66,7 +91,8 @@ export async function connect(peripheralId: string): Promise<boolean> {
  *
  * Sends the TOGGLE_IMU_MODE (0x6A) BLE command to the strap.
  * IMU samples (accelerometer + gyroscope) are buffered internally.
- * Call `getBufferedSamples()` to retrieve them.
+ * Use `peekBufferedSamples()` and call `confirmSamplesDrain()` only after a
+ * successful upload.
  *
  * @returns true on success.
  */
@@ -111,8 +137,11 @@ export async function startOpticalMode(): Promise<boolean> {
  * actually remove them. If the upload fails, the samples remain
  * buffered for retry — no data loss.
  */
-export async function peekBufferedSamples(): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.peekBufferedSamples();
+export async function peekBufferedSamples(
+  maxCount?: number,
+): Promise<Array<WhoopImuSample & { deviceId: string }>> {
+  const natives: NativeWhoopSample[] = await WhoopBleModule.peekBufferedSamples(maxCount);
+  return natives.map(mapNativeSample);
 }
 
 /**
@@ -128,8 +157,10 @@ export function confirmSamplesDrain(count: number): void {
  *
  * Call `confirmRealtimeDataDrain(count)` after a successful upload.
  */
-export async function peekBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {
-  return WhoopBleModule.peekBufferedRealtimeData();
+export async function peekBufferedRealtimeData(
+  maxCount?: number,
+): Promise<WhoopRealtimeDataSample[]> {
+  return WhoopBleModule.peekBufferedRealtimeData(maxCount);
 }
 
 /**
@@ -152,8 +183,9 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
  * Retrieve and clear the internal IMU sample buffer.
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
-export async function getBufferedSamples(): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.getBufferedSamples();
+export async function getBufferedSamples(): Promise<Array<WhoopImuSample & { deviceId: string }>> {
+  const natives: NativeWhoopSample[] = await WhoopBleModule.getBufferedSamples();
+  return natives.map(mapNativeSample);
 }
 
 /** Get the current BLE connection state (idle, scanning, connecting, ready, streaming). */
@@ -189,6 +221,10 @@ export function getDataPathStats(): {
   hasCmdResponseCharacteristic: boolean;
   lastWriteError: string;
   watchdogRetryCount: number;
+  malformedFrames: number;
+  malformedCmdFrames: number;
+  coalescedFrames: number;
+  coalescedCmdFrames: number;
 } {
   return WhoopBleModule.getDataPathStats();
 }
@@ -209,6 +245,11 @@ export async function retryConnection(): Promise<boolean> {
 /** Disconnect from the WHOOP strap. */
 export function disconnect(): void {
   WhoopBleModule.disconnect();
+}
+
+/** Disconnect and clear every account-owned IMU/realtime buffer and parser state. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return WhoopBleModule.purgeAccountState(deviceErasureCutoff);
 }
 
 /** Connection state change event from the native BLE module. */

@@ -5,36 +5,74 @@ export interface SleepPerformanceResult {
   score: number;
   /** Tier label */
   tier: SleepTier;
+  /** Component scores used to calculate performance */
+  components?: SleepPerformanceComponents;
+}
+
+export interface SleepPerformanceComponents {
+  hours: number;
+  efficiency: number;
+  consistency: number | null;
+  lowStress: number | null;
+}
+
+export interface SleepPerformanceComponentInput {
+  consistency?: number | null;
+  lowStress?: number | null;
+}
+
+function clampPercent(value: number): number {
+  return Math.min(Math.max(value, 0), 100);
+}
+
+function tierFromScore(score: number): SleepTier {
+  if (score >= 90) return "Excellent";
+  if (score >= 70) return "Good";
+  if (score >= 50) return "Fair";
+  return "Poor";
 }
 
 /**
  * Compute sleep performance from actual vs needed sleep and efficiency.
- * Score = 70% sufficiency (actual/needed, capped at 100%) + 30% efficiency.
+ * When consistency and stress components are supplied, score is the equal
+ * average of all available provider-agnostic component scores.
+ * Otherwise, preserves the original 70% sufficiency + 30% efficiency blend.
  * Tiers: Excellent (90+), Good (70-89), Fair (50-69), Poor (<50).
  */
 export function computeSleepPerformance(
   actualMinutes: number,
   neededMinutes: number,
   efficiency: number,
+  componentInput?: SleepPerformanceComponentInput,
 ): SleepPerformanceResult {
-  const sufficiency = neededMinutes > 0 ? Math.min(actualMinutes / neededMinutes, 1) * 100 : 100;
-  const normalizedEfficiency = Math.min(Math.max(efficiency, 0), 100);
+  const rawSufficiency = neededMinutes > 0 ? Math.min(actualMinutes / neededMinutes, 1) * 100 : 100;
+  const hours = Math.round(rawSufficiency);
+  const normalizedEfficiency = Math.round(clampPercent(efficiency));
+  const consistency =
+    componentInput?.consistency != null
+      ? Math.round(clampPercent(componentInput.consistency))
+      : null;
+  const lowStress =
+    componentInput?.lowStress != null ? Math.round(clampPercent(componentInput.lowStress)) : null;
 
-  const score = Math.round(sufficiency * 0.7 + normalizedEfficiency * 0.3);
+  const components: SleepPerformanceComponents = {
+    hours,
+    efficiency: normalizedEfficiency,
+    consistency,
+    lowStress,
+  };
+  const componentScores = [hours, normalizedEfficiency, consistency, lowStress].filter(
+    (value): value is number => value != null,
+  );
+
+  const hasExtraComponents = consistency != null || lowStress != null;
+  const score = !hasExtraComponents
+    ? Math.round(rawSufficiency * 0.7 + normalizedEfficiency * 0.3)
+    : Math.round(componentScores.reduce((sum, value) => sum + value, 0) / componentScores.length);
+
   const clampedScore = Math.min(Math.max(score, 0), 100);
 
-  let tier: SleepTier;
-  if (clampedScore >= 90) {
-    tier = "Excellent";
-  } else if (clampedScore >= 70) {
-    tier = "Good";
-  } else if (clampedScore >= 50) {
-    tier = "Fair";
-  } else {
-    tier = "Poor";
-  }
-
-  return { score: clampedScore, tier };
+  return { score: clampedScore, tier: tierFromScore(clampedScore), components };
 }
 
 /**

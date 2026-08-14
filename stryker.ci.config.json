@@ -3,10 +3,12 @@
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
   "vitest": {
-    "configFile": "vitest.config.mutation.ts"
+    "configFile": "vitest.config.mutation.ts",
+    "related": true
   },
   "ignoreStatic": true,
   "incremental": false,
+  "concurrency": 2,
   "mutate": [
     "src/**/*.ts",
     "packages/format/src/**/*.ts",
@@ -27,7 +29,12 @@
     "packages/trainerroad-client/src/**/*.ts",
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
+    "packages/zepp-client/src/**/*.ts",
+    "packages/zepp/src/**/*.ts",
     "packages/trainingpeaks-connect/src/**/*.ts",
+    "packages/provider-http/src/**/*.ts",
+    "packages/peloton-client/src/**/*.ts",
+    "packages/xert-client/src/**/*.ts",
     "packages/mobile/app/**/*.{ts,tsx}",
     "packages/mobile/components/**/*.{ts,tsx}",
     "packages/mobile/lib/**/*.{ts,tsx}",
@@ -36,14 +43,38 @@
     "!**/*.test.ts",
     "!**/*.test.tsx",
     "!**/test-helpers.ts",
+    "!packages/server/src/routers/clickhouse-integration-test-helpers.ts",
+    "!packages/server/src/routers/clickhouse-integration-test-models.ts",
+    "!packages/server/src/routers/clickhouse-integration-test-read-models-*.ts",
     "!**/fixtures/**",
-    "!src/db/schema.ts"
+    "!src/db/clickhouse-migrations.ts",
+    "!src/db/drizzle-schema.ts",
+    "!src/db/schema/**/*.ts",
+    "!packages/server/src/types.ts",
+    "!packages/zepp/app.ts",
+    "!packages/zepp/app-side/**",
+    "!packages/zepp/app-service/**",
+    "!packages/zepp/page/**",
+    "!packages/zepp/setting/**"
   ],
   "ignorePatterns": [
+    "packages/training/src/terminology.ts",
     "dist/**",
+    "packages/mobile/modules/whoop-ble/.build/**",
+    ".adal/**",
+    ".aider-desk/**",
+    ".antigravitycli/**",
+    ".augment/**",
+    ".codegraph/**",
     ".codex/**",
     ".claude/**",
-    ".context/**"
+    ".context/**",
+    ".gemini/**",
+    ".kilocode/**",
+    ".qwen/**",
+    ".windsurf/**",
+    ".agents/**",
+    "**/skills/stripe-projects"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]
@@ -56,5 +87,8 @@
     "low": 90,
     "break": 75
   },
-  "reporters": ["clear-text", "progress"]
+  "reporters": ["clear-text", "progress-append-only", "dots", "json"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  }
 }

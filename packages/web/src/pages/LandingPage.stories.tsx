@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { expect, within } from "storybook/test";
 import { type LandingPageProvider, LandingPageView } from "./LandingPage.tsx";
 
 const configuredProviders: LandingPageProvider[] = [
@@ -50,8 +51,16 @@ function withRouter(Story: ComponentType) {
   });
 
   return (
-    <div className="w-screen bg-page">
+    <div className="bg-page">
       <RouterProvider router={router} />
+    </div>
+  );
+}
+
+function withFixedMobileViewport(Story: ComponentType) {
+  return (
+    <div style={{ width: "390px", height: "667px", overflow: "hidden" }}>
+      <Story />
     </div>
   );
 }
@@ -74,6 +83,65 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ConfiguredProviders: Story = {};
+
+export const MobileHeader: Story = {
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+  play: async ({ canvasElement }) => {
+    const signInLink = within(canvasElement).getByRole("link", { name: "Sign in" });
+
+    await expect(signInLink).toBeVisible();
+    await expect(signInLink).toHaveAttribute("href", "/login");
+  },
+};
+
+export const MobileFirstViewport: Story = {
+  name: "Mobile first viewport",
+  decorators: [withFixedMobileViewport],
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Keeps the concrete recovery outcome visible within a fixed 390 × 667 first-viewport frame.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Example recovery picture")).toBeVisible();
+    await expect(canvas.getByText("74%")).toBeVisible();
+    await expect(canvas.getByText("Near baseline")).toBeVisible();
+  },
+};
+
+export const IllustrativeDecisionPreview: Story = {
+  name: "Illustrative decision preview",
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Shows the landing-page relationship as an illustrative sample without an unsupported statistical result, sample size, or confidence interval.",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByText("Illustrative relationship")).toBeVisible();
+    await expect(canvas.getByText("Illustrative sample")).toBeVisible();
+    await expect(canvas.getByText("No measured correlation")).toBeVisible();
+    await expect(
+      canvas.getByText("No sample size or confidence interval is shown for this illustration."),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("img", {
+        name: "Illustrative scatter plot for demonstration only. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms).",
+      }),
+    ).toBeVisible();
+  },
+};
 
 export const ImportOnlyProviders: Story = {
   args: {

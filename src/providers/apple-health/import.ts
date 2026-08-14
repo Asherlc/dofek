@@ -4,21 +4,26 @@ import { join } from "node:path";
 import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
+import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
+import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
+import { dailyMetrics } from "../../db/schema/activity.ts";
 import {
   allergyIntolerance,
   condition,
-  dailyMetrics,
   healthEvent,
   labPanel,
   labResult,
   medication,
-  metricStream,
-  nutritionDaily,
-} from "../../db/schema.ts";
+  medicationDoseEvent,
+} from "../../db/schema/clinical.ts";
+import { foodEntry } from "../../db/schema/nutrition.ts";
+import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { SyncError, SyncResult } from "../types.ts";
 import { getStringAttrs } from "./dates.ts";
 import {
@@ -27,7 +32,6 @@ import {
   aggregateSpO2ToDailyMetrics,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
-  linkUnassignedHeartRateToActivities,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
   upsertBodyMeasurementBatch,
@@ -54,11 +58,99 @@ import {
 import type { HealthRecord } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
+
+const appleMedicationDoseEventSchema = z
+  .object({
+    uuid: z.string().optional(),
+    startDate: z.string(),
+    scheduledDate: z.string().nullable().optional(),
+    logStatus: z.union([z.number(), z.string()]).optional(),
+    medicationConceptIdentifier: z.string().nullable().optional(),
+    medicationDisplayName: z.string().nullable().optional(),
+    sourceName: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+function normalizeOptionalString(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
+function parseMedicationDoseRecordedAt(value: string): Date {
+  const recordedAt = new Date(value);
+  if (Number.isNaN(recordedAt.getTime())) {
+    throw new Error(`Invalid medication dose event startDate: ${value}`);
+  }
+  return recordedAt;
+}
+
+function mapMedicationDoseStatus(logStatus: number | string | undefined): string {
+  if (logStatus === 1 || logStatus === "1") return "taken";
+  if (logStatus === 2 || logStatus === "2") return "skipped";
+  const statusText = typeof logStatus === "string" ? normalizeOptionalString(logStatus) : null;
+  return statusText ?? "unknown";
+}
+
+function medicationDoseEventName(input: {
+  medicationConceptIdentifier?: string | null | undefined;
+  medicationDisplayName?: string | null | undefined;
+}): string {
+  return (
+    normalizeOptionalString(input.medicationDisplayName) ??
+    normalizeOptionalString(input.medicationConceptIdentifier) ??
+    "Unknown medication"
+  );
+}
+
+function medicationDoseEventExternalId(input: {
+  medicationConceptIdentifier?: string | null | undefined;
+  medicationName: string;
+  scheduledDate?: string | null | undefined;
+  sourceFileName: string;
+  startDate: string;
+  uuid?: string | null | undefined;
+}): string {
+  const uuid = normalizeOptionalString(input.uuid);
+  if (uuid) return uuid;
+
+  return [
+    "apple-health-medication-dose",
+    input.startDate,
+    normalizeOptionalString(input.scheduledDate) ?? "unscheduled",
+    normalizeOptionalString(input.medicationConceptIdentifier) ?? input.medicationName,
+    input.sourceFileName,
+  ].join(":");
+}
+
+function medicationDoseEventConflictKey(row: typeof medicationDoseEvent.$inferInsert): string {
+  return `${row.userId}:${row.providerId}:${row.externalId}`;
+}
+
+function hasDuplicateMedicationDoseConflictKeys(
+  rows: Array<typeof medicationDoseEvent.$inferInsert>,
+): boolean {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const key = medicationDoseEventConflictKey(row);
+    if (keys.has(key)) return true;
+    keys.add(key);
+  }
+  return false;
+}
 
 /**
  * Extract export.xml from an Apple Health export ZIP file.
  * Returns the path to the extracted XML file in a temp directory.
  */
+export class AppleHealthImportValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AppleHealthImportValidationError";
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 export function extractExportXml(zipPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const outDir = join(tmpdir(), `apple-health-import-${Date.now()}`);
@@ -85,7 +177,11 @@ export function extractExportXml(zipPath: string): Promise<string> {
       });
 
       zipfile.on("end", () => {
-        reject(new Error("No export.xml found in ZIP file"));
+        reject(
+          new AppleHealthImportValidationError(
+            "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+          ),
+        );
       });
       zipfile.on("error", reject);
     });
@@ -117,6 +213,19 @@ export function defaultConsoleProgress(info: ProgressInfo): void {
   }
 }
 
+function collectWorkoutImportErrors(workouts: HealthWorkout[]): SyncError[] {
+  return workouts.flatMap((workout) => {
+    const message = workout.hangTen?.activitySegmentsError;
+    if (!message) return [];
+    return [
+      {
+        message,
+        externalId: workoutExternalId(workout),
+      },
+    ];
+  });
+}
+
 // ============================================================
 // Import logic (shared between CLI and sync)
 // ============================================================
@@ -127,10 +236,13 @@ export async function runImport(
   xmlPath: string,
   since: Date,
   onProgress?: (info: ProgressInfo) => void,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
   let recordsSynced = 0;
+  const presentWorkoutExternalIds = new Set<string>();
+  let latestWorkoutTimestamp: Date | null = null;
   const scopedUserId = getTokenUserId();
   if (!scopedUserId) {
     throw new Error("apple-health import requires user context");
@@ -138,18 +250,21 @@ export async function runImport(
 
   try {
     // Delete existing rows for this provider/time range so re-imports don't
-    // create duplicates (metric_stream has no uniqueness constraint) and additive
+    // create duplicate metric stream samples and additive
     // daily metric upserts don't double-count across re-imports.
     const sinceDate = sql`${since.toISOString().slice(0, 10)}::date`;
-    await db
-      .delete(metricStream)
-      .where(
-        and(
-          eq(metricStream.userId, scopedUserId),
-          eq(metricStream.providerId, providerId),
-          gte(metricStream.recordedAt, since),
-        ),
-      );
+    const metricStreamReplacementScope = {
+      userId: scopedUserId,
+      providerId,
+      recordedAtStart: since,
+    };
+    await replaceMetricStreamBatch(
+      db,
+      metricStreamReplacementScope,
+      [],
+      SOURCE_TYPE_FILE,
+      metricStreamPublisher,
+    );
     await db
       .delete(dailyMetrics)
       .where(
@@ -160,15 +275,16 @@ export async function runImport(
         ),
       );
     await db
-      .delete(nutritionDaily)
+      .delete(foodEntry)
       .where(
         and(
-          eq(nutritionDaily.userId, scopedUserId),
-          eq(nutritionDaily.providerId, providerId),
-          gte(nutritionDaily.date, sinceDate),
+          eq(foodEntry.userId, scopedUserId),
+          eq(foodEntry.providerId, providerId),
+          gte(foodEntry.date, sinceDate),
         ),
       );
 
+    const dailyAggregateMetricRecords: HealthRecord[] = [];
     const counts = await streamHealthExport(xmlPath, since, {
       onProgress,
       onRecordBatch: async (records) => {
@@ -188,12 +304,29 @@ export async function runImport(
 
         // Run all table inserts in parallel -- they target independent tables
         const results = await Promise.all([
-          metricRecords.length > 0 ? upsertMetricStreamBatch(db, providerId, metricRecords) : 0,
-          bodyRecords.length > 0 ? upsertBodyMeasurementBatch(db, providerId, bodyRecords) : 0,
+          metricRecords.length > 0
+            ? upsertMetricStreamBatch(
+                db,
+                providerId,
+                metricRecords,
+                metricStreamReplacementScope,
+                metricStreamPublisher,
+              )
+            : 0,
+          bodyRecords.length > 0
+            ? upsertBodyMeasurementBatch(
+                db,
+                providerId,
+                bodyRecords,
+                metricStreamReplacementScope,
+                metricStreamPublisher,
+              )
+            : 0,
           dailyRecords.length > 0 ? upsertDailyMetricsBatch(db, providerId, dailyRecords) : 0,
           nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
           unrouted.length > 0 ? upsertHealthEventBatch(db, providerId, unrouted) : 0,
         ]);
+        dailyAggregateMetricRecords.push(...metricRecords);
         for (const c of results) recordsSynced += c;
       },
       onSleepBatch: async (records) => {
@@ -201,8 +334,22 @@ export async function runImport(
         recordsSynced += sleepCount;
       },
       onWorkoutBatch: async (workouts) => {
-        const workoutCount = await upsertWorkoutBatch(db, providerId, workouts);
+        for (const workout of workouts) {
+          presentWorkoutExternalIds.add(workoutExternalId(workout));
+          const workoutEnd = workout.endDate ?? workout.startDate;
+          if (!latestWorkoutTimestamp || workoutEnd > latestWorkoutTimestamp) {
+            latestWorkoutTimestamp = workoutEnd;
+          }
+        }
+        const workoutCount = await upsertWorkoutBatch(
+          db,
+          providerId,
+          workouts,
+          metricStreamReplacementScope,
+          metricStreamPublisher,
+        );
         recordsSynced += workoutCount;
+        errors.push(...collectWorkoutImportErrors(workouts));
       },
       onCategoryBatch: async (records) => {
         // Insert category records into health_event table
@@ -225,18 +372,18 @@ export async function runImport(
       },
     });
 
-    const linkedHrRows = await linkUnassignedHeartRateToActivities(db, providerId, {
-      startAt: since,
-    });
-    if (linkedHrRows > 0) {
-      logger.info(
-        `[apple_health] Linked ${linkedHrRows} heart-rate sensor rows to workouts after import`,
-      );
+    if (dailyAggregateMetricRecords.length > 0) {
+      await aggregateSpO2ToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
+      await aggregateSkinTempToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
     }
 
-    // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
-    await aggregateSpO2ToDailyMetrics(db, providerId, since);
-    await aggregateSkinTempToDailyMetrics(db, providerId, since);
+    await finishProviderActivityListSync(db, {
+      providerId,
+      userId: scopedUserId,
+      windowStart: since,
+      windowEnd: latestWorkoutTimestamp ?? since,
+      presentExternalIds: presentWorkoutExternalIds,
+    });
 
     logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +
@@ -261,6 +408,7 @@ export async function importAppleHealthFile(
   filePath: string,
   since: Date,
   onProgress?: (info: ProgressInfo) => void,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<SyncResult> {
   await ensureProvider(db, "apple_health", "Apple Health");
 
@@ -280,7 +428,14 @@ export async function importAppleHealthFile(
   const progressFn = onProgress ?? defaultConsoleProgress;
 
   logger.info(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
-  const result = await runImport(db, "apple_health", xmlPath, since, progressFn);
+  const result = await runImport(
+    db,
+    "apple_health",
+    xmlPath,
+    since,
+    progressFn,
+    metricStreamPublisher,
+  );
 
   // Import clinical records (lab results) from zip
   if (filePath.endsWith(".zip")) {
@@ -293,6 +448,17 @@ export async function importAppleHealthFile(
     logger.info(
       `[apple_health] ${labCounts.inserted} clinical records imported, ` +
         `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
+    );
+
+    logger.info("[apple_health] Importing medication dose events...");
+    const doseEventCounts = await importMedicationDoseEvents(db, "apple_health", filePath);
+    result.recordsSynced += doseEventCounts.inserted;
+    if (doseEventCounts.errors.length > 0) {
+      result.errors.push(...doseEventCounts.errors);
+    }
+    logger.info(
+      `[apple_health] ${doseEventCounts.inserted} medication dose events imported, ` +
+        `${doseEventCounts.skipped} skipped, ${doseEventCounts.errors.length} errors`,
     );
   }
 
@@ -696,6 +862,103 @@ export async function importClinicalRecords(
   inserted += allergyBatch.length;
 
   return { inserted, skipped, errors };
+}
+
+export async function importMedicationDoseEvents(
+  db: SyncDatabase,
+  providerId: string,
+  zipPath: string,
+): Promise<{ inserted: number; skipped: number; errors: SyncError[] }> {
+  const errors: SyncError[] = [];
+  const scopedUserId = getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("apple-health medication dose import requires user context");
+  }
+
+  await db
+    .delete(medicationDoseEvent)
+    .where(
+      and(
+        eq(medicationDoseEvent.userId, scopedUserId),
+        eq(medicationDoseEvent.providerId, providerId),
+      ),
+    );
+
+  const doseEventFiles = await readZipEntries(
+    zipPath,
+    (name) => name.endsWith(".json") && name.includes("MedicationDoseEvent"),
+  );
+
+  if (doseEventFiles.length === 0) {
+    return { inserted: 0, skipped: 0, errors };
+  }
+
+  const skipped = 0;
+  const batch: (typeof medicationDoseEvent.$inferInsert)[] = [];
+
+  for (const file of doseEventFiles) {
+    try {
+      const raw: unknown = JSON.parse(file.data.toString("utf-8"));
+      const parsed = appleMedicationDoseEventSchema.parse(raw);
+      const medicationName = medicationDoseEventName(parsed);
+
+      batch.push({
+        providerId,
+        userId: scopedUserId,
+        externalId: medicationDoseEventExternalId({
+          ...parsed,
+          medicationName,
+          sourceFileName: file.name,
+        }),
+        medicationName,
+        medicationConceptId: normalizeOptionalString(parsed.medicationConceptIdentifier),
+        doseStatus: mapMedicationDoseStatus(parsed.logStatus),
+        recordedAt: parseMedicationDoseRecordedAt(parsed.startDate),
+        sourceName: normalizeOptionalString(parsed.sourceName),
+        raw,
+      });
+    } catch (err) {
+      errors.push({
+        message: `MedicationDoseEvent ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  const upsertMedicationDoseEvents = async (
+    values: Array<typeof medicationDoseEvent.$inferInsert>,
+  ) => {
+    await db
+      .insert(medicationDoseEvent)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          medicationDoseEvent.userId,
+          medicationDoseEvent.providerId,
+          medicationDoseEvent.externalId,
+        ],
+        set: {
+          medicationName: sql`excluded.medication_name`,
+          medicationConceptId: sql`excluded.medication_concept_id`,
+          doseStatus: sql`excluded.dose_status`,
+          recordedAt: sql`excluded.recorded_at`,
+          sourceName: sql`excluded.source_name`,
+          raw: sql`excluded.raw`,
+        },
+      });
+  };
+
+  for (let batchStart = 0; batchStart < batch.length; batchStart += 500) {
+    const batchSlice = batch.slice(batchStart, batchStart + 500);
+    if (hasDuplicateMedicationDoseConflictKeys(batchSlice)) {
+      for (const row of batchSlice) {
+        await upsertMedicationDoseEvents([row]);
+      }
+    } else {
+      await upsertMedicationDoseEvents(batchSlice);
+    }
+  }
+
+  return { inserted: batch.length, skipped, errors };
 }
 
 /**

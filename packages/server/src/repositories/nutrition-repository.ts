@@ -1,7 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Domain model
@@ -9,7 +9,7 @@ import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 export interface NutritionDayRow {
   date: string;
-  providerId: string;
+  providerId: string | null;
   userId: string;
   calories: number | null;
   proteinGrams: number | null;
@@ -17,10 +17,15 @@ export interface NutritionDayRow {
   fatGrams: number | null;
   fiberGrams: number | null;
   waterMl: number | null;
-  createdAt: string;
+  createdAt: string | null;
+  resolutionStatus: "available" | "source_conflict";
+  resolutionMessage: string;
+  sourceProviders: string[];
+  contributingProviders: string[];
+  excludedProviders: string[];
 }
 
-/** A single day's nutrition totals from a specific provider. */
+/** A single day's canonical nutrition totals and source resolution. */
 export class NutritionDay {
   readonly #row: NutritionDayRow;
 
@@ -32,7 +37,7 @@ export class NutritionDay {
     return this.#row.date;
   }
 
-  get providerId(): string {
+  get providerId(): string | null {
     return this.#row.providerId;
   }
 
@@ -52,6 +57,11 @@ export class NutritionDay {
       fiber_g: this.#row.fiberGrams,
       water_ml: this.#row.waterMl,
       created_at: this.#row.createdAt,
+      resolution_status: this.#row.resolutionStatus,
+      resolution_message: this.#row.resolutionMessage,
+      source_providers: this.#row.sourceProviders,
+      contributing_providers: this.#row.contributingProviders,
+      excluded_providers: this.#row.excludedProviders,
     };
   }
 }
@@ -62,7 +72,7 @@ export class NutritionDay {
 
 const nutritionDailyDbSchema = z.object({
   date: dateStringSchema,
-  provider_id: z.string(),
+  provider_id: z.string().nullable(),
   user_id: z.string(),
   calories: z.coerce.number().nullable(),
   protein_g: z.coerce.number().nullable(),
@@ -70,7 +80,12 @@ const nutritionDailyDbSchema = z.object({
   fat_g: z.coerce.number().nullable(),
   fiber_g: z.coerce.number().nullable(),
   water_ml: z.coerce.number().nullable(),
-  created_at: z.string(),
+  created_at: timestampStringSchema.nullable(),
+  resolution_status: z.enum(["available", "source_conflict"]),
+  resolution_message: z.string(),
+  source_providers: z.array(z.string()),
+  contributing_providers: z.array(z.string()),
+  excluded_providers: z.array(z.string()),
 });
 
 // ---------------------------------------------------------------------------
@@ -91,7 +106,26 @@ export class NutritionRepository {
     const rows = await executeWithSchema(
       this.#db,
       nutritionDailyDbSchema,
-      sql`SELECT * FROM fitness.nutrition_daily
+      sql`SELECT
+            date,
+            CASE
+              WHEN CARDINALITY(contributing_providers) = 1 THEN contributing_providers[1]
+              ELSE NULL
+            END AS provider_id,
+            user_id,
+            calories,
+            protein_g,
+            carbs_g,
+            fat_g,
+            fiber_g,
+            water_ml,
+            created_at,
+            resolution_status,
+            resolution_message,
+            source_providers,
+            contributing_providers,
+            excluded_providers
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
             AND date > ${startDate}::date
           ORDER BY date ASC`,
@@ -110,6 +144,11 @@ export class NutritionRepository {
           fiberGrams: row.fiber_g,
           waterMl: row.water_ml,
           createdAt: row.created_at,
+          resolutionStatus: row.resolution_status,
+          resolutionMessage: row.resolution_message,
+          sourceProviders: row.source_providers,
+          contributingProviders: row.contributing_providers,
+          excludedProviders: row.excluded_providers,
         }),
     );
   }

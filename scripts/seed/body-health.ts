@@ -1,41 +1,15 @@
-import { daysBefore, round, type SeedRandom, type Sql, timestampAt, USER_ID } from "./helpers.ts";
+import { daysBefore, round, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
 interface IdRow {
   id: string;
 }
 
-export async function seedBodyHealth(sql: Sql, random: SeedRandom): Promise<void> {
+export async function seedBodyHealth(sql: Sql): Promise<void> {
   const today = new Date();
-  await seedBodyMeasurements(sql, random, today);
   await seedDexaScans(sql, today);
   await seedLabs(sql, today);
   await seedClinicalRecords(sql, today);
-  await seedMenstrualPeriods(sql, today);
-  console.log("Seeded: body composition, labs, clinical records, and cycle data");
-}
-
-async function seedBodyMeasurements(sql: Sql, random: SeedRandom, today: Date): Promise<void> {
-  let weightKg = 82.4;
-  for (let daysAgo = 180; daysAgo >= 0; daysAgo -= 3) {
-    if (daysAgo % 39 === 0) continue;
-    const date = daysBefore(today, daysAgo);
-    weightKg += random.float(-0.18, 0.12, 2);
-    const bodyFatPct = 18.4 - (180 - daysAgo) * 0.012 + random.float(-0.25, 0.25, 2);
-    await sql`
-      INSERT INTO fitness.body_measurement (
-        provider_id, user_id, external_id, recorded_at, weight_kg, body_fat_pct,
-        muscle_mass_kg, bone_mass_kg, water_pct, bmi, height_cm,
-        waist_circumference_cm, systolic_bp, diastolic_bp, heart_pulse,
-        temperature_c, source_name
-      ) VALUES (
-        'apple_health', ${USER_ID}, ${`seed-body-${daysAgo}`}, ${timestampAt(date, 7, 20)},
-        ${round(weightKg, 2)}, ${round(bodyFatPct, 2)}, ${round(weightKg * 0.48, 2)},
-        3.2, ${random.float(54, 59, 1)}, ${round(weightKg / 3.1329, 1)}, 179,
-        ${random.float(82, 88, 1)}, ${random.int(108, 124)}, ${random.int(65, 78)},
-        ${random.int(48, 58)}, ${random.float(36.2, 36.8, 1)}, 'Apple Health Review Seed'
-      )
-    `;
-  }
+  console.log("Seeded: body composition, labs, and clinical records");
 }
 
 async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
@@ -50,7 +24,7 @@ async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
         body_fat_pct, android_gynoid_ratio, visceral_fat_mass_kg,
         visceral_fat_volume_cm3, total_bone_mineral_density,
         bone_density_t_percentile, bone_density_z_percentile,
-        resting_metabolic_rate_kcal, height_inches, weight_pounds
+        height_inches, weight_pounds
       ) VALUES (
         'bodyspec', ${USER_ID}, ${`seed-dexa-${scanIndex + 1}`}, ${timestampAt(date, 9, 30)},
         'Hologic Horizon Review', ${round((totalMassKg * bodyFatPct) / 100, 2)},
@@ -58,7 +32,7 @@ async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
         ${scanIndex === 0 ? 0.98 : 0.91}, ${scanIndex === 0 ? 0.62 : 0.48},
         ${scanIndex === 0 ? 620 : 480}, ${scanIndex === 0 ? 1.18 : 1.21},
         ${scanIndex === 0 ? 68 : 73}, ${scanIndex === 0 ? 71 : 76},
-        ${scanIndex === 0 ? 1_810 : 1_840}, 70.5, ${round(totalMassKg * 2.20462, 1)}
+        70.5, ${round(totalMassKg * 2.20462, 1)}
       ) RETURNING id
     `;
     await seedDexaRegions(sql, scanId, scanIndex);
@@ -178,21 +152,6 @@ async function seedClinicalRecords(sql: Sql, today: Date): Promise<void> {
         'apple_health', ${USER_ID}, ${`seed-dose-${daysAgo}`}, 'Vitamin D3', 'taken',
         ${timestampAt(date, 8, 0)}, 'Apple Health Review Seed'
       )
-    `;
-  }
-}
-
-async function seedMenstrualPeriods(sql: Sql, today: Date): Promise<void> {
-  for (let periodIndex = 0; periodIndex < 6; periodIndex++) {
-    const startDaysAgo = 12 + periodIndex * 29;
-    const startDate = daysBefore(today, startDaysAgo);
-    const endDate = daysBefore(today, startDaysAgo - 4);
-    await sql`
-      INSERT INTO fitness.menstrual_period (user_id, start_date, end_date, notes)
-      VALUES (${USER_ID}, ${startDate}, ${endDate}, 'Review seed cycle data')
-      ON CONFLICT (user_id, start_date) DO UPDATE
-        SET end_date = EXCLUDED.end_date,
-            notes = EXCLUDED.notes
     `;
   }
 }

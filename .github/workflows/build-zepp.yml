@@ -1,0 +1,79 @@
+name: Build Zepp
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check-zepp-changes:
+    name: Check Zepp Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check for Zepp changes
+        id: check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- \
+              packages/zepp/ \
+              pnpm-lock.yaml \
+              pnpm-workspace.yaml \
+              tsconfig.json \
+              .github/actions/build-zepp/ \
+              .github/actions/setup-node-pnpm/ \
+              .github/workflows/build-zepp.yml)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Zepp files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No Zepp changes detected, skipping build"
+            fi
+          fi
+
+  build:
+    name: Build Zepp packages
+    needs: check-zepp-changes
+    if: needs.check-zepp-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Build Zepp watch app ZAB
+        uses: ./.github/actions/build-zepp
+
+      - name: Validate Workout Extension app ID
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: |
+          if ! [[ "$ZEPP_WORKOUT_EXTENSION_APP_ID" =~ ^[1-9][0-9]*$ ]] || [ "$ZEPP_WORKOUT_EXTENSION_APP_ID" -lt 1000000 ]; then
+            echo "::error::Repository variable ZEPP_WORKOUT_EXTENSION_APP_ID must contain the numeric app ID provisioned in the Zepp developer console."
+            exit 1
+          fi
+
+      - name: Build Zepp Workout Extension ZAB
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: packages/zepp
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: pnpm build:workout-extension

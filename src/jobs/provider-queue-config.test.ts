@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CyclingAnalyticsProvider } from "../providers/cycling-analytics.ts";
 import {
   DEFAULT_QUEUE_CONFIG,
   getConfiguredProviderIds,
@@ -21,15 +22,16 @@ describe("getProviderQueueConfig", () => {
     expect(config.limiter).toBeDefined();
     expect(config.limiter?.max).toBe(120);
     expect(config.limiter?.duration).toBe(60_000); // 1 minute
+    expect(config.concurrency).toBe(1);
     expect(config.syncTier).toBe("realtime");
   });
 
-  it("returns fitbit-specific config with rate limiter", () => {
-    const config = getProviderQueueConfig("fitbit");
-    expect(config.limiter).toBeDefined();
-    expect(config.limiter?.max).toBe(150);
-    expect(config.limiter?.duration).toBe(3_600_000); // 1 hour
-    expect(config.syncTier).toBe("frequent");
+  it("returns the realtime config for Cycling Analytics' canonical ID", () => {
+    const providerId = new CyclingAnalyticsProvider().id;
+    const config = getProviderQueueConfig(providerId);
+    expect(config.limiter).toBeUndefined();
+    expect(config.concurrency).toBe(3);
+    expect(config.syncTier).toBe("realtime");
   });
 
   it("returns default config for unknown provider", () => {
@@ -51,16 +53,18 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("daily");
   });
 
-  it("returns realtime tier for garmin", () => {
+  it("returns frequent tier for garmin with step-chain job limiter", () => {
     const config = getProviderQueueConfig("garmin");
-    expect(config.syncTier).toBe("realtime");
-    expect(config.limiter).toBeUndefined();
+    expect(config.syncTier).toBe("frequent");
     expect(config.concurrency).toBe(1);
+    expect(config.limiter).toEqual({ max: 1, duration: 5_000 });
   });
 
-  it("returns frequent tier for whoop", () => {
+  it("returns frequent tier for whoop with step-chain job limiter", () => {
     const config = getProviderQueueConfig("whoop");
     expect(config.syncTier).toBe("frequent");
+    expect(config.concurrency).toBe(1);
+    expect(config.limiter).toEqual({ max: 1, duration: 1_000 });
   });
 });
 
@@ -100,6 +104,7 @@ describe("getConfiguredProviderIds", () => {
     expect(ids).toContain("whoop");
     expect(ids).toContain("fatsecret");
     expect(ids).toContain("bodyspec");
+    expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });
 
   it("does not contain duplicates", () => {

@@ -1,25 +1,30 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
-import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
-import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
+import {
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { z } from "zod";
+import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, bodyMeasurement } from "../db/schema.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider } from "../db/tokens.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import { ProviderTokenRejectedError, RefreshTokenRevokedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Wger API types
 // ============================================================
 
 const WGER_API_BASE = "https://wger.de/api/v2";
-const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const WGER_REFRESH_URL = `${WGER_API_BASE}/token/refresh`;
 
 interface WgerWorkoutSession {
   id: number;
@@ -43,13 +48,22 @@ interface WgerPaginatedResponse<T> {
   results: T[];
 }
 
+const wgerRefreshResponseSchema = z.object({
+  access: z.string().min(1),
+  refresh: z.string().min(1),
+});
+
+const jwtPayloadSchema = z.object({
+  exp: z.number().int().positive(),
+});
+
 // ============================================================
 // Parsed types
 // ============================================================
 
 export interface ParsedWgerWorkoutSession {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   raw: Record<string, unknown>;
@@ -68,7 +82,7 @@ export interface ParsedWgerWeightEntry {
 export function parseWgerWorkoutSession(session: WgerWorkoutSession): ParsedWgerWorkoutSession {
   return {
     externalId: String(session.id),
-    activityType: "strength",
+    activityType: resolveProviderActivityType("strength", "strength"),
     name: session.comment || "Workout",
     startedAt: new Date(session.date),
     raw: {
@@ -89,22 +103,68 @@ export function parseWgerWeightEntry(entry: WgerWeightEntry): ParsedWgerWeightEn
 }
 
 // ============================================================
-// OAuth configuration
+// Personal token authentication
 // ============================================================
 
-export function wgerOAuthConfig(host?: string): OAuthConfig | null {
-  const clientId = process.env.WGER_CLIENT_ID;
-  const clientSecret = process.env.WGER_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+function jwtExpiration(token: string): Date {
+  const encodedPayload = token.split(".")[1];
+  if (!encodedPayload) {
+    throw new Error("Wger returned an access token without a JWT payload");
+  }
 
+  let payload: unknown;
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+  } catch (error: unknown) {
+    throw new Error("Wger returned an invalid access-token JWT payload", { cause: error });
+  }
+  const parsed = jwtPayloadSchema.parse(payload);
+  return new Date(parsed.exp * 1000);
+}
+
+async function exchangeWgerRefreshToken(
+  refreshToken: string,
+  fetchFn: typeof globalThis.fetch,
+): Promise<TokenSet> {
+  const response = await fetchFn(WGER_REFRESH_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: new URLSearchParams({ refresh: refreshToken }).toString(),
+  });
+  if (response.status === 400 || response.status === 401 || response.status === 403) {
+    throw new ProviderTokenRejectedError(
+      "Wger",
+      "Create a new JWT refresh token in Wger's API key settings and try again.",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`Wger token refresh failed (${response.status}). Try again.`);
+  }
+
+  const body: unknown = await response.json();
+  const parsed = wgerRefreshResponseSchema.parse(body);
   return {
-    clientId,
-    clientSecret,
-    authorizeUrl: "https://wger.de/en/user/authorize",
-    tokenUrl: "https://wger.de/api/v2/token",
-    redirectUri: getOAuthRedirectUri(host),
-    scopes: ["read"],
+    accessToken: parsed.access,
+    refreshToken: parsed.refresh,
+    expiresAt: jwtExpiration(parsed.access),
+    scopes: "read",
   };
+}
+
+async function assertWgerDataResponse(response: Response): Promise<void> {
+  if (response.status === 401 || response.status === 403) {
+    throw new ProviderTokenRejectedError(
+      "Wger",
+      "Create a new JWT refresh token in Wger's API key settings and reconnect.",
+    );
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Wger API error (${response.status}): ${text}`);
+  }
 }
 
 // ============================================================
@@ -117,37 +177,56 @@ export class WgerProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("wger", fetchFn);
   }
 
   validate(): string | null {
-    if (!process.env.WGER_CLIENT_ID) return "WGER_CLIENT_ID is not set";
-    if (!process.env.WGER_CLIENT_SECRET) return "WGER_CLIENT_SECRET is not set";
     return null;
   }
 
-  authSetup(options?: { host?: string }): ProviderAuthSetup {
-    const config = wgerOAuthConfig(options?.host);
-    if (!config) throw new Error("WGER_CLIENT_ID and CLIENT_SECRET required");
+  authSetup(): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      manualToken: {
+        label: "JWT refresh token",
+        instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+        exchangeToken: (token) => exchangeWgerRefreshToken(token, fetchFn),
+      },
       apiBaseUrl: WGER_API_BASE,
     };
   }
 
   async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    return resolveOAuthTokens({
-      db,
-      providerId: this.id,
-      providerName: this.name,
-      getOAuthConfig: () => wgerOAuthConfig(),
-      fetchFn: this.#fetchFn,
-    });
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
+      throw new Error(`No tokens found for ${this.name}. Connect ${this.name} in Data Sources.`);
+    }
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+    if (!tokens.refreshToken) {
+      throw new RefreshTokenRevokedError(this.name);
+    }
+
+    try {
+      const refreshed = await exchangeWgerRefreshToken(tokens.refreshToken, this.#fetchFn);
+      // Persist before using the rotated access token. If this write fails, the
+      // provider may already have blacklisted the prior refresh token; surface
+      // the failure and leave the stale row intact so a later rejected refresh
+      // records the normal reconnect-required state.
+      await saveTokens(db, this.id, refreshed);
+      return refreshed;
+    } catch (error: unknown) {
+      if (error instanceof ProviderTokenRejectedError) {
+        await deleteTokens(db, this.id);
+        throw new RefreshTokenRevokedError(this.name, { cause: error });
+      }
+      throw error;
+    }
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -164,6 +243,9 @@ export class WgerProvider implements SyncProvider {
     }
 
     // Sync workout sessions → activity table
+    const since = window.since;
+    const syncWindowEnd = window.until;
+    const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
         db,
@@ -171,69 +253,77 @@ export class WgerProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let url: string | null =
-            `${WGER_API_BASE}/workoutsession/?format=json&ordering=-date&offset=0&limit=50`;
+          const initialUrl = `${WGER_API_BASE}/workoutsession/?format=json&ordering=-date&offset=0&limit=50`;
 
-          while (url) {
-            const response = await this.#fetchFn(url, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
-              },
-            });
+          const pages = await fetchProviderPages<WgerWorkoutSession, string>({
+            providerId: this.id,
+            stepName: "activity",
+            initialCursor: initialUrl,
+            fetchPage: async (url) => {
+              if (!url) throw new Error("Wger workout pagination missing page URL");
+              const response = await this.#fetchFn(url, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: "application/json",
+                },
+              });
+              await assertWgerDataResponse(response);
+              const data: WgerPaginatedResponse<WgerWorkoutSession> = await response.json();
+              return {
+                items: data.results ?? [],
+                nextCursor: data.next,
+              };
+            },
+            shouldStopAfterPage: (page) =>
+              page.items.some((session) => new Date(session.date) < since),
+          });
 
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Wger API error (${response.status}): ${text}`);
+          for (const raw of pages.items) {
+            const sessionDate = new Date(raw.date);
+            if (sessionDate < since || sessionDate >= syncWindowEnd) {
+              continue;
             }
 
-            const data: WgerPaginatedResponse<WgerWorkoutSession> = await response.json();
-            const sessions = data.results ?? [];
-
-            for (const raw of sessions) {
-              const sessionDate = new Date(raw.date);
-              if (sessionDate < since) {
-                url = null;
-                break;
-              }
-
-              const parsed = parseWgerWorkoutSession(raw);
-              try {
-                await db
-                  .insert(activity)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      raw: parsed.raw,
-                    },
-                  });
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
+            const parsed = parseWgerWorkoutSession(raw);
+            presentActivityExternalIds.add(parsed.externalId);
+            try {
+              await upsertProviderActivity(
+                db,
+                {
+                  providerId: this.id,
                   externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            if (url) {
-              url = data.next;
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  raw: parsed.raw,
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  raw: parsed.raw,
+                },
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
           }
 
-          return { recordCount: count, result: count };
+          if (pages.degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations: pages.degradations };
         },
         options?.userId,
       );
@@ -245,84 +335,77 @@ export class WgerProvider implements SyncProvider {
       });
     }
 
-    // Sync body weight → bodyMeasurement table
+    // Sync body weight into metric stream body channels.
     try {
       const weightCount = await withSyncLog(
         db,
         this.id,
-        "bodyMeasurement",
+        "metric_stream",
         async () => {
           let count = 0;
-          let url: string | null =
-            `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
+          const initialUrl = `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
+          const pages = await fetchProviderPages<WgerWeightEntry, string>({
+            providerId: this.id,
+            stepName: "metric_stream",
+            initialCursor: initialUrl,
+            fetchPage: async (url) => {
+              if (!url) throw new Error("Wger weight pagination missing page URL");
+              const response = await this.#fetchFn(url, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: "application/json",
+                },
+              });
+              await assertWgerDataResponse(response);
+              const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
+              return {
+                items: data.results ?? [],
+                nextCursor: data.next,
+              };
+            },
+            shouldStopAfterPage: (page) => page.items.some((entry) => new Date(entry.date) < since),
+          });
 
-          while (url) {
-            const response = await this.#fetchFn(url, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
-              },
-            });
-
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Wger API error (${response.status}): ${text}`);
+          for (const raw of pages.items) {
+            const entryDate = new Date(raw.date);
+            if (entryDate < since || entryDate >= syncWindowEnd) {
+              continue;
             }
 
-            const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
-            const entries = data.results ?? [];
-
-            for (const raw of entries) {
-              const entryDate = new Date(raw.date);
-              if (entryDate < since) {
-                url = null;
-                break;
-              }
-
-              const parsed = parseWgerWeightEntry(raw);
-              try {
-                await db
-                  .insert(bodyMeasurement)
-                  .values({
+            const parsed = parseWgerWeightEntry(raw);
+            try {
+              await writeMetricStreamBatch(
+                db,
+                [
+                  {
                     providerId: this.id,
                     externalId: parsed.externalId,
                     recordedAt: parsed.recordedAt,
                     weightKg: parsed.weightKg,
-                  })
-                  .onConflictDoUpdate({
-                    target: [
-                      bodyMeasurement.userId,
-                      bodyMeasurement.providerId,
-                      bodyMeasurement.externalId,
-                    ],
-                    set: {
-                      recordedAt: parsed.recordedAt,
-                      weightKg: parsed.weightKg,
-                    },
-                  });
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            if (url) {
-              url = data.next;
+                  },
+                ],
+                SOURCE_TYPE_API,
+                undefined,
+                options?.metricStreamPublisher,
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
           }
 
-          return { recordCount: count, result: count };
+          return { recordCount: count, result: count, degradations: pages.degradations };
         },
         options?.userId,
       );
       recordsSynced += weightCount;
     } catch (err) {
       errors.push({
-        message: `bodyMeasurement: ${err instanceof Error ? err.message : String(err)}`,
+        message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

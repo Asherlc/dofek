@@ -115,10 +115,25 @@ export interface WhoopWorkoutScore {
   zone_duration: WhoopZoneDuration;
 }
 
+export interface WhoopDeveloperWorkoutRecord {
+  id: string;
+  start: string;
+  end: string;
+  timezone_offset?: string;
+  sport_name?: string;
+  sport_id?: number;
+  score_state?: string;
+}
+
+export interface WhoopDeveloperWorkoutListResponse {
+  records: WhoopDeveloperWorkoutRecord[];
+  next_token?: string | null;
+}
+
 export interface WhoopWorkoutRecord {
   // BFF v0 uses `during` (Postgres range) + `activity_id` (UUID)
-  // Both optional because legacy API versions may omit them
-  activity_id?: string; // UUID
+  // Legacy API versions may return integer activity_id or numeric id
+  activity_id?: string | number;
   during?: string; // Postgres range format: "['start','end')"
   timezone_offset: string;
   sport_id: number;
@@ -224,6 +239,7 @@ export interface WhoopAuthToken {
   accessToken: string;
   refreshToken: string;
   userId: number;
+  expiresInSeconds: number;
 }
 
 export type WhoopVerificationMethod = "sms" | "totp";

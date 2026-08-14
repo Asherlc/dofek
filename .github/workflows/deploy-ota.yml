@@ -39,8 +39,9 @@ jobs:
     outputs:
       commit_sha: ${{ steps.resolve.outputs.sha }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 1
       - name: Resolve commit SHA
         id: resolve
@@ -62,11 +63,7 @@ jobs:
   deploy:
     name: Publish OTA
     needs: [check]
-    if: |
-      always() && (
-        github.event_name != 'workflow_run' ||
-        needs.check.result == 'success'
-      )
+    if: needs.check.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Resolve commit SHA
@@ -82,23 +79,37 @@ jobs:
           else
             echo "ref=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ steps.sha.outputs.ref }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
             EXPO_TOKEN
+            SENTRY_AUTH_TOKEN
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
+      - name: Validate mobile runtime env
+        run: |
+          if [ -z "${EXPO_PUBLIC_SENTRY_DSN:-}" ]; then
+            echo "::error::Missing EXPO_PUBLIC_SENTRY_DSN secret required by packages/mobile/lib/telemetry.ts"
+            exit 1
+          fi
+          if [ -z "${EXPO_PUBLIC_OTEL_ENDPOINT:-}" ]; then
+            echo "::error::Missing EXPO_PUBLIC_OTEL_ENDPOINT secret required by packages/mobile/lib/telemetry.ts"
+            exit 1
+          fi
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile OTA sourcemap upload"
+            exit 1
+          fi
       - name: Wait for OTA server
         run: |
           for attempt in $(seq 1 30); do
-            status=$(curl -s -o /dev/null -w "%{http_code}" https://ota.dofek.asherlc.com/manifest || true)
-            if [ "$status" -ge 200 ] && [ "$status" -lt 500 ]; then
-              echo "OTA server is healthy"
+            if pnpm tsx scripts/check-ota-manifest.ts; then
               exit 0
             fi
             echo "Waiting for OTA server... (attempt $attempt/30)"
@@ -106,12 +117,29 @@ jobs:
           done
           echo "OTA server did not become healthy in time"
           exit 1
+      # eoas runs `pnpx expo export` internally and swallows its output, so a
+      # failing export only shows up as a generic "exited with non-zero code: 1".
+      # Run an isolated preflight so the real Metro/expo error is visible. The
+      # publish step below owns the final dist directory and its source maps.
+      - name: Export iOS bundle (surfaces the error eoas hides)
+        working-directory: packages/mobile
+        run: pnpm expo export --output-dir /tmp/dofek-ota-preflight --platform ios
       - name: Publish OTA update
         working-directory: packages/mobile
         env:
           DEBUG: true
           RELEASE_CHANNEL: production
-        run: npx eoas@2.3.17 publish --branch main --platform ios --nonInteractive
+          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
+          EXPO_PUBLIC_SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
+        # EOAS 2.3.22 is the compatible Expo Open OTA publisher; eoas@3.1.0
+        # is a different npm project. Keep the invocation on the pinned pnpm
+        # toolchain and pass the sourcemap alias to the published export.
+        run: pnpm dlx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dumpSourcemap
+      - name: Upload OTA sourcemaps to Sentry
+        working-directory: packages/mobile
+        env:
+          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
+        run: pnpm exec sentry-expo-upload-sourcemaps dist
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()

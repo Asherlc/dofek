@@ -46,6 +46,15 @@ export interface HealthspanMetric {
   yearsDelta: number;
 }
 
+export interface HealthspanAvailability {
+  status: "available" | "insufficient_data";
+  availableMetricCount: number;
+  requiredMetricCount: 3;
+  missingMetricLabels: string[];
+  summary: string;
+  nextCondition: string | null;
+}
+
 export interface HealthspanResult {
   /** Composite healthspan score 0-100, or null when there is no data */
   healthspanScore: number | null;
@@ -57,7 +66,23 @@ export interface HealthspanResult {
   history: { weekStart: string; score: number }[];
   /** Direction of weekly score trend: "improving" | "declining" | "stable" (null if < 4 weeks of data) */
   trend: "improving" | "declining" | "stable" | null;
+  /** Exact server-owned score readiness rendered identically by every client. */
+  availability: HealthspanAvailability;
 }
+
+const HEALTHSPAN_REQUIRED_METRIC_COUNT = 3;
+const HEALTHSPAN_CACHE_KEY_VERSION = "healthspan-availability-v1";
+const HEALTHSPAN_SUPPORTED_METRIC_LABELS = [
+  "Sleep Consistency",
+  "Sleep Duration",
+  "Aerobic Activity",
+  "High Intensity",
+  "Strength Training",
+  "Daily Steps",
+  "VO2 Max",
+  "Resting Heart Rate",
+  "Lean Body Mass",
+] as const;
 
 function toNumberOrNull(value: number | null): number | null {
   return value != null ? Number(value) : null;
@@ -174,7 +199,6 @@ function buildHistory(row: HealthspanRawRow): HealthspanResult["history"] {
   });
 }
 
-/** Linear regression slope of weekly scores, bucketed into a direction. */
 function computeTrend(history: HealthspanResult["history"]): HealthspanResult["trend"] {
   if (history.length < 4) return null;
 
@@ -197,48 +221,80 @@ function computeTrend(history: HealthspanResult["history"]): HealthspanResult["t
   return "stable";
 }
 
+function buildAvailability(metrics: HealthspanMetric[]): HealthspanAvailability {
+  const availableMetricCount = metrics.filter((metric) => metric.value != null).length;
+  const missingMetricLabels =
+    metrics.length > 0
+      ? metrics.filter((metric) => metric.value == null).map((metric) => metric.name)
+      : [...HEALTHSPAN_SUPPORTED_METRIC_LABELS];
+  const additionalMetricCount = Math.max(
+    0,
+    HEALTHSPAN_REQUIRED_METRIC_COUNT - availableMetricCount,
+  );
+
+  return {
+    status: additionalMetricCount === 0 ? "available" : "insufficient_data",
+    availableMetricCount,
+    requiredMetricCount: HEALTHSPAN_REQUIRED_METRIC_COUNT,
+    missingMetricLabels,
+    summary:
+      availableMetricCount > HEALTHSPAN_REQUIRED_METRIC_COUNT
+        ? `${availableMetricCount} supported Healthspan metrics are available; ${HEALTHSPAN_REQUIRED_METRIC_COUNT} are required for a score.`
+        : `${availableMetricCount} of ${HEALTHSPAN_REQUIRED_METRIC_COUNT} required Healthspan metrics are available.`,
+    nextCondition:
+      additionalMetricCount === 0
+        ? null
+        : `The score becomes available after ${additionalMetricCount} more supported ${
+            additionalMetricCount === 1 ? "metric syncs" : "metrics sync"
+          } successfully.`,
+  };
+}
+
+export function buildHealthspanResult(row: HealthspanRawRow | null): HealthspanResult {
+  if (!row) {
+    return {
+      healthspanScore: null,
+      yearsDelta: null,
+      metrics: [],
+      history: [],
+      trend: null,
+      availability: buildAvailability([]),
+    };
+  }
+
+  const metrics = buildMetrics(row);
+  const metricsWithData = metrics.filter((metric) => metric.value != null);
+  const healthspanScore =
+    metricsWithData.length >= HEALTHSPAN_REQUIRED_METRIC_COUNT
+      ? Math.round(
+          metricsWithData.reduce((sum, metric) => sum + metric.score, 0) / metricsWithData.length,
+        )
+      : null;
+  const history = buildHistory(row);
+
+  return {
+    healthspanScore,
+    yearsDelta: healthspanScore != null ? scoreToYearsDelta(healthspanScore) : null,
+    metrics,
+    history,
+    trend: computeTrend(history),
+    availability: buildAvailability(metrics),
+  };
+}
+
 export const healthspanRouter = router({
   /**
    * Healthspan Score — composite longevity metric inspired by Whoop's Healthspan.
    * Updates weekly from rolling 4-week data windows.
    */
-  score: cachedProtectedQuery(CacheTTL.LONG)
+  score: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: HEALTHSPAN_CACHE_KEY_VERSION,
+  })
     .input(z.object({ weeks: z.number().min(4).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;
-
       const row = await fetchHealthspanRawData(ctx, input.endDate, totalDays);
-      if (!row) {
-        return {
-          healthspanScore: null,
-          yearsDelta: null,
-          metrics: [],
-          history: [],
-          trend: null,
-        };
-      }
-
-      const metrics = buildMetrics(row);
-
-      // Composite: equal weight across metrics that have real data.
-      // Require at least 3 metrics — fewer than that is not a meaningful composite.
-      const metricsWithData = metrics.filter((metric) => metric.value != null);
-      const healthspanScore =
-        metricsWithData.length >= 3
-          ? Math.round(
-              metricsWithData.reduce((sum, metric) => sum + metric.score, 0) /
-                metricsWithData.length,
-            )
-          : null;
-
-      const history = buildHistory(row);
-
-      return {
-        healthspanScore,
-        yearsDelta: healthspanScore != null ? scoreToYearsDelta(healthspanScore) : null,
-        metrics,
-        history,
-        trend: computeTrend(history),
-      };
+      return buildHealthspanResult(row);
     }),
 });

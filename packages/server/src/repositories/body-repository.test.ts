@@ -43,6 +43,12 @@ describe("BodyMeasurement", () => {
     expect(new BodyMeasurement(makeRow({ bodyFatPct: null })).bodyFatPct).toBeNull();
   });
 
+  it("exposes provider and BMI for server-side summaries", () => {
+    const measurement = new BodyMeasurement(makeRow());
+    expect(measurement.providerId).toBe("withings");
+    expect(measurement.bmi).toBe(22.4);
+  });
+
   it("serializes all fields via toDetail()", () => {
     const row = makeRow();
     expect(new BodyMeasurement(row).toDetail()).toEqual(row);
@@ -61,14 +67,24 @@ describe("BodyMeasurement", () => {
 
 describe("BodyRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new BodyRepository({ execute }, "user-1", "UTC");
-    return { repo, execute };
+    const query = vi.fn(async (schema: { parse: (row: Record<string, unknown>) => unknown }) =>
+      rows.map((row) => schema.parse(row)),
+    );
+    const repo = new BodyRepository({ query }, "user-1", "UTC");
+    return { repo, query };
   }
 
   it("returns empty array when no data", async () => {
     const { repo } = makeRepository([]);
     expect(await repo.list(90)).toEqual([]);
+  });
+
+  it("rejects invalid day windows before querying ClickHouse", async () => {
+    const { repo, query } = makeRepository([]);
+
+    await expect(repo.list(-1)).rejects.toThrow("days must be a non-negative integer");
+    await expect(repo.list(1.5)).rejects.toThrow("days must be a non-negative integer");
+    expect(query).not.toHaveBeenCalled();
   });
 
   it("returns BodyMeasurement instances", async () => {
@@ -101,6 +117,67 @@ describe("BodyRepository", () => {
     expect(result[0]?.weightKg).toBe(75.5);
   });
 
+  it("reads body measurements from the ClickHouse analytics model", async () => {
+    const { repo, query } = makeRepository([]);
+
+    await repo.list(30);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("FROM analytics.v_body_measurement"),
+      { userId: "user-1", days: 30 },
+    );
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
+    expect(queryText).toContain("ORDER BY body_measurements.recorded_at DESC");
+    expect(queryText).not.toContain("fitness.v_body_measurement");
+  });
+
+  it("reads an exact local-date range from ClickHouse", async () => {
+    const { repo, query } = makeRepository([
+      {
+        id: "bm-range-1",
+        recorded_at: "2024-01-15T08:00:00Z",
+        provider_id: "withings",
+        user_id: "user-1",
+        external_id: null,
+        weight_kg: "75.5",
+        body_fat_pct: null,
+        muscle_mass_kg: null,
+        bone_mass_kg: null,
+        water_pct: null,
+        bmi: null,
+        height_cm: null,
+        waist_circumference_cm: null,
+        systolic_bp: null,
+        diastolic_bp: null,
+        heart_pulse: null,
+        temperature_c: null,
+        source_name: "Withings Body+",
+        created_at: "2024-01-15T08:01:00Z",
+      },
+    ]);
+
+    const result = await repo.listRange("2024-01-10", "2024-01-15");
+
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("toDate(toTimeZone(recorded_at, {timezone:String}))"),
+      {
+        userId: "user-1",
+        timezone: "UTC",
+        startDate: "2024-01-10",
+        endDate: "2024-01-15",
+      },
+    );
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
+    expect(queryText).toContain(") AS body_measurements");
+    expect(queryText).toContain("ORDER BY body_measurements.recorded_at ASC");
+    expect(result[0]).toBeInstanceOf(BodyMeasurement);
+    expect(result[0]?.id).toBe("bm-range-1");
+  });
+
   it("maps all snake_case DB fields to camelCase", async () => {
     const { repo } = makeRepository([
       {
@@ -128,7 +205,7 @@ describe("BodyRepository", () => {
     const result = await repo.list(90);
     const detail = result[0]?.toDetail();
     expect(detail?.id).toBe("bm-1");
-    expect(detail?.recordedAt).toBe("2024-01-15T08:00:00Z");
+    expect(detail?.recordedAt).toBe("2024-01-15T08:00:00.000Z");
     expect(detail?.providerId).toBe("withings");
     expect(detail?.userId).toBe("user-1");
     expect(detail?.externalId).toBe("ext-123");
@@ -145,7 +222,7 @@ describe("BodyRepository", () => {
     expect(detail?.heartPulse).toBe(62);
     expect(detail?.temperatureC).toBe(36.6);
     expect(detail?.sourceName).toBe("Withings Body+");
-    expect(detail?.createdAt).toBe("2024-01-15T08:01:00Z");
+    expect(detail?.createdAt).toBe("2024-01-15T08:01:00.000Z");
   });
 
   it("maps null external_id to null externalId", async () => {
@@ -259,15 +336,15 @@ describe("BodyRepository", () => {
     const result = await repo.list(90);
     const detail = result[0]?.toDetail();
     expect(detail?.id).toBe("bm-99");
-    expect(detail?.recordedAt).toBe("2024-03-20T10:30:00Z");
+    expect(detail?.recordedAt).toBe("2024-03-20T10:30:00.000Z");
     expect(detail?.providerId).toBe("garmin");
     expect(detail?.userId).toBe("user-42");
-    expect(detail?.createdAt).toBe("2024-03-20T10:31:00Z");
+    expect(detail?.createdAt).toBe("2024-03-20T10:31:00.000Z");
   });
 
-  it("calls execute once", async () => {
-    const { repo, execute } = makeRepository([]);
+  it("calls query once", async () => {
+    const { repo, query } = makeRepository([]);
     await repo.list(30);
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

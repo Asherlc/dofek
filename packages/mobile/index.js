@@ -1,3 +1,5 @@
+require("./lib/intl-polyfills");
+
 if (process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "true") {
   module.exports = require("./.rnstorybook");
 } else {

@@ -1,17 +1,16 @@
-import { VeloHeroClient } from "velohero-client/client";
-import { parseVeloHeroWorkout } from "velohero-client/parsing";
-import type { SyncDatabase } from "../db/index.ts";
-import { activity } from "../db/schema.ts";
+import { VeloHeroClient } from "@dofek/velohero/client";
+import { parseVeloHeroWorkout } from "@dofek/velohero/parsing";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import { ProviderSessionExpiredError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
 
@@ -33,7 +32,7 @@ export class VeloHeroProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch("velohero", fetchFn);
   }
 
   validate(): string | null {
@@ -48,14 +47,6 @@ export class VeloHeroProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: "",
-        clientSecret: "",
-        authorizeUrl: `${VELOHERO_BASE_URL}/sso`,
-        tokenUrl: `${VELOHERO_BASE_URL}/sso`,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await VeloHeroClient.signIn(email, password, fetchFn);
         return {
@@ -65,13 +56,11 @@ export class VeloHeroProvider implements SyncProvider {
           scopes: `userId:${result.userId}`,
         };
       },
-      exchangeCode: async () => {
-        throw new Error("VeloHero uses automated login, not OAuth code exchange");
-      },
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -88,7 +77,7 @@ export class VeloHeroProvider implements SyncProvider {
 
       // VeloHero sessions expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error("VeloHero session expired — please re-authenticate via Settings");
+        throw new ProviderSessionExpiredError("VeloHero");
       }
       client = new VeloHeroClient(stored.accessToken, this.#fetchFn);
     } catch (err) {
@@ -97,8 +86,11 @@ export class VeloHeroProvider implements SyncProvider {
     }
 
     // Fetch and sync activities
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const toDate = formatDate(new Date());
+    const syncWindowEnd = window.until;
+    const toDate = formatDate(syncWindowEnd);
+    const presentActivityExternalIds = new Set<string>();
 
     try {
       const activityCount = await withSyncLog(
@@ -114,10 +106,11 @@ export class VeloHeroProvider implements SyncProvider {
 
           for (const workout of workouts) {
             const parsed = parseVeloHeroWorkout(workout);
+            presentActivityExternalIds.add(parsed.externalId);
             try {
-              await db
-                .insert(activity)
-                .values({
+              await upsertProviderActivity(
+                db,
+                {
                   providerId: this.id,
                   externalId: parsed.externalId,
                   activityType: parsed.activityType,
@@ -125,17 +118,15 @@ export class VeloHeroProvider implements SyncProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                });
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
               count++;
             } catch (err) {
               errors.push({
@@ -146,6 +137,13 @@ export class VeloHeroProvider implements SyncProvider {
             }
           }
 
+          await finishProviderActivityListSync(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

@@ -1,83 +1,141 @@
-import { formatNumber } from "@dofek/format/format";
-import type { WeightPrediction } from "../../../server/src/routers/body-analytics.ts";
+import { formatCalories, formatDateMedium } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
+import { textColors } from "@dofek/scoring/colors";
+import type {
+  BodyFatPrediction,
+  WeightPrediction,
+} from "../../../server/src/routers/body-analytics.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
 interface WeightPredictionSummaryProps {
-  prediction: WeightPrediction;
+  prediction: WeightPrediction | BodyFatPrediction;
+  metric?: "weight" | "bodyFat";
+  hasTrendData?: boolean;
 }
 
 function formatDate(isoDate: string): string {
-  const date = new Date(`${isoDate}T12:00:00`);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateMedium(isoDate);
 }
 
-export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryProps) {
+function hasPredictionContent(prediction: WeightPrediction | BodyFatPrediction): boolean {
+  return (
+    prediction.ratePerWeek != null ||
+    ("goal" in prediction && prediction.goal != null) ||
+    prediction.periodDeltas.days7 != null ||
+    prediction.periodDeltas.days14 != null ||
+    prediction.periodDeltas.days30 != null
+  );
+}
+
+function PeriodDelta({
+  label,
+  value,
+  metric,
+}: {
+  label: string;
+  value: number;
+  metric: "weight" | "bodyFat";
+}) {
+  const units = useUnitConverter();
+  if (!Number.isFinite(value)) return null;
+
+  return (
+    <div>
+      <div className="text-subtle text-xs uppercase">{label}</div>
+      <div className="font-medium">
+        {value > 0 ? "+" : ""}
+        {metric === "weight" ? formatMeasurementText(units.formatWeight(value)) : `${value}%`}
+      </div>
+    </div>
+  );
+}
+
+export function WeightPredictionSummary({
+  prediction,
+  metric = "weight",
+  hasTrendData = false,
+}: WeightPredictionSummaryProps) {
   const units = useUnitConverter();
 
-  if (prediction.ratePerWeek == null) return null;
-
-  const rateConverted = units.convertWeight(prediction.ratePerWeek);
-  const rateColor =
-    Math.abs(prediction.ratePerWeek) < 0.05
-      ? "text-muted"
-      : prediction.ratePerWeek > 0
-        ? "text-green-400"
-        : "text-red-400";
+  if (!hasPredictionContent(prediction)) {
+    return (
+      <p className="text-sm text-muted">
+        {hasTrendData
+          ? metric === "weight"
+            ? "Weight trend is available, but a prediction could not be calculated from the current data."
+            : "Body-fat trend is available, but a prediction could not be calculated from the current data."
+          : metric === "weight"
+            ? "Not enough weigh-in data to estimate weight trend yet."
+            : "Not enough body-fat readings to estimate a trend yet."}
+      </p>
+    );
+  }
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
       {/* Rate */}
-      <div>
-        <div className="text-subtle text-xs uppercase">Rate</div>
-        <div className={`font-semibold ${rateColor}`}>
-          {rateConverted > 0 ? "+" : ""}
-          {formatNumber(rateConverted)} {units.weightLabel}/wk
-        </div>
-      </div>
-
-      {/* Period deltas */}
-      {prediction.periodDeltas.days7 != null && (
+      {prediction.ratePerWeek != null && (
         <div>
-          <div className="text-subtle text-xs uppercase">7-Day Change</div>
-          <div className="font-medium">
-            {units.convertWeight(prediction.periodDeltas.days7) > 0 ? "+" : ""}
-            {formatNumber(units.convertWeight(prediction.periodDeltas.days7))} {units.weightLabel}
+          <div className="text-subtle text-xs uppercase">Rate</div>
+          <div className="font-semibold" style={{ color: textColors.secondary }}>
+            {prediction.ratePerWeek > 0 ? "+" : ""}
+            {metric === "weight"
+              ? formatMeasurementText(units.formatWeight(prediction.ratePerWeek))
+              : `${prediction.ratePerWeek}%`}
+            /wk
           </div>
         </div>
+      )}
+
+      {prediction.periodDeltas.days7 != null && (
+        <PeriodDelta label="7-Day Change" value={prediction.periodDeltas.days7} metric={metric} />
+      )}
+
+      {prediction.periodDeltas.days14 != null && (
+        <PeriodDelta label="14-Day Change" value={prediction.periodDeltas.days14} metric={metric} />
+      )}
+
+      {prediction.periodDeltas.days30 != null && (
+        <PeriodDelta label="30-Day Change" value={prediction.periodDeltas.days30} metric={metric} />
       )}
 
       {/* Calorie estimate */}
-      {prediction.impliedDailyCalories != null && (
-        <div>
-          <div className="text-subtle text-xs uppercase">Daily Balance</div>
-          <div className="font-medium">
-            {prediction.impliedDailyCalories > 0 ? "+" : ""}
-            {Math.round(prediction.impliedDailyCalories)} kcal/day
+      {metric === "weight" &&
+        "impliedDailyCalories" in prediction &&
+        prediction.impliedDailyCalories != null && (
+          <div>
+            <div className="text-subtle text-xs uppercase">Daily Balance</div>
+            <div className="font-medium">
+              {prediction.impliedDailyCalories > 0 ? "+" : ""}
+              {formatCalories(prediction.impliedDailyCalories)}/day
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Goal ETA */}
-      {prediction.goal?.estimatedDate != null && (
+      {metric === "weight" && "goal" in prediction && prediction.goal?.estimatedDate != null && (
         <div>
           <div className="text-subtle text-xs uppercase">Goal Estimate</div>
           <div className="font-medium">
-            {formatNumber(units.convertWeight(prediction.goal.goalWeightKg))} {units.weightLabel}
+            {formatMeasurementText(units.formatWeight(prediction.goal.goalWeightKg))}
             {" by "}
             <span className="text-muted">~{formatDate(prediction.goal.estimatedDate)}</span>
           </div>
         </div>
       )}
 
-      {prediction.goal != null && prediction.goal.estimatedDate == null && (
-        <div>
-          <div className="text-subtle text-xs uppercase">Goal</div>
-          <div className="font-medium text-muted">
-            {formatNumber(units.convertWeight(prediction.goal.goalWeightKg))} {units.weightLabel}
-            {" — estimate unavailable"}
+      {metric === "weight" &&
+        "goal" in prediction &&
+        prediction.goal != null &&
+        prediction.goal.estimatedDate == null && (
+          <div>
+            <div className="text-subtle text-xs uppercase">Goal</div>
+            <div className="font-medium text-muted">
+              {formatMeasurementText(units.formatWeight(prediction.goal.goalWeightKg))}
+              {" — estimate unavailable"}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }

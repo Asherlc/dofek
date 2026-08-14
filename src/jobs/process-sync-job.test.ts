@@ -1,15 +1,71 @@
+import {
+  ProviderRateLimitError,
+  ProviderRequestTimeoutError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
+import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
+import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
+import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
+import { AccessTokenExpiredError, RefreshTokenRevokedError } from "../providers/auth-errors.ts";
+import type { SyncRun } from "../providers/sync-run.ts";
+import { SyncWindow } from "../providers/sync-window.ts";
 import type { SyncProvider, SyncResult } from "../providers/types.ts";
+
+type MockCooldownRecord = {
+  providerId: string;
+  scope: "provider" | "user";
+  userId: string | null;
+  expiresAt: Date;
+};
+
+const MockJobDataSchema = z.object({
+  origin: z.enum(["manual", "scheduled"]).optional(),
+  providerId: z.string().optional(),
+  sinceDays: z.number().optional(),
+  sinceIso: z.string().optional(),
+  untilIso: z.string().optional(),
+  userId: z.string(),
+  checkpoint: z.unknown().optional(),
+});
+
+const mockProviderRateLimitCooldownRecords = vi.hoisted(
+  (): Map<string, MockCooldownRecord> => new Map(),
+);
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
+const mockWithUserWriteFence = vi.fn(
+  async (
+    database: unknown,
+    _userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => operation(database),
+);
+vi.mock("../db/account-erasure.ts", () => ({
+  withAccountErasureUserWriteFence: (
+    database: unknown,
+    userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => mockWithUserWriteFence(database, userId, operation),
+}));
+vi.mock("../db/account-erasure-processing.ts", () => ({
+  isAccountErasureActive: vi.fn(async () => false),
+}));
+
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
+const mockInvalidateAllUserQueries = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("../lib/cache.ts", () => ({
+  invalidateAllUserQueries: (...args: unknown[]) => mockInvalidateAllUserQueries(...args),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: {
@@ -18,6 +74,91 @@ vi.mock("../logger.ts", () => ({
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
     debug: vi.fn(),
   },
+}));
+
+const processingOperationId = "30000000-0000-4000-8000-000000000001";
+const mockProcessingOutputManifest = vi.hoisted<
+  Partial<Record<ProcessingDatasetKey, Array<"metric_stream" | "relational">>>
+>(() => ({}));
+
+function recordMockProcessingOutputs(
+  datasetKeys: readonly ProcessingDatasetKey[],
+  outputPath: "metric_stream" | "relational",
+): void {
+  for (const datasetKey of datasetKeys) {
+    const outputPaths = mockProcessingOutputManifest[datasetKey] ?? [];
+    if (!outputPaths.includes(outputPath)) {
+      outputPaths.push(outputPath);
+    }
+    mockProcessingOutputManifest[datasetKey] = outputPaths;
+  }
+}
+
+const mockCreateProcessingOperation = vi.fn(
+  async (
+    _database: unknown,
+    input: {
+      userId: string | null;
+      providerId?: string | null;
+      kind: "provider_sync";
+      externalCorrelationKey?: string | null;
+      datasetKeys: ProcessingDatasetKey[];
+    },
+  ) => ({
+    id: processingOperationId,
+    userId: input.userId,
+    providerId: input.providerId ?? null,
+    kind: input.kind,
+    externalCorrelationKey: input.externalCorrelationKey ?? null,
+    datasetKeys: input.datasetKeys,
+    createdAt: new Date("2026-06-02T12:00:00.000Z"),
+  }),
+);
+const mockAppendProcessingStageEvent = vi.fn(
+  async (_database: unknown, _input: unknown) => undefined,
+);
+const mockRecordMetricStreamBatchPublished = vi.fn(
+  async (_database: unknown, input: { datasetKeys: ProcessingDatasetKey[] }) => {
+    recordMockProcessingOutputs(input.datasetKeys, "metric_stream");
+  },
+);
+const mockRecordRelationalCanonicalCommits = vi.fn(
+  async (_database: unknown, input: { datasetKeys: ProcessingDatasetKey[] }) => {
+    recordMockProcessingOutputs(input.datasetKeys, "relational");
+  },
+);
+const mockGetProcessingOutputManifest = vi.fn(
+  async (_database: unknown, _operationId: string) => mockProcessingOutputManifest,
+);
+vi.mock("../processing/processing-event-store.ts", () => ({
+  appendProcessingStageEvent: (database: unknown, input: unknown) =>
+    mockAppendProcessingStageEvent(database, input),
+  createProcessingOperation: (
+    database: unknown,
+    input: Parameters<typeof mockCreateProcessingOperation>[1],
+  ) => mockCreateProcessingOperation(database, input),
+  getProcessingOutputManifest: (database: unknown, operationId: string) =>
+    mockGetProcessingOutputManifest(database, operationId),
+  recordMetricStreamBatchPublished: (
+    database: unknown,
+    input: { datasetKeys: ProcessingDatasetKey[] },
+  ) => mockRecordMetricStreamBatchPublished(database, input),
+  recordRelationalCanonicalCommits: (
+    database: unknown,
+    input: { datasetKeys: ProcessingDatasetKey[] },
+  ) => mockRecordRelationalCanonicalCommits(database, input),
+}));
+
+const mockMetricStreamPublishRows = vi.fn(
+  async (rows: readonly MetricStreamRowInput[], options: MetricStreamPublishOptions) =>
+    rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
+);
+const mockMetricStreamReplaceRows = vi.fn();
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
+    publishRows: mockMetricStreamPublishRows,
+    replaceRows: mockMetricStreamReplaceRows,
+  })),
 }));
 
 // Mock dependencies — the mock functions are accessed via module-level refs
@@ -59,10 +200,29 @@ vi.mock("../db/tokens.ts", () => ({
 
 const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
+function createMockQueuedJob() {
+  return {
+    getState: vi.fn().mockResolvedValue("waiting"),
+    remove: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+const mockProviderQueueAdd = vi.fn().mockResolvedValue(createMockQueuedJob());
+const mockProviderQueueGetJob = vi.fn().mockResolvedValue(undefined);
 vi.mock("./queues.ts", () => ({
   enqueueDebouncedPostSyncMaintenance: (...args: unknown[]) =>
     mockEnqueueDebouncedPostSyncMaintenance(...args),
   enqueueDebouncedUserRefit: (...args: unknown[]) => mockEnqueueDebouncedUserRefit(...args),
+  getProviderSyncQueue: vi.fn(() => ({
+    add: mockProviderQueueAdd,
+    getJob: mockProviderQueueGetJob,
+  })),
+  SYNC_JOB_RETRY_OPTIONS: {
+    attempts: 288,
+    backoff: { type: "fixed", delay: 300_000 },
+    removeOnComplete: { age: 86_400, count: 1_000 },
+    removeOnFail: { age: 604_800, count: 1_000 },
+  },
 }));
 
 const mockSyncRecordsTotal = { add: vi.fn() };
@@ -76,35 +236,116 @@ vi.mock("../sync-metrics.ts", () => ({
   syncErrorsTotal: mockSyncErrorsTotal,
 }));
 
+vi.mock("./provider-rate-limit-cooldown.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./provider-rate-limit-cooldown.ts")>();
+
+  function cooldownKey(providerId: string, scope: "provider" | "user", userId: string | null) {
+    return scope === "provider"
+      ? `${providerId}:provider`
+      : `${providerId}:user:${userId ?? "unknown"}`;
+  }
+
+  function activeCooldown(cooldown: MockCooldownRecord | null): MockCooldownRecord | null {
+    if (!cooldown) return null;
+    return cooldown.expiresAt > new Date() ? cooldown : null;
+  }
+
+  function laterCooldown(
+    first: MockCooldownRecord | null,
+    second: MockCooldownRecord | null,
+  ): MockCooldownRecord | null {
+    if (!first) return second;
+    if (!second) return first;
+    return first.expiresAt >= second.expiresAt ? first : second;
+  }
+
+  return {
+    ...actual,
+    providerRateLimitCooldownStore: {
+      record: async (error: ProviderRateLimitError, fallbackUserId: string) => {
+        const scope = error.scope;
+        const userId = scope === "user" ? (error.userId ?? fallbackUserId) : null;
+        const expiresAt = new Date(Date.now() + (error.retryAfterSeconds ?? 30 * 60) * 1000);
+        const cooldown = { providerId: error.providerId, scope, userId, expiresAt };
+        const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
+        const existing = activeCooldown(mockProviderRateLimitCooldownRecords.get(key) ?? null);
+        const effective = laterCooldown(existing, cooldown) ?? cooldown;
+        mockProviderRateLimitCooldownRecords.set(key, effective);
+        return effective;
+      },
+      getActive: async (providerId: string, userId: string) => {
+        const providerCooldown = activeCooldown(
+          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "provider", null)) ??
+            null,
+        );
+        const userCooldown = activeCooldown(
+          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "user", userId)) ?? null,
+        );
+        return laterCooldown(providerCooldown, userCooldown);
+      },
+    },
+  };
+});
+
 // Import after mocks are set up
 const { processSyncJob } = await import("./process-sync-job.ts");
 
 // All DB functions are mocked at module level, so the db object is never actually called.
-const mockDb: SyncDatabase = {
+const mockDb: SyncDatabase & { transaction: ReturnType<typeof vi.fn> } = {
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
+  transaction: vi.fn(),
 };
 
 interface MockJob {
-  data: { providerId?: string; sinceDays?: number; userId: string };
+  id?: string;
+  data: {
+    origin?: "manual" | "scheduled";
+    providerId?: string;
+    sinceDays?: number;
+    sinceIso?: string;
+    untilIso?: string;
+    targetRefreshWindow?: { type: "full" } | { type: "days"; days: number };
+    userId: string;
+    checkpoint?: unknown;
+    processingOperationIds?: Record<string, string>;
+  };
   updateProgress: ReturnType<typeof vi.fn>;
+  updateData: ReturnType<typeof vi.fn>;
 }
 
 function createMockJob(
-  data: { providerId?: string; sinceDays?: number; userId?: string } = {},
+  data: {
+    origin?: "manual" | "scheduled";
+    providerId?: string;
+    sinceDays?: number;
+    sinceIso?: string;
+    untilIso?: string;
+    targetRefreshWindow?: { type: "full" } | { type: "days"; days: number };
+    userId?: string;
+    checkpoint?: unknown;
+    processingOperationIds?: Record<string, string>;
+  } = {},
 ): MockJob {
-  return {
+  const job: MockJob = {
     data: { userId: "user-1", ...data },
     updateProgress: vi.fn().mockResolvedValue(undefined),
+    updateData: vi.fn(),
   };
+  job.updateData.mockImplementation((nextData: MockJob["data"]) => {
+    job.data = nextData;
+    return Promise.resolve();
+  });
+  return job;
 }
 
 function createMockProvider(overrides: Partial<SyncProvider> = {}): SyncProvider {
   return {
     id: "test-provider",
     name: "Test Provider",
+    processingDatasetKeys: ["recovery", "training"],
     validate: () => null,
     sync: vi.fn().mockResolvedValue({
       provider: "test-provider",
@@ -125,6 +366,10 @@ function runSyncJob(job: MockJob, db: SyncDatabase) {
 describe("processSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProviderRateLimitCooldownRecords.clear();
+    for (const datasetKey of Object.keys(mockProcessingOutputManifest)) {
+      Reflect.deleteProperty(mockProcessingOutputManifest, datasetKey);
+    }
     // Restore default return values after clearAllMocks
     mockGetEnabledSyncProviders.mockReturnValue([]);
     mockGetProvider.mockReturnValue(undefined);
@@ -139,9 +384,32 @@ describe("processSyncJob", () => {
     });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
+    mockInvalidateAllUserQueries.mockResolvedValue(undefined);
+    mockProviderQueueAdd.mockResolvedValue(createMockQueuedJob());
+    mockProviderQueueGetJob.mockResolvedValue(undefined);
+    mockCreateProcessingOperation.mockClear();
+    mockAppendProcessingStageEvent.mockClear();
+    mockRecordMetricStreamBatchPublished.mockClear();
+    mockRecordRelationalCanonicalCommits.mockClear();
+    mockGetProcessingOutputManifest.mockReset();
+    mockGetProcessingOutputManifest.mockImplementation(
+      async (_database: unknown, _operationId: string) => mockProcessingOutputManifest,
+    );
+    mockMetricStreamPublishRows.mockClear();
+    mockMetricStreamReplaceRows.mockClear();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   afterEach(() => {
+    // Restore real timers so a test that throws before its own useRealTimers()
+    // can't leak the fake clock into later tests.
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -154,6 +422,233 @@ describe("processSyncJob", () => {
 
     expect(providerA.sync).toHaveBeenCalledOnce();
     expect(providerB.sync).toHaveBeenCalledOnce();
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledTimes(2);
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+  });
+
+  it("invalidates WHOOP journal queries after a nonzero sync", async () => {
+    const provider = createMockProvider({
+      id: "whoop",
+      name: "WHOOP",
+      sync: vi.fn().mockResolvedValue({
+        provider: "whoop",
+        recordsSynced: 2,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "whoop" }), mockDb);
+
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+  });
+
+  it("does not invalidate queries when a sync writes no records", async () => {
+    const provider = createMockProvider({
+      sync: vi.fn().mockResolvedValue({
+        provider: "test-provider",
+        recordsSynced: 0,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockInvalidateAllUserQueries).not.toHaveBeenCalled();
+  });
+
+  it("records a retry-stable processing lifecycle and correlates metric batches", async () => {
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      processingDatasetKeys: ["recovery", "training"],
+      sync: vi.fn(async (run: SyncRun) => {
+        await run.options.metricStreamPublisher?.publishRows(
+          [
+            {
+              recordedAt: "2026-06-02T10:00:00.000Z",
+              userId: "00000000-0000-4000-8000-000000000001",
+              providerId: "garmin",
+              externalId: "heart-rate-1",
+              sourceType: "api",
+              channel: "heart_rate",
+              scalar: 72,
+            },
+          ],
+          { operationRevision: "1000000000000000" },
+        );
+        return {
+          provider: "garmin",
+          recordsSynced: 1,
+          errors: [],
+          duration: 100,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
+    Object.assign(job, { id: "bull-sync-1852" });
+
+    await runSyncJob(job, mockDb);
+
+    expect(mockCreateProcessingOperation).toHaveBeenCalledWith(mockDb, {
+      userId: "00000000-0000-4000-8000-000000000001",
+      providerId: "garmin",
+      kind: "provider_sync",
+      externalCorrelationKey: "bull-sync-1852:garmin",
+      datasetKeys: ["recovery", "training"],
+    });
+    expect(job.data.processingOperationIds).toEqual({ garmin: processingOperationId });
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "queued",
+        idempotencyKey: "worker-queued",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+      operationId: processingOperationId,
+      stage: "ingest",
+      status: "running",
+      progressPercentage: 0,
+      idempotencyKey: "worker-running",
+    });
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "succeeded",
+        progressPercentage: 100,
+        idempotencyKey: "worker-succeeded",
+      }),
+    );
+    expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        processing: expect.objectContaining({
+          operationId: processingOperationId,
+          datasetKeys: ["recovery", "training"],
+        }),
+      }),
+    );
+    expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        operationId: processingOperationId,
+        datasetKeys: ["recovery", "training"],
+        expectedEventCount: 1,
+      }),
+    );
+    expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalledWith(mockDb, {
+      operationId: processingOperationId,
+      datasetKeys: ["recovery", "training"],
+      idempotencyKey: "worker-relational-commit:bull-sync-1852",
+    });
+  });
+
+  it("records metric-only output without fabricating a relational dependency", async () => {
+    const provider = createMockProvider({
+      sync: vi.fn(async (run: SyncRun) => {
+        await run.options.metricStreamPublisher?.publishRows(
+          [
+            {
+              recordedAt: "2026-06-02T10:00:00.000Z",
+              userId: "00000000-0000-4000-8000-000000000001",
+              providerId: "test-provider",
+              externalId: "heart-rate-only",
+              sourceType: "api",
+              channel: "heart_rate",
+              scalar: 72,
+            },
+          ],
+          { operationRevision: "1000000000000001" },
+        );
+        return {
+          provider: "test-provider",
+          recordsSynced: 0,
+          errors: [],
+          duration: 100,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledOnce();
+    expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+    expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ status: "skipped", stage: "analytics" }),
+    );
+  });
+
+  it("does not record relational output for a metric-only dataset", async () => {
+    const provider = createMockProvider({
+      processingDatasetKeys: ["body"],
+      sync: vi.fn(async (run: SyncRun) => {
+        await run.options.metricStreamPublisher?.publishRows(
+          [
+            {
+              recordedAt: "2026-06-02T10:00:00.000Z",
+              userId: "00000000-0000-4000-8000-000000000001",
+              providerId: "test-provider",
+              externalId: "body-only",
+              sourceType: "api",
+              channel: "weight",
+              scalar: 75,
+            },
+          ],
+          { operationRevision: "1000000000000001" },
+        );
+        return {
+          provider: "test-provider",
+          recordsSynced: 1,
+          errors: [],
+          duration: 100,
+        } satisfies SyncResult;
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+    expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ status: "skipped" }),
+    );
+  });
+
+  it("records relational-only output without requiring a metric batch", async () => {
+    const provider = createMockProvider({
+      processingDatasetKeys: ["nutrition"],
+      sync: vi.fn(async (run: SyncRun) => {
+        expect(run.options.metricStreamPublisher).toBeUndefined();
+        return {
+          provider: "test-provider",
+          recordsSynced: 5,
+          errors: [],
+          duration: 100,
+        } satisfies SyncResult;
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalledOnce();
+    expect(mockRecordMetricStreamBatchPublished).not.toHaveBeenCalled();
   });
 
   it("filters out invalid providers", async () => {
@@ -163,6 +658,216 @@ describe("processSyncJob", () => {
     await runSyncJob(createMockJob(), mockDb);
 
     expect(valid.sync).toHaveBeenCalledOnce();
+  });
+
+  it("records legitimate no-output datasets as skipped", async () => {
+    const provider = createMockProvider({
+      sync: vi.fn().mockResolvedValue({
+        provider: "test-provider",
+        recordsSynced: 0,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        operationId: processingOperationId,
+        datasetKey: "recovery",
+        stage: "analytics",
+        status: "skipped",
+        idempotencyKey: "no-output:recovery:analytics",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        operationId: processingOperationId,
+        datasetKey: "training",
+        stage: "cache_refresh",
+        status: "skipped",
+        idempotencyKey: "no-output:training:cache_refresh",
+      }),
+    );
+  });
+
+  it("records no-output skips when a relational-only dataset emits nothing", async () => {
+    const provider = createMockProvider({
+      processingDatasetKeys: ["nutrition"],
+      sync: vi.fn().mockResolvedValue({
+        provider: "test-provider",
+        recordsSynced: 0,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+      operationId: processingOperationId,
+      stage: "analytics",
+      status: "skipped",
+      datasetKey: "nutrition",
+      message: "No new data was emitted for this dataset",
+      idempotencyKey: "no-output:nutrition:analytics",
+    });
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+      operationId: processingOperationId,
+      stage: "cache_refresh",
+      status: "skipped",
+      datasetKey: "nutrition",
+      message: "No new data was emitted for this dataset",
+      idempotencyKey: "no-output:nutrition:cache_refresh",
+    });
+  });
+
+  it("does not mark output from an earlier continuation attempt as skipped", async () => {
+    const provider = createMockProvider({
+      id: "garmin",
+      sync: vi.fn().mockResolvedValue({
+        provider: "garmin",
+        recordsSynced: 0,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockGetProcessingOutputManifest.mockResolvedValue({ recovery: ["metric_stream"] });
+
+    await runSyncJob(
+      createMockJob({
+        providerId: "garmin",
+        processingOperationIds: { garmin: processingOperationId },
+      }),
+      mockDb,
+    );
+
+    expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        datasetKey: "recovery",
+        status: "skipped",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        datasetKey: "training",
+        status: "skipped",
+      }),
+    );
+  });
+
+  it("reuses the persisted processing operation on retry", async () => {
+    const provider = createMockProvider({ id: "garmin", name: "Garmin" });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const persistedOperationId = "30000000-0000-4000-8000-000000000099";
+    const job = createMockJob({
+      providerId: "garmin",
+      processingOperationIds: { garmin: persistedOperationId },
+    });
+
+    await runSyncJob(job, mockDb);
+
+    expect(mockCreateProcessingOperation).not.toHaveBeenCalled();
+    expect(job.updateData).not.toHaveBeenCalled();
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        operationId: persistedOperationId,
+        idempotencyKey: "worker-queued",
+      }),
+    );
+  });
+
+  it("builds a stable fallback correlation key from absolute sync bounds", async () => {
+    const provider = createMockProvider({ id: "garmin", name: "Garmin" });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(
+      createMockJob({
+        providerId: "garmin",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+      }),
+      mockDb,
+    );
+
+    expect(mockCreateProcessingOperation).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalCorrelationKey:
+          "user-1:garmin:2026-06-01T00:00:00.000Z:2026-06-02T23:59:59.999Z:garmin",
+      }),
+    );
+  });
+
+  it("builds a stable fallback correlation key from a relative sync window", async () => {
+    const provider = createMockProvider({ id: "garmin", name: "Garmin" });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "garmin", sinceDays: 30 }), mockDb);
+
+    expect(mockCreateProcessingOperation).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalCorrelationKey: "user-1:garmin:days:30:open:garmin",
+      }),
+    );
+  });
+
+  it("fails metric batch recording when transaction support is malformed", async () => {
+    const malformedDatabase = Object.assign(
+      {
+        select: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      } satisfies SyncDatabase,
+      { transaction: "not-a-function" },
+    );
+    const provider = createMockProvider({
+      sync: vi.fn(async (run: SyncRun) => {
+        await run.options.metricStreamPublisher?.publishRows(
+          [
+            {
+              recordedAt: "2026-06-02T10:00:00.000Z",
+              userId: "00000000-0000-4000-8000-000000000001",
+              providerId: "test-provider",
+              externalId: "heart-rate-malformed-db",
+              sourceType: "api",
+              channel: "heart_rate",
+              scalar: 72,
+            },
+          ],
+          { operationRevision: "1000000000000002" },
+        );
+        return {
+          provider: "test-provider",
+          recordsSynced: 0,
+          errors: [],
+          duration: 100,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), malformedDatabase);
+
+    expect(mockRecordMetricStreamBatchPublished).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Processing metric-stream publication requires a transactional database",
+      }),
+      { tags: { provider: "test-provider" } },
+    );
   });
 
   it("syncs only the specified provider when providerId is given", async () => {
@@ -183,6 +888,266 @@ describe("processSyncJob", () => {
     await expect(runSyncJob(createMockJob({ providerId: "nonexistent" }), mockDb)).rejects.toThrow(
       "Unknown provider: nonexistent",
     );
+  });
+
+  it("records provider rate-limit cooldown records and schedules a deterministic delayed retry", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(
+        new ProviderRateLimitError({
+          message: "Garmin API rate limit exceeded (429): limited",
+          providerId: "garmin",
+          statusCode: 429,
+          responseBody: "limited",
+          scope: "provider",
+          retryAfterSeconds: 600,
+        }),
+      ),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "garmin",
+        processingOperationIds: { garmin: processingOperationId },
+        userId: "user-1",
+        sinceDays: 1,
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+      },
+      expect.objectContaining({
+        attempts: 288,
+        delay: 600_000,
+        jobId: "provider-rate-limit-garmin-provider-1780402200000",
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalledWith(
+      expect.any(ProviderRateLimitError),
+      expect.anything(),
+    );
+
+    // The rate-limited provider counts as completed (1/1 → 100%) and its status
+    // is reported as running with the retry message.
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: { status: "running", message: expect.stringContaining("retry scheduled") },
+      },
+      percentage: 100,
+    });
+
+    // The 429 is logged as an error with the provider's message and the elapsed
+    // duration (0 under frozen time — guards against Date.now() + syncStart).
+    expect(mockLogSync).toHaveBeenCalledWith(mockDb, {
+      providerId: "garmin",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Garmin API rate limit exceeded (429): limited",
+      durationMs: 0,
+      userId: "user-1",
+      origin: "unknown",
+    });
+
+    // Metrics are tagged with the provider, not an empty options object.
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "garmin",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncDuration.record).toHaveBeenCalledWith(0, {
+      provider: "garmin",
+      data_type: "sync",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "garmin",
+      data_type: "sync",
+    });
+    vi.useRealTimers();
+  });
+
+  it("requeues a rate-limited run with the resolved absolute since timestamp", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(
+        new ProviderRateLimitError({
+          message: "Garmin API rate limit exceeded (429): limited",
+          providerId: "garmin",
+          statusCode: 429,
+          responseBody: "limited",
+          scope: "provider",
+          retryAfterSeconds: 600,
+        }),
+      ),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 7 });
+    await runSyncJob(job, mockDb);
+
+    // The original run resolved a 7-day window ending at the end of the sync day.
+    const expectedWindow = SyncWindow.lastDays(7, { now: new Date("2026-06-02T12:00:00Z") });
+    const firstCall = mockProviderQueueAdd.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const requeuedData = MockJobDataSchema.parse(firstCall?.[1]);
+    expect(requeuedData.sinceIso).toBe(expectedWindow.sinceIso);
+    expect(requeuedData.untilIso).toBe(expectedWindow.untilIso);
+
+    // The delayed retry resolves the same absolute window from persisted ISO timestamps.
+    vi.setSystemTime(new Date("2026-06-02T12:30:00Z"));
+    const retryProvider = createMockProvider({ id: "garmin", name: "Garmin" });
+    mockGetEnabledSyncProviders.mockReturnValue([retryProvider]);
+    await runSyncJob(createMockJob(requeuedData), mockDb);
+
+    expect(retryProvider.sync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db: mockDb,
+        window: expectedWindow,
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
+    );
+    vi.useRealTimers();
+  });
+
+  it("schedules a delayed retry when a sync result returns a rate-limit error", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const rateLimitError = new ProviderRateLimitError({
+      message: "Garmin API rate limit exceeded (429): limited",
+      providerId: "garmin",
+      statusCode: 429,
+      responseBody: "limited",
+      scope: "provider",
+      retryAfterSeconds: 600,
+    });
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockResolvedValue({
+        provider: "garmin",
+        recordsSynced: 0,
+        errors: [{ message: rateLimitError.message, cause: rateLimitError }],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "garmin",
+        userId: "user-1",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+      }),
+      expect.objectContaining({
+        delay: 600_000,
+        jobId: "provider-rate-limit-garmin-provider-1780402200000",
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("defers sync without calling the provider when a rate-limit cooldown is already active", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn(),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+    await providerRateLimitCooldownStore.record(
+      new ProviderRateLimitError({
+        message: "Garmin API rate limit exceeded (429): limited",
+        providerId: "garmin",
+        statusCode: 429,
+        responseBody: "limited",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      }),
+      "user-1",
+    );
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "garmin",
+        userId: "user-1",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+      }),
+      expect.objectContaining({
+        delay: 600_000,
+        jobId: "provider-rate-limit-garmin-provider-1780402200000",
+      }),
+    );
+    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: {
+          status: "running",
+          message: "Rate limited; retry scheduled for 2026-06-02T12:10:00.000Z",
+        },
+      },
+      percentage: 100,
+    });
+    vi.useRealTimers();
+  });
+
+  it("skips disconnected OAuth providers before active cooldown deferral", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      authSetup: () => undefined,
+      sync: vi.fn(),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockLoadTokens.mockResolvedValue(null);
+
+    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+    await providerRateLimitCooldownStore.record(
+      new ProviderRateLimitError({
+        message: "Garmin API rate limit exceeded (429): limited",
+        providerId: "garmin",
+        statusCode: 429,
+        responseBody: "limited",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      }),
+      "user-1",
+    );
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "garmin", "user-1");
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: { garmin: { status: "done", message: "Skipped — not connected" } },
+      percentage: 100,
+    });
+    vi.useRealTimers();
   });
 
   it("skips import-only providers when enqueued by id", async () => {
@@ -227,11 +1192,11 @@ describe("processSyncJob", () => {
     });
   });
 
-  it("logs success to sync log with userId", async () => {
+  it("logs a scheduled sync with its scheduled origin", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob({ userId: "user-1" }), mockDb);
+    await runSyncJob(createMockJob({ userId: "user-1", origin: "scheduled" }), mockDb);
 
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
@@ -242,6 +1207,7 @@ describe("processSyncJob", () => {
         recordCount: 5,
         errorMessage: undefined,
         userId: "user-1",
+        origin: "scheduled",
       }),
     );
   });
@@ -264,6 +1230,15 @@ describe("processSyncJob", () => {
     // Should not throw — errors are caught per-provider
     await runSyncJob(job, mockDb);
 
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+      operationId: processingOperationId,
+      stage: "ingest",
+      status: "failed",
+      errorCode: "provider_sync_failed",
+      errorMessage: "Broken could not be synced. Try the sync again later.",
+      idempotencyKey: "worker-failed",
+    });
+
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
@@ -273,6 +1248,7 @@ describe("processSyncJob", () => {
         errorMessage: "API timeout",
         durationMs: expect.any(Number),
         userId: "user-1",
+        origin: "unknown",
       }),
     );
 
@@ -326,6 +1302,13 @@ describe("processSyncJob", () => {
     // Verify each error is logged individually via Winston
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_sync_failed",
+        errorMessage: "Partial could not be synced. Try the sync again later.",
+      }),
+    );
   });
 
   it("reports thrown sync errors to Sentry", async () => {
@@ -344,15 +1327,128 @@ describe("processSyncJob", () => {
     });
   });
 
+  it("does not report thrown expired access token errors to Sentry", async () => {
+    const expiredTokenError = new AccessTokenExpiredError("Wahoo");
+    const provider = createMockProvider({
+      id: "wahoo",
+      name: "Wahoo",
+      sync: vi.fn().mockRejectedValue(expiredTokenError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "wahoo",
+        status: "error",
+        errorMessage: expiredTokenError.message,
+        authFailureReason: "access_token_expired",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Wahoo authorization needs attention. Reconnect Wahoo, then try again.",
+      }),
+    );
+  });
+
+  it("rethrows retryable infrastructure errors so BullMQ retries the same job", async () => {
+    const infraError = new Error("FATAL: the database system is in recovery mode");
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(infraError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin" });
+
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow("database system is in recovery mode");
+
+    expect(mockCaptureException).toHaveBeenCalledWith(infraError, {
+      tags: { provider: "garmin", retryable: "true" },
+      level: "warning",
+    });
+    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("records metrics without reporting returned provider connect timeouts to Sentry", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const timeout = new ProviderRequestTimeoutError({
+      cause: fetchError,
+      providerId: "withings",
+      timeoutMs: 120_000,
+    });
+    const provider = createMockProvider({
+      id: "withings",
+      name: "Withings",
+      sync: vi.fn().mockResolvedValue({
+        provider: "withings",
+        recordsSynced: 0,
+        errors: [{ message: "metric_stream: fetch failed", cause: timeout }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "withings" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "withings",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "withings",
+      data_type: "sync",
+    });
+  });
+
+  it("rethrows retryable infrastructure errors returned in sync results", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const provider = createMockProvider({
+      id: "withings",
+      name: "Withings",
+      sync: vi.fn().mockResolvedValue({
+        provider: "withings",
+        recordsSynced: 0,
+        errors: [{ message: "metric_stream: fetch failed", cause: fetchError }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await expect(runSyncJob(createMockJob({ providerId: "withings" }), mockDb)).rejects.toThrow(
+      "fetch failed",
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledWith(fetchError, {
+      tags: { provider: "withings", retryable: "true" },
+      level: "warning",
+    });
+    expect(mockLogSync).not.toHaveBeenCalled();
+  });
+
   it("reports returned sync errors to Sentry", async () => {
     const cause = new Error("original cause");
+    const context = { activityId: 456, activitySport: "CYCLING" };
     const provider = createMockProvider({
       id: "partial",
       name: "Partial",
       sync: vi.fn().mockResolvedValue({
         provider: "partial",
         recordsSynced: 3,
-        errors: [{ message: "bad record 1", cause }, { message: "bad record 2" }],
+        errors: [{ message: "bad record 1", cause, context }, { message: "bad record 2" }],
         duration: 50,
       }),
     });
@@ -360,15 +1456,151 @@ describe("processSyncJob", () => {
 
     await runSyncJob(createMockJob(), mockDb);
 
-    // First error: uses the cause as the exception
-    expect(mockCaptureException).toHaveBeenCalledWith(cause, {
-      tags: { provider: "partial" },
-    });
-    // Second error: creates an Error from the message
-    expect(mockCaptureException).toHaveBeenCalledWith(
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
+    expect(mockCaptureException.mock.calls[0]).toEqual([
+      cause,
+      { tags: { provider: "partial" }, extra: context },
+    ]);
+    expect(mockCaptureException.mock.calls[1]).toEqual([
       expect.objectContaining({ message: "bad record 2" }),
       { tags: { provider: "partial" } },
+    ]);
+  });
+
+  it("does not report returned provider auth errors to Sentry", async () => {
+    const cause = new RefreshTokenRevokedError("Withings");
+    const provider = createMockProvider({
+      id: "withings",
+      name: "Withings",
+      sync: vi.fn().mockResolvedValue({
+        provider: "withings",
+        recordsSynced: 0,
+        errors: [{ message: cause.message, cause }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "withings",
+        status: "error",
+        errorMessage: cause.message,
+        authFailureReason: "refresh_token_revoked",
+      }),
     );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Withings authorization needs attention. Reconnect Withings, then try again.",
+      }),
+    );
+  });
+
+  it("records metrics without reporting returned provider outages to Sentry", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      message: "zwift API service unavailable (503)",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "Service Unavailable",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockResolvedValue({
+        provider: "zwift",
+        recordsSynced: 0,
+        errors: [{ message: `activity: ${outage.message}`, cause: outage }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
+  });
+
+  it("records metrics without reporting thrown provider outages to Sentry", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      message: "zwift API service unavailable (503)",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "Service Unavailable",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(outage),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
+  });
+
+  it("does not report provider outages wrapped in an error cause chain", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      message: "zwift API service unavailable (503)",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "Service Unavailable",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(new Error("activity sync failed", { cause: outage })),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
+  });
+
+  it("reports non-outage errors with a cyclic cause chain", async () => {
+    const cycle = new Error("activity sync failed");
+    cycle.cause = cycle;
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(cycle),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(cycle, {
+      tags: { provider: "zwift" },
+    });
   });
 
   it("calls ensureProvider for each synced provider", async () => {
@@ -393,11 +1625,54 @@ describe("processSyncJob", () => {
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+  });
+
+  it("enqueues a continuation job and skips post-sync when sync returns continued", async () => {
+    const continuationCheckpoint = { phase: "api", apiStepIndex: 2 };
+    const provider = createMockProvider({
+      id: "whoop",
+      name: "WHOOP",
+      sync: vi.fn().mockImplementation(async (run: SyncRun): Promise<SyncResult> => {
+        await run.options.enqueueSyncContinuation?.(continuationCheckpoint);
+        return {
+          provider: "whoop",
+          recordsSynced: 4,
+          errors: [],
+          duration: 12,
+          continued: true,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "whoop" });
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "whoop",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
+        checkpoint: continuationCheckpoint,
+      }),
+      expect.any(Object),
+    );
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+    expect(job.updateProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: { whoop: { status: "running", message: "4 synced so far" } },
+      }),
+    );
   });
 
   it("continues when global post-sync enqueue fails", async () => {
+    const enqueueError = new Error("queue gone");
     mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));
+    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(enqueueError);
 
     // Should not throw
     await runSyncJob(createMockJob(), mockDb);
@@ -407,11 +1682,15 @@ describe("processSyncJob", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue global post-sync maintenance"),
     );
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-global-maintenance-enqueue" },
+    });
   });
 
   it("continues when per-user refit enqueue fails", async () => {
+    const enqueueError = new Error("queue gone");
     mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockEnqueueDebouncedUserRefit.mockRejectedValue(new Error("queue gone"));
+    mockEnqueueDebouncedUserRefit.mockRejectedValue(enqueueError);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -420,6 +1699,9 @@ describe("processSyncJob", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue user refit"),
     );
+    expect(mockCaptureException).toHaveBeenCalledWith(enqueueError, {
+      tags: { phase: "post-sync-user-refit-enqueue" },
+    });
   });
 
   it("relays within-provider progress to job.updateProgress with correct percentage", async () => {
@@ -427,18 +1709,10 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({
       id: "test",
       name: "Test",
-      sync: vi
-        .fn()
-        .mockImplementation(
-          async (
-            _db: SyncDatabase,
-            _since: Date,
-            options?: { onProgress?: (percentage: number, message: string) => void },
-          ) => {
-            options?.onProgress?.(50, "5/10 activities");
-            return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
-          },
-        ),
+      sync: vi.fn().mockImplementation(async (run: SyncRun) => {
+        run.options?.onProgress?.(50, "5/10 activities");
+        return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
+      }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
@@ -489,29 +1763,97 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    const now = Date.now();
-    vi.spyOn(Date, "now").mockReturnValue(now);
+    const now = new Date("2026-06-18T15:00:00.000Z");
+    vi.spyOn(Date, "now").mockReturnValue(now.getTime());
 
     await runSyncJob(createMockJob({ sinceDays: 30 }), mockDb);
 
-    const expectedSince = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    const expectedWindow = SyncWindow.lastDays(30, { now });
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      expectedSince,
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: expectedWindow,
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
+  });
+
+  it("uses sinceIso instead of recomputing sinceDays on retry", async () => {
+    const provider = createMockProvider({ id: "test", name: "Test" });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const sinceIso = "2026-03-15T12:00:00.000Z";
+
+    await runSyncJob(createMockJob({ sinceDays: 30, sinceIso }), mockDb);
+
+    expect(provider.sync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db: mockDb,
+        window: SyncWindow.fromIsoRange({
+          sinceIso,
+          untilIso: new Date(now).toISOString(),
+        }),
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
+    );
+  });
+
+  it("passes a Redis-backed checkpoint store to providers", async () => {
+    const initialCheckpoint = { phase: "sleep", nextDate: "2026-03-02" };
+    const savedCheckpoint = { phase: "daily_metrics", nextDate: "2026-03-03" };
+    const observedCheckpoints: unknown[] = [];
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockImplementation(async (run: SyncRun): Promise<SyncResult> => {
+        const options = run.options;
+        observedCheckpoints.push(await options?.checkpoint?.load());
+        await options?.checkpoint?.save(savedCheckpoint);
+        return { provider: "garmin", recordsSynced: 1, errors: [], duration: 10 };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", checkpoint: initialCheckpoint });
+
+    await runSyncJob(job, mockDb);
+
+    expect(observedCheckpoints).toEqual([initialCheckpoint]);
+    expect(job.updateData).toHaveBeenCalledWith({
+      providerId: "garmin",
+      processingOperationIds: { garmin: processingOperationId },
+      userId: "user-1",
+      checkpoint: savedCheckpoint,
+    });
+    expect(job.data.checkpoint).toEqual(savedCheckpoint);
   });
 
   it("uses epoch when sinceDays is not provided", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
+    const now = new Date("2026-06-18T15:00:00.000Z");
+    vi.spyOn(Date, "now").mockReturnValue(now.getTime());
+
     await runSyncJob(createMockJob({}), mockDb);
 
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      new Date(0),
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: SyncWindow.full(now),
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
   });
 

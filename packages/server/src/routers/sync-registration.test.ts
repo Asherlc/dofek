@@ -34,16 +34,13 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn(),
   queryCache: {
     invalidateByPrefix: vi.fn(),
     get: vi.fn(),
     set: vi.fn(),
     invalidateAll: vi.fn(),
   },
-}));
-
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
 }));
 
 vi.mock("../lib/typed-sql.ts", () => ({
@@ -82,6 +79,12 @@ vi.mock("dofek/providers/strong-csv", () => ({
 vi.mock("dofek/providers/polar", () => ({ PolarProvider: vi.fn(() => ({ id: "polar" })) }));
 vi.mock("dofek/providers/fitbit", () => ({ FitbitProvider: vi.fn(() => ({ id: "fitbit" })) }));
 vi.mock("dofek/providers/garmin", () => ({ GarminProvider: vi.fn(() => ({ id: "garmin" })) }));
+vi.mock("dofek/providers/garmin-dump", () => ({
+  GarminDumpProvider: vi.fn(() => ({ id: "garmin-dump" })),
+}));
+vi.mock("dofek/providers/fit-file", () => ({
+  FitFileProvider: vi.fn(() => ({ id: "fit-file" })),
+}));
 vi.mock("dofek/providers/strava", () => ({ StravaProvider: vi.fn(() => ({ id: "strava" })) }));
 vi.mock("dofek/providers/cronometer-csv", () => ({
   CronometerCsvProvider: vi.fn(() => ({ id: "cronometer-csv" })),
@@ -100,6 +103,9 @@ vi.mock("dofek/providers/trainerroad", () => ({
 vi.mock("dofek/providers/ultrahuman", () => ({
   UltrahumanProvider: vi.fn(() => ({ id: "ultrahuman" })),
 }));
+vi.mock("dofek/providers/amazfit-zepp", () => ({
+  AmazfitZeppProvider: vi.fn(() => ({ id: "amazfit-zepp" })),
+}));
 vi.mock("dofek/providers/mapmyfitness", () => ({
   MapMyFitnessProvider: vi.fn(() => ({ id: "mapmyfitness" })),
 }));
@@ -111,7 +117,7 @@ vi.mock("dofek/providers/concept2", () => ({
 vi.mock("dofek/providers/komoot", () => ({ KomootProvider: vi.fn(() => ({ id: "komoot" })) }));
 vi.mock("dofek/providers/xert", () => ({ XertProvider: vi.fn(() => ({ id: "xert" })) }));
 vi.mock("dofek/providers/cycling-analytics", () => ({
-  CyclingAnalyticsProvider: vi.fn(() => ({ id: "cycling-analytics" })),
+  CyclingAnalyticsProvider: vi.fn(() => ({ id: "cycling_analytics" })),
 }));
 vi.mock("dofek/providers/wger", () => ({ WgerProvider: vi.fn(() => ({ id: "wger" })) }));
 vi.mock("dofek/providers/decathlon", () => ({
@@ -123,10 +129,17 @@ vi.mock("dofek/providers/velohero", () => ({
 vi.mock("dofek/providers/auto-supplements", () => ({
   AutoSupplementsProvider: vi.fn(() => ({ id: "auto-supplements" })),
 }));
+vi.mock("dofek/providers/kaya/provider", () => ({
+  KayaProvider: vi.fn(() => ({ id: "kaya-export" })),
+}));
+vi.mock("dofek/providers/zos-app/provider", () => ({
+  ZosAppProvider: vi.fn(() => ({ id: "zos-app" })),
+}));
 
 describe("ensureProvidersRegistered failure path", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    mockRegisterProvider.mockReset();
     vi.resetModules();
   });
 
@@ -137,10 +150,34 @@ describe("ensureProvidersRegistered failure path", () => {
       }
     });
 
-    const { ensureProvidersRegistered } = await import("./sync.ts");
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
 
     await expect(ensureProvidersRegistered()).rejects.toThrow(
       "Failed to register fatsecret provider: FATSECRET_CONSUMER_KEY is not set",
+    );
+  });
+
+  it("registers the Kaya file-import provider", async () => {
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
+
+    await ensureProvidersRegistered();
+
+    expect(mockRegisterProvider).toHaveBeenCalledWith({ id: "kaya-export" });
+  });
+
+  it("registers self-service providers but omits externally gated providers", async () => {
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
+
+    await ensureProvidersRegistered();
+
+    const registeredIds = mockRegisterProvider.mock.calls.map(
+      ([provider]: [{ id: string }]) => provider.id,
+    );
+    expect(registeredIds).toEqual(
+      expect.arrayContaining(["bodyspec", "cycling_analytics", "ultrahuman", "wger"]),
+    );
+    expect(registeredIds).not.toEqual(
+      expect.arrayContaining(["fitbit", "suunto", "coros", "komoot", "decathlon", "mapmyfitness"]),
     );
   });
 });

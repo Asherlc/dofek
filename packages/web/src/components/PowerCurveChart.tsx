@@ -1,3 +1,6 @@
+import { POWER_UNIT_LABEL, WORK_UNIT_LABEL } from "@dofek/format/units";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
+import type { TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
   chartThemeColors,
@@ -6,8 +9,11 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
+import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface PowerCurvePoint {
   durationSeconds: number;
@@ -27,6 +33,7 @@ interface PowerCurveChartProps {
   comparisonData?: PowerCurvePoint[];
   model?: CriticalPowerModel | null;
   loading?: boolean;
+  availability?: TrainingChartAvailability;
 }
 
 function formatDuration(seconds: number): string {
@@ -35,7 +42,17 @@ function formatDuration(seconds: number): string {
   return `${Math.round(seconds / 3600)}h`;
 }
 
-export function PowerCurveChart({ data, comparisonData, model, loading }: PowerCurveChartProps) {
+export function PowerCurveChart({
+  data,
+  comparisonData,
+  model,
+  loading,
+  availability,
+}: PowerCurveChartProps) {
+  if (!loading && availability?.status === "insufficient_data") {
+    return <TrainingChartEmptyState availability={availability} />;
+  }
+
   // Generate CP model curve points (smooth line from 120s to 7200s)
   const modelCurveData: [number, number][] = [];
   if (model && model.cp > 0) {
@@ -66,14 +83,10 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
 
   if (modelCurveData.length > 0 && model) {
     series.push(
-      dofekSeries.line(
-        `Threshold Model (${model.cp}W, reserve=${Math.round(model.wPrime / 1000)}kJ)`,
-        modelCurveData,
-        {
-          color: chartColors.orange,
-          lineStyle: { type: "dashed" },
-        },
-      ),
+      dofekSeries.line("Sustainable power model", modelCurveData, {
+        color: chartColors.orange,
+        lineStyle: { type: "dashed" },
+      }),
     );
   }
 
@@ -98,7 +111,7 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
       trigger: "item",
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, watts] = params.data;
-        return `${params.seriesName}<br/>${formatDuration(seconds)}: <strong>${watts}W</strong>`;
+        return `${escapeTooltipHtml(params.seriesName)}<br/>${formatDuration(seconds)}: <strong>${watts}${POWER_UNIT_LABEL}</strong>`;
       },
     }),
     xAxis: {
@@ -123,12 +136,25 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
   };
 
   return (
-    <DofekChart
-      option={option}
-      loading={loading}
-      empty={data.length === 0}
-      height={280}
-      emptyMessage="No power data"
-    />
+    <div>
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={280}
+        emptyMessage="No power data"
+      />
+      {modelCurveData.length > 0 && model ? (
+        <MethodExplanation
+          className="mt-2"
+          technicalName={`${TRAINING_TERMINOLOGY.criticalPower.technicalName} + ${TRAINING_TERMINOLOGY.anaerobicWorkCapacity.technicalName}`}
+          lines={[
+            TRAINING_TERMINOLOGY.criticalPower.details,
+            TRAINING_TERMINOLOGY.anaerobicWorkCapacity.details,
+            `Current fit: ${model.cp}${POWER_UNIT_LABEL} sustainable cycling power and ${Math.round(model.wPrime / 1000)}${WORK_UNIT_LABEL} short-burst power reserve.`,
+          ]}
+        />
+      ) : null}
+    </div>
   );
 }
