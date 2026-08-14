@@ -52,6 +52,7 @@ import { addBackgroundRefreshListener } from "../modules/background-refresh";
 import {
   addConnectionStateListener as addHeartRateConnectionStateListener,
   addHeartRateListener,
+  clearBufferedSamples as clearHeartRateBufferedSamples,
   confirmSamplesDrain as confirmHeartRateSamplesDrain,
   disconnect as disconnectHeartRate,
   isBluetoothAvailable as isHeartRateBluetoothAvailable,
@@ -183,6 +184,7 @@ const bleHeartRateDeps = {
   scanAndConnect: scanAndConnectHeartRate,
   peekBufferedSamples: peekHeartRateSamples,
   confirmSamplesDrain: confirmHeartRateSamplesDrain,
+  clearBufferedSamples: clearHeartRateBufferedSamples,
   addConnectionStateListener: addHeartRateConnectionStateListener,
   addHeartRateListener,
   disconnect: disconnectHeartRate,
@@ -480,7 +482,6 @@ function AuthGate() {
           },
         },
       };
-      const bleHeartRateUploadClient = createBleHeartRateUploadClient(trpcClient);
       return runRequiredBackgroundRefreshWork([
         {
           source: "bg-refresh-watch-sync",
@@ -520,7 +521,7 @@ function AuthGate() {
         },
         {
           source: "bg-refresh-ble-heart-rate-flush",
-          run: () => syncBleHeartRate(bleHeartRateUploadClient, bleHeartRateDeps),
+          run: () => syncBleHeartRate(),
         },
       ]);
     });

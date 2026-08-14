@@ -64,6 +64,10 @@ public class BleHeartRateModule: Module {
             self.sampleBuffer.confirmDrain(count: count)
         }
 
+        Function("clearBufferedSamples") {
+            self.sampleBuffer.clearAll()
+        }
+
         Function("disconnect") {
             self.connectionManager.disconnect()
         }

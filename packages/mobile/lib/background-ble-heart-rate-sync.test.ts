@@ -60,6 +60,7 @@ function makeDeps(): BleHeartRateSyncDeps {
     scanAndConnect: vi.fn().mockResolvedValue({ id: "polar-123", name: "Polar H10" }),
     peekBufferedSamples: vi.fn().mockResolvedValue([]),
     confirmSamplesDrain: vi.fn(),
+    clearBufferedSamples: vi.fn(),
     addConnectionStateListener: vi.fn().mockImplementation((callback) => {
       connectionStateCallback = callback;
       return { remove: mockConnectionRemove };
@@ -143,7 +144,10 @@ describe("background BLE heart-rate sync", () => {
     ]);
     vi.mocked(uploadClient.bleHeartRateSync.pushSamples.mutate).mockRejectedValueOnce(uploadError);
 
-    await expect(syncBleHeartRate(uploadClient, deps)).rejects.toThrow("network unavailable");
+    AppState.currentState = "background";
+    await initBackgroundBleHeartRateSync(uploadClient, deps);
+
+    await expect(syncBleHeartRate()).rejects.toThrow("network unavailable");
 
     expect(deps.confirmSamplesDrain).not.toHaveBeenCalled();
   });
@@ -207,13 +211,102 @@ describe("background BLE heart-rate sync", () => {
 
     finishPriorDrain?.();
     await priorInit;
-    const overlappingSync = syncBleHeartRate(uploadClient, deps);
+    const overlappingSync = syncBleHeartRate();
     await Promise.resolve();
 
     expect(deps.peekBufferedSamples).toHaveBeenCalledOnce();
 
     finishCurrentDrain?.();
     await Promise.all([currentInit, overlappingSync]);
+  });
+
+  it("does not upload a batch whose session ended while its native peek was pending", async () => {
+    let finishPriorPeek:
+      | ((samples: Awaited<ReturnType<typeof deps.peekBufferedSamples>>) => void)
+      | null = null;
+    vi.mocked(deps.peekBufferedSamples).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishPriorPeek = resolve;
+        }),
+    );
+
+    const priorInit = initBackgroundBleHeartRateSync(uploadClient, deps);
+    await vi.waitFor(() => expect(deps.peekBufferedSamples).toHaveBeenCalledOnce());
+
+    teardownBackgroundBleHeartRateSync();
+    finishPriorPeek?.([
+      {
+        deviceId: "polar-123",
+        timestamp: "2026-08-13T12:00:00.000Z",
+        heartRateBpm: 142,
+        rrIntervalsMs: [811],
+      },
+    ]);
+    await priorInit;
+
+    expect(uploadClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
+    expect(deps.confirmSamplesDrain).not.toHaveBeenCalled();
+  });
+
+  it("does not confirm an uploaded batch after its session ends", async () => {
+    let finishUpload: (() => void) | null = null;
+    vi.mocked(deps.peekBufferedSamples).mockResolvedValueOnce([
+      {
+        deviceId: "polar-123",
+        timestamp: "2026-08-13T12:00:00.000Z",
+        heartRateBpm: 142,
+        rrIntervalsMs: [811],
+      },
+    ]);
+    vi.mocked(uploadClient.bleHeartRateSync.pushSamples.mutate).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = () => resolve({ inserted: 1 });
+        }),
+    );
+
+    const priorInit = initBackgroundBleHeartRateSync(uploadClient, deps);
+    await vi.waitFor(() =>
+      expect(uploadClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledOnce(),
+    );
+
+    teardownBackgroundBleHeartRateSync();
+    finishUpload?.();
+    await priorInit;
+
+    expect(deps.confirmSamplesDrain).not.toHaveBeenCalled();
+  });
+
+  it("clears buffered samples before a later authenticated session can upload them", async () => {
+    const bufferedSamples = [
+      {
+        deviceId: "polar-123",
+        timestamp: "2026-08-13T12:00:00.000Z",
+        heartRateBpm: 142,
+        rrIntervalsMs: [811],
+      },
+    ];
+    const sessionDeps = makeDeps();
+    vi.mocked(sessionDeps.peekBufferedSamples).mockImplementation(async () =>
+      bufferedSamples.slice(),
+    );
+    vi.mocked(sessionDeps.confirmSamplesDrain).mockImplementation((count) => {
+      bufferedSamples.splice(0, count);
+    });
+    vi.mocked(sessionDeps.clearBufferedSamples).mockImplementation(() => {
+      bufferedSamples.splice(0);
+    });
+
+    AppState.currentState = "background";
+    await initBackgroundBleHeartRateSync(uploadClient, sessionDeps);
+    teardownBackgroundBleHeartRateSync();
+
+    AppState.currentState = "active";
+    const laterClient = makeUploadClient();
+    await initBackgroundBleHeartRateSync(laterClient, sessionDeps);
+
+    expect(laterClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
   });
 
   it("removes listeners and disconnects during authenticated-service teardown", async () => {
@@ -223,6 +316,7 @@ describe("background BLE heart-rate sync", () => {
       peripheralId: "polar-123",
       name: "Polar H10",
     });
+    vi.mocked(deps.clearBufferedSamples).mockClear();
 
     teardownBackgroundBleHeartRateSync();
 
@@ -230,5 +324,6 @@ describe("background BLE heart-rate sync", () => {
     expect(mockConnectionRemove).toHaveBeenCalledOnce();
     expect(mockHeartRateRemove).toHaveBeenCalledOnce();
     expect(deps.disconnect).toHaveBeenCalledOnce();
+    expect(deps.clearBufferedSamples).toHaveBeenCalledOnce();
   });
 });

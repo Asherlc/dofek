@@ -28,6 +28,7 @@ export interface BleHeartRateSyncDeps {
   scanAndConnect(): Promise<BleHeartRateDevice>;
   peekBufferedSamples(maxCount?: number): Promise<BleHeartRateSample[]>;
   confirmSamplesDrain(count: number): void;
+  clearBufferedSamples(): void;
   addConnectionStateListener(callback: (event: ConnectionStateEvent) => void): {
     remove(): void;
   };
@@ -55,13 +56,19 @@ let state: BleHeartRateSyncState = {
   device: null,
   liveBpm: null,
 };
-let currentDeps: BleHeartRateSyncDeps | null = null;
 let appStateSubscription: { remove(): void } | null = null;
 let connectionStateSubscription: { remove(): void } | null = null;
 let heartRateSubscription: { remove(): void } | null = null;
 let periodicDrainTimer: ReturnType<typeof setInterval> | null = null;
 let bluetoothAvailabilityTimer: ReturnType<typeof setInterval> | null = null;
-let activeDrain: Promise<void> | null = null;
+
+interface BleHeartRateSyncSession {
+  uploadClient: BleHeartRateUploadClient;
+  deps: BleHeartRateSyncDeps;
+  activeDrain: Promise<void> | null;
+}
+
+let currentSession: BleHeartRateSyncSession | null = null;
 
 function publishState(next: Partial<BleHeartRateSyncState>): void {
   state = { ...state, ...next };
@@ -85,14 +92,18 @@ function toUploadSample(sample: BleHeartRateSample): BleHeartRateSample {
   };
 }
 
-async function drainBuffer(
-  uploadClient: BleHeartRateUploadClient,
-  deps: BleHeartRateSyncDeps,
-): Promise<void> {
+function isCurrentSession(session: BleHeartRateSyncSession): boolean {
+  return currentSession === session;
+}
+
+async function drainBuffer(session: BleHeartRateSyncSession): Promise<void> {
+  const { uploadClient, deps } = session;
   const deviceErasureCutoff = await loadDeviceErasureCutoff();
+  if (!isCurrentSession(session)) return;
 
   for (;;) {
     const samples = await deps.peekBufferedSamples(UPLOAD_BATCH_SIZE);
+    if (!isCurrentSession(session)) return;
     if (samples.length === 0) return;
 
     const uploadableSamples =
@@ -105,27 +116,28 @@ async function drainBuffer(
     for (const sample of uploadableSamples) groups.add(sample);
 
     for (const [deviceId, deviceSamples] of groups.entries()) {
+      if (!isCurrentSession(session)) return;
       await uploadClient.bleHeartRateSync.pushSamples.mutate({
         deviceId,
         samples: deviceSamples,
       });
+      if (!isCurrentSession(session)) return;
     }
 
+    if (!isCurrentSession(session)) return;
     deps.confirmSamplesDrain(samples.length);
     logger.info(LOG_CATEGORY, `uploaded ${samples.length} buffered samples`);
   }
 }
 
-function runSerializedDrain(
-  uploadClient: BleHeartRateUploadClient,
-  deps: BleHeartRateSyncDeps,
-): Promise<void> {
-  if (activeDrain) return activeDrain;
+function runSerializedDrain(session: BleHeartRateSyncSession): Promise<void> {
+  if (!isCurrentSession(session)) return Promise.resolve();
+  if (session.activeDrain) return session.activeDrain;
 
-  const trackedDrain = drainBuffer(uploadClient, deps).finally(() => {
-    if (activeDrain === trackedDrain) activeDrain = null;
+  const trackedDrain = drainBuffer(session).finally(() => {
+    if (session.activeDrain === trackedDrain) session.activeDrain = null;
   });
-  activeDrain = trackedDrain;
+  session.activeDrain = trackedDrain;
   return trackedDrain;
 }
 
@@ -144,16 +156,14 @@ function stopForegroundTimers(): void {
   }
 }
 
-function startForegroundTimers(
-  uploadClient: BleHeartRateUploadClient,
-  deps: BleHeartRateSyncDeps,
-): void {
-  if (AppState.currentState !== "active") return;
+function startForegroundTimers(session: BleHeartRateSyncSession): void {
+  const { deps } = session;
+  if (!isCurrentSession(session) || AppState.currentState !== "active") return;
 
   updateBluetoothAvailability(deps);
   if (!periodicDrainTimer) {
     periodicDrainTimer = setInterval(() => {
-      void runSerializedDrain(uploadClient, deps).catch((error: unknown) => {
+      void runSerializedDrain(session).catch((error: unknown) => {
         captureException(error, { source: "ble-heart-rate-periodic-drain" });
       });
     }, PERIODIC_DRAIN_INTERVAL_MS);
@@ -175,9 +185,12 @@ export async function initBackgroundBleHeartRateSync(
   deps: BleHeartRateSyncDeps,
 ): Promise<void> {
   teardownBackgroundBleHeartRateSync();
-  currentDeps = deps;
+  deps.clearBufferedSamples();
+  const session: BleHeartRateSyncSession = { uploadClient, deps, activeDrain: null };
+  currentSession = session;
 
   connectionStateSubscription = deps.addConnectionStateListener((event) => {
+    if (!isCurrentSession(session)) return;
     if (event.state === "connected") {
       publishState({
         connectionState: "connected",
@@ -193,24 +206,26 @@ export async function initBackgroundBleHeartRateSync(
     }
   });
   heartRateSubscription = deps.addHeartRateListener((sample) => {
+    if (!isCurrentSession(session)) return;
     publishState({ liveBpm: sample.heartRateBpm });
   });
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+    if (!isCurrentSession(session)) return;
     if (nextState !== "active") {
       stopForegroundTimers();
       return;
     }
 
-    startForegroundTimers(uploadClient, deps);
-    void runSerializedDrain(uploadClient, deps).catch((error: unknown) => {
+    startForegroundTimers(session);
+    void runSerializedDrain(session).catch((error: unknown) => {
       captureException(error, { source: "ble-heart-rate-foreground-drain" });
     });
   });
 
-  startForegroundTimers(uploadClient, deps);
+  startForegroundTimers(session);
   if (AppState.currentState === "active") {
     try {
-      await runSerializedDrain(uploadClient, deps);
+      await runSerializedDrain(session);
     } catch (error: unknown) {
       captureException(error, { source: "ble-heart-rate-initial-drain" });
     }
@@ -219,13 +234,19 @@ export async function initBackgroundBleHeartRateSync(
 
 /** Connect the first advertising standard heart-rate monitor. */
 export async function connectBleHeartRateMonitor(): Promise<void> {
-  if (!currentDeps) throw new Error("Bluetooth heart-rate sync is not initialized");
+  const session = currentSession;
+  if (!session) throw new Error("Bluetooth heart-rate sync is not initialized");
 
   publishState({ connectionState: "connecting", liveBpm: null });
   try {
-    const device = await currentDeps.scanAndConnect();
+    const device = await session.deps.scanAndConnect();
+    if (!isCurrentSession(session)) {
+      session.deps.disconnect();
+      return;
+    }
     publishState({ connectionState: "connected", device });
   } catch (error: unknown) {
+    if (!isCurrentSession(session)) return;
     publishState({ connectionState: "disconnected", device: null, liveBpm: null });
     throw error;
   }
@@ -233,17 +254,16 @@ export async function connectBleHeartRateMonitor(): Promise<void> {
 
 /** Stop capture from the currently connected monitor. */
 export function disconnectBleHeartRateMonitor(): void {
-  currentDeps?.disconnect();
+  currentSession?.deps.disconnect();
   publishState({ connectionState: "disconnected", device: null, liveBpm: null });
 }
 
 /** Flush buffered samples during an iOS background-refresh wakeup. */
-export async function syncBleHeartRate(
-  uploadClient: BleHeartRateUploadClient,
-  deps: BleHeartRateSyncDeps,
-): Promise<void> {
+export async function syncBleHeartRate(): Promise<void> {
+  const session = currentSession;
+  if (!session) return;
   try {
-    await runSerializedDrain(uploadClient, deps);
+    await runSerializedDrain(session);
   } catch (error: unknown) {
     captureException(error, { source: "ble-heart-rate-background-refresh" });
     throw error;
@@ -252,6 +272,8 @@ export async function syncBleHeartRate(
 
 /** Stop the authenticated BLE heart-rate lifecycle and release its connection. */
 export function teardownBackgroundBleHeartRateSync(): void {
+  const endingSession = currentSession;
+  currentSession = null;
   stopForegroundTimers();
   appStateSubscription?.remove();
   connectionStateSubscription?.remove();
@@ -259,9 +281,8 @@ export function teardownBackgroundBleHeartRateSync(): void {
   appStateSubscription = null;
   connectionStateSubscription = null;
   heartRateSubscription = null;
-  currentDeps?.disconnect();
-  currentDeps = null;
-  activeDrain = null;
+  endingSession?.deps.disconnect();
+  endingSession?.deps.clearBufferedSamples();
   publishState({
     bluetoothAvailable: false,
     connectionState: "disconnected",
