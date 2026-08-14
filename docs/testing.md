@@ -72,8 +72,6 @@ configuration. Server startup connects the producer before opening the HTTP
 listener, and Compose waits for both broker health and `/readyz`; Docker
 documents health-gated dependency startup in its
 [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
-The `activity-recording.cy.ts` API test exercises this dependency by saving a
-recorded activity with sensor samples through the authenticated tRPC endpoint.
 
 Use the `e2e` suffix for startup, reuse, service inspection, logs, and teardown.
 Docker documents project-name isolation and precedence here:
@@ -102,8 +100,7 @@ add retries or waits to the review workflow.
 This topology currently validates browser paths. It is not a complete mobile
 write-path environment because the metric-stream broker prerequisites are
 missing; that confirmed gap is tracked in
-[#1806](https://github.com/Asherlc/dofek/issues/1806). Do not treat its healthy
-server status as proof that activity recording can save.
+[#1806](https://github.com/Asherlc/dofek/issues/1806).
 
 ### Native FIT Decoder
 
