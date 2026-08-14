@@ -222,13 +222,6 @@ describe("Upload & Auth - extended coverage", () => {
       expect(body).toContain("Unknown or expired OAuth 1.0 request token");
     });
 
-    it("GET /callback with state=slack (no random token) returns 400 as unknown state", async () => {
-      const res = await fetch(`${baseUrl}/callback?code=slack_code&state=slack`);
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("Unknown or expired OAuth state");
-    });
-
     it("GET /callback with unknown state token returns 400", async () => {
       const res = await fetch(`${baseUrl}/callback?code=testcode&state=nonexistent_state`);
       expect(res.status).toBe(400);
@@ -328,15 +321,6 @@ describe("Upload & Auth - extended coverage", () => {
   });
 
   describe("Data provider OAuth", () => {
-    it("GET /auth/provider/slack without SLACK_CLIENT_ID returns 400", async () => {
-      const res = await fetch(`${baseUrl}/auth/provider/slack`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("SLACK_CLIENT_ID");
-    });
-
     it("GET /auth/provider/:provider returns 404 for truly unknown provider", async () => {
       const res = await fetch(`${baseUrl}/auth/provider/does_not_exist`, {
         redirect: "manual",

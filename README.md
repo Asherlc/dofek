@@ -45,7 +45,7 @@ If you are starting cold and do not want to hunt through agent notes, begin here
 └─────────────┘
 ```
 
-Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Nutrition logging on web and iOS supports natural-language AI meal input that can split one message into multiple food items. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ; the `sync` mode remains available for manual one-shot runs.
+Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ; the `sync` mode remains available for manual one-shot runs.
 
 ## Quick Start
 
@@ -64,7 +64,6 @@ infisical run --env=prod -- pnpm sync
 ## Adding a Provider
 
 See [docs/adding-a-provider.md](docs/adding-a-provider.md).
-See [docs/nutrition-ai-input.md](docs/nutrition-ai-input.md) for natural-language meal logging flow on web and iOS.
 
 ## Schema
 
@@ -330,7 +329,6 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] OTel Collector sidecar shipping app logs + Docker container logs to Axiom
 - [x] Infisical secrets management (migrated from SOPS + Age)
 - [x] GHA CI with Docker build + push to GHCR
-- [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
 - [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB)
 

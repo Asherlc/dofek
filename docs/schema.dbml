@@ -979,24 +979,6 @@ table fitness.shared_report {
   }
 }
 
-table fitness.slack_installation {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  team_id text [not null, unique]
-  team_name text
-  bot_token text [not null]
-  bot_id text
-  bot_user_id text
-  app_id text
-  installer_slack_user_id text
-  raw_installation jsonb [not null]
-  installed_at "timestamp with time zone" [not null, default: `now()`]
-  updated_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    team_id [name: 'slack_installation_team_idx']
-  }
-}
-
 table fitness.sleep_session {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]

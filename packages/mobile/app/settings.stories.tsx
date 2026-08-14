@@ -94,12 +94,6 @@ function createSeededProviders() {
     },
   });
 
-  // settings.slackStatus (used by SlackIntegrationPanel)
-  queryClient.setQueryData([["settings", "slackStatus"], { type: "query" }], {
-    configured: true,
-    connected: false,
-    channelName: null,
-  });
   queryClient.setQueryData([["billing", "status"], { type: "query" }], {
     hasFullAccess: false,
     access: {

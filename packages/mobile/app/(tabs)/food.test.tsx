@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 const foodRefetchMock = vi.fn();
 const analyzeItemsMutateAsyncMock = vi.fn();
@@ -41,63 +41,14 @@ vi.mock("../../lib/useRefresh", () => ({
   useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
 }));
 
-describe("FoodScreen AI meal confirmation", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    analyzeItemsMutateAsyncMock.mockResolvedValue({
-      items: [
-        {
-          meal: "breakfast",
-          foodName: "Eggs",
-          foodDescription: "2 large eggs",
-          category: "eggs",
-          calories: 140,
-          proteinG: 12,
-          carbsG: 1,
-          fatG: 10,
-          fiberG: 0,
-          saturatedFatG: 3,
-          sugarG: 0,
-          sodiumMg: 140,
-        },
-      ],
-    });
-  });
-
-  it("waits for confirmation before creating AI parsed food entries", async () => {
+describe("FoodScreen", () => {
+  it("shows synced food data without first-party food logging controls", async () => {
     const { default: FoodScreen } = await import("./food");
 
     render(<FoodScreen />);
 
-    fireEvent.input(screen.getByPlaceholderText(/two eggs/i), {
-      target: { value: "two eggs" },
-    });
-    fireEvent.click(screen.getByText("Log with AI"));
-
-    await screen.findByText("Review AI meal");
-
-    expect(screen.getByText("Eggs")).toBeTruthy();
-    expect(createAiEntryMutateAsyncMock).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByText("Confirm and log"));
-
-    await waitFor(() => {
-      expect(createAiEntryMutateAsyncMock).toHaveBeenCalledWith({
-        date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        nutrients: {},
-        meal: "breakfast",
-        foodName: "Eggs",
-        foodDescription: "2 large eggs",
-        category: "eggs",
-        calories: 140,
-        proteinG: 12,
-        carbsG: 1,
-        fatG: 10,
-        fiberG: 0,
-        saturatedFatG: 3,
-        sugarG: 0,
-        sodiumMg: 140,
-      });
-    });
+    expect(screen.queryByText("AI meal input")).toBeNull();
+    expect(screen.queryByText("+ Add food")).toBeNull();
+    expect(screen.getByText("Breakfast")).toBeTruthy();
   });
 });

@@ -29,10 +29,6 @@ vi.mock("../components/PersonalizationPanel", () => ({
   PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
 }));
 
-vi.mock("../components/SlackIntegrationPanel", () => ({
-  SlackIntegrationPanel: () => React.createElement("div", null, "SlackIntegrationPanel"),
-}));
-
 vi.mock("../components/ProviderLogo", () => ({
   ProviderLogo: ({ provider }: { provider: string }) =>
     React.createElement("span", { "data-testid": `provider-logo-${provider}` }),

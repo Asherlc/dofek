@@ -5,7 +5,6 @@ import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -179,10 +178,6 @@ export function SettingsPage() {
         subtitle="Parameters are automatically learned from your data to improve accuracy"
       >
         <PersonalizationPanel />
-      </PageSection>
-
-      <PageSection title="Integrations" subtitle="Connect external services">
-        <SlackIntegrationPanel />
       </PageSection>
 
       <PageSection title="Data Export" subtitle="Download all your data">

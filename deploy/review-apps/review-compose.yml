@@ -11,9 +11,6 @@ services:
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
       REDIS_URL: redis://redis:6379
       JOB_FILES_DIR: /app/job-files
-      SLACK_SIGNING_SECRET: ""
-      SLACK_BOT_TOKEN: ""
-      SLACK_APP_TOKEN: ""
       OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ""
     ports:

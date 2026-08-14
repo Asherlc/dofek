@@ -1,4 +1,4 @@
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
 export interface FoodEntry {
@@ -14,24 +14,11 @@ export interface FoodEntry {
 
 interface FoodEntryCardProps {
   entry: FoodEntry;
-  onDelete: (id: string) => void;
-  deleting: boolean;
 }
 
-export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps) {
-  function handleLongPress() {
-    Alert.alert("Delete Entry", `Remove "${entry.food_name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => onDelete(entry.id) },
-    ]);
-  }
-
+export function FoodEntryCard({ entry }: FoodEntryCardProps) {
   return (
-    <TouchableOpacity
-      style={[styles.container, deleting && styles.deleting]}
-      activeOpacity={0.7}
-      onLongPress={handleLongPress}
-    >
+    <View style={styles.container}>
       <View style={styles.leftSection}>
         <Text style={styles.name}>{entry.food_name}</Text>
         {entry.food_description ? (
@@ -42,7 +29,7 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
         </Text>
       </View>
       <Text style={styles.calories}>{entry.calories ?? 0} cal</Text>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -55,9 +42,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.surfaceSecondary,
-  },
-  deleting: {
-    opacity: 0.5,
   },
   leftSection: {
     flex: 1,

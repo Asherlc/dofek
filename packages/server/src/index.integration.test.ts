@@ -302,18 +302,6 @@ describe("tRPC API", () => {
     });
   });
 
-  describe("Slack OAuth", () => {
-    it("GET /auth/provider/slack returns 400 without SLACK_CLIENT_ID", async () => {
-      // In test env, SLACK_CLIENT_ID is not set
-      const res = await fetch(`${baseUrl}/auth/provider/slack`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("SLACK_CLIENT_ID");
-    });
-  });
-
   describe("Metrics at /api/metrics", () => {
     it("exposes /api/metrics endpoint (mirrors /metrics)", async () => {
       const res = await fetch(`${baseUrl}/api/metrics`);
@@ -521,15 +509,6 @@ describe("tRPC API", () => {
       expect(res.status).toBe(400);
       const body = await res.text();
       expect(body).toContain("Unknown or expired OAuth 1.0 request token");
-    });
-  });
-
-  describe("Slack OAuth callback", () => {
-    it("GET /callback with state=slack (no random token) returns 400 as unknown state", async () => {
-      const res = await fetch(`${baseUrl}/callback?code=test&state=slack`);
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("Unknown or expired OAuth state");
     });
   });
 

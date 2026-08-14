@@ -657,21 +657,6 @@ entity "shared_report" {
   created_at : timestamp
 }
 
-entity "slack_installation" {
-  * id : uuid <<PK>>
-  --
-  team_id : text
-  team_name : text
-  bot_token : text
-  bot_id : text
-  bot_user_id : text
-  app_id : text
-  installer_slack_user_id : text
-  raw_installation : jsonb
-  installed_at : timestamp
-  updated_at : timestamp
-}
-
 entity "sleep_session" {
   * id : uuid <<PK>>
   --

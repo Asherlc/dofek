@@ -3,7 +3,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   apple: "Apple",
   github: "GitHub",
-  slack: "Slack",
   strava: "Strava",
   wahoo: "Wahoo",
   fitbit: "Fitbit",

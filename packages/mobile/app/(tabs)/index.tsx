@@ -1,10 +1,4 @@
-import {
-  formatDateYmd,
-  formatDurationMinutes,
-  formatSleepDebtInline,
-  isToday,
-} from "@dofek/format/format";
-import { autoMealType } from "@dofek/nutrition/meal";
+import { formatDurationMinutes, formatSleepDebtInline, isToday } from "@dofek/format/format";
 import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
@@ -90,10 +84,6 @@ export default function TodayScreen() {
     triggerSync.mutate({ sinceDays: 1 });
   });
 
-  function handleLogFood() {
-    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}`);
-  }
-
   if (isError) {
     return (
       <View style={styles.container}>
@@ -134,12 +124,6 @@ export default function TodayScreen() {
       )}
 
       <Text style={styles.date}>{todayString()}</Text>
-
-      {/* Log food */}
-      <TouchableOpacity style={styles.quickAddButton} onPress={handleLogFood} activeOpacity={0.7}>
-        <Text style={styles.quickAddPlus}>+</Text>
-        <Text style={styles.quickAddLabel}>Log Food</Text>
-      </TouchableOpacity>
 
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>
@@ -441,26 +425,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     fontWeight: "500",
-  },
-  quickAddButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    gap: 10,
-  },
-  quickAddPlus: {
-    fontSize: 22,
-    fontWeight: "600",
-    color: colors.accent,
-    width: 28,
-    textAlign: "center",
-  },
-  quickAddLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
   },
   emptyRing: {
     alignItems: "center",

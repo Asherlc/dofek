@@ -1,25 +1,14 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 import type { FoodEntry } from "./FoodEntryCard";
 import { FoodEntryCard } from "./FoodEntryCard";
 
 interface MealSectionProps {
   mealName: string;
-  mealKey: string;
   entries: FoodEntry[];
-  onAddFood: (mealKey: string) => void;
-  onDeleteFood: (id: string) => void;
-  deleting: boolean;
 }
 
-export function MealSection({
-  mealName,
-  mealKey,
-  entries,
-  onAddFood,
-  onDeleteFood,
-  deleting,
-}: MealSectionProps) {
+export function MealSection({ mealName, entries }: MealSectionProps) {
   const totalCalories = entries.reduce((sum, entry) => sum + (entry.calories ?? 0), 0);
 
   return (
@@ -30,20 +19,10 @@ export function MealSection({
       </View>
 
       {entries.length > 0 ? (
-        entries.map((entry) => (
-          <FoodEntryCard key={entry.id} entry={entry} onDelete={onDeleteFood} deleting={deleting} />
-        ))
+        entries.map((entry) => <FoodEntryCard key={entry.id} entry={entry} />)
       ) : (
         <Text style={styles.emptyText}>No entries yet</Text>
       )}
-
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => onAddFood(mealKey)}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.addButtonText}>+ Add food</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -76,16 +55,5 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontStyle: "italic",
     paddingVertical: 8,
-  },
-  addButton: {
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.surfaceSecondary,
-    marginTop: 4,
-  },
-  addButtonText: {
-    fontSize: 14,
-    color: colors.accent,
-    fontWeight: "500",
   },
 });

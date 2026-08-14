@@ -35,7 +35,6 @@ import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
-import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -222,7 +221,6 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           req.path.startsWith("/api/") ||
           req.path.startsWith("/auth/") ||
           req.path.startsWith("/admin/") ||
-          req.path.startsWith("/slack/") ||
           req.path === "/callback" ||
           req.path === "/healthz" ||
           req.path === "/metrics"
@@ -243,15 +241,10 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
  */
 export function runStartupTasks(
   db: ReturnType<typeof createDatabaseFromEnv>,
-  app: express.Express,
+  _app: express.Express,
 ) {
   warmCache(db).catch((err) => {
     logger.error(`[cache] Warm failed: ${err}`);
-    Sentry.captureException(err);
-  });
-
-  startSlackBot(db, app).catch((err) => {
-    logger.error(`[slack] Slack bot error: ${err}`);
     Sentry.captureException(err);
   });
 }

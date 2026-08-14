@@ -19,7 +19,6 @@ import {
 import { z } from "zod";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -510,15 +509,6 @@ export default function SettingsScreen() {
         </Text>
         <View style={styles.card}>
           <PersonalizationPanel />
-        </View>
-      </View>
-
-      {/* ── Integrations ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Integrations</Text>
-        <Text style={styles.sectionDescription}>Connect external services</Text>
-        <View style={styles.card}>
-          <SlackIntegrationPanel />
         </View>
       </View>
 

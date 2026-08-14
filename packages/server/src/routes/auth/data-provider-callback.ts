@@ -20,7 +20,6 @@ import {
   sanitizeReturnTo,
   storePendingEmailSignup,
 } from "./shared.ts";
-import { handleSlackCallback } from "./slack-oauth.ts";
 
 export async function handleOAuth2Callback(req: Request, res: Response): Promise<void> {
   let resolvedProviderName: string | undefined;
@@ -105,13 +104,6 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     // ── OAuth 2.0 callback ──
     if (!code || !state) {
       res.status(400).send("Missing code or state parameter");
-      return;
-    }
-
-    // ── Slack OAuth callback (Add to Slack) ──
-    if (state.startsWith("slack:") && (await oauthStateStore.has(state))) {
-      const slackState = await oauthStateStore.get(state);
-      await handleSlackCallback(req, res, code, state, slackState);
       return;
     }
 

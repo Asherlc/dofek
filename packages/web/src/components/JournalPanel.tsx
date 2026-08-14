@@ -2,7 +2,6 @@ import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
-import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 import { TimeRangeSelector } from "./TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "./TimeSeriesChart.tsx";
 
@@ -68,7 +67,6 @@ const entrySchema = z.object({
 type JournalEntry = z.infer<typeof entrySchema>;
 
 function JournalLog({ days }: { days: number }) {
-  const [showModal, setShowModal] = useState(false);
   const utils = trpc.useUtils();
   const entriesQuery = trpc.journal.entries.useQuery({ days });
   const deleteMutation = trpc.journal.delete.useMutation({
@@ -93,16 +91,6 @@ function JournalLog({ days }: { days: number }) {
 
   return (
     <div>
-      <div className="flex justify-end mb-3">
-        <button
-          type="button"
-          className="px-3 py-1.5 rounded-md text-sm font-medium bg-accent/15 text-accent hover:bg-accent/25"
-          onClick={() => setShowModal(true)}
-        >
-          + Add Entry
-        </button>
-      </div>
-
       {entriesQuery.isLoading && <p className="text-muted text-sm text-center py-8">Loading...</p>}
 
       {!entriesQuery.isLoading && entries.length === 0 && (
@@ -117,17 +105,6 @@ function JournalLog({ days }: { days: number }) {
           onDelete={(id) => deleteMutation.mutate({ id })}
         />
       ))}
-
-      {showModal && (
-        <AddJournalEntryModal
-          isOpen={showModal}
-          onClose={() => setShowModal(false)}
-          onSuccess={() => {
-            setShowModal(false);
-            utils.journal.entries.invalidate();
-          }}
-        />
-      )}
     </div>
   );
 }

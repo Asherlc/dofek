@@ -48,7 +48,6 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
 - PostgreSQL is configured with `max_connections=40`, `work_mem=4MB`, and `maintenance_work_mem=64MB` to keep per-query and per-connection memory bounded on the small single-node host.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
-- Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 
 ### Monitoring (`otel-collector-config.yaml`)
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.

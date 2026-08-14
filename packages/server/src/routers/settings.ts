@@ -30,11 +30,6 @@ export const settingsRouter = router({
       return result;
     }),
 
-  slackStatus: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
-    const repo = new SettingsRepository(ctx.db, ctx.userId);
-    return repo.slackStatus();
-  }),
-
   deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     await repo.deleteAllUserData(DISCONNECT_CHILD_TABLES);

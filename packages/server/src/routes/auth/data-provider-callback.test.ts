@@ -40,10 +40,6 @@ vi.mock("../../auth/session.ts", () => ({
   validateSession: vi.fn(),
 }));
 
-vi.mock("./slack-oauth.ts", () => ({
-  handleSlackCallback: vi.fn(),
-}));
-
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
   ensureProvider: vi.fn(),

@@ -106,10 +106,6 @@ vi.mock("./routes/webhooks.ts", () => ({
     return Router();
   }),
 }));
-vi.mock("./slack/bot.ts", () => ({
-  startSlackBot: vi.fn(() => Promise.resolve()),
-}));
-
 vi.mock("dofek/db", () => ({
   createDatabaseFromEnv: vi.fn(() => ({
     execute: vi.fn().mockResolvedValue([]),
@@ -133,7 +129,6 @@ import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
-import { startSlackBot } from "./slack/bot.ts";
 
 function startApp(
   app: ReturnType<typeof createApp>,
@@ -724,7 +719,6 @@ describe("runStartupTasks", () => {
   it("reports warmCache errors to Sentry", async () => {
     const error = new Error("cache boom");
     vi.mocked(warmCache).mockRejectedValueOnce(error);
-    vi.mocked(startSlackBot).mockResolvedValueOnce(undefined);
 
     const fakeDb = createDatabaseFromEnv();
     const app = express();
@@ -734,21 +728,6 @@ describe("runStartupTasks", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("cache boom"));
-    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
-  });
-
-  it("reports startSlackBot errors to Sentry", async () => {
-    const error = new Error("slack boom");
-    vi.mocked(warmCache).mockResolvedValueOnce(undefined);
-    vi.mocked(startSlackBot).mockRejectedValueOnce(error);
-
-    const fakeDb = createDatabaseFromEnv();
-    const app = express();
-    runStartupTasks(fakeDb, app);
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("slack boom"));
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
   });
 });

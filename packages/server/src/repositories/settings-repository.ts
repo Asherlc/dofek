@@ -8,7 +8,6 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 // ---------------------------------------------------------------------------
 
 const settingRowSchema = z.object({ key: z.string(), value: z.unknown() });
-const providerAccountRowSchema = z.object({ provider_account_id: z.string() });
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -17,11 +16,6 @@ const providerAccountRowSchema = z.object({ provider_account_id: z.string() });
 export interface Setting {
   key: string;
   value: unknown;
-}
-
-export interface SlackStatus {
-  configured: boolean;
-  connected: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,24 +95,6 @@ export class SettingsRepository {
     const result = rows[0];
     if (!result) throw new Error("Failed to upsert setting");
     return { key: result.key, value: result.value };
-  }
-
-  /** Check Slack integration status (env vars + OAuth connection). */
-  async slackStatus(): Promise<SlackStatus> {
-    const rows = await executeWithSchema(
-      this.#db,
-      providerAccountRowSchema,
-      sql`SELECT provider_account_id FROM fitness.auth_account
-          WHERE user_id = ${this.#userId} AND auth_provider = 'slack'
-          LIMIT 1`,
-    );
-    const oauthMode = !!(process.env.SLACK_CLIENT_ID && process.env.SLACK_SIGNING_SECRET);
-    const socketMode = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN);
-    const configured = oauthMode || socketMode;
-    return {
-      configured,
-      connected: rows.length > 0,
-    };
   }
 
   /**
