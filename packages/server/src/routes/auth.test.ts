@@ -174,7 +174,7 @@ import {
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
 import { loadTokens } from "dofek/db/tokens";
-import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
@@ -649,6 +649,7 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/api/auth/me");
       expect(res.status).toBe(401);
     });
+  });
 
   describe("GET /callback", () => {
     it("returns OK for bare GET with no params", async () => {
