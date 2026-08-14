@@ -36,7 +36,7 @@ export function isBackgroundHealthKitTransientNetworkError(error: unknown): bool
 
 export const HEALTHKIT_BACKGROUND_SENTRY_SOURCE = "bg-healthkit-sync";
 
-function isBackgroundSyncSentrySource(source: string | undefined): boolean {
+function isBackgroundSyncSource(source: string | undefined): boolean {
   return (
     source === HEALTHKIT_BACKGROUND_SENTRY_SOURCE ||
     source === "bg-accel-sync" ||
@@ -55,5 +55,5 @@ export function shouldSuppressBackgroundTransientNetworkError(
   error: unknown,
   source: string | undefined,
 ): boolean {
-  return isBackgroundSyncSentrySource(source) && isBackgroundHealthKitTransientNetworkError(error);
+  return isBackgroundSyncSource(source) && isBackgroundHealthKitTransientNetworkError(error);
 }

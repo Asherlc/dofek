@@ -210,11 +210,12 @@ export function captureException(error: unknown, context: Record<string, unknown
       ? { ...context, route: hasExplicitRoute ? explicitRoute : currentTelemetryRoute }
       : context;
   const source = typeof context.source === "string" ? context.source : undefined;
-  // Suppress non-actionable transient background HealthKit network failures from
-  // every error-tracking destination. Applying the check here (rather than only in
-  // Sentry's beforeSend) keeps Sentry and PostHog consistent — otherwise the PostHog
-  // capture path silently mints error-tracking issues for errors Sentry drops. Logs
-  // and breadcrumbs below still record the failure for observability.
+  // Suppress non-actionable transient network failures from declared background
+  // sync sources at every error-tracking destination. Applying the check here
+  // (rather than only in Sentry's beforeSend) keeps Sentry and PostHog consistent
+  // — otherwise the PostHog capture path silently mints error-tracking issues for
+  // errors Sentry drops. Logs and breadcrumbs below still record the failure for
+  // observability.
   const captureToErrorTracking = !shouldSuppressBackgroundTransientNetworkError(error, source);
   if (captureToErrorTracking) {
     Sentry.captureException(error, {

@@ -9,10 +9,12 @@ them, and the durability work they suggest.
 
 ## 2026-08-14 — Sentry triage: inactive CDC slots, Kaya authentication, and mobile transport noise
 
-- **Status:** CDC is resolved after the canonical production deployment; the
-  mobile telemetry fix is implemented and pending deployment; Kaya remains
-  blocked on user reauthentication. The Sentry issues already covered by the
-  deployed server-side fixes were marked resolved in the next release.
+- **Status:** CDC is resolved after the canonical production deployment and a
+  positive post-deployment CDC-health check; the mobile telemetry fix is
+  implemented and pending deployment; Kaya's token-refresh fix is pending
+  deployment in [PR #2522](https://github.com/Asherlc/dofek/pull/2522). The
+  Sentry issues already covered by deployed server-side fixes were marked
+  resolved against production release `64ef0ac673f6ee96154c8cb6b15a2686d7489c21`.
 - **Symptoms / user impact:** The CDC monitor reported two inactive PeerDB slots
   ([DOFEK-SERVER-3B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-3B));
   Kaya syncs returned HTTP 401
@@ -24,29 +26,34 @@ them, and the durability work they suggest.
   `dofek_provider_inventory_raw_analytics` and
   `dofek_sensor_priority_raw_analytics` slots. The latest successful
   [production deployment](https://github.com/Asherlc/dofek/actions/runs/31774624060)
-  reran its canonical `Configure ClickHouse CDC` step after the failure, and no
-  subsequent CDC event was observed. The underlying reason those PeerDB slots
-  became inactive remains unknown because this workspace lacked both the
-  documented production SSH alias and a production Docker context. Kaya's
-  stored user access token was rejected by the upstream API. The mobile event
-  came from `bg-accel-sync`; its `fetch failed: ... network connection was
-  lost` message is a transient transport condition already recognized by the
-  shared classifier, but that source was absent from the suppression allow-list.
+  reran its canonical `Configure ClickHouse CDC` step after the failure. The
+  production CDC-health monitor then passed at 14:20 and 14:28 UTC, checking all
+  three required slots and the active mirror; a direct post-check confirmed both
+  affected slots were active, had `wal_status = reserved`, and retained a
+  `restart_lsn`. The underlying reason those PeerDB slots became inactive
+  remains unknown because this workspace initially lacked both the documented
+  production SSH alias and a production Docker context. Kaya's stored user
+  access token was rejected by the upstream API. The mobile event came from
+  `bg-accel-sync`; its `fetch failed: ... network connection was lost` message
+  is a transient transport condition already recognized by the shared
+  classifier, but that source was absent from the suppression allow-list.
 - **Fix / mitigation:** Resolved the CDC issue only after the successful
   deployment evidence. Extended the shared mobile telemetry suppression to
   include `bg-accel-sync`, while retaining the structured error log and
   preserving error reporting for other sources and non-transient errors. No
-  retry, timeout, or pool-size workaround was added. Kaya requires the affected
-  account to reconnect through the normal provider flow; credentials were not
-  handled outside that flow.
+  retry, timeout, or pool-size workaround was added. Kaya now refreshes its
+  encrypted per-user refresh token before expiry and retries one confirmed
+  access-token 401 once; a rejected refresh token still requires the user to
+  reconnect through the normal provider flow. Credentials are not handled
+  outside that flow.
 - **Validation:** The new regression test first failed for `bg-accel-sync`,
   then the focused mobile suite (12 tests), mobile typecheck, and the mobile
   lint/telemetry-policy/route gates passed. Sentry showed no CDC recurrence
   after the canonical configuration step.
 - **Remaining risk / follow-up:** Deploy the mobile fix and verify
-  `DOFEK-MOBILE-19` does not recur. Reauthenticate Kaya in the user-visible
-  provider flow, then verify both Kaya issues stop receiving sync failures. If
-  the CDC issue recurs, regain production access and follow the
+  `DOFEK-MOBILE-19` does not recur. Deploy the Kaya token-refresh fix, then
+  verify both Kaya issues stop receiving sync failures. If the CDC issue recurs,
+  regain production access and follow the
   [CDC health runbook](clickhouse-cdc-health-runbook.md) before attempting any
   mirror recreation.
 
