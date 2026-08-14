@@ -561,17 +561,6 @@ describe("SettingsScreen data sources", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
   });
 
-  it("navigates to cycle tracking from the health tracking section", async () => {
-    mockSearchParams = { tab: "goals-models" };
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Cycle Tracking" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/cycle");
-  });
-
   it("navigates to journal trends from the health tracking section", async () => {
     mockSearchParams = { tab: "goals-models" };
     const { default: SettingsScreen } = await import("../app/settings");

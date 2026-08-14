@@ -5,7 +5,7 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 ## Database & Seeding
 
 - `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.
-  - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans, cycle data, journal entries, life events, and breathwork sessions.
+  - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans, journal entries, and life events.
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
   - Automatically applies migrations when needed and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`

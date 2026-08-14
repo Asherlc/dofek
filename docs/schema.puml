@@ -822,22 +822,6 @@ entity "body_region" {
   sort_order : integer
 }
 
-entity "breathwork_session" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  technique_id : text
-  rounds : integer
-  duration_seconds : integer
-  started_at : timestamp
-  notes : text
-  stress_before : bigint
-  stress_after : bigint
-  dizziness_after : boolean
-  perceived_effect : text
-  created_at : timestamp
-}
-
 entity "dexa_scan" {
   * id : uuid <<PK>>
   --
@@ -990,16 +974,6 @@ entity "life_events" {
   ongoing : boolean
   notes : text
   personal_experiment_id : uuid <<FK>>
-  created_at : timestamp
-}
-
-entity "menstrual_period" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  start_date : date
-  end_date : date
-  notes : text
   created_at : timestamp
 }
 
@@ -1239,7 +1213,6 @@ user_profile ||--o{ user_billing
 user_profile ||--o{ user_external_effect
 user_profile ||--o{ user_password_credential
 user_profile ||--o{ user_settings
-user_profile ||--o{ breathwork_session
 provider ||--o{ dexa_scan
 user_profile ||--o{ dexa_scan
 dexa_scan ||--o{ dexa_scan_region
@@ -1253,7 +1226,6 @@ user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
 user_profile ||--o{ life_events
 personal_experiment ||--o{ life_events
-user_profile ||--o{ menstrual_period
 user_profile ||--o{ personal_experiment
 personal_experiment ||--o{ personal_experiment_check_in
 user_profile ||--o{ provider_data_deletion_outbox

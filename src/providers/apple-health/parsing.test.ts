@@ -860,20 +860,6 @@ describe("Apple Health Provider -- parsing", () => {
       expect(result?.endDate).toBeInstanceOf(Date);
     });
 
-    it("parses menstrual flow", () => {
-      const attrs: Record<string, string> = {
-        type: "HKCategoryTypeIdentifierMenstrualFlow",
-        sourceName: "Apple Health",
-        value: "HKCategoryValueMenstrualFlowLight",
-        creationDate: "2024-03-01 08:00:00 -0500",
-        startDate: "2024-03-01 08:00:00 -0500",
-        endDate: "2024-03-01 08:00:00 -0500",
-      };
-      const result = parseCategoryRecord(attrs);
-      expect(result?.type).toBe("HKCategoryTypeIdentifierMenstrualFlow");
-      expect(result?.value).toBe("HKCategoryValueMenstrualFlowLight");
-    });
-
     it("returns null without type", () => {
       const result = parseCategoryRecord({ value: "1" });
       expect(result).toBeNull();

@@ -68,7 +68,6 @@ let readTypes: Set<HKObjectType> = {
     // Category types
     let categoryTypes: [HKCategoryTypeIdentifier] = [
         .sleepAnalysis,
-        .menstrualFlow,
         .mindfulSession,
         .handwashingEvent,
         .toothbrushingEvent,

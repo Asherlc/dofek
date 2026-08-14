@@ -656,7 +656,7 @@ describe("settingsRouter", () => {
       const deleteQueries = txExecute.mock.calls.filter(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []).includes("DELETE FROM"),
       );
-      expect(deleteQueries).toHaveLength(PROVIDER_ACCOUNT_TABLES.length + 6);
+      expect(deleteQueries).toHaveLength(PROVIDER_ACCOUNT_TABLES.length + 5);
       expectCallsUseNonEmptySql(txExecute);
       expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });

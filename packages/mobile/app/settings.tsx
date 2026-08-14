@@ -76,7 +76,7 @@ const SETTINGS_CATEGORIES: readonly {
     id: "goals-models",
     label: "Goals & Models",
     searchText:
-      "goals models primary goal units cycle tracking journal trends health reports goal weight algorithm personalization",
+      "goals models primary goal units journal trends health reports goal weight algorithm personalization",
   },
   {
     id: "privacy-export",
@@ -458,18 +458,6 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Health Tracking</Text>
           <Text style={styles.sectionDescription}>Log and review personal health events</Text>
           <View style={styles.healthTrackingCards}>
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => router.push("/cycle")}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Cycle Tracking"
-            >
-              <View style={styles.dataSourcesRow}>
-                <Text style={styles.devToolLabel}>Cycle Tracking</Text>
-                <Text style={styles.devToolChevron}>›</Text>
-              </View>
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.card}
               onPress={() => router.push("/tracking")}

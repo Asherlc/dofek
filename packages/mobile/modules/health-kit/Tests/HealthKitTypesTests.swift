@@ -107,7 +107,7 @@ final class HealthKitTypesTests: XCTestCase {
 
     func testReadTypesTotalCount() {
         // 49 quantity types + 5 category types + 1 workout type + 1 workout route = 56
-        var expectedCount = 56
+        var expectedCount = 55
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
@@ -130,11 +130,6 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertFalse(
             backgroundDeliveryTypes.contains(
                 HKQuantityType.quantityType(forIdentifier: .dietaryProtein)!
-            )
-        )
-        XCTAssertFalse(
-            backgroundDeliveryTypes.contains(
-                HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
             )
         )
         XCTAssertFalse(
