@@ -1,20 +1,31 @@
-import { KayaClient, KayaInvalidCredentialsError, signInToKaya } from "@dofek/kaya-client";
+import {
+  KayaApiError,
+  type KayaAscent,
+  KayaClient,
+  KayaInvalidCredentialsError,
+  type KayaSession,
+  refreshKayaAccessToken,
+  signInToKaya,
+} from "@dofek/kaya-client";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import type { SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { climbingEntry } from "../db/schema/activity.ts";
-import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import {
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,
+  RefreshTokenRevokedError,
 } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult, TokenSet } from "./types.ts";
 
 const scopesSchema = z.object({ kayaUserId: z.string() });
 const sentAscentTypes = new Set(["flash", "onsight", "redpoint", "repeat"]);
+const KAYA_ACCESS_TOKEN_REFRESH_INTERVAL_MS = 25 * 60_000;
 
 export class KayaSyncProvider implements SyncProvider {
   readonly id = "kaya";
@@ -39,7 +50,7 @@ export class KayaSyncProvider implements SyncProvider {
           return {
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
-            expiresAt: new Date(Date.now() + 25 * 60_000),
+            expiresAt: new Date(Date.now() + KAYA_ACCESS_TOKEN_REFRESH_INTERVAL_MS),
             scopes: JSON.stringify({ kayaUserId: tokens.userId }),
           };
         } catch (error) {
@@ -50,6 +61,29 @@ export class KayaSyncProvider implements SyncProvider {
         }
       },
     };
+  }
+
+  async #refreshTokens(db: SyncDatabase, userId: string, tokens: TokenSet): Promise<TokenSet> {
+    if (!tokens.refreshToken) throw new RefreshTokenRevokedError(this.name);
+    try {
+      const accessToken = await refreshKayaAccessToken(tokens.refreshToken, this.fetchFn);
+      const refreshedTokens = {
+        ...tokens,
+        accessToken,
+        expiresAt: new Date(Date.now() + KAYA_ACCESS_TOKEN_REFRESH_INTERVAL_MS),
+      };
+      await saveTokens(db, this.id, refreshedTokens, userId);
+      return refreshedTokens;
+    } catch (error) {
+      if (error instanceof KayaApiError && error.status === 401) {
+        throw new RefreshTokenRevokedError(this.name, { cause: error });
+      }
+      throw error;
+    }
+  }
+
+  #isAccessTokenRejected(error: unknown): error is KayaApiError {
+    return error instanceof KayaApiError && error.status === 401;
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
@@ -72,12 +106,33 @@ export class KayaSyncProvider implements SyncProvider {
         ),
       ]);
     }
-    const client = new KayaClient(tokens.accessToken, this.fetchFn);
+    let activeTokens = tokens;
+    if (tokens.expiresAt <= new Date()) {
+      try {
+        activeTokens = await this.#refreshTokens(run.db, userId, tokens);
+      } catch (error) {
+        if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
+        return this.#result(startedAt, 0, [error]);
+      }
+    }
+    let client = new KayaClient(activeTokens.accessToken, this.fetchFn);
     try {
-      const [sessions, ascents] = await Promise.all([
-        client.listSessions(identity.data.kayaUserId),
-        client.listAscents(identity.data.kayaUserId),
-      ]);
+      let sessions: KayaSession[];
+      let ascents: KayaAscent[];
+      try {
+        [sessions, ascents] = await Promise.all([
+          client.listSessions(identity.data.kayaUserId),
+          client.listAscents(identity.data.kayaUserId),
+        ]);
+      } catch (error) {
+        if (!this.#isAccessTokenRejected(error)) throw error;
+        activeTokens = await this.#refreshTokens(run.db, userId, activeTokens);
+        client = new KayaClient(activeTokens.accessToken, this.fetchFn);
+        [sessions, ascents] = await Promise.all([
+          client.listSessions(identity.data.kayaUserId),
+          client.listAscents(identity.data.kayaUserId),
+        ]);
+      }
       const ascentsBySession = new Map<string, typeof ascents>();
       for (const ascent of ascents) {
         if (!ascent.session_id) continue;
@@ -147,7 +202,7 @@ export class KayaSyncProvider implements SyncProvider {
       }
       return this.#result(startedAt, recordsSynced, errors);
     } catch (error) {
-      captureException(error);
+      if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
       return this.#result(startedAt, 0, [error]);
     }
   }

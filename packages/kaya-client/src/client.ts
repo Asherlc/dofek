@@ -76,6 +76,24 @@ export async function signInToKaya(
   };
 }
 
+export async function refreshKayaAccessToken(
+  refreshToken: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<string> {
+  const response = await fetchFn(`${KAYA_API_URL}/api/user/refresh-token`, {
+    method: "POST",
+    headers: browserHeaders(),
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  if (!response.ok) {
+    throw new KayaApiError(`Kaya token refresh failed (${response.status})`, response.status);
+  }
+  const payload: unknown = await response.json();
+  const parsed = z.object({ message: z.literal("ok"), token: z.string() }).safeParse(payload);
+  if (!parsed.success) throw new KayaApiError("Kaya token refresh returned an invalid response");
+  return parsed.data.token;
+}
+
 export class KayaClient {
   readonly accessToken: string;
   readonly fetchFn: typeof fetch;

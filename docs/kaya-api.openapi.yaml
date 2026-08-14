@@ -26,6 +26,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
+  /api/user/refresh-token:
+    post:
+      operationId: refreshAccessToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Refreshed Kaya access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
   /graphql:
     post:
       operationId: graphQl
@@ -65,6 +84,12 @@ components:
           required: [id]
           properties:
             id: { oneOf: [{ type: string }, { type: integer }] }
+    RefreshTokenResponse:
+      type: object
+      required: [message, token]
+      properties:
+        message: { type: string, enum: [ok] }
+        token: { type: string }
     KayaAscent:
       type: object
       required: [id, session_id, date, attempts, ascent_type, climb]
