@@ -22,6 +22,7 @@ overrides:
   gel>shell-quote: 1.10.0
   hono: 4.12.25
   ip-address: 10.4.0
+  inquirer@0.11.0>lodash: 4.18.1
   lerna>minimatch: 3.1.4
   minimatch@3>brace-expansion: 1.1.18
   minimatch: 10.2.5
@@ -1076,8 +1077,8 @@ importers:
         specifier: 4.0.0
         version: 4.0.0
       '@zeppos/zeus-cli':
-        specifier: 1.9.2
-        version: 1.9.2(@babel/core@7.29.7)(@types/babel__core@7.20.5)(@types/node@26.1.2)(bluebird@3.7.2)(debug@4.4.3)(mem-fs@2.3.0)(supports-color@11.0.0)
+        specifier: 1.9.3
+        version: 1.9.3(@babel/core@7.29.7)(@types/babel__core@7.20.5)(@types/node@26.1.2)(bluebird@3.7.2)(debug@4.4.3)(mem-fs@2.3.0)(supports-color@11.0.0)
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
@@ -8639,8 +8640,8 @@ packages:
   '@zeppos/device-types@4.0.0':
     resolution: {integrity: sha512-As1r/7/+ucMbem6lqWIgzMqKw/vhzLNIz4muHF/LssL/5RZD5dfMR/pkaIb8YSrEnpGxRGFZffecPPMjsZO4Ag==}
 
-  '@zeppos/zeus-cli@1.9.2':
-    resolution: {integrity: sha512-SCA6fIR7u90nflYz9MYLH3ESHddzDThcAshiRsSf26Z1UhsNdqSksQu2mkjT+7Bs27p+agDpLoqf39wmY4pyXQ==}
+  '@zeppos/zeus-cli@1.9.3':
+    resolution: {integrity: sha512-LUOOw5YlxdQN76jiEzccq5A3CRIGfHJ6FjFajlzTqEZowYBKpNlMqfGkpDwXc51RJnnJKxL7CACTr/xTt2xrWw==}
     hasBin: true
 
   '@zeppos/zml@0.0.43':
@@ -9977,9 +9978,6 @@ packages:
 
   dateformat@4.6.3:
     resolution: {integrity: sha512-2P0p0pFGzHS5EMnhdxQi7aJN+iMheud0UhG4dlE1DLAlvL8JHjJJTX/CSm4JXwV0Ka5nGk3zC5mcb5bUQUxxMA==}
-
-  dayjs@1.11.20:
-    resolution: {integrity: sha512-YbwwqR/uYpeoP4pu043q+LTDLFBLApUP6VxRihdfNTqu4ubqMlGDLd6ErXhEgsyvY0K6nCs7nggYumAN+9uEuQ==}
 
   dayjs@1.11.21:
     resolution: {integrity: sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA==}
@@ -12569,9 +12567,6 @@ packages:
 
   lodash.truncate@4.4.2:
     resolution: {integrity: sha512-jttmRe7bRse52OsWIMDLaXxWqRAmtIUccAQ3garviCqJjafXOfNMO0yMfNpdD6zbGaTU0P5Nz7e7gAT6cKmJRw==}
-
-  lodash@3.10.1:
-    resolution: {integrity: sha512-9mDDwqVIma6OZX79ZlDACZl8sBm0TEnkf99zV3iMA4GzkIT/9hiqP5mY0HoT1iNLCrKc/R1HByV+yJfRWVJryQ==}
 
   lodash@4.18.1:
     resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
@@ -25562,13 +25557,13 @@ snapshots:
 
   '@zeppos/device-types@4.0.0': {}
 
-  '@zeppos/zeus-cli@1.9.2(@babel/core@7.29.7)(@types/babel__core@7.20.5)(@types/node@26.1.2)(bluebird@3.7.2)(debug@4.4.3)(mem-fs@2.3.0)(supports-color@11.0.0)':
+  '@zeppos/zeus-cli@1.9.3(@babel/core@7.29.7)(@types/babel__core@7.20.5)(@types/node@26.1.2)(bluebird@3.7.2)(debug@4.4.3)(mem-fs@2.3.0)(supports-color@11.0.0)':
     dependencies:
       '@zeppos/zpm': 3.4.2(@babel/core@7.29.7)(@types/babel__core@7.20.5)(supports-color@11.0.0)
       axios: 1.18.1(debug@4.4.3)(supports-color@11.0.0)
       chalk: 4.1.2
       chokidar: 3.6.0
-      dayjs: 1.11.20
+      dayjs: 1.11.21
       define-lazy-prop: 2.0.0
       dotenv: 16.6.1
       findup-sync: 5.0.0
@@ -27152,8 +27147,6 @@ snapshots:
   dateformat@3.0.3: {}
 
   dateformat@4.6.3: {}
-
-  dayjs@1.11.20: {}
 
   dayjs@1.11.21: {}
 
@@ -29183,7 +29176,7 @@ snapshots:
       cli-cursor: 1.0.2
       cli-width: 1.1.1
       figures: 1.7.0
-      lodash: 3.10.1
+      lodash: 4.18.1
       readline2: 1.0.1
       run-async: 0.1.0
       rx-lite: 3.1.2
@@ -30040,8 +30033,6 @@ snapshots:
   lodash.throttle@4.1.1: {}
 
   lodash.truncate@4.4.2: {}
-
-  lodash@3.10.1: {}
 
   lodash@4.18.1: {}
 
@@ -31265,7 +31256,7 @@ snapshots:
       is-unicode-supported: 2.1.0
       log-symbols: 7.0.1
       stdin-discarder: 0.3.2
-      string-width: 8.2.1
+      string-width: 8.2.2
 
   os-tmpdir@1.0.2: {}
 
