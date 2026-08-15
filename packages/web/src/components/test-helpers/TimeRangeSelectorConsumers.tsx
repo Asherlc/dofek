@@ -123,6 +123,12 @@ vi.mock("../../lib/trpc.ts", () => {
 
   return {
     trpc: {
+      useUtils: () => ({
+        processing: {
+          alerts: { invalidate: vi.fn() },
+          status: { invalidate: vi.fn() },
+        },
+      }),
       behaviorImpact: {
         impactSummary: recordQuery("behaviorImpact.impactSummary"),
       },
