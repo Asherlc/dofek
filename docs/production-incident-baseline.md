@@ -23653,6 +23653,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   follow the database recovery runbook in an isolated restore and import the
   recovered rows once with explicit legacy provenance; do not restore the
   deleted write APIs or create a second source of truth.
+
+## 2026-08-14 — Concurrent local integration runs exhausted shared ClickHouse
+
+- **Status:** Unresolved local validation-environment contention; no production
+  impact and no evidence of a cycle-tracking defect.
+- **Symptoms / impact:** `pnpm test:changed:all` completed the changed unit and
+  mobile tests, then unrelated server integration suites timed out during
+  ClickHouse setup and skipped their test bodies. The final integration result
+  was 116 files and 2,666 tests passed, 99 files failed during setup, and 799
+  tests skipped. The first fatal failure was a
+  ClickHouse HTTP `Timeout error` after 120 seconds in the unchanged
+  `packages/server/src/routers/router.integration.test.ts`, followed by
+  `ECONNRESET: socket hang up`; later suites reproduced the same setup failure,
+  one reported ClickHouse error 241 `MEMORY_LIMIT_EXCEEDED` at its 1.25 GiB
+  limit, HealthKit sync setup exceeded its 60-second `beforeAll` timeout, and
+  later Postgres-dependent suites failed while the database was in recovery.
+- **Evidence / root cause:** Another workspace was simultaneously running a
+  long-lived integration command against the same Docker daemon, while Docker
+  inspect, exec, and published-port requests intermittently stalled. The
+  workspace containers later reported healthy without configuration changes,
+  and the focused menstrual-cycle repository integration suite passed all 8
+  tests once the database responded. This isolates the failure to host-level
+  Docker/ClickHouse contention during concurrent workspace suites, rather than
+  the changed read path. Workspace isolation and recovery expectations are
+  documented in [the testing runbook](testing.md#integration-dependencies).
+- **Fix / mitigation:** No test timeout, retry, failure suppression, shared
+  container restart, or deletion of another workspace's resources was added.
+  Cycle database behavior was validated with its focused executable integration
+  suite after the service recovered.
+- **Remaining risk / follow-up:** Rerun `pnpm test:changed:all` or rely on the
+  hosted integration matrix when this workspace has exclusive access to its
+  Docker resources. Document an explicit local integration-run concurrency
+  check so agents can avoid overlapping heavyweight suites.
+
 ## 2026-08-12 — PR 2507 CI retained an orphaned mobile component after conflict resolution
 
 - **Status:** Resolved by commits `a874f77` and `ce3bac9`; the repaired [Knip job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312820), [Native FIT Decoder job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312585), Mobile Preview OTA check, and [TFLint rerun](https://github.com/Asherlc/dofek/actions/runs/31633329057/job/94237945547) passed on fresh PR runs.

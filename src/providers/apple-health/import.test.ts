@@ -1158,6 +1158,8 @@ describe("runImport (control-flow mutation killers)", () => {
           await handlers.onWorkoutBatch([{ startDate: new Date("2026-03-01T10:00:00Z") }]);
           await handlers.onCategoryBatch([
             {
+              metadata: {},
+              sourceBundle: "com.example.watch",
               type: "category.type",
               value: "mindful",
               sourceName: "Watch",
