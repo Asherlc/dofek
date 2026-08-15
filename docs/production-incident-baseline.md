@@ -23691,8 +23691,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ([Redpanda Connect input metadata](https://docs.redpanda.com/connect/components/inputs/redpanda/)).
 - **Fix / mitigation:** Pass the Kafka heartbeat through the consumer batch
   context and keep it alive while ClickHouse writes and control operations are
-  pending. Add a sink `/readyz` endpoint driven by Kafka group join/rebalance/disconnect
-  lifecycle events and make Swarm health checks call it. Group R2 records by
+  pending. Report heartbeat failures to Sentry and fail the batch after its
+  associated ClickHouse operation settles. Add a sink `/readyz` endpoint on
+  port `3001`, driven by Kafka group join/rebalance/disconnect lifecycle events,
+  and make Swarm health checks call that listener. Group R2 records by
   topic, partition, and Kafka timestamp UTC date/hour before archiving
   ([Redpanda Connect `group_by_value`](https://docs.redpanda.com/connect/components/processors/group_by_value/)),
   then derive each object key and offset range from that group
