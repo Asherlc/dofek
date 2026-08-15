@@ -24,7 +24,7 @@ import {
   type SyncJobData,
 } from "./jobs/queues.ts";
 import { logger } from "./logger.ts";
-import { runMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
+import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
 import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
 
 async function resolveCliUserId(db: ReturnType<typeof createDatabaseFromEnv>): Promise<string> {
@@ -296,7 +296,7 @@ export async function main() {
   }
 
   if (command === "metric-stream-clickhouse-sink") {
-    await runMetricStreamClickHouseSinkFromEnv();
+    await startMetricStreamClickHouseSinkFromEnv();
     return;
   }
 
