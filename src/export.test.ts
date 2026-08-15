@@ -294,7 +294,7 @@ describe("generateExport", () => {
         stress_before: 5,
         stress_after: 2,
         dizziness_after: false,
-        perceived_effect: "calmer",
+        perceived_effect: "same",
         created_at: "2026-08-02T07:05:00.000Z",
       },
     ];
@@ -304,7 +304,7 @@ describe("generateExport", () => {
 
     const entry = findArchiveEntry("breathwork-sessions.csv");
     expect(entry?.[0]).toBe(
-      "id,user_id,technique_id,rounds,duration_seconds,started_at,notes,stress_before,stress_after,dizziness_after,perceived_effect,created_at\nsession-1,user-1,box-breathing,4,240,2026-08-01T07:00:00.000Z,Morning practice,7,3,false,better,2026-08-01T07:04:00.000Z\nsession-2,user-1,coherent-breathing,5,300,2026-08-02T07:00:00.000Z,,5,2,false,calmer,2026-08-02T07:05:00.000Z",
+      "id,user_id,technique_id,rounds,duration_seconds,started_at,notes,stress_before,stress_after,dizziness_after,perceived_effect,created_at\nsession-1,user-1,box-breathing,4,240,2026-08-01T07:00:00.000Z,Morning practice,7,3,false,better,2026-08-01T07:04:00.000Z\nsession-2,user-1,coherent-breathing,5,300,2026-08-02T07:00:00.000Z,,5,2,false,same,2026-08-02T07:05:00.000Z",
     );
 
     const execute = vi.mocked(mockDb.execute);

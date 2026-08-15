@@ -39,10 +39,11 @@ canonical tables with forward-only migration
 documented in the [retained health record recovery plan](../plans/2026-08-15-recover-retained-health-records.md).
 The UI and mutation API retirement described here remains unchanged.
 
-The restored `fitness.breathwork_session` table stays represented by the
-canonical Drizzle schema in
+The restored `fitness.breathwork_session` and `fitness.menstrual_period` tables
+stay represented by the canonical Drizzle schema in
 [`src/db/schema/events.ts`](../../../src/db/schema/events.ts). No later migration
-may drop, truncate, rename, or rewrite the retained table or its recovered rows.
+may drop, truncate, rename, or rewrite either retained table or its recovered
+rows.
 
 The application will have no Breathwork-specific mutation, repository, or UI
 write path after this change. Historical rows may still be read through

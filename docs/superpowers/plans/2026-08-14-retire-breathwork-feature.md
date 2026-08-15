@@ -2,9 +2,9 @@
 
 > **Execution procedure:** Complete the tasks in order, keep the checkbox state current, run each task's stated verification before its commit, and stop before any repository or production mutation that has not received explicit approval.
 
-**Goal:** Remove every first-party Breathwork UI and tRPC API while preserving all existing `fitness.breathwork_session` rows as historical read-only data.
+**Goal:** Remove every first-party Breathwork UI and tRPC API while preserving all existing `fitness.breathwork_session` and `fitness.menstrual_period` rows as historical read-only data.
 
-**Architecture:** Delete the web/mobile product surface and its dedicated server/domain stack, then stop generating new development seed sessions. Keep the canonical table, migrations, export reads, admin accounting, seed-user cleanup, and provider activity classification so historical data remains intact and portable without leaving an active Breathwork feature.
+**Architecture:** Delete the web/mobile product surface and its dedicated server/domain stack, then stop generating new development seed sessions. Keep both retained canonical tables, migrations, export reads, admin accounting, seed-user cleanup, and provider activity classification so historical data remains intact and portable without leaving an active Breathwork feature.
 
 **Tech Stack:** TypeScript, React, React Native/Expo Router, TanStack Router, tRPC, Drizzle ORM, Vitest, Biome.
 
@@ -12,10 +12,10 @@
 
 ## Global Constraints
 
-- Do not add another destructive or data-transforming migration for `fitness.breathwork_session`. Keep deployed migration `0089` immutable and restore the canonical table only through forward migration `0091`.
-- Do not remove the table from `src/db/schema/events.ts`, `drizzle/0000_baseline.sql`, `drizzle/0065_breathwork_outcome_reports.sql`, `docs/schema.dbml`, or `docs/schema.puml`.
-- Keep generic export reads and operator/admin accounting for the retained table.
-- Keep disposable review-user cleanup in `scripts/seed/core.ts`; remove only active seed generation and verification requirements.
+- Do not add another destructive or data-transforming migration for `fitness.breathwork_session` or `fitness.menstrual_period`. Keep deployed migration `0089` immutable and restore both canonical tables only through forward migration `0091`.
+- Do not remove either retained table from `src/db/schema/events.ts`, `drizzle/0000_baseline.sql`, the relevant historical migrations, `docs/schema.dbml`, or `docs/schema.puml`.
+- Keep generic export reads and operator/admin accounting for both retained tables.
+- Keep disposable review-user cleanup for both retained tables in `scripts/seed/core.ts`; remove only active seed generation and verification requirements.
 - Keep provider-ingested `breathwork` activity mappings in Garmin, WHOOP, Oura, and `@dofek/training`.
 - Do not add a redirect, compatibility API, deprecation screen, disabled UI, archive table, or replacement feature.
 - Do not add tests that merely assert the removed route, API, or implementation is absent.

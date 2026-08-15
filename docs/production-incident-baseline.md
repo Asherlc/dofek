@@ -23754,8 +23754,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the retained historical integer types. No DDL was rerun; after fresh-database
   schema equivalence passed, the production migration journal was reconciled to
   the final reviewed hash under advisory lock `728370291`. The matching
-  encrypted backup, `.metadata`, and original Databasus key were decrypted with
-  MAC verification using the [documented Databasus manual recovery procedure](https://databasus.com/how-to-recover-without-databasus).
+  encrypted backup was decrypted using its matching `.metadata` object and the
+  original Databasus `secret.key`; every encrypted chunk passed MAC verification
+  under the [documented Databasus manual recovery procedure](https://databasus.com/how-to-recover-without-databasus).
   Only the two target tables were selected for the data-only import. PostgreSQL
   documents the atomic restore option used here in
   [`pg_restore --single-transaction`](https://www.postgresql.org/docs/current/app-pgrestore.html),
