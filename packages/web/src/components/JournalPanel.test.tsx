@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JournalPanel } from "./JournalPanel.tsx";
 import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
@@ -23,47 +23,22 @@ const mocks = vi.hoisted(() => {
   const chartProps: CapturedChartProps[] = [];
   return {
     chartProps,
-    captureException: vi.fn(),
-    deleteMutation: vi.fn(),
-    entriesInvalidate: vi.fn(),
     entriesQuery: vi.fn(),
-    questionsQuery: vi.fn(),
     trendsQuery: vi.fn(),
   };
 });
 
-vi.mock("../lib/telemetry.ts", () => ({
-  captureException: mocks.captureException,
-}));
-
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
-    useUtils: () => ({
-      journal: {
-        entries: {
-          invalidate: mocks.entriesInvalidate,
-        },
-      },
-    }),
     journal: {
       entries: {
         useQuery: mocks.entriesQuery,
       },
-      questions: {
-        useQuery: mocks.questionsQuery,
-      },
       trends: {
         useQuery: mocks.trendsQuery,
       },
-      delete: {
-        useMutation: mocks.deleteMutation,
-      },
     },
   },
-}));
-
-vi.mock("./AddJournalEntryModal.tsx", () => ({
-  AddJournalEntryModal: () => <div>Add journal entry form</div>,
 }));
 
 vi.mock("./DofekChart.tsx", () => ({
@@ -100,20 +75,14 @@ describe("JournalPanel", () => {
 
   beforeEach(() => {
     mocks.chartProps.length = 0;
-    mocks.captureException.mockReset();
-    mocks.entriesInvalidate.mockReset();
     mocks.entriesQuery.mockReset();
     mocks.entriesQuery.mockReturnValue({ data: [entry], error: null, isLoading: false });
-    mocks.questionsQuery.mockReset();
-    mocks.questionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
     mocks.trendsQuery.mockReset();
     mocks.trendsQuery.mockReturnValue({
       data: emptyJournalTrendEvidence,
       error: null,
       isLoading: false,
     });
-    mocks.deleteMutation.mockReset();
-    mocks.deleteMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
   });
 
   it("shows an initial entries failure instead of the empty state", () => {
@@ -148,6 +117,14 @@ describe("JournalPanel", () => {
     expect(screen.getByText("Mood")).toBeDefined();
     expect(screen.getByText("Calm")).toBeDefined();
     expect(screen.getByText("Journal refresh failed")).toBeDefined();
+  });
+
+  it("shows provider attribution for a stored manual entry", () => {
+    mocks.entriesQuery.mockReturnValue({ data: [entry], error: null, isLoading: false });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("Dofek")).toBeInTheDocument();
   });
 
   it("shows journal answers without presenting provider impact scores as per-entry effects", () => {
@@ -243,32 +220,6 @@ describe("JournalPanel", () => {
 
     expect(screen.queryByText("Entry 1")).toBeNull();
     expect(screen.getByText("Entry 21")).toBeDefined();
-  });
-
-  it("shows and reports delete failures while keeping the entry available to retry", () => {
-    const deleteError = new Error("Journal entry could not be deleted");
-    let onError: ((error: unknown) => void) | undefined;
-    let meta: unknown;
-    const mutate = vi.fn();
-    mocks.deleteMutation.mockImplementation(
-      (options: { meta?: unknown; onError?: (error: unknown) => void }) => {
-        meta = options.meta;
-        onError = options.onError;
-        return { error: deleteError, isPending: false, mutate };
-      },
-    );
-
-    render(<JournalPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    act(() => onError?.(deleteError));
-
-    expect(mutate).toHaveBeenCalledWith({ id: "entry-1" });
-    expect(meta).toEqual({ errorReportedLocally: true });
-    expect(screen.getByText(deleteError.message)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
-    expect(mocks.captureException).toHaveBeenCalledWith(deleteError, {
-      operation: "journal.delete",
-    });
   });
 
   it("shows trend-evidence failures instead of the empty chart state", () => {

@@ -230,7 +230,7 @@ describe("TrackingScreen", () => {
 
     expect(screen.getByText("No numeric journal data to chart")).toBeTruthy();
     expect(
-      screen.getByText("Log a numeric or Yes/No journal value to start reviewing trends."),
+      screen.getByText("Sync a numeric or Yes/No journal observation to start reviewing trends."),
     ).toBeTruthy();
   });
 
