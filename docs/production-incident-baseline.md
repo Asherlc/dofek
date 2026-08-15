@@ -23811,3 +23811,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   passes locally. Confirm a fresh hosted SQLFluff job passes.
 - **Remaining risk / follow-up:** Add migration SQLFluff parity to the standard
   local lint workflow so new migrations fail before push.
+
+## 2026-08-15 — PR 2532 read paths fell below the mutation threshold
+
+- **Status:** Fixed in the pull request; hosted rerun pending.
+- **Symptoms / impact:** Three `Test / Stryker` shards blocked PR #2532. The
+  cycle repository shard reported 41 surviving and four uncovered mutants, the
+  Apple Health import shard left category identity/value behavior uncovered,
+  and the HealthKit repository shard ended with `Final mutation score 66.67
+  under breaking threshold 75`. No production environment was affected.
+- **Evidence / root cause:** CI ran `pnpm exec stryker run
+  stryker.ci.config.json --mutate "$MUTATE_FILES"`. The initial tests verified
+  common read-only cycle results but did not pin calendar month-end math,
+  deterministic source ordering in both comparator directions, regularity and
+  stale-window boundaries, estimate range wording, category external-ID
+  uniqueness, or absent HealthKit metadata as SQL `NULL`. Equivalent optional
+  branches and a redundant minimum-interval condition also created mutants
+  that no valid input could distinguish. See the [failed mutation
+  run](https://github.com/Asherlc/dofek/actions/runs/31891264213).
+- **Fix / mitigation:** Added public-behavior tests for every uncovered branch,
+  removed only the redundant or construction-guaranteed branches, and retained
+  the existing production behavior. No mutation exclusion, ignored file,
+  lowered threshold, timeout, retry, or suppression was added.
+- **Validation:** The focused cycle and Apple import suites pass 100 tests.
+  Stryker killed 125 of 127 relevant mutants in the combined run; focused
+  reruns then killed both remaining comparator/slicing mutants and reported a
+  100.00% mutation score with no survivors or timeouts.
+- **Remaining risk / follow-up:** Confirm all hosted mutation shards and the
+  aggregate mutation gate pass on the pushed commit.

@@ -1604,6 +1604,24 @@ describe("HealthKitSyncRepository", () => {
       expect(query.params).toContain(JSON.stringify(metadata));
       expect(query.params).toContain("hk:91C7A825-3DA3-4F24-9085-15A9E2D1D2A1");
     });
+
+    it("binds absent metadata as SQL null", async () => {
+      const { repository, execute } = makeRepository();
+
+      await repository.processHealthEvents([
+        makeSample({
+          type: "HKCategoryTypeIdentifierMenstrualFlow",
+          uuid: "event-without-metadata",
+          metadata: undefined,
+        }),
+      ]);
+
+      const statement = execute.mock.calls[0]?.[0];
+      expect(statement).toBeDefined();
+      const query = new PgDialect().sqlToQuery(statement);
+      expect(query.params).toContain(null);
+      expect(query.params).not.toContain(undefined);
+    });
   });
 
   describe("processWorkouts", () => {

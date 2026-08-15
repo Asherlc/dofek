@@ -1205,6 +1205,88 @@ describe("runImport (control-flow mutation killers)", () => {
     );
   });
 
+  it("preserves category values and derives distinct stable external ids", async () => {
+    vi.resetModules();
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: {},
+      BODY_MEASUREMENT_TYPES: new Set<string>(),
+      DAILY_METRIC_TYPES: new Set<string>(),
+      NUTRITION_TYPES: {},
+      ALL_ROUTED_TYPES: new Set<string>(),
+      upsertMetricStreamBatch: vi.fn().mockResolvedValue(0),
+      upsertBodyMeasurementBatch: vi.fn().mockResolvedValue(0),
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onCategoryBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          const shared = {
+            metadata: { HKMetadataKeyMenstrualCycleStart: true },
+            sourceBundle: "com.example.cycle",
+            type: "HKCategoryTypeIdentifierMenstrualFlow",
+            sourceName: "Cycle Source",
+            startDate: new Date("2026-03-01T10:00:00Z"),
+            endDate: new Date("2026-03-01T10:05:00Z"),
+          };
+          await handlers.onCategoryBatch([
+            { ...shared, value: "light" },
+            { ...shared, value: "heavy" },
+          ]);
+          return { recordCount: 0, workoutCount: 0, sleepCount: 0, categoryCount: 2 };
+        },
+      ),
+    }));
+
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const db = makeTransactionalTestDatabase<SyncDatabase>({
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      insert: vi.fn().mockReturnValue({ values }),
+      select: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    });
+    const { runImport: mockedRunImport } = await import("./import.ts");
+
+    const result = await mockedRunImport(
+      db,
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.recordsSynced).toBe(2);
+    const categoryRows = values.mock.calls
+      .map(([rows]) => rows)
+      .find(
+        (rows) => Array.isArray(rows) && rows[0]?.type === "HKCategoryTypeIdentifierMenstrualFlow",
+      );
+    expect(categoryRows).toEqual([
+      expect.objectContaining({
+        valueText: "light",
+        externalId: expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      }),
+      expect.objectContaining({
+        valueText: "heavy",
+        externalId: expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      }),
+    ]);
+    expect(new Set(categoryRows.map((row: { externalId: string }) => row.externalId)).size).toBe(2);
+  });
+
   it("uses the latest workout end timestamp for reconciliation windowEnd", async () => {
     vi.resetModules();
 

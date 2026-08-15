@@ -72,8 +72,8 @@ function calendarDate(date: Date, timezone: string): string {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(date);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value;
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  const value = (type: Intl.DateTimeFormatPartTypes) => values.get(type);
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
@@ -222,20 +222,22 @@ export class MenstrualCycleRepository {
       );
     }
 
-    const intervals = starts
-      .slice(1)
-      .map((start, index) =>
-        daysBetween(starts[index]?.startDate ?? start.startDate, start.startDate),
-      );
+    const intervals = starts.flatMap((earlier, index) =>
+      starts
+        .slice(index + 1, index + 2)
+        .map((later) => daysBetween(earlier.startDate, later.startDate)),
+    );
     const conflictingIntervalIndex = intervals.findIndex(
       (interval) => interval < MINIMUM_REGULAR_CYCLE_DAYS,
     );
     if (conflictingIntervalIndex >= 0) {
-      const earlier = starts[conflictingIntervalIndex];
-      const later = starts[conflictingIntervalIndex + 1];
+      const conflictingDates = starts
+        .slice(conflictingIntervalIndex, conflictingIntervalIndex + 2)
+        .map((start) => start.startDate)
+        .join(" and ");
       return unavailable(
         "conflicting-history",
-        `Provider cycle-start records conflict: ${earlier?.startDate} and ${later?.startDate} are fewer than ${MINIMUM_REGULAR_CYCLE_DAYS} days apart. Correct the record in its source and sync again.`,
+        `Provider cycle-start records conflict: ${conflictingDates} are fewer than ${MINIMUM_REGULAR_CYCLE_DAYS} days apart. Correct the record in its source and sync again.`,
         latestCycleStart,
       );
     }
@@ -251,7 +253,6 @@ export class MenstrualCycleRepository {
     const minimumDays = Math.min(...intervals);
     const maximumDays = Math.max(...intervals);
     if (
-      minimumDays < MINIMUM_REGULAR_CYCLE_DAYS ||
       maximumDays > MAXIMUM_REGULAR_CYCLE_DAYS ||
       maximumDays - minimumDays > MAXIMUM_REGULAR_VARIATION_DAYS
     ) {
