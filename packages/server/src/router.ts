@@ -10,7 +10,6 @@ import { billingRouter } from "./routers/billing.ts";
 import { bleHeartRateSyncRouter } from "./routers/ble-heart-rate-sync.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
-import { breathworkRouter } from "./routers/breathwork.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { climbingRouter } from "./routers/climbing.ts";
 import { companionPairingRouter } from "./routers/companion-pairing.ts";
@@ -83,7 +82,6 @@ const appRouterProcedures = {
   behaviorImpact: behaviorImpactRouter,
   billing: billingRouter,
   bleHeartRateSync: bleHeartRateSyncRouter,
-  breathwork: breathworkRouter,
   personalization: personalizationRouter,
   auth: authRouter,
   sleep: sleepRouter,

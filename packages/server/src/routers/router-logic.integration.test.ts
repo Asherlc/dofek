@@ -489,33 +489,6 @@ describe("Router transformation logic", () => {
       });
     });
 
-    it("refreshes breathwork history after logging a session", async () => {
-      const startedAt = new Date().toISOString();
-      await queryCache.invalidateAll();
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.breathwork_session
-            WHERE user_id = ${TEST_USER_ID} AND notes = 'Cache invalidation'`,
-      );
-
-      const { result: historyBefore } = await query("breathwork.history", { days: 1 });
-      expect(historyBefore.result.data).toHaveLength(0);
-
-      const { status, result: createdResult } = await mutate("breathwork.logSession", {
-        techniqueId: "box-breathing",
-        rounds: 4,
-        durationSeconds: 64,
-        startedAt,
-        notes: "Cache invalidation",
-      });
-      expect(status).toBe(200);
-      const sessionId = createdResult.result.data.id;
-
-      const { result: historyAfter } = await query("breathwork.history", { days: 1 });
-      expect(
-        historyAfter.result.data.find((session: { id: string }) => session.id === sessionId),
-      ).toBeDefined();
-    });
-
     it("refreshes personalization status after reset", async () => {
       await queryCache.invalidateAll();
       await savePersonalizedParams(testCtx.db, TEST_USER_ID, {

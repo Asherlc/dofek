@@ -1,7 +1,7 @@
 # @dofek/scoring
 
 Platform-agnostic TypeScript models for health scores, sleep and readiness
-presentation, breathwork sessions, and shared design tokens. The package is used
+presentation, and shared design tokens. The package is used
 by both web and mobile clients but has no UI-framework dependency.
 
 ## Install
@@ -44,7 +44,6 @@ console.log({
 | `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
 | `@dofek/scoring/menstrual-cycle` | Cycle-phase estimation, display metadata, and shared safety copy |
-| `@dofek/scoring/breathwork` | Built-in breathing techniques and session-duration helpers |
 | `@dofek/scoring/loading-policy` | Blocking-loading state policy |
 | `@dofek/scoring/query-cache` | Shared query-cache age constant |
 
