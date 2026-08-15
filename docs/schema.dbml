@@ -1306,6 +1306,29 @@ table fitness.body_region {
   }
 }
 
+table fitness.breathwork_session {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  technique_id text [not null]
+  rounds integer [not null]
+  duration_seconds integer [not null]
+  started_at "timestamp with time zone" [not null]
+  notes text
+  stress_before bigint
+  stress_after bigint
+  dizziness_after boolean
+  perceived_effect text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    user_id [name: 'breathwork_session_user_idx']
+    started_at [name: 'breathwork_session_started_at_idx']
+
+
+
+  }
+}
+
 table fitness.dexa_scan {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
@@ -1508,6 +1531,20 @@ table fitness.life_events {
 
   indexes {
     started_at [name: 'life_events_started_at_idx']
+  }
+}
+
+table fitness.menstrual_period {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  start_date date [not null]
+  end_date date
+  notes text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, start_date) [name: 'menstrual_period_user_start_idx', unique]
+    user_id [name: 'menstrual_period_user_idx']
   }
 }
 
@@ -1933,6 +1970,8 @@ ref user_settings_user_id_user_profile_id_fk: fitness.user_settings.user_id > fi
 
 ref body_region_parent_id_body_region_id_fk: fitness.body_region.parent_id > fitness.body_region.id [delete: restrict, update: no action]
 
+ref breathwork_session_user_id_user_profile_id_fk: fitness.breathwork_session.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
 ref dexa_scan_provider_id_provider_id_fk: fitness.dexa_scan.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref dexa_scan_user_id_user_profile_id_fk: fitness.dexa_scan.user_id > fitness.user_profile.id [delete: no action, update: no action]
@@ -1958,6 +1997,8 @@ ref journal_entry_question_slug_journal_question_slug_fk: fitness.journal_entry.
 ref life_events_user_id_user_profile_id_fk: fitness.life_events.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref life_events_personal_experiment_id_personal_experiment_id_fk: fitness.life_events.personal_experiment_id > fitness.personal_experiment.id [delete: set null, update: no action]
+
+ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref personal_experiment_user_id_user_profile_id_fk: fitness.personal_experiment.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
