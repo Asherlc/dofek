@@ -19,28 +19,31 @@ them, and the durability work they suggest.
   the server acknowledges the batch; no sample-loss evidence was found.
 - **Evidence / root cause:** Sentry recorded two occurrences in four days. For
   the latest occurrence, the same mobile process received a structured tRPC
-  response from the server six seconds later, proving that connectivity had
-  already recovered. The host had no reboot, kernel OOM, or system warning in
-  the incident window. Docker did replace an unhealthy analytics-worker task at
+  response from the server six seconds later, showing that the app-to-server
+  path was working at that time. The host had no reboot, kernel OOM, or system
+  warning in the incident window. Docker did replace an unhealthy
+  analytics-worker task at
   13:43:02 UTC, but the web service remained separate and no evidence connected
   that replacement to the later edge response; Swarm models service work as
   replaceable tasks ([Docker task documentation](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).
-  Axiom access was expired and the superseded web-task logs had been pruned, so
+  Axiom access had expired and the superseded web-task logs had been pruned, so
   the precise reason Cloudflare emitted the one-request 502 could not be
   recovered.
 - **Fix / mitigation:** No retry, timeout, telemetry suppression, or sample
   discard was added. The existing peek-then-confirm uploader already preserves
   the batch for a later upload, while continued Sentry reporting will reopen the
   issue if the edge failure recurs.
-- **Validation:** The current production web service has two healthy replicas;
-  the worker, analytics worker, databases, proxy, and ingest services report
-  their desired replicas. The host has remained up since 2026-05-29, and the
-  incident window contains no kernel or system failure entry.
+- **Validation:** The 2026-08-14 22:19 PDT incident-record snapshot found two
+  healthy production web replicas; the worker, analytics worker, databases,
+  proxy, and ingest services reported their desired replicas. At that time, the
+  host had been up since 2026-05-29, and the incident window contained no
+  kernel or system failure entry.
 - **Remaining risk / follow-up:** If this issue regresses, renew Axiom access
   before the next event and correlate the Cloudflare request with web, Traefik,
-  and host logs while the task-local evidence is still retained. Do not add
-  retries or suppress the server response without first identifying that new
-  event's origin-side failure.
+  and host logs while the task-local evidence is still retained. Incident
+  responders must preserve unacknowledged batches, verify that unexpected
+  upload failures remain reported, and avoid retries or telemetry suppression
+  until the new event's origin-side failure is identified.
 
 ## 2026-08-14 — Mobile typecheck blocked the feature-removal PR after merge resolution
 
