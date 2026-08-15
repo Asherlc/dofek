@@ -1,6 +1,6 @@
 # Read-Only Tracking Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Execute this plan task by task and use the checkbox (`- [ ]`) steps to track progress. Agentic workers may use a repository-approved planning or delegation workflow, but the implementation requirements below stand on their own.
 
 **Goal:** Make journal, life-event, and subjective body-state tracking read-only across web, mobile, and tRPC while preserving historical data, provider ingestion, and all read analytics.
 
@@ -18,6 +18,7 @@
 - Keep loading, empty, cached-data refresh error, terminal error, and retry behavior for every retained query.
 - Do not add disabled endpoints, compatibility aliases, feature flags, fallback mutation paths, or replacement data-entry UI.
 - Keep the untracked workspace file `paseo.json` out of every commit.
+- Run commit and push steps only when explicit user approval or the active workflow authorizes those repository changes.
 
 ---
 
@@ -108,13 +109,17 @@ pnpm lint:web-stories
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the web journal slice**
+- [ ] **Step 5: Commit and push the web journal slice when authorized**
 
 ```bash
 git add packages/web/src/components/JournalPanel.tsx packages/web/src/components/JournalPanel.test.tsx packages/web/src/components/JournalPanel.stories.tsx packages/web/src/components/test-helpers/TimeRangeSelectorConsumers.tsx packages/web/src/components/AddJournalEntryModal.tsx packages/web/src/components/AddJournalEntryModal.test.tsx packages/web/src/components/AddJournalEntryModal.stories.tsx packages/mobile/app/tracking.tsx packages/mobile/app-tests/tracking.test.tsx
 git commit -m "refactor(web): make journal tracking read only"
 git push
 ```
+
+- [ ] **Step 6: Record the Task 1 retrospective**
+
+Record the outcome, investigation required, useful next-time context, and concrete documentation, guideline, or skill improvements. If the task involved a production, deployment, CI, or infrastructure incident, append the required evidence and disposition to `docs/production-incident-baseline.md`.
 
 ---
 
@@ -177,13 +182,17 @@ pnpm lint:web-stories
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit the web life-events slice**
+- [ ] **Step 4: Commit and push the web life-events slice when authorized**
 
 ```bash
 git add packages/web/src/components/LifeEventsPanel.tsx packages/web/src/components/LifeEventsPanel.test.tsx packages/web/src/components/LifeEventsPanel.stories.tsx
 git commit -m "refactor(web): make life events read only"
 git push
 ```
+
+- [ ] **Step 5: Record the Task 2 retrospective**
+
+Record the outcome, investigation required, useful next-time context, and concrete documentation, guideline, or skill improvements. If the task involved a production, deployment, CI, or infrastructure incident, append the required evidence and disposition to `docs/production-incident-baseline.md`.
 
 ---
 
@@ -296,13 +305,17 @@ pnpm check:mobile-app-routes
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the body-state slice**
+- [ ] **Step 6: Commit and push the body-state slice when authorized**
 
 ```bash
 git add packages/web/src/components/SubjectiveTrackingPanel.tsx packages/web/src/components/SubjectiveTrackingPanel.test.tsx packages/web/src/components/SubjectiveTrackingPanel.stories.tsx packages/web/src/pages/TrackingPage.tsx 'packages/mobile/app/(tabs)/recovery.tsx' 'packages/mobile/app-tests/(tabs)/recovery.test.tsx' 'packages/mobile/app-stories/(tabs)/recovery.stories.tsx' packages/mobile/components/SubjectiveTrackingPanel.tsx packages/mobile/components/SubjectiveTrackingPanel.test.tsx packages/mobile/components/SubjectiveTrackingPanel.stories.tsx
 git commit -m "refactor(tracking): make body state read only"
 git push
 ```
+
+- [ ] **Step 7: Record the Task 3 retrospective**
+
+Record the outcome, investigation required, useful next-time context, and concrete documentation, guideline, or skill improvements. If the task involved a production, deployment, CI, or infrastructure incident, append the required evidence and disposition to `docs/production-incident-baseline.md`.
 
 ---
 
@@ -367,13 +380,17 @@ pnpm lint:web-stories
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the experiment annotation slice**
+- [ ] **Step 5: Commit and push the experiment annotation slice when authorized**
 
 ```bash
 git add packages/web/src/pages/PersonalExperimentsPage.tsx packages/web/src/pages/PersonalExperimentsPage.test.tsx packages/web/src/pages/PersonalExperimentsPage.stories.tsx packages/mobile/app/experiments.tsx packages/mobile/app-tests/experiments.test.tsx packages/mobile/app-stories/experiments.stories.tsx
 git commit -m "refactor(experiments): make annotations read only"
 git push
 ```
+
+- [ ] **Step 6: Record the Task 4 retrospective**
+
+Record the outcome, investigation required, useful next-time context, and concrete documentation, guideline, or skill improvements. If the task involved a production, deployment, CI, or infrastructure incident, append the required evidence and disposition to `docs/production-incident-baseline.md`.
 
 ---
 
@@ -488,13 +505,17 @@ pnpm test:integration -- packages/server/src/repositories/personal-experiments-r
 
 Expected: PASS without calling any removed mutation API.
 
-- [ ] **Step 6: Commit the server API slice**
+- [ ] **Step 6: Commit and push the server API slice when authorized**
 
 ```bash
 git add packages/server/src/routers/journal.ts packages/server/src/routers/journal.test.ts packages/server/src/repositories/journal-repository.ts packages/server/src/repositories/journal-repository.test.ts packages/server/src/routers/life-events.ts packages/server/src/routers/life-events.test.ts packages/server/src/routers/hiking-insights-life-events.test.ts packages/server/src/repositories/life-events-repository.ts packages/server/src/repositories/life-events-repository.test.ts packages/server/src/routers/subjective.ts packages/server/src/routers/subjective.test.ts packages/server/src/repositories/subjective-repository.ts packages/server/src/repositories/subjective-repository.test.ts packages/server/src/repositories/personal-experiments-repository.integration.test.ts packages/server/src/routers/router-logic.integration.test.ts packages/server/src/routers/router-data.integration.test.ts packages/server/src/routers/router.integration.test.ts
 git commit -m "refactor(api): remove manual tracking mutations"
 git push
 ```
+
+- [ ] **Step 7: Record the Task 5 retrospective**
+
+Record the outcome, investigation required, useful next-time context, and concrete documentation, guideline, or skill improvements. If the task involved a production, deployment, CI, or infrastructure incident, append the required evidence and disposition to `docs/production-incident-baseline.md`.
 
 ---
 
@@ -552,7 +573,7 @@ git status --short
 
 Expected: no whitespace errors; no migration or schema file changes; only `paseo.json` remains untracked outside the implementation diff.
 
-- [ ] **Step 5: Commit documentation or formatting changes and push**
+- [ ] **Step 5: Commit and push documentation or formatting changes when authorized**
 
 ```bash
 git add docs/personal-experiments.md
