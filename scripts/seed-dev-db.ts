@@ -11,7 +11,7 @@
  *   - 90 WHOOP nights plus 30 Apple Health overlap sessions
  *   - 120 days of deterministic activity history and strength work
  *   - 90 days of nutrition, recent meals, and supplements
- *   - Body composition, labs, DEXA, clinical records, and cycle data
+ *   - Body composition, labs, DEXA, and clinical records
  *   - Journal and life-event context for reports/correlation
  *
  * The data is designed to exercise reviewer-facing product surfaces:

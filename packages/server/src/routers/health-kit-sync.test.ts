@@ -2803,6 +2803,7 @@ describe("healthKitSyncRouter", () => {
         expect.objectContaining({
           activityType: { providerType: "13", canonicalType: "cycling", modality: null },
         }),
+        expect.anything(),
       );
     });
 
@@ -2843,6 +2844,7 @@ describe("healthKitSyncRouter", () => {
             totalDistance: 10000,
           }),
         }),
+        expect.anything(),
       );
     });
 
@@ -2898,6 +2900,7 @@ describe("healthKitSyncRouter", () => {
             ],
           }),
         }),
+        expect.anything(),
         expect.anything(),
       );
     });

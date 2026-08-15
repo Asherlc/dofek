@@ -1,7 +1,11 @@
 import { vi } from "vitest";
 import { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import type { SmoothedWeightRow } from "../repositories/body-analytics-repository.ts";
+import type {
+  BodyFatPrediction,
+  SmoothedBodyFatRow,
+  SmoothedWeightRow,
+} from "../repositories/body-analytics-repository.ts";
 import type {
   DailyMetricsViewRow,
   HrvBaselineRow,
@@ -103,6 +107,8 @@ export async function runRecoveryTab(
     metrics?: DailyMetricsViewRow[];
     hrvBaseline?: HrvBaselineRow[];
     weight?: SmoothedWeightRow[];
+    bodyFatTrend?: SmoothedBodyFatRow[];
+    bodyFatPrediction?: BodyFatPrediction;
     goalWeight?: string | null;
     days?: number;
     endDate?: string;
@@ -167,6 +173,23 @@ export async function runRecoveryTab(
     goal: null,
     projectionLine: [],
   });
+  vi.spyOn(
+    (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+      .prototype,
+    "getSmoothedBodyFat",
+  ).mockResolvedValue(options.bodyFatTrend ?? []);
+  vi.spyOn(
+    (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+      .prototype,
+    "getBodyFatPrediction",
+  ).mockResolvedValue(
+    options.bodyFatPrediction ?? {
+      ratePerWeek: null,
+      rateConfidence: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      projectionLine: [],
+    },
+  );
   const decisionContextSpy = vi.spyOn(
     (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
       .prototype,

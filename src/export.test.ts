@@ -154,6 +154,7 @@ describe("generateExport", () => {
     expect(metadata.tables).toHaveLength(17);
     expect(metadata.tables[0]).toBe("user-profile.csv");
     expect(metadata.tables).toContain("breathwork-sessions.csv");
+    expect(metadata.tables).toContain("menstrual-periods.csv");
     expect(metadata.tables).not.toContain("metric-streams.csv");
     expect(metadata.totalRecords).toBe(0);
     expect(metadata.exportedAt).toBeDefined();

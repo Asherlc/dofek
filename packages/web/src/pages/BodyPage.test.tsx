@@ -20,9 +20,28 @@ vi.mock("../components/BodyRecompositionChart.tsx", () => ({
   ),
 }));
 vi.mock("../components/BodyFatPercentageChart.tsx", () => ({
-  BodyFatPercentageChart: ({ data }: { data: unknown[] }) => (
-    <div>Body fat points: {data.length}</div>
-  ),
+  BodyFatPercentageChart: ({
+    data,
+    prediction,
+    loading,
+  }: {
+    data: unknown[];
+    prediction?: unknown;
+    loading?: boolean;
+  }) => {
+    const firstDataPoint = data[0];
+    const isTrendData =
+      firstDataPoint !== null &&
+      typeof firstDataPoint === "object" &&
+      "smoothedBodyFatPct" in firstDataPoint;
+
+    return (
+      <div data-loading={String(loading ?? false)} data-testid="body-fat-chart">
+        Body fat points: {data.length}; trend: {String(isTrendData)}; prediction:{" "}
+        {String(prediction != null)}
+      </div>
+    );
+  },
 }));
 vi.mock("../components/CorrelationCard.tsx", () => ({
   CorrelationCard: () => null,
@@ -56,7 +75,9 @@ vi.mock("../components/TimeSeriesChart.tsx", () => ({
   TimeSeriesChart: () => <div>Time series chart</div>,
 }));
 vi.mock("../components/WeightPredictionSummary.tsx", () => ({
-  WeightPredictionSummary: () => <div>Weight prediction</div>,
+  WeightPredictionSummary: ({ metric = "weight" }: { metric?: "weight" | "bodyFat" }) => (
+    <div>{metric === "weight" ? "Weight prediction" : "Body-fat prediction"}</div>
+  ),
 }));
 vi.mock("../hooks/useTodayQueryDate.ts", () => ({
   useTodayQueryDate: () => "2026-07-25",
@@ -90,17 +111,20 @@ interface MockQueryOptions {
   data?: unknown;
   error?: Error | null;
   isFetching?: boolean;
+  isLoading?: boolean;
 }
 
-function mockQuery({ data, error = null, isFetching = false }: MockQueryOptions = {}) {
+function mockQuery({ data, error = null, isFetching, isLoading = false }: MockQueryOptions = {}) {
+  const resolvedIsFetching = isFetching ?? isLoading;
+
   return {
     data,
     error,
     isError: error !== null,
-    isFetching,
-    isLoading: false,
-    isPending: false,
-    isSuccess: error === null,
+    isFetching: resolvedIsFetching,
+    isLoading,
+    isPending: isLoading,
+    isSuccess: error === null && !isLoading,
     refetch: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -130,6 +154,26 @@ const healthyWeightOverview = {
     impliedDailyCalories: 0,
     periodDeltas: { days7: 0, days14: 0, days30: 0 },
     goal: null,
+    projectionLine: [],
+  },
+  bodyFatTrend: [
+    {
+      date: "2026-07-25",
+      rawBodyFatPct: 20,
+      smoothedBodyFatPct: 20,
+      interpolated: false,
+    },
+    {
+      date: "2026-07-26",
+      rawBodyFatPct: 19.8,
+      smoothedBodyFatPct: 19.9,
+      interpolated: false,
+    },
+  ],
+  bodyFatPrediction: {
+    ratePerWeek: -0.2,
+    rateConfidence: 0.8,
+    periodDeltas: { days7: -0.2, days14: -0.4, days30: -0.8 },
     projectionLine: [],
   },
   recomposition: [
@@ -190,10 +234,42 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BodyPage", () => {
-  it("shows body fat points from recomposition data", () => {
+  it("renders the body fat percentage card with canonical body-fat trend data", () => {
     render(<BodyPage />);
 
-    expect(screen.getByText("Body fat points: 1")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Body Fat Percentage" })).toBeTruthy();
+    expect(screen.getAllByTestId("body-fat-chart")[0]).toHaveAttribute("data-loading", "false");
+    expect(screen.getAllByTestId("body-fat-chart")[0]).toHaveTextContent(
+      "Body fat points: 2; trend: true; prediction: true",
+    );
+  });
+
+  it("renders the body fat percentage card with empty data while loading", () => {
+    queryMocks.weightOverview.mockReturnValue(mockQuery({ isLoading: true }));
+
+    render(<BodyPage />);
+
+    const bodyFatCharts = screen.getAllByTestId("body-fat-chart");
+    expect(bodyFatCharts).toHaveLength(1);
+    expect(bodyFatCharts[0]).toHaveAttribute("data-loading", "true");
+    expect(bodyFatCharts[0]).toHaveTextContent("Body fat points: 0");
+  });
+
+  it("toggles the shared trend summary and chart between weight and body fat", () => {
+    render(<BodyPage />);
+
+    expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
+    expect(screen.getByText("Weight prediction")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
+
+    const bodyFatCharts = screen.getAllByTestId("body-fat-chart");
+    expect(bodyFatCharts).toHaveLength(2);
+    for (const chart of bodyFatCharts) {
+      expect(chart).toHaveTextContent("Body fat points: 2; trend: true; prediction: true");
+    }
+    expect(screen.getByText("Body-fat prediction")).toBeTruthy();
+    expect(screen.queryByText("Goal weight input")).toBeNull();
   });
 
   it("shows one dependency notice for a repeated body-composition query failure", () => {
@@ -255,7 +331,7 @@ describe("BodyPage", () => {
 
     expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
     expect(screen.getByText("Recomposition points: 1")).toBeTruthy();
-    expect(screen.getByText("Body fat points: 1")).toBeTruthy();
+    expect(screen.getByTestId("body-fat-chart")).toHaveTextContent("Body fat points: 2");
     expect(screen.getByText("Weight prediction")).toBeTruthy();
     expect(screen.getAllByText("Body data refresh failed.")).toHaveLength(1);
     expect(

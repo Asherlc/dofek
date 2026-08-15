@@ -12,7 +12,6 @@ vi.mock("./routers/inertial-measurement-unit-sync.ts", () => ({
   inertialMeasurementUnitSyncRouter: mockRouter,
 }));
 vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
-vi.mock("./routers/activity-recording.ts", () => ({ activityRecordingRouter: mockRouter }));
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
 vi.mock("./routers/account-erasure.ts", () => ({ accountErasureRouter: mockRouter }));
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
@@ -43,7 +42,6 @@ vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
 vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
 vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
 vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
-vi.mock("./routers/menstrual-cycle.ts", () => ({ menstrualCycleRouter: mockRouter }));
 vi.mock("./routers/medication-dose-events.ts", () => ({ medicationDoseEventsRouter: mockRouter }));
 vi.mock("./routers/mcp.ts", () => ({ mcpRouter: mockRouter }));
 vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
@@ -124,7 +122,6 @@ describe("appRouter", () => {
       "inertialMeasurementUnitSync",
       "watchAltitudeSync",
       "activity",
-      "activityRecording",
       "anomalyDetection",
       "accountErasure",
       "auth",
@@ -179,7 +176,6 @@ describe("appRouter", () => {
       "stress",
       "todayPlan",
       "healthspan",
-      "menstrualCycle",
       "medicationDoseEvents",
       "mcp",
       "mobileDashboard",

@@ -175,16 +175,19 @@ interface ProcessingFailureOperation {
   datasets: readonly string[];
   dismissed: boolean;
   errorMessage: string | null;
+  errorCode?: string | null;
 }
 
 export interface ProcessingFailureGroup {
   operationId: string;
+  providerId: string | null;
   providerLabel: string | null;
   datasetLabels: string[];
   status: "blocked" | "failed";
   failedAt: string | null;
   lastReadyAt: string | null;
   errorMessage: string | null;
+  requiresReconnect: boolean;
   dismissed: boolean;
 }
 
@@ -227,12 +230,14 @@ export function processingFailureGroups(input: {
     return [
       {
         operationId: operation.id,
+        providerId: operation.providerId,
         providerLabel: operation.providerId ? providerLabel(operation.providerId) : null,
         datasetLabels: groupedDatasets.map((dataset) => dataset.label),
         status: operation.status,
         failedAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastFailedAt)),
         lastReadyAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastReadyAt)),
         errorMessage: operation.errorMessage,
+        requiresReconnect: operation.errorCode === "provider_auth_failed",
         dismissed: operation.dismissed,
       },
     ];

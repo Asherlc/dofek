@@ -8,11 +8,6 @@ const destinations = [
     description: "Manage your profile, preferences, data sources, and account.",
   },
   {
-    to: "/cycle",
-    title: "Cycle tracking",
-    description: "Review cycle phases and record period dates.",
-  },
-  {
     to: "/data-quality",
     title: "Data quality",
     description:
@@ -22,7 +17,7 @@ const destinations = [
 
 export function MorePage() {
   return (
-    <PageLayout title="More" subtitle="Account, wellbeing, and tracking tools">
+    <PageLayout title="More" subtitle="Account and data tools">
       <nav aria-label="More destinations">
         <ul className="grid gap-3 sm:grid-cols-2">
           {destinations.map((destination) => (

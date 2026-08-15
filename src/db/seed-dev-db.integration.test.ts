@@ -33,7 +33,6 @@ interface SeedCounts {
   dexaScans: number;
   journalEntries: number;
   lifeEvents: number;
-  menstrualPeriods: number;
   vSleep: number;
   vDailyMetrics: number;
 }
@@ -133,7 +132,6 @@ describe("seed-dev-db", () => {
       expect(firstCounts.dexaScans).toBeGreaterThanOrEqual(2);
       expect(firstCounts.journalEntries).toBeGreaterThanOrEqual(30);
       expect(firstCounts.lifeEvents).toBeGreaterThanOrEqual(3);
-      expect(firstCounts.menstrualPeriods).toBeGreaterThanOrEqual(4);
       expect(firstCounts.vSleep).toBeGreaterThanOrEqual(90);
       expect(firstCounts.vDailyMetrics).toBeGreaterThanOrEqual(170);
     } finally {
@@ -275,10 +273,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     lifeEvents: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.life_events WHERE user_id = '${userId}'`,
-    ),
-    menstrualPeriods: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${userId}'`,
     ),
     vSleep: await readCount(
       sql,

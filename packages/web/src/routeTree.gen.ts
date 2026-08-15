@@ -30,7 +30,6 @@ import { Route as HealthReportRouteImport } from './routes/health-report'
 import { Route as ExperimentsRouteImport } from './routes/experiments'
 import { Route as DataQualityRouteImport } from './routes/data-quality'
 import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as CycleRouteImport } from './routes/cycle'
 import { Route as CorrelationRouteImport } from './routes/correlation'
 import { Route as BodyRouteImport } from './routes/body'
 import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
@@ -163,11 +162,6 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof DashboardRouteImport.update>[0])
-const CycleRoute = CycleRouteImport.update({
-  id: '/cycle',
-  path: '/cycle',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof CycleRouteImport.update>[0])
 const CorrelationRoute = CorrelationRouteImport.update({
   id: '/correlation',
   path: '/correlation',
@@ -316,7 +310,6 @@ export interface FileRoutesByFullPath {
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/correlation': typeof CorrelationRoute
-  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
@@ -364,7 +357,6 @@ export interface FileRoutesByTo {
   '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/correlation': typeof CorrelationRoute
-  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
@@ -412,7 +404,6 @@ export interface FileRoutesById {
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/correlation': typeof CorrelationRoute
-  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
@@ -464,7 +455,6 @@ export interface FileRouteTypes {
     | '/behavior-impact'
     | '/body'
     | '/correlation'
-    | '/cycle'
     | '/dashboard'
     | '/data-quality'
     | '/experiments'
@@ -512,7 +502,6 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/behavior-impact'
     | '/correlation'
-    | '/cycle'
     | '/dashboard'
     | '/data-quality'
     | '/experiments'
@@ -559,7 +548,6 @@ export interface FileRouteTypes {
     | '/behavior-impact'
     | '/body'
     | '/correlation'
-    | '/cycle'
     | '/dashboard'
     | '/data-quality'
     | '/experiments'
@@ -610,7 +598,6 @@ export interface RootRouteChildren {
   BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRouteWithChildren
   CorrelationRoute: typeof CorrelationRoute
-  CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
   DataQualityRoute: typeof DataQualityRoute
   ExperimentsRoute: typeof ExperimentsRoute
@@ -782,13 +769,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cycle': {
-      id: '/cycle'
-      path: '/cycle'
-      fullPath: '/cycle'
-      preLoaderRoute: typeof CycleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/correlation': {
@@ -1065,7 +1045,6 @@ const rootRouteChildren: RootRouteChildren = {
   BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRouteWithChildren,
   CorrelationRoute: CorrelationRoute,
-  CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
   DataQualityRoute: DataQualityRoute,
   ExperimentsRoute: ExperimentsRoute,

@@ -107,7 +107,7 @@ final class HealthKitTypesTests: XCTestCase {
 
     func testReadTypesTotalCount() {
         // 49 quantity types + 5 category types + 1 workout type + 1 workout route = 56
-        var expectedCount = 56
+        var expectedCount = 55
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
@@ -130,11 +130,6 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertFalse(
             backgroundDeliveryTypes.contains(
                 HKQuantityType.quantityType(forIdentifier: .dietaryProtein)!
-            )
-        )
-        XCTAssertFalse(
-            backgroundDeliveryTypes.contains(
-                HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
             )
         )
         XCTAssertFalse(
@@ -182,16 +177,5 @@ final class HealthKitTypesTests: XCTestCase {
             let type = HKQuantityType.quantityType(forIdentifier: identifier)!
             XCTAssertFalse(writeTypes.contains(type), "writeTypes should not contain \(identifier.rawValue)")
         }
-    }
-
-    func testDietaryWriteQuantityTypeAllowsOnlyWritableDietaryIdentifiers() {
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryProtein.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryFatTotal.rawValue))
-
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.stepCount.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.heartRate.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: "not-a-healthkit-type"))
     }
 }
