@@ -1,7 +1,6 @@
 import {
   formatBodyCompositionPercent,
   formatDateMedium,
-  formatDateYmd,
   formatDurationMinutes,
   formatHRV,
   formatNumber,
@@ -9,8 +8,6 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { useState } from "react";
 import { z } from "zod";
-import { locallyReportedErrorMeta } from "../lib/query-client.ts";
-import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { PaginationControls } from "./PaginationControls.tsx";
@@ -52,37 +49,14 @@ const eventAnalysisDataSchema = z.object({
 });
 type EventAnalysisData = z.infer<typeof eventAnalysisDataSchema>;
 
-const CATEGORIES = ["diet", "supplement", "injury", "lifestyle", "training", "other"] as const;
 const PAGE_SIZE = 20;
 
 export function LifeEventsPanel() {
-  const [showForm, setShowForm] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
   const [windowDays, setWindowDays] = useState(30);
   const [page, setPage] = useState(0);
 
-  const utils = trpc.useUtils();
   const events = trpc.lifeEvents.list.useQuery();
-  const createMutation = trpc.lifeEvents.create.useMutation({
-    meta: locallyReportedErrorMeta,
-    onSuccess: () => {
-      utils.lifeEvents.list.invalidate();
-      setShowForm(false);
-    },
-    onError: (error) => {
-      captureException(error, { operation: "lifeEvents.create" });
-    },
-  });
-  const deleteMutation = trpc.lifeEvents.delete.useMutation({
-    meta: locallyReportedErrorMeta,
-    onSuccess: () => {
-      utils.lifeEvents.list.invalidate();
-      setSelectedEvent(null);
-    },
-    onError: (error) => {
-      captureException(error, { operation: "lifeEvents.delete" });
-    },
-  });
   const analysis = trpc.lifeEvents.analyze.useQuery(
     { id: selectedEvent ?? "", windowDays },
     { enabled: !!selectedEvent },
@@ -109,36 +83,26 @@ export function LifeEventsPanel() {
         />
       ) : null}
 
-      {/* Event list + add button */}
-      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 flex-wrap gap-2">
-          {visibleEvents?.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              onClick={() => setSelectedEvent(selectedEvent === e.id ? null : e.id)}
-              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                selectedEvent === e.id
-                  ? "bg-blue-900/50 border-blue-700 text-blue-300"
-                  : "bg-surface-solid border-border text-muted hover:text-foreground hover:border-border-strong"
-              }`}
-            >
-              <span className="mr-1.5">{categoryIcon(e.category)}</span>
-              {e.label}
-              <span className="ml-1.5 text-dim">
-                {formatDate(e.started_at)}
-                {e.ended_at ? ` — ${formatDate(e.ended_at)}` : e.ongoing ? " — now" : ""}
-              </span>
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowForm(!showForm)}
-          className="w-full shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors sm:w-auto"
-        >
-          + Add event
-        </button>
+      <div className="flex min-w-0 flex-wrap gap-2">
+        {visibleEvents?.map((e) => (
+          <button
+            key={e.id}
+            type="button"
+            onClick={() => setSelectedEvent(selectedEvent === e.id ? null : e.id)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+              selectedEvent === e.id
+                ? "bg-blue-900/50 border-blue-700 text-blue-300"
+                : "bg-surface-solid border-border text-muted hover:text-foreground hover:border-border-strong"
+            }`}
+          >
+            <span className="mr-1.5">{categoryIcon(e.category)}</span>
+            {e.label}
+            <span className="ml-1.5 text-dim">
+              {formatDate(e.started_at)}
+              {e.ended_at ? ` — ${formatDate(e.ended_at)}` : e.ongoing ? " — now" : ""}
+            </span>
+          </button>
+        ))}
       </div>
 
       <PaginationControls
@@ -156,21 +120,6 @@ export function LifeEventsPanel() {
         <p className="text-dim text-sm text-center py-6">No life events yet.</p>
       ) : null}
 
-      {/* Add form */}
-      {showForm && (
-        <>
-          <AddEventForm
-            onSubmit={(data) => createMutation.mutate(data)}
-            onCancel={() => setShowForm(false)}
-            loading={createMutation.isPending}
-          />
-          {createMutation.error ? (
-            <p className="text-xs text-red-400">{createMutation.error.message}</p>
-          ) : null}
-        </>
-      )}
-
-      {/* Analysis */}
       {(() => {
         if (!selectedEvent || !eventList || eventList.length === 0) return null;
         const event = eventList.find((e) => e.id === selectedEvent);
@@ -192,167 +141,10 @@ export function LifeEventsPanel() {
               loading={analysis.isLoading && analysis.data === undefined}
               windowDays={windowDays}
               onWindowChange={setWindowDays}
-              onDelete={() => deleteMutation.mutate({ id: selectedEvent })}
-              deleting={deleteMutation.isPending}
             />
-            {deleteMutation.error ? (
-              <p className="text-xs text-red-400">{deleteMutation.error.message}</p>
-            ) : null}
           </>
         );
       })()}
-    </div>
-  );
-}
-
-function AddEventForm({
-  onSubmit,
-  onCancel,
-  loading,
-}: {
-  onSubmit: (data: {
-    label: string;
-    startedAt: string;
-    endedAt: string | null;
-    category: string | null;
-    ongoing: boolean;
-    notes: string | null;
-  }) => void;
-  onCancel: () => void;
-  loading: boolean;
-}) {
-  const [label, setLabel] = useState("");
-  const [startedAt, setStartedAt] = useState(formatDateYmd());
-  const [endedAt, setEndedAt] = useState("");
-  const [category, setCategory] = useState("");
-  const [notes, setNotes] = useState("");
-  const [eventType, setEventType] = useState<"point" | "range" | "ongoing">("point");
-
-  return (
-    <div className="card p-4 space-y-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label htmlFor="life-event-label" className="text-xs text-subtle block mb-1">
-            Label
-          </label>
-          <input
-            id="life-event-label"
-            type="text"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g., Started Whole 30, Got injured, Started creatine"
-            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
-          />
-        </div>
-
-        <div>
-          <span className="text-xs text-subtle block mb-1">Type</span>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {(["point", "range", "ongoing"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setEventType(t)}
-                className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                  eventType === t
-                    ? "bg-accent/15 border-border-strong text-foreground"
-                    : "bg-accent/10 border-border-strong text-subtle hover:text-foreground"
-                }`}
-              >
-                {t === "point" ? "One-time" : t === "range" ? "Date range" : "Ongoing"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="life-event-category" className="text-xs text-subtle block mb-1">
-            Category
-          </label>
-          <select
-            id="life-event-category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
-          >
-            <option value="">None</option>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor="life-event-start-date" className="text-xs text-subtle block mb-1">
-            Start date
-          </label>
-          <input
-            id="life-event-start-date"
-            type="date"
-            value={startedAt}
-            onChange={(e) => setStartedAt(e.target.value)}
-            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
-          />
-        </div>
-
-        {eventType === "range" && (
-          <div>
-            <label htmlFor="life-event-end-date" className="text-xs text-subtle block mb-1">
-              End date
-            </label>
-            <input
-              id="life-event-end-date"
-              type="date"
-              value={endedAt}
-              onChange={(e) => setEndedAt(e.target.value)}
-              className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
-            />
-          </div>
-        )}
-
-        <div className="sm:col-span-2">
-          <label htmlFor="life-event-notes" className="text-xs text-subtle block mb-1">
-            Notes (optional)
-          </label>
-          <input
-            id="life-event-notes"
-            type="text"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Any additional context"
-            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-xs px-3 py-1.5 rounded text-subtle hover:text-foreground transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          disabled={!label || !startedAt || loading}
-          onClick={() =>
-            onSubmit({
-              label,
-              startedAt,
-              endedAt: eventType === "range" && endedAt ? endedAt : null,
-              category: category || null,
-              ongoing: eventType === "ongoing",
-              notes: notes || null,
-            })
-          }
-          className="text-xs px-4 py-1.5 rounded bg-blue-800 text-blue-100 hover:bg-blue-700 disabled:opacity-40 transition-colors"
-        >
-          {loading ? "Saving..." : "Save"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -363,16 +155,12 @@ function EventAnalysis({
   loading,
   windowDays,
   onWindowChange,
-  onDelete,
-  deleting,
 }: {
   event: LifeEvent;
   analysis: EventAnalysisData | null;
   loading: boolean;
   windowDays: number;
   onWindowChange: (days: number) => void;
-  onDelete: () => void;
-  deleting: boolean;
 }) {
   const units = useUnitConverter();
   if (loading) {
@@ -421,34 +209,24 @@ function EventAnalysis({
             {event.notes && ` · ${event.notes}`}
           </p>
         </div>
-        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
-            <span className="text-xs text-dim">Window:</span>
-            <div className="grid grid-cols-4 gap-1.5 sm:flex">
-              {[14, 30, 60, 90].map((days) => (
-                <button
-                  key={days}
-                  type="button"
-                  onClick={() => onWindowChange(days)}
-                  className={`w-full text-xs px-2 py-0.5 rounded transition-colors sm:w-auto ${
-                    windowDays === days
-                      ? "bg-accent/15 text-foreground"
-                      : "text-dim hover:text-muted"
-                  }`}
-                >
-                  {days}d
-                </button>
-              ))}
-            </div>
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+          <span className="text-xs text-dim">Window:</span>
+          <div className="grid grid-cols-4 gap-1.5 sm:flex">
+            {[14, 30, 60, 90].map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => onWindowChange(days)}
+                className={`w-full text-xs px-2 py-0.5 rounded transition-colors sm:w-auto ${
+                  windowDays === days
+                    ? "bg-accent/15 text-foreground"
+                    : "text-dim hover:text-muted"
+                }`}
+              >
+                {days}d
+              </button>
+            ))}
           </div>
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={deleting}
-            className="w-full text-xs text-red-800 hover:text-red-500 transition-colors sm:w-auto"
-          >
-            {deleting ? "Deleting..." : "Delete"}
-          </button>
         </div>
       </div>
 

@@ -137,9 +137,6 @@ function resolveOperation(path: string, scenario: LifeEventStoryScenario): unkno
       return scenario.events;
     case "lifeEvents.analyze":
       return scenario.analysis;
-    case "lifeEvents.create":
-    case "lifeEvents.delete":
-      return { ok: true };
     default:
       return null;
   }
