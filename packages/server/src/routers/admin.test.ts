@@ -144,6 +144,21 @@ describe("adminRouter", () => {
       expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("supplement_dose_event");
     });
 
+    it("includes retained health record tables in the catalog overview", async () => {
+      const rows = [
+        { table_name: "breathwork_session", row_count: "2" },
+        { table_name: "menstrual_period", row_count: "3" },
+      ];
+      const execute = vi.fn().mockResolvedValue(rows);
+      const caller = makeCaller(execute);
+
+      await expect(caller.overview()).resolves.toEqual([rows[1], rows[0]]);
+
+      const sqlText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("breathwork_session");
+      expect(sqlText).toContain("menstrual_period");
+    });
+
     it("uses chunk estimates for metric stream hypertable counts", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = makeCaller(execute);

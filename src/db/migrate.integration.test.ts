@@ -34,6 +34,12 @@ const accountErasureTriggerRowsSchema = z.array(
     table_name: z.string(),
   }),
 );
+const retainedHealthRecordRowsSchema = z.array(
+  z.object({
+    breathwork_exists: z.boolean(),
+    menstrual_period_exists: z.boolean(),
+  }),
+);
 let nextMigrationTimestamp = 2_000_000_000_000;
 
 function writeTestMigration(migrationsDir: string, file: string, content: string): void {
@@ -99,6 +105,23 @@ describe("runMigrations", () => {
           constraint_definition:
             "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
         },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("retains canonical breathwork and menstrual records after all migrations", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const result = await client.query(`
+        SELECT
+          to_regclass('fitness.breathwork_session') IS NOT NULL AS breathwork_exists,
+          to_regclass('fitness.menstrual_period') IS NOT NULL AS menstrual_period_exists
+      `);
+      expect(retainedHealthRecordRowsSchema.parse(result.rows)).toEqual([
+        { breathwork_exists: true, menstrual_period_exists: true },
       ]);
     } finally {
       await client.end();

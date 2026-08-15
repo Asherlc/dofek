@@ -23827,6 +23827,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `WITHINGS_CLIENT_ID`; it is not the cause of this completed operation but must
   be provisioned before a future Withings authorization or token refresh.
 
+## 2026-08-15 — Feature retirement dropped retained health-record storage
+
+- **Status:** Recovered in production on 2026-08-15. The breathwork and cycle
+  input surfaces and mutation APIs remain retired; the two canonical tables are
+  restored for read-only retention, export, account erasure, and operational
+  inventory.
+- **Symptoms / impact:** Applied migration
+  `0089_remove_cycle_tracking_and_breathwork.sql` dropped
+  `fitness.breathwork_session` and `fitness.menstrual_period`, so production
+  could no longer retain or export either historical dataset. The first
+  confirmed fatal effect was that both production `to_regclass` checks returned
+  false. The selected pre-drop backup contained zero rows in both tables, so no
+  lost record was confirmed.
+- **Evidence / root cause:** Commit `c66cedde51d381954af93b795c55e39b2230c925`
+  coupled UI/API retirement to destructive storage removal. Production's
+  migration journal recorded SHA-256
+  `3ac8b536afd32166c83c03d29cd8b0e208b0e45fb9ed6d97dd611f8511c1b012`,
+  exactly matching migration 0089. The encrypted pre-drop R2 backup was written
+  at `2026-08-14T06:02:06.112Z`; the destructive commit followed at
+  `2026-08-14T14:21:00Z`. This was a scope/modeling error: retiring human input
+  did not require deleting canonical raw storage.
+- **Fix / mitigation:** Added forward migration
+  `0092_restore_retained_health_records.sql` with SHA-256
+  `eba278b958501a9d1274622d7ddc3440dfef371041de9d531905107eb5d98580`.
+  The initial recovery bytes (SHA-256
+  `e4f5c8e239bda2a5254b3f19ea04192c269190870984f1c348eece1f2e813b48`)
+  were applied under advisory lock `728370291` in one transaction and followed
+  by an account-erasure write-fence refresh. Before merge, CI required
+  semantic-preserving SQL formatting and declaration changes: constraints moved
+  into the same empty-table `CREATE TABLE` statements and comments documented
+  the retained historical integer types. No DDL was rerun; after fresh-database
+  schema equivalence passed, the production migration journal was reconciled to
+  the final reviewed hash under advisory lock `728370291`. The matching
+  encrypted backup was decrypted using its matching `.metadata` object and the
+  original Databasus `secret.key`; every encrypted chunk passed MAC verification
+  under the [documented Databasus manual recovery procedure](https://databasus.com/how-to-recover-without-databasus).
+  Only the two target tables were selected for the data-only import. PostgreSQL
+  documents the atomic restore option used here in
+  [`pg_restore --single-transaction`](https://www.postgresql.org/docs/current/app-pgrestore.html),
+  and the migration transaction followed PostgreSQL's
+  [transaction-block semantics](https://www.postgresql.org/docs/current/tutorial-transactions.html).
+- **Validation:** A full archive restore into isolated PostgreSQL 18 completed
+  successfully with both source counts at zero and no unvalidated constraints.
+  A second empty PostgreSQL 18 database applied all 94 repository migrations,
+  accepted the two-table archive in one transaction, and reproduced exact
+  zero/zero count parity. Production then verified zero rows and zero orphaned
+  owners, 12 breathwork columns, 6 menstrual-period columns, 3 indexes per
+  table, 3 explicit breathwork checks, 2 foreign keys, zero unvalidated
+  constraints, 2 account-erasure fences, the final migration hash, and
+  `pg_is_in_recovery() = false`. The database and backup services were `1/1`,
+  the web service was `2/2`, and `/healthz` returned `ok` after recovery.
+- **Remaining risk / follow-up:** Records written during the approximately
+  eight-hour interval between the selected backup and the destructive change
+  would not be recoverable from this backup. No such records were observed, but
+  the risk cannot be reduced to zero. The executable full-chain migration test
+  now requires both canonical tables to survive, and removal work must treat UI,
+  mutation API, raw storage, export, and erasure as separate lifecycle scopes.
 ## 2026-08-15 — PR 2532 migration failed the SQLFluff CI gate
 
 - **Status:** Resolved; the fresh hosted SQLFluff check passed.
