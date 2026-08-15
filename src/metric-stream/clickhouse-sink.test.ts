@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyMetricStreamEventsToClickHouse,
@@ -20,6 +21,12 @@ import {
   type MetricStreamEventV1,
 } from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
+
+const captureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/error-reporting.ts", () => ({
+  captureException,
+}));
 
 const heartRateEvent = {
   version: 1,
@@ -72,6 +79,8 @@ function makeEmptyGenerationQuery() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
+  captureException.mockClear();
   vi.doUnmock("../db/clickhouse.ts");
   vi.doUnmock("./consumer-readiness.ts");
   vi.doUnmock("./redpanda-consumer.ts");
@@ -170,6 +179,162 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
 });
 
 describe("applyMetricStreamEventsToClickHouse", () => {
+  it("keeps Kafka heartbeats alive while a ClickHouse write is pending", async () => {
+    vi.useFakeTimers();
+    let resolveInsert: (() => void) | undefined;
+    const insertion = new Promise<void>((resolve) => {
+      resolveInsert = resolve;
+    });
+    const insert = vi.fn(() => insertion);
+    const heartbeat = vi.fn(async () => undefined);
+    const applying = applyMetricStreamEventsToClickHouse(
+      { insert, query: makeEmptyGenerationQuery() },
+      [heartRateEvent],
+      {
+        topic: "metric-stream-v1",
+        partition: 2,
+        eventOffsets: ["42"],
+        heartbeat,
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(insert).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(heartbeat).toHaveBeenCalledOnce();
+
+    resolveInsert?.();
+    await applying;
+
+    const heartbeatsAfterCompletion = heartbeat.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(heartbeat).toHaveBeenCalledTimes(heartbeatsAfterCompletion);
+  });
+
+  it("fails after a keepalive heartbeat fails during a pending ClickHouse write", async () => {
+    vi.useFakeTimers();
+    let resolveInsert: (() => void) | undefined;
+    const insertion = new Promise<void>((resolve) => {
+      resolveInsert = resolve;
+    });
+    const heartbeatFailure = new Error("Kafka heartbeat failed");
+    const heartbeat = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(heartbeatFailure)
+      .mockResolvedValue(undefined);
+    const applying = applyMetricStreamEventsToClickHouse(
+      { insert: vi.fn(() => insertion), query: makeEmptyGenerationQuery() },
+      [heartRateEvent],
+      {
+        topic: "metric-stream-v1",
+        partition: 2,
+        eventOffsets: ["42"],
+        heartbeat,
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(heartbeat).toHaveBeenCalledOnce();
+    resolveInsert?.();
+
+    await expect(applying).rejects.toThrow(heartbeatFailure.message);
+    expect(captureException).toHaveBeenCalledWith(heartbeatFailure, {
+      tags: {
+        metricStreamConsumer: "clickhouse-sink",
+        metricStreamFailure: "heartbeat",
+      },
+    });
+  });
+
+  it("does not overlap keepalive heartbeats while a previous heartbeat is pending", async () => {
+    vi.useFakeTimers();
+    let resolveInsert: (() => void) | undefined;
+    let resolveHeartbeat: (() => void) | undefined;
+    const insertion = new Promise<void>((resolve) => {
+      resolveInsert = resolve;
+    });
+    const pendingHeartbeat = new Promise<void>((resolve) => {
+      resolveHeartbeat = resolve;
+    });
+    const heartbeat = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(() => pendingHeartbeat)
+      .mockResolvedValue(undefined);
+    const applying = applyMetricStreamEventsToClickHouse(
+      { insert: vi.fn(() => insertion), query: makeEmptyGenerationQuery() },
+      [heartRateEvent],
+      {
+        topic: "metric-stream-v1",
+        partition: 2,
+        eventOffsets: ["42"],
+        heartbeat,
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(heartbeat).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(heartbeat).toHaveBeenCalledOnce();
+
+    resolveHeartbeat?.();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(heartbeat).toHaveBeenCalledTimes(2);
+
+    resolveInsert?.();
+    await applying;
+  });
+
+  it("applies events without Kafka context", async () => {
+    const insert = vi.fn(async () => undefined);
+
+    await expect(
+      applyMetricStreamEventsToClickHouse({ insert, query: makeEmptyGenerationQuery() }, [
+        heartRateEvent,
+      ]),
+    ).resolves.toBe(1);
+    expect(insert).toHaveBeenCalledOnce();
+  });
+
+  it("does not schedule heartbeats when Kafka context is absent", async () => {
+    vi.useFakeTimers();
+    let resolveInsert: (() => void) | undefined;
+    const insertion = new Promise<void>((resolve) => {
+      resolveInsert = resolve;
+    });
+    const applying = applyMetricStreamEventsToClickHouse(
+      { insert: vi.fn(() => insertion), query: makeEmptyGenerationQuery() },
+      [heartRateEvent],
+    );
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    resolveInsert?.();
+
+    await expect(applying).resolves.toBe(1);
+  });
+
+  it("does not query ClickHouse for an empty batch", async () => {
+    const insert = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
+
+    await expect(applyMetricStreamEventsToClickHouse({ insert, query }, [])).resolves.toBe(0);
+    expect(insert).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("does not query ClickHouse for IMU-only batches", async () => {
+    const insert = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
+
+    await expect(applyMetricStreamEventsToClickHouse({ insert, query }, [imuEvent])).resolves.toBe(
+      0,
+    );
+    expect(insert).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("flushes rows at the maximum write size before processing the next event", async () => {
     const insert = vi.fn(async () => undefined);
     const heartbeat = vi.fn(async () => undefined);
@@ -311,6 +476,35 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     ).rejects.toThrow(
       "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
     );
+  });
+
+  it("does not acknowledge a correlated batch fenced by account erasure", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = vi.fn(async () => ({ json: async () => [{ operation_hash: "f".repeat(64) }] }));
+    const marker = createMetricStreamBatchCompletedEvent(
+      {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "heart-rate-1",
+        datasetKeys: ["recovery"],
+      },
+      1,
+    );
+
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        { command, insert: vi.fn(async () => undefined), query },
+        [marker],
+        {
+          topic: "metric-stream-v1",
+          partition: 2,
+          eventOffsets: ["42"],
+          heartbeat: vi.fn(async () => undefined),
+        },
+      ),
+    ).resolves.toBe(0);
+
+    expect(query).toHaveBeenCalledOnce();
+    expect(command).not.toHaveBeenCalled();
   });
 
   it("tombstones an event when the provider generation fence advances during insertion", async () => {
@@ -768,9 +962,13 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
   });
 
   it("starts the readiness server before starting the ClickHouse sink", async () => {
-    const listen = vi.fn();
+    const readinessServer = Object.assign(new EventEmitter(), {
+      listen: vi.fn(() => readinessServer),
+      unref: vi.fn(),
+    });
+    const listen = readinessServer.listen;
     const unref = vi.fn();
-    const readinessServer = { listen, unref };
+    readinessServer.unref = unref;
     const createMetricStreamConsumerReadinessServer = vi.fn(() => readinessServer);
     const runMetricStreamEventConsumer = vi.fn(async () => undefined);
     const consumer = {
@@ -801,12 +999,60 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
 
     const { startMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
 
-    await startMetricStreamClickHouseSinkFromEnv();
+    const starting = startMetricStreamClickHouseSinkFromEnv();
+    await Promise.resolve();
+
+    expect(runMetricStreamEventConsumer).not.toHaveBeenCalled();
+    readinessServer.emit("listening");
+    await starting;
 
     expect(listen).toHaveBeenCalledWith(3001, "0.0.0.0");
     expect(unref).toHaveBeenCalledOnce();
+    expect(listen.mock.invocationCallOrder[0]).toBeLessThan(
+      runMetricStreamEventConsumer.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(runMetricStreamEventConsumer).toHaveBeenCalledWith(
       expect.objectContaining({ lifecycleListener: expect.any(Object) }),
     );
+  });
+
+  it("fails before consuming when the readiness server cannot bind", async () => {
+    const readinessServer = Object.assign(new EventEmitter(), {
+      listen: vi.fn(() => readinessServer),
+      unref: vi.fn(),
+    });
+    const runMetricStreamEventConsumer = vi.fn(async () => undefined);
+
+    vi.doMock("../db/clickhouse.ts", () => ({
+      createClickHouseClientFromEnv: vi.fn(() => ({ insert: vi.fn(async () => undefined) })),
+    }));
+    vi.doMock("./consumer-readiness.ts", () => ({
+      MetricStreamConsumerReadiness: class MetricStreamConsumerReadiness {},
+      createMetricStreamConsumerReadinessServer: vi.fn(() => readinessServer),
+    }));
+    vi.doMock("./redpanda-consumer.ts", () => ({
+      createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
+        consumer: {
+          connect: vi.fn(async () => undefined),
+          observeGroupLifecycle: vi.fn(),
+          subscribe: vi.fn(async () => undefined),
+          run: vi.fn(async () => undefined),
+        },
+        quarantine: {
+          connect: vi.fn(async () => undefined),
+          write: vi.fn(async () => undefined),
+        },
+        topic: "metric-stream-v1",
+      })),
+      runMetricStreamEventConsumer,
+    }));
+
+    const { startMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
+    const starting = startMetricStreamClickHouseSinkFromEnv();
+    const error = new Error("listen EADDRINUSE: address already in use 0.0.0.0:3001");
+    readinessServer.emit("error", error);
+
+    await expect(starting).rejects.toThrow(error.message);
+    expect(runMetricStreamEventConsumer).not.toHaveBeenCalled();
   });
 });

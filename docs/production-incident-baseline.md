@@ -23690,12 +23690,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   record timestamp metadata for every input message
   ([Redpanda Connect input metadata](https://docs.redpanda.com/connect/components/inputs/redpanda/)).
 - **Fix / mitigation:** Pass the Kafka heartbeat through the consumer batch
-  context and heartbeat after bounded ClickHouse writes and control operations.
-  Add a sink `/readyz` endpoint driven by Kafka group join/rebalance/disconnect
-  lifecycle events and make Swarm health checks call it. Partition R2 object
-  keys from Kafka record timestamps rather than payload `recordedAt`, and rotate
-  the immutable Swarm config to `metric_stream_r2_archive_config_v3`. No retry,
-  timeout extension, or failure suppression was added.
+  context and keep it alive while ClickHouse writes and control operations are
+  pending. Add a sink `/readyz` endpoint driven by Kafka group join/rebalance/disconnect
+  lifecycle events and make Swarm health checks call it. Group R2 records by
+  topic, partition, and Kafka timestamp UTC date/hour before archiving
+  ([Redpanda Connect `group_by_value`](https://docs.redpanda.com/connect/components/processors/group_by_value/)),
+  then derive each object key and offset range from that group
+  ([Redpanda Connect `archive`](https://docs.redpanda.com/connect/components/processors/archive/)). Rotate the immutable
+  Swarm config to `metric_stream_r2_archive_config_v4`. No retry, timeout
+  extension, or failure suppression was added.
 - **Validation:** New readiness and heartbeat regressions pass (121 selected
   tests), TypeScript typecheck passes, and Redpanda Connect 4.99.0 lint accepts
   the archive configuration with a representative environment. Production

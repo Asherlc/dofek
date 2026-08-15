@@ -164,6 +164,9 @@ describe("runMetricStreamEventConsumer", () => {
     });
 
     expect(observeGroupLifecycle).toHaveBeenCalledWith(lifecycleListener);
+    expect(observeGroupLifecycle.mock.invocationCallOrder[0]).toBeLessThan(
+      consumer.run.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it("does not register the consumer lifecycle observer without a listener", async () => {
