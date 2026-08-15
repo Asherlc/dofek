@@ -7,6 +7,44 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-14 — One IMU upload received a transient Cloudflare 502
+
+- **Status:** [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G)
+  was resolved after the failure self-recovered and read-only production checks
+  found no continuing application or host outage. The exact origin-side cause
+  remains unconfirmed, so no application behavior was changed.
+- **Symptoms / user impact:** One 500-sample WHOOP BLE IMU upload received an
+  HTML `502 Bad Gateway` response at 13:45:05 UTC. The mobile uploader retained
+  the complete page in its native buffer because it confirms a drain only after
+  the server acknowledges the batch; no sample-loss evidence was found.
+- **Evidence / root cause:** Sentry recorded two occurrences in four days. For
+  the latest occurrence, the same mobile process received a structured tRPC
+  response from the server six seconds later, showing that the app-to-server
+  path was working at that time. The host had no reboot, kernel OOM, or system
+  warning in the incident window. Docker did replace an unhealthy
+  analytics-worker task at
+  13:43:02 UTC, but the web service remained separate and no evidence connected
+  that replacement to the later edge response; Swarm models service work as
+  replaceable tasks ([Docker task documentation](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).
+  Axiom access had expired and the superseded web-task logs had been pruned, so
+  the precise reason Cloudflare emitted the one-request 502 could not be
+  recovered.
+- **Fix / mitigation:** No retry, timeout, telemetry suppression, or sample
+  discard was added. The existing peek-then-confirm uploader already preserves
+  the batch for a later upload, while continued Sentry reporting will reopen the
+  issue if the edge failure recurs.
+- **Validation:** The 2026-08-14 22:19 PDT incident-record snapshot found two
+  healthy production web replicas; the worker, analytics worker, databases,
+  proxy, and ingest services reported their desired replicas. At that time, the
+  host had been up since 2026-05-29, and the incident window contained no
+  kernel or system failure entry.
+- **Remaining risk / follow-up:** If this issue regresses, renew Axiom access
+  before the next event and correlate the Cloudflare request with web, Traefik,
+  and host logs while the task-local evidence is still retained. Incident
+  responders must preserve unacknowledged batches, verify that unexpected
+  upload failures remain reported, and avoid retries or telemetry suppression
+  until the new event's origin-side failure is identified.
+
 ## 2026-08-14 — Mobile typecheck blocked the feature-removal PR after merge resolution
 
 - **Status:** Fixed in commit `d90d132`; exact-head hosted CI verification is pending.
