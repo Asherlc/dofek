@@ -30,20 +30,42 @@ type CycleStart = {
   }>;
 };
 
-const state = vi.hoisted(() => ({
-  component: null as ComponentType | null,
-  phase: { data: undefined as PhaseData | undefined, isLoading: false, error: null as Error | null },
-  history: {
-    data: [] as CycleStart[] | undefined,
+type QueryState<T> = {
+  data: T | undefined;
+  isLoading: boolean;
+  error: Error | null;
+};
+
+type RouteState = {
+  component: ComponentType | null;
+  phase: QueryState<PhaseData>;
+  history: QueryState<CycleStart[]>;
+};
+
+const state = vi.hoisted<RouteState>(() => ({
+  component: null,
+  phase: {
+    data: undefined,
     isLoading: false,
-    error: null as Error | null,
+    error: null,
+  },
+  history: {
+    data: [],
+    isLoading: false,
+    error: null,
   },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, search, to }: { children: ReactNode; search?: { tab?: string }; to: string }) => (
-    <a href={search?.tab ? `${to}?tab=${search.tab}` : to}>{children}</a>
-  ),
+  Link: ({
+    children,
+    search,
+    to,
+  }: {
+    children: ReactNode;
+    search?: { tab?: string };
+    to: string;
+  }) => <a href={search?.tab ? `${to}?tab=${search.tab}` : to}>{children}</a>,
   createFileRoute: () => (options: { component: ComponentType }) => {
     state.component = options.component;
     return {};
@@ -170,7 +192,11 @@ describe("CyclePage", () => {
 
   it("surfaces query errors and links to data-source and privacy controls", () => {
     state.phase.error = new Error("Current cycle query failed.");
-    state.history = { data: undefined, isLoading: false, error: new Error("History query failed.") };
+    state.history = {
+      data: undefined,
+      isLoading: false,
+      error: new Error("History query failed."),
+    };
 
     renderPage();
 

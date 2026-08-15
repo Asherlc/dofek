@@ -161,4 +161,4 @@ type Story = StoryObj<typeof meta>;
 export const Populated: Story = { render: () => <CycleStoryFrame scenario="populated" /> };
 export const NoData: Story = { render: () => <CycleStoryFrame scenario="no-data" /> };
 export const Conflict: Story = { render: () => <CycleStoryFrame scenario="conflict" /> };
-export const Error: Story = { render: () => <CycleStoryFrame scenario="error" /> };
+export const QueryError: Story = { render: () => <CycleStoryFrame scenario="error" /> };

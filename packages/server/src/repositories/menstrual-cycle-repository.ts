@@ -93,8 +93,7 @@ function shiftCalendarDate(date: string, amount: number, unit: "day" | "month"):
 
 function daysBetween(earlier: string, later: string): number {
   return (
-    (Date.parse(`${later}T00:00:00.000Z`) - Date.parse(`${earlier}T00:00:00.000Z`)) /
-    86_400_000
+    (Date.parse(`${later}T00:00:00.000Z`) - Date.parse(`${earlier}T00:00:00.000Z`)) / 86_400_000
   );
 }
 
@@ -213,10 +212,7 @@ export class MenstrualCycleRepository {
 
   async getCurrentPhase(today = new Date()): Promise<CurrentPhaseResult> {
     const currentDate = calendarDate(today, this.#timezone);
-    const starts = await this.#cycleStarts(
-      "1970-01-01",
-      shiftCalendarDate(currentDate, 1, "day"),
-    );
+    const starts = await this.#cycleStarts("1970-01-01", shiftCalendarDate(currentDate, 1, "day"));
     const latestCycleStart = starts.at(-1) ?? null;
     if (!latestCycleStart) {
       return unavailable(
@@ -226,9 +222,11 @@ export class MenstrualCycleRepository {
       );
     }
 
-    const intervals = starts.slice(1).map((start, index) =>
-      daysBetween(starts[index]?.startDate ?? start.startDate, start.startDate),
-    );
+    const intervals = starts
+      .slice(1)
+      .map((start, index) =>
+        daysBetween(starts[index]?.startDate ?? start.startDate, start.startDate),
+      );
     const conflictingIntervalIndex = intervals.findIndex(
       (interval) => interval < MINIMUM_REGULAR_CYCLE_DAYS,
     );

@@ -9,9 +9,7 @@ const { mockCurrentPhase, mockHistory, mockRepository } = vi.hoisted(() => ({
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC
-    .context<{ db: unknown; userId: string; timezone: string }>()
-    .create();
+  const trpc = initTRPC.context<{ db: unknown; userId: string; timezone: string }>().create();
   return {
     router: trpc.router,
     cachedProtectedQuery: () => trpc.procedure,
@@ -52,11 +50,7 @@ describe("menstrualCycleRouter", () => {
     const caller = createCaller({ db: {}, userId: "user-1", timezone: "America/Los_Angeles" });
 
     await expect(caller.currentPhase()).resolves.toEqual(result);
-    expect(mockRepository).toHaveBeenCalledWith(
-      {},
-      "user-1",
-      "America/Los_Angeles",
-    );
+    expect(mockRepository).toHaveBeenCalledWith({}, "user-1", "America/Los_Angeles");
   });
 
   it("returns provider-attributed history with a default six-month range", async () => {

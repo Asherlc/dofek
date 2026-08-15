@@ -24,7 +24,9 @@ export function CyclePage() {
     <PageLayout title="Cycle Tracking" subtitle="Provider-sourced cycle phases and history">
       <div className="space-y-6">
         <section aria-label="Cycle data source" className="card p-6">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-muted">Read-only data</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted">
+            Read-only data
+          </h2>
           <p className="mt-2 text-sm text-muted">
             Cycle records come from connected providers. To correct a date, update it in the source
             app and sync again.
@@ -66,10 +68,10 @@ export function CyclePage() {
               <div>
                 <div className="flex items-center gap-4">
                   <div
-                    aria-label="Current cycle day"
                     className="flex h-16 w-16 items-center justify-center rounded-full text-lg font-bold text-white"
                     style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
                   >
+                    <span className="sr-only">Current cycle day </span>
                     {currentPhase.data.dayOfCycle}
                   </div>
                   <div>
@@ -98,7 +100,11 @@ export function CyclePage() {
           ) : currentPhase.isLoading ? (
             <QueryStatePanel contextLabel="Current cycle phase" height={96} variant="loading" />
           ) : currentPhase.error ? (
-            <QueryStatePanel contextLabel="Current cycle phase" error={currentPhase.error} height={96} />
+            <QueryStatePanel
+              contextLabel="Current cycle phase"
+              error={currentPhase.error}
+              height={96}
+            />
           ) : (
             <QueryStatePanel message="No readable provider cycle data yet." height={96} />
           )}
@@ -124,11 +130,7 @@ export function CyclePage() {
             history.data.length > 0 ? (
               <ul className="divide-y divide-border">
                 {[...history.data].reverse().map((start) => (
-                  <li
-                    aria-label={`Cycle start ${start.startDate}`}
-                    className="py-3"
-                    key={start.id}
-                  >
+                  <li aria-label={`Cycle start ${start.startDate}`} className="py-3" key={start.id}>
                     <p className="text-sm font-medium text-foreground">{start.startDate}</p>
                     <ul className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
                       {start.sources.map((source) => (

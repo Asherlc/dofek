@@ -56,8 +56,9 @@ const currentPhaseOutputSchema = z.object({
 export const menstrualCycleRouter = router({
   currentPhase: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .output(currentPhaseOutputSchema)
-    .query(({ ctx }): Promise<CurrentPhaseResult> =>
-      new MenstrualCycleRepository(ctx.db, ctx.userId, ctx.timezone).getCurrentPhase(),
+    .query(
+      ({ ctx }): Promise<CurrentPhaseResult> =>
+        new MenstrualCycleRepository(ctx.db, ctx.userId, ctx.timezone).getCurrentPhase(),
     ),
 
   history: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })

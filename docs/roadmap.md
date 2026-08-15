@@ -169,6 +169,19 @@ Connect each daily decision to a longer-term outcome. First slice shipped: persi
 Implementation-level backlog. Checked items are complete; unchecked are open.
 
 ### Data Ingestion
+- [x] Read-only menstrual-cycle tracking from explicit Apple Health menstrual-flow records,
+  including the upstream cycle-start marker, source attribution, background HealthKit delivery,
+  XML import, and provider-only correction workflow
+  ([HealthKit menstrual flow](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
+- [ ] Add Garmin Women's Health only after Connect Developer Program approval and access to the
+  official payload contract; do not extend the private Garmin provider with guessed endpoints
+  ([Garmin Women's Health API](https://developer.garmin.com/gc-developer-program/womens-health-api/),
+  [program FAQ](https://developer.garmin.com/gc-developer-program/program-faq/)).
+- [ ] Add Android Health Connect menstrual records if an Android client is introduced
+  ([MenstruationPeriodRecord](https://developer.android.com/reference/androidx/health/connect/client/records/MenstruationPeriodRecord)).
+- [x] Record WHOOP, Oura, Fitbit, Polar, Withings, and Google Health as unsupported explicit
+  menstrual-record sources under their current public APIs; see
+  [`provider-api-audit.md`](provider-api-audit.md#unsupported-public-menstrual-record-sources).
 - [x] Apple Health XML parser (HR streams, HRV, sleep stages, workouts, body measurements, blood glucose, nutrition, walking stats, mindful sessions)
 - [x] Apple Health HTTP upload with chunked transfer and progress indicator
 - [x] Apple Health workout routes (GPS data from WorkoutRoute elements → metric_stream)

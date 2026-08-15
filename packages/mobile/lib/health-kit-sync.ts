@@ -754,11 +754,7 @@ export async function syncHealthKitObserverChanges(
   }
 
   if (typeIdentifiers.has(MENSTRUAL_FLOW_TYPE_IDENTIFIER)) {
-    const result = await syncAnchoredSampleType(
-      options,
-      MENSTRUAL_FLOW_TYPE_IDENTIFIER,
-      startDate,
-    );
+    const result = await syncAnchoredSampleType(options, MENSTRUAL_FLOW_TYPE_IDENTIFIER, startDate);
     deleted += result.deleted;
     inserted += result.inserted;
     errors.push(...result.errors);

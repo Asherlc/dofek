@@ -146,7 +146,10 @@ describe("CycleScreen", () => {
     render(<CycleScreen />);
 
     fireEvent.click(screen.getByRole("link", { name: "Data sources" }));
-    expect(mocks.push).toHaveBeenCalledWith({ pathname: "/settings", params: { tab: "data-sources" } });
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: "/settings",
+      params: { tab: "data-sources" },
+    });
     fireEvent.click(screen.getByRole("link", { name: "Export all data" }));
     expect(mocks.push).toHaveBeenCalledWith({
       pathname: "/settings",

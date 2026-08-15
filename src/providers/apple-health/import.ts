@@ -56,7 +56,7 @@ import {
   parseFhirMedicationRequest,
   parseFhirObservation,
 } from "./fhir.ts";
-import type { CategoryRecord, HealthRecord } from "./records.ts";
+import { type CategoryRecord, type HealthRecord, normalizedCategoryMetadata } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
 import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
@@ -93,18 +93,6 @@ function categoryExternalId(record: CategoryRecord): string {
     )
     .digest("hex");
   return `ah-category:${digest}`;
-}
-
-function categoryMetadata(
-  record: CategoryRecord,
-): Record<string, string | number | boolean> {
-  const metadata: Record<string, string | number | boolean> = { ...record.metadata };
-  if (Object.hasOwn(record.metadata, "HKMenstrualCycleStart")) {
-    delete metadata.HKMenstrualCycleStart;
-    metadata.HKMetadataKeyMenstrualCycleStart =
-      record.metadata.HKMenstrualCycleStart === "1";
-  }
-  return metadata;
 }
 
 function parseMedicationDoseRecordedAt(value: string): Date {
@@ -390,7 +378,7 @@ export async function runImport(
           valueText: r.value ?? undefined,
           sourceName: r.sourceName,
           sourceBundle: r.sourceBundle,
-          metadata: categoryMetadata(r),
+          metadata: normalizedCategoryMetadata(r),
           startDate: r.startDate,
           endDate: r.endDate,
         }));

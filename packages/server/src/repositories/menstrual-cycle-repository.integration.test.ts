@@ -155,8 +155,6 @@ describe("MenstrualCycleRepository with Postgres", () => {
       .from(schema.healthEvent)
       .where(eq(schema.healthEvent.userId, OTHER_USER_ID));
     expect(rows).toHaveLength(1);
-    await expect(
-      repository().getHistory(6, new Date("2026-08-14T12:00:00Z")),
-    ).resolves.toEqual([]);
+    await expect(repository().getHistory(6, new Date("2026-08-14T12:00:00Z"))).resolves.toEqual([]);
   });
 });

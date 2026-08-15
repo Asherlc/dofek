@@ -79,7 +79,9 @@ export default function CycleScreen() {
                   </View>
                   <View style={styles.phaseText}>
                     <Text style={styles.phaseLabel}>{currentPhase.data.estimate.phaseLabel}</Text>
-                    <Text style={styles.detailText}>{currentPhase.data.estimate.cycleDayLabel}</Text>
+                    <Text style={styles.detailText}>
+                      {currentPhase.data.estimate.cycleDayLabel}
+                    </Text>
                   </View>
                 </View>
                 <View style={styles.details}>
@@ -222,7 +224,12 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   noticeTitle: { color: colors.text, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  historyRow: { borderBottomColor: colors.border, borderBottomWidth: 1, gap: spacing.xs, paddingVertical: spacing.sm },
+  historyRow: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
   historyDate: { color: colors.text, fontSize: fontSize.base, fontWeight: fontWeight.semibold },
   sources: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   source: {

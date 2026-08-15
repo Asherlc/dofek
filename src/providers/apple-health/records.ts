@@ -55,6 +55,17 @@ export function parseCategoryRecord(attrs: Record<string, string>): CategoryReco
   };
 }
 
+export function normalizedCategoryMetadata(
+  record: CategoryRecord,
+): Record<string, string | number | boolean> {
+  const metadata: Record<string, string | number | boolean> = { ...record.metadata };
+  if (Object.hasOwn(record.metadata, "HKMenstrualCycleStart")) {
+    delete metadata.HKMenstrualCycleStart;
+    metadata.HKMetadataKeyMenstrualCycleStart = record.metadata.HKMenstrualCycleStart === "1";
+  }
+  return metadata;
+}
+
 export interface RouteLocation {
   date: Date;
   lat: number;
