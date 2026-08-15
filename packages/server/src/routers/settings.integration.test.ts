@@ -254,6 +254,29 @@ describe("Settings router", () => {
               VALUES (${SETTINGS_TEST_USER_ID}, 'Delete event', '2024-01-15')`,
         ),
         testCtx.db.execute(
+          sql`INSERT INTO fitness.breathwork_session (
+                id, user_id, technique_id, rounds, duration_seconds, started_at
+              ) VALUES (
+                '33333333-3333-3333-3333-333333333333',
+                ${SETTINGS_TEST_USER_ID},
+                'box-breathing',
+                4,
+                240,
+                '2024-01-15T10:00:00Z'
+              )
+              ON CONFLICT (id) DO NOTHING`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.menstrual_period (id, user_id, start_date, notes)
+              VALUES (
+                '44444444-4444-4444-4444-444444444444',
+                ${SETTINGS_TEST_USER_ID},
+                '2024-01-15',
+                'Delete period'
+              )
+              ON CONFLICT (id) DO NOTHING`,
+        ),
+        testCtx.db.execute(
           sql`INSERT INTO fitness.sport_settings (user_id, sport, effective_from, ftp)
               VALUES (${SETTINGS_TEST_USER_ID}, 'running', '2024-01-15', 260)
               ON CONFLICT DO NOTHING`,
@@ -283,6 +306,8 @@ describe("Settings router", () => {
         logsAfter,
         tokensAfter,
         eventsAfter,
+        breathworkSessionsAfter,
+        menstrualPeriodsAfter,
         sportSettingsAfter,
         supplementsAfter,
         userSettingsAfter,
@@ -300,6 +325,12 @@ describe("Settings router", () => {
           sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.breathwork_session WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
+          sql`SELECT count(*)::int AS count FROM fitness.menstrual_period WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        testCtx.db.execute<{ count: number }>(
           sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
@@ -314,6 +345,8 @@ describe("Settings router", () => {
       expect(logsAfter[0]?.count).toBe(0);
       expect(tokensAfter[0]?.count).toBe(0);
       expect(eventsAfter[0]?.count).toBe(0);
+      expect(breathworkSessionsAfter[0]?.count).toBe(0);
+      expect(menstrualPeriodsAfter[0]?.count).toBe(0);
       expect(sportSettingsAfter[0]?.count).toBe(0);
       expect(supplementsAfter[0]?.count).toBe(0);
       expect(userSettingsAfter[0]?.count).toBe(0);
