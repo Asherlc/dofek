@@ -23791,7 +23791,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-08-15 — PR 2532 migration failed the SQLFluff CI gate
 
-- **Status:** Fixed in the pull request; hosted rerun pending.
+- **Status:** Resolved; the fresh hosted SQLFluff check passed.
 - **Symptoms / impact:** The `Test / SQLFluff` job blocked PR #2532 while
   linting `drizzle/0091_health_event_source_metadata.sql`. The first fatal
   finding was `RF06 Unnecessary quoted identifier "fitness"`; the same file
@@ -23808,13 +23808,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ignore, retry, timeout, or failure suppression was added.
 - **Validation:** The exact CI command,
   `uv tool run sqlfluff lint drizzle/0091_health_event_source_metadata.sql`,
-  passes locally. Confirm a fresh hosted SQLFluff job passes.
+  passes locally, and the fresh [hosted SQLFluff
+  job](https://github.com/Asherlc/dofek/actions/runs/31894084167/job/95034674793)
+  passed.
 - **Remaining risk / follow-up:** Add migration SQLFluff parity to the standard
   local lint workflow so new migrations fail before push.
 
 ## 2026-08-15 — PR 2532 read paths fell below the mutation threshold
 
-- **Status:** Fixed in the pull request; hosted rerun pending.
+- **Status:** Resolved; all fresh hosted mutation checks passed.
 - **Symptoms / impact:** Three `Test / Stryker` shards blocked PR #2532. The
   cycle repository shard reported 41 surviving and four uncovered mutants, the
   Apple Health import shard left category identity/value behavior uncovered,
@@ -23836,6 +23838,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The focused cycle and Apple import suites pass 100 tests.
   Stryker killed 125 of 127 relevant mutants in the combined run; focused
   reruns then killed both remaining comparator/slicing mutants and reported a
-  100.00% mutation score with no survivors or timeouts.
-- **Remaining risk / follow-up:** Confirm all hosted mutation shards and the
-  aggregate mutation gate pass on the pushed commit.
+  100.00% mutation score with no survivors or timeouts. All eight hosted
+  Stryker shards and the aggregate mutation gate passed in the [fresh CI
+  run](https://github.com/Asherlc/dofek/actions/runs/31894084167).
+- **Remaining risk / follow-up:** Keep the calendar, source-ordering, and
+  persistence boundary cases when the provider-read model changes.
