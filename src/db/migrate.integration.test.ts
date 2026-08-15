@@ -108,13 +108,16 @@ describe("runMigrations", () => {
   it("retains canonical breathwork and menstrual records after all migrations", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
-    const result = await client.query(`
-      SELECT
-        to_regclass('fitness.breathwork_session') IS NOT NULL AS breathwork_exists,
-        to_regclass('fitness.menstrual_period') IS NOT NULL AS menstrual_period_exists
-    `);
-    expect(result.rows).toEqual([{ breathwork_exists: true, menstrual_period_exists: true }]);
-    await client.end();
+    try {
+      const result = await client.query(`
+        SELECT
+          to_regclass('fitness.breathwork_session') IS NOT NULL AS breathwork_exists,
+          to_regclass('fitness.menstrual_period') IS NOT NULL AS menstrual_period_exists
+      `);
+      expect(result.rows).toEqual([{ breathwork_exists: true, menstrual_period_exists: true }]);
+    } finally {
+      await client.end();
+    }
   });
 
   it("skips already-applied migrations on second run", async () => {
