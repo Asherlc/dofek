@@ -254,6 +254,8 @@ describe("generateExport", () => {
       Reflect.get(execute.mock.calls[14]?.[0] ?? {}, "queryChunks") ?? [],
     );
     expect(periodQuery).toContain("fitness.menstrual_period");
+    expect(periodQuery).toContain("WHERE user_id = ");
+    expect(periodQuery).toContain("user-1");
   });
 
   it("exports historical breathwork sessions with every returned column", async () => {
