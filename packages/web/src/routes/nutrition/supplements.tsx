@@ -31,7 +31,7 @@ function NutritionSupplementsPage() {
       </PageSection>
       <PageSection
         title="Recent Doses"
-        subtitle="Planned, taken, skipped, and unknown dose-event history"
+        subtitle="Provider-recorded planned, taken, skipped, and unknown dose-event history"
       >
         <SupplementDoseEventsPanel />
       </PageSection>
