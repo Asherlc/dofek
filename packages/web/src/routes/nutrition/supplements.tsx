@@ -17,7 +17,7 @@ function NutritionSupplementsPage() {
     <div className="space-y-8">
       <PageSection
         title="Supplement Stack"
-        subtitle="Define your schedule; nutrients count only when you record a dose as taken"
+        subtitle="Synced supplement definitions and nutrient details"
       >
         <SupplementStackPanel />
       </PageSection>
