@@ -13,6 +13,11 @@ const destinations = [
     description:
       "Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
   },
+  {
+    to: "/cycle",
+    title: "Cycle tracking",
+    description: "Review provider-sourced cycle starts and phase estimates.",
+  },
 ] as const;
 
 export function MorePage() {

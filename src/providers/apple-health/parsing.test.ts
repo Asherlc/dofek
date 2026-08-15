@@ -865,6 +865,7 @@ describe("Apple Health Provider -- parsing", () => {
       const attrs: Record<string, string> = {
         type: "HKCategoryTypeIdentifierMindfulSession",
         sourceName: "Headspace",
+        sourceBundle: "com.headspace.Headspace",
         value: "1",
         creationDate: "2024-03-01 07:00:00 -0500",
         startDate: "2024-03-01 07:00:00 -0500",
@@ -875,6 +876,8 @@ describe("Apple Health Provider -- parsing", () => {
       expect(result?.type).toBe("HKCategoryTypeIdentifierMindfulSession");
       expect(result?.value).toBe("1");
       expect(result?.sourceName).toBe("Headspace");
+      expect(result?.sourceBundle).toBe("com.headspace.Headspace");
+      expect(result?.metadata).toEqual({});
       expect(result?.startDate).toBeInstanceOf(Date);
       expect(result?.endDate).toBeInstanceOf(Date);
     });

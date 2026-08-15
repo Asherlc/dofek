@@ -37,5 +37,8 @@ describe("MorePage", () => {
     expect(screen.getByRole("link", { name: /Data quality/ }).getAttribute("href")).toBe(
       "/data-quality",
     );
+    expect(screen.getByRole("link", { name: /Cycle tracking/ }).getAttribute("href")).toBe(
+      "/cycle",
+    );
   });
 });

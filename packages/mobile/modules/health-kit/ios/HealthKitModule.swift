@@ -566,6 +566,10 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
+                    if HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
+                        promise.resolve([[String: Any]]())
+                        return
+                    }
                     self.rejectHealthKitError(
                         promise,
                         operation: "queryCategorySamples(\(typeIdentifier))",
@@ -578,17 +582,9 @@ public class HealthKitModule: Module {
                     .filter {
                         self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                     }
-                    .map { sample -> [String: Any] in
-                    return [
-                        "uuid": sample.uuid.uuidString,
-                        "type": typeIdentifier,
-                        "value": sample.value,
-                        "startDate": HealthKitQueries.formatDate(sample.startDate),
-                        "endDate": HealthKitQueries.formatDate(sample.endDate),
-                        "sourceName": sample.sourceRevision.source.name,
-                        "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
-                    ]
-                } ?? []
+                    .compactMap {
+                        HealthKitQueries.transportSample($0, typeIdentifier: typeIdentifier)
+                    } ?? []
                 promise.resolve(samples)
             }
             self.healthStore.execute(query)
@@ -632,11 +628,11 @@ public class HealthKitModule: Module {
         }
 
         AsyncFunction("queryAnchoredSamples") { (typeIdentifier: String, initialStartDateStr: String, promise: Promise) in
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+            guard let sampleType = HealthKitQueries.sampleType(for: typeIdentifier) else {
                 self.rejectPromise(
                     promise,
                     code: "INVALID_TYPE",
-                    reason: "Unknown quantity type: \(typeIdentifier)"
+                    reason: "Unknown sample type: \(typeIdentifier)"
                 )
                 return
             }
@@ -698,23 +694,13 @@ public class HealthKitModule: Module {
                     }
                     let objects: HealthKitAnchoredObjects = queryResult.result
 
-                    let samples = (objects.added as? [HKQuantitySample])?
+                    let samples = objects.added
                         .filter {
                             self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                         }
-                        .map { sample -> [String: Any] in
-                        let unit = HealthKitQueries.preferredUnit(for: sampleType)
-                        return [
-                            "type": typeIdentifier,
-                            "value": sample.quantity.doubleValue(for: unit),
-                            "unit": unit.unitString,
-                            "startDate": HealthKitQueries.formatDate(sample.startDate),
-                            "endDate": HealthKitQueries.formatDate(sample.endDate),
-                            "sourceName": sample.sourceRevision.source.name,
-                            "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
-                            "uuid": sample.uuid.uuidString,
-                        ]
-                    } ?? []
+                        .compactMap {
+                            HealthKitQueries.transportSample($0, typeIdentifier: typeIdentifier)
+                        }
 
                     let deletedUUIDs = objects.deleted.map { $0.uuid.uuidString }
 
@@ -853,11 +839,11 @@ public class HealthKitModule: Module {
         }
 
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+            guard let sampleType = HealthKitQueries.sampleType(for: typeIdentifier) else {
                 self.rejectPromise(
                     promise,
                     code: "INVALID_TYPE",
-                    reason: "Unknown quantity type: \(typeIdentifier)"
+                    reason: "Unknown sample type: \(typeIdentifier)"
                 )
                 return
             }

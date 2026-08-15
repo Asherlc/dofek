@@ -7,6 +7,44 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-14 — One IMU upload received a transient Cloudflare 502
+
+- **Status:** [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G)
+  was resolved after the failure self-recovered and read-only production checks
+  found no continuing application or host outage. The exact origin-side cause
+  remains unconfirmed, so no application behavior was changed.
+- **Symptoms / user impact:** One 500-sample WHOOP BLE IMU upload received an
+  HTML `502 Bad Gateway` response at 13:45:05 UTC. The mobile uploader retained
+  the complete page in its native buffer because it confirms a drain only after
+  the server acknowledges the batch; no sample-loss evidence was found.
+- **Evidence / root cause:** Sentry recorded two occurrences in four days. For
+  the latest occurrence, the same mobile process received a structured tRPC
+  response from the server six seconds later, showing that the app-to-server
+  path was working at that time. The host had no reboot, kernel OOM, or system
+  warning in the incident window. Docker did replace an unhealthy
+  analytics-worker task at
+  13:43:02 UTC, but the web service remained separate and no evidence connected
+  that replacement to the later edge response; Swarm models service work as
+  replaceable tasks ([Docker task documentation](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).
+  Axiom access had expired and the superseded web-task logs had been pruned, so
+  the precise reason Cloudflare emitted the one-request 502 could not be
+  recovered.
+- **Fix / mitigation:** No retry, timeout, telemetry suppression, or sample
+  discard was added. The existing peek-then-confirm uploader already preserves
+  the batch for a later upload, while continued Sentry reporting will reopen the
+  issue if the edge failure recurs.
+- **Validation:** The 2026-08-14 22:19 PDT incident-record snapshot found two
+  healthy production web replicas; the worker, analytics worker, databases,
+  proxy, and ingest services reported their desired replicas. At that time, the
+  host had been up since 2026-05-29, and the incident window contained no
+  kernel or system failure entry.
+- **Remaining risk / follow-up:** If this issue regresses, renew Axiom access
+  before the next event and correlate the Cloudflare request with web, Traefik,
+  and host logs while the task-local evidence is still retained. Incident
+  responders must preserve unacknowledged batches, verify that unexpected
+  upload failures remain reported, and avoid retries or telemetry suppression
+  until the new event's origin-side failure is identified.
+
 ## 2026-08-14 — Mobile typecheck blocked the feature-removal PR after merge resolution
 
 - **Status:** Fixed in commit `d90d132`; exact-head hosted CI verification is pending.
@@ -23636,6 +23674,74 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** A frozen install, Expo compatibility check, focused Journal web/mobile tests, typechecks, and sandbox lint passed locally. The hosted checks must pass before the PR is considered ready.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and remaining hosted checks pass. Repeated SDK patch drift indicates the mobile dependency refresh cadence should run before feature PRs that touch mobile code.
 
+## 2026-08-14 — Cycle-removal migration ran before read-only product direction
+
+- **Status:** Unresolved. The destructive migration has completed in
+  production; provider-fed read-only cycle tracking and any approved recovery
+  of historical manual rows remain follow-up work.
+- **Symptoms / impact:** The cycle route, APIs, and `fitness.menstrual_period`
+  storage were removed by [PR #2523](https://github.com/Asherlc/dofek/pull/2523).
+  The subsequent product direction is to retain cycle tracking as a read-only,
+  provider-fed feature. Historical manual period rows are no longer available
+  in the live table, and the deployed clients no longer expose cycle history.
+- **Evidence:** The exact production step was `Run migrations` in
+  [Deploy Web run 31862135496](https://github.com/Asherlc/dofek/actions/runs/31862135496).
+  It completed successfully at `2026-08-15T03:39:06Z`; the merged forward
+  migration contains `DROP TABLE fitness.menstrual_period`.
+- **Root cause:** The full feature-removal change, including destructive data
+  deletion, merged and deployed before the narrower product requirement to
+  remove human-input surfaces while preserving a provider-fed read path was
+  established.
+- **Fix / mitigation:** No production mutation or ad-hoc table recreation has
+  been attempted. The durable design uses provider-originated raw events in
+  `fitness.health_event` and restores only read queries and read-only clients.
+- **Remaining risk / follow-up:** Decide separately whether historical manual
+  rows should be recovered from the latest pre-migration backup. If approved,
+  follow the database recovery runbook in an isolated restore and import the
+  recovered rows once with explicit legacy provenance; do not restore the
+  deleted write APIs or create a second source of truth.
+
+## 2026-08-14 — Concurrent local integration runs exhausted shared ClickHouse
+
+- **Status:** Current workspace recovered; concurrent local validation remains a
+  documented risk. There was no production impact or evidence of a
+  cycle-tracking defect.
+- **Symptoms / impact:** `pnpm test:changed:all` completed the changed unit and
+  mobile tests, then unrelated server integration suites timed out during
+  ClickHouse setup and skipped their test bodies. The final integration result
+  was 116 files and 2,666 tests passed, 99 files failed during setup, and 799
+  tests skipped. The first fatal failure was a
+  ClickHouse HTTP `Timeout error` after 120 seconds in the unchanged
+  `packages/server/src/routers/router.integration.test.ts`, followed by
+  `ECONNRESET: socket hang up`; later suites reproduced the same setup failure,
+  one reported ClickHouse error 241 `MEMORY_LIMIT_EXCEEDED` at its 1.25 GiB
+  limit, HealthKit sync setup exceeded its 60-second `beforeAll` timeout, and
+  later Postgres-dependent suites failed while the database was in recovery.
+  After the run, Docker Desktop's engine stopped, leaving `.env.local` pointed
+  at unavailable workspace ports and causing analytics lint to fail before SQL
+  evaluation.
+- **Evidence / root cause:** Another workspace was simultaneously running a
+  long-lived integration command against the same Docker daemon, while Docker
+  inspect, exec, and published-port requests intermittently stalled. The
+  workspace containers later reported healthy without configuration changes,
+  and the focused menstrual-cycle repository integration suite passed all 8
+  tests once the database responded. During the final recovery, Postgres's
+  startup process was blocked in uninterruptible I/O while ClickHouse used 415
+  processes to finalize background merges. This isolates the failure to
+  host-level Docker/database contention during concurrent workspace suites,
+  rather than the changed read path. Workspace isolation and recovery
+  expectations are documented in [the testing runbook](testing.md#integration-dependencies).
+- **Fix / mitigation:** No test timeout, retry, failure suppression, shared
+  container restart, volume deletion, or deletion of another workspace's
+  resources was added. Docker Desktop was restarted, the repository Compose
+  wrapper restored the existing workspace services, and validation resumed only
+  after their health checks recovered. Cycle database behavior passed its
+  focused executable integration suite, and analytics lint completed
+  successfully against the recovered ClickHouse service.
+- **Remaining risk / follow-up:** Rerun `pnpm test:changed:all` or rely on the
+  hosted integration matrix when this workspace has exclusive access to its
+  Docker resources. Document an explicit local integration-run concurrency
+  check so agents can avoid overlapping heavyweight suites.
 ## 2026-08-12 — PR 2507 CI retained an orphaned mobile component after conflict resolution
 
 - **Status:** Resolved by commits `a874f77` and `ce3bac9`; the repaired [Knip job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312820), [Native FIT Decoder job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312585), Mobile Preview OTA check, and [TFLint rerun](https://github.com/Asherlc/dofek/actions/runs/31633329057/job/94237945547) passed on fresh PR runs.
@@ -23778,3 +23884,57 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the risk cannot be reduced to zero. The executable full-chain migration test
   now requires both canonical tables to survive, and removal work must treat UI,
   mutation API, raw storage, export, and erasure as separate lifecycle scopes.
+## 2026-08-15 — PR 2532 migration failed the SQLFluff CI gate
+
+- **Status:** Resolved; the fresh hosted SQLFluff check passed.
+- **Symptoms / impact:** The `Test / SQLFluff` job blocked PR #2532 while
+  linting `drizzle/0091_health_event_source_metadata.sql`. The first fatal
+  finding was `RF06 Unnecessary quoted identifier "fitness"`; the same file
+  also reported unnecessary quotes for the table and column names and `LT02`
+  indentation violations. No production environment was affected.
+- **Evidence / root cause:** The failing job ran the new-migration file list
+  through `uv tool run sqlfluff lint`. The migration used Drizzle-style quotes
+  around ordinary lowercase identifiers and indented its `ADD COLUMN` clauses,
+  which violate the repository's migration SQLFluff rules. The regular local
+  `pnpm lint` command did not exercise that CI-only new-migration invocation.
+  See the [failed SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/31890825620/job/95026814995).
+- **Fix / mitigation:** Removed the unnecessary identifier quotes and aligned
+  the `ADD COLUMN` clauses with SQLFluff's expected indentation. No lint rule,
+  ignore, retry, timeout, or failure suppression was added.
+- **Validation:** The exact CI command,
+  `uv tool run sqlfluff lint drizzle/0091_health_event_source_metadata.sql`,
+  passes locally, and the fresh [hosted SQLFluff
+  job](https://github.com/Asherlc/dofek/actions/runs/31894084167/job/95034674793)
+  passed.
+- **Remaining risk / follow-up:** Add migration SQLFluff parity to the standard
+  local lint workflow so new migrations fail before push.
+
+## 2026-08-15 — PR 2532 read paths fell below the mutation threshold
+
+- **Status:** Resolved; all fresh hosted mutation checks passed.
+- **Symptoms / impact:** Three `Test / Stryker` shards blocked PR #2532. The
+  cycle repository shard reported 41 surviving and four uncovered mutants, the
+  Apple Health import shard left category identity/value behavior uncovered,
+  and the HealthKit repository shard ended with `Final mutation score 66.67
+  under breaking threshold 75`. No production environment was affected.
+- **Evidence / root cause:** CI ran `pnpm exec stryker run
+  stryker.ci.config.json --mutate "$MUTATE_FILES"`. The initial tests verified
+  common read-only cycle results but did not pin calendar month-end math,
+  deterministic source ordering in both comparator directions, regularity and
+  stale-window boundaries, estimate range wording, category external-ID
+  uniqueness, or absent HealthKit metadata as SQL `NULL`. Equivalent optional
+  branches and a redundant minimum-interval condition also created mutants
+  that no valid input could distinguish. See the [failed mutation
+  run](https://github.com/Asherlc/dofek/actions/runs/31891264213).
+- **Fix / mitigation:** Added public-behavior tests for every uncovered branch,
+  removed only the redundant or construction-guaranteed branches, and retained
+  the existing production behavior. No mutation exclusion, ignored file,
+  lowered threshold, timeout, retry, or suppression was added.
+- **Validation:** The focused cycle and Apple import suites pass 100 tests.
+  Stryker killed 125 of 127 relevant mutants in the combined run; focused
+  reruns then killed both remaining comparator/slicing mutants and reported a
+  100.00% mutation score with no survivors or timeouts. All eight hosted
+  Stryker shards and the aggregate mutation gate passed in the [fresh CI
+  run](https://github.com/Asherlc/dofek/actions/runs/31894084167).
+- **Remaining risk / follow-up:** Keep the calendar, source-ordering, and
+  persistence boundary cases when the provider-read model changes.

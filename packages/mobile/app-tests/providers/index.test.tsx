@@ -259,6 +259,7 @@ vi.mock("../../modules/health-kit", () => ({
     deletedUUIDs: [],
   }),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
