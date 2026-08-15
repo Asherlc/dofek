@@ -19,6 +19,7 @@ function MorePageStory() {
   const destinationRoutes = [
     { path: "/settings", title: "Account & settings" },
     { path: "/data-quality", title: "Data quality" },
+    { path: "/cycle", title: "Cycle tracking" },
   ].map(({ path, title }) =>
     createRoute({
       getParentRoute: () => rootRoute,
