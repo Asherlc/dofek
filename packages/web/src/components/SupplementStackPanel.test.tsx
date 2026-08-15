@@ -47,6 +47,15 @@ describe("SupplementStackPanel", () => {
     expect(screen.getByTestId("query-state-loading")).toBeDefined();
   });
 
+  it("shows the server error when the initial stack load fails", () => {
+    mocks.query.data = undefined;
+    mocks.query.error = new Error("Supplement load failed.");
+
+    render(<SupplementStackPanel />);
+
+    expect(screen.getByText("Supplement load failed.")).toBeDefined();
+  });
+
   it("uses the shared query state panel for an empty synced stack", () => {
     mocks.query.data = [];
 

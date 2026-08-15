@@ -44,14 +44,6 @@ vi.mock("../lib/trpc", () => ({
           isLoading: false,
         }),
       },
-      recordDose: {
-        useMutation: () => ({
-          error: null,
-          isError: false,
-          isPending: false,
-          mutate: vi.fn(),
-        }),
-      },
     },
     nutritionAnalytics: {
       micronutrientAdequacyV2: {
