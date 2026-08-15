@@ -23366,3 +23366,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-08-14 — Cycle-removal migration ran before read-only product direction
+
+- **Status:** Unresolved. The destructive migration has completed in
+  production; provider-fed read-only cycle tracking and any approved recovery
+  of historical manual rows remain follow-up work.
+- **Symptoms / impact:** The cycle route, APIs, and `fitness.menstrual_period`
+  storage were removed by [PR #2523](https://github.com/Asherlc/dofek/pull/2523).
+  The subsequent product direction is to retain cycle tracking as a read-only,
+  provider-fed feature. Historical manual period rows are no longer available
+  in the live table, and the deployed clients no longer expose cycle history.
+- **Evidence:** The exact production step was `Run migrations` in
+  [Deploy Web run 31862135496](https://github.com/Asherlc/dofek/actions/runs/31862135496).
+  It completed successfully at `2026-08-15T03:39:06Z`; the merged forward
+  migration contains `DROP TABLE fitness.menstrual_period`.
+- **Root cause:** The full feature-removal change, including destructive data
+  deletion, merged and deployed before the narrower product requirement to
+  remove human-input surfaces while preserving a provider-fed read path was
+  established.
+- **Fix / mitigation:** No production mutation or ad-hoc table recreation has
+  been attempted. The durable design uses provider-originated raw events in
+  `fitness.health_event` and restores only read queries and read-only clients.
+- **Remaining risk / follow-up:** Decide separately whether historical manual
+  rows should be recovered from the latest pre-migration backup. If approved,
+  follow the database recovery runbook in an isolated restore and import the
+  recovered rows once with explicit legacy provenance; do not restore the
+  deleted write APIs or create a second source of truth.
