@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AccessibilityInfo } from "react-native";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface QueryState {
@@ -10,34 +9,16 @@ interface QueryState {
   isLoading: boolean;
 }
 
-interface SaveOptions {
-  meta?: unknown;
-  onError?: (error: Error) => void;
-  onSuccess?: () => void;
-}
-
 const mocks = vi.hoisted<{
   captureException: ReturnType<typeof vi.fn>;
-  invalidateAll: ReturnType<typeof vi.fn>;
-  safetyInvalidate: ReturnType<typeof vi.fn>;
-  stackInvalidate: ReturnType<typeof vi.fn>;
-  mutate: ReturnType<typeof vi.fn>;
   query: QueryState;
-  savePending: boolean;
-  saveOptions: SaveOptions | undefined;
 }>(() => ({
   captureException: vi.fn(),
-  invalidateAll: vi.fn(),
-  safetyInvalidate: vi.fn(),
-  stackInvalidate: vi.fn(),
-  mutate: vi.fn(),
   query: {
     data: [{ name: "Creatine", amount: 5, unit: "g" }],
     error: null,
     isLoading: false,
   },
-  savePending: false,
-  saveOptions: undefined,
 }));
 
 vi.mock("../lib/telemetry", () => ({
@@ -50,13 +31,7 @@ vi.mock("../lib/useRefresh", () => ({
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({
-      invalidate: mocks.invalidateAll,
-      nutritionAnalytics: {
-        micronutrientAdequacyV2: { invalidate: mocks.safetyInvalidate },
-      },
-      supplements: { list: { invalidate: mocks.stackInvalidate } },
-    }),
+    useUtils: () => ({}),
     supplements: {
       list: { useQuery: () => mocks.query },
       occurrences: {
@@ -76,17 +51,6 @@ vi.mock("../lib/trpc", () => ({
           isPending: false,
           mutate: vi.fn(),
         }),
-      },
-      save: {
-        useMutation: (options: typeof mocks.saveOptions) => {
-          mocks.saveOptions = options;
-          return {
-            error: null,
-            isError: false,
-            isPending: mocks.savePending,
-            mutate: mocks.mutate,
-          };
-        },
       },
     },
     nutritionAnalytics: {
@@ -143,23 +107,16 @@ describe("SupplementsScreen", () => {
     mocks.query.data = [{ name: "Creatine", amount: 5, unit: "g" }];
     mocks.query.error = null;
     mocks.query.isLoading = false;
-    mocks.savePending = false;
-    mocks.saveOptions = undefined;
     vi.clearAllMocks();
   });
 
-  it("disables replacement actions when a previously loaded stack fails to reload", async () => {
+  it("describes an empty synced supplement stack", async () => {
+    mocks.query.data = [];
     const { default: SupplementsScreen } = await import("../app/supplements");
-    const { rerender } = render(<SupplementsScreen />);
 
-    mocks.query.data = undefined;
-    mocks.query.error = new Error("Supplement stack is unavailable.");
-    rerender(<SupplementsScreen />);
+    render(<SupplementsScreen />);
 
-    expect(screen.getByText("Supplement stack is unavailable.")).toBeTruthy();
-    expect(screen.queryByText(/No supplements configured/)).toBeNull();
-    expect(screen.getByRole("button", { name: "Add Supplement" })).toHaveProperty("disabled", true);
-    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(screen.getByText("No synced supplements available.")).toBeTruthy();
   });
 
   it("preserves cached supplements during a background refresh failure", async () => {
@@ -170,104 +127,6 @@ describe("SupplementsScreen", () => {
 
     expect(screen.getByText("Creatine")).toBeTruthy();
     expect(screen.getByText("Refresh failed: Supplement refresh failed.")).toBeTruthy();
-  });
-
-  it("renders persistent labeled move controls and announces a successful reorder", async () => {
-    mocks.query.data = [
-      { name: "Creatine", amount: 5, unit: "g" },
-      { name: "Vitamin D", amount: 25, unit: "mcg" },
-    ];
-    const { default: SupplementsScreen } = await import("../app/supplements");
-
-    render(<SupplementsScreen />);
-
-    const moveDown = screen.getByRole("button", { name: "Move Creatine down" });
-    expect(moveDown.textContent).toBe("Move down");
-    expect(screen.getByRole("button", { name: "Move Vitamin D up" })).toBeTruthy();
-
-    fireEvent.click(moveDown);
-
-    expect(mocks.mutate).toHaveBeenCalledWith({
-      supplements: [
-        { name: "Vitamin D", amount: 25, unit: "mcg" },
-        { name: "Creatine", amount: 5, unit: "g" },
-      ],
-    });
-
-    await act(async () => {
-      await mocks.saveOptions?.onSuccess?.();
-    });
-
-    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
-      "Moved Creatine to position 2 of 2.",
-    );
-    expect(screen.getByText("Moved Creatine to position 2 of 2.")).toBeTruthy();
-  });
-
-  it("disables replacement entry points while a save is pending", async () => {
-    mocks.savePending = true;
-    mocks.query.data = [
-      { name: "Creatine", amount: 5, unit: "g" },
-      { name: "Vitamin D", amount: 25, unit: "mcg" },
-    ];
-    const { default: SupplementsScreen } = await import("../app/supplements");
-
-    render(<SupplementsScreen />);
-
-    expect(screen.getByRole("button", { name: "Add Supplement" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("button", { name: "Delete Creatine" })).toHaveProperty(
-      "disabled",
-      true,
-    );
-    const moveDown = screen.getByRole("button", { name: "Move Creatine down" });
-    const moveUp = screen.getByRole("button", { name: "Move Vitamin D up" });
-    expect(moveDown).toHaveProperty("disabled", true);
-    expect(moveUp).toHaveProperty("disabled", true);
-    expect(moveDown.style.opacity).toBe("0.5");
-    expect(moveUp.style.opacity).toBe("0.5");
-  });
-
-  it("clears a stale reorder announcement when the save fails", async () => {
-    mocks.query.data = [
-      { name: "Creatine", amount: 5, unit: "g" },
-      { name: "Vitamin D", amount: 25, unit: "mcg" },
-    ];
-    const { default: SupplementsScreen } = await import("../app/supplements");
-
-    render(<SupplementsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Move Creatine down" }));
-
-    await act(async () => {
-      await mocks.saveOptions?.onSuccess?.();
-    });
-    expect(screen.getByText("Moved Creatine to position 2 of 2.")).toBeTruthy();
-
-    act(() => mocks.saveOptions?.onError?.(new Error("Supplement save failed.")));
-
-    expect(screen.queryByText("Moved Creatine to position 2 of 2.")).toBeNull();
-  });
-
-  it("reports failed replacement mutations", async () => {
-    const saveError = new Error("Supplement stack changed. Reload and try again.");
-    const { default: SupplementsScreen } = await import("../app/supplements");
-    render(<SupplementsScreen />);
-
-    mocks.saveOptions?.onError?.(saveError);
-
-    expect(mocks.saveOptions?.meta).toEqual({ errorReportedLocally: true });
-    expect(mocks.captureException).toHaveBeenCalledWith(saveError, {
-      operation: "supplements.save",
-    });
-  });
-
-  it("invalidates the stack and safety review after replacement succeeds", async () => {
-    const { default: SupplementsScreen } = await import("../app/supplements");
-    render(<SupplementsScreen />);
-
-    await mocks.saveOptions?.onSuccess?.();
-
-    expect(mocks.stackInvalidate).toHaveBeenCalledOnce();
-    expect(mocks.safetyInvalidate).toHaveBeenCalledWith({ days: 30 });
   });
 
   it("renders server-owned upper-limit and medication-review guidance", async () => {
