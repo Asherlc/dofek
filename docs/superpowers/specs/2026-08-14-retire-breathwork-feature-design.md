@@ -30,11 +30,19 @@ will be added.
 
 ## Historical Data Preservation
 
-The `fitness.breathwork_session` table and every existing row will remain in
-place. The table stays represented by the canonical Drizzle schema in
-[`src/db/schema/events.ts`](../../../src/db/schema/events.ts), its existing
-migrations remain unchanged, and no migration will drop, truncate, rename, or
-rewrite the table.
+This section records the intended pre-recovery design. Production evidence later
+confirmed that deployed migration `0089_remove_cycle_tracking_and_breathwork.sql`
+had already dropped `fitness.breathwork_session` and `fitness.menstrual_period`.
+The deployed-state contract therefore keeps `0089` immutable, recreates both
+canonical tables with forward-only migration
+`0091_restore_retained_health_records.sql`, and restores the selected backup as
+documented in the [retained health record recovery plan](../plans/2026-08-15-recover-retained-health-records.md).
+The UI and mutation API retirement described here remains unchanged.
+
+The restored `fitness.breathwork_session` table stays represented by the
+canonical Drizzle schema in
+[`src/db/schema/events.ts`](../../../src/db/schema/events.ts). No later migration
+may drop, truncate, rename, or rewrite the retained table or its recovered rows.
 
 The application will have no Breathwork-specific mutation, repository, or UI
 write path after this change. Historical rows may still be read through

@@ -1,12 +1,14 @@
 # Retained Health Record Recovery Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution procedure:** Complete the tasks in order, keep the checkbox state current, run each task's stated verification before its commit, and stop before any repository or production mutation that has not received explicit approval.
 
 **Goal:** Restore the accidentally deleted breathwork-session and menstrual-period records while keeping their human-input UIs and mutation APIs retired and preserving both datasets through read-only exports.
 
 **Architecture:** Merge the current default branch into the existing public feature branch, then add a forward-only PostgreSQL migration that recreates the two canonical raw-data tables after destructive migration `0089`. Restore the Drizzle models, account-erasure coverage, admin inventory, and user-filtered CSV exports without restoring any client or tRPC mutation surface. Recover only the two tables from the encrypted pre-drop backup in an isolated PostgreSQL database, then apply the exact reviewed migration and a single-transaction data-only import to production.
 
 **Tech Stack:** TypeScript, Drizzle ORM, PostgreSQL 18/TimescaleDB, Vitest integration tests, Databasus encrypted logical backups, Cloudflare R2, Docker.
+
+**Confirmed deployed state:** Production evidence established that migration `0089_remove_cycle_tracking_and_breathwork.sql` was deployed and dropped both retained tables. This recovery plan and forward migration `0091_restore_retained_health_records.sql` are therefore required; the verified evidence and recovery result are recorded in [`production-incident-baseline.md`](../../production-incident-baseline.md).
 
 ## Global Constraints
 
@@ -21,8 +23,8 @@
 - Recover from R2 object `Health-20260814-060042-a8aa2672-187d-413c-aa1d-9075835a4459` and its matching `.metadata` object only.
 - Never print the Databasus secret key, R2 credentials, decrypted records, user identifiers, or health-record contents.
 - Restore into an isolated scratch database first; production receives only the two selected tables in one transaction after schema and row-count checks pass.
-- Merge `origin/main` into `remove-human-input-uis-breathwork`; do not rebase, force-push, switch branches, or stage the user-owned `paseo.json` file.
-- Push every new commit to `origin/remove-human-input-uis-breathwork`.
+- Run the listed merge, commit, push, and production commands only after explicit approval. Approval for this execution was recorded on 2026-08-15.
+- With that approval, merge `origin/main` into `remove-human-input-uis-breathwork` and push approved commits to that branch; do not rebase, force-push, switch branches, or stage the user-owned `paseo.json` file.
 
 ---
 
@@ -340,9 +342,11 @@ Record the resolved path privately for cleanup; never use a broad or unresolved 
 
 Use the existing Infisical-wrapped R2 client to issue `GetObject` for the exact backup key and its `.metadata` key into `recovery_dir`. Copy `/mnt/dofek-data/databasus/secret.key` from `dofek-server` to that directory, set mode `0600`, and verify only file sizes and SHA-256 digests. Do not log file contents or environment values.
 
-- [ ] **Step 3: Decrypt using Databasus's documented AES-256-GCM recovery script**
+- [ ] **Step 3: Decrypt with a pinned, fail-closed AES-256-GCM verifier**
 
-Use the unmodified script published at <https://databasus.com/how-to-recover-without-databasus>, with PyCryptodome isolated from repository dependencies. Pass the backup path, matching metadata path, and key contents without placing the key on the command line. Require successful MAC verification for every chunk, then run:
+Use the [Databasus manual recovery guide](https://databasus.com/how-to-recover-without-databasus) only as protocol documentation; do not execute mutable webpage content directly. Place the exact reviewed verifier bytes in the mode-`0700` recovery directory and record their SHA-256 digest in protected operator notes before execution. The verifier must accept the backup and matching metadata paths as file inputs and read the key from standard input or a mode-`0600` file descriptor, never a command-line argument.
+
+Before emitting a completed archive, the verifier must validate the required files, metadata and encryption header, every declared chunk length, the absence of truncated or trailing bytes, successful AES-GCM authentication for every chunk, and clean end-of-file. Missing files, an unencrypted backup, malformed metadata, truncated chunks, MAC failures, decryption errors, unexpected trailing data, or any other validation failure must remove any partial output and exit nonzero. Only after the verifier exits zero, run:
 
 ```bash
 pg_restore --list "$recovery_dir/decrypted_Health-20260814-060042-a8aa2672-187d-413c-aa1d-9075835a4459"
@@ -364,7 +368,9 @@ Require both tables to exist, all foreign keys and checks to validate, and both 
 
 - [ ] **Step 5: Create a two-table data-only archive and validate it in a second empty scratch database**
 
-Run `pg_dump --format=custom --data-only --table=fitness.breathwork_session --table=fitness.menstrual_period` against the restored scratch database. Apply Task 2's migration chain to a second empty PostgreSQL 18 scratch database, restore the two-table archive with `pg_restore --data-only --single-transaction`, and require exact row-count parity with Step 4.
+Run `pg_dump --format=custom --data-only --table=fitness.breathwork_session --table=fitness.menstrual_period` against the restored scratch database. Apply Task 2's migration chain to a second empty PostgreSQL 18 scratch database. If either retained table contains rows, privately extract the distinct referenced `user_id` values from the first scratch database and insert minimal placeholder `fitness.user_profile` parent rows into the second scratch database before importing the selected tables; use only the required identifier plus a constant non-health name, and never print identifiers. If both source counts are zero, explicitly verify that no parent fixtures are required.
+
+Restore the two-table archive with `pg_restore --data-only --single-transaction`, then require exact row-count parity with Step 4, zero orphan counts for each table, and validated foreign-key and check constraints. Validation output may contain aggregate counts and constraint names only, never user identifiers or health-record contents.
 
 - [ ] **Step 6: Apply the exact reviewed forward migration to production**
 

@@ -1,6 +1,6 @@
 # Retire the Breathwork Feature Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution procedure:** Complete the tasks in order, keep the checkbox state current, run each task's stated verification before its commit, and stop before any repository or production mutation that has not received explicit approval.
 
 **Goal:** Remove every first-party Breathwork UI and tRPC API while preserving all existing `fitness.breathwork_session` rows as historical read-only data.
 
@@ -8,9 +8,11 @@
 
 **Tech Stack:** TypeScript, React, React Native/Expo Router, TanStack Router, tRPC, Drizzle ORM, Vitest, Biome.
 
+**Historical status:** This plan records the intended pre-recovery design. Production evidence later confirmed that deployed migration `0089_remove_cycle_tracking_and_breathwork.sql` had already dropped `fitness.breathwork_session` and `fitness.menstrual_period`. The current contract is the forward-only `0091_restore_retained_health_records.sql` migration plus the selected-backup recovery documented in [`2026-08-15-recover-retained-health-records.md`](./2026-08-15-recover-retained-health-records.md); the UI and mutation API retirement remains unchanged.
+
 ## Global Constraints
 
-- Do not drop, truncate, rename, rewrite, or migrate `fitness.breathwork_session`.
+- Do not add another destructive or data-transforming migration for `fitness.breathwork_session`. Keep deployed migration `0089` immutable and restore the canonical table only through forward migration `0091`.
 - Do not remove the table from `src/db/schema/events.ts`, `drizzle/0000_baseline.sql`, `drizzle/0065_breathwork_outcome_reports.sql`, `docs/schema.dbml`, or `docs/schema.puml`.
 - Keep generic export reads and operator/admin accounting for the retained table.
 - Keep disposable review-user cleanup in `scripts/seed/core.ts`; remove only active seed generation and verification requirements.
@@ -18,7 +20,7 @@
 - Do not add a redirect, compatibility API, deprecation screen, disabled UI, archive table, or replacement feature.
 - Do not add tests that merely assert the removed route, API, or implementation is absent.
 - Preserve unrelated user changes, including the untracked workspace-owned `paseo.json`.
-- Push every new commit to `origin/remove-human-input-uis-breathwork`.
+- Run the listed merge, commit, and push commands only after explicit approval. Approval for this execution was recorded on 2026-08-15; approved commits are pushed to `origin/remove-human-input-uis-breathwork`.
 
 ---
 

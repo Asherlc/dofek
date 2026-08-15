@@ -1,11 +1,14 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 const SETTINGS_TEST_USER_ID = "00000000-0000-0000-0000-0000000000f1";
+const countRowSchema = z.object({ count: z.coerce.number() });
 
 describe("Settings router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -312,31 +315,49 @@ describe("Settings router", () => {
         supplementsAfter,
         userSettingsAfter,
       ] = await Promise.all([
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.sync_log WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.oauth_token WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.breathwork_session WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.menstrual_period WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
       ]);

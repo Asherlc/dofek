@@ -241,8 +241,11 @@ describe("generateExport", () => {
     executeResults[14] = [
       {
         id: "period-1",
+        user_id: TEST_USER_ID,
         start_date: "2026-07-03",
+        end_date: null,
         notes: "Cramps and poor sleep",
+        created_at: "2026-07-03T08:15:00.000Z",
       },
     ];
     setupMockDb(executeResults);
@@ -250,7 +253,9 @@ describe("generateExport", () => {
     await generateExport(mockDb, TEST_USER_ID, "/tmp/test.zip", () => {});
 
     const periodEntry = findArchiveEntry("menstrual-periods.csv");
-    expect(periodEntry?.[0]).toBe("id,start_date,notes\nperiod-1,2026-07-03,Cramps and poor sleep");
+    expect(periodEntry?.[0]).toBe(
+      "id,user_id,start_date,end_date,notes,created_at\nperiod-1,user-1,2026-07-03,,Cramps and poor sleep,2026-07-03T08:15:00.000Z",
+    );
     const execute = vi.mocked(mockDb.execute);
     const periodQuery = JSON.stringify(
       Reflect.get(execute.mock.calls[14]?.[0] ?? {}, "queryChunks") ?? [],
@@ -278,6 +283,20 @@ describe("generateExport", () => {
         perceived_effect: "better",
         created_at: "2026-08-01T07:04:00.000Z",
       },
+      {
+        id: "session-2",
+        user_id: "user-1",
+        technique_id: "coherent-breathing",
+        rounds: 5,
+        duration_seconds: 300,
+        started_at: "2026-08-02T07:00:00.000Z",
+        notes: null,
+        stress_before: 5,
+        stress_after: 2,
+        dizziness_after: false,
+        perceived_effect: "calmer",
+        created_at: "2026-08-02T07:05:00.000Z",
+      },
     ];
     setupMockDb(executeResults);
 
@@ -285,7 +304,7 @@ describe("generateExport", () => {
 
     const entry = findArchiveEntry("breathwork-sessions.csv");
     expect(entry?.[0]).toBe(
-      "id,user_id,technique_id,rounds,duration_seconds,started_at,notes,stress_before,stress_after,dizziness_after,perceived_effect,created_at\nsession-1,user-1,box-breathing,4,240,2026-08-01T07:00:00.000Z,Morning practice,7,3,false,better,2026-08-01T07:04:00.000Z",
+      "id,user_id,technique_id,rounds,duration_seconds,started_at,notes,stress_before,stress_after,dizziness_after,perceived_effect,created_at\nsession-1,user-1,box-breathing,4,240,2026-08-01T07:00:00.000Z,Morning practice,7,3,false,better,2026-08-01T07:04:00.000Z\nsession-2,user-1,coherent-breathing,5,300,2026-08-02T07:00:00.000Z,,5,2,false,calmer,2026-08-02T07:05:00.000Z",
     );
 
     const execute = vi.mocked(mockDb.execute);
@@ -295,5 +314,6 @@ describe("generateExport", () => {
     expect(query).toContain("fitness.breathwork_session");
     expect(query).toContain("WHERE user_id = ");
     expect(query).toContain("user-1");
+    expect(query).toContain("ORDER BY started_at");
   });
 });

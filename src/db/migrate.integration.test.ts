@@ -34,6 +34,12 @@ const accountErasureTriggerRowsSchema = z.array(
     table_name: z.string(),
   }),
 );
+const retainedHealthRecordRowsSchema = z.array(
+  z.object({
+    breathwork_exists: z.boolean(),
+    menstrual_period_exists: z.boolean(),
+  }),
+);
 let nextMigrationTimestamp = 2_000_000_000_000;
 
 function writeTestMigration(migrationsDir: string, file: string, content: string): void {
@@ -114,7 +120,9 @@ describe("runMigrations", () => {
           to_regclass('fitness.breathwork_session') IS NOT NULL AS breathwork_exists,
           to_regclass('fitness.menstrual_period') IS NOT NULL AS menstrual_period_exists
       `);
-      expect(result.rows).toEqual([{ breathwork_exists: true, menstrual_period_exists: true }]);
+      expect(retainedHealthRecordRowsSchema.parse(result.rows)).toEqual([
+        { breathwork_exists: true, menstrual_period_exists: true },
+      ]);
     } finally {
       await client.end();
     }
