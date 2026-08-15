@@ -12,7 +12,7 @@
  *   - 120 days of deterministic activity history and strength work
  *   - 90 days of nutrition, recent meals, and supplements
  *   - Body composition, labs, DEXA, clinical records, and cycle data
- *   - Journal, life event, and breathwork context for reports/correlation
+ *   - Journal and life-event context for reports/correlation
  *
  * The data is designed to exercise reviewer-facing product surfaces:
  *   - Multi-provider sleep dedup (overlapping but <80% threshold)
