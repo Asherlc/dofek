@@ -1,9 +1,9 @@
 # Bluetooth Heart-Rate Monitors
 
 Dofek connects to any standard Bluetooth Low Energy heart-rate strap (Polar H10,
-Wahoo TICKR, Garmin HRM, Coospo, etc.) during activity recording, streams live
-beats-per-minute for the UI, and stores heart rate + heart-rate variability into
-the metric stream.
+Wahoo TICKR, Garmin HRM, Coospo, etc.) from **Settings → Data Sources**, streams
+live beats-per-minute for connection status, and stores heart rate + heart-rate
+variability into the metric stream independently of activity recording.
 
 Unlike the WHOOP strap integration (a reverse-engineered proprietary protocol —
 see [whoop-ble-protocol.md](./whoop-ble-protocol.md)), this uses the **public,
@@ -46,8 +46,8 @@ Strap ──BLE notify (0x2A37)──▶ BleHeartRateModule (iOS)
                                  ├─ emits onHeartRateMeasurement (live bpm for the UI)
                                  └─ buffers samples (peek / confirm-drain)
                                         │
-                    on activity save    ▼
-   heart-rate-recording-service ──▶ trpc bleHeartRateSync.pushSamples
+             authenticated sync lifecycle    ▼
+ background-ble-heart-rate-sync ──▶ trpc bleHeartRateSync.pushSamples
                                         │
                                         ▼
         metric stream (provider ble_heart_rate, sourceType "ble")
@@ -56,7 +56,9 @@ Strap ──BLE notify (0x2A37)──▶ BleHeartRateModule (iOS)
 ```
 
 - The native buffer uses the same **peek → upload → confirm-drain** pattern as the
-  WHOOP module, so a failed upload leaves samples in place for retry.
+  WHOOP module, so a failed upload leaves samples in place for retry. The mobile
+  app drains on authenticated startup, foreground transitions, every 30 seconds
+  while active, and iOS background-refresh wakeups.
 - Zero-bpm readings (emitted before the strap detects skin contact) are dropped
   server-side and never stored.
 - Heart rate is stored on the existing `heart_rate` channel and R-R intervals on
@@ -72,4 +74,5 @@ iOS app rather than a server-side pull job.
 
 `packages/mobile/app.json` declares `NSBluetoothAlwaysUsageDescription` for
 connecting to Bluetooth heart-rate monitors. `bluetooth-central` is listed under
-`UIBackgroundModes` so streaming continues while recording in the background.
+`UIBackgroundModes` so an established connection can continue delivering
+notifications while the app is in the background.

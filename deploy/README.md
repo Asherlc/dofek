@@ -102,7 +102,6 @@ infrastructure has been retired.
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
-- Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 - The Oracle override scales Portainer, CloudBeaver, pgAdmin, PeerDB UI, and
   Netdata to zero. Databasus remains at one replica because it owns the backup
   schedule; its base-stack route is active for backup operations.
@@ -357,7 +356,7 @@ terminated:
    9. Run the requested image's tracked Postgres and ClickHouse migrations in a
       detached one-shot container on `<stack>_default`. CI polls its status and
       logs, removes it on exit, and fails if it exceeds four hours.
-   10. Historical Slack-membership and exercise-provenance backfills are
+   10. Historical exercise-provenance backfills are
        operator-run one-time tasks, not deployment steps. Run them from the
        image with an explicit `DATABASE_URL` only after reviewing their dry-run
        output, and record the completion date, image commit, and operator in

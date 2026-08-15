@@ -11,18 +11,6 @@ const destinations = [
     description: "Manage your profile, preferences, data sources, and account.",
   },
   {
-    href: "/breathwork",
-    icon: "leaf-outline",
-    title: "Breathwork",
-    description: "Start a guided breathing session and review recent practice.",
-  },
-  {
-    href: "/cycle",
-    icon: "calendar-outline",
-    title: "Cycle tracking",
-    description: "Review cycle phases and record period dates.",
-  },
-  {
     href: "/data-quality",
     icon: "shield-checkmark-outline",
     title: "Data quality",
@@ -38,7 +26,7 @@ export default function MoreScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.intro}>
         <Text style={styles.title}>More</Text>
-        <Text style={styles.subtitle}>Account, wellbeing, and tracking tools</Text>
+        <Text style={styles.subtitle}>Account and data tools</Text>
       </View>
 
       <View accessibilityRole="list" style={styles.destinations}>

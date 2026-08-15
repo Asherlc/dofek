@@ -269,6 +269,7 @@ vi.mock("./file-upload-reconciliation.ts", () => ({
 }));
 
 vi.mock("./scheduled-sync.ts", () => ({
+  DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES: 30,
   setupScheduledSync: () =>
     hoisted.scheduledSyncState.error
       ? Promise.reject(hoisted.scheduledSyncState.error)

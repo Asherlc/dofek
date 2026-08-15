@@ -95,9 +95,6 @@ vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
 vi.mock("../components/AccountErasurePanel.tsx", () => ({
   AccountErasurePanel: () => <div>AccountErasurePanel</div>,
 }));
-vi.mock("../components/SlackIntegrationPanel.tsx", () => ({
-  SlackIntegrationPanel: () => <div>SlackIntegrationPanel</div>,
-}));
 vi.mock("../components/UnitSystemToggle.tsx", () => ({
   UnitSystemToggle: () => <div>UnitSystemToggle</div>,
 }));
@@ -281,7 +278,6 @@ describe("SettingsPage categories", () => {
 
     expect(screen.getByText("DataSourcesPanel")).toBeTruthy();
     expect(screen.getByText("Zepp App Pairing")).toBeTruthy();
-    expect(screen.getByText("Integrations")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Billing" })).toBeNull();
   });
 

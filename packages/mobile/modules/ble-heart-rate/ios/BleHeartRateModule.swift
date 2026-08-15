@@ -64,6 +64,10 @@ public class BleHeartRateModule: Module {
             self.sampleBuffer.confirmDrain(count: count)
         }
 
+        AsyncFunction("disconnectAndClearBufferedSamples") { (promise: Promise) in
+            self.disconnectAndClearBufferedSamples(promise: promise)
+        }
+
         Function("disconnect") {
             self.connectionManager.disconnect()
         }
@@ -97,6 +101,13 @@ public class BleHeartRateModule: Module {
         }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: value)
+    }
+
+    private func disconnectAndClearBufferedSamples(promise: Promise) {
+        connectionManager.disconnect {
+            self.sampleBuffer.clearAll()
+            promise.resolve(true)
+        }
     }
 
     private func resolveConnect(

@@ -27,7 +27,6 @@ const mocks = vi.hoisted(() => {
     deleteMutation: vi.fn(),
     entriesInvalidate: vi.fn(),
     entriesQuery: vi.fn(),
-    questionsQuery: vi.fn(),
     trendsQuery: vi.fn(),
   };
 });
@@ -49,9 +48,6 @@ vi.mock("../lib/trpc.ts", () => ({
       entries: {
         useQuery: mocks.entriesQuery,
       },
-      questions: {
-        useQuery: mocks.questionsQuery,
-      },
       trends: {
         useQuery: mocks.trendsQuery,
       },
@@ -60,10 +56,6 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     },
   },
-}));
-
-vi.mock("./AddJournalEntryModal.tsx", () => ({
-  AddJournalEntryModal: () => <div>Add journal entry form</div>,
 }));
 
 vi.mock("./DofekChart.tsx", () => ({
@@ -104,8 +96,6 @@ describe("JournalPanel", () => {
     mocks.entriesInvalidate.mockReset();
     mocks.entriesQuery.mockReset();
     mocks.entriesQuery.mockReturnValue({ data: [entry], error: null, isLoading: false });
-    mocks.questionsQuery.mockReset();
-    mocks.questionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
     mocks.trendsQuery.mockReset();
     mocks.trendsQuery.mockReturnValue({
       data: emptyJournalTrendEvidence,

@@ -175,7 +175,6 @@ vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
 }));
 vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
-vi.mock("../slack/bot.ts", () => ({ startSlackBot: vi.fn() }));
 
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
@@ -317,17 +316,6 @@ describe("createApp", () => {
     const app = createApp(fakeDb, makeMockSensorStore());
 
     const res = await request(app, "GET", path);
-
-    expect(res.status).toBe(404);
-    expect(res.body).not.toContain("<!doctype html>");
-  });
-
-  it("does not serve the SPA shell for missing Slack routes", async () => {
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const fakeDb = createDatabaseFromEnv();
-    const app = createApp(fakeDb, makeMockSensorStore());
-
-    const res = await request(app, "GET", "/slack/nonexistent");
 
     expect(res.status).toBe(404);
     expect(res.body).not.toContain("<!doctype html>");
