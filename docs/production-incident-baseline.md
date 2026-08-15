@@ -23656,8 +23656,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-08-14 — Concurrent local integration runs exhausted shared ClickHouse
 
-- **Status:** Unresolved local validation-environment contention; no production
-  impact and no evidence of a cycle-tracking defect.
+- **Status:** Current workspace recovered; concurrent local validation remains a
+  documented risk. There was no production impact or evidence of a
+  cycle-tracking defect.
 - **Symptoms / impact:** `pnpm test:changed:all` completed the changed unit and
   mobile tests, then unrelated server integration suites timed out during
   ClickHouse setup and skipped their test bodies. The final integration result
@@ -23669,19 +23670,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   one reported ClickHouse error 241 `MEMORY_LIMIT_EXCEEDED` at its 1.25 GiB
   limit, HealthKit sync setup exceeded its 60-second `beforeAll` timeout, and
   later Postgres-dependent suites failed while the database was in recovery.
+  After the run, Docker Desktop's engine stopped, leaving `.env.local` pointed
+  at unavailable workspace ports and causing analytics lint to fail before SQL
+  evaluation.
 - **Evidence / root cause:** Another workspace was simultaneously running a
   long-lived integration command against the same Docker daemon, while Docker
   inspect, exec, and published-port requests intermittently stalled. The
   workspace containers later reported healthy without configuration changes,
   and the focused menstrual-cycle repository integration suite passed all 8
-  tests once the database responded. This isolates the failure to host-level
-  Docker/ClickHouse contention during concurrent workspace suites, rather than
-  the changed read path. Workspace isolation and recovery expectations are
-  documented in [the testing runbook](testing.md#integration-dependencies).
+  tests once the database responded. During the final recovery, Postgres's
+  startup process was blocked in uninterruptible I/O while ClickHouse used 415
+  processes to finalize background merges. This isolates the failure to
+  host-level Docker/database contention during concurrent workspace suites,
+  rather than the changed read path. Workspace isolation and recovery
+  expectations are documented in [the testing runbook](testing.md#integration-dependencies).
 - **Fix / mitigation:** No test timeout, retry, failure suppression, shared
-  container restart, or deletion of another workspace's resources was added.
-  Cycle database behavior was validated with its focused executable integration
-  suite after the service recovered.
+  container restart, volume deletion, or deletion of another workspace's
+  resources was added. Docker Desktop was restarted, the repository Compose
+  wrapper restored the existing workspace services, and validation resumed only
+  after their health checks recovered. Cycle database behavior passed its
+  focused executable integration suite, and analytics lint completed
+  successfully against the recovered ClickHouse service.
 - **Remaining risk / follow-up:** Rerun `pnpm test:changed:all` or rely on the
   hosted integration matrix when this workspace has exclusive access to its
   Docker resources. Document an explicit local integration-run concurrency
