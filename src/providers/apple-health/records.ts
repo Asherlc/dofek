@@ -32,9 +32,11 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
 export interface CategoryRecord {
   type: string;
   sourceName: string | null;
+  sourceBundle: string | null;
   value: string | null;
   startDate: Date;
   endDate: Date;
+  metadata: Record<string, string>;
 }
 
 export function parseCategoryRecord(attrs: Record<string, string>): CategoryRecord | null {
@@ -44,9 +46,12 @@ export function parseCategoryRecord(attrs: Record<string, string>): CategoryReco
   return {
     type,
     sourceName: attrs.sourceName ?? null,
+    sourceBundle:
+      attrs.sourceBundle ?? attrs.sourceBundleIdentifier ?? attrs.bundleIdentifier ?? null,
     value: attrs.value ?? null,
     startDate: parseHealthDate(attrs.startDate ?? ""),
     endDate: parseHealthDate(attrs.endDate ?? ""),
+    metadata: {},
   };
 }
 

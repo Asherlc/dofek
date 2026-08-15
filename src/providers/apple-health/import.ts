@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, mkdirSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,7 +56,7 @@ import {
   parseFhirMedicationRequest,
   parseFhirObservation,
 } from "./fhir.ts";
-import type { HealthRecord } from "./records.ts";
+import type { CategoryRecord, HealthRecord } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
 import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
@@ -75,6 +76,35 @@ const appleMedicationDoseEventSchema = z
 function normalizeOptionalString(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
+function categoryExternalId(record: CategoryRecord): string {
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify([
+        record.type,
+        record.sourceBundle,
+        record.sourceName,
+        record.value,
+        record.startDate.toISOString(),
+        record.endDate.toISOString(),
+        record.metadata,
+      ]),
+    )
+    .digest("hex");
+  return `ah-category:${digest}`;
+}
+
+function categoryMetadata(
+  record: CategoryRecord,
+): Record<string, string | number | boolean> {
+  const metadata: Record<string, string | number | boolean> = { ...record.metadata };
+  if (Object.hasOwn(record.metadata, "HKMenstrualCycleStart")) {
+    delete metadata.HKMenstrualCycleStart;
+    metadata.HKMetadataKeyMenstrualCycleStart =
+      record.metadata.HKMenstrualCycleStart === "1";
+  }
+  return metadata;
 }
 
 function parseMedicationDoseRecordedAt(value: string): Date {
@@ -355,10 +385,12 @@ export async function runImport(
         // Insert category records into health_event table
         const rows: (typeof healthEvent.$inferInsert)[] = records.map((r) => ({
           providerId,
-          externalId: `ah:${r.type}:${r.startDate.toISOString()}`,
+          externalId: categoryExternalId(r),
           type: r.type,
-          valueText: r.value || undefined,
+          valueText: r.value ?? undefined,
           sourceName: r.sourceName,
+          sourceBundle: r.sourceBundle,
+          metadata: categoryMetadata(r),
           startDate: r.startDate,
           endDate: r.endDate,
         }));
