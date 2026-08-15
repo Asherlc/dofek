@@ -24,8 +24,16 @@ export async function resolveOAuthTokens(options: {
   providerName: string;
   getOAuthConfig: () => OAuthConfig | null | undefined;
   fetchFn?: FetchFn;
+  forceRefresh?: boolean;
 }): Promise<TokenSet> {
-  const { db, providerId, providerName, getOAuthConfig, fetchFn = globalThis.fetch } = options;
+  const {
+    db,
+    providerId,
+    providerName,
+    getOAuthConfig,
+    fetchFn = globalThis.fetch,
+    forceRefresh = false,
+  } = options;
 
   const tokens = await loadTokens(db, providerId);
   if (!tokens) {
@@ -34,7 +42,7 @@ export async function resolveOAuthTokens(options: {
     );
   }
 
-  if (tokens.expiresAt > new Date()) {
+  if (!forceRefresh && tokens.expiresAt > new Date()) {
     return tokens;
   }
 

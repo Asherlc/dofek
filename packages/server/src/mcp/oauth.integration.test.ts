@@ -318,7 +318,7 @@ describe("MCP OAuth", () => {
         grant_type: "refresh_token",
         refresh_token: tokens.refresh_token,
         resource,
-        scope: "health:read activity:read nutrition:write",
+        scope: "health:read activity:read nutrition:read",
       }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
@@ -450,7 +450,7 @@ describe("MCP OAuth", () => {
     const body = await response.text();
     expect(body).toContain("Search your activities");
     expect(body).toContain("View your daily health summaries");
-    expect(body).toContain("Log food entries");
+    expect(body).not.toContain("Log food entries");
     expect(body).toContain("View your connected data sources");
     expect(body).toContain("Start data synchronization");
   });

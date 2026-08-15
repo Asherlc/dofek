@@ -18,28 +18,9 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **Safe SQL**: Uses `executeWithSchema` (in `src/lib/typed-sql.ts`) which combines Drizzle's `sql` template literal with Zod schema validation to ensure runtime type safety and catch schema drift.
 - **Caching**: Implements a `queryCache` middleware for tRPC procedures (`src/trpc.ts`), with per-user isolation and configurable TTLs.
 - **Nutrition AI Parsing**: `food.analyzeWithAi` estimates one entry, while `food.analyzeItemsWithAi` parses a natural-language meal into multiple itemized entries for client-side logging flows.
-- **Cycle estimate provenance**: `menstrualCycle.currentPhase` counts the cycle
-  day from the latest recorded period start, matching
-  [ACOG's first-day-to-first-day cycle definition](https://www.acog.org/womens-health/faqs/your-first-period).
-  A phase estimate requires at least three completed intervals, every interval
-  to be 21–35 days, and an observed range no wider than 9 days. Otherwise the
-  endpoint returns a server-authored sparse, irregular, or stale-history
-  explanation instead of imposing a regular-cycle model. Those conservative
-  boundaries follow ACOG's adult cycle-length and variation guidance, while
-  ACOG also cautions that 28-day calendar assumptions do not account for
-  irregular cycles or variable ovulation timing
-  ([cycle guidance](https://www.acog.org/womens-health/faqs/abnormal-uterine-bleeding),
-  [calendar-method limitation](https://www.acog.org/clinical/clinical-guidance/committee-opinion/articles/2017/05/methods-for-estimating-the-due-date)).
-  The observed range remains descriptive history, not a calibrated confidence
-  score or next-period forecast. Period rows can be corrected or deleted by
-  stable ID through user-scoped mutations; web and iOS require explicit
-  confirmation before deleting an erroneous entry, consistent with Apple's
-  cycle-history review and correction flow
-  ([Apple Cycle Tracking guide](https://support.apple.com/en-gb/guide/iphone/iph1a4a00aa0/26/ios/26)).
 - **Authentication**: Supports session-based auth with cookie-based persistence for web and Bearer tokens for mobile. See `src/auth/` and `src/routes/auth/`.
 - **Redis pairing store**: Companion pairing uses Lua scripts over related Redis keys and is intended for the single-node Redis deployment used by Dofek. Redis Cluster requires every key touched by one Lua script to be in the same hash slot; supporting Cluster mode would require redesigning the pairing key names with Redis hash tags. See the Redis Cluster scaling and hash tag documentation: https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/ and https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags.
 - **Monitoring**: Integrated with Sentry for error tracking and Prometheus for performance metrics (`src/lib/metrics.ts`).
-- **Slack Integration**: A built-in Slack bot (`src/slack/`) for status updates and basic data interactions.
 
 ### Activity training-stress availability contract
 
@@ -120,7 +101,6 @@ display unit and format dates, but they render the supplied direction and summar
 a trend from the observations. The responsive chart selects one exercise at a time so long exercise
 lists stay readable without hiding the time axis.
 
-See `../../docs/nutrition-ai-input.md` for full client/server flow details.
 
 ## Development
 

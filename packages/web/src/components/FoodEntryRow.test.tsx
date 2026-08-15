@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { FoodEntryRow } from "./FoodEntryRow";
 
 describe("FoodEntryRow", () => {
@@ -31,7 +31,6 @@ describe("FoodEntryRow", () => {
             valueText: "680 mg",
           },
         ]}
-        onDelete={vi.fn()}
       />,
     );
 
@@ -84,7 +83,6 @@ describe("FoodEntryRow", () => {
             valueText: "680 mg",
           },
         ]}
-        onDelete={vi.fn()}
       />,
     );
 
@@ -96,23 +94,5 @@ describe("FoodEntryRow", () => {
     expect(screen.getByText("32 g")).toBeTruthy();
     expect(screen.getByText("Sodium")).toBeTruthy();
     expect(screen.getByText("680 mg")).toBeTruthy();
-  });
-
-  it("does not delete when expanding the row", () => {
-    const onDelete = vi.fn();
-
-    render(
-      <FoodEntryRow
-        foodName="Chicken Bowl"
-        servingDescription={null}
-        calories={420}
-        nutrients={[]}
-        onDelete={onDelete}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Show nutrition for Chicken Bowl/ }));
-
-    expect(onDelete).not.toHaveBeenCalled();
   });
 });

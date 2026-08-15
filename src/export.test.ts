@@ -74,7 +74,7 @@ describe("generateExport", () => {
   it("exports all tables and returns result with counts", async () => {
     const rows = [{ id: "1" }];
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push(rows);
     }
 
@@ -85,15 +85,15 @@ describe("generateExport", () => {
       progress.push(info);
     });
 
-    expect(result.tableCount).toBe(16);
-    expect(result.totalRecords).toBe(16);
+    expect(result.tableCount).toBe(15);
+    expect(result.totalRecords).toBe(15);
     expect(progress.length).toBeGreaterThan(0);
     expect(progress[progress.length - 1]).toEqual({ percentage: 100, message: "Export complete" });
   });
 
   it("handles empty tables correctly", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push([]);
     }
 
@@ -101,13 +101,13 @@ describe("generateExport", () => {
 
     const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
-    expect(result.tableCount).toBe(16);
+    expect(result.tableCount).toBe(15);
     expect(result.totalRecords).toBe(0);
   });
 
   it("reports progress for each table", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push([]);
     }
 
@@ -118,20 +118,20 @@ describe("generateExport", () => {
       progress.push(info);
     });
 
-    // Should have progress for each of the 16 tables + final 100%
-    expect(progress.length).toBe(17);
+    // Should have progress for each of the 15 tables + final 100%
+    expect(progress.length).toBe(16);
     // First progress should be 0%
     expect(progress[0]?.percentage).toBe(0);
     expect(progress[0]?.message).toContain("Exporting");
-    expect(progress[1]?.percentage).toBe(6);
-    expect(progress[9]?.percentage).toBe(56);
+    expect(progress[1]?.percentage).toBe(7);
+    expect(progress[9]?.percentage).toBe(60);
     // Last progress should be 100%
-    expect(progress[16]?.percentage).toBe(100);
+    expect(progress[15]?.percentage).toBe(100);
   });
 
   it("includes metadata file in the archive", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       executeResults.push([]);
     }
 
@@ -151,7 +151,7 @@ describe("generateExport", () => {
 
     const metadata = JSON.parse(String(metadataCall?.[0]));
     expect(metadata.userId).toBe("user-1");
-    expect(metadata.tables).toHaveLength(16);
+    expect(metadata.tables).toHaveLength(15);
     expect(metadata.tables[0]).toBe("user-profile.csv");
     expect(metadata.tables).not.toContain("metric-streams.csv");
     expect(metadata.totalRecords).toBe(0);
@@ -160,7 +160,7 @@ describe("generateExport", () => {
 
   it("creates a compressed ZIP archive", async () => {
     const executeResults: Record<string, unknown>[][] = [];
-    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+    for (let tableIndex = 0; tableIndex < 15; tableIndex++) {
       executeResults.push([]);
     }
 
@@ -199,7 +199,7 @@ describe("generateExport", () => {
         },
       ],
     ];
-    for (let tableIndex = 1; tableIndex < 16; tableIndex++) {
+    for (let tableIndex = 1; tableIndex < 15; tableIndex++) {
       executeResults.push([]);
     }
 
@@ -216,7 +216,7 @@ describe("generateExport", () => {
   });
 
   it("exports raw food-entry provenance instead of the serving aggregate", async () => {
-    setupMockDb(Array.from({ length: 16 }, () => []));
+    setupMockDb(Array.from({ length: 15 }, () => []));
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
@@ -230,27 +230,5 @@ describe("generateExport", () => {
     expect(nutritionDailyQuery).toContain("fitness.v_nutrition_provider_daily");
     expect(foodEntryQuery).toContain("fitness.food_entry");
     expect(foodEntryQuery).not.toContain("fitness.v_nutrition_daily");
-  });
-
-  it("exports canonical menstrual periods, including their notes", async () => {
-    const executeResults: Record<string, unknown>[][] = Array.from({ length: 16 }, () => []);
-    executeResults[13] = [
-      {
-        id: "period-1",
-        start_date: "2026-07-03",
-        notes: "Cramps and poor sleep",
-      },
-    ];
-    setupMockDb(executeResults);
-
-    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
-
-    const periodEntry = findArchiveEntry("menstrual-periods.csv");
-    expect(periodEntry?.[0]).toBe("id,start_date,notes\nperiod-1,2026-07-03,Cramps and poor sleep");
-    const execute = vi.mocked(mockDb.execute);
-    const periodQuery = JSON.stringify(
-      Reflect.get(execute.mock.calls[13]?.[0] ?? {}, "queryChunks") ?? [],
-    );
-    expect(periodQuery).toContain("fitness.menstrual_period");
   });
 });

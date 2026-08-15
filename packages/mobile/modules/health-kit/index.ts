@@ -60,19 +60,6 @@ export interface DailyStatistic {
   value: number;
 }
 
-export interface DietarySample {
-  typeIdentifier: string;
-  value: number;
-  unit: "kcal" | "g";
-  startDate: string;
-  endDate: string;
-  syncIdentifier: string;
-  syncVersion: number;
-  foodEntryId: string;
-  foodName: string;
-  fingerprint: string;
-}
-
 export interface SyncResult {
   samplesCount: number;
   startDate: string;
@@ -150,11 +137,6 @@ export async function queryDailyStatistics(
 /** Query GPS route locations for a workout by its UUID */
 export async function queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]> {
   return HealthKitModule.queryWorkoutRoutes(workoutUuid);
-}
-
-/** Write Dofek-owned dietary samples to HealthKit */
-export async function writeDietarySamples(samples: DietarySample[]): Promise<boolean> {
-  return HealthKitModule.writeDietarySamples(samples);
 }
 
 /** Delete Dofek-owned dietary samples by HealthKit sync identifier */

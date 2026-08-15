@@ -56,10 +56,6 @@ vi.mock("../components/AccountErasurePanel", () => ({
   AccountErasurePanel: () => React.createElement("div", null, "AccountErasurePanel"),
 }));
 
-vi.mock("../components/SlackIntegrationPanel", () => ({
-  SlackIntegrationPanel: () => React.createElement("div", null, "SlackIntegrationPanel"),
-}));
-
 vi.mock("../components/ProviderLogo", () => ({
   ProviderLogo: ({ provider }: { provider: string }) =>
     React.createElement("span", { "data-testid": `provider-logo-${provider}` }),
@@ -71,6 +67,14 @@ let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {}
 const mockLogout = vi.fn();
 const mockCheckoutSession = vi.fn();
 const mockPortalSession = vi.fn();
+const mockConnectBleHeartRateMonitor = vi.fn().mockResolvedValue(undefined);
+const mockDisconnectBleHeartRateMonitor = vi.fn();
+const mockBleHeartRateState = {
+  bluetoothAvailable: true,
+  connectionState: "disconnected" as const,
+  device: null,
+  liveBpm: null,
+};
 const checkoutOperationId = "10000000-0000-4000-8000-000000000001";
 let mockSessionToken: string | null = "test-token";
 const defaultBillingStatus = {
@@ -105,6 +109,13 @@ vi.mock("../lib/auth-context", () => ({
     serverUrl: "https://test.example.com",
     sessionToken: mockSessionToken,
   }),
+}));
+
+vi.mock("../lib/background-ble-heart-rate-sync", () => ({
+  connectBleHeartRateMonitor: (...args: unknown[]) => mockConnectBleHeartRateMonitor(...args),
+  disconnectBleHeartRateMonitor: (...args: unknown[]) => mockDisconnectBleHeartRateMonitor(...args),
+  getBleHeartRateSyncState: () => mockBleHeartRateState,
+  subscribeBleHeartRateSyncState: () => () => undefined,
 }));
 
 const mockLinkedAccountsRefetch = vi.fn();
@@ -484,6 +495,15 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByText("2 connected")).toBeTruthy();
   });
 
+  it("lets the user connect a standard Bluetooth heart-rate monitor", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Connect heart-rate monitor" }));
+
+    await waitFor(() => expect(mockConnectBleHeartRateMonitor).toHaveBeenCalledOnce());
+  });
+
   it("renders provider logos for connected providers only", async () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
@@ -559,17 +579,6 @@ describe("SettingsScreen data sources", () => {
     fireEvent.click(screen.getByText("2 connected"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
-  });
-
-  it("navigates to cycle tracking from the health tracking section", async () => {
-    mockSearchParams = { tab: "goals-models" };
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Cycle Tracking" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/cycle");
   });
 
   it("navigates to journal trends from the health tracking section", async () => {

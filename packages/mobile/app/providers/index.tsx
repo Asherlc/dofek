@@ -1,4 +1,3 @@
-import { formatDateYmd } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import * as DocumentPicker from "expo-document-picker";
@@ -25,7 +24,6 @@ import {
   HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
   isHealthKitDatabaseInaccessible,
 } from "../../lib/health-kit-errors";
-import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
 import {
   type ImportProviderId,
   importSharedFile,
@@ -35,7 +33,6 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
-import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import {
   CredentialAuthModal,
@@ -69,16 +66,6 @@ function deleteSharedFile(fileUri: string): void {
   if (file.exists) {
     file.delete();
   }
-}
-
-function ymdDaysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return formatDateYmd(date);
-}
-
-function todayYmd(): string {
-  return formatDateYmd();
 }
 
 export default function ProvidersScreen() {
@@ -175,21 +162,7 @@ export default function ProvidersScreen() {
         syncRangeDays: 7,
         onProgress: setHealthKitProgress,
       });
-      setHealthKitProgress("Writing Dofek food to Apple Health...");
-      const foodWriteBack = await syncDofekFoodToHealthKit({
-        trpcClient,
-        healthKit: {
-          writeDietarySamples,
-          deleteDietarySamples,
-        },
-        startDate: ymdDaysAgo(7),
-        endDate: todayYmd(),
-      });
-      const foodSummary =
-        foodWriteBack.errors.length > 0
-          ? `${foodWriteBack.written} foods written, ${foodWriteBack.errors.length} food errors`
-          : `${foodWriteBack.written} foods written`;
-      setHealthKitProgress(`Done — ${result.inserted} records synced, ${foodSummary}`);
+      setHealthKitProgress(`Done — ${result.inserted} records synced`);
       trpcUtils.invalidate();
     } catch (error: unknown) {
       if (!isHealthKitDatabaseInaccessible(error)) {
@@ -202,7 +175,7 @@ export default function ProvidersScreen() {
       setHealthKitSyncing(false);
       setAnySyncing(false);
     }
-  }, [appleHealth, trpcClient, trpcUtils]);
+  }, [appleHealth, trpcUtils]);
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -642,6 +615,8 @@ export default function ProvidersScreen() {
     authType: provider.authType,
     tokenAuth: provider.tokenAuth,
     lastSyncAt: provider.lastSyncedAt,
+    lastSuccessfulSyncAt: provider.lastSuccessfulSyncAt,
+    syncFreshness: provider.syncFreshness,
     importOnly: provider.importOnly,
     pushOnly: provider.pushOnly,
   }));
