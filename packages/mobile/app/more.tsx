@@ -17,6 +17,12 @@ const destinations = [
     description:
       "Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
   },
+  {
+    href: "/cycle",
+    icon: "calendar-outline",
+    title: "Cycle tracking",
+    description: "Review provider-sourced cycle starts and phase estimates.",
+  },
 ] as const;
 
 export default function MoreScreen() {

@@ -254,6 +254,8 @@ export const healthEvent = fitness.table(
     valueText: text("value_text"), // category/string value (if any)
     unit: text("unit"),
     sourceName: text("source_name"),
+    sourceBundle: text("source_bundle"),
+    metadata: jsonb("metadata").$type<Record<string, string | number | boolean>>(),
     startDate: timestamp("start_date", { withTimezone: true }).notNull(),
     endDate: timestamp("end_date", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

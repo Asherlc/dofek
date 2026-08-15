@@ -498,6 +498,8 @@ entity "health_event" {
   value_text : text
   unit : text
   source_name : text
+  source_bundle : text
+  metadata : jsonb
   start_date : timestamp
   end_date : timestamp
   created_at : timestamp

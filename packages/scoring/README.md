@@ -44,6 +44,7 @@ console.log({
 | `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
 | `@dofek/scoring/loading-policy` | Blocking-loading state policy |
+| `@dofek/scoring/menstrual-cycle` | Read-only cycle phase calculation, display metadata, and safety notice for provider-originated starts |
 | `@dofek/scoring/query-cache` | Shared query-cache age constant |
 
 ## Model behavior
@@ -63,6 +64,7 @@ console.log({
   consistency or low-stress inputs are supplied, it averages all available
   components equally.
 - Healthspan display deltas map scores from 0–100 onto +3 to -2 years.
+- Menstrual-cycle phases use a server-supplied cycle day and observed average cycle length; the model does not infer a period start or provide contraceptive guidance.
 - The design-token modules contain values only; they do not install fonts or
   render UI.
 - `operationalStatusColors` is the light-theme presentation palette for generic

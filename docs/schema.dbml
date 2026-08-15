@@ -904,6 +904,8 @@ table fitness.health_event {
   value_text text
   unit text
   source_name text
+  source_bundle text
+  metadata jsonb
   start_date "timestamp with time zone" [not null]
   end_date "timestamp with time zone"
   created_at "timestamp with time zone" [not null, default: `now()`]
