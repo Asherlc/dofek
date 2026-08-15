@@ -1572,6 +1572,38 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(1);
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("preserves source bundle and structured metadata for category events", async () => {
+      const { repository, execute } = makeRepository();
+      const metadata = {
+        HKMetadataKeyMenstrualCycleStart: true,
+        upstreamVersion: 3,
+        upstreamLabel: "confirmed",
+      };
+
+      await repository.processHealthEvents([
+        makeSample({
+          type: "HKCategoryTypeIdentifierMenstrualFlow",
+          value: 2,
+          unit: "category",
+          startDate: "2026-08-01T08:00:00-07:00",
+          endDate: "2026-08-01T08:05:00-07:00",
+          sourceName: "Cycle Source",
+          sourceBundle: "com.example.cycle-source",
+          uuid: "91C7A825-3DA3-4F24-9085-15A9E2D1D2A1",
+          metadata,
+        }),
+      ]);
+
+      const statement = execute.mock.calls[0]?.[0];
+      expect(statement).toBeDefined();
+      const query = new PgDialect().sqlToQuery(statement);
+      expect(query.sql).toContain("source_bundle");
+      expect(query.sql).toContain("metadata");
+      expect(query.params).toContain("com.example.cycle-source");
+      expect(query.params).toContain(JSON.stringify(metadata));
+      expect(query.params).toContain("hk:91C7A825-3DA3-4F24-9085-15A9E2D1D2A1");
+    });
   });
 
   describe("processWorkouts", () => {

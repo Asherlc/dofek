@@ -76,6 +76,7 @@ export interface HealthKitSample {
   sourceName: string;
   sourceBundle: string;
   uuid: string;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export interface WorkoutSample {
@@ -581,8 +582,8 @@ export class HealthKitSyncRepository {
       for (const sample of batch) {
         const externalId = `hk:${sample.uuid}`;
         await this.#db.execute(
-          sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, start_date, end_date)
-              VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
+          sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, source_bundle, metadata, start_date, end_date)
+              VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.sourceBundle}, ${sample.metadata === undefined ? null : JSON.stringify(sample.metadata)}::jsonb, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
               ON CONFLICT (user_id, provider_id, external_id) DO NOTHING`,
         );
         inserted++;
