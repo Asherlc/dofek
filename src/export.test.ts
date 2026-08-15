@@ -28,6 +28,8 @@ vi.mock("./logger.ts", () => ({
 import type { SyncDatabase } from "./db/index.ts";
 import { generateExport } from "./export.ts";
 
+const TEST_USER_ID = "user-1";
+
 // All DB functions are mocked — only execute is actually called by generateExport.
 const mockDb: SyncDatabase = {
   select: vi.fn(),
@@ -245,7 +247,7 @@ describe("generateExport", () => {
     ];
     setupMockDb(executeResults);
 
-    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+    await generateExport(mockDb, TEST_USER_ID, "/tmp/test.zip", () => {});
 
     const periodEntry = findArchiveEntry("menstrual-periods.csv");
     expect(periodEntry?.[0]).toBe("id,start_date,notes\nperiod-1,2026-07-03,Cramps and poor sleep");
@@ -255,7 +257,8 @@ describe("generateExport", () => {
     );
     expect(periodQuery).toContain("fitness.menstrual_period");
     expect(periodQuery).toContain("WHERE user_id = ");
-    expect(periodQuery).toContain("user-1");
+    expect(periodQuery).toContain(TEST_USER_ID);
+    expect(periodQuery).toContain("ORDER BY start_date");
   });
 
   it("exports historical breathwork sessions with every returned column", async () => {
