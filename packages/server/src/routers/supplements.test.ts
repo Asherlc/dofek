@@ -1,12 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const invalidateNutritionCaches = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const captureException = vi.hoisted(() => vi.fn());
-
-vi.mock("../lib/nutrition-cache.ts", () => ({ invalidateNutritionCaches }));
-vi.mock("@sentry/node", () => ({ captureException }));
-
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -34,15 +28,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-// Mock drizzle functions used by SupplementsRepository
-vi.mock("drizzle-orm", async (importOriginal) => {
-  const original = await importOriginal<typeof import("drizzle-orm")>();
-  return {
-    ...original,
-    eq: vi.fn(() => true),
-  };
-});
-
 // ---------------------------------------------------------------------------
 // Router procedure tests
 // ---------------------------------------------------------------------------
@@ -50,17 +35,7 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 describe("supplementsRouter", () => {
   async function makeCaller(executeResult: unknown[] = []) {
     const execute = vi.fn().mockResolvedValue(executeResult);
-    // Mock select/from/where for the list query
-    const where = vi.fn().mockResolvedValue(executeResult);
-    const from = vi.fn(() => ({ where }));
-    const select = vi.fn(() => ({ from }));
-    const insert = vi.fn(() => ({ values: vi.fn(() => ({ onConflictDoUpdate: vi.fn() })) }));
-    const deleteFn = vi.fn(() => ({ where: vi.fn() }));
-    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
-      const tx = { execute, select, insert, delete: deleteFn };
-      return callback(tx);
-    });
-    const db = { execute, select, insert, delete: deleteFn, transaction };
+    const db = { execute };
 
     const { supplementsRouter } = await import("./supplements.ts");
     const callerFactory = createTestCallerFactory(supplementsRouter);
@@ -108,79 +83,6 @@ describe("supplementsRouter", () => {
           meal: "breakfast",
         },
       ]);
-    });
-  });
-
-  describe("save", () => {
-    it("invalidates nutrition analytics after replacing the stack", async () => {
-      const { caller } = await makeCaller([]);
-
-      await caller.save({ supplements: [] });
-
-      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
-    });
-
-    it("preserves the exact installed-client V1 success shape", async () => {
-      const { caller } = await makeCaller([]);
-      expect(await caller.save({ supplements: [] })).toEqual({
-        success: true,
-        count: 0,
-      });
-    });
-
-    it("rejects empty supplement name", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "" }] })).rejects.toThrow();
-    });
-
-    it("rejects supplement name exceeding 200 chars", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "x".repeat(201) }] })).rejects.toThrow();
-    });
-
-    it("accepts name at exactly 200 chars (boundary)", async () => {
-      const { caller } = await makeCaller([]);
-      // This will fail with DB error, but should NOT fail with validation error
-      try {
-        await caller.save({ supplements: [{ name: "x".repeat(200) }] });
-      } catch (error) {
-        // Should not be a ZodError (input validation should pass)
-        expect(String(error)).not.toContain("String must contain at most 200");
-      }
-    });
-
-    it("rejects negative amount", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "Test", amount: -1 }] })).rejects.toThrow();
-    });
-
-    it("rejects zero amount", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "Test", amount: 0 }] })).rejects.toThrow();
-    });
-
-    it("rejects unit exceeding 10 chars", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(
-        caller.save({ supplements: [{ name: "Test", unit: "x".repeat(11) }] }),
-      ).rejects.toThrow();
-    });
-
-    it("requires the supplements input property", async () => {
-      const { caller } = await makeCaller([]);
-
-      await expect(Reflect.apply(caller.save, undefined, [{}])).rejects.toThrow();
-    });
-
-    it("rejects malformed repository output", async () => {
-      const save = vi.spyOn(SupplementsRepository.prototype, "save").mockResolvedValue({
-        success: true,
-        count: -1,
-      });
-      const { caller } = await makeCaller([]);
-
-      await expect(caller.save({ supplements: [] })).rejects.toThrow();
-      save.mockRestore();
     });
   });
 
@@ -272,137 +174,7 @@ describe("supplementsRouter", () => {
     });
   });
 
-  describe("recordDose", () => {
-    it("records a correction and invalidates nutrition caches", async () => {
-      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
-        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-        scheduledDate: "2026-07-27",
-        status: "taken",
-      });
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "taken",
-        }),
-      ).resolves.toEqual({
-        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-        scheduledDate: "2026-07-27",
-        status: "taken",
-      });
-      expect(recordDose).toHaveBeenCalledWith("b0ec9f35-fb09-40bb-b536-fd7970ec7c62", "taken");
-      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
-      recordDose.mockRestore();
-    });
-
-    it("maps stale-leaf conflicts to an actionable conflict error", async () => {
-      const recordDose = vi
-        .spyOn(SupplementsRepository.prototype, "recordDose")
-        .mockRejectedValue(new SupplementDoseConflictError());
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "skipped",
-        }),
-      ).rejects.toMatchObject({
-        code: "CONFLICT",
-        message: "Supplement status changed. Reload and try again.",
-      });
-      recordDose.mockRestore();
-    });
-
-    it("maps unexpected persistence failures to a semantic server error", async () => {
-      const failure = new Error("database connection closed");
-      const recordDose = vi
-        .spyOn(SupplementsRepository.prototype, "recordDose")
-        .mockRejectedValue(failure);
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "taken",
-        }),
-      ).rejects.toMatchObject({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Could not record the supplement dose. Reload and try again.",
-        cause: failure,
-      });
-      expect(captureException).toHaveBeenCalledWith(failure, {
-        tags: { operation: "supplements.recordDose" },
-      });
-      recordDose.mockRestore();
-    });
-
-    it("requires the event id and a supported status", async () => {
-      const { caller } = await makeCaller([]);
-      const validId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
-
-      await expect(Reflect.apply(caller.recordDose, undefined, [{}])).rejects.toThrow();
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
-        ]),
-      ).rejects.toThrow();
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId: validId, status: "unknown" },
-        ]),
-      ).rejects.toThrow();
-    });
-
-    it("accepts both supported statuses", async () => {
-      const recordDose = vi
-        .spyOn(SupplementsRepository.prototype, "recordDose")
-        .mockImplementation(async (_eventId, status) => ({
-          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-          scheduledDate: "2026-07-27",
-          status,
-        }));
-      const { caller } = await makeCaller([]);
-      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
-
-      await expect(
-        caller.recordDose({ expectedCurrentEventId, status: "taken" }),
-      ).resolves.toMatchObject({ status: "taken" });
-      await expect(
-        caller.recordDose({ expectedCurrentEventId, status: "skipped" }),
-      ).resolves.toMatchObject({ status: "skipped" });
-      recordDose.mockRestore();
-    });
-
-    it("rejects malformed repository output", async () => {
-      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
-        id: "not-a-uuid",
-        scheduledDate: "2026-07-27",
-        status: "taken",
-      });
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "taken",
-        }),
-      ).rejects.toThrow();
-      recordDose.mockRestore();
-    });
-  });
-
   describe("schema initialization", () => {
-    it("enforces the save input and exact output after a fresh module load", async () => {
-      vi.resetModules();
-      const { caller } = await makeCaller([]);
-
-      await expect(caller.save({ supplements: [] })).resolves.toEqual({
-        success: true,
-        count: 0,
-      });
-    });
-
     it("enforces the occurrence default and inclusive day bounds after a fresh module load", async () => {
       vi.resetModules();
       const { SupplementsRepository: FreshSupplementsRepository } = await import(
@@ -424,42 +196,6 @@ describe("supplementsRouter", () => {
       expect(occurrences.mock.calls).toEqual([[7], [1], [30]]);
       occurrences.mockRestore();
     });
-
-    it("enforces record-dose input and exact output after a fresh module load", async () => {
-      vi.resetModules();
-      const { SupplementsRepository: FreshSupplementsRepository } = await import(
-        "../repositories/supplements-repository.ts"
-      );
-      const recordDose = vi
-        .spyOn(FreshSupplementsRepository.prototype, "recordDose")
-        .mockResolvedValue({
-          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-          scheduledDate: "2026-07-27",
-          status: "taken",
-        });
-      const { caller } = await makeCaller([]);
-      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
-
-      await expect(caller.recordDose({ expectedCurrentEventId, status: "taken" })).resolves.toEqual(
-        {
-          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-          scheduledDate: "2026-07-27",
-          status: "taken",
-        },
-      );
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
-        ]),
-      ).rejects.toThrow();
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId, status: "unknown" },
-        ]),
-      ).rejects.toThrow();
-      expect(recordDose).toHaveBeenCalledTimes(1);
-      recordDose.mockRestore();
-    });
   });
 });
 
@@ -467,11 +203,7 @@ describe("supplementsRouter", () => {
 // toApiSupplement utility tests
 // ---------------------------------------------------------------------------
 
-import {
-  SupplementDoseConflictError,
-  SupplementsRepository,
-  toApiSupplement,
-} from "../repositories/supplements-repository.ts";
+import { SupplementsRepository, toApiSupplement } from "../repositories/supplements-repository.ts";
 
 describe("toApiSupplement()", () => {
   it("maps name from row", () => {

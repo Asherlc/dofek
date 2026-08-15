@@ -19,7 +19,7 @@ import {
  * - efficiency (aerobicDecoupling, polarizationTrend)
  * - cycling-advanced (pedalDynamics)
  * - power (powerCurve, eftpTrend)
- * - supplements (list, save)
+ * - supplements (list)
  * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
@@ -784,43 +784,12 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Supplements — list and save
+  // Supplements — list
   // ══════════════════════════════════════════════════════════════
   describe("supplements", () => {
     it("list returns an array (possibly empty)", async () => {
       const result = await query<unknown[]>("supplements.list");
       expect(Array.isArray(result)).toBe(true);
-    });
-
-    it("save stores supplements and list retrieves them", async () => {
-      const supplements = [
-        { name: "Vitamin D3", amount: 5000, unit: "IU", form: "softgel", vitaminDMcg: 125 },
-        { name: "Magnesium Glycinate", amount: 400, unit: "mg", magnesiumMg: 400 },
-      ];
-      const saveResult = await mutate<{ success: boolean; count: number }>("supplements.save", {
-        supplements,
-      });
-      expect(saveResult.success).toBe(true);
-      expect(saveResult.count).toBe(2);
-
-      // Invalidate cache and verify list returns saved data
-      await queryCache.invalidateAll();
-      const listResult =
-        await query<{ name: string; amount: number; unit: string }[]>("supplements.list");
-      expect(listResult.length).toBe(2);
-      expect(listResult[0]?.name).toBe("Vitamin D3");
-      expect(listResult[1]?.name).toBe("Magnesium Glycinate");
-
-      const nutritionRows = await testCtx.db.execute<{ count: string }>(
-        sql`SELECT COUNT(*)::text AS count
-            FROM fitness.supplement_definition_nutrient AS nutrient
-            JOIN fitness.supplement_definition AS definition
-              ON definition.id = nutrient.definition_id
-            JOIN fitness.supplement AS supplement
-              ON supplement.id = definition.supplement_id
-            WHERE supplement.user_id = ${TEST_USER_ID}`,
-      );
-      expect(nutritionRows[0]?.count).toBe("2");
     });
   });
 

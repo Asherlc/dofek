@@ -1,10 +1,60 @@
+import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { expect } from "vitest";
+import { nutrientAmountEntriesFromLegacyFields } from "../../../../src/db/nutrient-columns.ts";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
 } from "../../../../src/db/provider-data-deletion.ts";
-import type { Database } from "../../../../src/db/typed-sql.ts";
+import {
+  supplement,
+  supplementDefinition,
+  supplementDefinitionNutrient,
+} from "../../../../src/db/schema/nutrition.ts";
+
+export async function insertSupplementDefinitionForTest(
+  database: Database,
+  values: {
+    userId: string;
+    name: string;
+    effectiveFrom: string;
+    meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other";
+  },
+  nutrients: Record<string, number | null> = {},
+): Promise<{ definitionId: string; scheduleId: string }> {
+  const [insertedSchedule] = await database
+    .insert(supplement)
+    .values({ userId: values.userId })
+    .returning({ id: supplement.id });
+  if (!insertedSchedule) throw new Error("Supplement fixture schedule insert returned no id");
+
+  const [insertedDefinition] = await database
+    .insert(supplementDefinition)
+    .values({
+      supplementId: insertedSchedule.id,
+      name: values.name,
+      effectiveFrom: values.effectiveFrom,
+      meal: values.meal,
+    })
+    .returning({ id: supplementDefinition.id });
+  if (!insertedDefinition) throw new Error("Supplement fixture definition insert returned no id");
+
+  const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutrients);
+  if (nutrientEntries.length > 0) {
+    await database.insert(supplementDefinitionNutrient).values(
+      nutrientEntries.map((nutrient) => ({
+        definitionId: insertedDefinition.id,
+        nutrientId: nutrient.nutrientId,
+        amount: nutrient.amount,
+      })),
+    );
+  }
+
+  return {
+    definitionId: insertedDefinition.id,
+    scheduleId: insertedSchedule.id,
+  };
+}
 
 export async function resolveProviderDataGenerationsForTest(
   database: Database,
