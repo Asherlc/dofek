@@ -19,7 +19,11 @@ afterEach(async () => {
   );
 });
 
-async function requestReadiness(readiness: MetricStreamConsumerReadiness): Promise<Response> {
+async function requestReadiness(
+  readiness: MetricStreamConsumerReadiness,
+  path = "/readyz",
+  method = "GET",
+): Promise<Response> {
   const server = createMetricStreamConsumerReadinessServer(readiness);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -27,7 +31,7 @@ async function requestReadiness(readiness: MetricStreamConsumerReadiness): Promi
   if (!address || typeof address === "string") {
     throw new Error("expected a TCP readiness server address");
   }
-  return fetch(`http://127.0.0.1:${address.port}/readyz`);
+  return fetch(`http://127.0.0.1:${address.port}${path}`, { method });
 }
 
 describe("MetricStreamConsumerReadiness", () => {
@@ -37,6 +41,7 @@ describe("MetricStreamConsumerReadiness", () => {
     const response = await requestReadiness(readiness);
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("content-type")).toBe("application/json");
     await expect(response.json()).resolves.toEqual({ status: "starting" });
   });
 
@@ -50,7 +55,7 @@ describe("MetricStreamConsumerReadiness", () => {
     await expect(response.json()).resolves.toEqual({ status: "ready" });
   });
 
-  it("becomes unavailable while the consumer rebalances or disconnects", async () => {
+  it("becomes unavailable after a consumer rebalance or disconnect", async () => {
     const readiness = new MetricStreamConsumerReadiness();
     readiness.markGroupJoined();
     readiness.markUnavailable();
@@ -59,5 +64,14 @@ describe("MetricStreamConsumerReadiness", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("returns not found for paths and methods other than the readiness endpoint", async () => {
+    const readiness = new MetricStreamConsumerReadiness();
+    const pathResponse = await requestReadiness(readiness, "/healthz");
+    const methodResponse = await requestReadiness(readiness, "/readyz", "POST");
+
+    expect(pathResponse.status).toBe(404);
+    expect(methodResponse.status).toBe(404);
   });
 });

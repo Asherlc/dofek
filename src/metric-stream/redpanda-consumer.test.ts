@@ -139,6 +139,55 @@ describe("runMetricStreamEventConsumer", () => {
     expect(commitOffsetsIfNecessary).toHaveBeenCalled();
   });
 
+  it("registers a supplied lifecycle listener before consuming events", async () => {
+    const observeGroupLifecycle = vi.fn();
+    const lifecycleListener = {
+      markGroupJoined: vi.fn(),
+      markUnavailable: vi.fn(),
+    };
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      observeGroupLifecycle,
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async () => undefined),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      lifecycleListener,
+      quarantine: {
+        connect: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
+      topic: "metric-stream-v1",
+    });
+
+    expect(observeGroupLifecycle).toHaveBeenCalledWith(lifecycleListener);
+  });
+
+  it("does not register the consumer lifecycle observer without a listener", async () => {
+    const observeGroupLifecycle = vi.fn();
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      observeGroupLifecycle,
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async () => undefined),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: {
+        connect: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
+      topic: "metric-stream-v1",
+    });
+
+    expect(observeGroupLifecycle).not.toHaveBeenCalled();
+  });
+
   it("passes delete events to sinks in Redpanda batch order", async () => {
     const deleteEvent = createMetricStreamDeletedEvent(
       { activityId: "20000000-0000-4000-8000-000000000001" },
@@ -579,17 +628,29 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     const groupJoinListener = kafkaConsumerOn.mock.calls.find(
       ([eventName]) => eventName === "consumer.group_join",
     )?.[1];
-    const unavailableListener = kafkaConsumerOn.mock.calls.find(
-      ([eventName]) => eventName === "consumer.rebalancing",
-    )?.[1];
-    if (typeof groupJoinListener !== "function" || typeof unavailableListener !== "function") {
+    const unavailableListeners = kafkaConsumerOn.mock.calls
+      .filter(
+        ([eventName]) =>
+          eventName === "consumer.rebalancing" ||
+          eventName === "consumer.disconnect" ||
+          eventName === "consumer.stop" ||
+          eventName === "consumer.crash",
+      )
+      .map(([, listener]) => listener);
+    if (
+      typeof groupJoinListener !== "function" ||
+      unavailableListeners.length !== 4 ||
+      unavailableListeners.some((listener) => typeof listener !== "function")
+    ) {
       throw new Error("expected Kafka lifecycle listeners");
     }
 
     groupJoinListener();
-    unavailableListener();
+    for (const unavailableListener of unavailableListeners) {
+      unavailableListener();
+    }
 
     expect(readiness.markGroupJoined).toHaveBeenCalledOnce();
-    expect(readiness.markUnavailable).toHaveBeenCalledOnce();
+    expect(readiness.markUnavailable).toHaveBeenCalledTimes(4);
   });
 });

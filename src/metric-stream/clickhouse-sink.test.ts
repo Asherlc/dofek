@@ -59,12 +59,21 @@ function firstCommandQuery(command: ReturnType<typeof vi.fn>): string {
   return call.query;
 }
 
+function insertedValues(insert: ReturnType<typeof vi.fn>, callIndex: number): unknown[] {
+  const call = insert.mock.calls[callIndex]?.[0];
+  if (!call || typeof call !== "object" || !("values" in call) || !Array.isArray(call.values)) {
+    throw new Error("expected an insert call with row values");
+  }
+  return call.values;
+}
+
 function makeEmptyGenerationQuery() {
   return vi.fn(async () => ({ json: async () => [] }));
 }
 
 afterEach(() => {
   vi.doUnmock("../db/clickhouse.ts");
+  vi.doUnmock("./consumer-readiness.ts");
   vi.doUnmock("./redpanda-consumer.ts");
   vi.resetModules();
 });
@@ -161,6 +170,31 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
 });
 
 describe("applyMetricStreamEventsToClickHouse", () => {
+  it("flushes rows at the maximum write size before processing the next event", async () => {
+    const insert = vi.fn(async () => undefined);
+    const heartbeat = vi.fn(async () => undefined);
+    const events = Array.from({ length: 1001 }, (_, index) => ({
+      ...heartRateEvent,
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    }));
+
+    await applyMetricStreamEventsToClickHouse(
+      { insert, query: makeEmptyGenerationQuery() },
+      events,
+      {
+        topic: "metric-stream-v1",
+        partition: 2,
+        eventOffsets: events.map((_, index) => String(index)),
+        heartbeat,
+      },
+    );
+
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(insertedValues(insert, 0)).toHaveLength(1000);
+    expect(insertedValues(insert, 1)).toHaveLength(1);
+    expect(heartbeat).toHaveBeenCalledTimes(2);
+  });
+
   it("acknowledges a correlated batch only after its rows are applied", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
@@ -704,5 +738,75 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     await expect(
       runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
     ).rejects.toThrow("ClickHouse metric-stream sink requires an insert-capable client");
+  });
+
+  it("requires Kafka group lifecycle events for the readiness check", async () => {
+    vi.doMock("../db/clickhouse.ts", () => ({
+      createClickHouseClientFromEnv: vi.fn(() => ({ insert: vi.fn(async () => undefined) })),
+    }));
+    vi.doMock("./redpanda-consumer.ts", () => ({
+      createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
+        consumer: {
+          connect: vi.fn(async () => undefined),
+          subscribe: vi.fn(async () => undefined),
+          run: vi.fn(async () => undefined),
+        },
+        quarantine: {
+          connect: vi.fn(async () => undefined),
+          write: vi.fn(async () => undefined),
+        },
+        topic: "metric-stream-v1",
+      })),
+      runMetricStreamEventConsumer: vi.fn(),
+    }));
+
+    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
+
+    await expect(
+      runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
+    ).rejects.toThrow("ClickHouse metric-stream sink requires Kafka group lifecycle events");
+  });
+
+  it("starts the readiness server before starting the ClickHouse sink", async () => {
+    const listen = vi.fn();
+    const unref = vi.fn();
+    const readinessServer = { listen, unref };
+    const createMetricStreamConsumerReadinessServer = vi.fn(() => readinessServer);
+    const runMetricStreamEventConsumer = vi.fn(async () => undefined);
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      observeGroupLifecycle: vi.fn(),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async () => undefined),
+    };
+
+    vi.doMock("../db/clickhouse.ts", () => ({
+      createClickHouseClientFromEnv: vi.fn(() => ({ insert: vi.fn(async () => undefined) })),
+    }));
+    vi.doMock("./consumer-readiness.ts", () => ({
+      MetricStreamConsumerReadiness: class MetricStreamConsumerReadiness {},
+      createMetricStreamConsumerReadinessServer,
+    }));
+    vi.doMock("./redpanda-consumer.ts", () => ({
+      createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
+        consumer,
+        quarantine: {
+          connect: vi.fn(async () => undefined),
+          write: vi.fn(async () => undefined),
+        },
+        topic: "metric-stream-v1",
+      })),
+      runMetricStreamEventConsumer,
+    }));
+
+    const { startMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
+
+    await startMetricStreamClickHouseSinkFromEnv();
+
+    expect(listen).toHaveBeenCalledWith(3001, "0.0.0.0");
+    expect(unref).toHaveBeenCalledOnce();
+    expect(runMetricStreamEventConsumer).toHaveBeenCalledWith(
+      expect.objectContaining({ lifecycleListener: expect.any(Object) }),
+    );
   });
 });
