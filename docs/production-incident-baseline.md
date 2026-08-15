@@ -23788,3 +23788,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   separately approved recovery plan. Production also lacks
   `WITHINGS_CLIENT_ID`; it is not the cause of this completed operation but must
   be provisioned before a future Withings authorization or token refresh.
+
+## 2026-08-15 — PR 2532 migration failed the SQLFluff CI gate
+
+- **Status:** Fixed in the pull request; hosted rerun pending.
+- **Symptoms / impact:** The `Test / SQLFluff` job blocked PR #2532 while
+  linting `drizzle/0091_health_event_source_metadata.sql`. The first fatal
+  finding was `RF06 Unnecessary quoted identifier "fitness"`; the same file
+  also reported unnecessary quotes for the table and column names and `LT02`
+  indentation violations. No production environment was affected.
+- **Evidence / root cause:** The failing job ran the new-migration file list
+  through `uv tool run sqlfluff lint`. The migration used Drizzle-style quotes
+  around ordinary lowercase identifiers and indented its `ADD COLUMN` clauses,
+  which violate the repository's migration SQLFluff rules. The regular local
+  `pnpm lint` command did not exercise that CI-only new-migration invocation.
+  See the [failed SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/31890825620/job/95026814995).
+- **Fix / mitigation:** Removed the unnecessary identifier quotes and aligned
+  the `ADD COLUMN` clauses with SQLFluff's expected indentation. No lint rule,
+  ignore, retry, timeout, or failure suppression was added.
+- **Validation:** The exact CI command,
+  `uv tool run sqlfluff lint drizzle/0091_health_event_source_metadata.sql`,
+  passes locally. Confirm a fresh hosted SQLFluff job passes.
+- **Remaining risk / follow-up:** Add migration SQLFluff parity to the standard
+  local lint workflow so new migrations fail before push.
