@@ -23849,7 +23849,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `2026-08-14T14:21:00Z`. This was a scope/modeling error: retiring human input
   did not require deleting canonical raw storage.
 - **Fix / mitigation:** Added forward migration
-  `0091_restore_retained_health_records.sql` with SHA-256
+  `0092_restore_retained_health_records.sql` with SHA-256
   `eba278b958501a9d1274622d7ddc3440dfef371041de9d531905107eb5d98580`.
   The initial recovery bytes (SHA-256
   `e4f5c8e239bda2a5254b3f19ea04192c269190870984f1c348eece1f2e813b48`)
