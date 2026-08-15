@@ -8,11 +8,6 @@ const destinations = [
     description: "Manage your profile, preferences, data sources, and account.",
   },
   {
-    to: "/breathwork",
-    title: "Breathwork",
-    description: "Start a guided breathing session and review recent practice.",
-  },
-  {
     to: "/cycle",
     title: "Cycle tracking",
     description: "Review cycle phases and record period dates.",

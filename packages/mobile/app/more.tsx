@@ -11,12 +11,6 @@ const destinations = [
     description: "Manage your profile, preferences, data sources, and account.",
   },
   {
-    href: "/breathwork",
-    icon: "leaf-outline",
-    title: "Breathwork",
-    description: "Start a guided breathing session and review recent practice.",
-  },
-  {
     href: "/cycle",
     icon: "calendar-outline",
     title: "Cycle tracking",
