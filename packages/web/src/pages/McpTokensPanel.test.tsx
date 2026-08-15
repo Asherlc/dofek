@@ -130,14 +130,7 @@ describe("McpTokensPanel", () => {
     await waitFor(() => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
-        scopes: [
-          "health:read",
-          "activity:read",
-          "nutrition:read",
-          "nutrition:write",
-          "providers:read",
-          "sync:write",
-        ],
+        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
         expiresAt: null,
       });
     });

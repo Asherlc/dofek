@@ -133,6 +133,9 @@
     "Kaya",
     "KAYA",
     "kaya",
+    "Eldorado",
+    "mountainproject",
+    "Pinkpoint",
     "Redpoint",
     "Onsight",
     "Amazfit",
@@ -657,7 +660,11 @@
     "trkpt",
     "trkseg",
     "Mesgs",
-    "mesg"
+    "mesg",
+    "openbeta",
+    "uiaa",
+    "ewbank",
+    "vscale"
   ],
   "flagWords": [],
   "useGitignore": false,

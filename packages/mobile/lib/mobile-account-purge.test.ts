@@ -57,6 +57,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(async (cutoff) => calls.push(`whoop:${cutoff}`)),
         teardownAccelerometer: stop("stop-accelerometer"),
         teardownHealthKit: stop("stop-health-kit"),
+        teardownHeartRate: stop("stop-heart-rate"),
         teardownWatchMotion: stop("stop-watch"),
         teardownWhoopBle: stop("stop-whoop"),
       },
@@ -65,11 +66,12 @@ describe("purgeMobileAccountState", () => {
     });
 
     expect(result.errors).toEqual([]);
-    expect(calls.slice(0, 4)).toEqual([
+    expect(calls.slice(0, 5)).toEqual([
       "stop-health-kit",
       "stop-accelerometer",
       "stop-watch",
       "stop-whoop",
+      "stop-heart-rate",
     ]);
     expect(calls).toEqual(
       expect.arrayContaining([
@@ -112,6 +114,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: laterCleanup,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -152,6 +155,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -191,6 +195,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -223,6 +228,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -256,6 +262,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: operation,
         teardownAccelerometer: operation,
         teardownHealthKit: operation,
+        teardownHeartRate: operation,
         teardownWatchMotion: operation,
         teardownWhoopBle: operation,
       },
@@ -298,6 +305,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },

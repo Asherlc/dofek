@@ -17,6 +17,19 @@ export async function resolveProviderDataGenerationsForTest(
   };
 }
 
+export function makeTransactionalTestDatabase<TDatabase extends Database>(
+  database: TDatabase,
+): TDatabase & {
+  transaction<TResult>(work: (transaction: TDatabase) => Promise<TResult>): Promise<TResult>;
+} {
+  async function transaction<TResult>(
+    work: (transaction: TDatabase) => Promise<TResult>,
+  ): Promise<TResult> {
+    return work(database);
+  }
+  return Object.assign(database, { transaction });
+}
+
 export function collectSqlText(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value !== "object" || value === null) return "";

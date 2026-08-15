@@ -90,10 +90,10 @@ Last updated: 2026-06-23
 ### Oura
 - **Official API:** Oura Cloud API v2 — 17 endpoint groups: sleep (5-min stage resolution), HR (individual timestamped readings), HRV (5-min intervals), readiness, resilience, stress (daily aggregate), SpO2 (daily aggregate), VO2 max, cardiovascular age, workouts
 - **Internal API:** Web portal at `cloud.ouraring.com` exists but no one has documented its internal endpoints
-- **Gaps:** SpO2 time-series (app shows overnight graph, API gives daily average), stress time-series (app shows daytime graph, API gives daily totals), cycle/period tracking, ring battery (BLE only)
+- **Gaps:** SpO2 time-series (app shows overnight graph, API gives daily average), stress time-series (app shows daytime graph, API gives daily totals), ring battery (BLE only)
 - **RE efforts:** Only BLE protocol RE exists ([ringverse/protocol](https://github.com/ringverse/protocol)), not cloud API
 - **Note:** Active membership ($5.99/mo) required for API access on Gen 3/Ring 4
-- **Verdict:** LOW VALUE RE — official API is solid. Gaps (SpO2/stress time-series, cycle tracking) are real but niche.
+- **Verdict:** LOW VALUE RE — official API is solid. SpO2 and stress time-series gaps are real but niche.
 
 ### Samsung Health
 - **Official API:** No public REST API. Samsung charges ~$10K for server-side access. On-device SDK deprecated July 2025, replaced by Samsung Health Data SDK (foreground Android app only).

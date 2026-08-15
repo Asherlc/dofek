@@ -351,12 +351,14 @@ describe("FoodRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.list("2024-06-01", "2024-06-30", "lunch");
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("AND meal =");
     });
 
     it("queries without meal filter when not provided", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.list("2024-06-01", "2024-06-30");
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).not.toContain("AND meal =");
     });
 
     it("returns FoodEntry instances when meal is provided", async () => {
