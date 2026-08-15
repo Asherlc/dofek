@@ -187,6 +187,15 @@ describe("SupplementsRepository", () => {
     expect(supplementSchema.safeParse({ id: "definition-1", ...invalid }).success).toBe(false);
   });
 
+  it("accepts a valid supplement after fresh schema initialization", async () => {
+    vi.resetModules();
+    const { supplementSchema: freshSupplementSchema } = await import("./supplements-repository.ts");
+
+    expect(freshSupplementSchema.safeParse({ id: "definition-1", name: "Vitamin D" }).success).toBe(
+      true,
+    );
+  });
+
   it("rejects an invalid supplement view row at the database boundary", async () => {
     const row = makeSupplementViewRow();
     row.definition_id = undefined;
