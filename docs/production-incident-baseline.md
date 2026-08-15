@@ -23627,6 +23627,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-08-14 — Journal PR Metro gate rejected stale Expo SDK patch dependencies
+
+- **Status:** Fixed in [PR #2527](https://github.com/Asherlc/dofek/pull/2527); hosted CI rerun is pending.
+- **Symptoms / impact:** [Build Mobile / Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/31864105274/job/94962402296) failed before export, blocking the stacked Journal read-only PR. No production impact occurred.
+- **Evidence / root cause:** The exact failed command was `pnpm expo install --check`; its first fatal line was `Found outdated dependencies`. Expo SDK 57 now requires newer compatible patch releases for thirteen pinned packages, including `expo@57.0.13`, while the branch still pinned the preceding releases. Expo documents that dependency validation compares installed packages with the versions compatible with the current SDK ([official documentation](https://docs.expo.dev/more/expo-cli/#version-validation)).
+- **Fix / mitigation:** Updated all thirteen packages named by the compatibility check to their exact SDK-compatible patch releases, refreshed the minimum-release-age exceptions added by pnpm for those new packages, and regenerated `pnpm-lock.yaml`. No retry, timeout, suppression, or compatibility-check bypass was added.
+- **Validation:** A frozen install, Expo compatibility check, focused Journal web/mobile tests, typechecks, and sandbox lint passed locally. The hosted checks must pass before the PR is considered ready.
+- **Remaining risk / follow-up:** Confirm the fresh Metro bundle and remaining hosted checks pass. Repeated SDK patch drift indicates the mobile dependency refresh cadence should run before feature PRs that touch mobile code.
+
 ## 2026-08-14 — Cycle-removal migration ran before read-only product direction
 
 - **Status:** Unresolved. The destructive migration has completed in
@@ -23695,7 +23704,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   hosted integration matrix when this workspace has exclusive access to its
   Docker resources. Document an explicit local integration-run concurrency
   check so agents can avoid overlapping heavyweight suites.
-
 ## 2026-08-12 — PR 2507 CI retained an orphaned mobile component after conflict resolution
 
 - **Status:** Resolved by commits `a874f77` and `ce3bac9`; the repaired [Knip job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312820), [Native FIT Decoder job](https://github.com/Asherlc/dofek/actions/runs/31632262084/job/94234312585), Mobile Preview OTA check, and [TFLint rerun](https://github.com/Asherlc/dofek/actions/runs/31633329057/job/94237945547) passed on fresh PR runs.

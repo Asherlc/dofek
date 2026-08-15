@@ -14,6 +14,10 @@ function createMockLink(scenario: Scenario): TRPCLink<AppRouter> {
     ({ op }) => {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
+          if (op.path !== "supplements.occurrences") {
+            observer.error?.(TRPCClientError.from(new Error(`Unexpected operation: ${op.path}`)));
+            return { unsubscribe: () => {} };
+          }
           if (scenario === "loading" && op.path === "supplements.occurrences") {
             return { unsubscribe: () => {} };
           }
@@ -26,35 +30,33 @@ function createMockLink(scenario: Scenario): TRPCLink<AppRouter> {
           observer.next?.({
             result: {
               data:
-                op.path === "supplements.occurrences"
-                  ? scenario === "empty"
-                    ? {
-                        occurrences: [],
-                        counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
-                      }
-                    : {
-                        occurrences: [
-                          {
-                            currentEventId: "event-current",
-                            scheduleId: "schedule-1",
-                            supplementId: "supplement-1",
-                            supplementName: "Vitamin D",
-                            scheduledDate: "2026-07-27",
-                            status: "unknown",
-                            history: [
-                              {
-                                id: "event-current",
-                                providerId: "auto-supplements",
-                                status: "unknown",
-                                recordedAt: "2026-07-27T12:00:00.000Z",
-                                sourceName: "Auto-Supplements",
-                              },
-                            ],
-                          },
-                        ],
-                        counts: { planned: 0, taken: 0, skipped: 0, unknown: 1 },
-                      }
-                  : { id: "new-event", status: "taken" },
+                scenario === "empty"
+                  ? {
+                      occurrences: [],
+                      counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+                    }
+                  : {
+                      occurrences: [
+                        {
+                          currentEventId: "event-current",
+                          scheduleId: "schedule-1",
+                          supplementId: "supplement-1",
+                          supplementName: "Vitamin D",
+                          scheduledDate: "2026-07-27",
+                          status: "unknown",
+                          history: [
+                            {
+                              id: "event-current",
+                              providerId: "auto-supplements",
+                              status: "unknown",
+                              recordedAt: "2026-07-27T12:00:00.000Z",
+                              sourceName: "Auto-Supplements",
+                            },
+                          ],
+                        },
+                      ],
+                      counts: { planned: 0, taken: 0, skipped: 0, unknown: 1 },
+                    },
             },
           });
           observer.complete?.();

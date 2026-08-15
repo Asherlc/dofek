@@ -124,7 +124,10 @@ vi.mock("../../lib/trpc.ts", () => {
   return {
     trpc: {
       useUtils: () => ({
-        journal: { entries: { invalidate: vi.fn() } },
+        processing: {
+          alerts: { invalidate: vi.fn() },
+          status: { invalidate: vi.fn() },
+        },
       }),
       behaviorImpact: {
         impactSummary: recordQuery("behaviorImpact.impactSummary"),
@@ -157,7 +160,6 @@ vi.mock("../../lib/trpc.ts", () => {
         compute: recordQuery("insights.compute"),
       },
       journal: {
-        delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
         entries: recordQuery("journal.entries"),
         trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
