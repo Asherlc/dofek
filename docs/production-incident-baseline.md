@@ -23744,12 +23744,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   did not require deleting canonical raw storage.
 - **Fix / mitigation:** Added forward migration
   `0091_restore_retained_health_records.sql` with SHA-256
-  `e4f5c8e239bda2a5254b3f19ea04192c269190870984f1c348eece1f2e813b48`.
-  The exact reviewed bytes were applied under advisory lock `728370291` in one
-  transaction, recorded as both migration hashes, and followed by an
-  account-erasure write-fence refresh. The matching encrypted backup,
-  `.metadata`, and original Databasus key were decrypted with MAC verification
-  using the [documented Databasus manual recovery procedure](https://databasus.com/how-to-recover-without-databasus).
+  `eba278b958501a9d1274622d7ddc3440dfef371041de9d531905107eb5d98580`.
+  The initial recovery bytes (SHA-256
+  `e4f5c8e239bda2a5254b3f19ea04192c269190870984f1c348eece1f2e813b48`)
+  were applied under advisory lock `728370291` in one transaction and followed
+  by an account-erasure write-fence refresh. Before merge, CI required
+  semantic-preserving SQL formatting and declaration changes: constraints moved
+  into the same empty-table `CREATE TABLE` statements and comments documented
+  the retained historical integer types. No DDL was rerun; after fresh-database
+  schema equivalence passed, the production migration journal was reconciled to
+  the final reviewed hash under advisory lock `728370291`. The matching
+  encrypted backup, `.metadata`, and original Databasus key were decrypted with
+  MAC verification using the [documented Databasus manual recovery procedure](https://databasus.com/how-to-recover-without-databasus).
   Only the two target tables were selected for the data-only import. PostgreSQL
   documents the atomic restore option used here in
   [`pg_restore --single-transaction`](https://www.postgresql.org/docs/current/app-pgrestore.html),
@@ -23762,7 +23768,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   zero/zero count parity. Production then verified zero rows and zero orphaned
   owners, 12 breathwork columns, 6 menstrual-period columns, 3 indexes per
   table, 3 explicit breathwork checks, 2 foreign keys, zero unvalidated
-  constraints, 2 account-erasure fences, the exact migration hash, and
+  constraints, 2 account-erasure fences, the final migration hash, and
   `pg_is_in_recovery() = false`. The database and backup services were `1/1`,
   the web service was `2/2`, and `/healthz` returned `ok` after recovery.
 - **Remaining risk / follow-up:** Records written during the approximately
