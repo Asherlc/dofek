@@ -3,6 +3,7 @@ import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface Supplement {
+  id: string;
   name: string;
   amount?: number;
   unit?: string;
@@ -121,10 +122,7 @@ export function SupplementStackPanel() {
         <QueryStatePanel variant="empty" message="No synced supplements available." height={72} />
       ) : null}
       {supplements.map((supp) => (
-        <SupplementRow
-          key={`${supp.name}-${supp.amount ?? ""}-${supp.unit ?? ""}-${supp.form ?? ""}-${supp.meal ?? ""}`}
-          supp={supp}
-        />
+        <SupplementRow key={supp.id} supp={supp} />
       ))}
     </div>
   );

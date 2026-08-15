@@ -15,7 +15,7 @@ function createMockLink(scenario: Scenario): TRPCLink<AppRouter> {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
           if (op.path !== "supplements.occurrences") {
-            observer.complete?.();
+            observer.error?.(TRPCClientError.from(new Error(`Unexpected operation: ${op.path}`)));
             return { unsubscribe: () => {} };
           }
           if (scenario === "loading" && op.path === "supplements.occurrences") {

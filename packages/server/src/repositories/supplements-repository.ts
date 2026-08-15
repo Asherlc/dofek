@@ -15,6 +15,7 @@ import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 export const supplementSchema = z
   .object({
+    id: z.string().min(1),
     name: z.string().min(1).max(200),
     amount: z.number().positive().optional(),
     unit: z.string().max(10).optional(),
@@ -68,7 +69,7 @@ const doseEventRowSchema = z.object({
 });
 
 export function toApiSupplement(row: Record<string, unknown>): Supplement {
-  const result: Record<string, unknown> = { name: row.name };
+  const result: Record<string, unknown> = { id: row.definition_id, name: row.name };
 
   for (const key of NON_NUTRIENT_OPTIONAL_FIELDS) {
     if (row[key] != null) result[key] = row[key];

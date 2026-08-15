@@ -51,6 +51,7 @@ describe("toApiSupplement", () => {
   it("maps basic and nutrient fields to the API shape", () => {
     expect(
       toApiSupplement({
+        definition_id: "definition-fish-oil",
         name: "Fish Oil",
         amount: 1000,
         unit: "mg",
@@ -61,6 +62,7 @@ describe("toApiSupplement", () => {
         omega3_mg: 500,
       }),
     ).toEqual({
+      id: "definition-fish-oil",
       name: "Fish Oil",
       amount: 1000,
       unit: "mg",
@@ -74,6 +76,7 @@ describe("toApiSupplement", () => {
   it("omits null optional and nutrient fields", () => {
     expect(
       toApiSupplement({
+        definition_id: "definition-magnesium",
         name: "Magnesium",
         amount: null,
         unit: null,
@@ -82,7 +85,7 @@ describe("toApiSupplement", () => {
         meal: null,
         ...NULL_NUTRIENTS,
       }),
-    ).toEqual({ name: "Magnesium" });
+    ).toEqual({ id: "definition-magnesium", name: "Magnesium" });
   });
 });
 
@@ -109,6 +112,7 @@ describe("SupplementsRepository", () => {
 
     await expect(repository.list()).resolves.toEqual([
       {
+        id: "definition-1",
         name: "Vitamin D",
         amount: 5000,
         unit: "IU",
@@ -173,13 +177,14 @@ describe("SupplementsRepository", () => {
   });
 
   it.each([
+    { id: "", name: "Vitamin D" },
     { name: "" },
     { name: "x".repeat(201) },
     { name: "Vitamin D", amount: 0 },
     { name: "Vitamin D", unit: "micrograms+" },
     { name: "Vitamin D", meal: "midnight" },
   ])("rejects invalid supplement input at the schema boundary: %o", (invalid) => {
-    expect(supplementSchema.safeParse(invalid).success).toBe(false);
+    expect(supplementSchema.safeParse({ id: "definition-1", ...invalid }).success).toBe(false);
   });
 
   it("rejects an invalid supplement view row at the database boundary", async () => {

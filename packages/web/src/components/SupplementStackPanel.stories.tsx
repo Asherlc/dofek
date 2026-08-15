@@ -13,6 +13,7 @@ interface SupplementScenario {
 
 const supplements = [
   {
+    id: "definition-creatine",
     name: "Creatine monohydrate",
     amount: 5,
     unit: "g",
@@ -20,6 +21,7 @@ const supplements = [
     meal: "breakfast",
   },
   {
+    id: "definition-vitamin-d3",
     name: "Vitamin D3",
     amount: 50,
     unit: "mcg",
@@ -28,6 +30,7 @@ const supplements = [
     vitaminDMcg: 50,
   },
   {
+    id: "definition-magnesium",
     name: "Magnesium glycinate",
     amount: 300,
     unit: "mg",

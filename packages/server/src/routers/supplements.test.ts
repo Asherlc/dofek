@@ -52,7 +52,7 @@ describe("supplementsRouter", () => {
       expect(result).toEqual([]);
     });
 
-    it("preserves the exact installed-client V1 definition shape", async () => {
+    it("preserves installed fields while including the stable definition id", async () => {
       const { caller } = await makeCaller([
         {
           definition_id: "supplement-version-1",
@@ -77,6 +77,7 @@ describe("supplementsRouter", () => {
 
       expect(await caller.list()).toEqual([
         {
+          id: "supplement-version-1",
           name: "Vitamin D",
           amount: 50,
           unit: "mcg",
@@ -207,12 +208,14 @@ import { SupplementsRepository, toApiSupplement } from "../repositories/suppleme
 
 describe("toApiSupplement()", () => {
   it("maps name from row", () => {
-    const result = toApiSupplement({ name: "Vitamin D" });
+    const result = toApiSupplement({ definition_id: "definition-vitamin-d", name: "Vitamin D" });
+    expect(result.id).toBe("definition-vitamin-d");
     expect(result.name).toBe("Vitamin D");
   });
 
   it("includes non-nutrient optional fields when present", () => {
     const result = toApiSupplement({
+      definition_id: "definition-fish-oil",
       name: "Fish Oil",
       amount: 1000,
       unit: "mg",
@@ -230,6 +233,7 @@ describe("toApiSupplement()", () => {
 
   it("omits null optional fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-magnesium",
       name: "Magnesium",
       amount: null,
       unit: null,
@@ -246,13 +250,14 @@ describe("toApiSupplement()", () => {
   });
 
   it("omits undefined optional fields", () => {
-    const result = toApiSupplement({ name: "Zinc" });
+    const result = toApiSupplement({ definition_id: "definition-zinc", name: "Zinc" });
     expect(result).not.toHaveProperty("amount");
     expect(result).not.toHaveProperty("unit");
   });
 
   it("converts snake_case nutrient columns to camelCase", () => {
     const result = toApiSupplement({
+      definition_id: "definition-multi",
       name: "Multi",
       vitamin_a_mcg: 900,
       vitamin_c_mg: 90,
@@ -267,6 +272,7 @@ describe("toApiSupplement()", () => {
 
   it("omits null nutrient columns from result", () => {
     const result = toApiSupplement({
+      definition_id: "definition-single",
       name: "Single",
       vitamin_a_mcg: null,
       vitamin_c_mg: null,
@@ -277,8 +283,8 @@ describe("toApiSupplement()", () => {
     expect(result.calciumMg).toBe(500);
   });
 
-  it("returns just name when all optional fields and nutrients are null", () => {
-    const row: Record<string, unknown> = { name: "Empty" };
+  it("returns just identity fields when all optional fields and nutrients are null", () => {
+    const row: Record<string, unknown> = { definition_id: "definition-empty", name: "Empty" };
     // Add all nutrient columns as null
     const nutrientCols = [
       "calories",
@@ -329,11 +335,12 @@ describe("toApiSupplement()", () => {
     row.meal = null;
 
     const result = toApiSupplement(row);
-    expect(result).toEqual({ name: "Empty" });
+    expect(result).toEqual({ id: "definition-empty", name: "Empty" });
   });
 
   it("handles mixed nutrients (some present, some null)", () => {
     const result = toApiSupplement({
+      definition_id: "definition-b-complex",
       name: "B-Complex",
       vitamin_b1_mg: 1.2,
       vitamin_b2_mg: 1.3,
@@ -355,6 +362,7 @@ describe("toApiSupplement()", () => {
 
   it("handles macronutrient fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-protein-powder",
       name: "Protein Powder",
       calories: 120,
       protein_g: 25,
@@ -373,6 +381,7 @@ describe("toApiSupplement()", () => {
 
   it("handles fat breakdown and mineral fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-complete",
       name: "Complete",
       saturated_fat_g: 0.5,
       polyunsaturated_fat_g: 0.3,
@@ -397,6 +406,7 @@ describe("toApiSupplement()", () => {
 
   it("handles all mineral fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-mineral-complex",
       name: "Mineral Complex",
       selenium_mcg: 55,
       copper_mg: 0.9,
@@ -417,6 +427,7 @@ describe("toApiSupplement()", () => {
 
   it("ignores non-string nutrient values (treats as null)", () => {
     const result = toApiSupplement({
+      definition_id: "definition-bad-data",
       name: "Bad Data",
       vitamin_a_mcg: "not a number",
       calcium_mg: true,

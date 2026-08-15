@@ -136,6 +136,7 @@ describe("toApiSupplement", () => {
     const row = fullViewRow();
     const result = toApiSupplement(row);
 
+    expect(result.id).toBe("uuid-1");
     expect(result.name).toBe("Multivitamin");
     expect(result.amount).toBe(5000);
     expect(result.unit).toBe("IU");
@@ -157,14 +158,15 @@ describe("toApiSupplement", () => {
     const row = minimalViewRow();
     const result = toApiSupplement(row);
 
-    expect(result).toEqual({ name: "Multivitamin" });
+    expect(result).toEqual({ id: "uuid-1", name: "Multivitamin" });
   });
 
-  it("strips DB-only fields (id, user_id, sort_order, timestamps, nutrition_data_id)", () => {
+  it("maps the definition id and strips other DB-only fields", () => {
     const row = fullViewRow();
     const result = toApiSupplement(row);
 
-    expect(result).not.toHaveProperty("id");
+    expect(result.id).toBe("uuid-1");
+    expect(result).not.toHaveProperty("definition_id");
     expect(result).not.toHaveProperty("user_id");
     expect(result).not.toHaveProperty("sort_order");
     expect(result).not.toHaveProperty("created_at");
@@ -177,6 +179,7 @@ describe("toApiSupplement", () => {
 
     const result = toApiSupplement(row);
     expect(result).toEqual({
+      id: "uuid-1",
       name: "Multivitamin",
       amount: 5000,
       unit: "IU",
@@ -212,6 +215,7 @@ describe("supplementsRouter", () => {
 
       const result = await caller.list();
       expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe("uuid-1");
       expect(result[0]?.name).toBe("Multivitamin");
       expect(result[0]?.amount).toBe(5000);
       expect(result[0]?.unit).toBe("IU");
@@ -230,7 +234,7 @@ describe("supplementsRouter", () => {
       const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.list();
-      expect(result[0]).toEqual({ name: "Multivitamin" });
+      expect(result[0]).toEqual({ id: "uuid-1", name: "Multivitamin" });
     });
 
     it("calls executeWithSchema with the view query", async () => {

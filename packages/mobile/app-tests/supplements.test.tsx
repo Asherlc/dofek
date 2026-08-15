@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface QueryState {
-  data: Array<{ name: string; amount?: number; unit?: string }> | undefined;
+  data: unknown;
   error: Error | null;
   isLoading: boolean;
 }
@@ -15,7 +15,7 @@ const mocks = vi.hoisted<{
 }>(() => ({
   captureException: vi.fn(),
   query: {
-    data: [{ name: "Creatine", amount: 5, unit: "g" }],
+    data: [{ id: "definition-1", name: "Creatine", amount: 5, unit: "g" }],
     error: null,
     isLoading: false,
   },
@@ -93,10 +93,13 @@ vi.mock("../lib/trpc", () => ({
 }));
 
 describe("SupplementsScreen", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   beforeEach(() => {
-    mocks.query.data = [{ name: "Creatine", amount: 5, unit: "g" }];
+    mocks.query.data = [{ id: "definition-1", name: "Creatine", amount: 5, unit: "g" }];
     mocks.query.error = null;
     mocks.query.isLoading = false;
     vi.clearAllMocks();
@@ -119,6 +122,34 @@ describe("SupplementsScreen", () => {
 
     expect(screen.getByText("Creatine")).toBeTruthy();
     expect(screen.getByText("Refresh failed: Supplement refresh failed.")).toBeTruthy();
+  });
+
+  it("reports malformed synced supplements without hiding the rest of the screen", async () => {
+    mocks.query.data = [{ name: 42 }];
+    const { default: SupplementsScreen } = await import("../app/supplements");
+
+    render(<SupplementsScreen />);
+
+    expect(screen.getByText("Synced supplements could not be read.")).toBeTruthy();
+    expect(screen.queryByText("No synced supplements available.")).toBeNull();
+    expect(screen.getByText("Safety Context")).toBeTruthy();
+    await waitFor(() => expect(mocks.captureException).toHaveBeenCalledOnce());
+  });
+
+  it("renders duplicate synced supplements without duplicate React keys", async () => {
+    mocks.query.data = [
+      { id: "definition-1", name: "Creatine", amount: 5, unit: "g" },
+      { id: "definition-2", name: "Creatine", amount: 5, unit: "g" },
+    ];
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { default: SupplementsScreen } = await import("../app/supplements");
+
+    render(<SupplementsScreen />);
+
+    expect(screen.getAllByText("Creatine")).toHaveLength(2);
+    expect(
+      consoleError.mock.calls.filter(([message]) => String(message).includes("same key")),
+    ).toHaveLength(0);
   });
 
   it("renders server-owned upper-limit and medication-review guidance", async () => {

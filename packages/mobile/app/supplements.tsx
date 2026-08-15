@@ -1,4 +1,5 @@
 import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
+import { useEffect, useMemo } from "react";
 import {
   Linking,
   RefreshControl,
@@ -16,6 +17,7 @@ import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
 
 const supplementSchema = z.object({
+  id: z.string().min(1),
   name: z.string(),
   amount: z.number().optional(),
   unit: z.string().optional(),
@@ -40,7 +42,16 @@ export default function SupplementsScreen() {
   const stack = trpc.supplements.list.useQuery();
   const safetyReview = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days: 30 });
 
-  const supplements = z.array(supplementSchema).parse(stack.data ?? []);
+  const parsedStack = useMemo(
+    () => z.array(supplementSchema).safeParse(stack.data ?? []),
+    [stack.data],
+  );
+  useEffect(() => {
+    if (!parsedStack.success) {
+      captureException(parsedStack.error, { operation: "supplements.parseStack" });
+    }
+  }, [parsedStack]);
+  const supplements = parsedStack.success ? parsedStack.data : [];
   const hasCanonicalStack = stack.data !== undefined;
 
   const { refreshing, onRefresh } = useRefresh();
@@ -69,7 +80,11 @@ export default function SupplementsScreen() {
         </Text>
       )}
 
-      {supplements.length === 0 && !stack.isLoading && !stack.error ? (
+      {!parsedStack.success ? (
+        <Text style={styles.errorText}>Synced supplements could not be read.</Text>
+      ) : null}
+
+      {parsedStack.success && supplements.length === 0 && !stack.isLoading && !stack.error ? (
         <Text style={styles.emptyText}>No synced supplements available.</Text>
       ) : null}
 
@@ -77,7 +92,7 @@ export default function SupplementsScreen() {
         const dose = formatDose(supp);
         const mealLabel = MEAL_OPTIONS.find((meal) => meal.value === supp.meal)?.label;
         return (
-          <View key={supp.name} style={styles.card}>
+          <View key={supp.id} style={styles.card}>
             <View style={styles.cardContent}>
               <Text style={styles.cardLabel}>{supp.name}</Text>
               {dose ? <Text style={styles.cardSub}>{dose}</Text> : null}

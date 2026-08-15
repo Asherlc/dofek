@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupplementStackPanel } from "./SupplementStackPanel.tsx";
 
 interface QueryState {
-  data: Array<{ name: string; amount?: number; unit?: string }> | undefined;
+  data: Array<{ id: string; name: string; amount?: number; unit?: string }> | undefined;
   error: Error | null;
   isLoading: boolean;
 }
@@ -14,7 +14,7 @@ const mocks = vi.hoisted<{
   query: QueryState;
 }>(() => ({
   query: {
-    data: [{ name: "Creatine", amount: 5, unit: "g" }],
+    data: [{ id: "definition-1", name: "Creatine", amount: 5, unit: "g" }],
     error: null,
     isLoading: false,
   },
@@ -29,10 +29,13 @@ vi.mock("../lib/trpc.ts", () => ({
 }));
 
 describe("SupplementStackPanel", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   beforeEach(() => {
-    mocks.query.data = [{ name: "Creatine", amount: 5, unit: "g" }];
+    mocks.query.data = [{ id: "definition-1", name: "Creatine", amount: 5, unit: "g" }];
     mocks.query.error = null;
     mocks.query.isLoading = false;
     vi.clearAllMocks();
@@ -72,5 +75,20 @@ describe("SupplementStackPanel", () => {
 
     expect(screen.getByText("Creatine")).toBeDefined();
     expect(screen.getByText("Supplement refresh failed.")).toBeDefined();
+  });
+
+  it("renders duplicate synced supplements without duplicate React keys", () => {
+    mocks.query.data = [
+      { id: "definition-1", name: "Creatine", amount: 5, unit: "g" },
+      { id: "definition-2", name: "Creatine", amount: 5, unit: "g" },
+    ];
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    render(<SupplementStackPanel />);
+
+    expect(screen.getAllByText("Creatine")).toHaveLength(2);
+    expect(
+      consoleError.mock.calls.filter(([message]) => String(message).includes("same key")),
+    ).toHaveLength(0);
   });
 });
