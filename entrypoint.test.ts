@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -105,6 +113,7 @@ esac
     );
 
     const entrypoint = spawn("sh", [resolve("entrypoint.sh"), "cdc-health"], {
+      detached: true,
       env: {
         ...process.env,
         CDC_HEALTH_INTERVAL_SECONDS: "1",
@@ -122,7 +131,7 @@ esac
       }),
     ]);
     if (outcome === "timed out") {
-      entrypoint.kill("SIGTERM");
+      stopProcessGroup(entrypoint, "SIGTERM");
       await waitForExit(entrypoint);
     }
 
@@ -141,6 +150,147 @@ esac
     expect(events.indexOf("reconciliation-finish")).toBeLessThan(
       events.lastIndexOf("reconciliation-start"),
     );
+  });
+
+  it("logs a failed reconciliation child and retries it after the next successful CDC check", async () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-entrypoint-cdc-health-retry-"));
+    temporaryDirectories.push(temporaryDirectory);
+    const commandDirectory = join(temporaryDirectory, "commands");
+    const eventPath = join(temporaryDirectory, "events.log");
+    const checkCountPath = join(temporaryDirectory, "check-count");
+    const reconciliationCountPath = join(temporaryDirectory, "reconciliation-count");
+
+    mkdirSync(commandDirectory);
+    writeExecutable(
+      join(commandDirectory, "node"),
+      String.raw`#!/bin/sh
+script=""
+for argument in "$@"; do
+  case "$argument" in
+    scripts/*) script="$argument" ;;
+  esac
+done
+
+case "$script" in
+  scripts/cdc-health-state.ts)
+    ;;
+  scripts/check-clickhouse-cdc.ts)
+    check_count=0
+    if [ -f "$FAKE_CHECK_COUNT_PATH" ]; then check_count=$(cat "$FAKE_CHECK_COUNT_PATH"); fi
+    check_count=$((check_count + 1))
+    printf '%s\n' "$check_count" > "$FAKE_CHECK_COUNT_PATH"
+    printf 'check-%s\n' "$check_count" >> "$FAKE_EVENT_PATH"
+    if [ "$check_count" -ge 3 ]; then
+      entrypoint_pid="$PPID"
+      ( /bin/sleep 0.05; kill -TERM "$entrypoint_pid" ) &
+    fi
+    ;;
+  scripts/reconcile-pending-processing.ts)
+    reconciliation_count=0
+    if [ -f "$FAKE_RECONCILIATION_COUNT_PATH" ]; then reconciliation_count=$(cat "$FAKE_RECONCILIATION_COUNT_PATH"); fi
+    reconciliation_count=$((reconciliation_count + 1))
+    printf '%s\n' "$reconciliation_count" > "$FAKE_RECONCILIATION_COUNT_PATH"
+    printf 'reconciliation-start-%s\n' "$reconciliation_count" >> "$FAKE_EVENT_PATH"
+    if [ "$reconciliation_count" -eq 1 ]; then exit 23; fi
+    while true; do /bin/sleep 1; done
+    ;;
+esac
+`,
+    );
+
+    const entrypoint = spawn("sh", [resolve("entrypoint.sh"), "cdc-health"], {
+      detached: true,
+      env: {
+        ...process.env,
+        CDC_HEALTH_INTERVAL_SECONDS: "1",
+        FAKE_CHECK_COUNT_PATH: checkCountPath,
+        FAKE_EVENT_PATH: eventPath,
+        FAKE_RECONCILIATION_COUNT_PATH: reconciliationCountPath,
+        PATH: `${commandDirectory}:${process.env.PATH ?? ""}`,
+      },
+    });
+    let standardError = "";
+    entrypoint.stderr?.on("data", (chunk: Buffer) => {
+      standardError += chunk.toString();
+    });
+
+    try {
+      const outcome = await Promise.race([
+        waitForExit(entrypoint).then(() => "completed" as const),
+        new Promise<"timed out">((resolveTimeout) => {
+          setTimeout(() => resolveTimeout("timed out"), 4_500);
+        }),
+      ]);
+      if (outcome === "timed out") {
+        stopProcessGroup(entrypoint, "SIGTERM");
+        await waitForExit(entrypoint);
+      }
+
+      expect(outcome).toBe("completed");
+      expect(readFileSync(eventPath, "utf8").trim().split("\n")).toContain(
+        "reconciliation-start-2",
+      );
+      expect(readFileSync(checkCountPath, "utf8").trim()).toBe("3");
+      expect(standardError).toContain(
+        "cdc-health: processing reconciliation failed with exit status 23; retrying after the next successful CDC check",
+      );
+    } finally {
+      stopProcessGroup(entrypoint, "SIGKILL");
+    }
+  });
+
+  it("cleans up a blocked reconciliation child when the runtime test stops", async () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-entrypoint-cdc-health-cleanup-"));
+    temporaryDirectories.push(temporaryDirectory);
+    const commandDirectory = join(temporaryDirectory, "commands");
+    const reconciliationPidPath = join(temporaryDirectory, "reconciliation.pid");
+
+    mkdirSync(commandDirectory);
+    writeExecutable(
+      join(commandDirectory, "node"),
+      String.raw`#!/bin/sh
+script=""
+for argument in "$@"; do
+  case "$argument" in
+    scripts/*) script="$argument" ;;
+  esac
+done
+
+case "$script" in
+  scripts/cdc-health-state.ts|scripts/check-clickhouse-cdc.ts)
+    ;;
+  scripts/reconcile-pending-processing.ts)
+    printf '%s\n' "$$" > "$FAKE_RECONCILIATION_PID_PATH"
+    while true; do /bin/sleep 1; done
+    ;;
+esac
+`,
+    );
+
+    const entrypoint = spawn("sh", [resolve("entrypoint.sh"), "cdc-health"], {
+      detached: true,
+      env: {
+        ...process.env,
+        CDC_HEALTH_INTERVAL_SECONDS: "1",
+        FAKE_RECONCILIATION_PID_PATH: reconciliationPidPath,
+        PATH: `${commandDirectory}:${process.env.PATH ?? ""}`,
+      },
+    });
+
+    let reconciliationPid: number | undefined;
+    try {
+      await waitForFile(reconciliationPidPath);
+      reconciliationPid = Number.parseInt(readFileSync(reconciliationPidPath, "utf8"), 10);
+      stopProcessGroup(entrypoint, "SIGTERM");
+      await waitForExit(entrypoint);
+
+      expect(isProcessRunning(reconciliationPid)).toBe(false);
+    } finally {
+      stopProcessGroup(entrypoint, "SIGKILL");
+      if (reconciliationPid !== undefined && isProcessRunning(reconciliationPid)) {
+        process.kill(reconciliationPid, "SIGKILL");
+      }
+    }
   });
 });
 
@@ -163,4 +313,36 @@ async function waitForExit(entrypoint: ReturnType<typeof spawn>): Promise<void> 
     entrypoint.once("error", rejectExit);
     entrypoint.once("exit", () => resolveExit());
   });
+}
+
+async function waitForFile(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (existsSync(path)) {
+      return;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+  }
+  throw new Error(`Timed out waiting for ${path}`);
+}
+
+function isProcessRunning(processId: number): boolean {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stopProcessGroup(entrypoint: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
+  if (entrypoint.pid === undefined) {
+    return;
+  }
+  try {
+    process.kill(-entrypoint.pid, signal);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("ESRCH")) {
+      throw error;
+    }
+  }
 }

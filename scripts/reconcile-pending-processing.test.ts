@@ -34,8 +34,10 @@ const mockedSentryInit = vi.mocked(Sentry.init);
 describe("reconcile-pending-processing", () => {
   let clickHouseClient: ClickHouseClient;
   let reconciliationDatabase: ReturnType<typeof createProcessingReconciliationDatabaseFromEnv>;
+  let originalSentryDsn: string | undefined;
 
   beforeEach(() => {
+    originalSentryDsn = process.env.SENTRY_DSN;
     vi.clearAllMocks();
     vi.spyOn(process, "exit").mockImplementation(() => undefined);
     clickHouseClient = {
@@ -54,6 +56,11 @@ describe("reconcile-pending-processing", () => {
   });
 
   afterEach(() => {
+    if (originalSentryDsn === undefined) {
+      delete process.env.SENTRY_DSN;
+    } else {
+      process.env.SENTRY_DSN = originalSentryDsn;
+    }
     vi.restoreAllMocks();
   });
 
