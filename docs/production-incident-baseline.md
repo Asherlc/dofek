@@ -23938,3 +23938,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   run](https://github.com/Asherlc/dofek/actions/runs/31894084167).
 - **Remaining risk / follow-up:** Keep the calendar, source-ordering, and
   persistence boundary cases when the provider-read model changes.
+# 2026-08-19 — CDC health monitor was killed while reconciliation was still running
+
+- **Status:** Fixed in the CDC-health reconciliation decoupling change; deployment verification remains pending.
+- **Symptoms / impact:** The production `cdc-health` Swarm task was replaced while long-running processing reconciliation was still executing, which left no fresh successful CDC-health report even though the bounded CDC check had already completed.
+- **Evidence / root cause:** The monitor persisted `cdc-health-state.ts success` only after `scripts/check-clickhouse-cdc.ts` completed. That script also ran pending processing reconciliation, so the health-state write was blocked behind reconciliation rather than representing the bounded CDC check. The stale state then made the health probe unhealthy and Swarm replaced the task. Docker documents both healthcheck state transitions and Swarm task replacement: <https://docs.docker.com/reference/dockerfile/#healthcheck> and <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- **Fix / mitigation:** Kept `check-clickhouse-cdc.ts` limited to CDC health, persisted successful CDC state immediately in `entrypoint.sh`, and moved processing reconciliation to its own executable step that runs only after CDC success. Reconciliation reports failures to Sentry and the entrypoint logs them for the next scheduled retry; it does not alter CDC health state. No timeout, retry count, probe threshold, or failure suppression changed.
+- **Validation:** Focused orchestration and reconciliation tests cover persistence-before-reconciliation, success gating, bounded CDC health, and reconciliation error reporting. The required lint and TypeScript checks are recorded with the implementation commit.
+- **Remaining risk / follow-up:** Verify the next production `cdc-health` interval records a fresh success before reconciliation and that reconciliation failures appear as their own Sentry events without triggering Swarm replacement.

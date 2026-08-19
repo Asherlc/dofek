@@ -72,6 +72,12 @@ case "${1:-sync}" in
     while true; do
       if $NODE scripts/check-clickhouse-cdc.ts; then
         $NODE scripts/cdc-health-state.ts success
+        if $NODE scripts/reconcile-pending-processing.ts; then
+          :
+        else
+          status="$?"
+          echo "cdc-health: processing reconciliation failed with exit status $status; retrying in ${interval_seconds}s" >&2
+        fi
         sleep "$interval_seconds"
       else
         status="$?"

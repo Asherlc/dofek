@@ -35,7 +35,10 @@ The durability control is the production WAL and PeerDB work-unit budget:
 Postgres allows six logical slots/senders and caps each slot at 64 GiB, while
 PeerDB mirrors use 100,000-row CDC batches and single-worker 100,000-row initial
 snapshot partitions. The production `cdc-health` service runs this check every
-five minutes and atomically records each result. Its health probe tolerates one
+five minutes and atomically records each bounded CDC result before it starts
+processing reconciliation. Reconciliation runs only after a successful CDC
+result; a reconciliation failure is reported separately, leaves the CDC state
+unchanged, and is retried on the next interval. Its health probe tolerates one
 failed report so the next scheduled check can demonstrate recovery, then fails
 after a second consecutive failure. A missing or stale result also fails after
 one interval plus 60 seconds, covering a stuck monitor. The probe runs every ten
@@ -54,7 +57,8 @@ docker exec "$(docker ps --filter name=dofek_cdc-health -q | head -n 1)" \
 
 `lastCheckedAt`, `lastSuccessfulAt`, and `consecutiveFailures` distinguish a
 currently failing check from a monitor that stopped updating. A passing check
-resets the failure count and updates both timestamps.
+resets the failure count and updates both timestamps, even if the subsequent
+processing reconciliation fails.
 
 ## Triage
 

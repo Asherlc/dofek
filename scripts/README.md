@@ -86,6 +86,9 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `reconcile-pending-processing.ts`: Reconciles pending processing operations
+  after the CDC health monitor records a successful bounded CDC result. It
+  reports its own failures without changing the recorded CDC health state.
 - `check-database-backup-freshness.ts`: Lists every page of the private
   `dofek-db-backups` R2 bucket and fails when no backup exists, object metadata
   is incomplete, or the newest recovery point is at least 24 hours old.
