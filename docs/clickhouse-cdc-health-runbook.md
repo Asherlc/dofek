@@ -37,8 +37,10 @@ PeerDB mirrors use 100,000-row CDC batches and single-worker 100,000-row initial
 snapshot partitions. The production `cdc-health` service runs this check every
 five minutes and atomically records each bounded CDC result before it starts
 processing reconciliation. Reconciliation runs only after a successful CDC
-result; a reconciliation failure is reported separately, leaves the CDC state
-unchanged, and is retried on the next interval. Its health probe tolerates one
+result as a single independent child process: an in-flight reconciliation never
+delays the next CDC check. A reconciliation failure is reported separately,
+leaves the CDC state unchanged, and is retried after the next successful CDC
+check. Its health probe tolerates one
 failed report so the next scheduled check can demonstrate recovery, then fails
 after a second consecutive failure. A missing or stale result also fails after
 one interval plus 60 seconds, covering a stuck monitor. The probe runs every ten

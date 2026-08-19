@@ -69,14 +69,25 @@ case "${1:-sync}" in
         ;;
     esac
     $NODE scripts/cdc-health-state.ts initialize
-    while true; do
-      if $NODE scripts/check-clickhouse-cdc.ts; then
-        $NODE scripts/cdc-health-state.ts success
-        if $NODE scripts/reconcile-pending-processing.ts; then
+    reconciliation_pid=""
+    reap_reconciliation() {
+      if [ -n "$reconciliation_pid" ] && ! kill -0 "$reconciliation_pid" 2>/dev/null; then
+        if wait "$reconciliation_pid"; then
           :
         else
           status="$?"
-          echo "cdc-health: processing reconciliation failed with exit status $status; retrying in ${interval_seconds}s" >&2
+          echo "cdc-health: processing reconciliation failed with exit status $status; retrying after the next successful CDC check" >&2
+        fi
+        reconciliation_pid=""
+      fi
+    }
+    while true; do
+      reap_reconciliation
+      if $NODE scripts/check-clickhouse-cdc.ts; then
+        $NODE scripts/cdc-health-state.ts success
+        if [ -z "$reconciliation_pid" ]; then
+          $NODE scripts/reconcile-pending-processing.ts &
+          reconciliation_pid="$!"
         fi
         sleep "$interval_seconds"
       else
