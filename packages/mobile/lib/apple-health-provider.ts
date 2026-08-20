@@ -5,6 +5,7 @@ import {
   hasEverAuthorized,
   isAvailable,
   queryAnchoredSamples,
+  queryCategorySamples,
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
@@ -353,6 +354,7 @@ export const defaultAppleHealthAuthorizationNative: AppleHealthAuthorizationNati
 export const defaultAppleHealthAdapter: HealthKitAdapter = {
   completeAnchoredQuery,
   queryAnchoredSamples,
+  queryCategorySamples,
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,

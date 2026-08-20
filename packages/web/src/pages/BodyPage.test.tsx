@@ -331,6 +331,7 @@ describe("BodyPage", () => {
 
     expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
     expect(screen.getByText("Recomposition points: 1")).toBeTruthy();
+    expect(screen.getByTestId("body-fat-chart")).toHaveTextContent("Body fat points: 2");
     expect(screen.getByText("Weight prediction")).toBeTruthy();
     expect(screen.getAllByText("Body data refresh failed.")).toHaveLength(1);
     expect(

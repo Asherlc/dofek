@@ -2,6 +2,52 @@ import HealthKit
 
 /// Common query patterns used by the HealthKit module
 enum HealthKitQueries {
+    /// Resolve raw HealthKit identifiers used by generic sample queries.
+    static func sampleType(for identifier: String) -> HKSampleType? {
+        if let quantityType = HKQuantityType.quantityType(
+            forIdentifier: HKQuantityTypeIdentifier(rawValue: identifier)
+        ) {
+            return quantityType
+        }
+        return HKCategoryType.categoryType(
+            forIdentifier: HKCategoryTypeIdentifier(rawValue: identifier)
+        )
+    }
+
+    /// Convert quantity and category samples into the shared JS transport shape.
+    static func transportSample(
+        _ sample: HKSample,
+        typeIdentifier: String
+    ) -> [String: Any]? {
+        var result: [String: Any] = [
+            "type": typeIdentifier,
+            "startDate": formatDate(sample.startDate),
+            "endDate": formatDate(sample.endDate),
+            "sourceName": sample.sourceRevision.source.name,
+            "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
+            "uuid": sample.uuid.uuidString,
+        ]
+
+        if let quantitySample = sample as? HKQuantitySample,
+           let quantityType = sample.sampleType as? HKQuantityType {
+            let unit = preferredUnit(for: quantityType)
+            result["value"] = quantitySample.quantity.doubleValue(for: unit)
+            result["unit"] = unit.unitString
+            return result
+        }
+
+        if let categorySample = sample as? HKCategorySample {
+            result["value"] = categorySample.value
+            result["unit"] = "category"
+            let cycleStart = (categorySample.metadata?[HKMetadataKeyMenstrualCycleStart] as? NSNumber)?
+                .boolValue ?? false
+            result["metadata"] = [HKMetadataKeyMenstrualCycleStart: cycleStart]
+            return result
+        }
+
+        return nil
+    }
+
     /// Build a date predicate for sample queries
     static func datePredicate(start: Date, end: Date) -> NSPredicate {
         return HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)

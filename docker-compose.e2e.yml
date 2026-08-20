@@ -22,7 +22,7 @@ services:
       retries: 15
 
   clickhouse:
-    image: mirror.gcr.io/clickhouse/clickhouse-server:26.7.2-alpine
+    image: mirror.gcr.io/clickhouse/clickhouse-server:26.7.3.19-alpine
     mem_limit: 2048m
     environment:
       CLICKHOUSE_DB: fitness

@@ -5,14 +5,28 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 ## Core Features
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.
+- **Read-only cycle tracking**: Reads provider-originated menstrual-flow records from HealthKit,
+  preserves the required cycle-start metadata and source attribution, and renders server-computed
+  history and phase estimates. Dofek never requests menstrual-flow write permission; corrections
+  are made in the source app and synced again. HealthKit supports a whole-period interval or
+  multiple flow samples whose first sample is marked as the cycle start
+  ([Apple documentation](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
+  Because HealthKit does not disclose whether a specific read permission was denied, an empty
+  result is presented neutrally as no readable provider data
+  ([authorization behavior](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
 - **WHOOP BLE Sync**: High-resolution sensor data capture (IMU - accelerometer + gyroscope) from WHOOP straps via `WhoopBleModule`.
-- **Bluetooth Heart-Rate Monitors**: Live heart rate + R-R intervals from any standard Bluetooth heart-rate strap via `BleHeartRateModule`, using the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/) (`0x180D`) / Heart Rate Measurement (`0x2A37`) GATT profile. See `../../docs/ble-heart-rate.md`.
-- **Activity Recording**: Real-time GPS and sensor recording for workouts, utilizing native `CoreMotion` and `WatchMotion` modules.
+- **Bluetooth Heart-Rate Monitors**: Pair in Settings and passively upload live
+  heart rate + R-R intervals from any standard Bluetooth heart-rate strap via
+  `BleHeartRateModule`, using the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/)
+  (`0x180D`) / Heart Rate Measurement (`0x2A37`) GATT profile. See
+  `../../docs/ble-heart-rate.md`.
+- **Activity History**: Displays workouts and GPS routes imported from Apple
+  Health and connected providers.
+- **Passive Motion Sync**: Core Motion and WatchMotion provide background motion
+  synchronization from iPhone and Apple Watch sensors.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
 - **Journal Trends**: Reviews server-authored numeric and Yes/No journal series with visible date bounds, explicit missing days, exact provider-attributed values, and the supported uncertainty status.
-- **Nutrition Logging**: Rapid meal entry, barcode scanning, and natural-language AI meal input that splits a single message into multiple food items.
-
-See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
+- **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
 ## Project Structure
 

@@ -1,5 +1,3 @@
-import { resolveProviderActivityType } from "@dofek/training/activity-types";
-import type { ClimbingGradeSystem } from "@dofek/training/climbing-grades";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -10,12 +8,6 @@ import {
   type SchemaExecutionDatabase,
   timestampStringSchema,
 } from "../lib/typed-sql.ts";
-import { ensurePushProvider } from "./push-provider-repository.ts";
-
-const DOFEK_PROVIDER_ID = "dofek";
-const DOFEK_PROVIDER_NAME = "Dofek App";
-const FINGER_LOADING_ACTIVITY_TYPE = resolveProviderActivityType("finger_loading", "strength");
-const CLIMBING_ACTIVITY_TYPE = resolveProviderActivityType("rock_climbing", "climbing");
 
 export const fingerLoadingExerciseSchema = z.enum([
   "max_hang",
@@ -33,41 +25,6 @@ export const fingerLoadingGripPositionSchema = z.enum([
   "two_finger_pocket",
 ]);
 export const fingerLoadingLateralitySchema = z.enum(["both", "left", "right"]);
-export const climbingHoldTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
-export const climbingAttemptOutcomeSchema = z.enum(["sent", "failed"]);
-export const climbingFailureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
-
-export interface FingerLoadingInput {
-  bodyweightKg: number;
-  edgeSizeMm: number | null;
-  exercise: z.infer<typeof fingerLoadingExerciseSchema>;
-  externalLoadKg: number;
-  gripPosition: z.infer<typeof fingerLoadingGripPositionSchema> | null;
-  holdDurationSeconds: number;
-  laterality: z.infer<typeof fingerLoadingLateralitySchema>;
-  notes: string | null;
-  restIntervalSeconds: number;
-  setCount: number;
-  startedAt: string;
-}
-
-export interface ClimbingAttemptInput {
-  failureReason: z.infer<typeof climbingFailureReasonSchema> | null;
-  notes: string | null;
-  outcome: z.infer<typeof climbingAttemptOutcomeSchema>;
-}
-
-export interface ClimbInput {
-  attempts: ClimbingAttemptInput[];
-  climbType: "boulder" | "route";
-  grade: string;
-  gradeSystem: ClimbingGradeSystem;
-  holdType: z.infer<typeof climbingHoldTypeSchema> | null;
-  routeName: string | null;
-  wallAngleDegrees: number | null;
-}
-
-const insertedIdSchema = z.object({ id: z.string() });
 const fingerLoadingRowSchema = z.object({
   activity_id: z.string(),
   started_at: timestampStringSchema,
@@ -155,7 +112,7 @@ export async function readFingerLoadingRange(input: {
   return rows.map(toFingerLoadingDetail);
 }
 
-type TrainingLogDatabase = Pick<Database, "execute" | "transaction">;
+type TrainingLogDatabase = Pick<Database, "execute">;
 
 export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDatabase> {
   constructor(
@@ -165,167 +122,6 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
     accessWindow?: AccessWindow,
   ) {
     super(database, userId, timezone, accessWindow);
-  }
-
-  async logFingerLoading(input: FingerLoadingInput): Promise<FingerLoadingDetail> {
-    await ensurePushProvider({
-      database: this.db,
-      providerId: DOFEK_PROVIDER_ID,
-      providerName: DOFEK_PROVIDER_NAME,
-      userId: this.userId,
-    });
-
-    const activityId = await this.db.transaction(async (transaction) => {
-      const activityRows = await executeWithSchema(
-        transaction,
-        insertedIdSchema,
-        sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, canonical_type, provider_type, modality,
-              started_at, ended_at, name, source_name
-            ) VALUES (
-              ${DOFEK_PROVIDER_ID},
-              ${this.userId}::uuid,
-              ${`manual:${crypto.randomUUID()}`},
-              ${FINGER_LOADING_ACTIVITY_TYPE.canonicalType},
-              ${FINGER_LOADING_ACTIVITY_TYPE.providerType},
-              ${FINGER_LOADING_ACTIVITY_TYPE.modality},
-              ${input.startedAt}::timestamptz,
-              ${input.startedAt}::timestamptz,
-              'Finger loading',
-              ${DOFEK_PROVIDER_NAME}
-            )
-            RETURNING id`,
-      );
-      const activity = activityRows[0];
-      if (!activity) throw new Error("Finger-loading activity insert returned no id");
-
-      await transaction.execute(sql`INSERT INTO fitness.finger_loading_entry (
-            activity_id,
-            exercise,
-            edge_size_mm,
-            grip_position,
-            external_load_kg,
-            bodyweight_kg,
-            laterality,
-            set_count,
-            hold_duration_seconds,
-            rest_interval_seconds,
-            notes
-          ) VALUES (
-            ${activity.id}::uuid,
-            ${input.exercise}::fitness.finger_loading_exercise,
-            ${input.edgeSizeMm},
-            ${input.gripPosition}::fitness.finger_loading_grip_position,
-            ${input.externalLoadKg},
-            ${input.bodyweightKg},
-            ${input.laterality}::fitness.finger_loading_laterality,
-            ${input.setCount},
-            ${input.holdDurationSeconds},
-            ${input.restIntervalSeconds},
-            ${input.notes}
-          )`);
-      return activity.id;
-    });
-
-    const created = await this.#getFingerLoadingActivity(activityId);
-    if (!created) throw new Error("Saved finger-loading activity could not be read");
-    return created;
-  }
-
-  async logClimbingSession(input: {
-    climbs: ClimbInput[];
-    endedAt: string | null;
-    locationName: string | null;
-    startedAt: string;
-  }): Promise<{
-    activityId: string;
-    climbs: Array<{ attemptCount: number; id: string; sent: boolean }>;
-  }> {
-    await ensurePushProvider({
-      database: this.db,
-      providerId: DOFEK_PROVIDER_ID,
-      providerName: DOFEK_PROVIDER_NAME,
-      userId: this.userId,
-    });
-
-    return this.db.transaction(async (transaction) => {
-      const activityRows = await executeWithSchema(
-        transaction,
-        insertedIdSchema,
-        sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, canonical_type, provider_type, modality,
-              started_at, ended_at, name, source_name
-            ) VALUES (
-              ${DOFEK_PROVIDER_ID},
-              ${this.userId}::uuid,
-              ${`manual:${crypto.randomUUID()}`},
-              ${CLIMBING_ACTIVITY_TYPE.canonicalType},
-              ${CLIMBING_ACTIVITY_TYPE.providerType},
-              ${CLIMBING_ACTIVITY_TYPE.modality},
-              ${input.startedAt}::timestamptz,
-              ${input.endedAt}::timestamptz,
-              'Climbing session',
-              ${DOFEK_PROVIDER_NAME}
-            )
-            RETURNING id`,
-      );
-      const activity = activityRows[0];
-      if (!activity) throw new Error("Climbing activity insert returned no id");
-
-      const climbs: Array<{ attemptCount: number; id: string; sent: boolean }> = [];
-      for (const climb of input.climbs) {
-        const climbingRows = await executeWithSchema(
-          transaction,
-          insertedIdSchema,
-          sql`INSERT INTO fitness.climbing_entry (
-                activity_id,
-                climb_type,
-                grade_system,
-                grade,
-                sent,
-                attempt_count,
-                wall_angle_degrees,
-                hold_type,
-                route_name,
-                location_name,
-                source_name
-              ) VALUES (
-                ${activity.id}::uuid,
-                ${climb.climbType}::fitness.climbing_climb_type,
-                ${climb.gradeSystem}::fitness.climbing_grade_system,
-                ${climb.grade},
-                NULL,
-                NULL,
-                ${climb.wallAngleDegrees},
-                ${climb.holdType}::fitness.climbing_hold_type,
-                ${climb.routeName},
-                ${input.locationName},
-                ${DOFEK_PROVIDER_NAME}
-              )
-              RETURNING id`,
-        );
-        const climbingEntry = climbingRows[0];
-        if (!climbingEntry) throw new Error("Climbing entry insert returned no id");
-
-        for (const [attemptOffset, attempt] of climb.attempts.entries()) {
-          await transaction.execute(sql`INSERT INTO fitness.climbing_attempt (
-                climbing_entry_id, attempt_index, outcome, failure_reason, notes
-              ) VALUES (
-                ${climbingEntry.id}::uuid,
-                ${attemptOffset + 1},
-                ${attempt.outcome}::fitness.climbing_attempt_outcome,
-                ${attempt.failureReason}::fitness.climbing_failure_reason,
-                ${attempt.notes}
-              )`);
-        }
-        climbs.push({
-          attemptCount: climb.attempts.length,
-          id: climbingEntry.id,
-          sent: climb.attempts.some((attempt) => attempt.outcome === "sent"),
-        });
-      }
-      return { activityId: activity.id, climbs };
-    });
   }
 
   async getFingerLoadingHistory(days: number): Promise<FingerLoadingDetail[]> {
@@ -364,31 +160,5 @@ export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDat
       timezone: this.timezone,
       userId: this.userId,
     });
-  }
-
-  async #getFingerLoadingActivity(activityId: string): Promise<FingerLoadingDetail | null> {
-    const rows = await this.query(
-      fingerLoadingRowSchema,
-      sql`SELECT
-            a.id::text AS activity_id,
-            a.started_at,
-            entry.exercise,
-            entry.edge_size_mm,
-            entry.grip_position,
-            entry.external_load_kg,
-            entry.bodyweight_kg,
-            entry.laterality,
-            entry.set_count,
-            entry.hold_duration_seconds,
-            entry.rest_interval_seconds,
-            entry.rpe,
-            entry.notes
-          FROM fitness.v_activity AS a
-          JOIN fitness.finger_loading_entry AS entry
-            ON entry.activity_id = ANY(a.member_activity_ids)
-          WHERE a.user_id = ${this.userId}::uuid
-            AND ${activityId}::uuid = ANY(a.member_activity_ids)`,
-    );
-    return rows[0] ? toFingerLoadingDetail(rows[0]) : null;
   }
 }

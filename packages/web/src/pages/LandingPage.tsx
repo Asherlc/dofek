@@ -105,7 +105,6 @@ const INSPECTION_POINTS = [
   "Compare the same signal across sources",
   "Track sleep, training, nutrition, body, and recovery",
   "Check correlations with source context",
-  "Log food from Slack",
   "Use the same record on web and iPhone",
 ] as const;
 

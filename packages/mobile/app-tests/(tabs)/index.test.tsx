@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -13,7 +13,6 @@ const mockTodayPlanUseQuery = vi.fn();
 const mockAnomalyUseQuery = vi.fn();
 const mockDataHealthUseQuery = vi.fn();
 const mockInvalidate = vi.fn();
-const mockUseHealthKitFoodWriteback = vi.fn();
 const mockUseRefresh = vi.fn((_options: unknown) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -122,10 +121,6 @@ vi.mock("../../lib/trpc", () => ({
       processing: { status: { invalidate: vi.fn() } },
     }),
   },
-}));
-
-vi.mock("../../lib/useHealthKitFoodWriteback", () => ({
-  useHealthKitFoodWriteback: (...args: unknown[]) => mockUseHealthKitFoodWriteback(...args),
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
@@ -281,14 +276,6 @@ describe("TodayScreen independent loading states", () => {
     mockDataHealthUseQuery.mockClear();
     mockDataHealthRefetch.mockClear();
     mockUseRefresh.mockClear();
-    mockUseHealthKitFoodWriteback.mockClear();
-  });
-
-  it("passes dashboard coverage to HealthKit food writeback", async () => {
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    expect(mockUseHealthKitFoodWriteback).toHaveBeenCalledWith("2026-03-21");
   });
 
   it("shows data readiness when dashboard summaries are stale", async () => {
@@ -636,20 +623,6 @@ describe("TodayScreen independent loading states", () => {
     render(<TodayScreen />);
 
     expect(screen.getByText(/Resting Heart Rate: 70/)).toBeTruthy();
-  });
-
-  it("opens add food with today's date and auto-selected meal", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 2, 21, 15, 30));
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    fireEvent.click(screen.getByText("Log Food"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/food/add?meal=snack&date=2026-03-21&mode=quickadd",
-    );
   });
 
   it("refreshes dashboard and anomaly queries when pull-to-refresh runs", async () => {

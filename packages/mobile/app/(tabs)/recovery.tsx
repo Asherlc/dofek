@@ -856,16 +856,6 @@ export default function RecoveryScreen() {
           {/* Navigation links */}
           <TouchableOpacity
             style={styles.navLink}
-            onPress={() => router.push("/breathwork")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Breathwork"
-          >
-            <Text style={styles.navLinkText}>Breathwork</Text>
-            <Text style={styles.navChevron}>{"\u203A"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navLink}
             onPress={() => router.push("/sleep")}
             activeOpacity={0.7}
             accessibilityRole="button"

@@ -498,6 +498,8 @@ entity "health_event" {
   value_text : text
   unit : text
   source_name : text
+  source_bundle : text
+  metadata : jsonb
   start_date : timestamp
   end_date : timestamp
   created_at : timestamp
@@ -741,29 +743,6 @@ entity "session" {
   user_id : uuid <<FK>>
   expires_at : timestamp
   created_at : timestamp
-}
-
-entity "slack_installation" {
-  * id : uuid <<PK>>
-  --
-  team_id : text
-  team_name : text
-  bot_token : text
-  bot_id : text
-  bot_user_id : text
-  app_id : text
-  installer_slack_user_id : text
-  raw_installation : jsonb
-  installed_at : timestamp
-  updated_at : timestamp
-}
-
-entity "slack_team_membership" {
-  team_id : text <<FK>>
-  user_id : uuid <<FK>>
-  slack_user_id : text
-  created_at : timestamp
-  updated_at : timestamp
 }
 
 entity "stripe_webhook_event" {
@@ -1241,8 +1220,6 @@ user_profile ||--o{ mcp_oauth_refresh_token
 mcp_access_token ||--o{ mcp_oauth_refresh_token
 mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
-slack_installation ||--o{ slack_team_membership
-user_profile ||--o{ slack_team_membership
 user_profile ||--o{ user_billing
 user_profile ||--o{ user_external_effect
 user_profile ||--o{ user_password_credential

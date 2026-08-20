@@ -16,6 +16,10 @@ private final class PeekConfirmDrainCursor {
         headSequence += UInt64(count)
     }
 
+    func cancelPeek() {
+        hasInFlightPeek = false
+    }
+
     func confirmRemovalCount(requestedCount: Int, bufferedCount: Int) -> Int {
         let requestedCount = max(0, requestedCount)
         defer { hasInFlightPeek = false }
@@ -68,6 +72,7 @@ final class BleHeartRateSampleBuffer {
     func clearAll() {
         lock.lock()
         drainCursor.recordHeadRemoval(count: samples.count)
+        drainCursor.cancelPeek()
         samples.removeAll()
         lock.unlock()
     }

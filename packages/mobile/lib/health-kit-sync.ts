@@ -42,22 +42,25 @@ export const NON_ADDITIVE_QUANTITY_TYPES = [
 ];
 
 export const SLEEP_TYPE_IDENTIFIER = "HKCategoryTypeIdentifierSleepAnalysis";
+export const MENSTRUAL_FLOW_TYPE_IDENTIFIER = "HKCategoryTypeIdentifierMenstrualFlow";
 export const WORKOUT_TYPE_IDENTIFIER = "HKWorkoutTypeIdentifier";
 export const WORKOUT_ROUTE_TYPE_IDENTIFIER = "HKWorkoutRouteTypeIdentifier";
 
-const ANCHORED_QUANTITY_TYPES = new Set([
+const ANCHORED_SAMPLE_TYPES = new Set([
   "HKQuantityTypeIdentifierBodyMass",
   "HKQuantityTypeIdentifierBodyFatPercentage",
   "HKQuantityTypeIdentifierHeartRate",
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierVO2Max",
   "HKQuantityTypeIdentifierRespiratoryRate",
+  MENSTRUAL_FLOW_TYPE_IDENTIFIER,
 ]);
 
 const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];
 
 export const BACKGROUND_HEALTH_KIT_TYPES = [
   ...ALL_QUANTITY_TYPES,
+  MENSTRUAL_FLOW_TYPE_IDENTIFIER,
   SLEEP_TYPE_IDENTIFIER,
   WORKOUT_TYPE_IDENTIFIER,
   WORKOUT_ROUTE_TYPE_IDENTIFIER,
@@ -158,6 +161,11 @@ export interface HealthKitAdapter {
     startDate: string,
     endDate: string,
   ): Promise<HealthKitSample[]>;
+  queryCategorySamples(
+    typeId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<HealthKitSample[]>;
   queryWorkouts(startDate: string, endDate: string): Promise<WorkoutSample[]>;
   querySleepSamples(startDate: string, endDate: string): Promise<SleepSample[]>;
   queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]>;
@@ -223,6 +231,7 @@ export interface HealthKitSyncStage {
     | "deleteQuantitySamples"
     | "queryAnchoredSamples"
     | "queryDailyStatistics"
+    | "queryCategorySamples"
     | "queryQuantitySamples"
     | "pushQuantitySamples"
     | "queryWorkouts"
@@ -338,6 +347,32 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     );
     typeIndex++;
   }
+
+  onProgress?.("Querying menstrual flow...");
+  onStage?.({
+    operation: "queryCategorySamples",
+    typeIdentifier: MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+  });
+  let menstrualFlowSamples: HealthKitSample[];
+  try {
+    menstrualFlowSamples = await healthKit.queryCategorySamples(
+      MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      startDate,
+      endDate,
+    );
+  } catch (error) {
+    if (!isAuthorizationNotDetermined(error)) {
+      throw error;
+    }
+    menstrualFlowSamples = [];
+  }
+  allSamples.push(
+    ...menstrualFlowSamples.filter(
+      (sample) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+    ),
+  );
 
   let totalInserted = 0;
   const errors: string[] = [];
@@ -488,7 +523,7 @@ function dailyStatisticsSamples(
   }));
 }
 
-async function syncAnchoredQuantityType(
+async function syncAnchoredSampleType(
   options: ObserverSyncOptions,
   typeIdentifier: string,
   initialStartDate: string,
@@ -697,8 +732,8 @@ export async function syncHealthKitObserverChanges(
     if (!typeIdentifiers.has(typeIdentifier)) {
       continue;
     }
-    if (ANCHORED_QUANTITY_TYPES.has(typeIdentifier)) {
-      const result = await syncAnchoredQuantityType(options, typeIdentifier, startDate);
+    if (ANCHORED_SAMPLE_TYPES.has(typeIdentifier)) {
+      const result = await syncAnchoredSampleType(options, typeIdentifier, startDate);
       deleted += result.deleted;
       inserted += result.inserted;
       errors.push(...result.errors);
@@ -714,6 +749,13 @@ export async function syncHealthKitObserverChanges(
         isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
     );
     const result = await pushQuantitySampleBatches(trpcClient, samples, onStage);
+    inserted += result.inserted;
+    errors.push(...result.errors);
+  }
+
+  if (typeIdentifiers.has(MENSTRUAL_FLOW_TYPE_IDENTIFIER)) {
+    const result = await syncAnchoredSampleType(options, MENSTRUAL_FLOW_TYPE_IDENTIFIER, startDate);
+    deleted += result.deleted;
     inserted += result.inserted;
     errors.push(...result.errors);
   }
