@@ -1,12 +1,17 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const temporaryDirectories: string[] = [];
+const entrypoints: ChildProcess[] = [];
+const runtimeSafetyTimeoutMilliseconds = 30_000;
 
 afterEach(() => {
+  for (const entrypoint of entrypoints.splice(0)) {
+    terminateProcessGroup(entrypoint);
+  }
   for (const temporaryDirectory of temporaryDirectories.splice(0)) {
     rmSync(temporaryDirectory, { force: true, recursive: true });
   }
@@ -29,6 +34,11 @@ done
 case "$script" in
   scripts/cdc-health-state.ts) printf 'state-%s\n' "$action" >> "$FAKE_EVENT_PATH" ;;
   scripts/check-clickhouse-cdc.ts) printf 'check\n' >> "$FAKE_EVENT_PATH" ;;
+  scripts/*)
+    printf 'unexpected-%s\n' "$script" >> "$FAKE_EVENT_PATH"
+    printf 'unexpected fake Node invocation: %s\n' "$script" >&2
+    exit 64
+    ;;
 esac
 `,
     );
@@ -61,6 +71,11 @@ done
 case "$script" in
   scripts/cdc-health-state.ts) printf 'state-%s\n' "$action" >> "$FAKE_EVENT_PATH" ;;
   scripts/check-clickhouse-cdc.ts) printf 'check\n' >> "$FAKE_EVENT_PATH"; exit 17 ;;
+  scripts/*)
+    printf 'unexpected-%s\n' "$script" >> "$FAKE_EVENT_PATH"
+    printf 'unexpected fake Node invocation: %s\n' "$script" >&2
+    exit 64
+    ;;
 esac
 `,
     );
@@ -107,6 +122,11 @@ case "$script" in
     printf 'reconciliation-%s\n' "$reconciliation_count" >> "$FAKE_EVENT_PATH"
     if [ "$reconciliation_count" -eq 1 ]; then exit 23; fi
     ;;
+  scripts/*)
+    printf 'unexpected-%s\n' "$script" >> "$FAKE_EVENT_PATH"
+    printf 'unexpected fake Node invocation: %s\n' "$script" >&2
+    exit 64
+    ;;
 esac
 `,
     );
@@ -130,6 +150,44 @@ esac
     expect(standardError).toContain(
       "processing-reconciliation: reconciliation failed with exit status 23; retrying in 300s",
     );
+  });
+});
+
+describe("entrypoint runtime harness", () => {
+  it("fails loudly when fake Node receives an unexpected script", () => {
+    const { commandDirectory, eventPath, temporaryDirectory } = createRuntimeHarness();
+    temporaryDirectories.push(temporaryDirectory);
+
+    writeExecutable(
+      join(commandDirectory, "node"),
+      String.raw`#!/bin/sh
+script=""
+for argument in "$@"; do
+  case "$argument" in scripts/*) script="$argument" ;; esac
+done
+case "$script" in
+  scripts/check-clickhouse-cdc.ts) printf 'check\n' >> "$FAKE_EVENT_PATH" ;;
+  scripts/*)
+    printf 'unexpected-%s\n' "$script" >> "$FAKE_EVENT_PATH"
+    printf 'unexpected fake Node invocation: %s\n' "$script" >&2
+    exit 64
+    ;;
+esac
+`,
+    );
+
+    const unexpectedNode = spawn(
+      join(commandDirectory, "node"),
+      ["scripts/reconcile-pending-processing.ts"],
+      {
+        env: { ...process.env, FAKE_EVENT_PATH: eventPath },
+      },
+    );
+
+    return waitForExit(unexpectedNode).then(() => {
+      expect(readEvents(eventPath)).toEqual(["unexpected-scripts/reconcile-pending-processing.ts"]);
+      expect(unexpectedNode.exitCode).toBe(64);
+    });
   });
 });
 
@@ -160,7 +218,8 @@ function startEntrypoint(
   eventPath: string,
   environment: NodeJS.ProcessEnv = {},
 ) {
-  return spawn("sh", [resolve("entrypoint.sh"), mode], {
+  const entrypoint = spawn("sh", [resolve("entrypoint.sh"), mode], {
+    detached: true,
     env: {
       ...process.env,
       ...environment,
@@ -168,6 +227,8 @@ function startEntrypoint(
       PATH: `${commandDirectory}:${process.env.PATH ?? ""}`,
     },
   });
+  entrypoints.push(entrypoint);
+  return entrypoint;
 }
 
 function writeStopAfterFirstSleep(commandDirectory: string): void {
@@ -204,9 +265,41 @@ function readEvents(eventPath: string): string[] {
   return readFileSync(eventPath, "utf8").trim().split("\n");
 }
 
-async function waitForExit(entrypoint: ReturnType<typeof spawn>): Promise<void> {
-  await new Promise<void>((resolveExit, rejectExit) => {
-    entrypoint.once("error", rejectExit);
-    entrypoint.once("exit", () => resolveExit());
-  });
+async function waitForExit(entrypoint: ChildProcess): Promise<void> {
+  let safetyTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    await new Promise<void>((resolveExit, rejectExit) => {
+      safetyTimeout = setTimeout(() => {
+        terminateProcessGroup(entrypoint);
+        rejectExit(
+          new Error(
+            `Entrypoint process group did not exit within ${runtimeSafetyTimeoutMilliseconds}ms`,
+          ),
+        );
+      }, runtimeSafetyTimeoutMilliseconds);
+      entrypoint.once("error", rejectExit);
+      entrypoint.once("exit", () => resolveExit());
+    });
+  } finally {
+    if (safetyTimeout !== undefined) {
+      clearTimeout(safetyTimeout);
+    }
+    terminateProcessGroup(entrypoint);
+  }
+}
+
+function terminateProcessGroup(entrypoint: ChildProcess): void {
+  if (entrypoint.pid === undefined) {
+    return;
+  }
+
+  try {
+    process.kill(-entrypoint.pid, "SIGTERM");
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH") {
+      return;
+    }
+    throw error;
+  }
 }

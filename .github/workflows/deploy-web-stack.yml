@@ -680,7 +680,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 2100))
-          for service in web worker analytics-worker metric-stream-clickhouse-sink clickhouse databasus; do
+          for service in web worker analytics-worker metric-stream-clickhouse-sink processing-reconciliation clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -699,6 +699,16 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              case "$service" in
+                web|worker|analytics-worker|metric-stream-clickhouse-sink|processing-reconciliation)
+                  expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+                  if [ "${image%@*}" != "$expected_image" ]; then
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::${service_name} is using ${image}, expected ${expected_image}"
+                    exit 1
+                  fi
+                  ;;
+              esac
               case "$update_state" in
                 rollback_*)
                   docker service ps "$service_name" --no-trunc
@@ -912,7 +922,7 @@ jobs:
 
           wait_deadline_seconds=$((SECONDS + 1200))
           stability_window_seconds=60
-          for service in analytics-worker metric-stream-clickhouse-sink; do
+          for service in analytics-worker metric-stream-clickhouse-sink processing-reconciliation; do
             service_name="${STACK_NAME}_${service}"
             stable_task_id=""
             stable_since_seconds=0
@@ -939,6 +949,12 @@ jobs:
               )"
               task_id="${task_ids%%$'\n'*}"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none} task_id=${task_id:-none}"
+              expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+              if [ "${image%@*}" != "$expected_image" ]; then
+                docker service ps "$service_name" --no-trunc
+                echo "::error::${service_name} is using ${image}, expected ${expected_image}"
+                exit 1
+              fi
               if [ "$desired_replicas" != "1" ]; then
                 docker service ps "$service_name" --no-trunc
                 echo "::error::${service_name} expected one desired replica after the full deploy, found ${desired_replicas}"

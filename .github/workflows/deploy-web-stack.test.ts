@@ -15,6 +15,7 @@ interface ServiceObservation {
 interface ConsumerScenarios {
   readonly analyticsWorker: readonly ServiceObservation[];
   readonly metricStreamClickhouseSink: readonly ServiceObservation[];
+  readonly processingReconciliation?: readonly ServiceObservation[];
 }
 
 interface DeployConsumerOptions {
@@ -147,6 +148,10 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
       join(scenarioDirectory, "dofek_metric-stream-clickhouse-sink"),
       serializeScenario(scenarios.metricStreamClickhouseSink),
     );
+    writeFileSync(
+      join(scenarioDirectory, "dofek_processing-reconciliation"),
+      serializeScenario(scenarios.processingReconciliation ?? [STABLE_OBSERVATION]),
+    );
 
     const result = spawnSync(
       "bash",
@@ -169,6 +174,7 @@ ${deployConsumersRunScript()}`,
           ...process.env,
           PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
           FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
+          IMAGE_TAG: "test",
           MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
           RUNNER_TEMP: temporaryDirectory,
           SCENARIO_DIR: scenarioDirectory,

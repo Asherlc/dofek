@@ -10,3 +10,7 @@ services:
   metric-stream-clickhouse-sink:
     deploy:
       replicas: 0
+
+  processing-reconciliation:
+    deploy:
+      replicas: 0

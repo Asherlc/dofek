@@ -42,16 +42,19 @@ only; it never contains metric payloads.
    manifest containing only paths that emitted rows.
 2. The worker records relational fences and/or published metric batches, then
    queues reconciliation work in Postgres.
-3. `scripts/check-clickhouse-cdc.ts`, run by the production `cdc-health` service
-   every five minutes, compares each pending operation with exact ClickHouse
-   evidence. It queues analytics only after every emitted path for a dataset is
-   present.
-4. The analytics worker runs every production dbt model sequentially and records
+3. The production `processing-reconciliation` service runs the reconciliation
+   script synchronously every 300 seconds. It compares each pending operation
+   with exact ClickHouse evidence and queues analytics only after every emitted
+   path for a dataset is present.
+4. Independently, the `cdc-health` service runs
+   `scripts/check-clickhouse-cdc.ts` every five minutes and records only the
+   bounded CDC result for its health probe.
+5. The analytics worker runs every production dbt model sequentially and records
    the status of every selected model. dbt writes execution status only for
    executed nodes to `run_results.json`; those identifiers are resolved through
    the full project `manifest.json` ([dbt run results](https://docs.getdbt.com/reference/artifacts/run-results-json),
    [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)).
-5. The cache warmer records each registered query-family outcome. A dataset is
+6. The cache warmer records each registered query-family outcome. A dataset is
    ready only after its required analytics and cache work succeeds or is
    explicitly skipped.
 
@@ -185,12 +188,14 @@ exceptions remain in Sentry/logs rather than the ledger.
 
 ## Monitoring and Retention
 
-The `cdc-health` service logs a processing reconciliation summary after every
-successful check and reports failures to Sentry. Alert on repeated
-`processing reconciliation` failures, non-completed outbox rows older than the
-five-minute reconciliation interval, analytics/cache `failed` events, and
-operations whose latest nonterminal event exceeds the dataset's freshness
-target.
+The `processing-reconciliation` service logs a summary after every serial
+300-second run. Its script initializes Sentry and reports reconciliation
+failures there; the entrypoint logs the nonzero exit before the next scheduled
+retry. Alert on repeated `processing reconciliation` failures, non-completed
+outbox rows older than the five-minute reconciliation interval, analytics/cache
+`failed` events, and operations whose latest nonterminal event exceeds the
+dataset's freshness target. Monitor `cdc-health` independently for a stale or
+failing bounded CDC result.
 
 The ledger is append-only and is not physically purged in the first release.
 `processing.status` considers operations created in the last 90 days;
