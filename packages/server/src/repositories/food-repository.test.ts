@@ -763,6 +763,25 @@ describe("FoodRepository", () => {
       expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-1");
     });
 
+    it("persists an external identifier without nutrients", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "External Food",
+        externalId: "external-entry-2",
+        nutrients: {},
+      });
+
+      expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-2");
+    });
+
     it("inserts junction table rows when nutrients are provided", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
