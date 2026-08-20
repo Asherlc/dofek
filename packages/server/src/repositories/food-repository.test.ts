@@ -757,7 +757,7 @@ describe("FoodRepository", () => {
         date: "2024-06-15",
         foodName: "External Food",
         externalId: "external-entry-1",
-        nutrients: {},
+        nutrients: { "vitamin-c": 1 },
       });
 
       expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-1");
