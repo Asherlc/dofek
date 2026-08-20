@@ -226,6 +226,29 @@ services:
         order: stop-first
         failure_action: rollback
 
+  processing-reconciliation:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["processing-reconciliation"]
+    env_file: ${CDC_HEALTH_ENV_FILE:?CDC_HEALTH_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      OTEL_SERVICE_NAME: dofek-processing-reconciliation
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 200M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
   db:
     image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
     command:
