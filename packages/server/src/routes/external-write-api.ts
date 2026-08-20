@@ -81,6 +81,7 @@ const linkExchangeSchema = z.object({
   codeVerifier: z.string().min(43).max(128),
   externalSubject: externalSubjectSchema,
 });
+const linkReissueSchema = externalSubjectSchema;
 const authorizeSchema = z.object({ linkId: z.string().uuid(), approved: z.literal(true) });
 const nutritionSchema = z.object({
   entries: z
@@ -118,6 +119,14 @@ const grantSchema = z.object({
   subject: z.string(),
   expires_at: timestampStringSchema,
   revoked_at: timestampStringSchema.nullable(),
+});
+const reissueGrantSchema = z.object({
+  grant_id: z.string(),
+  user_id: z.string(),
+  opaque_subject: z.string(),
+  scopes: z.array(z.string()),
+  namespace: z.string(),
+  subject: z.string(),
 });
 const linkSchema = z.object({
   link_id: z.string(),
@@ -447,6 +456,75 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
       captureException(error);
       logger.error(
         `[external-api] link exchange failed: ${error instanceof Error ? error.name : "unknown"}`,
+      );
+      return sendProblem(res, req, 503, "SERVICE_UNAVAILABLE");
+    }
+  });
+
+  router.post("/link/reissue", express.json(), async (req, res) => {
+    const client = await authenticateClient(deps.db, req);
+    const parsed = linkReissueSchema.safeParse(req.body);
+    if (!client) return sendProblem(res, req, 401, "INVALID_CREDENTIALS");
+    if (!parsed.success) return sendProblem(res, req, 422, "VALIDATION_ERROR");
+
+    const grants = await executeWithSchema(
+      deps.db,
+      reissueGrantSchema,
+      sql`SELECT grant_id, user_id, opaque_subject, scopes, namespace, subject
+          FROM fitness.external_grant
+          WHERE client_id = ${client.clientId}
+            AND namespace = ${parsed.data.namespace}
+            AND subject = ${parsed.data.subject}
+            AND revoked_at IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1`,
+    );
+    const grant = grants[0];
+    if (!grant) return sendProblem(res, req, 404, "NOT_FOUND");
+
+    try {
+      const result = await withAccountErasureUserAndIdentityWriteFence(
+        deps.db,
+        grant.user_id,
+        externalIdentity(grant.namespace, grant.subject),
+        async (tx) => {
+          const token = createOpaqueSecret();
+          const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000).toISOString();
+          const rotated = await executeWithSchema(
+            tx,
+            reissueGrantSchema,
+            sql`UPDATE fitness.external_grant
+                SET access_token_hash = ${hash(token.value)}, expires_at = ${expiresAt}
+                WHERE grant_id = ${grant.grant_id}::uuid
+                  AND client_id = ${client.clientId}
+                  AND namespace = ${grant.namespace}
+                  AND subject = ${grant.subject}
+                  AND revoked_at IS NULL
+                RETURNING grant_id, user_id, opaque_subject, scopes, namespace, subject`,
+          );
+          if (!rotated[0]) throw new Error("GRANT_NOT_FOUND");
+          return {
+            externalSubject: rotated[0].opaque_subject,
+            grantId: rotated[0].grant_id,
+            accessToken: token.value,
+            tokenType: "Bearer" as const,
+            expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+            scope: rotated[0].scopes.join(" "),
+          };
+        },
+      );
+      return res.json(result);
+    } catch (error) {
+      if (
+        error instanceof AccountErasureUserFencedError ||
+        error instanceof AccountErasureIdentityFencedError
+      )
+        return sendProblem(res, req, 423, "ACCOUNT_ERASURE_ACTIVE");
+      if (error instanceof Error && error.message === "GRANT_NOT_FOUND")
+        return sendProblem(res, req, 404, "NOT_FOUND");
+      captureException(error);
+      logger.error(
+        `[external-api] link reissue failed: ${error instanceof Error ? error.name : "unknown"}`,
       );
       return sendProblem(res, req, 503, "SERVICE_UNAVAILABLE");
     }

@@ -97,6 +97,28 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '423': { $ref: '#/components/responses/Problem' }
+  /api/external/v1/link/reissue:
+    post:
+      operationId: reissueExternalLinkToken
+      summary: Reissue an external link access token
+      description: Rotates the opaque bearer token for the latest active grant owned by this external client and subject. The grant ID and idempotency scope remain unchanged; the previous token is invalid immediately.
+      security: [{ externalClient: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalSubject' }
+      responses:
+        '200':
+          description: Fresh 15-minute external grant token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinkExchangeResponse' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '423': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
   /api/external/v1/link/status:
     post:
       operationId: getExternalLinkStatus

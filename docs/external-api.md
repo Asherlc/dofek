@@ -62,6 +62,18 @@ tokens require HTTPS and must not be placed in URLs or cookies; see
 the immediate invalidation semantics described by
 [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html).
 
+When that token expires, the separately deployed app can call
+`POST /api/external/v1/link/reissue` with the original client credential and
+the same `{namespace, subject}` external identity. Dofek reissues only the
+latest non-revoked grant owned by that exact client and subject; an expired
+access token does not by itself revoke the grant. The response has the same
+shape as link exchange, keeps the same `grantId` and grant-scoped idempotency
+receipts, and returns a fresh 15-minute token. Rotation is atomic: the prior
+token stops working as soon as the replacement is committed. Missing,
+non-owned, or revoked grants return the privacy-preserving `404 NOT_FOUND`
+problem, while invalid client credentials return `401 INVALID_CREDENTIALS`.
+An active account-erasure fence returns `423 ACCOUNT_ERASURE_ACTIVE`.
+
 DPoP is not required for the first release. It remains a future sender-
 constraining option if threat modeling requires it; it adds proof-key storage,
 clock/replay handling, and client complexity
