@@ -680,6 +680,13 @@
       "when": 1786812000001,
       "tag": "0094_external_write_api",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1786812000002,
+      "tag": "0095_external_client_erasure_policy",
+      "breakpoints": true
     }
   ]
 }
