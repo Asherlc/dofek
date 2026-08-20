@@ -45,7 +45,7 @@ async function createGrant(
   return { authorization: `Bearer ${options.clientId}.${options.clientSecret}`, grantId, oldToken };
 }
 
-describe("external write API network contract", () => {
+describe.sequential("external write API network contract", () => {
   let testContext: TestContext;
   let server: Server;
   let baseUrl: string;
