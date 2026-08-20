@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { sql } from "drizzle-orm";
 import express from "express";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { initiateAccountErasure } from "../../../../src/db/account-erasure.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
@@ -74,6 +74,27 @@ describe("external write API network contract", () => {
       });
     });
   }, 120_000);
+
+  beforeEach(async () => {
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.account_erasure_identity_fence
+          WHERE request_id IN (
+            SELECT id FROM fitness.account_erasure_request WHERE user_id = ${USER_ID}
+          )`,
+    );
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.account_erasure_preparation WHERE user_id = ${USER_ID}`,
+    );
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.account_erasure_request WHERE user_id = ${USER_ID}`,
+    );
+    await testContext.db.execute(sql`DELETE FROM fitness.external_erasure_ack`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_idempotency_receipt`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_grant`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_identity_link`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_link`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_client`);
+  });
 
   afterAll(async () => {
     server?.closeAllConnections();
