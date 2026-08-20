@@ -98,11 +98,11 @@ infrastructure has been retired.
   healthy probe before it could read the state file. This timeout is scoped to
   the probe process; the state-age and consecutive-failure thresholds still
   determine CDC health.
-- After each successful CDC check, `cdc-health` starts at most one background
-  processing-reconciliation child. The monitor continues its regular CDC
-  checks while that child runs; a reconciliation failure is reported to Sentry
-  and logged for retry after a later successful CDC check, without changing
-  CDC state.
+- `cdc-health` owns only the bounded CDC check and its state file. The separate
+  `processing-reconciliation` service runs reconciliation serially every 300
+  seconds with its own resource budget; its script reports failures to Sentry
+  and its loop logs the nonzero exit before the next scheduled retry. A
+  reconciliation failure never changes CDC state.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.

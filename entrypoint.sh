@@ -69,26 +69,9 @@ case "${1:-sync}" in
         ;;
     esac
     $NODE scripts/cdc-health-state.ts initialize
-    reconciliation_pid=""
-    reap_reconciliation() {
-      if [ -n "$reconciliation_pid" ] && ! kill -0 "$reconciliation_pid" 2>/dev/null; then
-        if wait "$reconciliation_pid"; then
-          :
-        else
-          status="$?"
-          echo "cdc-health: processing reconciliation failed with exit status $status; retrying after the next successful CDC check" >&2
-        fi
-        reconciliation_pid=""
-      fi
-    }
     while true; do
-      reap_reconciliation
       if $NODE scripts/check-clickhouse-cdc.ts; then
         $NODE scripts/cdc-health-state.ts success
-        if [ -z "$reconciliation_pid" ]; then
-          $NODE scripts/reconcile-pending-processing.ts &
-          reconciliation_pid="$!"
-        fi
         sleep "$interval_seconds"
       else
         status="$?"
@@ -96,6 +79,17 @@ case "${1:-sync}" in
         echo "cdc-health: check failed with exit status $status; retrying in ${interval_seconds}s" >&2
         sleep "$interval_seconds"
       fi
+    done
+    ;;
+  processing-reconciliation)
+    while true; do
+      if $NODE scripts/reconcile-pending-processing.ts; then
+        :
+      else
+        status="$?"
+        echo "processing-reconciliation: reconciliation failed with exit status $status; retrying in 300s" >&2
+      fi
+      sleep 300
     done
     ;;
   metric-stream-clickhouse-sink)
@@ -108,7 +102,7 @@ case "${1:-sync}" in
     exec $NODE scripts/seed-review-clickhouse.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'provider-connection-cutover', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'provider-connection-cutover', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'processing-reconciliation', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac
