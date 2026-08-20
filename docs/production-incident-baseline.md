@@ -23972,3 +23972,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   external `curl: (35) Recv failure: Connection reset by peer` while downloading
   dotenv-linter. Its root cause is outside the repository and has not been masked
   with a retry. Confirm a fresh CI run succeeds after this configuration fix.
+
+## 2026-08-20 — Expo SDK compatibility gate blocked the mobile bundle
+
+- **Status:** Fixed in source; fresh hosted CI is pending.
+- **Symptoms / user impact:** The `Build Mobile / Metro Bundle` job blocked the
+  release-fix PR before it could export the iOS JavaScript bundle.
+- **Evidence / root cause:** The exact failing command was `cd packages/mobile &&
+  pnpm expo install --check`; its first fatal line was `Found outdated
+  dependencies`. Expo's online compatibility map required twelve Expo SDK 57
+  packages to move to their supported patch versions, while the mobile manifest
+  still pinned earlier patches. The package check is Expo's documented mechanism
+  for validating SDK compatibility: [Expo CLI dependency
+  validation](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+  See the [failed Metro Bundle job](https://github.com/Asherlc/dofek/actions/runs/32424013441/job/96602295023).
+- **Fix / mitigation:** Updated the twelve affected Expo packages to the versions
+  selected by `expo install --fix`, regenerated `pnpm-lock.yaml`, and retained the
+  workspace release-age policy entries the verified package install requires. No
+  CI retry, timeout, ignore, or compatibility-check suppression was added.
+- **Validation:** The exact online `pnpm expo install --check` command now reports
+  `Dependencies are up to date`; `pnpm expo export --platform ios --clear`
+  completed an iOS bundle successfully.
+- **Remaining risk / follow-up:** Confirm the fresh hosted Mobile Bundle and iOS
+  Native Build jobs pass before merging the PR and triggering TestFlight upload.
