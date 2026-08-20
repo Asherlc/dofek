@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildProblem, createOpaqueSecret, pkceS256, verifyPkce } from "./external-write-api.ts";
+import {
+  buildProblem,
+  createOpaqueSecret,
+  pkceS256,
+  verifyPkce,
+} from "./external-write-api-primitives.ts";
 
 describe("external write API security primitives", () => {
   it("computes the RFC 7636 S256 challenge", () => {
