@@ -9,7 +9,7 @@ import { createSession } from "../auth/session.ts";
 import { createExternalWriteApiRouter } from "./external-write-api.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
-const ERASURE_USER_ID = USER_ID;
+const ERASURE_USER_ID = "00000000-0000-4000-8000-000000000022";
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -49,7 +49,6 @@ describe.sequential("external write API network contract", () => {
   let testContext: TestContext;
   let server: Server;
   let baseUrl: string;
-  let sessionCookie: string;
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
@@ -69,8 +68,6 @@ describe.sequential("external write API network contract", () => {
     await testContext.db.execute(sql`DELETE FROM fitness.external_identity_link`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_link`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_client`);
-    const session = await createSession(testContext.db, USER_ID);
-    sessionCookie = `session=${session.sessionId}`;
     const app = express();
     app.use("/api/external/v1", createExternalWriteApiRouter({ db: testContext.db }));
     await new Promise<void>((resolve) => {
@@ -83,6 +80,16 @@ describe.sequential("external write API network contract", () => {
   }, 120_000);
 
   beforeEach(async () => {
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
     await testContext.db.execute(
       sql`DELETE FROM fitness.account_erasure_identity_fence
           WHERE request_id IN (
@@ -105,8 +112,6 @@ describe.sequential("external write API network contract", () => {
     await testContext.db.execute(sql`DELETE FROM fitness.external_identity_link`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_link`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_client`);
-    const session = await createSession(testContext.db, USER_ID);
-    sessionCookie = `session=${session.sessionId}`;
   });
 
   afterAll(async () => {
@@ -116,9 +121,10 @@ describe.sequential("external write API network contract", () => {
   });
 
   it("provisions a client without persisting the raw secret", async () => {
+    const session = await createSession(testContext.db, USER_ID);
     const response = await fetch(`${baseUrl}/api/external/v1/clients`, {
       method: "POST",
-      headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
+      headers: { Cookie: `session=${session.sessionId}`, "Content-Type": "application/json" },
       body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
     });
     expect(response.status).toBe(201);
