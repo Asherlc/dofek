@@ -8,8 +8,8 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createExternalWriteApiRouter } from "./external-write-api.ts";
 
-const USER_ID = "00000000-0000-4000-8000-000000000021";
-const ERASURE_USER_ID = "00000000-0000-4000-8000-000000000022";
+const USER_ID = randomUUID();
+const ERASURE_USER_ID = randomUUID();
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
