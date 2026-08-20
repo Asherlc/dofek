@@ -44,6 +44,7 @@ const mockCheckReadiness = vi.fn(async () => ({
     queues: "ok" as const,
   },
 }));
+const mockCreateExternalWriteApiRouter = vi.fn(() => express.Router());
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -156,6 +157,9 @@ vi.mock("../routes/activity-export.ts", () => ({
 }));
 vi.mock("../routes/auth/index.ts", () => ({ createAuthRouter: vi.fn(() => express.Router()) }));
 vi.mock("../routes/export.ts", () => ({ createExportRouter: vi.fn(() => express.Router()) }));
+vi.mock("./routes/external-write-api.ts", () => ({
+  createExternalWriteApiRouter: mockCreateExternalWriteApiRouter,
+}));
 vi.mock("./routes/ingest-zos-health.ts", () => ({
   createIngestZosHealthRouter: vi.fn(() => express.Router()),
 }));
@@ -559,5 +563,14 @@ describe("main", () => {
       message: "Invalid x-timezone header",
     });
     expect(getAccessWindowForUser).not.toHaveBeenCalled();
+  });
+
+  it("mounts the external write API router with the application database", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    createApp(fakeDb, makeMockSensorStore());
+
+    expect(mockCreateExternalWriteApiRouter).toHaveBeenCalledWith({ db: fakeDb });
   });
 });
