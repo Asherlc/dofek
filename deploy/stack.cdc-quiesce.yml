@@ -1,7 +1,8 @@
-# Temporary deploy overlay: keep heavy ClickHouse consumers at zero replicas
+# Temporary deploy overlay: keep analytics-worker,
+# metric-stream-clickhouse-sink, and processing-reconciliation at zero replicas
 # while post-deploy CDC setup runs. The deploy workflow applies this overlay
 # for the first stack deploy, runs Configure ClickHouse CDC, then redeploys
-# without this file so analytics-worker and the metric-stream sink start.
+# without this file so all three services start.
 services:
   analytics-worker:
     deploy:
