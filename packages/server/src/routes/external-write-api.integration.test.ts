@@ -94,6 +94,8 @@ describe("external write API network contract", () => {
     await testContext.db.execute(sql`DELETE FROM fitness.external_identity_link`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_link`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_client`);
+    const session = await createSession(testContext.db, USER_ID);
+    sessionCookie = `session=${session.sessionId}`;
   });
 
   afterAll(async () => {
