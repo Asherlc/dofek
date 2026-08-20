@@ -23947,3 +23947,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** `cdc-health` now owns only the bounded check and immediate state write. Processing reconciliation runs synchronously in the separate `processing-reconciliation` Swarm service every 300 seconds, so one service cannot delay the other's cadence. The reconciliation script retains its Sentry reporting and its loop logs a nonzero exit before retrying; it does not alter CDC health state. No timeout, probe threshold, or failure suppression changed.
 - **Validation:** The earlier 88,444,928-byte result was invalid because its wrapper replaced `node` for the checker, reconciliation, and probe. Faithful same-container validation with the production image, real Node, real checker/probe, active local logical slots, PeerDB catalog rows, a fresh ClickHouse mirror, and an `ACCESS EXCLUSIVE` reconciliation lock peaked at 205,840,384 bytes under the 200M limit. It also produced one stale-state probe failure while the real check exceeded the interval-plus-60-second freshness budget, even though Docker retained overall `healthy` status. That evidence rejected the same-container design. Isolated-service resource validation and the required full checks are recorded with this follow-up.
 - **Remaining risk / follow-up:** Verify production's next independent CDC and reconciliation service intervals and their individual Swarm resource usage after deployment.
+
+## 2026-08-20 — iOS TestFlight uploads were rejected for a missing HealthKit purpose string
+
+- **Status:** Fixed in source; a fresh main-branch build must complete CI and upload
+  before the release is confirmed.
+- **Symptoms / user impact:** The iOS deployment archive and export completed, but
+  TestFlight rejected the upload. As a result, the last successfully uploaded
+  build remained eight days old despite later deployment attempts.
+- **Evidence / root cause:** The exact failing workflow step was `Export IPA & Upload
+  to TestFlight`; its first fatal line was `Upload failed. Missing purpose string in
+  Info.plist... NSHealthUpdateUsageDescription` (Apple response `90683`). The iOS
+  app requests HealthKit write access for dietary sample types, but
+  `packages/mobile/app.json` generated no `NSHealthUpdateUsageDescription` key.
+  Apple documents that this key explains why an app needs permission to save health
+  data: [NSHealthUpdateUsageDescription](https://developer.apple.com/documentation/bundleresources/information-property-list/nshealthupdateusagedescription).
+  See the [failed deployment upload job](https://github.com/Asherlc/dofek/actions/runs/31979200751/job/95243256525).
+- **Fix / mitigation:** Added a user-facing `NSHealthUpdateUsageDescription` that
+  accurately explains removal of Dofek-owned dietary entries during account erasure.
+  No retry, timeout, or upload-error suppression was added.
+- **Validation:** Regenerate the iOS project and inspect the generated app
+  `Info.plist` before merge; then verify the next main-branch TestFlight upload.
+- **Remaining risk / follow-up:** The current main CI run also encountered an
+  external `curl: (35) Recv failure: Connection reset by peer` while downloading
+  dotenv-linter. Its root cause is outside the repository and has not been masked
+  with a retry. Confirm a fresh CI run succeeds after this configuration fix.
