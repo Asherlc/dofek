@@ -9,6 +9,7 @@ import { createSession } from "../auth/session.ts";
 import { createExternalWriteApiRouter } from "./external-write-api.ts";
 
 const USER_ID = "00000000-0000-4000-8000-000000000021";
+const ERASURE_USER_ID = "00000000-0000-4000-8000-000000000022";
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -21,6 +22,7 @@ async function createGrant(
     clientSecret: string;
     namespace: string;
     subject: string;
+    userId?: string;
     revoked?: boolean;
   },
 ) {
@@ -33,12 +35,12 @@ async function createGrant(
   );
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject)
-        VALUES (${options.namespace}, ${options.subject}, ${USER_ID}, ${opaqueSubject})`,
+        VALUES (${options.namespace}, ${options.subject}, ${options.userId ?? USER_ID}, ${opaqueSubject})`,
   );
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_grant
         (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at, revoked_at)
-        VALUES (${grantId}::uuid, ${options.clientId}, ${USER_ID}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
+        VALUES (${grantId}::uuid, ${options.clientId}, ${options.userId ?? USER_ID}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
   );
   return { authorization: `Bearer ${options.clientId}.${options.clientSecret}`, grantId, oldToken };
 }
@@ -54,6 +56,11 @@ describe("external write API network contract", () => {
     await testContext.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
           VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
           ON CONFLICT (id) DO UPDATE SET is_admin = true`,
     );
     await testContext.db.execute(sql`DELETE FROM fitness.external_erasure_ack`);
@@ -79,14 +86,18 @@ describe("external write API network contract", () => {
     await testContext.db.execute(
       sql`DELETE FROM fitness.account_erasure_identity_fence
           WHERE request_id IN (
-            SELECT id FROM fitness.account_erasure_request WHERE user_id = ${USER_ID}
+            SELECT id
+            FROM fitness.account_erasure_request
+            WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)
           )`,
     );
     await testContext.db.execute(
-      sql`DELETE FROM fitness.account_erasure_preparation WHERE user_id = ${USER_ID}`,
+      sql`DELETE FROM fitness.account_erasure_preparation
+          WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)`,
     );
     await testContext.db.execute(
-      sql`DELETE FROM fitness.account_erasure_request WHERE user_id = ${USER_ID}`,
+      sql`DELETE FROM fitness.account_erasure_request
+          WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)`,
     );
     await testContext.db.execute(sql`DELETE FROM fitness.external_erasure_ack`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_idempotency_receipt`);
@@ -232,10 +243,11 @@ describe("external write API network contract", () => {
       clientSecret: "client-secret",
       namespace: "slack",
       subject: "erasure-subject",
+      userId: ERASURE_USER_ID,
     });
     await initiateAccountErasure(
       testContext.db,
-      USER_ID,
+      ERASURE_USER_ID,
       async () => "snapshot",
       async () => undefined,
     );
