@@ -1052,17 +1052,17 @@ jobs:
           release: ${{ steps.pull_images.outputs.sentry_release }}
           set_commits: skip
 
-      - name: Report quiesced ClickHouse consumers
+      - name: Report quiesced processing services
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'
         run: |
-          message="ClickHouse consumers remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness or CDC setup step, then rerun the deployment."
+          message="analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness or CDC setup step, then rerun the deployment."
           echo "::error::$message"
           {
-            echo "### ClickHouse consumers remain quiesced"
+            echo "### Processing services remain quiesced"
             echo
             echo "$message"
             echo
-            echo "The analytics worker and metric-stream ClickHouse sink remain at zero replicas."
+            echo "analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation remain at zero replicas."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prune obsolete images post-deploy

@@ -36,10 +36,10 @@ Postgres allows six logical slots/senders and caps each slot at 64 GiB, while
 PeerDB mirrors use 100,000-row CDC batches and single-worker 100,000-row initial
 snapshot partitions. The production `cdc-health` service runs this check every
 five minutes and atomically records each bounded CDC result. The separate
-`processing-reconciliation` service runs one synchronous reconciliation at a
-time every 300 seconds. Its script reports failures to Sentry, and its
-entrypoint logs a nonzero exit before the next scheduled retry. Reconciliation
-does not affect CDC state or delay the next CDC check. The CDC health probe tolerates one
+`processing-reconciliation` service runs one synchronous reconciliation, then
+waits 300 seconds before the next run. Its script reports failures to Sentry,
+and its entrypoint logs a nonzero exit before the next scheduled retry.
+Reconciliation does not affect CDC state or delay the next CDC check. The CDC health probe tolerates one
 failed report so the next scheduled check can demonstrate recovery, then fails
 after a second consecutive failure. A missing or stale result also fails after
 one interval plus 60 seconds, covering a stuck monitor. The probe runs every ten

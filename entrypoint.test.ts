@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -154,6 +154,25 @@ esac
 });
 
 describe("entrypoint runtime harness", () => {
+  it("requires a parent PATH before constructing a child command path", () => {
+    const { commandDirectory, eventPath, temporaryDirectory } = createRuntimeHarness();
+    temporaryDirectories.push(temporaryDirectory);
+    const parentPath = process.env.PATH;
+
+    try {
+      delete process.env.PATH;
+      expect(() => startEntrypoint("cdc-health", commandDirectory, eventPath)).toThrow(
+        "Parent PATH is required for entrypoint runtime tests",
+      );
+    } finally {
+      if (parentPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = parentPath;
+      }
+    }
+  });
+
   it("fails loudly when fake Node receives an unexpected script", () => {
     const { commandDirectory, eventPath, temporaryDirectory } = createRuntimeHarness();
     temporaryDirectories.push(temporaryDirectory);
@@ -218,13 +237,18 @@ function startEntrypoint(
   eventPath: string,
   environment: NodeJS.ProcessEnv = {},
 ) {
+  const parentPath = process.env.PATH;
+  if (!parentPath) {
+    throw new Error("Parent PATH is required for entrypoint runtime tests");
+  }
+
   const entrypoint = spawn("sh", [resolve("entrypoint.sh"), mode], {
     detached: true,
     env: {
       ...process.env,
       ...environment,
       FAKE_EVENT_PATH: eventPath,
-      PATH: `${commandDirectory}:${process.env.PATH ?? ""}`,
+      PATH: `${commandDirectory}:${parentPath}`,
     },
   });
   entrypoints.push(entrypoint);
@@ -294,12 +318,16 @@ function terminateProcessGroup(entrypoint: ChildProcess): void {
     return;
   }
 
-  try {
-    process.kill(-entrypoint.pid, "SIGTERM");
-  } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH") {
-      return;
-    }
-    throw error;
+  const termination = spawnSync("/bin/kill", ["-TERM", `-${entrypoint.pid}`], {
+    encoding: "utf8",
+  });
+  if (termination.status === 0) {
+    return;
   }
+  if (termination.status === 1 && termination.stderr.includes("No such process")) {
+    return;
+  }
+  throw new Error(
+    `Could not terminate entrypoint process group ${entrypoint.pid}: ${termination.error?.message ?? termination.stderr}`,
+  );
 }

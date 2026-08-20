@@ -23938,6 +23938,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   run](https://github.com/Asherlc/dofek/actions/runs/31894084167).
 - **Remaining risk / follow-up:** Keep the calendar, source-ordering, and
   persistence boundary cases when the provider-read model changes.
+
 # 2026-08-19 — CDC health monitor was killed while reconciliation was still running
 
 - **Status:** Fixed by resource-isolating reconciliation from CDC health; deployment verification remains pending.
