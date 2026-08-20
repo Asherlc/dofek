@@ -26,6 +26,7 @@ async function createGrant(
 ) {
   const opaqueSubject = `opaque-${options.clientId}`;
   const grantId = randomUUID();
+  const oldToken = `old-token-${grantId}`;
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes)
         VALUES (${options.clientId}, ${options.clientId}, ${hash(options.clientSecret)}, ARRAY['nutrition:write'])`,
@@ -37,9 +38,9 @@ async function createGrant(
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_grant
         (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at, revoked_at)
-        VALUES (${grantId}::uuid, ${options.clientId}, ${USER_ID}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hash("old-token")}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
+        VALUES (${grantId}::uuid, ${options.clientId}, ${USER_ID}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
   );
-  return { grantId, authorization: `Bearer ${options.clientId}.${options.clientSecret}` };
+  return { authorization: `Bearer ${options.clientId}.${options.clientSecret}`, grantId, oldToken };
 }
 
 describe("external write API network contract", () => {
@@ -127,7 +128,7 @@ describe("external write API network contract", () => {
     const oldTokenResponse = await fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
       method: "POST",
       headers: {
-        Authorization: "Bearer old-token",
+        Authorization: `Bearer ${grant.oldToken}`,
         "Content-Type": "application/json",
         "Idempotency-Key": "old-token-request-key",
       },
