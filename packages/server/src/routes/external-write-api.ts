@@ -8,6 +8,7 @@ import {
 import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { isAdmin } from "../auth/admin.ts";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
@@ -262,6 +263,17 @@ function authorizeHtml(linkId: string): string {
 
 export function createExternalWriteApiRouter(deps: { db: Database }): Router {
   const router = Router();
+
+  router.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 60,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      skipSuccessfulRequests: true,
+      message: "Too many rejected external API requests — please try again later",
+    }),
+  );
 
   router.post("/clients", express.json(), async (req, res) => {
     const session = await currentSession(deps.db, req);
