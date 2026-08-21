@@ -1,7 +1,14 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { executeWithSchema } from "./typed-sql.ts";
+
+const activityPriorityRowSchema = z.object({
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
+});
 
 describe("Hang Ten activity priority", () => {
   let testCtx: TestContext;
@@ -40,7 +47,9 @@ describe("Hang Ten activity priority", () => {
   });
 
   it("selects Hang Ten over an overlapping WHOOP activity", async () => {
-    const rows = await testCtx.db.execute<{ provider_id: string; source_name: string | null }>(
+    const rows = await executeWithSchema(
+      testCtx.db,
+      activityPriorityRowSchema,
       sql`SELECT provider_id, source_name
           FROM fitness.v_activity
           WHERE user_id = ${TEST_USER_ID}
