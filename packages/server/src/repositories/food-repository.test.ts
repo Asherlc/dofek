@@ -75,6 +75,15 @@ function makeFoodEntryRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function collectSqlValues(value: unknown): unknown[] {
+  if (typeof value !== "object" || value === null) return [value];
+  const queryChunks = Reflect.get(value, "queryChunks");
+  if (Array.isArray(queryChunks)) return queryChunks.flatMap(collectSqlValues);
+  const rawValue = Reflect.get(value, "value");
+  if (Array.isArray(rawValue)) return rawValue.flatMap(collectSqlValues);
+  return rawValue === undefined ? [] : [rawValue];
+}
+
 const availableResolutionRow = {
   resolution_status: "available",
   resolution_message: "Totals use the only available nutrition source.",
@@ -1481,6 +1490,9 @@ describe("FoodRepository", () => {
       expect(JSON.stringify(queryChunks)).toContain("2");
       expect(JSON.stringify(queryChunks)).toContain("lunch");
       expect(JSON.stringify(queryChunks)).toContain("With milk");
+      const sqlValues = collectSqlValues(query);
+      expect(sqlValues).toContain("grain");
+      expect(sqlValues).toContain(2);
       expect(result).not.toBeNull();
     });
 
