@@ -1469,6 +1469,86 @@ describe("processSyncJob", () => {
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });
 
+  it("records a non-Zepp HTTP 500 service outage without retrying or reporting it to Sentry", async () => {
+    const serviceUnavailableError = new ProviderServiceUnavailableError({
+      message: "Zwift API service unavailable (500): upstream outage",
+      providerId: "zwift",
+      statusCode: 500,
+      responseBody: "upstream outage",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(serviceUnavailableError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "zwift" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
+  });
+
+  it("records a Zepp HTTP 503 service outage without retrying or reporting it to Sentry", async () => {
+    const serviceUnavailableError = new ProviderServiceUnavailableError({
+      message: "Zepp API service unavailable (503): upstream outage",
+      providerId: "amazfit-zepp",
+      statusCode: 503,
+      responseBody: "upstream outage",
+    });
+    const provider = createMockProvider({
+      id: "amazfit-zepp",
+      name: "Amazfit/Zepp",
+      sync: vi.fn().mockRejectedValue(serviceUnavailableError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "amazfit-zepp" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+    });
+  });
+
+  it("reports an untyped Zepp HTTP 500 error instead of retrying it", async () => {
+    const lookalikeError = Object.assign(new Error("Zepp API returned 500"), {
+      providerId: "amazfit-zepp",
+      statusCode: 500,
+    });
+    const provider = createMockProvider({
+      id: "amazfit-zepp",
+      name: "Amazfit/Zepp",
+      sync: vi.fn().mockRejectedValue(lookalikeError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "amazfit-zepp" }), mockDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(lookalikeError, {
+      tags: { provider: "amazfit-zepp" },
+    });
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+      status: "error",
+    });
+  });
+
   it("reports returned sync errors to Sentry", async () => {
     const cause = new Error("original cause");
     const context = { activityId: 456, activitySport: "CYCLING" };
