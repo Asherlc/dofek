@@ -146,8 +146,9 @@ describe.sequential("external write API network contract", () => {
       },
       body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
     });
-    expect(response.status).toBe(201);
-    const body: { clientId: string; clientSecret: string } = await response.json();
+    const responseBody = await response.text();
+    expect(response.status, responseBody).toBe(201);
+    const body: { clientId: string; clientSecret: string } = JSON.parse(responseBody);
     const rows = await testContext.db.execute(
       sql`SELECT secret_hash FROM fitness.external_client WHERE client_id = ${body.clientId}`,
     );
