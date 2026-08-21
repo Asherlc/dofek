@@ -1479,6 +1479,8 @@ describe("FoodRepository", () => {
       if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
       expect(JSON.stringify(queryChunks)).toContain("grain");
       expect(JSON.stringify(queryChunks)).toContain("2");
+      expect(JSON.stringify(queryChunks)).toContain("lunch");
+      expect(JSON.stringify(queryChunks)).toContain("With milk");
       expect(result).not.toBeNull();
     });
 
