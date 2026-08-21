@@ -24,7 +24,13 @@ vi.mock("./clickhouse.ts", () => ({
   createClickHouseClientFromEnv: clickHouseClientMocks.createClickHouseClientFromEnv,
 }));
 
-import { setupClickHouseCdc, setupClickHouseCdcFromEnv } from "./clickhouse-cdc.ts";
+import {
+  createPeerDbMirrorApiClient,
+  type PeerDbMirrorApiClient,
+  type PeerDbTableMapping,
+  setupClickHouseCdc,
+  setupClickHouseCdcFromEnv,
+} from "./clickhouse-cdc.ts";
 
 function credentialedUrl(
   protocol: "http" | "postgres",
@@ -67,29 +73,165 @@ function createTestClickHouseClient(
   };
 }
 
+function createConfiguredPeerDbMirrorApiClient(): PeerDbMirrorApiClient {
+  return {
+    async getMirrorStatus(mirrorName) {
+      const destinationTableIdentifier =
+        mirrorName === "dofek_provider_inventory_raw_analytics"
+          ? "processing_flow_marker_provider_inventory"
+          : "processing_flow_marker";
+      return {
+        currentFlowState: "STATUS_RUNNING",
+        tableMappings:
+          mirrorName === "dofek_sensor_priority_raw_analytics"
+            ? []
+            : [
+                ...(mirrorName === "dofek_fitness_raw_analytics"
+                  ? [
+                      {
+                        sourceTableIdentifier: "fitness.provider_connection",
+                        destinationTableIdentifier: "provider_connection",
+                        exclude: [],
+                      },
+                    ]
+                  : []),
+                {
+                  sourceTableIdentifier: "fitness.processing_flow_marker",
+                  destinationTableIdentifier,
+                  exclude: [],
+                },
+              ],
+      };
+    },
+    async listMirrors() {
+      return [];
+    },
+    async changeMirrorState() {
+      throw new Error("Configured PeerDB mirrors must not be edited");
+    },
+  };
+}
+
+function createExistingFitnessMirrorPeerDbClient() {
+  return {
+    async query(queryText: string) {
+      const query = String(queryText);
+      if (query.includes("obsolete_metric_stream_mirror_name")) return { rows: [] };
+      if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
+        return { rows: [{ name: "dofek_fitness_raw_analytics" }] };
+      }
+      if (query.includes("existing_mirror_name")) {
+        return { rows: [{ existing_mirror_name: "dofek_fitness_raw_analytics" }] };
+      }
+      return {};
+    },
+  };
+}
+
+function configureExistingFitnessMirrorQuery(): void {
+  const peerDbClient = createExistingFitnessMirrorPeerDbClient();
+  peerDbClientMocks.query.mockImplementation((queryText) => peerDbClient.query(String(queryText)));
+}
+
+function configureFlowApiEnvironment(postgresHost: string): void {
+  process.env.DATABASE_URL = credentialedUrl(
+    "postgres",
+    "health",
+    "pg-credential",
+    `${postgresHost}:5432`,
+    "/fitness",
+  );
+  process.env.CLICKHOUSE_URL = credentialedUrl(
+    "http",
+    "analytics",
+    "clickhouse-credential",
+    "clickhouse.example:8123",
+    "",
+  );
+  process.env.POSTGRES_PASSWORD = "peerdb fixture";
+}
+
+function peerDbStatusResponse(
+  currentFlowState: string,
+  tableMappings: PeerDbTableMapping[],
+  error?: { errorMessage?: string; ok: false },
+): Response {
+  return new Response(
+    JSON.stringify({
+      currentFlowState,
+      cdcStatus: { config: { tableMappings } },
+      ...error,
+    }),
+  );
+}
+
 describe("PeerDB ClickHouse CDC setup", () => {
   const rawAnalyticsTables = [
     "activity",
     "sleep_session",
     "sleep_stage",
     "daily_metrics",
+    "processing_flow_marker",
     "food_entry",
     "health_event",
     "lab_panel",
     "lab_result",
     "journal_entry",
     "provider",
+    "provider_connection",
     "provider_priority",
     "device_priority",
     "sensor_provider_priority",
     "sensor_device_priority",
     "user_profile",
   ];
+
+  it("lists every mirror identity and destination type through the Flow API", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            mirrors: [
+              {
+                destinationType: "CLICKHOUSE",
+                isCdc: true,
+                name: "dofek_fitness_raw_analytics",
+              },
+              {
+                destinationType: "POSTGRES",
+                isCdc: true,
+                name: "unrelated_postgres_mirror",
+              },
+            ],
+          }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createPeerDbMirrorApiClient("http://peerdb-flow-api:8113/v1", undefined).listMirrors(),
+    ).resolves.toEqual([
+      {
+        destinationType: "CLICKHOUSE",
+        isCdc: true,
+        name: "dofek_fitness_raw_analytics",
+      },
+      {
+        destinationType: "POSTGRES",
+        isCdc: true,
+        name: "unrelated_postgres_mirror",
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith("http://peerdb-flow-api:8113/v1/mirrors/list", {
+      headers: {},
+    });
+  });
   const originalDatabaseUrl = process.env.DATABASE_URL;
   const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
   const originalPostgresPassword = process.env.POSTGRES_PASSWORD;
   const originalPeerDbHost = process.env.PEERDB_CDC_HOST;
   const originalPeerDbPort = process.env.PEERDB_CDC_PORT;
+  const originalPeerDbUiPort = process.env.PEERDB_UI_PORT;
   const originalTemplatePostgresHost = process.env.PEERDB_CDC_POSTGRES_HOST;
   const originalTemplatePostgresPort = process.env.PEERDB_CDC_POSTGRES_PORT;
   const originalTemplateClickhouseHost = process.env.PEERDB_CDC_CLICKHOUSE_HOST;
@@ -116,6 +258,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       .mockReturnValue(clickHouseClientMocks);
     delete process.env.PEERDB_CDC_HOST;
     delete process.env.PEERDB_CDC_PORT;
+    delete process.env.PEERDB_UI_PORT;
     delete process.env.PEERDB_CDC_POSTGRES_HOST;
     delete process.env.PEERDB_CDC_POSTGRES_PORT;
     delete process.env.PEERDB_CDC_CLICKHOUSE_HOST;
@@ -124,6 +267,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     if (originalDatabaseUrl === undefined) {
       delete process.env.DATABASE_URL;
     } else {
@@ -148,6 +292,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
       delete process.env.PEERDB_CDC_PORT;
     } else {
       process.env.PEERDB_CDC_PORT = originalPeerDbPort;
+    }
+    if (originalPeerDbUiPort === undefined) {
+      delete process.env.PEERDB_UI_PORT;
+    } else {
+      process.env.PEERDB_UI_PORT = originalPeerDbUiPort;
     }
     if (originalTemplatePostgresHost === undefined) {
       delete process.env.PEERDB_CDC_POSTGRES_HOST;
@@ -321,6 +470,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
 
     await setupClickHouseCdc({
+      peerDbMirrorApiClient: createConfiguredPeerDbMirrorApiClient(),
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
@@ -373,6 +523,173 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness",
     );
     expect(peerDbQueries.join("\n")).not.toContain("CREATE MIRROR");
+  });
+
+  it("adds missing processing markers to existing mirrors without recreating them", async () => {
+    const peerDbQueries: string[] = [];
+    const tableMappings = new Map<string, PeerDbTableMapping[]>([
+      [
+        "dofek_fitness_raw_analytics",
+        [
+          {
+            sourceTableIdentifier: "fitness.processing_flow_marker",
+            destinationTableIdentifier: "wrong_destination",
+            exclude: [],
+          },
+          {
+            sourceTableIdentifier: "fitness.wrong_source",
+            destinationTableIdentifier: "processing_flow_marker",
+            exclude: [],
+          },
+        ],
+      ],
+      [
+        "dofek_provider_inventory_raw_analytics",
+        [
+          {
+            sourceTableIdentifier: "fitness.processing_flow_marker",
+            destinationTableIdentifier: "wrong_destination",
+            exclude: [],
+          },
+          {
+            sourceTableIdentifier: "fitness.wrong_source",
+            destinationTableIdentifier: "processing_flow_marker_provider_inventory",
+            exclude: [],
+          },
+        ],
+      ],
+    ]);
+    const mirrorStates = new Map<string, string>([
+      ["dofek_fitness_raw_analytics", "STATUS_RUNNING"],
+      ["dofek_provider_inventory_raw_analytics", "STATUS_RUNNING"],
+    ]);
+    const getMirrorStatus = vi.fn(async (mirrorName: string) => {
+      const currentFlowState = mirrorStates.get(mirrorName);
+      const currentTableMappings = tableMappings.get(mirrorName);
+      if (!currentFlowState || !currentTableMappings) {
+        throw new Error(`Unexpected mirror ${mirrorName}`);
+      }
+      return { currentFlowState, tableMappings: currentTableMappings };
+    });
+    const changeMirrorState = vi.fn(
+      async (request: Parameters<PeerDbMirrorApiClient["changeMirrorState"]>[0]) => {
+        if (request.requestedFlowState === "STATUS_PAUSED") {
+          mirrorStates.set(request.flowJobName, "STATUS_PAUSED");
+          return;
+        }
+        const additionalTables =
+          request.flowConfigUpdate?.cdcFlowConfigUpdate.additional_tables ?? [];
+        tableMappings.set(request.flowJobName, [
+          ...(tableMappings.get(request.flowJobName) ?? []),
+          ...additionalTables,
+        ]);
+        mirrorStates.set(request.flowJobName, "STATUS_RUNNING");
+      },
+    );
+    const peerDbMirrorApiClient: PeerDbMirrorApiClient = {
+      getMirrorStatus,
+      changeMirrorState,
+      async listMirrors() {
+        return [];
+      },
+    };
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbMirrorApiClient,
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
+            return { rows: [] };
+          }
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
+            return {
+              rows: [
+                { name: "dofek_fitness_raw_analytics" },
+                { name: "dofek_provider_inventory_raw_analytics" },
+              ],
+            };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return {
+              rows: [
+                { existing_mirror_name: "dofek_fitness_raw_analytics" },
+                { existing_mirror_name: "dofek_provider_inventory_raw_analytics" },
+              ],
+            };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: createTestClickHouseClient(),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(getMirrorStatus).toHaveBeenCalledTimes(6);
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledTimes(4);
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(1, {
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_PAUSED",
+    });
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledWith({
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_RUNNING",
+      flowConfigUpdate: {
+        cdcFlowConfigUpdate: {
+          additional_tables: [
+            {
+              sourceTableIdentifier: "fitness.provider_connection",
+              destinationTableIdentifier: "provider_connection",
+              exclude: [],
+            },
+            {
+              sourceTableIdentifier: "fitness.processing_flow_marker",
+              destinationTableIdentifier: "processing_flow_marker",
+              exclude: [],
+            },
+          ],
+        },
+      },
+    });
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(3, {
+      flowJobName: "dofek_provider_inventory_raw_analytics",
+      requestedFlowState: "STATUS_PAUSED",
+    });
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledWith({
+      flowJobName: "dofek_provider_inventory_raw_analytics",
+      requestedFlowState: "STATUS_RUNNING",
+      flowConfigUpdate: {
+        cdcFlowConfigUpdate: {
+          additional_tables: [
+            {
+              sourceTableIdentifier: "fitness.processing_flow_marker",
+              destinationTableIdentifier: "processing_flow_marker_provider_inventory",
+              exclude: [],
+            },
+          ],
+        },
+      },
+    });
+    expect(peerDbQueries.join("\n")).not.toContain("DROP MIRROR dofek_fitness_raw_analytics");
+    expect(peerDbQueries.join("\n")).not.toContain(
+      "DROP MIRROR dofek_provider_inventory_raw_analytics",
+    );
   });
 
   it("fails when PeerDB managed mirror rows are malformed", async () => {
@@ -645,6 +962,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
 
     await setupClickHouseCdc({
+      peerDbMirrorApiClient: createConfiguredPeerDbMirrorApiClient(),
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
@@ -925,8 +1243,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sleep_stage",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.daily_metrics",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.provider",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_connection",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.device_priority",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
@@ -1397,6 +1717,340 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(peerDbClientMocks.end).toHaveBeenCalledTimes(2);
     expect(clickHouseClientMocks.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the internal PeerDB flow API to reconcile an existing mirror", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg-credential",
+      "postgres.example:5432",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "clickhouse-credential",
+      "clickhouse.example:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+    peerDbClientMocks.query.mockImplementation(async (queryText) => {
+      const query = String(queryText);
+      if (query.includes("obsolete_metric_stream_mirror_name")) return { rows: [] };
+      if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
+        return { rows: [{ name: "dofek_fitness_raw_analytics" }] };
+      }
+      if (query.includes("existing_mirror_name")) {
+        return { rows: [{ existing_mirror_name: "dofek_fitness_raw_analytics" }] };
+      }
+      return {};
+    });
+    let mirrorState = "STATUS_RUNNING";
+    let hasRequiredMappings = false;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/mirrors/status")) {
+        return new Response(
+          JSON.stringify({
+            currentFlowState: mirrorState,
+            cdcStatus: {
+              config: {
+                tableMappings: hasRequiredMappings
+                  ? [
+                      {
+                        sourceTableIdentifier: "fitness.provider_connection",
+                        destinationTableIdentifier: "provider_connection",
+                        exclude: [],
+                      },
+                      {
+                        sourceTableIdentifier: "fitness.processing_flow_marker",
+                        destinationTableIdentifier: "processing_flow_marker",
+                        exclude: [],
+                      },
+                    ]
+                  : [],
+              },
+            },
+          }),
+        );
+      }
+      const requestBody = String(init?.body);
+      if (requestBody.includes('"requestedFlowState":"STATUS_PAUSED"')) {
+        mirrorState = "STATUS_PAUSED";
+      } else {
+        hasRequiredMappings = true;
+        mirrorState = "STATUS_RUNNING";
+      }
+      return new Response("{}");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await setupClickHouseCdcFromEnv();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://peerdb-flow-api:8113/v1/mirrors/status",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://peerdb-flow-api:8113/v1/mirrors/state_change",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://peerdb-flow-api:8113/v1/mirrors/status", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        flowJobName: "dofek_fitness_raw_analytics",
+        includeFlowInfo: true,
+      }),
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://peerdb-flow-api:8113/v1/mirrors/state_change",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flowJobName: "dofek_fitness_raw_analytics",
+          requestedFlowState: "STATUS_PAUSED",
+        }),
+      },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://peerdb-flow-api:8113/v1/mirrors/state_change",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          flowJobName: "dofek_fitness_raw_analytics",
+          requestedFlowState: "STATUS_RUNNING",
+          flowConfigUpdate: {
+            cdcFlowConfigUpdate: {
+              additional_tables: [
+                {
+                  sourceTableIdentifier: "fitness.provider_connection",
+                  destinationTableIdentifier: "provider_connection",
+                  exclude: [],
+                },
+                {
+                  sourceTableIdentifier: "fitness.processing_flow_marker",
+                  destinationTableIdentifier: "processing_flow_marker",
+                  exclude: [],
+                },
+              ],
+            },
+          },
+        }),
+      },
+    );
+  });
+
+  it("authenticates localhost PeerDB flow API status requests", async () => {
+    configureFlowApiEnvironment("localhost");
+    configureExistingFitnessMirrorQuery();
+    const fetchMock = vi.fn(async () =>
+      peerDbStatusResponse("STATUS_RUNNING", [
+        {
+          sourceTableIdentifier: "fitness.provider_connection",
+          destinationTableIdentifier: "provider_connection",
+          exclude: [],
+        },
+        {
+          sourceTableIdentifier: "fitness.processing_flow_marker",
+          destinationTableIdentifier: "processing_flow_marker",
+          exclude: [],
+        },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await setupClickHouseCdcFromEnv();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:3001/api/v1/mirrors/status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Basic ${Buffer.from(":peerdb fixture").toString("base64")}`,
+      },
+      body: JSON.stringify({
+        flowJobName: "dofek_fitness_raw_analytics",
+        includeFlowInfo: true,
+      }),
+    });
+  });
+
+  it("surfaces a PeerDB flow API HTTP response body", async () => {
+    configureFlowApiEnvironment("postgres.example");
+    configureExistingFitnessMirrorQuery();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response("flow unavailable", { status: 503, statusText: "Unavailable" }),
+      ),
+    );
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PeerDB API request failed with HTTP 503: flow unavailable",
+    );
+  });
+
+  it("falls back to HTTP status text when the PeerDB response body is empty", async () => {
+    configureFlowApiEnvironment("postgres.example");
+    configureExistingFitnessMirrorQuery();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 503, statusText: "Unavailable" })),
+    );
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PeerDB API request failed with HTTP 503: Unavailable",
+    );
+  });
+
+  it("surfaces a PeerDB mirror status failure", async () => {
+    configureFlowApiEnvironment("postgres.example");
+    configureExistingFitnessMirrorQuery();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        peerDbStatusResponse("STATUS_RUNNING", [], {
+          ok: false,
+          errorMessage: "mirror inspection failed",
+        }),
+      ),
+    );
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PeerDB could not inspect mirror dofek_fitness_raw_analytics: mirror inspection failed",
+    );
+  });
+
+  it("surfaces a PeerDB mirror state-change failure", async () => {
+    configureFlowApiEnvironment("postgres.example");
+    configureExistingFitnessMirrorQuery();
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/mirrors/status")) {
+        return peerDbStatusResponse("STATUS_RUNNING", []);
+      }
+      return new Response(JSON.stringify({ ok: false, errorMessage: "pause failed" }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PeerDB could not change mirror dofek_fitness_raw_analytics: pause failed",
+    );
+  });
+
+  it("requires the mirror API client before reconciling an existing mirror", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbClient: createExistingFitnessMirrorPeerDbClient(),
+        sourcePostgresClient: { async query() {} },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("PeerDB mirror API client is required to reconcile existing mirror mappings");
+  });
+
+  it("rejects editing a mirror that is not running", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+    const changeMirrorState = vi.fn(async () => undefined);
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbMirrorApiClient: {
+          async getMirrorStatus() {
+            return { currentFlowState: "STATUS_PAUSED", tableMappings: [] };
+          },
+          async listMirrors() {
+            return [];
+          },
+          changeMirrorState,
+        },
+        peerDbClient: createExistingFitnessMirrorPeerDbClient(),
+        sourcePostgresClient: { async query() {} },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow(
+      "PeerDB mirror dofek_fitness_raw_analytics must be running before adding required processing marker mappings; current state is STATUS_PAUSED",
+    );
+    expect(changeMirrorState).not.toHaveBeenCalled();
+  });
+
+  it("requests that a mirror resume when mapping reconciliation fails after pausing", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+    let statusReadCount = 0;
+    const changeMirrorState = vi.fn(async () => undefined);
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbMirrorApiClient: {
+          async getMirrorStatus() {
+            statusReadCount += 1;
+            if (statusReadCount === 1) {
+              return { currentFlowState: "STATUS_RUNNING", tableMappings: [] };
+            }
+            throw new Error("PeerDB status unavailable");
+          },
+          async listMirrors() {
+            return [];
+          },
+          changeMirrorState,
+        },
+        peerDbClient: createExistingFitnessMirrorPeerDbClient(),
+        sourcePostgresClient: { async query() {} },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("PeerDB status unavailable");
+
+    expect(changeMirrorState).toHaveBeenNthCalledWith(1, {
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_PAUSED",
+    });
+    expect(changeMirrorState).toHaveBeenNthCalledWith(2, {
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_RUNNING",
+    });
   });
 
   it("maps localhost source hosts to Docker compose service names", async () => {

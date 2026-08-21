@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { SyncRepository } from "./sync-repository.ts";
+import { collectSqlText } from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,10 +77,45 @@ describe("SyncRepository", () => {
       ]);
       const result = await repo.getLastSyncTimes();
       expect(result).toEqual([
-        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00Z" },
-        { providerId: "strava", lastSynced: "2024-01-14T08:00:00Z" },
+        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+        { providerId: "strava", lastSynced: "2024-01-14T08:00:00.000Z" },
       ]);
     });
+  });
+
+  describe("getLastSuccessfulSyncTimes", () => {
+    it("returns each provider's latest successful sync as LastSync objects", async () => {
+      const { repo, execute } = makeRepository([
+        { provider_id: "wahoo", last_synced: "2024-01-15T10:00:00Z" },
+        { provider_id: "strava", last_synced: "2024-01-14T08:00:00Z" },
+      ]);
+
+      const result = await repo.getLastSuccessfulSyncTimes();
+
+      expect(result).toEqual([
+        { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+        { providerId: "strava", lastSynced: "2024-01-14T08:00:00.000Z" },
+      ]);
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS last_synced");
+      expect(rawSql).toContain("WHERE user_id = ");
+      expect(rawSql).toContain("AND status = 'success'");
+      expect(rawSql).toContain("AND origin = 'scheduled'");
+      expect(rawSql).toContain("GROUP BY provider_id");
+    });
+  });
+
+  it("normalizes PostgreSQL Date timestamps for both last-sync queries", async () => {
+    const { repo } = makeRepository([
+      { provider_id: "wahoo", last_synced: new Date("2024-01-15T10:00:00Z") },
+    ]);
+
+    await expect(repo.getLastSyncTimes()).resolves.toEqual([
+      { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+    ]);
+    await expect(repo.getLastSuccessfulSyncTimes()).resolves.toEqual([
+      { providerId: "wahoo", lastSynced: "2024-01-15T10:00:00.000Z" },
+    ]);
   });
 
   describe("getLatestErrors", () => {
@@ -121,6 +157,21 @@ describe("SyncRepository", () => {
           syncedAt: stravaSyncedAt,
         },
       ]);
+    });
+
+    it("selects each provider's latest sync rows without a correlated max lookup", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getLatestErrors();
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("WITH latest_sync_times AS");
+      expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS synced_at");
+      expect(rawSql).toContain("GROUP BY provider_id");
+      expect(rawSql).toContain("DISTINCT ON (sync_log.provider_id)");
+      expect(rawSql).toContain("INNER JOIN latest_sync_times");
+      expect(rawSql).toContain("ORDER BY sync_log.provider_id, (sync_log.status = 'error') DESC");
+      expect(rawSql).toContain("WHERE latest_sync_log.status = 'error'");
+      expect(rawSql).not.toContain("SELECT MAX(synced_at) FROM fitness.sync_log s2");
     });
   });
 
@@ -184,6 +235,7 @@ describe("SyncRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
         providerId: "wahoo",
+        totalRecords: 168,
         activities: 5,
         dailyMetrics: 30,
         sleepSessions: 0,

@@ -13,6 +13,19 @@ vi.mock("../lib/auth-context.tsx", () => ({
   useAuth: mockUseAuth,
 }));
 
+vi.mock("../lib/processing-alerts-context.tsx", () => ({
+  ProcessingAlertsProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useActiveProcessingAlertCount: () => 0,
+}));
+
+vi.mock("../components/UnitProvider.tsx", () => ({
+  UnitProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+vi.mock("../components/DashboardLayoutProvider.tsx", () => ({
+  DashboardLayoutProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     admin: {

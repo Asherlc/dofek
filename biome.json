@@ -19,6 +19,12 @@
     "includes": [
       "src/**",
       "packages/*/src/**",
+      "packages/zepp/src/**",
+      "packages/zepp/page/**",
+      "packages/zepp/app-side/**",
+      "packages/zepp/setting/**",
+      "packages/zepp/app-service/**",
+      "packages/zepp/*.ts",
       "packages/mobile/**",
       "scripts/**",
       "cypress/**",
@@ -71,6 +77,7 @@
     {
       "includes": [
         "scripts/**",
+        "packages/mobile/scripts/**",
         "packages/mobile/lib/telemetry.ts",
         "packages/mobile/test-setup.ts",
         "packages/server/src/lib/start-worker.ts",

@@ -4,7 +4,9 @@ import {
   WHOOP_WEAR_LOCATIONS,
   type WhoopWearLocation,
 } from "@dofek/providers/whoop";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
@@ -20,19 +22,37 @@ function WhoopWearLocationPicker() {
   const setting = trpc.settings.get.useQuery({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
   const setSettingMutation = trpc.settings.set.useMutation();
   const trpcUtils = trpc.useUtils();
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const lastReadError = useRef<unknown>(null);
 
   const currentLocation = parseWhoopWearLocation(setting.data?.value);
 
+  useEffect(() => {
+    if (setting.error && lastReadError.current !== setting.error) {
+      lastReadError.current = setting.error;
+      captureException(setting.error, { context: "whoop-wear-location-read" });
+    }
+  }, [setting.error]);
+
   const handleChange = (location: WhoopWearLocation) => {
+    const previousSetting = trpcUtils.settings.get.getData({
+      key: WHOOP_WEAR_LOCATION_SETTING_KEY,
+    });
     trpcUtils.settings.get.setData(
       { key: WHOOP_WEAR_LOCATION_SETTING_KEY },
       { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
     );
+    setWriteError(null);
     setSettingMutation.mutate(
       { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
       {
+        onError: (error) => {
+          trpcUtils.settings.get.setData({ key: WHOOP_WEAR_LOCATION_SETTING_KEY }, previousSetting);
+          setWriteError(error.message);
+          captureException(error, { context: "whoop-wear-location-write" });
+        },
         onSettled: () => {
-          trpcUtils.settings.get.invalidate({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
+          void trpcUtils.settings.get.invalidate({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
         },
       },
     );
@@ -44,6 +64,9 @@ function WhoopWearLocationPicker() {
       <Text style={styles.subtitle}>
         Where do you wear your WHOOP? This helps us interpret your sensor data.
       </Text>
+      {(writeError ?? setting.error?.message) && (
+        <Text style={styles.errorText}>{writeError ?? setting.error?.message}</Text>
+      )}
       <View style={styles.optionsContainer}>
         {WHOOP_WEAR_LOCATIONS.map((location) => {
           const isSelected = currentLocation === location.id;
@@ -53,6 +76,9 @@ function WhoopWearLocationPicker() {
               style={[styles.option, isSelected && styles.optionSelected]}
               onPress={() => handleChange(location.id)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${location.label}, ${location.description}`}
+              accessibilityState={{ selected: isSelected }}
             >
               <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
                 {location.label}
@@ -110,5 +136,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 12,
   },
 });

@@ -18,6 +18,7 @@ function cognitoSuccessHandler(accessToken: string, refreshToken: string) {
       AuthenticationResult: {
         AccessToken: accessToken,
         RefreshToken: refreshToken,
+        ExpiresIn: 3600,
       },
     });
   });
@@ -112,6 +113,7 @@ describe("whoopAuth router", () => {
           accessToken: "whoop-access-token",
           refreshToken: "whoop-refresh-token",
           userId: 12345,
+          expiresInSeconds: 3600,
         },
       });
     });
@@ -162,11 +164,17 @@ describe("whoopAuth router", () => {
 
       const data: {
         status: string;
-        token: { accessToken: string; refreshToken: string; userId: number };
+        token: {
+          accessToken: string;
+          refreshToken: string;
+          userId: number;
+          expiresInSeconds: number;
+        };
       } = result?.result?.data;
       expect(data.status).toBe("success");
       expect(data.token.accessToken).toBe("verified-access-token");
       expect(data.token.userId).toBe(99999);
+      expect(data.token.expiresInSeconds).toBe(3600);
     });
 
     it("verifies a mobile-app code with the stored totp challenge method", async () => {
@@ -195,6 +203,7 @@ describe("whoopAuth router", () => {
             AuthenticationResult: {
               AccessToken: "totp-access-token",
               RefreshToken: "totp-refresh-token",
+              ExpiresIn: 3600,
             },
           });
         }),
@@ -219,10 +228,16 @@ describe("whoopAuth router", () => {
 
       const data: {
         status: string;
-        token: { accessToken: string; refreshToken: string; userId: number };
+        token: {
+          accessToken: string;
+          refreshToken: string;
+          userId: number;
+          expiresInSeconds: number;
+        };
       } = result?.result?.data;
       expect(data.status).toBe("success");
       expect(data.token.accessToken).toBe("totp-access-token");
+      expect(data.token.expiresInSeconds).toBe(3600);
       expect(challengeNames).toEqual(["SOFTWARE_TOKEN_MFA"]);
     });
 
@@ -291,18 +306,24 @@ describe("whoopAuth router", () => {
         accessToken: "saved-access-token",
         refreshToken: "saved-refresh-token",
         userId: 42,
+        expiresInSeconds: 3600,
       });
 
       expect(status).toBe(200);
       const data: { success: boolean } = result?.result?.data;
       expect(data.success).toBe(true);
 
-      // Verify provider was created with the session user's ID
-      const providerRows = await testCtx.db.execute<{ id: string; user_id: string }>(
+      // Verify the provider is global and ownership is stored in provider_connection.
+      const providerRows = await testCtx.db.execute<{ id: string; user_id: string | null }>(
         sql`SELECT id, user_id FROM fitness.provider WHERE id = 'whoop'`,
       );
       expect(providerRows.length).toBe(1);
-      expect(providerRows[0]?.user_id).toBe(TEST_USER_ID);
+      expect(providerRows[0]?.user_id).toBeNull();
+      const connectionRows = await testCtx.db.execute<{ user_id: string }>(
+        sql`SELECT user_id FROM fitness.provider_connection
+            WHERE provider_id = 'whoop' AND user_id = ${TEST_USER_ID}`,
+      );
+      expect(connectionRows).toEqual([{ user_id: TEST_USER_ID }]);
 
       // Verify token was saved for the authenticated user
       const tokenRows = await testCtx.db.execute<{
@@ -325,7 +346,9 @@ describe("whoopAuth router", () => {
       // Create a second user to ensure the regression isn't masked
       const testUserId = "11111111-1111-1111-1111-111111111111";
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.user_profile (id, name) VALUES (${testUserId}, 'Test User')`,
+        sql`INSERT INTO fitness.user_profile (id, name)
+            VALUES (${testUserId}, 'Test User')
+            ON CONFLICT (id) DO NOTHING`,
       );
 
       // Create a session for this user
@@ -340,17 +363,24 @@ describe("whoopAuth router", () => {
             accessToken: "test-access-token",
             refreshToken: "test-refresh-token",
             userId: 99,
+            expiresInSeconds: 3600,
           },
         }),
       });
       expect(response.status).toBe(200);
 
       // Provider row remains shared/global.
-      const providerRows = await testCtx.db.execute<{ id: string; user_id: string }>(
+      const providerRows = await testCtx.db.execute<{ id: string; user_id: string | null }>(
         sql`SELECT id, user_id FROM fitness.provider WHERE id = 'whoop'`,
       );
       expect(providerRows.length).toBe(1);
-      expect(providerRows[0]?.user_id).toBe(TEST_USER_ID);
+      expect(providerRows[0]?.user_id).toBeNull();
+      const connectionRows = await testCtx.db.execute<{ user_id: string }>(
+        sql`SELECT user_id FROM fitness.provider_connection
+            WHERE provider_id = 'whoop'
+            ORDER BY user_id`,
+      );
+      expect(connectionRows).toEqual([{ user_id: TEST_USER_ID }, { user_id: testUserId }]);
 
       // Token row must be scoped to the authenticated user.
       const tokenRows = await testCtx.db.execute<{ user_id: string }>(

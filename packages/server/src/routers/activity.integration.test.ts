@@ -1,10 +1,13 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { makeMockSensorStore } from "./test-helpers.ts";
+import { activityRouter } from "./activity.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+
+const createActivityCaller = createTestCallerFactory(activityRouter);
 
 describe("Activity router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -35,10 +38,12 @@ describe("Activity router", () => {
 
     const insertedActivities = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
             'test_provider',
             ${TEST_USER_ID},
+            'metric-stream-only-activity',
+            'running',
             'running',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 minutes',
@@ -51,13 +56,15 @@ describe("Activity router", () => {
     }
     metricOnlyActivityId = activityId;
 
-    const filteredActivities = await testCtx.db.execute<{ id: string; activity_type: string }>(
+    const filteredActivities = await testCtx.db.execute<{ id: string; canonical_type: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
           (
             'test_provider',
             ${TEST_USER_ID},
+            'filtered-cycling-activity',
+            'cycling',
             'cycling',
             CURRENT_TIMESTAMP - INTERVAL '1 day',
             CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '75 minutes',
@@ -66,18 +73,20 @@ describe("Activity router", () => {
           (
             'test_provider',
             ${TEST_USER_ID},
+            'filtered-walking-activity',
+            'walking',
             'walking',
             CURRENT_TIMESTAMP - INTERVAL '12 hours',
             CURRENT_TIMESTAMP - INTERVAL '12 hours' + INTERVAL '40 minutes',
             'Filtered Walking Activity'
           )
-          RETURNING id, activity_type`,
+          RETURNING id, canonical_type`,
     );
     const cyclingActivity = filteredActivities.find(
-      (activity) => activity.activity_type === "cycling",
+      (activity) => activity.canonical_type === "cycling",
     );
     const walkingActivity = filteredActivities.find(
-      (activity) => activity.activity_type === "walking",
+      (activity) => activity.canonical_type === "walking",
     );
     if (!cyclingActivity || !walkingActivity) {
       throw new Error("Failed to insert filtered test activities");
@@ -208,10 +217,10 @@ describe("Activity router", () => {
         activityTypes: ["cycling"],
       });
       expect(result.error).toBeUndefined();
-      const items: Array<{ id: string; activity_type: string }> = result.result?.data?.items ?? [];
+      const items: Array<{ id: string; canonical_type: string }> = result.result?.data?.items ?? [];
       expect(items).toHaveLength(1);
       expect(items[0]?.id).toBe(cyclingActivityId);
-      expect(items[0]?.activity_type).toBe("cycling");
+      expect(items[0]?.canonical_type).toBe("cycling");
       expect(items.some((item) => item.id === metricOnlyActivityId)).toBe(false);
       expect(items.some((item) => item.id === walkingActivityId)).toBe(false);
     });
@@ -331,5 +340,61 @@ describe("Activity router", () => {
       expect(result.error).toBeDefined();
       expect(result.error.data.code).toBe("UNAUTHORIZED");
     });
+  });
+});
+
+describe("Hangboarding activity router integration", () => {
+  let testContext: TestContext;
+  let activityId: string;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('hangboarding-activity-router-test', 'Hang Ten', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    const rows = await testContext.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name, raw
+          ) VALUES (
+            'hangboarding-activity-router-test', ${TEST_USER_ID}, 'hangboard-activity-router-session',
+            'hangboard', 'Hang Ten', '2026-08-08T14:00:00Z'::timestamptz,
+            '2026-08-08T14:10:00Z'::timestamptz, 'Repeaters',
+            '{"hangTen":{"sessionId":"router-session","planName":"Repeaters","boardName":"Tension Board"}}'::jsonb
+          ) RETURNING id::text AS id`,
+    );
+    activityId = rows[0]?.id ?? "";
+    if (!activityId) throw new Error("Failed to seed Hangboarding router activity");
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity_interval (
+            activity_id, interval_index, label, interval_type, started_at, ended_at
+          ) VALUES (
+            ${activityId}::uuid, 0, 'Step 1: Work', 'work',
+            '2026-08-08T14:00:00Z'::timestamptz, '2026-08-08T14:00:07Z'::timestamptz
+          )`,
+    );
+  }, 60_000);
+
+  afterAll(async () => {
+    await testContext?.cleanup();
+  });
+
+  it("returns the detail contract and actionable not-found error", async () => {
+    const caller = createActivityCaller({
+      db: testContext.db,
+      userId: TEST_USER_ID,
+      timezone: "UTC",
+    });
+    await expect(caller.hangboardDetails({ id: activityId })).resolves.toMatchObject({
+      planName: "Repeaters",
+      sessionId: "router-session",
+      boardName: "Tension Board",
+      intervals: [expect.objectContaining({ intervalType: "work", durationSeconds: 7 })],
+    });
+    await expect(
+      caller.hangboardDetails({ id: "00000000-0000-0000-0000-000000000099" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Hangboarding details not found" });
   });
 });

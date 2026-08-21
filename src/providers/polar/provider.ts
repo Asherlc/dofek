@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { logger } from "../../logger.ts";
 import type { SyncRun } from "../sync-run.ts";
@@ -10,6 +10,15 @@ import { PolarWebhookService } from "./webhook-service.ts";
 
 /** Default expiry when Polar omits expires_in — 1 year (conservative). */
 const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
+const polarTokenResponseSchema = z.object({
+  access_token: z.string().min(1),
+  expires_in: z.number().positive().optional(),
+  refresh_token: z.string().min(1).optional(),
+  scope: z.string().optional(),
+  x_user_id: z
+    .union([z.number().int().positive(), z.string().regex(/^[1-9][0-9]*$/)])
+    .transform(String),
+});
 
 export class PolarProvider implements WebhookProvider {
   readonly id = "polar";
@@ -20,7 +29,7 @@ export class PolarProvider implements WebhookProvider {
   readonly #webhookService: PolarWebhookService;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "polar" });
+    this.#fetchFn = fetchFn;
     this.#webhookService = new PolarWebhookService(this.#fetchFn);
   }
 
@@ -64,6 +73,7 @@ export class PolarProvider implements WebhookProvider {
 
     return {
       oauthConfig: config,
+      reconnectStrategy: "revoke-then-replace",
       exchangeCode: async (code) => {
         // Inline token exchange to capture Polar's x_user_id (needed for
         // AccessLink registration). The shared exchangeCodeForTokens drops it.
@@ -86,13 +96,20 @@ export class PolarProvider implements WebhookProvider {
           );
         }
 
-        const data: Record<string, unknown> = await response.json();
+        const rawData: unknown = await response.json();
+        if (typeof rawData !== "object" || rawData === null || !("x_user_id" in rawData)) {
+          throw new Error(
+            "Polar token response missing x_user_id — cannot complete AccessLink registration",
+          );
+        }
+        const data = polarTokenResponseSchema.parse(rawData);
         const expiresIn =
           typeof data.expires_in === "number" ? data.expires_in : DEFAULT_EXPIRES_IN_SECONDS;
         const tokens: TokenSet = {
           accessToken: String(data.access_token),
           refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
           expiresAt: new Date(Date.now() + expiresIn * 1000),
+          providerAccountId: data.x_user_id,
           scopes: typeof data.scope === "string" ? data.scope : null,
         };
 
@@ -104,12 +121,7 @@ export class PolarProvider implements WebhookProvider {
         // handled by revokeExistingTokens, which runs before exchangeCode
         // in the callback handler. We must NOT deregister with the NEW token
         // here — DELETE /v3/users/{id} revokes the calling token.
-        const polarUserId = data.x_user_id != null ? String(data.x_user_id) : null;
-        if (!polarUserId) {
-          throw new Error(
-            "Polar token response missing x_user_id — cannot complete AccessLink registration",
-          );
-        }
+        const polarUserId = data.x_user_id;
         const client = new PolarClient(tokens.accessToken, fetchFn);
         await client.registerUser(polarUserId);
         logger.info(`[polar] Registered user ${polarUserId} with Polar AccessLink`);
@@ -122,22 +134,31 @@ export class PolarProvider implements WebhookProvider {
         // existing token. This mirrors what Wahoo does.
         try {
           const client = new PolarClient(tokens.accessToken, fetchFn);
-          const polarUserId = await client.getCurrentUserId();
+          const polarUserId = tokens.providerAccountId ?? (await client.getCurrentUserId());
           if (polarUserId) {
             await client.deregisterUser(polarUserId);
             logger.info(`[polar] Deregistered user ${polarUserId} to revoke old token`);
           } else {
-            logger.warn(
-              "[polar] Could not discover Polar user ID for deregistration — old token may be expired",
+            throw new Error(
+              "Could not discover Polar user ID for deregistration; existing authorization was not confirmed revoked",
             );
           }
         } catch (revokeError) {
-          // Best-effort — if the old token is completely dead, we can't revoke.
-          // The user may need to contact Polar support.
           logger.warn(
             `[polar] Token revocation failed: ${revokeError instanceof Error ? revokeError.message : String(revokeError)}`,
           );
+          throw revokeError;
         }
+      },
+      revokeTokensForAccountErasure: async (tokens) => {
+        if (!tokens.providerAccountId) {
+          throw new Error(
+            "Polar account erasure requires the provider account ID captured during OAuth.",
+          );
+        }
+        const client = new PolarClient(tokens.accessToken, fetchFn);
+        await client.deregisterUserForAccountErasure(tokens.providerAccountId);
+        logger.info("[polar] Polar authorization revoked for account erasure");
       },
       apiBaseUrl: POLAR_API_BASE,
     };

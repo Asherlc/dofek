@@ -1,13 +1,13 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
+  finishProviderActivityListSync,
   hasProviderActivityListSyncErrors,
-  reconcileProviderActivityAbsence,
-} from "../../db/provider-activity-absence.ts";
+} from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -44,7 +44,7 @@ export class OuraProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "oura" });
+    this.#fetchFn = createProviderRateLimitFetch("oura", fetchFn);
   }
 
   validate(): string | null {
@@ -195,6 +195,7 @@ export class OuraProvider implements WebhookProvider {
         return {
           providerAccountId: data.id,
           email: data.email ?? null,
+          emailVerified: false,
           name: null,
         };
       },
@@ -257,7 +258,7 @@ export class OuraProvider implements WebhookProvider {
 
     if (!hasProviderActivityListSyncErrors(errors, ["workouts:", "sessions:"])) {
       try {
-        await reconcileProviderActivityAbsence(db, {
+        await finishProviderActivityListSync(db, {
           providerId: this.id,
           userId: options?.userId,
           windowStart: since,

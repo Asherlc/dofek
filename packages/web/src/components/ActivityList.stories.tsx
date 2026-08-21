@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { within } from "storybook/test";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList.tsx";
 
@@ -133,30 +134,32 @@ const activities: Activity[] = [
     id: "00000000-0000-0000-0000-000000000001",
     started_at: "2026-03-18T07:00:00Z",
     ended_at: "2026-03-18T07:45:00Z",
-    activity_type: "running",
+    canonical_type: "running",
     name: "Morning Run",
     provider_id: "strava",
     source_providers: ["strava"],
     distance_meters: 5000,
-    calories: 450,
+    distance_state: { status: "available" },
+    elevation_gain_m: 120,
+    elevation_state: { status: "available" },
     location: {
       centroidLat: 37.7749,
       centroidLng: -122.4194,
       mapPreview,
-      distanceMeters: 5000,
-      elevationGainM: 120,
     },
   },
   {
     id: "00000000-0000-0000-0000-000000000002",
     started_at: "2026-03-17T17:00:00Z",
     ended_at: "2026-03-17T18:00:00Z",
-    activity_type: "indoor_cycling",
+    canonical_type: "cycling",
     name: "Trainer Ride",
     provider_id: "wahoo",
     source_providers: ["wahoo"],
     distance_meters: null,
-    calories: 520,
+    distance_state: { status: "missing", reason: "Distance not recorded" },
+    elevation_gain_m: null,
+    elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
   },
 ];
 
@@ -211,6 +214,15 @@ export const Selectable: Story = {
   },
 };
 
+export const SelectionMode: Story = {
+  args: {
+    onBulkDelete: () => {},
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Select activities" }));
+  },
+};
+
 export const Loading: Story = {
   args: {
     activities: [],
@@ -221,5 +233,13 @@ export const Loading: Story = {
 export const Empty: Story = {
   args: {
     activities: [],
+  },
+};
+
+export const ScopedEmpty: Story = {
+  args: {
+    activities: [],
+    emptyMessage:
+      "No strength workouts in the selected 30-day range. Included types: strength, strength training, functional strength, and functional fitness.",
   },
 };

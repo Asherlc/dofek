@@ -1,7 +1,12 @@
+import {
+  offsetMinutesFromTimestamp,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Database, SyncDatabase } from "../../../../src/db/index.ts";
+import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -12,8 +17,18 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { workoutActivityTypeMap } from "../routers/health-kit-sync-schemas.ts";
+import { processWorkouts as processWorkoutsShared } from "../routers/health-kit-sync-processors.ts";
+import {
+  type AdditiveDailyMetricAccumulatorKey,
+  additiveDailyMetricTypes,
+  type DailyMetricAccumulator,
+  getDailyMetricAccumulatorKey,
+  ignoredCalorieExpenditureTypes,
+  pointInTimeDailyMetricTypes,
+} from "../routers/health-kit-sync-schemas.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -41,6 +56,8 @@ const INTEGER_METRIC_STREAM_COLUMNS = new Set([
 
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
+type HealthKitSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
 const ignoredProviderDerivedTypes = new Set([
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierVO2Max",
@@ -59,6 +76,7 @@ export interface HealthKitSample {
   sourceName: string;
   sourceBundle: string;
   uuid: string;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export interface WorkoutSample {
@@ -67,7 +85,6 @@ export interface WorkoutSample {
   startDate: string;
   endDate: string;
   duration: number;
-  totalEnergyBurned?: number | null;
   totalDistance?: number | null;
   sourceName: string;
   sourceBundle: string;
@@ -79,22 +96,6 @@ export interface SleepSample {
   endDate: string;
   value: string;
   sourceName: string;
-}
-
-/** Aggregated daily metric values for a single date */
-export interface DailyMetricAccumulator {
-  steps: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
-  distanceKm: number;
-  cyclingDistanceKm: number;
-  flightsClimbed: number;
-  exerciseMinutes: number;
-  hrv: number | null;
-  walkingSpeed: number | null;
-  walkingStepLength: number | null;
-  walkingDoubleSupportPct: number | null;
-  walkingAsymmetryPct: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,35 +116,6 @@ const bodyMeasurementTypes: Record<
   HKQuantityTypeIdentifierHeight: { column: "height_cm" },
 };
 
-/** Additive daily metrics -- values that should be summed within a day */
-const additiveDailyMetricTypes: Record<
-  string,
-  { column: string; transform?: (value: number) => number }
-> = {
-  HKQuantityTypeIdentifierStepCount: { column: "steps" },
-  HKQuantityTypeIdentifierActiveEnergyBurned: { column: "active_energy_kcal" },
-  HKQuantityTypeIdentifierBasalEnergyBurned: { column: "basal_energy_kcal" },
-  HKQuantityTypeIdentifierDistanceWalkingRunning: {
-    column: "distance_km",
-    transform: (value) => value / 1000,
-  },
-  HKQuantityTypeIdentifierDistanceCycling: {
-    column: "cycling_distance_km",
-    transform: (value) => value / 1000,
-  },
-  HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
-  HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
-};
-
-/** Point-in-time daily metrics -- use latest value for the day */
-const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
-  HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { column: "hrv" },
-  HKQuantityTypeIdentifierWalkingSpeed: { column: "walking_speed" },
-  HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
-  HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
-  HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
-};
-
 /** Metric stream types and their column names */
 const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
@@ -152,22 +124,6 @@ const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierBloodGlucose: { column: "blood_glucose" },
   HKQuantityTypeIdentifierEnvironmentalAudioExposure: { column: "audio_exposure" },
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
-};
-
-/** Column name to accumulator key mapping */
-const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
-  steps: "steps",
-  active_energy_kcal: "activeEnergyKcal",
-  basal_energy_kcal: "basalEnergyKcal",
-  distance_km: "distanceKm",
-  cycling_distance_km: "cyclingDistanceKm",
-  flights_climbed: "flightsClimbed",
-  exercise_minutes: "exerciseMinutes",
-  hrv: "hrv",
-  walking_speed: "walkingSpeed",
-  walking_step_length: "walkingStepLength",
-  walking_double_support_pct: "walkingDoubleSupportPct",
-  walking_asymmetry_pct: "walkingAsymmetryPct",
 };
 
 const HEALTHKIT_STAGE_MAP: Record<string, string> = {
@@ -186,27 +142,6 @@ const HEALTHKIT_STAGE_MAP: Record<string, string> = {
 /** Extract date string (YYYY-MM-DD) from an ISO timestamp. */
 export function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
-}
-
-export function computeBoundsFromIsoTimestamps(
-  timestamps: string[],
-): { startAt: string; endAt: string } | null {
-  if (timestamps.length === 0) return null;
-
-  let minTs = Number.POSITIVE_INFINITY;
-  let maxTs = Number.NEGATIVE_INFINITY;
-  for (const ts of timestamps) {
-    const milliseconds = Date.parse(ts);
-    if (Number.isNaN(milliseconds)) continue;
-    if (milliseconds < minTs) minTs = milliseconds;
-    if (milliseconds > maxTs) maxTs = milliseconds;
-  }
-
-  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return null;
-  return {
-    startAt: new Date(minTs).toISOString(),
-    endAt: new Date(maxTs).toISOString(),
-  };
 }
 
 function parseIsoTimestamp(value: string): number | null {
@@ -317,7 +252,9 @@ export function categorize(
   | "metricStream"
   | "ignored"
   | "healthEvent" {
-  if (ignoredProviderDerivedTypes.has(type)) return "ignored";
+  if (ignoredCalorieExpenditureTypes.has(type) || ignoredProviderDerivedTypes.has(type)) {
+    return "ignored";
+  }
   if (type in bodyMeasurementTypes) return "bodyMeasurement";
   if (type in additiveDailyMetricTypes) return "additiveDailyMetric";
   if (type in pointInTimeDailyMetricTypes) return "pointInTimeDailyMetric";
@@ -327,18 +264,16 @@ export function categorize(
 
 function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
-    steps: 0,
-    activeEnergyKcal: 0,
-    basalEnergyKcal: 0,
-    distanceKm: 0,
-    cyclingDistanceKm: 0,
-    flightsClimbed: 0,
-    exerciseMinutes: 0,
+    steps: null,
+    distanceKm: null,
+    flightsClimbed: null,
+    exerciseMinutes: null,
     hrv: null,
     walkingSpeed: null,
     walkingStepLength: null,
     walkingDoubleSupportPct: null,
     walkingAsymmetryPct: null,
+    walkingSteadiness: null,
   };
 }
 
@@ -366,10 +301,8 @@ export function aggregateDailyMetricSamples(
       const value = additiveMapping.transform
         ? additiveMapping.transform(sample.value)
         : sample.value;
-      const key = columnToAccumulatorKey[additiveMapping.column];
-      if (key) {
-        (accumulator[key] as number) += value;
-      }
+      const key = additiveMapping.accumulatorKey;
+      accumulator[key] = (accumulator[key] ?? 0) + value;
       continue;
     }
 
@@ -383,10 +316,8 @@ export function aggregateDailyMetricSamples(
       continue;
     }
 
-    const key = columnToAccumulatorKey[pointMapping.column];
-    if (key) {
-      (accumulator[key] as number | null) = sample.value;
-    }
+    const key = getDailyMetricAccumulatorKey(pointMapping.column);
+    accumulator[key] = sample.value;
   }
 
   // Select overnight HRV for each (date, source) using shared logic
@@ -407,14 +338,21 @@ export function aggregateDailyMetricSamples(
 // Repository
 // ---------------------------------------------------------------------------
 
+export class HealthKitDeletionTombstonesUnsupportedError extends Error {
+  constructor() {
+    super("Metric stream publisher does not support HealthKit deletion tombstones");
+    this.name = "HealthKitDeletionTombstonesUnsupportedError";
+  }
+}
+
 /** Data access for HealthKit sync operations (inserts, upserts, batch writes). */
 export class HealthKitSyncRepository {
-  readonly #db: Pick<Database, "execute">;
+  readonly #db: HealthKitSyncDatabase;
   readonly #userId: string;
   readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
   constructor(
-    db: Pick<Database, "execute">,
+    db: HealthKitSyncDatabase,
     userId: string,
     metricStreamPublisher?: MetricStreamEventPublisher,
   ) {
@@ -429,11 +367,63 @@ export class HealthKitSyncRepository {
 
   /** Ensure the apple_health provider row exists */
   async ensureProvider(): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'Apple Health', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
+    await ensurePushProvider({
+      database: this.#db,
+      providerId: PROVIDER_ID,
+      providerName: "Apple Health",
+      userId: this.#userId,
+    });
+  }
+
+  /** Apply anchored-query deletions to UUID-addressable canonical stores. */
+  async processDeletedQuantitySamples(
+    typeIdentifier: string,
+    deletedUUIDs: string[],
+  ): Promise<number> {
+    const uniqueUUIDs = [...new Set(deletedUUIDs)];
+    if (uniqueUUIDs.length === 0) {
+      return 0;
+    }
+
+    if (bodyMeasurementTypes[typeIdentifier] || metricStreamTypes[typeIdentifier]) {
+      const publisher = await this.#publisher();
+      const replaceRows = publisher.replaceRows?.bind(publisher);
+      if (!replaceRows) {
+        throw new HealthKitDeletionTombstonesUnsupportedError();
+      }
+      const context = await getProviderDataGenerations(this.#db, [
+        { providerId: PROVIDER_ID, userId: this.#userId },
+      ]);
+      await Promise.all(
+        uniqueUUIDs.map((uuid) =>
+          replaceRows(
+            {
+              userId: this.#userId,
+              providerId: PROVIDER_ID,
+              externalId: `hk:${uuid}`,
+            },
+            [],
+            context.operationRevision,
+          ),
+        ),
+      );
+      return uniqueUUIDs.length;
+    }
+
+    const externalIds = uniqueUUIDs.map((uuid) => `hk:${uuid}`);
+    const deletedRows = await executeWithSchema(
+      this.#db,
+      z.object({ externalId: z.string() }),
+      sql`DELETE FROM fitness.health_event
+          WHERE user_id = ${this.#userId}
+            AND provider_id = ${PROVIDER_ID}
+            AND external_id IN (${sql.join(
+              externalIds.map((externalId) => sql`${externalId}`),
+              sql`, `,
+            )})
+          RETURNING external_id AS "externalId"`,
     );
+    return deletedRows.length;
   }
 
   /** Process body measurement samples */
@@ -468,7 +458,7 @@ export class HealthKitSyncRepository {
 
       if (rows.length > 0) {
         const publisher = await this.#publisher();
-        const result = await writeMetricStreamRows({ publisher, rows });
+        const result = await writeMetricStreamRows({ database: this.#db, publisher, rows });
         inserted += result.published;
       }
     }
@@ -496,19 +486,16 @@ export class HealthKitSyncRepository {
       insertValues.push(sql`${sourceName ?? null}`);
 
       // Additive fields: replace with the complete day-total from this sync.
-      const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+      const additiveFields: Array<{ column: string; key: AdditiveDailyMetricAccumulatorKey }> = [
         { column: "steps", key: "steps" },
-        { column: "active_energy_kcal", key: "activeEnergyKcal" },
-        { column: "basal_energy_kcal", key: "basalEnergyKcal" },
         { column: "distance_km", key: "distanceKm" },
-        { column: "cycling_distance_km", key: "cyclingDistanceKm" },
         { column: "flights_climbed", key: "flightsClimbed" },
         { column: "exercise_minutes", key: "exerciseMinutes" },
       ];
 
       for (const { column, key } of additiveFields) {
-        const raw = Number(accumulator[key]);
-        if (raw > 0) {
+        const raw = accumulator[key];
+        if (raw !== null) {
           const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
           insertColumns.push(sql`${sql.identifier(column)}`);
           insertValues.push(sql`${value}`);
@@ -523,6 +510,7 @@ export class HealthKitSyncRepository {
         { column: "walking_step_length", key: "walkingStepLength" },
         { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
         { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+        { column: "walking_steadiness", key: "walkingSteadiness" },
       ];
 
       for (const { column, key } of pointFields) {
@@ -579,7 +567,7 @@ export class HealthKitSyncRepository {
 
       if (rows.length > 0) {
         const publisher = await this.#publisher();
-        const result = await writeMetricStreamRows({ publisher, rows });
+        const result = await writeMetricStreamRows({ database: this.#db, publisher, rows });
         inserted += result.published;
       }
     }
@@ -594,8 +582,8 @@ export class HealthKitSyncRepository {
       for (const sample of batch) {
         const externalId = `hk:${sample.uuid}`;
         await this.#db.execute(
-          sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, start_date, end_date)
-              VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
+          sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, source_bundle, metadata, start_date, end_date)
+              VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.sourceBundle}, ${sample.metadata === undefined ? null : JSON.stringify(sample.metadata)}::jsonb, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
               ON CONFLICT (user_id, provider_id, external_id) DO NOTHING`,
         );
         inserted++;
@@ -605,44 +593,39 @@ export class HealthKitSyncRepository {
   }
 
   /** Process workout samples */
-  async processWorkouts(workouts: WorkoutSample[]): Promise<number> {
-    let inserted = 0;
-    for (let index = 0; index < workouts.length; index += BATCH_SIZE) {
-      const batch = workouts.slice(index, index + BATCH_SIZE);
-      for (const workout of batch) {
-        const externalId = `hk:workout:${workout.uuid}`;
-        const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
+  async processWorkouts(
+    workouts: WorkoutSample[],
+    options?: { windowStart?: string; windowEnd?: string },
+  ): Promise<number> {
+    if (workouts.length === 0) return 0;
 
-        const rawData = JSON.stringify({
-          duration: workout.duration,
-          totalEnergyBurned: workout.totalEnergyBurned,
-          totalDistance: workout.totalDistance,
-          sourceName: workout.sourceName,
-          workoutType: workout.workoutType,
-        });
-
-        await this.#db.execute(
-          sql`INSERT INTO fitness.activity (user_id, provider_id, external_id, activity_type, started_at, ended_at, raw)
-              VALUES (
-                ${this.#userId},
-                ${PROVIDER_ID},
-                ${externalId},
-                ${activityType},
-                ${workout.startDate}::timestamptz,
-                ${workout.endDate}::timestamptz,
-                ${rawData}::jsonb
-              )
-              ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
-                activity_type = ${activityType},
-                started_at = ${workout.startDate}::timestamptz,
-                ended_at = ${workout.endDate}::timestamptz,
-                provider_absent_at = NULL`,
-        );
-        inserted++;
+    let windowStart = options?.windowStart;
+    let windowEnd = options?.windowEnd;
+    if (!windowStart || !windowEnd) {
+      const bounds = computeBoundsFromIsoTimestamps(
+        workouts.flatMap((workout) => [workout.startDate, workout.endDate]),
+      );
+      if (!bounds) {
+        throw new Error("Cannot derive workout sync window from workout timestamps");
       }
+      windowStart = windowStart ?? bounds.startAt;
+      windowEnd = windowEnd ?? bounds.endAt;
     }
 
-    return inserted;
+    const parsedWindowStart = new Date(windowStart);
+    const parsedWindowEnd = new Date(windowEnd);
+    if (
+      Number.isNaN(parsedWindowStart.getTime()) ||
+      Number.isNaN(parsedWindowEnd.getTime()) ||
+      parsedWindowStart >= parsedWindowEnd
+    ) {
+      throw new Error("Invalid workout sync window");
+    }
+
+    return processWorkoutsShared(this.#db, this.#userId, workouts, {
+      windowStart: parsedWindowStart.toISOString(),
+      windowEnd: parsedWindowEnd.toISOString(),
+    });
   }
 
   /** Process sleep samples, grouping by inBed boundaries */
@@ -690,6 +673,29 @@ export class HealthKitSyncRepository {
         stagesBySource.size > 0 ? [...stagesBySource.entries()] : [[session.sourceName, []]];
 
       for (const [sourceName, stages] of sources) {
+        const stagingAvailable = stages.some(
+          (stage) =>
+            stage.value === "asleepCore" ||
+            stage.value === "asleepDeep" ||
+            stage.value === "asleepREM",
+        );
+        const startUtcOffsetMinutes = offsetMinutesFromTimestamp(session.startDate);
+        const endUtcOffsetMinutes = offsetMinutesFromTimestamp(session.endDate);
+        const localTimeContext =
+          startUtcOffsetMinutes == null || endUtcOffsetMinutes == null
+            ? {
+                timezone: null,
+                startUtcOffsetMinutes: null,
+                endUtcOffsetMinutes: null,
+                source: "unknown" as const,
+              }
+            : resolveRecordLocalTimeContext({
+                startedAt: new Date(session.startDate),
+                endedAt: new Date(session.endDate),
+                startUtcOffsetMinutes,
+                endUtcOffsetMinutes,
+                source: "device_offset",
+              });
         let deepMinutes = 0;
         let remMinutes = 0;
         let lightMinutes = 0;
@@ -720,32 +726,47 @@ export class HealthKitSyncRepository {
         }
 
         const externalId = `hk:sleep:${session.uuid}:${sourceName}`;
+        const storedDeepMinutes = stagingAvailable ? deepMinutes : null;
+        const storedRemMinutes = stagingAvailable ? remMinutes : null;
+        const storedLightMinutes = stagingAvailable ? lightMinutes : null;
+        const storedAwakeMinutes =
+          stagingAvailable || stages.some((stage) => stage.value === "awake") ? awakeMinutes : null;
         const sessionResult = await executeWithSchema(
           this.#db,
-          z.object({ id: z.string().uuid() }),
-          sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
+          z.object({ id: z.guid() }),
+          sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, timezone, start_utc_offset_minutes, end_utc_offset_minutes, local_time_source, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, staging_available, sleep_type, source_name)
               VALUES (
                 ${this.#userId},
                 ${PROVIDER_ID},
                 ${externalId},
                 ${session.startDate}::timestamptz,
                 ${session.endDate}::timestamptz,
+                ${localTimeContext.timezone},
+                ${localTimeContext.startUtcOffsetMinutes},
+                ${localTimeContext.endUtcOffsetMinutes},
+                ${localTimeContext.source},
                 ${durationMinutes},
-                ${deepMinutes},
-                ${remMinutes},
-                ${lightMinutes},
-                ${awakeMinutes},
+                ${storedDeepMinutes},
+                ${storedRemMinutes},
+                ${storedLightMinutes},
+                ${storedAwakeMinutes},
+                ${stagingAvailable},
                 ${null},
                 ${sourceName}
               )
               ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
                 started_at = ${session.startDate}::timestamptz,
                 ended_at = ${session.endDate}::timestamptz,
+                timezone = ${localTimeContext.timezone},
+                start_utc_offset_minutes = ${localTimeContext.startUtcOffsetMinutes},
+                end_utc_offset_minutes = ${localTimeContext.endUtcOffsetMinutes},
+                local_time_source = ${localTimeContext.source},
                 duration_minutes = ${durationMinutes},
-                deep_minutes = ${deepMinutes},
-                rem_minutes = ${remMinutes},
-                light_minutes = ${lightMinutes},
-                awake_minutes = ${awakeMinutes},
+                deep_minutes = ${storedDeepMinutes},
+                rem_minutes = ${storedRemMinutes},
+                light_minutes = ${storedLightMinutes},
+                awake_minutes = ${storedAwakeMinutes},
+                staging_available = ${stagingAvailable},
                 sleep_type = ${null},
                 source_name = ${sourceName}
               RETURNING id`,

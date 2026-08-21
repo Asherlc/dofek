@@ -1,13 +1,21 @@
 import { formatDurationSeconds, formatRelativeTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
+import { FileImportButton } from "./file-import-button.tsx";
 import { styles } from "./styles.ts";
 
 export type AuthStatus = "connected" | "not_connected" | "expired";
+
+export interface ProviderSyncFreshness {
+  status: "unknown" | "current" | "overdue";
+  label: string;
+  description: string;
+}
 
 export interface Provider {
   id: string;
@@ -15,8 +23,12 @@ export interface Provider {
   enabled: boolean;
   authStatus: AuthStatus;
   authType: string;
+  tokenAuth?: { label: string; instructionsUrl: string } | null;
   lastSyncAt: string | null;
+  lastSuccessfulSyncAt: string | null;
+  syncFreshness: ProviderSyncFreshness | null;
   importOnly: boolean;
+  pushOnly: boolean;
 }
 
 export interface SyncLog {
@@ -62,114 +74,163 @@ function formatDuration(ms: number): string {
   return formatDurationSeconds(ms / 1000);
 }
 
+const IMPORT_PROVIDER_LABELS: Readonly<Record<string, string>> = {
+  "apple-health": "Apple Health",
+  "strong-csv": "Strong",
+  "cronometer-csv": "Cronometer",
+  "garmin-dump": "Garmin Dump",
+  "fit-file": "FIT File",
+  "kaya-export": "Kaya",
+};
+
 export function importProviderLabel(providerId: string | undefined): string {
-  switch (providerId) {
-    case "apple-health":
-      return "Apple Health";
-    case "strong-csv":
-      return "Strong";
-    case "cronometer-csv":
-      return "Cronometer";
-    default:
-      return "Shared file";
-  }
+  return providerId ? (IMPORT_PROVIDER_LABELS[providerId] ?? "Shared file") : "Shared file";
 }
 
 export function ProviderCard({
   provider,
   stats,
   syncing,
+  importing = false,
   syncProgress,
   onSync,
   onFullSync,
   onConnect,
+  onImport,
   onPress,
 }: {
   provider: Provider;
   stats: ProviderStats | undefined;
   syncing: boolean;
-  syncProgress: { percentage?: number; message?: string } | undefined;
+  importing?: boolean;
+  syncProgress: { percentage?: number; message?: string; failedCount?: number } | undefined;
   onSync: () => void;
-  onFullSync: () => void;
+  onFullSync?: () => void;
   onConnect: () => void;
+  onImport?: () => void;
   onPress: () => void;
 }) {
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
+  const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
+    ? formatRelativeTime(provider.lastSuccessfulSyncAt)
+    : null;
+  const canRunManualSync = !provider.importOnly && !provider.pushOnly;
+  const syncFreshness =
+    canRunManualSync && provider.authStatus !== "not_connected" ? provider.syncFreshness : null;
+  const canImport = onImport !== undefined;
+  const showingProgress = (syncing || importing) && syncProgress !== undefined;
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={onPress}
-      activeOpacity={0.7}
-      testID={`provider-card-${provider.id}`}
-    >
+    <View style={styles.card} testID={`provider-card-${provider.id}`}>
       <View style={styles.cardHeader}>
-        <View style={styles.cardTitleRow}>
+        <TouchableOpacity
+          style={styles.cardTitleRow}
+          onPress={onPress}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${provider.label} details`}
+        >
           <ProviderLogo provider={provider.id} serverUrl={serverUrl} size={24} />
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
-        </View>
-        {!provider.importOnly && (
-          <TouchableOpacity
-            style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-            onPress={provider.authStatus === "connected" ? onSync : onConnect}
-            activeOpacity={0.7}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <ActivityIndicator color={colors.text} size="small" />
-            ) : (
-              <Text style={styles.syncButtonText}>{providerActionLabel(provider.authStatus)}</Text>
-            )}
-          </TouchableOpacity>
+        </TouchableOpacity>
+        {(canRunManualSync || canImport) && (
+          <View style={styles.cardActions}>
+            {canRunManualSync ? (
+              <TouchableOpacity
+                style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
+                onPress={provider.authStatus === "connected" ? onSync : onConnect}
+                activeOpacity={0.7}
+                disabled={syncing}
+                accessibilityRole="button"
+                accessibilityLabel={`${providerActionLabel(provider.authStatus)} ${provider.label}`}
+                accessibilityState={{ busy: syncing, disabled: syncing }}
+              >
+                {syncing ? (
+                  <ActivityIndicator color={colors.text} size="small" />
+                ) : (
+                  <Text style={styles.syncButtonText}>
+                    {providerActionLabel(provider.authStatus)}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+            {canImport ? (
+              <FileImportButton
+                accessibilityLabel={`Import file for ${provider.label}`}
+                disabled={importing}
+                loading={importing}
+                onPress={onImport}
+              />
+            ) : null}
+          </View>
         )}
       </View>
 
-      {syncing && syncProgress ? (
+      {showingProgress ? (
         <View style={styles.syncProgressContainer}>
-          {syncProgress.percentage != null && (
-            <View style={styles.syncProgressTrack}>
-              <View
-                style={[
-                  styles.syncProgressFill,
-                  {
-                    width: `${Math.max(0, Math.min(100, syncProgress.percentage))}%`,
-                  },
-                ]}
-              />
-            </View>
+          <OperationProgressBar
+            fillTestID={`provider-card-${provider.id}-progress-fill`}
+            percentage={syncProgress.percentage}
+            message={syncProgress.message}
+          />
+          {typeof syncProgress.failedCount === "number" && syncProgress.failedCount > 0 && (
+            <Text style={styles.syncProgressFailedCount}>
+              {syncProgress.failedCount.toLocaleString()} file
+              {syncProgress.failedCount === 1 ? "" : "s"} failed
+            </Text>
           )}
-          {syncProgress.message ? (
-            <Text style={styles.syncProgressMessage}>{syncProgress.message}</Text>
-          ) : null}
         </View>
       ) : (
         <View style={styles.cardMeta}>
-          {!syncing && syncProgress?.message ? (
+          {!showingProgress && syncProgress?.message ? (
             <Text style={styles.cardMetaText}>{syncProgress.message}</Text>
           ) : (
             <Text style={styles.cardMetaText}>
-              {provider.importOnly ? "Import only" : statusLabel(provider.authStatus)}
+              {provider.importOnly
+                ? "Import only"
+                : provider.pushOnly
+                  ? "Push only"
+                  : statusLabel(provider.authStatus)}
             </Text>
           )}
-          {!provider.importOnly &&
+          {canRunManualSync &&
             (lastSyncRelative ? (
               <Text style={styles.cardMetaText}>Last sync: {lastSyncRelative}</Text>
             ) : (
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
-          {provider.authStatus === "connected" && !syncing && !provider.importOnly && (
-            <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
-              <Text style={styles.fullSyncLink}>Full sync</Text>
-            </TouchableOpacity>
-          )}
+          {canRunManualSync && lastSuccessfulSyncRelative ? (
+            <Text style={styles.cardMetaText}>
+              Last successful sync: {lastSuccessfulSyncRelative}
+            </Text>
+          ) : null}
+          {syncFreshness ? (
+            <View accessibilityRole={syncFreshness.status === "overdue" ? "alert" : undefined}>
+              <Text style={styles.cardMetaText}>{syncFreshness.label}</Text>
+              <Text style={styles.cardMetaText}>{syncFreshness.description}</Text>
+            </View>
+          ) : null}
+          {canRunManualSync &&
+            provider.authStatus === "connected" &&
+            onFullSync !== undefined &&
+            !syncing && (
+              <TouchableOpacity
+                onPress={onFullSync}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Full sync"
+              >
+                <Text style={styles.fullSyncLink}>Full sync</Text>
+              </TouchableOpacity>
+            )}
         </View>
       )}
 
       {stats && <ProviderStatsBreakdown stats={stats} />}
-    </TouchableOpacity>
+    </View>
   );
 }
 

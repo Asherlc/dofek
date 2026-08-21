@@ -1,16 +1,17 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
+import { WhoopClient, WhoopRateLimitError } from "@dofek/whoop/client";
 import type {
   WhoopHrValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
+} from "@dofek/whoop/types";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   parseHeartRateValues,
@@ -20,11 +21,23 @@ import {
   parseWorkout,
 } from "./whoop/parsing.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
+import { runWhoopOrchestratedSync } from "./whoop/sync-orchestrator.ts";
+
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
 }>(() => ({
   publishedMetricStreamBatches: [],
+}));
+
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "workout-uuid-1" }),
 }));
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
@@ -44,30 +57,81 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 // Mocks for sync tests
 // ============================================================
 
-vi.mock("../db/sync-log.ts", () => ({
-  withSyncLog: vi.fn(
-    (
-      _db: unknown,
-      _provider: string,
-      _type: string,
-      fn: () => Promise<{ recordCount: number; result: number }>,
-    ) => fn().then((r) => r.result),
-  ),
+vi.mock("../db/sync-log.ts", async () => {
+  const { reportSyncDegradation } = await import("../sync/sync-degradation-reporting.ts");
+  return {
+    withSyncLog: vi.fn(
+      async (
+        _db: unknown,
+        _provider: string,
+        _type: string,
+        fn: () => Promise<{
+          recordCount: number;
+          result: unknown;
+          degradations?: Parameters<typeof reportSyncDegradation>[0][];
+        }>,
+      ) => {
+        const outcome = await fn();
+        for (const degradation of outcome.degradations ?? []) {
+          reportSyncDegradation(degradation);
+        }
+        return outcome.result;
+      },
+    ),
+  };
+});
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
 }));
 
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn(),
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
+  deleteTokens: vi.fn(),
 }));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+const pendingQueryMocks = vi.hoisted(() => ({
+  listPendingSyncRequestQueryKeys: vi.fn(async () => new Set<string>()),
+}));
+
+vi.mock("../lib/sync-request-queue.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/sync-request-queue.ts")>();
+  return {
+    ...actual,
+    listPendingSyncRequestQueryKeys: pendingQueryMocks.listPendingSyncRequestQueryKeys,
+  };
+});
+
+vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/provider-rate-limit-fetch.ts")>();
+  return {
+    ...actual,
+    createProviderRateLimitFetch: vi.fn(actual.createProviderRateLimitFetch),
+  };
+});
+
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
+  providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "workout-uuid-1" });
 });
 
 function makeChainableMock(resolvedValue: unknown = []) {
@@ -76,21 +140,26 @@ function makeChainableMock(resolvedValue: unknown = []) {
   const deleteFn = vi.fn();
   const executeFn = vi.fn().mockResolvedValue([]);
 
-  // Self-referencing chain: each method returns the mock object
+  const limitFn = vi.fn().mockResolvedValue(resolvedValue);
+  const whereResult = Object.assign(Promise.resolve(resolvedValue), {
+    limit: limitFn,
+  });
+
   const chain = {
     values: vi.fn(),
     onConflictDoUpdate: vi.fn(),
     onConflictDoNothing: vi.fn().mockResolvedValue(resolvedValue),
     returning: vi.fn().mockResolvedValue(resolvedValue),
     from: vi.fn(),
-    where: vi.fn(),
-    limit: vi.fn().mockResolvedValue(resolvedValue),
+    innerJoin: vi.fn(),
+    where: vi.fn().mockReturnValue(whereResult),
+    limit: limitFn,
   };
 
-  // Make each chain method return the chain for fluent chaining
-  for (const fn of Object.values(chain)) {
-    fn.mockReturnValue(chain);
-  }
+  chain.values.mockReturnValue(chain);
+  chain.onConflictDoUpdate.mockReturnValue(chain);
+  chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
   selectFn.mockReturnValue(chain);
   insertFn.mockReturnValue(chain);
   deleteFn.mockReturnValue(chain);
@@ -103,7 +172,7 @@ function makeChainableMock(resolvedValue: unknown = []) {
   };
 
   // Return an object that is both SyncDatabase and has chain spies accessible
-  return Object.assign(db, chain);
+  return makeTransactionalTestDatabase(Object.assign(db, chain));
 }
 
 // Helper to make a WhoopClient-shaped mock via fetch
@@ -117,7 +186,17 @@ function makeSyncMockFetch(options: {
   hrError?: boolean;
   journalError?: boolean;
   cyclesError?: boolean;
+  cyclesRateLimit?: boolean;
+  strainRateLimit?: boolean;
+  strainSteps?: number;
+  sleepRateLimit?: boolean;
+  developerWorkoutsError?: boolean;
+  developerWorkoutPages?: Array<{
+    records: Array<{ id: string; start: string; end: string }>;
+    next_token: string | null;
+  }>;
 }) {
+  let developerWorkoutPageIndex = 0;
   const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = input.toString();
 
@@ -125,7 +204,11 @@ function makeSyncMockFetch(options: {
     if (url.includes("auth-service/v3/whoop")) {
       return Promise.resolve(
         Response.json({
-          AuthenticationResult: { AccessToken: "new-tok", RefreshToken: "new-ref" },
+          AuthenticationResult: {
+            AccessToken: "new-tok",
+            RefreshToken: "new-ref",
+            ExpiresIn: 3600,
+          },
         }),
       );
     }
@@ -137,14 +220,52 @@ function makeSyncMockFetch(options: {
 
     // Cycles (core-details-bff/v0/cycles/details)
     if (url.includes("cycles/details")) {
+      if (options.cyclesRateLimit) {
+        return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
       if (options.cyclesError) {
         return Promise.resolve(new Response("Server error", { status: 500 }));
       }
       return Promise.resolve(Response.json(options.cycles ?? []));
     }
 
+    // Strain deep dive (daily steps)
+    if (url.includes("deep-dive/strain")) {
+      if (options.strainRateLimit) {
+        return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
+      if (options.strainSteps != null) {
+        return Promise.resolve(
+          Response.json({
+            sections: [
+              {
+                items: [
+                  {
+                    type: "CONTRIBUTORS_TILE",
+                    content: {
+                      id: "STRAIN_CONTRIBUTORS_TILE",
+                      metrics: [
+                        {
+                          id: "CONTRIBUTORS_TILE_STEPS",
+                          status: options.strainSteps.toLocaleString("en-US"),
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(Response.json({ sections: [] }));
+    }
+
     // Sleep by ID (sleep-service/v1/sleep-events?activityId=...)
     if (url.includes("sleep-service")) {
+      if (options.sleepRateLimit) {
+        return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
       if (options.sleepError) {
         return Promise.resolve(new Response("Sleep error", { status: 500 }));
       }
@@ -175,6 +296,19 @@ function makeSyncMockFetch(options: {
       return Promise.resolve(Response.json(options.journalData ?? []));
     }
 
+    // Developer workout list (activity absence reconciliation)
+    if (url.includes("developer/v2/activity/workout")) {
+      if (options.developerWorkoutsError) {
+        return Promise.resolve(new Response("developer error", { status: 500 }));
+      }
+      const developerWorkoutPage = options.developerWorkoutPages?.[developerWorkoutPageIndex];
+      developerWorkoutPageIndex += 1;
+      if (developerWorkoutPage) {
+        return Promise.resolve(Response.json(developerWorkoutPage));
+      }
+      return Promise.resolve(Response.json({ records: [], next_token: null }));
+    }
+
     return Promise.resolve(new Response("Not found", { status: 404 }));
   };
   return mockFetch;
@@ -183,6 +317,59 @@ function makeSyncMockFetch(options: {
 /** Type guard: value is a non-null, non-array object with string keys */
 function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
+}
+
+function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
+  return (
+    query !== null &&
+    typeof query === "object" &&
+    "queryChunks" in query &&
+    Array.isArray(query.queryChunks)
+  );
+}
+
+function findUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    if (isRecord(values) && predicate(values)) {
+      return values;
+    }
+  }
+  return undefined;
+}
+
+function findUpsertUpdate(
+  predicate: (update: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const update = call[2];
+    if (isRecord(update) && predicate(update)) {
+      return update;
+    }
+  }
+  return undefined;
+}
+
+function findUpsertUpdateForExternalId(
+  externalId: string,
+  predicate?: (update: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  let match: Record<string, unknown> | undefined;
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    const update = call[2];
+    if (
+      isRecord(values) &&
+      values.externalId === externalId &&
+      isRecord(update) &&
+      (!predicate || predicate(update))
+    ) {
+      match = update;
+    }
+  }
+  return match;
 }
 
 /** Type guard: value is a non-empty array of record objects */
@@ -349,6 +536,7 @@ describe("WhoopClient.signIn (Cognito v3)", () => {
         AuthenticationResult: {
           AccessToken: "tok",
           RefreshToken: "ref",
+          ExpiresIn: 3600,
         },
       };
     });
@@ -371,7 +559,7 @@ describe("WhoopClient.signIn (Cognito v3)", () => {
 
   it("fetches user ID from users-service bootstrap after sign-in", async () => {
     const mockFetch = makeCognitoMockFetch(() => ({
-      AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+      AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
     }));
 
     const result = await WhoopClient.signIn("user@test.com", "pass", mockFetch);
@@ -413,7 +601,7 @@ describe("WhoopClient.refreshAccessToken (Cognito v3)", () => {
     const mockFetch = makeCognitoMockFetch((body) => {
       capturedBody = body;
       return {
-        AuthenticationResult: { AccessToken: "new-tok" },
+        AuthenticationResult: { AccessToken: "new-tok", ExpiresIn: 3600 },
       };
     });
 
@@ -437,7 +625,7 @@ describe("WhoopClient._fetchUserId edge cases", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
           }),
         );
       }
@@ -459,7 +647,7 @@ describe("WhoopClient._fetchUserId edge cases", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
           }),
         );
       }
@@ -485,7 +673,7 @@ describe("WhoopClient.refreshAccessToken — bootstrap failure", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-tok" },
+            AuthenticationResult: { AccessToken: "new-tok", ExpiresIn: 3600 },
           }),
         );
       }
@@ -597,22 +785,25 @@ describe("WHOOP Provider — parsing", () => {
       expect(result?.remMinutes).toBe(90);
       expect(result?.lightMinutes).toBe(180);
       expect(result?.awakeMinutes).toBe(30);
+      expect(result?.durationMinutes).toBe(420);
+      expect(result?.stagingAvailable).toBe(true);
       expect(result?.efficiencyPct).toBeCloseTo(91.7);
       expect(result?.isNap).toBe(false);
     });
 
-    it("defaults all stage times to 0 when score is missing", () => {
+    it("leaves sleep details unavailable when score is missing", () => {
       const noScore: WhoopSleepRecord = {
         ...sampleSleep,
         score: undefined,
       };
       const result = parseSleep(noScore);
       expect(result).not.toBeNull();
-      expect(result?.durationMinutes).toBe(0);
-      expect(result?.deepMinutes).toBe(0);
-      expect(result?.remMinutes).toBe(0);
-      expect(result?.lightMinutes).toBe(0);
-      expect(result?.awakeMinutes).toBe(0);
+      expect(result?.durationMinutes).toBeUndefined();
+      expect(result?.deepMinutes).toBeUndefined();
+      expect(result?.remMinutes).toBeUndefined();
+      expect(result?.lightMinutes).toBeUndefined();
+      expect(result?.awakeMinutes).toBeUndefined();
+      expect(result?.stagingAvailable).toBe(false);
       expect(result?.efficiencyPct).toBeUndefined();
     });
 
@@ -627,10 +818,9 @@ describe("WHOOP Provider — parsing", () => {
       const result = parseWorkout(sampleWorkout);
       expect(result).not.toBeNull();
       expect(result?.externalId).toBe("abc12345-6789-0def-1234-567890abcdef");
-      expect(result?.activityType).toBe("running");
+      expect(result?.activityType.canonicalType).toBe("running");
       expect(result?.avgHeartRate).toBe(155);
       expect(result?.maxHeartRate).toBe(185);
-      expect(result?.calories).toBe(598); // 2500.5 kJ / 4.184
       expect(result?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
       expect(result?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
       expect(result?.durationSeconds).toBe(3600);
@@ -660,7 +850,82 @@ describe("WHOOP Provider — parsing", () => {
 // Default future expiry for token mocks
 const futureExpiry = new Date("2099-01-01T00:00:00Z");
 
+async function mockStoredWhoopTokens(scopes = "userId:42") {
+  const { loadTokens } = await import("../db/tokens.ts");
+  vi.mocked(loadTokens).mockResolvedValue({
+    accessToken: "tok",
+    refreshToken: "ref",
+    expiresAt: futureExpiry,
+    scopes,
+  });
+}
+
+function makeCheckpointStore(initial: unknown) {
+  let current = initial;
+  const saved: unknown[] = [];
+  const store = {
+    load: vi.fn(async () => current),
+    save: vi.fn(async (checkpoint: unknown) => {
+      current = checkpoint;
+      saved.push(checkpoint);
+    }),
+    clear: vi.fn(async () => {
+      current = null;
+    }),
+  };
+  return { store, saved };
+}
+
+function requireRecord(value: unknown, message: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(message);
+  return value;
+}
+
+function requireArray(value: unknown, message: string): unknown[] {
+  if (!Array.isArray(value)) throw new Error(message);
+  return value;
+}
+
 describe("WhoopProvider.sync() — token resolution", () => {
+  it("passes user-scoped rate-limit options to createProviderRateLimitFetch", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:00000000-0000-0000-0000-000000000001",
+    });
+
+    const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
+
+    const provider = new WhoopProvider();
+    const db = makeChainableMock();
+    await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(vi.mocked(createProviderRateLimitFetch)).toHaveBeenCalledWith(
+      "whoop",
+      expect.any(Function),
+      expect.objectContaining({
+        scope: "user",
+        userId: expect.any(String),
+        createRateLimitError: expect.any(Function),
+      }),
+    );
+
+    const options = vi
+      .mocked(createProviderRateLimitFetch)
+      .mock.calls.find(([id]) => id === "whoop")?.[2];
+    const createRateLimitError = options?.createRateLimitError;
+    const error = createRateLimitError?.(new Response(null, { status: 429 }), "Too Many Requests");
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
+  });
+
   it("returns error when no tokens are stored", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValueOnce(null);
@@ -682,7 +947,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("returns error when refreshToken is missing", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "",
       expiresAt: futureExpiry,
@@ -705,10 +970,10 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("returns error when user ID not found after refresh", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
-      expiresAt: futureExpiry,
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
       scopes: null,
     });
 
@@ -718,7 +983,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-tok" },
+            AuthenticationResult: { AccessToken: "new-tok", ExpiresIn: 3600 },
           }),
         );
       }
@@ -743,9 +1008,91 @@ describe("WhoopProvider.sync() — token resolution", () => {
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 
+  it("reuses a valid access token without calling Cognito refresh", async () => {
+    const { loadTokens, saveTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:12345",
+    });
+
+    let cognitoCalls = 0;
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        cognitoCalls += 1;
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: {
+              AccessToken: "new-tok",
+              RefreshToken: "new-ref",
+              ExpiresIn: 3600,
+            },
+          }),
+        );
+      }
+      return makeSyncMockFetch({ cycles: [] })(input, init);
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(cognitoCalls).toBe(0);
+    expect(saveTokens).not.toHaveBeenCalled();
+  });
+
+  it("deletes stored tokens when Cognito rejects the refresh token", async () => {
+    const { deleteTokens, loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
+      scopes: "userId:12345",
+    });
+
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json(
+            {
+              __type: "NotAuthorizedException",
+              message: "Incorrect username or password.",
+            },
+            { status: 400 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(deleteTokens).toHaveBeenCalledWith(db, "whoop", "00000000-0000-0000-0000-000000000001");
+    expect(result.errors[0]?.message).toContain("refresh token was revoked or expired");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "refresh_token_revoked" });
+  });
+
   it("uses stored userId from scopes when available", async () => {
     const { loadTokens, saveTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -764,17 +1111,14 @@ describe("WhoopProvider.sync() — token resolution", () => {
     );
 
     expect(result.provider).toBe("whoop");
-    // saveTokens should have been called with userId:12345 in scopes
-    expect(saveTokens).toHaveBeenCalled();
-    const savedScopes = vi.mocked(saveTokens).mock.calls[0]?.[2]?.scopes;
-    expect(savedScopes).toBe("userId:12345");
+    expect(saveTokens).not.toHaveBeenCalled();
   });
 });
 
 describe("WhoopProvider.sync() — cycles error", () => {
   it("returns error when getCycles fails", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -795,12 +1139,714 @@ describe("WhoopProvider.sync() — cycles error", () => {
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("getCycles");
   });
+
+  it("rethrows rate limit errors from getCycles", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:42",
+    });
+
+    const mockFetch = makeSyncMockFetch({ cyclesRateLimit: true });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      providerId: "whoop",
+      statusCode: 429,
+    });
+  });
+
+  it("rethrows collected rate limit errors from sub-syncs", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:42",
+    });
+
+    const mockFetch = makeSyncMockFetch({ cycles: [], strainRateLimit: true });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ),
+    ).rejects.toMatchObject({ providerId: "whoop", statusCode: 429 });
+  });
+});
+
+describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("logs successful WHOOP API requests as info", async () => {
+    await mockStoredWhoopTokens();
+    const { logger } = await import("../logger.ts");
+    const infoSpy = vi.spyOn(logger, "info");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const { store } = makeCheckpointStore(null);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+
+    const provider = new WhoopProvider(makeSyncMockFetch({ cycles: [] }));
+    await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+      }),
+    );
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      "[whoop] API request",
+      expect.objectContaining({
+        whoopUserId: 42,
+        endpoint: "/core-details-bff/v0/cycles/details",
+        status: 200,
+        attempt: 0,
+        retryAfterSeconds: null,
+      }),
+    );
+    const apiWarnings = warnSpy.mock.calls.filter(
+      (call) => String(call[0]) === "[whoop] API request",
+    );
+    expect(apiWarnings).toHaveLength(0);
+
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("logs WHOOP client 429 responses as warnings", async () => {
+    await mockStoredWhoopTokens();
+    const { logger } = await import("../logger.ts");
+    const infoSpy = vi.spyOn(logger, "info");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const { store } = makeCheckpointStore(null);
+
+    await expect(
+      runWhoopOrchestratedSync(
+        new SyncRun({
+          db: makeChainableMock(),
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-01",
+          }),
+          checkpoint: store,
+        }),
+        makeSyncMockFetch({ cyclesRateLimit: true }),
+        Date.now(),
+      ),
+    ).rejects.toMatchObject({
+      providerId: "whoop",
+      statusCode: 429,
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[whoop] API request",
+      expect.objectContaining({
+        endpoint: "/core-details-bff/v0/cycles/details",
+        status: 429,
+      }),
+    );
+    expect(infoSpy).not.toHaveBeenCalledWith(
+      "[whoop] API request",
+      expect.objectContaining({ status: 429 }),
+    );
+
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("enqueues a continuation after fetching a bootstrap cycle chunk", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const { store, saved } = makeCheckpointStore(null);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const onProgress = vi.fn();
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        cycles: [{ days: ["2026-03-01"], recovery: null, sleep: null, workouts: [] }],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+        onProgress,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      duration: 0,
+      continued: true,
+    });
+    expect(onProgress).toHaveBeenCalledWith(0, "Fetching cycles");
+    expect(store.clear).not.toHaveBeenCalled();
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved bootstrap checkpoint");
+    expect(savedCheckpoint.phase).toBe("bootstrap");
+    expect(savedCheckpoint.cycleFetchCursorMs).toBeNull();
+    expect(requireArray(savedCheckpoint.cycles, "expected saved cycles")).toHaveLength(1);
+  });
+
+  it("persists queued bootstrap cycles without fetching WHOOP again", async () => {
+    await mockStoredWhoopTokens();
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockClear();
+
+    const initialCheckpoint = {
+      runId: "run-bootstrap-persist",
+      recordsSynced: 0,
+      phase: "bootstrap",
+      cycleFetchCursorMs: null,
+      cycles: [{ days: ["2026-03-01"], recovery: null, sleep: null, workouts: [] }],
+      apiSteps: [],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const onProgress = vi.fn();
+    const unexpectedFetch: typeof globalThis.fetch = (input: RequestInfo | URL) =>
+      Promise.reject(new Error(`unexpected fetch ${String(input)}`));
+
+    const provider = new WhoopProvider(unexpectedFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+        onProgress,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      continued: true,
+    });
+    expect(onProgress).toHaveBeenCalledWith(0, "Persisting cycle data");
+    expect(loadTokens).not.toHaveBeenCalled();
+    expect(store.clear).not.toHaveBeenCalled();
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved API checkpoint");
+    expect(savedCheckpoint.phase).toBe("api");
+    expect(savedCheckpoint.cycleFetchCursorMs).toBeNull();
+    expect(
+      requireArray(savedCheckpoint.apiSteps, "expected planned API steps").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("clears the checkpoint after the final API step completes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-final-step",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "strain_deep_dive", date: "2026-03-01" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const onProgress = vi.fn();
+    const db = makeChainableMock();
+    const provider = new WhoopProvider(makeSyncMockFetch({ strainSteps: 7421 }));
+
+    const result = await provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+        onProgress,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 1,
+      errors: [],
+      duration: 0,
+      continued: false,
+    });
+    expect(onProgress).toHaveBeenCalledWith(0, "Daily steps 2026-03-01");
+    expect(enqueueSyncContinuation).not.toHaveBeenCalled();
+    expect(store.clear).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved final checkpoint");
+    expect(savedCheckpoint.phase).toBe("done");
+    expect(savedCheckpoint.apiStepIndex).toBe(1);
+    expect(savedCheckpoint.recordsSynced).toBe(1);
+  });
+
+  it("uses the fallback journal label when an API checkpoint is already exhausted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-exhausted-api",
+      recordsSynced: 3,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "journal" }],
+      apiStepIndex: 1,
+      presentExternalIds: [],
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const onProgress = vi.fn();
+    const provider = new WhoopProvider(makeSyncMockFetch({ journalData: [] }));
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        onProgress,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 3,
+      errors: [],
+      duration: 0,
+      continued: false,
+    });
+    expect(onProgress).toHaveBeenCalledWith(99, "Journal");
+    expect(store.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies rate-limit checkpoint state when an API step is rate limited", async () => {
+    await mockStoredWhoopTokens();
+    const initialCheckpoint = {
+      runId: "run-sleep-rate-limit",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "sleep_stages", sleepId: "sleep-1" },
+        { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-01T01:00:00.000Z" },
+        { type: "journal" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(makeSyncMockFetch({ sleepRateLimit: true }));
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: makeChainableMock(),
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-01",
+          }),
+          checkpoint: store,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      providerId: "whoop",
+      statusCode: 429,
+    });
+
+    const savedCheckpoint = requireRecord(saved[0], "expected rate-limited checkpoint");
+    expect(savedCheckpoint.apiStepIndex).toBe(0);
+    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(3);
+    expect(store.clear).not.toHaveBeenCalled();
+  });
+
+  it("returns a hard failure after exhausting developer workout API retries", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-developer-workouts-error",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(makeSyncMockFetch({ developerWorkoutsError: true }));
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({
+          message: "WHOOP API service unavailable (500): developer error",
+        }),
+      ],
+      duration: 0,
+      continued: false,
+    });
+    expect(store.clear).not.toHaveBeenCalled();
+  });
+
+  it("queues the next developer workout page when the cursor advances", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-next-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts", nextToken: "page-1" }, { type: "persist_workouts" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "page-2",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      duration: 0,
+      continued: true,
+    });
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved next-token checkpoint");
+    expect(savedCheckpoint.apiStepIndex).toBe(1);
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "page-1" },
+      { type: "developer_workouts", nextToken: "page-2" },
+      { type: "persist_workouts" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
+    expect(savedCheckpoint.developerWorkoutPaginationComplete).toBe(false);
+  });
+
+  it("records degraded pagination and advances to persist when developer workout token repeats", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-repeated-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "developer_workouts", nextToken: "same-token" },
+        { type: "persist_workouts" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: ["previous-workout"],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      continued: true,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved repeated-token checkpoint");
+    expect(savedCheckpoint.apiStepIndex).toBe(1);
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "same-token" },
+      { type: "persist_workouts" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["previous-workout", "current-workout"]);
+  });
+
+  it("degrades a repeated developer workout token when only the current step has seen it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-single-repeated-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts", nextToken: "same-token" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      continued: false,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+
+    const savedCheckpoint = requireRecord(
+      saved[0],
+      "expected saved single repeated-token checkpoint",
+    );
+    expect(savedCheckpoint.phase).toBe("done");
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "same-token" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
+  });
+
+  it("persists workouts without absence reconciliation when developer workout pagination degrades", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-repeated-developer-workout-token-before-persist",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [
+        {
+          days: ["2026-03-01"],
+          recovery: null,
+          sleep: null,
+          workouts: [
+            {
+              activity_id: "cycle-workout",
+              during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+              timezone_offset: "-05:00",
+              sport_id: 0,
+              score: 8,
+              average_heart_rate: 130,
+              max_heart_rate: 160,
+              kilojoules: 1200,
+            },
+          ],
+        },
+      ],
+      apiSteps: [
+        { type: "developer_workouts", nextToken: "same-token" },
+        { type: "persist_workouts" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: ["previous-workout"],
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 1,
+      errors: [],
+      continued: false,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          providerId: "whoop",
+          stepName: "developer_workouts",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+    expect(findUpsertValues((record) => record.externalId === "cycle-workout")).toBeDefined();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
 });
 
 describe("WhoopProvider.sync() — recovery sync", () => {
   it("syncs recovery data from scored cycles", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -855,7 +1901,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("uses created_at date fallback when days array is empty", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -905,7 +1951,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("skips unscored recovery cycles", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -948,7 +1994,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("logs info (not warn) for unscored recovery with undefined state", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -999,7 +2045,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("warns when SCORED recovery has no parseable biometric data", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1047,7 +2093,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 describe("WhoopProvider.sync() — workout collection from cycles", () => {
   it("collects workouts from strain.workouts fallback", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1092,51 +2138,40 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     expect(result.recordsSynced).toBeGreaterThanOrEqual(0);
 
     // Verify the activity values contain correct fields from the workout
-    const valuesCallArgs = getValuesCallArgs(db);
-    const activityInsert = findValuesRecord(
-      valuesCallArgs,
+    const activityInsert = findUpsertValues(
       (rec) => rec.externalId === "w-1" && rec.activityType !== undefined,
     );
     expect(activityInsert).toBeDefined();
     expect(activityInsert?.providerId).toBe("whoop");
-    expect(activityInsert?.activityType).toBe("running"); // sport_id 0 = running
+    expect(activityInsert?.activityType).toMatchObject({
+      canonicalType: "running",
+      providerType: "0",
+    });
     expect(activityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(activityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-    // Verify raw data contains strain, HR, calories, duration
+    // Verify normalized raw data contains strain, HR, and duration
     expect(activityInsert?.raw).toBeDefined();
     expect(isRecord(activityInsert?.raw)).toBe(true);
     if (isRecord(activityInsert?.raw)) {
       expect(activityInsert.raw.strain).toBe(10);
       expect(activityInsert.raw.avgHeartRate).toBe(150);
       expect(activityInsert.raw.maxHeartRate).toBe(180);
-      expect(activityInsert.raw.calories).toBe(478); // 2000 kJ / 4.184
       expect(activityInsert.raw.durationSeconds).toBe(3600);
     }
 
-    // Verify onConflictDoUpdate was called with correct target and set for the activity upsert
-    const conflictArgs = getOnConflictArgs(db);
-    expect(conflictArgs.length).toBeGreaterThanOrEqual(1);
-    const activityConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && "activityType" in rec.set && "endedAt" in rec.set;
+    const activityUpdate = findUpsertUpdate((rec) => "activityType" in rec && "endedAt" in rec);
+    expect(activityUpdate).toBeDefined();
+    expect(activityUpdate?.activityType).toMatchObject({
+      canonicalType: "running",
+      providerType: "0",
     });
-    expect(activityConflict).toBeDefined();
-    // target should be an array (providerId + externalId columns)
-    expect(Array.isArray(activityConflict?.target)).toBe(true);
-    if (Array.isArray(activityConflict?.target)) {
-      expect(activityConflict.target.length).toBe(3);
-    }
-    // set should contain all updatable fields
-    expect(isRecord(activityConflict?.set)).toBe(true);
-    if (isRecord(activityConflict?.set)) {
-      expect(activityConflict.set.activityType).toBe("running");
-      expect(activityConflict.set.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-      expect(activityConflict.set.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-      expect(activityConflict.set.raw).toBeDefined();
-      if (isRecord(activityConflict.set.raw)) {
-        expect(activityConflict.set.raw.strain).toBe(10);
-        expect(activityConflict.set.raw.avgHeartRate).toBe(150);
-        expect(activityConflict.set.raw.maxHeartRate).toBe(180);
-      }
+    expect(activityUpdate?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(activityUpdate?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    expect(activityUpdate?.raw).toBeDefined();
+    if (isRecord(activityUpdate?.raw)) {
+      expect(activityUpdate.raw.strain).toBe(10);
+      expect(activityUpdate.raw.avgHeartRate).toBe(150);
+      expect(activityUpdate.raw.maxHeartRate).toBe(180);
     }
   });
 });
@@ -1505,99 +2540,6 @@ describe("parseJournalResponse — answer text extraction", () => {
 });
 
 // ============================================================
-// Provider authSetup / getUserIdentity tests
-// ============================================================
-
-describe("WhoopProvider.authSetup()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns auth setup with OAuth config when env vars are set", () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-    const provider = new WhoopProvider();
-    const setup = provider.authSetup();
-    expect(setup).toBeDefined();
-    expect(setup?.oauthConfig?.clientId).toBe("test-id");
-    expect(setup?.oauthConfig?.scopes).toContain("read:profile");
-    expect(setup?.exchangeCode).toBeTypeOf("function");
-  });
-
-  it("returns undefined when env vars are missing", () => {
-    delete process.env.WHOOP_CLIENT_ID;
-    delete process.env.WHOOP_CLIENT_SECRET;
-    const provider = new WhoopProvider();
-    expect(provider.authSetup()).toBeUndefined();
-  });
-});
-
-describe("WhoopProvider.getUserIdentity()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns identity from profile API", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({
-        user_id: 12345,
-        email: "whoop@test.com",
-        first_name: "John",
-        last_name: "Doe",
-      });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    const identity = await setup.getUserIdentity("test-token");
-    expect(identity.providerAccountId).toBe("12345");
-    expect(identity.email).toBe("whoop@test.com");
-    expect(identity.name).toBe("John Doe");
-  });
-
-  it("handles missing name fields", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({ user_id: 99 });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    const identity = await setup.getUserIdentity("test-token");
-    expect(identity.providerAccountId).toBe("99");
-    expect(identity.email).toBeNull();
-    expect(identity.name).toBeNull();
-  });
-
-  it("throws on API error", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Forbidden", { status: 403 });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
-      "Whoop profile API error (403)",
-    );
-  });
-});
-
-// ============================================================
 // Sync flow tests — sleep, HR stream, journal
 // ============================================================
 
@@ -1626,7 +2568,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("syncs inline sleep from cycle.sleeps array", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1682,7 +2624,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("refreshes v_sleep after syncing complete inline sleep records", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1719,7 +2661,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips incomplete (non-complete state) sleep records", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1759,7 +2701,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips cycles without sleeps array", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1800,7 +2742,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips inline sleep records that fail schema validation", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1839,7 +2781,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips inline sleep with invalid timestamps and logs a warning", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1902,7 +2844,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 describe("WhoopProvider.sync() — HR stream sync", () => {
   it("syncs heart rate data in batches", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1955,7 +2897,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
 
   it("batches HR data into chunks of 500", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2001,7 +2943,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
 
   it("handles empty HR data", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2034,7 +2976,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
 describe("WhoopProvider.sync() — journal sync", () => {
   it("syncs journal entries", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2140,7 +3082,7 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
   it("formats multi-word snake_case question names to Title Case", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2189,7 +3131,7 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
   it("uses provided userId from sync options", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2236,7 +3178,7 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
   it("records error when journal fetch fails", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2264,9 +3206,30 @@ describe("WhoopProvider.sync() — journal sync", () => {
 });
 
 describe("WhoopProvider.sync() — strength sync", () => {
+  const resolvedExerciseId = "20000000-0000-4000-8000-000000000001";
+
+  function mockResolvedExercise(db: ReturnType<typeof makeChainableMock>) {
+    vi.mocked(db.execute).mockImplementation(async (query) => {
+      if (!JSON.stringify(query).includes("resolved_exercise")) return [];
+      return [
+        {
+          alias_exercise_id: resolvedExerciseId,
+          exercise_id: resolvedExerciseId,
+          source_linked: true,
+        },
+      ];
+    });
+  }
+
+  function getExerciseResolutionCalls(db: ReturnType<typeof makeChainableMock>) {
+    return vi
+      .mocked(db.execute)
+      .mock.calls.filter((call) => JSON.stringify(call[0]).includes("resolved_exercise"));
+  }
+
   it("syncs weightlifting exercises and sets from workouts", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2359,26 +3322,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // The chain mock methods return the chain object. Use mockResolvedValueOnce
-    // on the original chain mocks (accessible via db before override) to queue
-    // specific return values that take priority over the default mockReturnValue.
-    //
-    // Sync calls these in order:
-    // 1. Recovery: insert().values().onConflictDoUpdate() — no recovery here
-    // 2. Workouts: insert().values().onConflictDoUpdate() — 1 workout
-    // 3. Strength: insert().values().onConflictDoUpdate().returning() — needs activity ID
-    //    then select().from().where().limit() — needs exercise ID
-    //
-    // Queue returning() to return activity UUID on the activity upsert in strength block.
-    // The first returning() call is from the workout activity insert — returns []
-    // (no ID needed). The second is from strength block activity upsert.
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    // First onConflictDoUpdate is the first activity workout insert (doesn't use returning)
-    // The first workout insert chain is: insert().values().onConflictDoUpdate()
-    // The second (strength-enriched) activity insert chain is: insert().values().onConflictDoUpdate().returning()
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-1" }]);
-    // select().from().where().limit() for exercise lookup
-    db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-1" }]);
+    mockResolvedExercise(db);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
@@ -2387,10 +3331,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     // Should have synced the strength workout (1 strength record)
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify activity upsert in strength block (providerId + externalId)
-    const valuesCallArgs = getValuesCallArgs(db);
-    const strengthActivityInsert = findValuesRecord(
-      valuesCallArgs,
+    const strengthActivityInsert = findUpsertValues(
       (rec) =>
         rec.externalId === "w-str-1" &&
         rec.startedAt !== undefined &&
@@ -2402,57 +3343,26 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(strengthActivityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(strengthActivityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
 
-    // Verify onConflictDoUpdate was called for activity with correct target and set
-    const conflictArgs = getOnConflictArgs(db);
-    const strengthConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && "raw" in rec.set;
-    });
-    expect(strengthConflict).toBeDefined();
-    // target should be an array (providerId + externalId)
-    expect(Array.isArray(strengthConflict?.target)).toBe(true);
-    if (Array.isArray(strengthConflict?.target)) {
-      expect(strengthConflict.target.length).toBe(3);
-    }
-    // set should contain the updatable fields
-    expect(isRecord(strengthConflict?.set)).toBe(true);
-    if (isRecord(strengthConflict?.set)) {
-      expect(strengthConflict.set).toHaveProperty("raw");
-    }
-
-    // Verify returning was called with { id: ... } argument
-    expect(db.returning).toHaveBeenCalled();
-    const returningCallArgs = db.returning.mock.calls;
-    // Find the returning call with an id field
-    const returningWithId = returningCallArgs.find(
-      (call: unknown[]) => isRecord(call[0]) && "id" in call[0],
+    const strengthUpdate = findUpsertUpdateForExternalId("w-str-1", (update) =>
+      hasQueryChunks(update.raw),
     );
-    expect(returningWithId).toBeDefined();
-    if (Array.isArray(returningWithId) && returningWithId.length > 0) {
-      expect(returningWithId[0]).toHaveProperty("id");
-    }
+    expect(strengthUpdate).toBeDefined();
+    expect(strengthUpdate?.startedAt).toEqual(strengthActivityInsert?.startedAt);
+    expect(strengthUpdate?.endedAt).toEqual(strengthActivityInsert?.endedAt);
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("rawMskStrainScore");
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("scaledMskStrainScore");
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("cardioStrainScore");
 
-    // Verify exercise alias insert happened
-    const exerciseAliasInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) =>
-        rec.exerciseId === "exercise-uuid-1" &&
-        rec.providerExerciseId === "BENCHPRESS" &&
-        rec.providerId === "whoop",
-    );
-    expect(exerciseAliasInsert).toBeDefined();
-    expect(exerciseAliasInsert?.providerExerciseName).toBe("Bench Press");
+    const exerciseResolutionCalls = getExerciseResolutionCalls(db);
+    expect(exerciseResolutionCalls).toHaveLength(1);
+    const serializedExerciseResolution = JSON.stringify(exerciseResolutionCalls);
+    expect(serializedExerciseResolution).toContain("BENCHPRESS");
+    expect(serializedExerciseResolution).toContain("Bench Press");
+    expect(serializedExerciseResolution).toContain("BARBELL");
+    expect(serializedExerciseResolution).toContain("CHEST");
+    expect(serializedExerciseResolution).toContain("whoop");
 
-    // Verify onConflictDoNothing was called (for exercise and exercise alias)
-    expect(db.onConflictDoNothing).toHaveBeenCalled();
-
-    // Verify exercise upsert
-    const exerciseInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.name === "Bench Press" && rec.equipment === "BARBELL",
-    );
-    expect(exerciseInsert).toBeDefined();
-    expect(exerciseInsert?.muscleGroups).toEqual(["CHEST"]);
-    expect(exerciseInsert?.exerciseType).toBe("STRENGTH");
+    const valuesCallArgs = getValuesCallArgs(db);
 
     // Verify strength set batch insert (2 complete sets)
     const setInsert = findValuesBatch(
@@ -2461,7 +3371,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     );
     expect(setInsert).toBeDefined();
     expect(setInsert?.[0]?.activityId).toBe("workout-uuid-1");
-    expect(setInsert?.[0]?.exerciseId).toBe("exercise-uuid-1");
+    expect(setInsert?.[0]?.exerciseId).toBe(resolvedExerciseId);
     expect(setInsert?.[0]?.weightKg).toBe(60);
     expect(setInsert?.[0]?.reps).toBe(10);
     expect(setInsert?.[0]?.setIndex).toBe(0);
@@ -2478,7 +3388,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("uses workout name from weightlifting data when available", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2564,9 +3474,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-named" }]);
-    db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-named" }]);
+    mockResolvedExercise(db);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
@@ -2574,32 +3482,33 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify the activity insert has the workout name (not null)
-    const valuesCallArgs = getValuesCallArgs(db);
-    const namedWorkoutInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.externalId === "w-named-1" && "name" in rec && rec.startedAt !== undefined,
+    const namedWorkoutInsert = findUpsertValues(
+      (rec) => rec.externalId === "w-named-1" && rec.name === "Morning Push Day",
     );
     expect(namedWorkoutInsert).toBeDefined();
-    // name should be "Morning Push Day" (not null, not && null)
-    expect(namedWorkoutInsert?.name).toBe("Morning Push Day");
     if (isRecord(namedWorkoutInsert?.raw)) {
-      expect(namedWorkoutInsert?.raw.rawMskStrainScore).toBe(5.2);
-      expect(namedWorkoutInsert?.raw.scaledMskStrainScore).toBe(3.1);
-      expect(namedWorkoutInsert?.raw.mskStrainContributionPercent).toBe(60);
+      expect(namedWorkoutInsert.raw.rawMskStrainScore).toBe(5.2);
+      expect(namedWorkoutInsert.raw.scaledMskStrainScore).toBe(3.1);
+      expect(namedWorkoutInsert.raw.mskStrainContributionPercent).toBe(60);
     }
 
-    // Verify the onConflictDoUpdate set also has the name
-    const conflictArgs = getOnConflictArgs(db);
-    const namedConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && rec.set.name === "Morning Push Day";
-    });
-    expect(namedConflict).toBeDefined();
+    const namedUpdate = findUpsertUpdateForExternalId("w-named-1", (update) =>
+      hasQueryChunks(update.raw),
+    );
+    expect(namedUpdate).toBeDefined();
+    expect(namedUpdate?.name).toBe("Morning Push Day");
+    expect(namedUpdate?.startedAt).toEqual(namedWorkoutInsert?.startedAt);
+    expect(namedUpdate?.endedAt).toEqual(namedWorkoutInsert?.endedAt);
+    const namedUpdateRaw = JSON.stringify(namedUpdate?.raw);
+    expect(namedUpdateRaw).toContain("rawMskStrainScore");
+    expect(namedUpdateRaw).toContain("5.2");
+    expect(namedUpdateRaw).toContain("3.1");
+    expect(namedUpdateRaw).toContain("mskStrainContributionPercent");
   });
 
   it("skips exercise/set processing when returning yields no activityId", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2684,10 +3593,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // Both inserts (workout and strength) now target activity table
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    // returning() yields empty array → row?.id is undefined → !activityId is true → skip
-    db.returning.mockResolvedValueOnce([]);
+    providerActivityAbsenceMocks.upsertProviderActivity
+      .mockResolvedValueOnce({ id: "workout-uuid-1" })
+      .mockResolvedValueOnce(undefined);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
@@ -2708,7 +3616,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("skips workouts with no weightlifting data (404)", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2753,10 +3661,8 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const strengthErrors = result.errors.filter((e) => e.message.includes("Strength"));
     expect(strengthErrors).toHaveLength(0);
 
-    // Verify no strength-enriched activity insert happened
-    const valuesCallArgs = getValuesCallArgs(db);
-    const strengthActivityInsert = findValuesRecord(
-      valuesCallArgs,
+    // Verify no strength-enriched activity upsert happened
+    const strengthActivityInsert = findUpsertValues(
       (rec) =>
         rec.externalId === "w-cardio-1" && isRecord(rec.raw) && "rawMskStrainScore" in rec.raw,
     );
@@ -2765,7 +3671,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("reuses cached exercise id for duplicate provider exercise ids", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2870,27 +3776,30 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-cache" }]);
-    db.limit.mockResolvedValue([{ id: "exercise-uuid-cache" }]);
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
+      id: "workout-uuid-cache",
+    });
+    mockResolvedExercise(db);
 
     await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
 
-    expect(db.select).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
-    expect(db.select).toHaveBeenCalledTimes(1);
-
+    expect(getExerciseResolutionCalls(db)).toHaveLength(1);
     const valuesCallArgs = getValuesCallArgs(db);
-    const exerciseInserts = valuesCallArgs.filter(
-      (arg) => isRecord(arg) && arg.name === "Bench Press" && arg.equipment === "BARBELL",
+    const setBatch = findValuesBatch(
+      valuesCallArgs,
+      (rows) =>
+        rows.length === 2 &&
+        rows.every((row) => row.exerciseId === resolvedExerciseId) &&
+        rows.every((row) => typeof row.setIndex === "number"),
     );
-    expect(exerciseInserts).toHaveLength(1);
+    expect(setBatch).toHaveLength(2);
   });
 
   it("records unresolved exercise when lookup returns no row and avoids set insert", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2975,9 +3884,10 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-missing" }]);
-    db.limit.mockResolvedValueOnce([]);
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
+      id: "workout-uuid-missing",
+    });
+    vi.mocked(db.execute).mockResolvedValue([]);
 
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
@@ -3012,29 +3922,31 @@ describe("WhoopProvider.sync() — strength sync", () => {
 // ============================================================
 
 describe("WhoopProvider — rate-limit aware fetch wiring", () => {
-  const originalEnv = { ...process.env };
+  it("surfaces ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
+    await mockStoredWhoopTokens();
 
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("throws ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
-      new Response("slow down", { status: 429 });
-
+    const mockFetch = makeSyncMockFetch({ cyclesRateLimit: true });
     const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const db = makeChainableMock();
 
-    // The constructor wraps fetchFn with createRateLimitAwareFetch({ providerId: "whoop" }).
-    // A 429 must surface as a ProviderRateLimitError carrying that providerId.
-    await expect(setup.getUserIdentity("tok")).rejects.toBeInstanceOf(ProviderRateLimitError);
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+
     try {
-      await setup.getUserIdentity("tok");
-      throw new Error("expected throw");
+      await provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      );
     } catch (err) {
       expect(err).toBeInstanceOf(ProviderRateLimitError);
       if (err instanceof ProviderRateLimitError) {

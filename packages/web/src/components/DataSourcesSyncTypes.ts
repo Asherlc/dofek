@@ -14,3 +14,25 @@ export interface SyncLogEntry {
   errorMessage: string | null;
   authFailureReason: string | null;
 }
+
+export interface ProviderSyncFreshness {
+  status: "unknown" | "current" | "overdue";
+  label: string;
+  description: string;
+}
+
+/** Row returned by sync.providers — registered OAuth/import and push-only providers. */
+export interface SyncProviderSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  authType: string;
+  tokenAuth: { label: string; instructionsUrl: string } | null;
+  authorized: boolean;
+  lastSyncedAt: string | null;
+  lastSuccessfulSyncAt: string | null;
+  syncFreshness: ProviderSyncFreshness | null;
+  importOnly: boolean;
+  pushOnly: boolean;
+  needsReauth: boolean;
+}

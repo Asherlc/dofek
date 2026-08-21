@@ -55,7 +55,7 @@ describe("parseTrainingPeaksWorkout", () => {
   it("parses basic workout fields", () => {
     const parsed = parseTrainingPeaksWorkout(baseWorkout);
     expect(parsed.externalId).toBe("123456789");
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("Tempo Ride");
     expect(parsed.completed).toBe(true);
     expect(parsed.startedAt).toEqual(new Date("2024-06-15T07:30:00"));
@@ -83,10 +83,9 @@ describe("parseTrainingPeaksWorkout", () => {
     expect(parsed.cadenceAverage).toBe(88);
   });
 
-  it("includes elevation and calories", () => {
+  it("includes elevation", () => {
     const parsed = parseTrainingPeaksWorkout(baseWorkout);
     expect(parsed.elevationGain).toBe(450);
-    expect(parsed.calories).toBe(850);
   });
 
   it("includes subjective metrics", () => {
@@ -137,7 +136,7 @@ describe("parseTrainingPeaksWorkout", () => {
       workoutTypeValueId: 0,
     };
     const parsed = parseTrainingPeaksWorkout(minimal);
-    expect(parsed.activityType).toBe("other");
+    expect(parsed.activityType.canonicalType).toBe("other");
     expect(parsed.distanceMeters).toBeUndefined();
     expect(parsed.averagePower).toBeUndefined();
     expect(parsed.trainingStressScore).toBeUndefined();
@@ -156,7 +155,7 @@ describe("parseTrainingPeaksWorkout", () => {
     ];
     for (const [familyId, expected] of types) {
       const workout = { ...baseWorkout, workoutTypeFamilyId: familyId };
-      expect(parseTrainingPeaksWorkout(workout).activityType).toBe(expected);
+      expect(parseTrainingPeaksWorkout(workout).activityType.canonicalType).toBe(expected);
     }
   });
 });

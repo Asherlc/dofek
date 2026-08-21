@@ -1,6 +1,13 @@
+import { formatReadinessDifference } from "@dofek/format/format";
+import { type ProviderProvenance, resolveProviderProvenance } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  currentDateRangePredicate,
+  type RangeDays,
+  rangeDaysOrNullAdd,
+} from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
@@ -17,9 +24,50 @@ export interface BehaviorImpactRow {
   avgReadinessNo: number;
   yesCount: number;
   noCount: number;
+  providerIds: string[];
 }
 
-/** A boolean journal behavior and its measured impact on next-day readiness. */
+export type BehaviorAssociationDirection = "higher" | "lower" | "no_difference" | "unavailable";
+
+export interface BehaviorAssociation {
+  relationship: "descriptive_association";
+  direction: BehaviorAssociationDirection;
+  estimateLabel: string;
+  method: string;
+  interpretation: string;
+  uncertainty: string;
+  observationWindow: string;
+}
+
+export interface BehaviorImpactDetail {
+  questionSlug: string;
+  displayName: string;
+  category: string;
+  impactPercent: number | null;
+  yesCount: number;
+  noCount: number;
+  sources: ProviderProvenance[];
+  association: Omit<BehaviorAssociation, "observationWindow">;
+}
+
+export const behaviorAssociationSchema = z.object({
+  relationship: z.literal("descriptive_association"),
+  direction: z.enum(["higher", "lower", "no_difference", "unavailable"]),
+  estimateLabel: z.string(),
+  method: z.string(),
+  interpretation: z.string(),
+  uncertainty: z.string(),
+  observationWindow: z.string(),
+});
+
+const BEHAVIOR_ASSOCIATION_METHOD =
+  "Relative difference in mean next-day readiness after Yes versus No.";
+const BEHAVIOR_ASSOCIATION_INTERPRETATION =
+  "This observational association does not establish that the behavior caused the readiness difference or prescribe a behavior change.";
+const BEHAVIOR_ASSOCIATION_UNCERTAINTY =
+  "Uncertainty interval is unavailable for this descriptive comparison.";
+
+/** A descriptive association between a boolean journal behavior and next-day readiness. */
 export class BehaviorImpact {
   readonly #row: BehaviorImpactRow;
 
@@ -47,9 +95,15 @@ export class BehaviorImpact {
     return this.#row.noCount;
   }
 
-  /** Percentage change in next-day readiness when behavior=yes vs no. */
-  get impactPercent(): number {
-    if (this.#row.avgReadinessNo === 0) return 0;
+  get sources(): ProviderProvenance[] {
+    return [...new Set(this.#row.providerIds)]
+      .sort((left, right) => left.localeCompare(right))
+      .map(resolveProviderProvenance);
+  }
+
+  /** Relative difference in mean next-day readiness when behavior=yes versus no. */
+  get impactPercent(): number | null {
+    if (this.#row.avgReadinessNo === 0) return null;
     return (
       Math.round(
         ((this.#row.avgReadinessYes - this.#row.avgReadinessNo) / this.#row.avgReadinessNo) * 1000,
@@ -57,7 +111,37 @@ export class BehaviorImpact {
     );
   }
 
-  toDetail() {
+  get association(): Omit<BehaviorAssociation, "observationWindow"> {
+    const impactPercent = this.impactPercent;
+    if (impactPercent === null) {
+      return {
+        relationship: "descriptive_association",
+        direction: "unavailable",
+        estimateLabel: "Estimate unavailable",
+        method: BEHAVIOR_ASSOCIATION_METHOD,
+        interpretation: BEHAVIOR_ASSOCIATION_INTERPRETATION,
+        uncertainty: BEHAVIOR_ASSOCIATION_UNCERTAINTY,
+      };
+    }
+
+    const direction: BehaviorAssociationDirection =
+      this.#row.avgReadinessYes > this.#row.avgReadinessNo
+        ? "higher"
+        : this.#row.avgReadinessYes < this.#row.avgReadinessNo
+          ? "lower"
+          : "no_difference";
+
+    return {
+      relationship: "descriptive_association",
+      direction,
+      estimateLabel: formatReadinessDifference(impactPercent),
+      method: BEHAVIOR_ASSOCIATION_METHOD,
+      interpretation: BEHAVIOR_ASSOCIATION_INTERPRETATION,
+      uncertainty: BEHAVIOR_ASSOCIATION_UNCERTAINTY,
+    };
+  }
+
+  toDetail(): BehaviorImpactDetail {
     return {
       questionSlug: this.questionSlug,
       displayName: this.displayName,
@@ -65,6 +149,8 @@ export class BehaviorImpact {
       impactPercent: this.impactPercent,
       yesCount: this.yesCount,
       noCount: this.noCount,
+      sources: this.sources,
+      association: this.association,
     };
   }
 }
@@ -81,13 +167,14 @@ const impactDbSchema = z.object({
   avg_readiness_no: z.coerce.number(),
   yes_count: z.coerce.number(),
   no_count: z.coerce.number(),
+  provider_ids: z.array(z.string()).min(1),
 });
 
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
 
-/** Data access for behavior-impact-on-readiness analytics. */
+/** Data access for descriptive behavior/readiness associations. */
 export class BehaviorImpactRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
@@ -106,15 +193,15 @@ export class BehaviorImpactRepository {
     this.#sensorStore = sensorStore;
   }
 
-  /** Impact of boolean journal behaviors on next-day readiness. */
-  async getImpactSummary(days: number): Promise<BehaviorImpact[]> {
+  /** Descriptive associations between boolean journal behaviors and next-day readiness. */
+  async getImpactSummary(days: RangeDays): Promise<BehaviorImpact[]> {
     const sensorStore = this.#requireSensorStore();
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
       sensorStore,
       userId: this.#userId,
       timezone: this.#timezone,
       endDate: new Date().toISOString().slice(0, 10),
-      days: days + 1,
+      days: rangeDaysOrNullAdd(days, 1),
     });
     const rows = await executeWithSchema(
       this.#db,
@@ -124,6 +211,7 @@ export class BehaviorImpactRepository {
             SELECT
               je.date,
               je.question_slug,
+              je.provider_id,
               jq.display_name,
               jq.category,
               CASE
@@ -134,7 +222,7 @@ export class BehaviorImpactRepository {
             FROM fitness.journal_entry je
             JOIN fitness.journal_question jq ON jq.slug = je.question_slug
             WHERE je.user_id = ${this.#userId}
-              AND je.date >= (CURRENT_DATE - ${days}::int)
+              ${currentDateRangePredicate(sql`je.date`, days, ">=")}
               AND jq.data_type = 'boolean'
           ),
           readiness AS (
@@ -155,12 +243,13 @@ export class BehaviorImpactRepository {
 	            LEFT JOIN resting_heart_rate drhr
 	              ON drhr.date = dm.date
             WHERE dm.user_id = ${this.#userId}
-              AND dm.date >= (CURRENT_DATE - ${days}::int)
+              ${currentDateRangePredicate(sql`dm.date`, days, ">=")}
             GROUP BY dm.date
           ),
           joined AS (
             SELECT
               be.question_slug,
+              be.provider_id,
               be.display_name,
               be.category,
               be.answer_bool,
@@ -177,7 +266,8 @@ export class BehaviorImpactRepository {
             AVG(CASE WHEN answer_bool = true THEN readiness_score END) AS avg_readiness_yes,
             AVG(CASE WHEN answer_bool = false THEN readiness_score END) AS avg_readiness_no,
             COUNT(CASE WHEN answer_bool = true THEN 1 END)::int AS yes_count,
-            COUNT(CASE WHEN answer_bool = false THEN 1 END)::int AS no_count
+            COUNT(CASE WHEN answer_bool = false THEN 1 END)::int AS no_count,
+            ARRAY_AGG(DISTINCT provider_id ORDER BY provider_id) AS provider_ids
           FROM joined
           GROUP BY question_slug, display_name, category
           HAVING COUNT(CASE WHEN answer_bool = true THEN 1 END) >= 5
@@ -196,6 +286,7 @@ export class BehaviorImpactRepository {
           avgReadinessNo: Number(row.avg_readiness_no),
           yesCount: Number(row.yes_count),
           noCount: Number(row.no_count),
+          providerIds: row.provider_ids,
         }),
     );
   }

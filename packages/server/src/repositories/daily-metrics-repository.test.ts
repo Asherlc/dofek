@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
@@ -20,8 +21,6 @@ function makeDailyMetricsRow(overrides: Record<string, unknown> = {}): Record<st
     respiratory_rate_avg: 14.2,
     skin_temp_c: 33.1,
     steps: 8500,
-    active_energy_kcal: 420,
-    basal_energy_kcal: 1600,
     distance_km: 6.2,
     flights_climbed: 8,
     exercise_minutes: 45,
@@ -51,21 +50,24 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
     avg_resting_hr: "56.2",
     avg_spo2: "97.1",
     avg_steps: "8200",
-    avg_active_energy: "410",
     avg_skin_temp: "33.0",
     stddev_hrv: "7.5",
     stddev_resting_hr: "3.1",
     stddev_spo2: "0.8",
+    stddev_steps: "1200",
     stddev_skin_temp: "0.4",
     latest_hrv: "48",
     latest_resting_hr: "55",
     latest_spo2: "98",
     latest_steps: "9200",
-    latest_active_energy: "450",
     latest_skin_temp: "33.2",
+    sample_count_hrv: "4",
+    sample_count_resting_hr: "3",
+    sample_count_spo2: "4",
+    sample_count_steps: "4",
+    sample_count_skin_temp: "4",
     latest_date: "2025-03-15",
     latest_steps_date: "2025-03-15",
-    latest_active_energy_date: "2025-03-15",
     ...overrides,
   };
 }
@@ -76,21 +78,24 @@ function makeAllNullTrendsRow(): Record<string, unknown> {
     avg_resting_hr: null,
     avg_spo2: null,
     avg_steps: null,
-    avg_active_energy: null,
     avg_skin_temp: null,
     stddev_hrv: null,
     stddev_resting_hr: null,
     stddev_spo2: null,
+    stddev_steps: null,
     stddev_skin_temp: null,
     latest_hrv: null,
     latest_resting_hr: null,
     latest_spo2: null,
     latest_steps: null,
-    latest_active_energy: null,
     latest_skin_temp: null,
+    sample_count_hrv: 0,
+    sample_count_resting_hr: 0,
+    sample_count_spo2: 0,
+    sample_count_steps: 0,
+    sample_count_skin_temp: 0,
     latest_date: null,
     latest_steps_date: null,
-    latest_active_energy_date: null,
   };
 }
 
@@ -147,7 +152,6 @@ describe("DailyMetricsRepository", () => {
       const rowNoSteps = makeDailyMetricsRow({
         date: "2025-03-15",
         steps: null,
-        active_energy_kcal: null,
       });
       const { repo, execute } = makeRepository([rowNoSteps]);
       const result = await repo.list(30, "2025-03-15");
@@ -161,6 +165,19 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.list(30, "2025-03-15");
       expect(result).toEqual([]);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("listRange", () => {
+    it("returns resting heart rate alongside exact-range daily metrics", async () => {
+      const { repo, execute } = makeRepository([makeDailyMetricsRow({ resting_hr: "52" })]);
+
+      const result = await repo.listRange("2025-03-10", "2025-03-15");
+
+      expect(result[0]?.resting_hr).toBe(52);
+      const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("WHERE false");
+      expect(compiledQuery.params).toEqual(["user-1", "2025-03-10", "2025-03-15"]);
     });
   });
 
@@ -193,20 +210,22 @@ describe("DailyMetricsRepository", () => {
       expect(result[0]?.mean_7d).toBe(44.1);
     });
 
-    it("filters out warmup rows before the cutoff date", async () => {
-      // Request 30 days ending 2025-03-15, cutoff = 2025-02-13
+    it("returns exactly the inclusive requested dates after discarding warmup rows", async () => {
+      // Request 30 days ending 2025-03-15, first included date = 2025-02-14
       // Warmup row on 2025-01-20 should be excluded (before cutoff)
-      // Row on 2025-02-12 should be excluded (before cutoff)
-      // Row on 2025-02-13 is included (>= cutoff)
+      // Row on 2025-02-13 should be excluded (one day before the range)
+      // Row on 2025-02-14 is included (the inclusive start)
+      // Row on 2025-03-16 should be excluded (after the selected end date)
       const { repo } = makeRepository([
         makeHrvBaselineRow({ date: "2025-01-20" }),
-        makeHrvBaselineRow({ date: "2025-02-12" }),
         makeHrvBaselineRow({ date: "2025-02-13" }),
+        makeHrvBaselineRow({ date: "2025-02-14" }),
         makeHrvBaselineRow({ date: "2025-03-15" }),
+        makeHrvBaselineRow({ date: "2025-03-16" }),
       ]);
       const result = await repo.getHrvBaseline(30, "2025-03-15");
       expect(result).toHaveLength(2);
-      expect(result[0]?.date).toBe("2025-02-13");
+      expect(result[0]?.date).toBe("2025-02-14");
       expect(result[1]?.date).toBe("2025-03-15");
     });
 
@@ -218,6 +237,18 @@ describe("DailyMetricsRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]?.hrv).toBeNull();
       expect(result[0]?.mean_60d).toBeNull();
+    });
+
+    it("excludes rows after the selected end date when days is null", async () => {
+      const { repo } = makeRepository([
+        makeHrvBaselineRow({ date: "2025-03-14", hrv: "44" }),
+        makeHrvBaselineRow({ date: "2025-03-15", hrv: "45" }),
+        makeHrvBaselineRow({ date: "2025-03-16", hrv: "46" }),
+      ]);
+
+      const result = await repo.getHrvBaseline(null, "2025-03-15");
+
+      expect(result.map((row) => row.date)).toEqual(["2025-03-14", "2025-03-15"]);
     });
   });
 
@@ -235,8 +266,56 @@ describe("DailyMetricsRepository", () => {
       expect(result?.avg_resting_hr).toBe(56.2);
       expect(result?.latest_hrv).toBe(48);
       expect(result?.latest_resting_hr).toBe(55);
+      expect(result?.stddev_steps).toBe(1200);
+      expect(result?.sample_count_hrv).toBe(4);
+      expect(result?.sample_count_resting_hr).toBe(3);
       expect(result?.latest_date).toBe("2025-03-15");
       expect(execute).toHaveBeenCalledTimes(1);
+      const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("STDDEV(steps) AS stddev_steps");
+      expect(compiledQuery.sql).toContain("COUNT(hrv) AS sample_count_hrv");
+    });
+
+    it("normalizes database date objects in metric evidence", async () => {
+      const { repo } = makeRepository([
+        makeTrendsRow({
+          metric_evidence: {
+            hrv: {
+              latestDate: new Date("2025-03-15T00:00:00.000Z"),
+              sourceProviders: ["whoop"],
+              observedDays: 1,
+              recentMean: 60,
+              baselineMean: 58,
+            },
+            spo2: null,
+            steps: null,
+            skin_temperature: null,
+          },
+        }),
+      ]);
+
+      const result = await repo.getTrends(30, "2025-03-15");
+
+      expect(result?.metric_evidence?.hrv?.latestDate).toBe("2025-03-15");
+    });
+
+    it("uses the intended evidence window for null, short, and long ranges", async () => {
+      const cases = [
+        { days: null, evidenceDays: 35, evidenceParameterCount: 1 },
+        { days: 7, evidenceDays: 35, evidenceParameterCount: 1 },
+        { days: 90, evidenceDays: 90, evidenceParameterCount: 3 },
+      ] as const;
+
+      for (const { days, evidenceDays, evidenceParameterCount } of cases) {
+        const { repo, execute } = makeRepository([]);
+
+        await repo.getTrends(days, "2025-03-15");
+
+        const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+        expect(compiledQuery.params.filter((param) => param === evidenceDays)).toHaveLength(
+          evidenceParameterCount,
+        );
+      }
     });
 
     it("joins resting heart rate values into the trends query", async () => {
@@ -270,7 +349,6 @@ describe("DailyMetricsRepository", () => {
       const row = makeTrendsRow({
         avg_steps: "8200",
         latest_steps: null,
-        latest_active_energy: null,
         latest_date: "2025-03-15",
       });
       const { repo, execute } = makeRepository([row]);
@@ -278,17 +356,14 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.getTrends(30, "2025-03-15");
 
       expect(result?.latest_steps).toBeNull();
-      expect(result?.latest_active_energy).toBeNull();
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("does not check latest missing metrics when the trends row has no latest date", async () => {
       const rowWithoutLatestDate = makeTrendsRow({
         latest_steps: null,
-        latest_active_energy: null,
         latest_date: null,
         latest_steps_date: null,
-        latest_active_energy_date: null,
       });
       const { repo, execute } = makeRepository([rowWithoutLatestDate]);
 
@@ -307,7 +382,6 @@ describe("DailyMetricsRepository", () => {
       const sqlArg = execute.mock.calls[0]?.[0];
       const sqlText = JSON.stringify(sqlArg);
       expect(sqlText).toContain("CASE WHEN latest.steps_date");
-      expect(sqlText).toContain("CASE WHEN latest.active_energy_kcal_date");
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
@@ -336,15 +410,14 @@ describe("DailyMetricsRepository", () => {
         avg_hrv: null,
         avg_spo2: null,
         avg_steps: null,
-        avg_active_energy: null,
         avg_skin_temp: null,
         stddev_hrv: null,
         stddev_spo2: null,
+        stddev_steps: null,
         stddev_skin_temp: null,
         latest_hrv: null,
         latest_spo2: null,
         latest_steps: null,
-        latest_active_energy: null,
         latest_skin_temp: null,
         latest_date: null,
       });

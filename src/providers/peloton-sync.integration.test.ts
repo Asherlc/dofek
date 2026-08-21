@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -49,8 +49,8 @@ function fakePerformanceGraph(): PelotonPerformanceGraph {
     segment_list: [],
     average_summaries: [],
     summaries: [
-      { display_name: "Calories", value: "450", slug: "calories" },
-      { display_name: "Distance", value: "9.25", slug: "distance" },
+      { display_name: "Calories", value: 450, slug: "calories" },
+      { display_name: "Distance", value: 9.25, slug: "distance" },
     ],
     metrics: [
       {
@@ -205,7 +205,7 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "workout-001");
     if (!ride) throw new Error("expected workout-001");
-    expect(ride.activityType).toBe("indoor_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("30 min Power Zone Ride");
 
     // Check raw JSONB metadata
@@ -220,7 +220,41 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const run = rows.find((r) => r.externalId === "workout-002");
     if (!run) throw new Error("expected workout-002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
+  });
+
+  it("preserves zero-duration source timestamps", async () => {
+    await saveTokens(ctx.db, "peloton", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "offline_access openid peloton-api.members:default",
+    });
+
+    const startedAtSeconds = 1773275085;
+    const workouts = [
+      fakeWorkout({
+        id: "workout-zero-duration",
+        start_time: startedAtSeconds,
+        end_time: startedAtSeconds,
+      }),
+    ];
+
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
+    const result = await syncProvider(provider, new Date("2026-01-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.externalId, "workout-zero-duration"));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.startedAt).toEqual(new Date(startedAtSeconds * 1000));
+    expect(rows[0]?.endedAt).toEqual(new Date(startedAtSeconds * 1000));
   });
 
   it("publishes metric stream events from performance graph", async () => {
@@ -312,7 +346,7 @@ describe("PelotonProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "peloton"));
 
     const provider = new PelotonProvider();
@@ -482,7 +516,7 @@ describe("PelotonProvider.sync() (integration)", () => {
       .where(eq(activity.externalId, "workout-graph-fail"));
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.activityType).toBe("indoor_cycling");
+    expect(rows[0]?.canonicalType).toBe("cycling");
   });
 
   it("stores timezone and stravaId on activity", async () => {

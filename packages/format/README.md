@@ -30,8 +30,12 @@ The `UnitConverter` class provides a unified interface for converting and labeli
 Use the shared domain helpers from `@dofek/format/format` anywhere these values are displayed:
 - Nutrition values: `formatNutritionNumber`, `formatCalories`, `formatGrams`, and `formatNutritionAmount` use 0 decimals.
 - Body composition values: `formatBodyCompositionNumber` and `formatBodyCompositionPercent` use 1 decimal.
-- Recovery and training values: `formatHRV`, `formatSpO2`, `formatIntensity`, and `formatTrainingLoad` use 0 decimals.
-- Dates and times: use the shared date/time helpers above instead of direct `toLocaleDateString`, `toLocaleTimeString`, `toLocaleString`, or ad hoc `toISOString().slice(0, 10)` in display code.
+- Recovery and training values: `formatHRV`, `formatSpO2`, `formatSteps`, `formatIntensity`, and `formatTrainingLoad` use 0 decimals; `formatSteps` also groups thousands.
+- Dates and times: use the shared date/time helpers above instead of direct `toLocaleDateString`, `toLocaleTimeString`, `toLocaleString`, or ad hoc `toISOString().slice(0, 10)` in display code. Use `formatTableCellValue` for generic table cells and detail modals that may contain dates or timestamps.
 - Time spans: `formatDurationMinutes`, `formatDurationSeconds`, and `formatDurationRange` provide human-readable durations.
 
 These helpers use `Intl.NumberFormat` with fixed fraction options and `style: "unit"` where the JavaScript runtime supports the unit. `kcal` is appended manually because current runtimes do not expose a standard kilocalorie unit identifier.
+
+### Activity Data States (`activity-data-state.ts`)
+
+Server-authored activity values use a discriminated state: `available`, `missing`, `stale`, `failed`, `processing`, or `conflicting`. Every non-available state carries a reason so clients can explain why a value is not displayed instead of substituting zero, a dash, or an empty value.

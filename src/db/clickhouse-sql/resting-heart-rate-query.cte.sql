@@ -7,7 +7,7 @@ resting_heart_rate AS (
     AND is_deleted = 0
     AND ended_at IS NOT NULL
     AND resting_hr IS NOT NULL
-    AND toDate(toTimeZone(ended_at, {{ timezone_param }})) > toDate({{ window_start_param }})
+    {{ window_start_predicate }}
     AND toDate(toTimeZone(ended_at, {{ timezone_param }})) <= toDate({{ end_date_param }})
   ORDER BY user_id, date, duration_seconds DESC, ended_at DESC
   LIMIT 1 BY user_id, date

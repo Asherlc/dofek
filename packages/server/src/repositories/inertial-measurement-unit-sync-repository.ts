@@ -1,5 +1,6 @@
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
@@ -8,19 +9,12 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
+
+const tracer = trace.getTracer("dofek-server");
 
 const PROVIDER_ID = "apple_motion";
 const INSERT_BATCH_SIZE = 5000;
-
-export interface InertialMeasurementUnitSample {
-  timestamp: string;
-  x: number;
-  y: number;
-  z: number;
-  gyroscopeX?: number;
-  gyroscopeY?: number;
-  gyroscopeZ?: number;
-}
 
 export class InertialMeasurementUnitSyncRepository {
   readonly #database: Pick<Database, "execute">;
@@ -42,11 +36,12 @@ export class InertialMeasurementUnitSyncRepository {
   }
 
   async ensureProvider(): Promise<void> {
-    await this.#database.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'Apple Motion', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#database,
+      providerId: PROVIDER_ID,
+      providerName: "Apple Motion",
+      userId: this.#userId,
+    });
   }
 
   async insertBatch(
@@ -89,9 +84,35 @@ export class InertialMeasurementUnitSyncRepository {
         };
       });
 
-      const publisher = await this.#publisher();
-      const result = await writeMetricStreamRows({ publisher, rows });
-      totalInserted += result.published;
+      await tracer.startActiveSpan("imu.writeMetricStreamRows", async (span) => {
+        try {
+          span.setAttributes({
+            "imu.batchOffset": offset,
+            "imu.batchRowCount": rows.length,
+          });
+
+          const publisher = await this.#publisher();
+          const result = await writeMetricStreamRows({
+            database: this.#database,
+            publisher,
+            rows,
+          });
+          totalInserted += result.published;
+
+          span.setStatus({ code: SpanStatusCode.OK });
+        } catch (error) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          if (error instanceof Error) {
+            span.recordException(error);
+          }
+          throw error;
+        } finally {
+          span.end();
+        }
+      });
     }
 
     return totalInserted;

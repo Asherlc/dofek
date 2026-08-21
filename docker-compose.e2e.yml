@@ -16,13 +16,14 @@ services:
     ports:
       - "5436:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U health -d health"]
       interval: 2s
       timeout: 5s
       retries: 15
 
   clickhouse:
-    image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
+    image: mirror.gcr.io/clickhouse/clickhouse-server:26.7.3.19-alpine
+    mem_limit: 2048m
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
       - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ./deploy/clickhouse/config.d/memory-limits-e2e.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     healthcheck:
       test:
         [
@@ -41,9 +43,63 @@ services:
       retries: 20
 
   redis:
-    image: mirror.gcr.io/redis:8.6.2-alpine
+    image: mirror.gcr.io/redis:8.6.3-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  redpanda:
+    image: mirror.gcr.io/redpandadata/redpanda:v26.2.1
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  account-erasure-minio:
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    environment:
+      MINIO_ROOT_USER: accounterasure
+      MINIO_ROOT_PASSWORD: account-erasure-e2e-secret
+      MINIO_DOMAIN: account-erasure-minio
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
+    networks:
+      default:
+        aliases:
+          - dofek-account-erasure-ledger.account-erasure-minio
+    entrypoint: >
+      /bin/sh -euc "
+      minio server /data --console-address=:36987 &
+      attempts=0;
+      until mc alias set account-erasure-minio http://account-erasure-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        attempts=$$((attempts + 1));
+        if [ $$attempts -ge 30 ]; then
+          echo account-erasure-minio did not become ready in time >&2;
+          exit 1;
+        fi;
+        sleep 1;
+      done;
+      mc mb --ignore-existing account-erasure-minio/$$ACCOUNT_ERASURE_LEDGER_R2_BUCKET;
+      wait
+      "
+    healthcheck:
+      test: ["CMD", "mc", "ready", "account-erasure-minio"]
       interval: 2s
       timeout: 5s
       retries: 15
@@ -66,6 +122,40 @@ services:
     command: ["migrate"]
     restart: "no"
 
+  seed:
+    image: e2e-server
+    build:
+      context: .
+      target: server
+    environment:
+      DATABASE_URL: postgres://health:health@db:5432/health
+      NODE_ENV: test
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    command: ["seed"]
+    restart: "no"
+
+  review-seed-clickhouse:
+    image: e2e-server
+    build:
+      context: .
+      target: server
+    environment:
+      DATABASE_URL: postgres://health:health@db:5432/health
+      CLICKHOUSE_URL: http://default:health@clickhouse:8123
+      CLICKHOUSE_PASSWORD: health
+      NODE_ENV: test
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+    command: ["review-seed-clickhouse"]
+    restart: "no"
+
   analytics:
     image: e2e-server
     build:
@@ -77,13 +167,13 @@ services:
       CLICKHOUSE_PASSWORD: health
       NODE_ENV: test
     depends_on:
-      migrate:
+      review-seed-clickhouse:
         condition: service_completed_successfully
       db:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
-    command: ["analytics"]
+    command: ["analytics-e2e"]
     restart: "no"
 
   server:
@@ -98,10 +188,19 @@ services:
       CLICKHOUSE_URL: http://default:health@clickhouse:8123
       CLICKHOUSE_PASSWORD: health
       REDIS_URL: redis://redis:6379
+      REDPANDA_BROKERS: redpanda:9092
+      METRIC_STREAM_TOPIC: metric-stream-v1
       PORT: "3000"
       NODE_ENV: test
+      PUBLIC_URL: http://localhost:3100
       DISABLE_QUERY_CACHE: "true"
       MATERIALIZED_VIEW_REFRESH_TOKEN: e2e-refresh-token
+      CREDENTIAL_ENCRYPTION_KEY_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: '{"activeKeyId":"e2e-v1","keys":{"e2e-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}}'
+      ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
+      R2_ENDPOINT: http://account-erasure-minio:9000
+      R2_ACCESS_KEY_ID: accounterasure
+      R2_SECRET_ACCESS_KEY: account-erasure-e2e-secret
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -113,9 +212,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      account-erasure-minio:
+        condition: service_healthy
     command: ["web"]
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/readyz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
       interval: 3s
       timeout: 3s
       retries: 10

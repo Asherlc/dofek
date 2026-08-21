@@ -1,16 +1,14 @@
 import { formatDateTime } from "@dofek/format/format";
-import { providerSourceLabel } from "@dofek/providers/providers";
+import { type ProviderAbsentSource, providerSourceLabel } from "@dofek/providers/providers";
+import { type ActivitySource, parseClickHouseActivitySourceMaps } from "./activity-source.ts";
 
-export interface SourceExternalIdEntry {
-  providerId: string;
-  externalId: string;
-  memberActivityId?: string;
-  providerAbsentAt?: string | null;
-}
+export type SourceExternalIdEntry = ActivitySource;
 
 /** Resolved provider source shown on activity detail and list cards. */
 export interface SourceLink {
   providerId: string;
+  externalId: string;
+  subsource: string | null;
   label: string;
   url: string | null;
   providerAbsentAt?: string | null;
@@ -41,7 +39,7 @@ export class ActivitySourceAttribution {
   static fromClickHouseAbsentMaps(
     maps: Array<Record<string, string | null>>,
   ): ActivitySourceAttribution {
-    return new ActivitySourceAttribution([], ActivitySourceAttribution.#parseClickHouseMaps(maps));
+    return new ActivitySourceAttribution([], parseClickHouseActivitySourceMaps(maps));
   }
 
   static fromClickHouseRow(
@@ -49,25 +47,9 @@ export class ActivitySourceAttribution {
     absentMaps: Array<Record<string, string | null>> | null | undefined,
   ): ActivitySourceAttribution {
     return new ActivitySourceAttribution(
-      ActivitySourceAttribution.#parseClickHouseMaps(activeMaps ?? []),
-      ActivitySourceAttribution.#parseClickHouseMaps(absentMaps ?? []),
+      activeMaps ? parseClickHouseActivitySourceMaps(activeMaps) : [],
+      absentMaps ? parseClickHouseActivitySourceMaps(absentMaps) : [],
     );
-  }
-
-  static #parseClickHouseMaps(maps: Array<Record<string, string | null>>): SourceExternalIdEntry[] {
-    return maps.flatMap((map) => {
-      const providerId = map.providerId;
-      const externalId = map.externalId;
-      if (!providerId || !externalId) return [];
-      return [
-        {
-          providerId,
-          externalId,
-          memberActivityId: map.memberActivityId ?? undefined,
-          providerAbsentAt: map.providerAbsentAt ?? null,
-        },
-      ];
-    });
   }
 
   get hasPartialAbsence(): boolean {
@@ -87,37 +69,55 @@ export class ActivitySourceAttribution {
   }
 
   toSourceLinks(lookup: ProviderLookup): SourceLink[] {
-    const linksByProvider = new Map<string, SourceLink>();
-
-    for (const { providerId, externalId } of this.#activeEntries) {
-      const provider = lookup(providerId);
-      if (!provider?.activityUrl) continue;
-      linksByProvider.set(providerId, {
-        providerId,
-        label: provider.name,
-        url: provider.activityUrl(externalId),
-        providerAbsentAt: null,
-      });
-    }
-
-    for (const entry of this.#absentEntries) {
-      if (linksByProvider.has(entry.providerId)) continue;
-      const provider = lookup(entry.providerId);
-      const label = provider?.name ?? entry.providerId;
-      const url =
-        provider?.activityUrl && entry.externalId ? provider.activityUrl(entry.externalId) : null;
-      linksByProvider.set(entry.providerId, {
-        providerId: entry.providerId,
-        label,
-        url,
-        providerAbsentAt: entry.providerAbsentAt ?? null,
-        memberActivityId: entry.memberActivityId,
-      });
-    }
-
-    return [...linksByProvider.values()].sort((left, right) =>
-      left.providerId.localeCompare(right.providerId),
+    const activeLinks = this.#activeEntries.map((entry) =>
+      ActivitySourceAttribution.#toSourceLink(entry, lookup),
     );
+    const activeSourceKeys = new Set(
+      this.#activeEntries.map((entry) => ActivitySourceAttribution.#sourceKey(entry)),
+    );
+    const absentLinks = this.#absentEntries
+      .filter((entry) => !activeSourceKeys.has(ActivitySourceAttribution.#sourceKey(entry)))
+      .map((entry) => ActivitySourceAttribution.#toSourceLink(entry, lookup));
+
+    return [...activeLinks, ...absentLinks].sort(ActivitySourceAttribution.#compareSourceLinks);
+  }
+
+  static #sourceKey(entry: SourceExternalIdEntry): string {
+    return `${entry.providerId}:${entry.subsource ?? ""}`;
+  }
+
+  static #toSourceLink(entry: SourceExternalIdEntry, lookup: ProviderLookup): SourceLink {
+    const provider = lookup(entry.providerId);
+    const label = entry.subsource
+      ? providerSourceLabel(entry.providerId, entry.subsource)
+      : (provider?.name ?? providerSourceLabel(entry.providerId));
+    const url = provider?.activityUrl ? provider.activityUrl(entry.externalId) : null;
+
+    return {
+      providerId: entry.providerId,
+      externalId: entry.externalId,
+      subsource: entry.subsource ?? null,
+      label,
+      url,
+      providerAbsentAt: entry.providerAbsentAt ?? null,
+      ...(entry.memberActivityId ? { memberActivityId: entry.memberActivityId } : {}),
+    };
+  }
+
+  static #compareSourceLinks(left: SourceLink, right: SourceLink): number {
+    return (
+      left.providerId.localeCompare(right.providerId) ||
+      left.label.localeCompare(right.label) ||
+      (left.memberActivityId ?? "").localeCompare(right.memberActivityId ?? "")
+    );
+  }
+
+  partialAbsentSources(): ProviderAbsentSource[] {
+    return this.#absentEntries.map((entry) => ({
+      providerId: entry.providerId,
+      ...(entry.subsource ? { subsource: entry.subsource } : {}),
+      providerAbsentAt: entry.providerAbsentAt ?? null,
+    }));
   }
 
   partialAbsenceSummary(lookup: ProviderLookup): string | null {
@@ -150,7 +150,9 @@ export class ActivitySourceAttribution {
     if (entries.length === 0) return null;
     return entries
       .map((entry) => {
-        const providerLabel = lookup(entry.providerId)?.name ?? entry.providerId;
+        const providerLabel = entry.subsource
+          ? providerSourceLabel(entry.providerId, entry.subsource)
+          : (lookup(entry.providerId)?.name ?? providerSourceLabel(entry.providerId));
         const removedAt = entry.providerAbsentAt
           ? ` · ${formatDateTime(entry.providerAbsentAt)}`
           : "";

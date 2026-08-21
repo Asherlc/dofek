@@ -8,12 +8,6 @@ interface MigrationCountRow {
   migration_count: number | string;
 }
 
-export function buildClickHouseMigrationStatements(postgresConnectionString: string): string[] {
-  return clickHouseMigrations(postgresConnectionString).flatMap((migration) =>
-    "statements" in migration ? migration.statements : [],
-  );
-}
-
 export async function runClickHouseMigrations(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,

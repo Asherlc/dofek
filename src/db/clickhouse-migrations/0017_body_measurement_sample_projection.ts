@@ -1,5 +1,4 @@
 import {
-  buildBodyMeasurementReadModelStatements,
   buildBodyMeasurementSampleProjectionMigrationStatements,
   buildProviderStatsReadModelStatements,
 } from "../clickhouse-read-models.ts";
@@ -10,7 +9,6 @@ export function createMigration(): ClickHouseMigration {
     id: "0017_body_measurement_sample_projection",
     statements: [
       ...buildBodyMeasurementSampleProjectionMigrationStatements(),
-      ...buildBodyMeasurementReadModelStatements(),
       ...buildProviderStatsReadModelStatements(),
     ],
   };

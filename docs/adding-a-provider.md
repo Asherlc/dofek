@@ -6,7 +6,7 @@ Providers are plugins that pull data from an external API and upsert it into the
 
 **Every new sync provider must authenticate per user.** Users connect their own account via the app UI (Settings → Data Sources). Credentials are stored in `oauth_token` and loaded during sync with `loadTokens(db, providerId, userId)`.
 
-Do **not** build new providers that read user-specific credentials from deployment env vars (for example `MY_PROVIDER_USER_ID`, `MY_PROVIDER_API_TOKEN`, or a shared email address). Exemptions are listed in `src/providers/provider-auth-policy.ts` — currently `ultrahuman` (legacy server-side env auth) and `auto-supplements` (internal provider with no external account).
+Do **not** build new providers that read user-specific credentials from deployment env vars (for example `MY_PROVIDER_USER_ID`, `MY_PROVIDER_API_TOKEN`, or a shared email address). External-account providers have no exemptions. `auto-supplements` is exempt only because it is an internal provider with no external account.
 
 Supported connect flows:
 
@@ -15,6 +15,7 @@ Supported connect flows:
 | OAuth 2.0 | Provider has a standard OAuth app | Strava, Oura, Withings |
 | OAuth 1.0 | Provider requires 3-legged OAuth 1 | FatSecret |
 | Credential (`automatedLogin`) | Email/password or token exchange without browser | Eight Sleep, Zwift, Amazfit/Zepp |
+| Personal token (`manualToken`) | User mints a personal API or access token | Cycling Analytics, Ultrahuman |
 | Custom auth router | Login flow needs extra UI/steps | Garmin, WHOOP |
 
 App-level OAuth client IDs/secrets in env vars are fine — those identify the Dofek application, not an individual user.
@@ -128,6 +129,35 @@ authSetup(_options?: { host?: string }): ProviderAuthSetup {
 }
 ```
 
+For providers that let each user mint a personal token, return `manualToken`. The shared web and
+mobile modal links to the vendor instructions, accepts the token as a password field, validates it
+through `exchangeToken()`, and stores the returned token set per user. This passthrough template is
+only for provider-issued API/access tokens. If the provider instead asks the user for a refresh
+credential, exchange it for the provider's access/refresh token response and preserve the returned
+expiry and rotation data (for example, Wger documents a JWT refresh endpoint in its
+[official API guide](https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens)):
+
+```typescript
+authSetup(): ProviderAuthSetup {
+  return {
+    apiBaseUrl: "https://api.provider.example.com",
+    manualToken: {
+      label: "Personal API token",
+      instructionsUrl: "https://provider.example.com/account/api",
+      exchangeToken: async (token) => {
+        await validateToken(token);
+        return {
+          accessToken: token,
+          refreshToken: null,
+          expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+          scopes: "read",
+        };
+      },
+    },
+  };
+}
+```
+
 If the provider is file-import-only (like Strong CSV or Cronometer CSV), implement `ImportProvider` instead and add `readonly importOnly = true` rather than a `sync()` method.
 
 ## 3. Register the provider
@@ -169,4 +199,4 @@ Run `pnpm test:watch` while developing.
 - **JWT subject caveat**: for OAuth/JWT providers, `sub` may not be the numeric profile ID required by downstream endpoints; canonicalize with a profile lookup when needed.
 - **Error handling**: collect per-record errors in `SyncResult.errors` instead of aborting the whole sync.
 - **Tests stay colocated**: keep unit tests next to the provider file as `<provider>.test.ts`.
-- **Provider activity absence**: If the provider sync fetches an authoritative activity list for a time window, call `reconcileProviderActivityAbsence()` only after that fetch completes successfully. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Activity upserts must clear `providerAbsentAt`. Do not reconcile on partial fetches — absence from an incomplete response is not proof the provider removed the activity.
+- **Provider activity absence**: Use `src/db/provider-activity-sync.ts`. Upsert with `upsertProviderActivity()` / `ProviderActivityListSync.upsert()`. After a completed authoritative activity-list fetch for the sync window, call `finishProviderActivityListSync()` / `ProviderActivityListSync.reconcile()`. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Shared upserts never set `providerAbsentAt: null`; reconciliation clears tombstones for activities still present in the provider list. Do not reconcile on partial fetches — absence from an incomplete response is not proof the provider removed the activity.

@@ -1,23 +1,31 @@
+import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import {
   createSyncQueue,
+  getImportQueue,
   getProviderSyncQueue,
+  IMPORT_QUEUE,
+  type ImportJobData,
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
-import { queryCache } from "dofek/lib/cache";
-import { ProviderModel } from "dofek/providers/provider-model";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
+import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
-import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
+import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES } from "../../../../src/jobs/scheduled-sync.ts";
+import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
-import { startWorker } from "../lib/start-worker.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
+import { evaluateProviderSyncFreshness } from "../services/provider-sync-freshness.ts";
 import {
+  adminProcedure,
   CacheTTL,
   cachedProtectedQuery,
   protectedProcedure,
@@ -28,11 +36,34 @@ import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
   getAllConfiguredProviderIds,
-  mapBullMqStateToSyncStatus,
+  importTypeFromJobData,
+  isJobDataForUser,
   parseJobId,
+  providerIdForImportType,
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
+
+const syncProviderRowOutputSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  authType: z.string(),
+  tokenAuth: providerTokenAuthSchema.nullable(),
+  authorized: z.boolean(),
+  lastSyncedAt: z.string().nullable(),
+  lastSuccessfulSyncAt: z.string().nullable(),
+  syncFreshness: z
+    .object({
+      status: z.enum(["unknown", "current", "overdue"]),
+      label: z.string(),
+      description: z.string(),
+    })
+    .nullable(),
+  importOnly: z.boolean(),
+  pushOnly: z.boolean(),
+  needsReauth: z.boolean(),
+});
 
 const syncDateSchema = z
   .string()
@@ -78,6 +109,7 @@ export const logsInput = z.object({ limit: z.number().default(100) });
 const providerStatsOutputSchema = z.array(
   z.object({
     providerId: z.string(),
+    totalRecords: z.number().int().nonnegative(),
     activities: z.number().int().nonnegative(),
     dailyMetrics: z.number().int().nonnegative(),
     sleepSessions: z.number().int().nonnegative(),
@@ -91,6 +123,23 @@ const providerStatsOutputSchema = z.array(
     journalEntries: z.number().int().nonnegative(),
   }),
 );
+
+const activeImportsOutputSchema = z.array(
+  operationStatusOutputSchema.extend({
+    jobId: z.string(),
+    providerId: z.string(),
+    failedCount: z.number().optional(),
+  }),
+);
+
+const importJobProgressSchema = z.union([
+  z.number(),
+  z.object({
+    percentage: z.number().optional(),
+    message: z.string().optional(),
+    failedCount: z.number().optional(),
+  }),
+]);
 
 const syncJobDataSchema = z.object({
   userId: z.string(),
@@ -112,13 +161,69 @@ const syncJobDataSchema = z.object({
   checkpoint: z.unknown().optional(),
 });
 
-import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
+const providerJobOutputSchema = z.object({
+  providerId: z.string(),
+  jobId: z.string(),
+  queueName: z.string(),
+});
+
+const providerSyncResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    providerId: z.string(),
+    status: z.literal("started"),
+    jobId: z.string(),
+    queueName: z.string(),
+  }),
+  z.object({
+    providerId: z.string(),
+    status: z.literal("skippedCooldown"),
+    message: z.string(),
+  }),
+  z.object({
+    providerId: z.string(),
+    status: z.literal("alreadyQueued"),
+    jobId: z.string(),
+    queueName: z.string(),
+  }),
+  z.object({
+    providerId: z.string(),
+    status: z.literal("failed"),
+    message: z.string(),
+  }),
+]);
+
+const triggerSyncOutputSchema = z.object({
+  jobId: z.string().optional(),
+  jobIds: z.array(z.string()),
+  providerJobs: z.array(providerJobOutputSchema),
+  providerResults: z.array(providerSyncResultSchema),
+});
+
+type ProviderSyncResult = z.infer<typeof providerSyncResultSchema>;
+
+const queueBackpressureOutputSchema = z.array(
+  z.object({
+    queueName: z.string(),
+    providerId: z.string().optional(),
+    waiting: z.number().int().nonnegative(),
+    active: z.number().int().nonnegative(),
+    delayed: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
+);
+
+const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as const;
+
 export { sanitizeErrorMessage };
 
 /** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
 const legacySyncQueue = createSyncQueue();
 
-export const syncRouter = router({
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+const syncRouterProcedures = {
   /** Public list of configured providers that have a user-facing connection or import flow. */
   usableProviders: publicProcedure.query(async () => {
     await ensureProvidersRegistered();
@@ -131,6 +236,7 @@ export const syncRouter = router({
           id: model.id,
           name: model.name,
           authType: model.authType,
+          tokenAuth: model.tokenAuth,
           importOnly: model.importOnly,
         };
       })
@@ -140,107 +246,125 @@ export const syncRouter = router({
   }),
 
   /** List all providers and whether they're enabled (have valid config) */
-  providers: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    await ensureProvidersRegistered();
-    const all = getAllProviders();
-    const repo = new SyncRepository(ctx.db, ctx.userId);
+  providers: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .output(z.array(syncProviderRowOutputSchema))
+    .query(async ({ ctx }) => {
+      const requestTime = new Date();
+      await ensureProvidersRegistered();
+      const all = getAllProviders();
+      const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
-    // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
-    const [allTokens, lastSyncs, latestErrors] = await Promise.all([
-      repo.getConnectedProviderIds(),
-      repo.getLastSyncTimes(),
-      repo.getLatestErrors(),
-    ]);
+      // Batch: load connections, latest attempts, recent auth errors, and latest successes.
+      const [allConnections, lastSyncs, latestErrors, lastSuccessfulSyncs] = await Promise.all([
+        repo.getConnectedProviderIds(),
+        repo.getLastSyncTimes(),
+        repo.getLatestErrors(),
+        repo.getLastSuccessfulSyncTimes(),
+      ]);
 
-    const tokenSet = new Set(allTokens.map((r) => r.providerId));
-    const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));
-    const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
-    const authErrorProviders = new Set(
-      latestErrors
-        .filter((r) =>
-          hasCurrentProviderAuthFailure(
-            r.authFailureReason,
-            r.syncedAt,
-            tokenUpdatedAtMap.get(r.providerId),
-          ),
-        )
-        .map((r) => r.providerId),
-    );
+      const connectionSet = new Set(allConnections.map((row) => row.providerId));
+      const connectionUpdatedAtMap = new Map(
+        allConnections.map((row) => [row.providerId, row.updatedAt]),
+      );
+      const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
+      const lastSuccessfulSyncMap = new Map(
+        lastSuccessfulSyncs.map((row) => [row.providerId, row.lastSynced]),
+      );
+      const authErrorProviders = new Set(
+        latestErrors
+          .filter((r) =>
+            hasCurrentProviderAuthFailure(
+              r.authFailureReason,
+              r.syncedAt,
+              connectionUpdatedAtMap.get(r.providerId),
+            ),
+          )
+          .map((r) => r.providerId),
+      );
+      const registeredProviders = all
+        .filter((p) => p.validate() === null)
+        .map((p) => {
+          const model = new ProviderModel(p, connectionSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
+          const lastSuccessfulSyncAt = lastSuccessfulSyncMap.get(model.id) ?? null;
+          return {
+            id: model.id,
+            name: model.name,
+            description: null,
+            authType: model.authType,
+            tokenAuth: model.tokenAuth,
+            authorized: model.isConnected,
+            lastSyncedAt: model.lastSyncedAt,
+            lastSuccessfulSyncAt,
+            syncFreshness:
+              model.isConnected && !model.importOnly
+                ? evaluateProviderSyncFreshness({
+                    now: requestTime,
+                    lastSuccessfulSyncAt: lastSuccessfulSyncAt
+                      ? new Date(lastSuccessfulSyncAt)
+                      : null,
+                    intervalMinutes: DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
+                  })
+                : null,
+            importOnly: model.importOnly,
+            pushOnly: false,
+            needsReauth: authErrorProviders.has(model.id),
+          };
+        });
 
-    return all
-      .filter((p) => p.validate() === null)
-      .map((p) => {
-        const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
+      const pushProviders = PUSH_PROVIDERS.map((provider) => {
         return {
-          id: model.id,
-          name: model.name,
-          authType: model.authType,
-          authorized: model.isConnected,
-          lastSyncedAt: model.lastSyncedAt,
-          importOnly: model.importOnly,
-          needsReauth: authErrorProviders.has(model.id),
+          id: provider.id,
+          name: provider.name,
+          description: provider.description,
+          authType: provider.authType,
+          tokenAuth: null,
+          authorized: connectionSet.has(provider.id),
+          lastSyncedAt: null,
+          lastSuccessfulSyncAt: null,
+          syncFreshness: null,
+          importOnly: false,
+          pushOnly: true,
+          needsReauth: false,
         };
       });
-  }),
+
+      return [...registeredProviders, ...pushProviders];
+    }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
-  triggerSync: protectedProcedure.input(triggerSyncInput).mutation(async ({ ctx, input }) => {
-    await ensureProvidersRegistered();
-    const repo = new SyncRepository(ctx.db, ctx.userId);
+  triggerSync: createTriggerSyncProcedure(),
 
-    const providerIds: string[] = [];
-
-    // Validate provider exists and is configured before enqueuing.
-    // For "sync all", fan out into one BullMQ job per connected provider.
-    if (input.providerId) {
-      const provider = getAllProviders().find((p) => p.id === input.providerId);
-      if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
-      const validation = provider.validate();
-      if (validation) throw new Error(`Provider not configured: ${validation}`);
-      providerIds.push(provider.id);
-    } else {
-      // Check which providers have tokens to determine connectivity
-      const allTokens = await repo.getConnectedProviderIds();
-      const tokenSet = new Set(allTokens.map((r) => r.providerId));
-
-      for (const provider of getAllProviders()) {
-        if (provider.validate() !== null) continue;
-        const model = new ProviderModel(provider, tokenSet);
-        if (model.importOnly || !model.isConnected) continue;
-        providerIds.push(model.id);
-      }
-
-      if (providerIds.length === 0) throw new Error("No configured providers available for sync");
-    }
-
-    const syncWindow = syncWindowFromTriggerInput({
-      sinceDays: input.sinceDays,
-      sinceDate: input.sinceDate,
-      untilDate: input.untilDate,
-    });
-
-    const providerJobs = await Promise.all(
-      providerIds.map(async (providerId) => {
-        const job = await enqueueSyncJob(providerId, {
-          providerId,
-          userId: ctx.userId,
-          ...syncWindowToJobData(syncWindow, input.sinceDays),
-        });
-        const jobId = toJobId(job.id, providerId);
+  queueBackpressure: adminProcedure.output(queueBackpressureOutputSchema).query(async () => {
+    const providerIds = new Set([
+      ...getAllConfiguredProviderIds(),
+      ...getAllProviders().map((p) => p.id),
+    ]);
+    const providerBackpressure = await Promise.all(
+      [...providerIds].map(async (providerId) => {
+        const counts = await getProviderSyncQueue(providerId).getJobCounts(
+          ...queueBackpressureStates,
+        );
         return {
-          providerId,
-          jobId,
           queueName: providerSyncQueueName(providerId),
+          providerId,
+          waiting: counts.waiting ?? 0,
+          active: counts.active ?? 0,
+          delayed: counts.delayed ?? 0,
+          failed: counts.failed ?? 0,
         };
       }),
     );
-
-    startWorker();
-    return {
-      jobId: providerJobs[0]?.jobId ?? `job-${Date.now()}`,
-      jobIds: providerJobs.map((job) => job.jobId),
-      providerJobs,
-    };
+    const importCounts = await getImportQueue().getJobCounts(...queueBackpressureStates);
+    return [
+      ...providerBackpressure,
+      {
+        queueName: IMPORT_QUEUE,
+        waiting: importCounts.waiting ?? 0,
+        active: importCounts.active ?? 0,
+        delayed: importCounts.delayed ?? 0,
+        failed: importCounts.failed ?? 0,
+      },
+    ];
   }),
 
   /** Poll sync job status — reads from BullMQ */
@@ -265,8 +389,16 @@ export const syncRouter = router({
       if (!job) {
         job = await legacySyncQueue.getJob(rawId);
       }
-    } catch {
-      return null; // Redis unavailable
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: input.jobId },
+      });
+      throw new TRPCError({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+        cause: error,
+      });
     }
     if (!job) return null;
 
@@ -274,11 +406,25 @@ export const syncRouter = router({
     const jobData = syncJobDataSchema.safeParse(job.data);
     if (!jobData.success || jobData.data.userId !== ctx.userId) return null;
 
-    const state = await job.getState();
+    let operationProgress: Awaited<ReturnType<typeof readOperationProgress>>;
+    try {
+      operationProgress = await readOperationProgress(job);
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: input.jobId },
+      });
+      throw new TRPCError({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+        cause: error,
+      });
+    }
 
     const progressSchema = z.object({
       providers: z
         .record(
+          z.string(),
           z.object({
             status: z.enum(["pending", "running", "done", "error"]),
             message: z.string().optional(),
@@ -293,16 +439,15 @@ export const syncRouter = router({
     // When a sync job finishes, invalidate ALL cached data for this user.
     // ClickHouse read models update outside the API server, but the API
     // server's in-memory cache can still hold stale results until TTL expiry.
-    if (state === "completed" || state === "failed") {
-      await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+    if (operationProgress.status === "completed" || operationProgress.status === "failed") {
+      await invalidateAllUserQueries(ctx.userId);
     }
 
     return {
-      status: mapBullMqStateToSyncStatus(state),
+      ...operationProgress,
       providers: progress?.providers ?? {},
-      percentage: progress?.percentage,
       message:
-        state === "failed" ? job.failedReason : state === "completed" ? "Sync complete" : undefined,
+        operationProgress.status === "completed" ? "Sync complete" : operationProgress.message,
     };
   }),
 
@@ -312,18 +457,30 @@ export const syncRouter = router({
     let jobs: Job<SyncJobData>[];
     try {
       const states: Array<"active" | "waiting" | "delayed"> = ["active", "waiting", "delayed"];
+      const providerIds = new Set([
+        ...getAllConfiguredProviderIds(),
+        ...getAllProviders().map((p) => p.id),
+      ]);
       const jobArrays: Job<SyncJobData>[][] = await Promise.all([
-        ...[...getAllConfiguredProviderIds()].map((id) => getProviderSyncQueue(id).getJobs(states)),
+        ...[...providerIds].map((id) => getProviderSyncQueue(id).getJobs(states)),
         legacySyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();
-    } catch {
-      return []; // Redis unavailable
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { procedure: "sync.activeSyncs" },
+      });
+      throw new TRPCError({
+        code: "BAD_GATEWAY",
+        message: "Active syncs are temporarily unavailable. Please try again.",
+        cause: error,
+      });
     }
 
     const progressSchema = z.object({
       providers: z
         .record(
+          z.string(),
           z.object({
             status: z.enum(["pending", "running", "done", "error"]),
             message: z.string().optional(),
@@ -335,7 +492,7 @@ export const syncRouter = router({
 
     const results: Array<{
       jobId: string;
-      status: "running" | "done" | "error";
+      status: "queued" | "running";
       percentage?: number;
       providers: Record<
         string,
@@ -346,13 +503,30 @@ export const syncRouter = router({
     for (const job of jobs) {
       const jobData = syncJobDataSchema.safeParse(job.data);
       if (!jobData.success || jobData.data.userId !== ctx.userId) continue;
-      const state = await job.getState();
+      const jobId = toJobId(job.id, jobData.data.providerId ?? "unknown");
+      let operationProgress: Awaited<ReturnType<typeof readOperationProgress>>;
+      try {
+        operationProgress = await readOperationProgress(job);
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { procedure: "sync.activeSyncs" },
+          extra: { jobId },
+        });
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "Active syncs are temporarily unavailable. Please try again.",
+          cause: error,
+        });
+      }
+      if (operationProgress.status !== "queued" && operationProgress.status !== "running") {
+        continue;
+      }
       const parsed = progressSchema.safeParse(job.progress);
       const progress = parsed.success ? parsed.data : undefined;
       results.push({
-        jobId: toJobId(job.id, jobData.data.providerId ?? "unknown"),
-        status: mapBullMqStateToSyncStatus(state),
-        percentage: progress?.percentage,
+        jobId,
+        status: operationProgress.status,
+        percentage: operationProgress.percentage,
         providers: progress?.providers ?? {},
       });
     }
@@ -360,8 +534,56 @@ export const syncRouter = router({
     return results;
   }),
 
+  /** Check for active file imports belonging to the current user. */
+  activeImports: protectedProcedure.output(activeImportsOutputSchema).query(async ({ ctx }) => {
+    let jobs: Job<ImportJobData>[];
+    try {
+      jobs = await getImportQueue().getJobs(["active", "waiting", "delayed", "waiting-children"]);
+    } catch (error: unknown) {
+      captureException(error);
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "We couldn't check import progress. Please try again.",
+      });
+    }
+
+    const results: z.infer<typeof activeImportsOutputSchema> = [];
+    for (const job of jobs) {
+      if (!isJobDataForUser(job.data, ctx.userId)) continue;
+      const importType = importTypeFromJobData(job.data);
+      if (!importType) continue;
+      const providerId = providerIdForImportType(importType);
+      if (!providerId) continue;
+
+      const parsedProgress = importJobProgressSchema.safeParse(job.progress);
+      const progressValue = parsedProgress.success ? parsedProgress.data : undefined;
+      const operationProgress = await readOperationProgress({
+        failedReason: job.failedReason,
+        getState: () => job.getState(),
+        progress: progressValue,
+      });
+      const message =
+        typeof progressValue === "object" && progressValue.message
+          ? progressValue.message
+          : operationProgress.status === "queued"
+            ? "Waiting to import..."
+            : "Processing import...";
+      const failedCount = typeof progressValue === "object" ? progressValue.failedCount : undefined;
+
+      results.push({
+        jobId: String(job.id ?? `job-${providerId}`),
+        providerId,
+        ...operationProgress,
+        message,
+        ...(failedCount !== undefined ? { failedCount } : {}),
+      });
+    }
+
+    return results;
+  }),
+
   /** Get sync log history */
-  logs: cachedProtectedQuery(CacheTTL.SHORT)
+  logs: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(logsInput)
     .query(async ({ ctx, input }) => {
       const repo = new SyncRepository(ctx.db, ctx.userId);
@@ -374,7 +596,7 @@ export const syncRouter = router({
     }),
 
   /** Per-provider record counts broken down by table */
-  providerStats: cachedProtectedQuery(CacheTTL.SHORT)
+  providerStats: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .output(providerStatsOutputSchema)
     .query(async ({ ctx }) => {
       if (!ctx.sensorStore) {
@@ -387,38 +609,125 @@ export const syncRouter = router({
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
       return repo.getProviderStats();
     }),
+};
 
-  /** Diagnostic: row counts for primary user-owned raw tables. */
-  dataHealth: protectedProcedure.query(async ({ ctx }) => {
-    const countSchema = z.object({ count: z.coerce.number() });
+function createTriggerSyncProcedure() {
+  return protectedProcedure
+    .input(triggerSyncInput)
+    .output(triggerSyncOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      return withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
+        const repo = new SyncRepository(transaction, ctx.userId);
+        const allConnections = await repo.getConnectedProviderIds();
+        const connectionSet = new Set(allConnections.map((row) => row.providerId));
 
-    const healthChecks = [
-      { key: "dailyMetrics", table: "fitness.daily_metrics", predicate: sqlTag`` },
-      { key: "sleep", table: "fitness.sleep_session", predicate: sqlTag`` },
-      {
-        key: "activity",
-        table: "fitness.activity",
-        predicate: sqlTag`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
-      },
-    ] as const;
+        const providerIds: string[] = [];
 
-    const counts = await Promise.all(
-      healthChecks.map(({ table, predicate }) =>
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM ${sqlTag.raw(table)}
-                 WHERE user_id = ${ctx.userId}
-                 ${predicate}`,
-        ),
-      ),
-    );
+        // Validate provider exists and is configured before enqueuing.
+        // For "sync all", fan out into one BullMQ job per connected provider.
+        if (input.providerId) {
+          const provider = getAllProviders().find(
+            (registeredProvider) => registeredProvider.id === input.providerId,
+          );
+          if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
+          const validation = provider.validate();
+          if (validation) throw new Error(`Provider not configured: ${validation}`);
+          const model = new ProviderModel(
+            provider,
+            connectionSet,
+            undefined,
+            CUSTOM_AUTH_PROVIDERS,
+          );
+          if (!model.isConnected) {
+            throw new Error(`Provider not connected: ${provider.id}`);
+          }
+          providerIds.push(provider.id);
+        } else {
+          for (const provider of getAllProviders()) {
+            if (provider.validate() !== null) continue;
+            const model = new ProviderModel(
+              provider,
+              connectionSet,
+              undefined,
+              CUSTOM_AUTH_PROVIDERS,
+            );
+            if (model.importOnly || !model.isConnected) continue;
+            providerIds.push(model.id);
+          }
 
-    const health: Record<string, number> = {};
-    for (const [index, { key }] of healthChecks.entries()) {
-      health[key] = counts[index]?.[0]?.count ?? 0;
-    }
+          if (providerIds.length === 0)
+            throw new Error("No configured providers available for sync");
+        }
 
-    return health;
-  }),
+        const syncWindow = syncWindowFromTriggerInput({
+          sinceDays: input.sinceDays,
+          sinceDate: input.sinceDate,
+          untilDate: input.untilDate,
+        });
+
+        const providerResults = await Promise.all(
+          providerIds.map(async (providerId): Promise<ProviderSyncResult> => {
+            try {
+              const job = await enqueueSyncJob(
+                providerId,
+                {
+                  providerId,
+                  userId: ctx.userId,
+                  origin: "manual",
+                  ...syncWindowToJobData(syncWindow, input.sinceDays),
+                },
+                { skipWhenRateLimited: true, singleFlightFullSync: true },
+              );
+              if (!job) {
+                return {
+                  providerId,
+                  status: "skippedCooldown",
+                  message: "Provider sync skipped: rate-limit cooldown active",
+                };
+              }
+              const jobId = toJobId(job.id, providerId);
+              return {
+                providerId,
+                status: job.alreadyQueued ? "alreadyQueued" : "started",
+                jobId,
+                queueName: providerSyncQueueName(providerId),
+              };
+            } catch (error: unknown) {
+              captureException(error);
+              return {
+                providerId,
+                status: "failed",
+                message: errorMessage(error),
+              };
+            }
+          }),
+        );
+
+        const providerJobs = providerResults.flatMap((providerResult) => {
+          if (providerResult.status !== "started" && providerResult.status !== "alreadyQueued") {
+            return [];
+          }
+          return [
+            {
+              providerId: providerResult.providerId,
+              jobId: providerResult.jobId,
+              queueName: providerResult.queueName,
+            },
+          ];
+        });
+
+        return {
+          jobId: providerJobs[0]?.jobId,
+          jobIds: providerJobs.map((job) => job.jobId),
+          providerJobs,
+          providerResults,
+        };
+      });
+    });
+}
+
+export const syncRouter = router({
+  ...syncRouterProcedures,
+  triggerSync: createTriggerSyncProcedure(),
 });

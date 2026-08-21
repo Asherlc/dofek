@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { dailyMetrics, oauthToken, sleepSession, userProfile } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { oauthToken, userProfile } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -196,6 +197,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(sleep1.deepMinutes).toBe(120); // 2 hours
     expect(sleep1.remMinutes).toBe(120);
     expect(sleep1.lightMinutes).toBe(180);
+    expect(sleep1.stagingAvailable).toBe(true);
 
     // Verify daily metrics
     const dailyRows = await ctx.db

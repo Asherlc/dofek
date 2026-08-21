@@ -1,124 +1,162 @@
-import { formatDateYmd } from "@dofek/format/format";
-import { PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
 
 export const Route = createFileRoute("/cycle")({
   component: CyclePage,
 });
 
-function CyclePage() {
-  const { data: phaseData, isLoading: phaseLoading } = trpc.menstrualCycle.currentPhase.useQuery();
-  const { data: history, isLoading: historyLoading } = trpc.menstrualCycle.history.useQuery({
-    months: 6,
-  });
+function sourceLabel(source: {
+  providerId: string;
+  sourceName: string | null;
+  sourceBundle: string | null;
+}): string {
+  return source.sourceName ?? source.sourceBundle ?? source.providerId;
+}
 
-  const [startDate, setStartDate] = useState(formatDateYmd());
-  const utils = trpc.useUtils();
-  const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
-    onSuccess: () => {
-      utils.menstrualCycle.currentPhase.invalidate();
-      utils.menstrualCycle.history.invalidate();
-    },
-  });
-
-  const isLoading = phaseLoading || historyLoading;
+export function CyclePage() {
+  const currentPhase = trpc.menstrualCycle.currentPhase.useQuery();
+  const history = trpc.menstrualCycle.history.useQuery({ months: 6 });
 
   return (
-    <PageLayout title="Cycle Tracking" subtitle="Menstrual cycle phases and history">
-      {isLoading ? (
-        <div className="card p-6 animate-pulse h-48" />
-      ) : (
-        <div className="space-y-6">
-          {/* Current Phase */}
-          <div className="card p-6">
-            <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-              Current Phase
-            </h3>
-            {phaseData?.phase ? (
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
-                  style={{ backgroundColor: PHASE_DISPLAY[phaseData.phase].color }}
-                >
-                  {phaseData.dayOfCycle}
+    <PageLayout title="Cycle Tracking" subtitle="Provider-sourced cycle phases and history">
+      <div className="space-y-6">
+        <section aria-label="Cycle data source" className="card p-6">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted">
+            Read-only data
+          </h2>
+          <p className="mt-2 text-sm text-muted">
+            Cycle records come from connected providers. To correct a date, update it in the source
+            app and sync again.
+          </p>
+          <nav aria-label="Cycle data actions" className="mt-4 flex flex-wrap gap-2">
+            <Link
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground"
+              search={{ tab: "data-sources" }}
+              to="/settings"
+            >
+              Data sources
+            </Link>
+            <Link
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground"
+              search={{ tab: "privacy-export" }}
+              to="/settings"
+            >
+              Export all data
+            </Link>
+            <Link
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground"
+              search={{ tab: "privacy-export" }}
+              to="/settings"
+            >
+              Delete account data
+            </Link>
+          </nav>
+        </section>
+
+        <section aria-labelledby="current-cycle-heading" className="card p-6">
+          <h2
+            className="mb-3 text-sm font-medium uppercase tracking-wider text-muted"
+            id="current-cycle-heading"
+          >
+            Current phase
+          </h2>
+          {currentPhase.data ? (
+            currentPhase.data.phase && currentPhase.data.estimate ? (
+              <div>
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-16 w-16 items-center justify-center rounded-full text-lg font-bold text-white"
+                    style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
+                  >
+                    <span className="sr-only">Current cycle day </span>
+                    {currentPhase.data.dayOfCycle}
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold">{currentPhase.data.estimate.phaseLabel}</p>
+                    <p className="text-xs text-dim">{currentPhase.data.estimate.cycleDayLabel}</p>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-lg font-semibold">
-                    {PHASE_DISPLAY[phaseData.phase].label}
-                  </div>
-                  <div className="text-xs text-dim">
-                    Day {phaseData.dayOfCycle} of {phaseData.cycleLength}-day cycle
-                  </div>
+                <div className="mt-4 space-y-1 text-sm text-muted">
+                  <p>{currentPhase.data.estimate.dayBasisLabel}</p>
+                  <p>{currentPhase.data.estimate.methodLabel}</p>
+                  <p>{currentPhase.data.estimate.uncertaintyLabel}</p>
+                  <p>{currentPhase.data.estimate.limitationLabel}</p>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-dim">
-                No active cycle detected. Log a period start to begin tracking.
-              </p>
-            )}
-          </div>
-
-          {/* Log Period */}
-          <div className="card p-6">
-            <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-              Log Period Start
-            </h3>
-            <div className="flex items-center gap-3">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="bg-surface border border-border rounded px-3 py-2 text-sm text-foreground"
-              />
-              <button
-                type="button"
-                onClick={() => logMutation.mutate({ startDate })}
-                disabled={logMutation.isPending}
-                className="px-4 py-2 bg-accent text-white rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-              >
-                {logMutation.isPending ? "Saving..." : "Log Period"}
-              </button>
-            </div>
-          </div>
-
-          {/* History */}
-          {history && history.length > 0 && (
-            <div className="card p-6">
-              <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-                Period History
-              </h3>
-              <div className="space-y-2">
-                {[...history].reverse().map((period) => (
-                  <div
-                    key={period.id}
-                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                  >
-                    <div>
-                      <span className="text-sm text-foreground">{period.startDate}</span>
-                      {period.endDate && (
-                        <span className="text-sm text-dim ml-1">to {period.endDate}</span>
-                      )}
-                    </div>
-                    {period.endDate && (
-                      <span className="text-xs text-muted">
-                        {Math.round(
-                          (new Date(period.endDate).getTime() -
-                            new Date(period.startDate).getTime()) /
-                            86400000,
-                        )}{" "}
-                        days
-                      </span>
-                    )}
-                  </div>
-                ))}
+              <div className="space-y-2 text-sm text-muted">
+                <p>{currentPhase.data.availability.label}</p>
+                {currentPhase.data.availability.status === "no-history" ? (
+                  <p>
+                    HealthKit cannot reveal whether read access was denied. Review Apple Health
+                    permissions and sync status in Data sources.
+                  </p>
+                ) : null}
               </div>
-            </div>
+            )
+          ) : currentPhase.isLoading ? (
+            <QueryStatePanel contextLabel="Current cycle phase" height={96} variant="loading" />
+          ) : currentPhase.error ? (
+            <QueryStatePanel
+              contextLabel="Current cycle phase"
+              error={currentPhase.error}
+              height={96}
+            />
+          ) : (
+            <QueryStatePanel message="No readable provider cycle data yet." height={96} />
           )}
-        </div>
-      )}
+
+          <aside
+            aria-label="Cycle tracking safety notice"
+            className="mt-4 rounded-lg border border-border bg-surface-hover p-3"
+            role="note"
+          >
+            <p className="text-sm font-medium text-foreground">Tracking limitation</p>
+            <p className="mt-1 text-sm text-muted">{CYCLE_TRACKING_SAFETY_NOTICE}</p>
+          </aside>
+        </section>
+
+        <section aria-labelledby="cycle-history-heading" className="card p-6" id="cycle-history">
+          <h2
+            className="mb-3 text-sm font-medium uppercase tracking-wider text-muted"
+            id="cycle-history-heading"
+          >
+            Provider cycle starts
+          </h2>
+          {history.data ? (
+            history.data.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {[...history.data].reverse().map((start) => (
+                  <li aria-label={`Cycle start ${start.startDate}`} className="py-3" key={start.id}>
+                    <p className="text-sm font-medium text-foreground">{start.startDate}</p>
+                    <ul className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
+                      {start.sources.map((source) => (
+                        <li
+                          className="rounded-full border border-border px-2 py-1"
+                          key={`${source.providerId}:${source.sourceBundle}:${source.sourceName}`}
+                        >
+                          {sourceLabel(source)}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <QueryStatePanel message="No readable provider cycle starts in the past 6 months." />
+            )
+          ) : history.isLoading ? (
+            <QueryStatePanel contextLabel="Cycle history" variant="loading" />
+          ) : history.error ? (
+            <QueryStatePanel contextLabel="Cycle history" error={history.error} />
+          ) : (
+            <QueryStatePanel message="No readable provider cycle starts in the past 6 months." />
+          )}
+        </section>
+      </div>
     </PageLayout>
   );
 }

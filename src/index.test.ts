@@ -24,6 +24,17 @@ const mockGetEnabledSyncProviders = vi.fn<() => Array<{ id: string }>>(() => [])
 const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
 const mockEnsureProvidersRegistered = vi.fn(() => Promise.resolve());
 const mockProcessSyncJob = vi.fn();
+const mockProcessFitFileImportJob = vi.fn();
+const mockCloseAccountErasureWorkLockPool = vi.fn(() => Promise.resolve());
+const mockRunQueuedUserWorkUnlessAccountErasing = vi.fn(
+  async (
+    _workLockPool: unknown,
+    _database: unknown,
+    _userId: string,
+    _workKind: string,
+    work: () => Promise<unknown>,
+  ) => work(),
+);
 const mockDbExecute = vi.fn(async () => [{ id: "test-user" }]);
 const mockCreateDatabaseFromEnv = vi.fn(() => ({
   execute: mockDbExecute,
@@ -33,9 +44,9 @@ const mockCreateSyncQueue = vi.fn(() => ({
   add: mockAdd,
   close: mockQueueClose,
 }));
-let capturedWorkerCallback: ((j: unknown) => Promise<unknown>) | undefined;
-const MockWorker = vi.fn((_name: string, callback: (j: unknown) => Promise<unknown>) => {
-  capturedWorkerCallback = callback;
+const capturedWorkerCallbacks = new Map<string, (job: unknown) => Promise<unknown>>();
+const MockWorker = vi.fn((name: string, callback: (job: unknown) => Promise<unknown>) => {
+  capturedWorkerCallbacks.set(name, callback);
   return { close: mockWorkerClose };
 });
 const MockQueueEvents = vi.fn(() => ({ close: mockQueueEventsClose }));
@@ -48,6 +59,7 @@ vi.mock("bullmq", () => ({
 vi.mock("./jobs/queues.ts", () => ({
   getRedisConnection: vi.fn(() => mockRedisConnection),
   createSyncQueue: mockCreateSyncQueue,
+  FIT_FILE_IMPORT_QUEUE: "fit-file-import",
   SYNC_QUEUE: "sync",
 }));
 
@@ -57,6 +69,17 @@ vi.mock("./jobs/provider-registration.ts", () => ({
 
 vi.mock("./jobs/process-sync-job.ts", () => ({
   processSyncJob: mockProcessSyncJob,
+}));
+
+vi.mock("./jobs/process-fit-file-import-job.ts", () => ({
+  processFitFileImportJob: mockProcessFitFileImportJob,
+}));
+
+vi.mock("./jobs/account-erasure-work-guard.ts", () => ({
+  createAccountErasureWorkLockPoolFromEnv: vi.fn(() => ({
+    close: mockCloseAccountErasureWorkLockPool,
+  })),
+  runQueuedUserWorkUnlessAccountErasing: mockRunQueuedUserWorkUnlessAccountErasing,
 }));
 
 vi.mock("./providers/index.ts", () => ({
@@ -69,7 +92,7 @@ vi.mock("./db/index.ts", () => ({
   createDatabaseFromEnv: mockCreateDatabaseFromEnv,
 }));
 
-vi.mock("./db/schema.ts", () => ({
+vi.mock("./db/schema/core.ts", () => ({
   TEST_USER_ID: "test-user",
 }));
 
@@ -101,7 +124,7 @@ vi.mock("./providers/apple-health/import.ts", () => ({
 
 const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefined);
 vi.mock("./metric-stream/clickhouse-sink.ts", () => ({
-  runMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
+  startMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
 }));
 
 // Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)
@@ -133,6 +156,7 @@ beforeEach(() => {
 describe("handleSyncCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedWorkerCallbacks.clear();
     mockAdd.mockResolvedValue({ waitUntilFinished: mockWaitUntilFinished });
     mockWaitUntilFinished.mockResolvedValue(undefined);
   });
@@ -166,6 +190,7 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: 7,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -178,11 +203,13 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: 7,
       userId: "test-user",
+      origin: "manual",
     });
     expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
       providerId: "wahoo",
       sinceDays: 7,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -209,10 +236,33 @@ describe("handleSyncCommand", () => {
       connection: mockRedisConnection,
     });
     // Verify the callback calls processSyncJob by invoking the captured callback
+    const capturedWorkerCallback = capturedWorkerCallbacks.get("sync");
     expect(capturedWorkerCallback).toBeDefined();
-    const fakeJob = { id: "123" };
+    const fakeJob = { data: { userId: "test-user" }, id: "123" };
     await capturedWorkerCallback?.(fakeJob);
     expect(mockProcessSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
+  });
+
+  it("runs a temporary FIT import worker for provider sync child jobs", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "wahoo" }]);
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+
+    expect(MockWorker).toHaveBeenCalledWith("fit-file-import", expect.any(Function), {
+      connection: mockRedisConnection,
+    });
+    const capturedFitWorkerCallback = capturedWorkerCallbacks.get("fit-file-import");
+    expect(capturedFitWorkerCallback).toBeDefined();
+    const fakeJob = { data: { userId: "test-user" }, id: "fit-123" };
+    await capturedFitWorkerCallback?.(fakeJob);
+    expect(mockProcessFitFileImportJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
+  });
+
+  it("closes the queued-work lock pool after temporary workers stop", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+
+    expect(mockCloseAccountErasureWorkLockPool).toHaveBeenCalledOnce();
   });
 
   it("creates QueueEvents with connection", async () => {
@@ -251,6 +301,7 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: undefined,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -261,6 +312,7 @@ describe("handleSyncCommand", () => {
       providerId: "strava",
       sinceDays: 30,
       userId: "test-user",
+      origin: "manual",
     });
   });
 
@@ -277,6 +329,7 @@ describe("handleSyncCommand", () => {
         providerId: "strava",
         sinceDays: 7,
         userId: "env-user-123",
+        origin: "manual",
       });
       expect(mockDbExecute).not.toHaveBeenCalled();
     } finally {
@@ -301,7 +354,7 @@ describe("handleSyncCommand", () => {
   it("cleans up BullMQ resources on success", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
+    expect(mockWorkerClose).toHaveBeenCalledTimes(2);
     expect(mockQueueEventsClose).toHaveBeenCalledOnce();
     expect(mockQueueClose).toHaveBeenCalledOnce();
   });
@@ -310,7 +363,7 @@ describe("handleSyncCommand", () => {
     mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
     mockWaitUntilFinished.mockRejectedValue(new Error("boom"));
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(mockWorkerClose).toHaveBeenCalledOnce();
+    expect(mockWorkerClose).toHaveBeenCalledTimes(2);
     expect(mockQueueEventsClose).toHaveBeenCalledOnce();
     expect(mockQueueClose).toHaveBeenCalledOnce();
   });

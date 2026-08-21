@@ -1,5 +1,4 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -7,6 +6,7 @@ import {
   restingHeartRateValuesCte,
 } from "../db/resting-heart-rate-query.ts";
 import type { Database } from "../db/typed-sql.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 
 /**
@@ -62,11 +62,34 @@ export async function refitAllParams(
     existingParams = await loadPersonalizedParams(db, userId);
   } catch (err) {
     logger.error(`[personalization] Failed to load existing params: ${err}`);
-    Sentry.captureException(err, { tags: { context: "personalization-load-existing" } });
+    captureException(err, { tags: { context: "personalization-load-existing" } });
   }
+  const fittedAt = new Date().toISOString();
   const params: PersonalizedParams = {
-    version: 1,
-    fittedAt: new Date().toISOString(),
+    version: 2,
+    fittedAt,
+    successfulFitAt: {
+      exponentialMovingAverage:
+        ewmaResult.status === "fulfilled" && ewmaResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.exponentialMovingAverage ?? null),
+      readinessWeights:
+        readinessResult.status === "fulfilled" && readinessResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.readinessWeights ?? null),
+      sleepTarget:
+        sleepResult.status === "fulfilled" && sleepResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.sleepTarget ?? null),
+      stressThresholds:
+        stressResult.status === "fulfilled" && stressResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.stressThresholds ?? null),
+      trainingImpulseConstants:
+        trimpResult.status === "fulfilled" && trimpResult.value != null
+          ? fittedAt
+          : (existingParams?.successfulFitAt?.trainingImpulseConstants ?? null),
+    },
     exponentialMovingAverage:
       ewmaResult.status === "fulfilled" && ewmaResult.value != null
         ? ewmaResult.value
@@ -93,7 +116,7 @@ export async function refitAllParams(
     await savePersonalizedParams(db, userId, params);
   } catch (err) {
     logger.error(`[personalization] Failed to save params: ${err}`);
-    Sentry.captureException(err, { tags: { context: "personalization-save" } });
+    captureException(err, { tags: { context: "personalization-save" } });
   }
 
   return params;
@@ -299,23 +322,12 @@ async function fitReadinessFromDb(db: Database, sensorStore: RefitSensorStore, u
         efficiency_pct: z.coerce.number().nullable(),
       }),
       `SELECT
-        toString(toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)) AS date,
-        efficiency_pct
-      FROM (
-        SELECT
-          started_at,
-          efficiency_pct,
-          duration_minutes,
-          row_number() OVER (
-            PARTITION BY toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)
-            ORDER BY duration_minutes DESC NULLS LAST
-          ) AS row_number
-        FROM analytics.v_sleep
-        WHERE user_id = {userId:UUID}
-          AND is_nap = false
-          AND started_at > now() - INTERVAL 425 DAY
-      )
-      WHERE row_number = 1`,
+        toString(sleep.date) AS date,
+        sleep.efficiency_pct AS efficiency_pct
+      FROM analytics.daily_sleep AS sleep FINAL
+      WHERE sleep.user_id = {userId:UUID}
+        AND sleep.is_deleted = 0
+        AND sleep.date >= toDate(now() - INTERVAL 425 DAY)`,
       { userId },
     ),
   ]);
@@ -389,22 +401,12 @@ export async function fitSleepFromDb(
             duration_minutes: z.coerce.number().nullable(),
           }),
           `SELECT
-        date,
-        duration_minutes
-      FROM (
-        SELECT
-          toString(toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)) AS date,
-          duration_minutes,
-          row_number() OVER (
-            PARTITION BY toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)
-            ORDER BY duration_minutes DESC NULLS LAST
-          ) AS row_number
-        FROM analytics.v_sleep
-        WHERE user_id = {userId:UUID}
-          AND is_nap = false
-          AND started_at > now() - INTERVAL 365 DAY
-      )
-      WHERE row_number = 1
+        toString(sleep.date) AS date,
+        sleep.duration_minutes AS duration_minutes
+      FROM analytics.daily_sleep AS sleep FINAL
+      WHERE sleep.user_id = {userId:UUID}
+        AND sleep.is_deleted = 0
+        AND sleep.date >= toDate(now() - INTERVAL 365 DAY)
       ORDER BY date ASC`,
           { userId },
         ),
@@ -542,61 +544,32 @@ export function parseTrainingImpulseRows(rows: Record<string, unknown>[]): Train
 }
 
 async function fitTrimpFromDb(sensorStore: RefitSensorStore, userId: string) {
-  // Reads NP from analytics.deduped_sensor and TRIMP inputs from
-  // analytics.activity_summary (joining user_profile via the
-  // native ClickHouse read models for max_hr / resting_hr).
+  // Reads precomputed normalized power and TRIMP inputs from the activity
+  // summary read model, joining user_profile for max_hr / resting_hr.
   const rows = await sensorStore.query(
     trainingImpulseActivityRowSchema,
-    `WITH rolling_power AS (
-      SELECT
-        a.id AS activity_id,
-        avg(ds.scalar) OVER (
-          PARTITION BY a.id
-          ORDER BY ds.recorded_at
-          RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
-        ) AS rolling_30s_power
-      FROM analytics.deduped_sensor ds
-      INNER JOIN analytics.v_activity a
-        ON a.user_id = ds.user_id
-       AND ds.recorded_at >= a.started_at
-       AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-      WHERE a.user_id = {userId:UUID}
-        AND a.started_at > now() - INTERVAL 365 DAY
-        AND ds.channel = 'power'
-        AND ds.scalar > 0
-        AND ds.is_deleted = 0
-    ),
-    np_data AS (
-      SELECT
-        activity_id,
-        round(pow(avg(pow(rolling_30s_power, 4)), 0.25), 1) AS np
-      FROM rolling_power
-      GROUP BY activity_id
-      HAVING count() >= 60
-    ),
-    np_long_activities AS (
-      SELECT n.np AS np
-      FROM np_data n
-      INNER JOIN analytics.activity_summary a2 ON a2.activity_id = n.activity_id
-      WHERE dateDiff('second', a2.started_at, a2.ended_at) / 60 >= 20
-    ),
-    ftp_estimate AS (
-      SELECT max(np) * 0.95 AS ftp FROM np_long_activities
+    `WITH ftp_estimate AS (
+      SELECT max(normalized_power) * 0.95 AS ftp
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND started_at > now() - INTERVAL 365 DAY
+        AND dateDiff('second', started_at, ended_at) / 60 >= 20
+        AND normalized_power IS NOT NULL
     )
     SELECT
       dateDiff('second', asum.started_at, asum.ended_at) / 60 AS duration_min,
       asum.avg_hr AS avg_hr,
       greatest(asum.max_hr, up.max_hr) AS max_hr,
       coalesce(up.resting_hr, 60) AS resting_hr,
-      pow(n.np / nullIf((SELECT ftp FROM ftp_estimate), 0), 2)
+      pow(asum.normalized_power / nullIf((SELECT ftp FROM ftp_estimate), 0), 2)
         * (dateDiff('second', asum.started_at, asum.ended_at) / 3600.0)
         * 100 AS power_tss
     FROM analytics.activity_summary asum
     INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-    INNER JOIN np_data n ON n.activity_id = asum.activity_id
     WHERE asum.user_id = {userId:UUID}
       AND asum.hr_sample_count > 0
-      AND asum.avg_hr > 0`,
+      AND asum.avg_hr > 0
+      AND asum.normalized_power IS NOT NULL`,
     { userId },
   );
 

@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { TRPCError } from "@trpc/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
+
+vi.mock("@sentry/node", () => ({ captureException: sentry.captureException }));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -33,75 +38,14 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 });
 
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
-import { classifyStrainZone, weeklyReportRouter } from "./weekly-report.ts";
-
-describe("classifyStrainZone", () => {
-  it("returns 'optimal' when chronicAvgLoad is 0", () => {
-    expect(classifyStrainZone(50, 0)).toBe("optimal");
-  });
-
-  it("returns 'optimal' when chronicAvgLoad is negative", () => {
-    expect(classifyStrainZone(50, -10)).toBe("optimal");
-  });
-
-  it("returns 'restoring' when ratio is below 0.8", () => {
-    // ratio = 30 / 100 = 0.3
-    expect(classifyStrainZone(30, 100)).toBe("restoring");
-  });
-
-  it("returns 'overreaching' when ratio is above 1.3", () => {
-    // ratio = 140 / 100 = 1.4
-    expect(classifyStrainZone(140, 100)).toBe("overreaching");
-  });
-
-  it("returns 'optimal' when ratio is between 0.8 and 1.3", () => {
-    // ratio = 100 / 100 = 1.0
-    expect(classifyStrainZone(100, 100)).toBe("optimal");
-  });
-
-  it("returns 'optimal' when ratio is exactly 0.8 (boundary)", () => {
-    // ratio = 80 / 100 = 0.8 → not < 0.8, so falls through to optimal
-    expect(classifyStrainZone(80, 100)).toBe("optimal");
-  });
-
-  it("returns 'optimal' when ratio is exactly 1.3 (boundary)", () => {
-    // ratio = 130 / 100 = 1.3 → not > 1.3, so falls through to optimal
-    expect(classifyStrainZone(130, 100)).toBe("optimal");
-  });
-
-  it("returns 'restoring' when ratio is just below 0.8", () => {
-    // ratio = 79 / 100 = 0.79
-    expect(classifyStrainZone(79, 100)).toBe("restoring");
-  });
-
-  it("returns 'overreaching' when ratio is just above 1.3", () => {
-    // ratio = 131 / 100 = 1.31
-    expect(classifyStrainZone(131, 100)).toBe("overreaching");
-  });
-
-  it("returns 'optimal' when weekAvgLoad is 0 and chronicAvgLoad > 0", () => {
-    // ratio = 0 / 100 = 0 → < 0.8 → restoring
-    expect(classifyStrainZone(0, 100)).toBe("restoring");
-  });
-
-  it("returns 'optimal' when both loads are 0", () => {
-    // chronicAvgLoad <= 0 → short-circuits to optimal
-    expect(classifyStrainZone(0, 0)).toBe("optimal");
-  });
-
-  it("handles very small chronicAvgLoad", () => {
-    // ratio = 50 / 0.001 = 50000 → overreaching
-    expect(classifyStrainZone(50, 0.001)).toBe("overreaching");
-  });
-
-  it("handles negative weekAvgLoad with positive chronicAvgLoad", () => {
-    // ratio = -10 / 100 = -0.1 → < 0.8 → restoring
-    expect(classifyStrainZone(-10, 100)).toBe("restoring");
-  });
-});
+import { weeklyReportRouter } from "./weekly-report.ts";
 
 describe("weeklyReportRouter", () => {
   const createCaller = createTestCallerFactory(weeklyReportRouter);
+
+  beforeEach(() => {
+    sentry.captureException.mockClear();
+  });
 
   describe("report", () => {
     it("returns empty report when no data", async () => {
@@ -114,6 +58,52 @@ describe("weeklyReportRouter", () => {
       const result = await caller.report({ weeks: 4, endDate: "2026-03-24" });
       expect(result.current).toBeNull();
       expect(result.history).toEqual([]);
+      expect(result.recovery).toEqual({
+        range: { startDate: "2026-03-01", endDate: "2026-03-24" },
+        emptyMessage:
+          "No activity, sleep, or recovery data was found from 2026-03-01 through 2026-03-24. Sync your providers, then retry or review processing alerts.",
+      });
+    });
+
+    it("reports failures and names the affected weekly range", async () => {
+      const failure = new Error("ClickHouse query failed");
+      const sensorStore = makeMockSensorStore([]);
+      vi.mocked(sensorStore.query).mockRejectedValue(failure);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await expect(caller.report({ weeks: 4, endDate: "2026-03-24" })).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        cause: failure,
+        message:
+          "The weekly report for 2026-03-01 through 2026-03-24 could not be refreshed. Retry now or review processing alerts if the problem continues.",
+      });
+      expect(sentry.captureException).toHaveBeenCalledWith(failure, {
+        tags: { reportType: "weekly" },
+        extra: { startDate: "2026-03-01", endDate: "2026-03-24" },
+      });
+    });
+
+    it("preserves an authored TRPCError unchanged", async () => {
+      const failure = new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Weekly report prerequisite missing",
+      });
+      const sensorStore = makeMockSensorStore([]);
+      vi.mocked(sensorStore.query).mockRejectedValue(failure);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await expect(caller.report({ weeks: 4, endDate: "2026-03-24" })).rejects.toBe(failure);
+      expect(sentry.captureException).not.toHaveBeenCalled();
     });
 
     it("asserts correct trainingHours rounding", async () => {
@@ -126,7 +116,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 480,
           avg_resting_hr: 58.67,
           avg_hrv: 45.33,
-          chronic_avg_load: 3.0,
           prev_3wk_avg_sleep: 400,
         },
       ];
@@ -156,7 +145,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 480,
           avg_resting_hr: null,
           avg_hrv: null,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 400,
         },
       ];
@@ -183,7 +171,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 480,
           avg_resting_hr: null,
           avg_hrv: null,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: null,
         },
       ];
@@ -207,7 +194,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 480,
           avg_resting_hr: null,
           avg_hrv: null,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 0,
         },
       ];
@@ -232,7 +218,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: null,
           avg_resting_hr: 58.67,
           avg_hrv: 45.33,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: null,
         },
       ];
@@ -257,7 +242,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: null,
           avg_resting_hr: null,
           avg_hrv: null,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: null,
         },
       ];
@@ -272,31 +256,6 @@ describe("weeklyReportRouter", () => {
       expect(result.current?.avgHrv).toBeNull();
     });
 
-    it("classifies strainZone correctly from load values", async () => {
-      const rows = [
-        {
-          week_start: "2026-03-17",
-          total_hours: 10,
-          activity_count: 5,
-          avg_daily_load: 8,
-          avg_sleep_min: 420,
-          avg_resting_hr: 55,
-          avg_hrv: 50,
-          chronic_avg_load: 5,
-          prev_3wk_avg_sleep: 420,
-        },
-      ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
-      // 8 / 5 = 1.6 > 1.3 → overreaching
-      expect(result.current?.strainZone).toBe("overreaching");
-    });
-
     it("splits current and history correctly", async () => {
       const rows = [
         {
@@ -307,7 +266,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 420,
           avg_resting_hr: 60,
           avg_hrv: 45,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 420,
         },
         {
@@ -318,7 +276,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 450,
           avg_resting_hr: 58,
           avg_hrv: 48,
-          chronic_avg_load: 1.5,
           prev_3wk_avg_sleep: 420,
         },
         {
@@ -329,7 +286,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 480,
           avg_resting_hr: 56,
           avg_hrv: 50,
-          chronic_avg_load: 2,
           prev_3wk_avg_sleep: 435,
         },
       ];
@@ -356,7 +312,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: null,
           avg_resting_hr: null,
           avg_hrv: null,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: null,
         },
       ];
@@ -382,7 +337,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 400,
           avg_resting_hr: 62,
           avg_hrv: 40,
-          chronic_avg_load: 0.5,
           prev_3wk_avg_sleep: 400,
         },
         {
@@ -393,7 +347,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 420,
           avg_resting_hr: 60,
           avg_hrv: 42,
-          chronic_avg_load: 0.8,
           prev_3wk_avg_sleep: 400,
         },
         {
@@ -404,7 +357,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 440,
           avg_resting_hr: 58,
           avg_hrv: 44,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 410,
         },
         {
@@ -415,7 +367,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 450,
           avg_resting_hr: 57,
           avg_hrv: 46,
-          chronic_avg_load: 1.3,
           prev_3wk_avg_sleep: 420,
         },
         {
@@ -426,7 +377,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 460,
           avg_resting_hr: 55,
           avg_hrv: 48,
-          chronic_avg_load: 1.5,
           prev_3wk_avg_sleep: 437,
         },
       ];
@@ -455,7 +405,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 420,
           avg_resting_hr: 60,
           avg_hrv: 45,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 420,
         },
         {
@@ -466,7 +415,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 450,
           avg_resting_hr: 58,
           avg_hrv: 48,
-          chronic_avg_load: 1.5,
           prev_3wk_avg_sleep: 420,
         },
         {
@@ -477,7 +425,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 480,
           avg_resting_hr: 56,
           avg_hrv: 50,
-          chronic_avg_load: 2,
           prev_3wk_avg_sleep: 435,
         },
       ];
@@ -506,7 +453,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 420,
           avg_resting_hr: 60,
           avg_hrv: 45,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 420,
         },
         {
@@ -517,7 +463,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 390,
           avg_resting_hr: 62,
           avg_hrv: 40,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 420,
         },
       ];
@@ -546,7 +491,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 420,
           avg_resting_hr: 60,
           avg_hrv: 45,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 420,
         },
         {
@@ -557,7 +501,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 390,
           avg_resting_hr: 62,
           avg_hrv: 40,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 420,
         },
       ];
@@ -623,7 +566,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 465,
           avg_resting_hr: 57.89,
           avg_hrv: 52.14,
-          chronic_avg_load: 3.78,
           prev_3wk_avg_sleep: 450,
         },
       ];
@@ -649,8 +591,6 @@ describe("weeklyReportRouter", () => {
       expect(currentWeek?.avgRestingHr).toBe(57.9);
       // avgHrv: Math.round(52.14 * 10) / 10 = Math.round(521.4) / 10 = 521 / 10 = 52.1
       expect(currentWeek?.avgHrv).toBe(52.1);
-      // strainZone: 4.56 / 3.78 = 1.206 → between 0.8 and 1.3 → optimal
-      expect(currentWeek?.strainZone).toBe("optimal");
       expect(currentWeek?.activityCount).toBe(5);
     });
 
@@ -698,7 +638,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 420,
           avg_resting_hr: null,
           avg_hrv: null,
-          chronic_avg_load: 2.5,
           prev_3wk_avg_sleep: null,
         },
       ];
@@ -711,9 +650,6 @@ describe("weeklyReportRouter", () => {
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       // With || 0: avgDailyLoad = 2.5. With && 0: avgDailyLoad = 0.
       expect(result.current?.avgDailyLoad).toBe(2.5);
-      // strainZone depends on avgDailyLoad: 2.5 / 2.5 = 1.0 → optimal
-      // With && 0: 0 / 0 → chronicAvgLoad <= 0 → optimal (same). So test strainZone + load.
-      expect(result.current?.strainZone).toBe("optimal");
     });
 
     it("computes sleepPerformancePct using division not multiplication (kills / → * mutant)", async () => {
@@ -729,7 +665,6 @@ describe("weeklyReportRouter", () => {
           avg_sleep_min: 360,
           avg_resting_hr: null,
           avg_hrv: null,
-          chronic_avg_load: 1,
           prev_3wk_avg_sleep: 400,
         },
       ];

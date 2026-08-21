@@ -20,6 +20,8 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
+  invalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -39,8 +41,8 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { queryCache } from "dofek/lib/cache";
-import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
+import { invalidateAllUserQueries, invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
+import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
 import { sleepNeedRouter } from "./sleep-need.ts";
@@ -82,6 +84,10 @@ describe("recoveryRouter", () => {
         return {
           date: rowDate,
           provider_id: String(row.provider_id ?? "apple_health"),
+          timezone: null,
+          start_utc_offset_minutes: 0,
+          end_utc_offset_minutes: 0,
+          local_time_source: "device_offset",
           started_at: hourTimestamp(rowDate, bedtimeHour),
           ended_at: hourTimestamp(rowDate, waketimeHour),
           duration_minutes: durationMinutes,
@@ -90,6 +96,7 @@ describe("recoveryRouter", () => {
           light_minutes: durationMinutes,
           awake_minutes: 0,
           efficiency_pct: null,
+          staging_available: Boolean(row.staging_available ?? true),
         };
       }
 
@@ -105,6 +112,10 @@ describe("recoveryRouter", () => {
       return {
         date: String(row.date ?? today),
         provider_id: String(row.provider_id ?? "apple_health"),
+        timezone: null,
+        start_utc_offset_minutes: 0,
+        end_utc_offset_minutes: 0,
+        local_time_source: "device_offset",
         started_at: `${String(row.date ?? today)}T04:00:00Z`,
         ended_at: `${String(row.date ?? today)}T12:00:00Z`,
         duration_minutes: durationMinutes,
@@ -113,6 +124,7 @@ describe("recoveryRouter", () => {
         light_minutes: lightMinutes,
         awake_minutes: awakeMinutes,
         efficiency_pct: row.efficiency ?? row.efficiency_pct ?? null,
+        staging_available: Boolean(row.staging_available ?? true),
       };
     });
   }
@@ -121,7 +133,7 @@ describe("recoveryRouter", () => {
     return {
       ...makeMockSensorStore([]),
       query: vi.fn(async (_schema: unknown, query: string) => {
-        if (query.includes("analytics.v_sleep")) return toSleepRows(rows);
+        if (query.includes("analytics.daily_sleep")) return toSleepRows(rows);
         if (query.includes("analytics.daily_strain")) {
           if (rows.some((row) => "daily_load" in row || "acute_load" in row)) return rows;
           return [{ load: rows[0]?.yesterday_load ?? 0 }];
@@ -380,7 +392,9 @@ describe("recoveryRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.sleepAnalytics({ days: 90 });
       expect(result.nightly).toEqual([]);
-      expect(result.sleepDebt).toBe(0);
+      expect(result.sleepDebt).toBeNull();
+      expect(result.averageSleepMinutes).toBeNull();
+      expect(result.averageEfficiencyPercent).toBeNull();
     });
   });
 
@@ -397,7 +411,6 @@ describe("recoveryRouter", () => {
           rhr_mean_60d: 55,
           rhr_sd_60d: 3,
           efficiency_pct: 90,
-          acwr: 1.0,
         },
       ];
       const caller = makeCaller(rows);
@@ -423,7 +436,6 @@ describe("recoveryRouter", () => {
           rhr_mean_60d: null,
           rhr_sd_60d: null,
           efficiency_pct: null,
-          acwr: null,
         },
       ];
       const caller = makeCaller(rows);
@@ -453,6 +465,7 @@ describe("recoveryRouter", () => {
           rhr_sd_30d: null,
           rr_mean_30d: 15,
           rr_sd_30d: 1,
+          respiratory_rate_z_score: -1,
           efficiency_pct: null,
         },
       ];
@@ -579,7 +592,7 @@ describe("settingsRouter", () => {
 
   describe("set", () => {
     it("upserts a setting", async () => {
-      const rows = [{ key: "theme", value: "light" }];
+      const rows = [{ key: "unitSystem", value: "metric" }];
       const execute = vi.fn().mockResolvedValue(rows);
       const caller = createCaller({
         db: { execute },
@@ -588,14 +601,16 @@ describe("settingsRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      const result = await caller.set({ key: "theme", value: "light" });
-      expect(result).toEqual({ key: "theme", value: "light" });
+      const result = await caller.set({ key: "unitSystem", value: "metric" });
+      expect(result).toEqual({ key: "unitSystem", value: "metric" });
       expectCallsUseNonEmptySql(execute);
     });
 
     it("invalidates server-side settings cache after upsert", async () => {
       const rows = [{ key: "unitSystem", value: "imperial" }];
       const execute = vi.fn().mockResolvedValue(rows);
+      const invalidateByPrefix = vi.mocked(queryCache.invalidateByPrefix);
+      invalidateByPrefix.mockClear();
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -603,7 +618,33 @@ describe("settingsRouter", () => {
         sensorStore: makeMockSensorStore([]),
       });
       await caller.set({ key: "unitSystem", value: "imperial" });
-      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+      expect(invalidateByPrefix).toHaveBeenCalledOnce();
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+    });
+
+    it("invalidates all grade-dependent queries after changing climbing grade systems", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([
+          { key: "climbingGradeSystems", value: { boulder: "font", route: "french" } },
+        ]);
+      const invalidateByPrefix = vi.mocked(queryCache.invalidateByPrefix);
+      invalidateByPrefix.mockClear();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
+      });
+
+      await caller.set({
+        key: "climbingGradeSystems",
+        value: { boulder: "font", route: "french" },
+      });
+
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.");
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.training");
     });
 
     it("throws when upsert fails", async () => {
@@ -613,7 +654,7 @@ describe("settingsRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      await expect(caller.set({ key: "theme", value: "dark" })).rejects.toThrow(
+      await expect(caller.set({ key: "unitSystem", value: "metric" })).rejects.toThrow(
         "Failed to upsert setting",
       );
     });
@@ -637,137 +678,12 @@ describe("settingsRouter", () => {
       const result = await caller.deleteAllUserData();
       expect(result).toEqual({ success: true });
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 4);
+      const deleteQueries = txExecute.mock.calls.filter(([query]) =>
+        JSON.stringify(Reflect.get(query, "queryChunks") ?? []).includes("DELETE FROM"),
+      );
+      expect(deleteQueries).toHaveLength(PROVIDER_ACCOUNT_TABLES.length + 7);
       expectCallsUseNonEmptySql(txExecute);
-    });
-  });
-
-  describe("slackStatus", () => {
-    const slackEnvKeys = [
-      "SLACK_CLIENT_ID",
-      "SLACK_SIGNING_SECRET",
-      "SLACK_BOT_TOKEN",
-      "SLACK_APP_TOKEN",
-    ] as const;
-
-    function withCleanSlackEnv() {
-      const previousValues = new Map<(typeof slackEnvKeys)[number], string | undefined>();
-      for (const key of slackEnvKeys) {
-        previousValues.set(key, process.env[key]);
-      }
-
-      for (const key of slackEnvKeys) {
-        delete process.env[key];
-      }
-
-      return () => {
-        for (const key of slackEnvKeys) {
-          const value = previousValues.get(key);
-          if (value === undefined) {
-            delete process.env[key];
-          } else {
-            process.env[key] = value;
-          }
-        }
-      };
-    }
-
-    it("returns slack status", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore([]),
-      });
-      const result = await caller.slackStatus();
-      expect(result).toHaveProperty("configured");
-      expect(result).toHaveProperty("connected");
-      expect(result.configured).toBe(false);
-      expect(result.connected).toBe(false);
-      restoreEnv();
-    });
-
-    it("returns connected when slack account exists", async () => {
-      const rows = [{ provider_account_id: "slack-123" }];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.slackStatus();
-      expect(result.connected).toBe(true);
-    });
-
-    it("returns configured when Socket Mode env vars are set", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_BOT_TOKEN = "xoxb-test";
-        process.env.SLACK_APP_TOKEN = "xapp-test";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(true);
-      } finally {
-        restoreEnv();
-      }
-    });
-
-    it("returns configured when OAuth env vars are set", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_CLIENT_ID = "client-id";
-        process.env.SLACK_SIGNING_SECRET = "signing-secret";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(true);
-      } finally {
-        restoreEnv();
-      }
-    });
-
-    it("requires both OAuth env vars", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_CLIENT_ID = "client-id";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        restoreEnv();
-      }
-    });
-
-    it("requires both Socket Mode env vars", async () => {
-      const restoreEnv = withCleanSlackEnv();
-      try {
-        process.env.SLACK_BOT_TOKEN = "xoxb-test";
-        const caller = createCaller({
-          db: { execute: vi.fn().mockResolvedValue([]) },
-          userId: "user-1",
-          timezone: "UTC",
-          sensorStore: makeMockSensorStore([]),
-        });
-        const result = await caller.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        restoreEnv();
-      }
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
   });
 });
@@ -778,7 +694,7 @@ describe("sleepNeedRouter", () => {
   const createCaller = createTestCallerFactory(sleepNeedRouter);
 
   describe("calculate", () => {
-    it("returns default baseline when insufficient data", async () => {
+    it("returns an unavailable legacy recommendation when insufficient data", async () => {
       const rows = [
         {
           date: "2024-01-15",
@@ -787,6 +703,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -795,10 +712,14 @@ describe("sleepNeedRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore(rows),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.baselineMinutes).toBe(480); // default 8hr
-      expect(result.totalNeedMinutes).toBeGreaterThanOrEqual(480);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
     it("computes personalized baseline from good nights", async () => {
@@ -811,6 +732,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: 60,
           good_recovery: true,
           yesterday_load: 50,
+          staging_available: false,
         });
       }
       const hrvRows = rows.map((row) => {
@@ -837,36 +759,36 @@ describe("sleepNeedRouter", () => {
             light_minutes: row.duration_minutes,
             awake_minutes: 0,
             efficiency_pct: null,
+            staging_available: false,
           })),
         ]),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2024-01-21" });
 
+      expect(result).not.toBeNull();
+      if (result === null) throw new Error("Expected personalized sleep need");
       expect(result.baselineMinutes).toBe(460);
       expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
       expect(result.recentNights).toHaveLength(7);
     });
 
-    it("handles empty data", async () => {
+    it("handles empty data with an unavailable legacy recommendation", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      const result = await caller.calculate({});
+      const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.baselineMinutes).toBe(480);
-      expect(result.recentNights).toHaveLength(7);
-      // All 7 nights should be null (calendar-based)
-      for (const night of result.recentNights) {
-        expect(night.actualMinutes).toBeNull();
-        expect(night.debtMinutes).toBeNull();
-      }
-      expect(result.canRecommend).toBe(false);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("always returns exactly 7 recent nights even with sparse data", async () => {
+    it("returns an unavailable legacy recommendation for sparse data", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -876,6 +798,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: 55,
           good_recovery: true,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -886,15 +809,33 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
       expect(result.recentNights).toHaveLength(7);
-      // 6 nights should have null actualMinutes, 1 should have data
-      const withData = result.recentNights.filter((n) => n.actualMinutes !== null);
-      const withoutData = result.recentNights.filter((n) => n.actualMinutes === null);
-      expect(withData).toHaveLength(1);
+      const withData = result.recentNights.filter((night) => night.actualMinutes !== null);
+      const withoutData = result.recentNights.filter((night) => night.actualMinutes === null);
+      expect(withData).toEqual([
+        expect.objectContaining({
+          date: "2026-03-14",
+          actualMinutes: 420,
+          neededMinutes: 480,
+          debtMinutes: 60,
+        }),
+      ]);
       expect(withoutData).toHaveLength(6);
+      for (const night of withoutData) {
+        expect(night).toMatchObject({
+          actualMinutes: null,
+          neededMinutes: 480,
+          debtMinutes: null,
+        });
+      }
     });
 
-    it("sets canRecommend=true when yesterday has sleep data", async () => {
+    it("keeps the legacy recommendation unavailable when the baseline is insufficient", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14
       const rows = [
         {
@@ -904,6 +845,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -914,10 +856,14 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.canRecommend).toBe(true);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("sets canRecommend=false when yesterday has no sleep data", async () => {
+    it("keeps the legacy recommendation unavailable when yesterday has no sleep data", async () => {
       // endDate=2026-03-15, yesterday=2026-03-14 — data only from 2026-03-12
       const rows = [
         {
@@ -927,6 +873,7 @@ describe("sleepNeedRouter", () => {
           median_hrv: null,
           good_recovery: false,
           yesterday_load: 0,
+          staging_available: false,
         },
       ];
       const caller = createCaller({
@@ -937,10 +884,14 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      expect(result.canRecommend).toBe(false);
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
     });
 
-    it("shows null nights with neededMinutes still set", async () => {
+    it("returns the legacy fallback shape without sleep data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -949,7 +900,12 @@ describe("sleepNeedRouter", () => {
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
-      // Even null nights should have neededMinutes (the baseline)
+      expect(result).toMatchObject({
+        baselineMinutes: 480,
+        totalNeedMinutes: 480,
+        recentNights: expect.any(Array),
+        canRecommend: false,
+      });
       for (const night of result.recentNights) {
         expect(night.neededMinutes).toBe(480);
       }
@@ -1011,18 +967,22 @@ describe("sportSettingsRouter", () => {
     it("creates sport settings", async () => {
       const created = { sport: "cycling", ftp: 250 };
       const caller = makeCaller([created]);
+      vi.mocked(invalidateUserQueryDomains).mockClear();
       const result = await caller.upsert({ sport: "cycling", ftp: 250 });
       expect(result).toEqual(created);
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });
 
   describe("delete", () => {
     it("deletes sport settings", async () => {
       const caller = makeCaller([]);
+      vi.mocked(invalidateUserQueryDomains).mockClear();
       const result = await caller.delete({
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });
 });

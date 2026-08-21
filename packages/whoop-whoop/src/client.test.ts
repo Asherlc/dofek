@@ -9,6 +9,7 @@ function makeToken(overrides: Partial<WhoopAuthToken> = {}): WhoopAuthToken {
     accessToken: "test-access-token",
     refreshToken: "test-refresh-token",
     userId: 12345,
+    expiresInSeconds: 3600,
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ describe("WhoopClient.signIn", () => {
                 AccessToken: "whoop-access-123",
                 RefreshToken: "whoop-refresh-456",
                 IdToken: "id-token",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -116,6 +118,7 @@ describe("WhoopClient.signIn", () => {
       expect(result.token.accessToken).toBe("whoop-access-123");
       expect(result.token.refreshToken).toBe("whoop-refresh-456");
       expect(result.token.userId).toBe(999);
+      expect(result.token.expiresInSeconds).toBe(3600);
     }
   });
 
@@ -171,6 +174,7 @@ describe("WhoopClient.signIn", () => {
               AuthenticationResult: {
                 AccessToken: "token",
                 RefreshToken: "refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -212,6 +216,31 @@ describe("WhoopClient.signIn", () => {
       "WHOOP auth failed (500)",
     );
   });
+
+  it("throws when Cognito response is missing ExpiresIn", async () => {
+    const callCount = { value: 0 };
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "whoop-access-123",
+                RefreshToken: "whoop-refresh-456",
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { user: { id: 999 } } }));
+    });
+
+    await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
+      "missing valid ExpiresIn",
+    );
+  });
 });
 
 // ============================================================
@@ -233,6 +262,7 @@ describe("WhoopClient.verifyCode", () => {
               AuthenticationResult: {
                 AccessToken: "verified-token",
                 RefreshToken: "verified-refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -253,6 +283,7 @@ describe("WhoopClient.verifyCode", () => {
     expect(result.accessToken).toBe("verified-token");
     expect(result.refreshToken).toBe("verified-refresh");
     expect(result.userId).toBe(42);
+    expect(result.expiresInSeconds).toBe(3600);
   });
 
   it("submits SOFTWARE_TOKEN_MFA when the challenge method is totp", async () => {
@@ -273,6 +304,7 @@ describe("WhoopClient.verifyCode", () => {
               AuthenticationResult: {
                 AccessToken: "totp-token",
                 RefreshToken: "totp-refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -300,6 +332,7 @@ describe("WhoopClient.verifyCode", () => {
     });
     expect(result.accessToken).toBe("totp-token");
     expect(result.userId).toBe(55);
+    expect(result.expiresInSeconds).toBe(3600);
   });
 
   it("throws when no tokens in verification response", async () => {
@@ -323,6 +356,7 @@ describe("WhoopClient.verifyCode", () => {
               AuthenticationResult: {
                 AccessToken: "token",
                 RefreshToken: "refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -335,6 +369,31 @@ describe("WhoopClient.verifyCode", () => {
     await expect(
       WhoopClient.verifyCode("session-123", "123456", "user@example.com", "sms", fetchFn),
     ).rejects.toThrow("could not determine user ID");
+  });
+
+  it("throws when Cognito response is missing ExpiresIn", async () => {
+    const callCount = { value: 0 };
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "verified-token",
+                RefreshToken: "verified-refresh",
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { id: 42 } }));
+    });
+
+    await expect(
+      WhoopClient.verifyCode("session-123", "123456", "user@example.com", "sms", fetchFn),
+    ).rejects.toThrow("missing valid ExpiresIn");
   });
 });
 
@@ -356,6 +415,7 @@ describe("WhoopClient.refreshAccessToken", () => {
               AuthenticationResult: {
                 AccessToken: "new-access",
                 RefreshToken: "new-refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -370,6 +430,7 @@ describe("WhoopClient.refreshAccessToken", () => {
     expect(result.accessToken).toBe("new-access");
     expect(result.refreshToken).toBe("new-refresh");
     expect(result.userId).toBe(77);
+    expect(result.expiresInSeconds).toBe(3600);
   });
 
   it("reuses old refresh token when Cognito does not return new one", async () => {
@@ -384,6 +445,7 @@ describe("WhoopClient.refreshAccessToken", () => {
             body: {
               AuthenticationResult: {
                 AccessToken: "new-access",
+                ExpiresIn: 3600,
                 // No RefreshToken
               },
             },
@@ -410,6 +472,7 @@ describe("WhoopClient.refreshAccessToken", () => {
             body: {
               AuthenticationResult: {
                 AccessToken: "new-access",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -429,6 +492,31 @@ describe("WhoopClient.refreshAccessToken", () => {
 
     await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toThrow(
       "no tokens in response",
+    );
+  });
+
+  it("throws when Cognito response is missing ExpiresIn", async () => {
+    const callCount = { value: 0 };
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "new-access",
+                RefreshToken: "new-refresh",
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { id: 77 } }));
+    });
+
+    await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toThrow(
+      "missing valid ExpiresIn",
     );
   });
 });
@@ -451,6 +539,7 @@ describe("WhoopClient.authenticate", () => {
               AuthenticationResult: {
                 AccessToken: "access",
                 RefreshToken: "refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -463,6 +552,7 @@ describe("WhoopClient.authenticate", () => {
 
     expect(token.accessToken).toBe("access");
     expect(token.userId).toBe(100);
+    expect(token.expiresInSeconds).toBe(3600);
   });
 
   it("throws when MFA is required", async () => {
@@ -829,37 +919,16 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     await expect(client.listDeveloperWorkouts()).rejects.toThrow();
   });
 
-  it("retries rate-limited developer workout requests before succeeding", async () => {
+  it("does not retry rate-limited developer workout requests", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(
+      .mockResolvedValue(
         createMockResponse({ status: 429, ok: false, text: "slow down", body: "slow down" }),
-      )
-      .mockResolvedValueOnce(
-        createMockResponse({ status: 429, ok: false, text: "still slow", body: "still slow" }),
-      )
-      .mockResolvedValueOnce(
-        createMockResponse({
-          status: 200,
-          ok: true,
-          body: {
-            records: [
-              {
-                id: "after-retry",
-                start: "2024-01-15T10:00:00Z",
-                end: "2024-01-15T11:00:00Z",
-              },
-            ],
-            next_token: null,
-          },
-        }),
       );
     const client = new WhoopClient(makeToken(), fetchFn);
 
-    const result = await client.listDeveloperWorkouts();
-
-    expect(result.records.map((record) => record.id)).toEqual(["after-retry"]);
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(WhoopRateLimitError);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it("retries service-unavailable developer workout requests before succeeding", async () => {
@@ -905,7 +974,64 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
-  it("throws the rate-limit error after exhausting developer workout retries", async () => {
+  it("retries HTTP 500 developer workout requests before succeeding", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 500,
+          ok: false,
+          text: "Request failed.",
+          body: "Request failed.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 500,
+          ok: false,
+          text: "Request failed.",
+          body: "Request failed.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 200,
+          ok: true,
+          body: {
+            records: [
+              {
+                id: "after-internal-server-retry",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts();
+
+    expect(result.records.map((record) => record.id)).toEqual(["after-internal-server-retry"]);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry non-transient developer workout errors", async () => {
+    const fetchFn = createMockFetch({
+      status: 403,
+      ok: false,
+      body: "Forbidden",
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow(
+      "WHOOP API error (403): Forbidden",
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws the rate-limit error without retrying developer workout requests", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
       .mockImplementation(() =>
@@ -916,7 +1042,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     const client = new WhoopClient(makeToken(), fetchFn);
 
     await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(WhoopRateLimitError);
-    expect(fetchFn).toHaveBeenCalledTimes(4);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it("throws the common service-unavailable error after exhausting developer workout retries", async () => {
@@ -1291,6 +1417,21 @@ describe("WhoopClient API error handling", () => {
       client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
     ).rejects.toThrow("WHOOP API error (403): Forbidden");
   });
+
+  it("does not retry HTTP 500 responses from other endpoints", async () => {
+    const fetchFn = createMockFetch({
+      ok: false,
+      status: 500,
+      body: "Request failed.",
+    });
+
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(
+      client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
+    ).rejects.toThrow("WHOOP API error (500): Request failed.");
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ============================================================
@@ -1365,6 +1506,18 @@ describe("WhoopClient rate limit detection", () => {
     const error = new WhoopRateLimitError("rate limited");
     expect(error.name).toBe("WhoopRateLimitError");
     expect(error).toBeInstanceOf(Error);
+  });
+
+  it("WhoopRateLimitError defaults to provider scope when userId is not provided", () => {
+    const error = new WhoopRateLimitError("rate limited");
+    expect(error.scope).toBe("provider");
+    expect(error.userId).toBeNull();
+  });
+
+  it("WhoopRateLimitError uses user scope when userId is provided", () => {
+    const error = new WhoopRateLimitError("rate limited", "", null, "user-abc");
+    expect(error.scope).toBe("user");
+    expect(error.userId).toBe("user-abc");
   });
 
   it("calls onRequest for every API response including successes", async () => {

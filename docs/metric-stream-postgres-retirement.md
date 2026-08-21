@@ -10,7 +10,7 @@ R2 archive; Postgres is no longer a metric-stream source or sink.
   Redpanda (`publishRows`/`replaceRows`); the Postgres sink was removed.
 - **`fitness.metric_stream` (Postgres):** retired and dropped. Historical rows
   were exported to R2 before the destructive migration.
-- **ClickHouse serving copy:** `postgres_fitness.metric_stream`, fed by the
+- **ClickHouse serving copy:** `ingest.metric_stream`, fed by the
   Redpanda `metric-stream-clickhouse-sink` (non-IMU only). Source for
   `analytics.deduped_sensor` and all downstream dbt sensor models. **Kept.**
 - **PeerDB PG→CH metric_stream mirror:** retired. The ClickHouse serving table
@@ -49,6 +49,14 @@ now-removed one-time exporter:
   already in the topic/R2) so it never overlaps already-archived data.
 - The `Backfill metric_stream to R2` GitHub Actions workflow and one-time export
   code were removed after the backfill completed.
+
+## Historical implementation plan
+
+> The remaining sections are the original transition plan. They are retained
+> as decision history, not as current instructions. The completed
+> implementation chose `ingest.metric_stream`, not the proposed
+> `metric_stream.events`, and current readers must follow the code and active
+> runbooks.
 
 ## Naming decision
 

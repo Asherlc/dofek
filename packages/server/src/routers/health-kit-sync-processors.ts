@@ -1,6 +1,13 @@
+import {
+  offsetMinutesFromTimestamp,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Database as DrizzleDatabase, SyncDatabase } from "../../../../src/db/index.ts";
+import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -11,17 +18,25 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import { replaceHangTenIntervals } from "../../../../src/providers/apple-health/hang-ten-intervals.ts";
+import {
+  buildAppleHealthWorkoutIdentity,
+  collectAppleHealthWorkoutIdentities,
+} from "../../../../src/providers/apple-health/workout-identity.ts";
+import { applyWorkoutMetadata } from "../../../../src/providers/apple-health/workouts.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import {
+  type AdditiveDailyMetricAccumulatorKey,
   additiveDailyMetricTypes,
   BATCH_SIZE,
   bodyMeasurementTypes,
-  columnToAccumulatorKey,
   createEmptyAccumulator,
   type DailyMetricAccumulator,
   type Database,
+  getDailyMetricAccumulatorKey,
   type HealthKitSample,
   INTEGER_DAILY_COLUMNS,
   INTEGER_METRIC_STREAM_COLUMNS,
@@ -46,26 +61,9 @@ function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
 }
 
-export function computeBoundsFromIsoTimestamps(
-  timestamps: string[],
-): { startAt: string; endAt: string } | null {
-  if (timestamps.length === 0) return null;
+export { computeBoundsFromIsoTimestamps };
 
-  let minTs = Number.POSITIVE_INFINITY;
-  let maxTs = Number.NEGATIVE_INFINITY;
-  for (const ts of timestamps) {
-    const ms = Date.parse(ts);
-    if (Number.isNaN(ms)) continue;
-    if (ms < minTs) minTs = ms;
-    if (ms > maxTs) maxTs = ms;
-  }
-
-  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return null;
-  return {
-    startAt: new Date(minTs).toISOString(),
-    endAt: new Date(maxTs).toISOString(),
-  };
-}
+type WorkoutSyncDatabase = SyncDatabase & Pick<DrizzleDatabase, "transaction">;
 
 function dateInTimezone(timestamp: string, timezone: string): string {
   const date = new Date(timestamp);
@@ -136,7 +134,7 @@ async function upsertDailyAverageFromSamples(
 
 /** Process body measurement samples */
 export async function processBodyMeasurements(
-  _db: Database,
+  db: Database,
   userId: string,
   samples: HealthKitSample[],
   publisher?: MetricStreamEventPublisher,
@@ -168,7 +166,7 @@ export async function processBodyMeasurements(
       });
       inserted++;
     }
-    await writeMetricStreamRows({ publisher: resolvedPublisher, rows });
+    await writeMetricStreamRows({ database: db, publisher: resolvedPublisher, rows });
   }
   return inserted;
 }
@@ -197,10 +195,8 @@ export function aggregateDailyMetricSamples(
       const value = additiveMapping.transform
         ? additiveMapping.transform(sample.value)
         : sample.value;
-      const key = columnToAccumulatorKey[additiveMapping.column];
-      if (key) {
-        (accumulator[key] as number) += value;
-      }
+      const key = additiveMapping.accumulatorKey;
+      accumulator[key] = (accumulator[key] ?? 0) + value;
       continue;
     }
 
@@ -214,10 +210,8 @@ export function aggregateDailyMetricSamples(
       continue;
     }
 
-    const key = columnToAccumulatorKey[pointMapping.column];
-    if (key) {
-      (accumulator[key] as number | null) = sample.value;
-    }
+    const key = getDailyMetricAccumulatorKey(pointMapping.column);
+    accumulator[key] = sample.value;
   }
 
   // Select overnight HRV for each (date, source) using shared logic
@@ -261,21 +255,18 @@ export async function processDailyMetrics(
     // Additive fields: replace with the complete day-total from this sync.
     // Each iOS sync sends all samples for the 7-day window, so the in-memory
     // accumulator already contains the full sum — no need to add to existing.
-    const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+    const additiveFields: Array<{ column: string; key: AdditiveDailyMetricAccumulatorKey }> = [
       { column: "steps", key: "steps" },
-      { column: "active_energy_kcal", key: "activeEnergyKcal" },
-      { column: "basal_energy_kcal", key: "basalEnergyKcal" },
       { column: "distance_km", key: "distanceKm" },
-      { column: "cycling_distance_km", key: "cyclingDistanceKm" },
       { column: "flights_climbed", key: "flightsClimbed" },
       { column: "exercise_minutes", key: "exerciseMinutes" },
     ];
 
     for (const { column, key } of additiveFields) {
-      const raw = Number(accumulator[key]);
-      if (raw > 0) {
+      const raw = accumulator[key];
+      if (raw !== null) {
         // Integer columns (steps, flights_climbed, exercise_minutes) need rounding;
-        // real columns (active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km) don't.
+        // real columns such as distance_km do not.
         const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
@@ -290,6 +281,7 @@ export async function processDailyMetrics(
       { column: "walking_step_length", key: "walkingStepLength" },
       { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
       { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+      { column: "walking_steadiness", key: "walkingSteadiness" },
     ];
 
     for (const { column, key } of pointFields) {
@@ -320,7 +312,7 @@ export async function processDailyMetrics(
 
 /** Process metric streams */
 export async function processMetricStream(
-  _db: Database,
+  db: Database,
   userId: string,
   samples: HealthKitSample[],
   publisher?: MetricStreamEventPublisher,
@@ -350,7 +342,7 @@ export async function processMetricStream(
       });
       inserted++;
     }
-    await writeMetricStreamRows({ publisher: resolvedPublisher, rows });
+    await writeMetricStreamRows({ database: db, publisher: resolvedPublisher, rows });
   }
   return inserted;
 }
@@ -377,50 +369,129 @@ export async function processHealthEvents(
   return inserted;
 }
 
+export function appleHealthWorkoutExternalId(uuid: string): string {
+  return `hk:workout:${uuid}`;
+}
+
+export interface ProcessWorkoutsOptions {
+  windowStart: string;
+  windowEnd: string;
+}
+
+function appleHealthLocalTimeContext(startTimestamp: string, endTimestamp: string) {
+  const startedAt = new Date(startTimestamp);
+  const endedAt = new Date(endTimestamp);
+  const startUtcOffsetMinutes = offsetMinutesFromTimestamp(startTimestamp);
+  const endUtcOffsetMinutes = offsetMinutesFromTimestamp(endTimestamp);
+  if (startUtcOffsetMinutes == null || endUtcOffsetMinutes == null) {
+    return {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      localTimeSource: "unknown" as const,
+    };
+  }
+  const context = resolveRecordLocalTimeContext({
+    startedAt,
+    endedAt,
+    startUtcOffsetMinutes,
+    endUtcOffsetMinutes,
+    source: "device_offset",
+  });
+  return {
+    timezone: context.timezone,
+    startUtcOffsetMinutes: context.startUtcOffsetMinutes,
+    endUtcOffsetMinutes: context.endUtcOffsetMinutes,
+    localTimeSource: context.source,
+  };
+}
+
 /** Process workout samples */
 export async function processWorkouts(
-  db: Database,
+  db: WorkoutSyncDatabase,
   userId: string,
   workouts: WorkoutSample[],
+  options: ProcessWorkoutsOptions,
 ): Promise<number> {
+  const activitySync = new ProviderActivityListSync({
+    db,
+    providerId: PROVIDER_ID,
+    userId,
+    windowStart: new Date(options.windowStart),
+    windowEnd: new Date(options.windowEnd),
+  });
+
   let inserted = 0;
-  for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
-    const batch = workouts.slice(i, i + BATCH_SIZE);
-    for (const workout of batch) {
-      const externalId = `hk:workout:${workout.uuid}`;
-      const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
-
-      const rawData = JSON.stringify({
-        duration: workout.duration,
-        totalEnergyBurned: workout.totalEnergyBurned,
-        totalDistance: workout.totalDistance,
+  for (const workout of workouts) {
+    const normalizedWorkout = applyWorkoutMetadata(
+      {
+        activityType: resolveProviderActivityType(
+          workout.workoutType,
+          workoutActivityTypeMap[workout.workoutType] ?? "other",
+        ),
         sourceName: workout.sourceName,
-        workoutType: workout.workoutType,
-        metadata: workout.metadata,
-        workoutActivities: workout.workoutActivities,
-      });
+        durationSeconds: workout.duration,
+        startDate: new Date(workout.startDate),
+        endDate: new Date(workout.endDate),
+      },
+      workout.metadata ?? {},
+    );
 
-      await db.execute(
-        sql`INSERT INTO fitness.activity (user_id, provider_id, external_id, activity_type, started_at, ended_at, raw)
-            VALUES (
-              ${userId},
-              ${PROVIDER_ID},
-              ${externalId},
-              ${activityType},
-              ${workout.startDate}::timestamptz,
-              ${workout.endDate}::timestamptz,
-              ${rawData}::jsonb
-            )
-            ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
-              activity_type = ${activityType},
-              started_at = ${workout.startDate}::timestamptz,
-              ended_at = ${workout.endDate}::timestamptz,
-              raw = ${rawData}::jsonb,
-              provider_absent_at = NULL`,
+    const rawData = {
+      duration: workout.duration,
+      totalDistance: workout.totalDistance,
+      sourceName: workout.sourceName,
+      workoutType: workout.workoutType,
+      metadata: workout.metadata,
+      workoutActivities: workout.workoutActivities,
+      ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
+    };
+
+    const values = {
+      userId,
+      providerId: PROVIDER_ID,
+      externalId: appleHealthWorkoutExternalId(workout.uuid),
+      activityType: normalizedWorkout.activityType,
+      startedAt: normalizedWorkout.startDate,
+      endedAt: normalizedWorkout.endDate,
+      name: normalizedWorkout.hangTen?.planName,
+      sourceName: normalizedWorkout.sourceName,
+      ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
+      raw: rawData,
+    };
+    await db.transaction(async (transactionDb) => {
+      const returned = await activitySync.upsert(
+        values,
+        {
+          activityType: normalizedWorkout.activityType,
+          startedAt: normalizedWorkout.startDate,
+          endedAt: normalizedWorkout.endDate,
+          name: normalizedWorkout.hangTen?.planName,
+          sourceName: normalizedWorkout.sourceName,
+          ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
+          raw: rawData,
+        },
+        transactionDb,
       );
-      inserted++;
-    }
+      if (returned && normalizedWorkout.hangTen) {
+        await replaceHangTenIntervals(transactionDb, returned.id, normalizedWorkout);
+      }
+    });
+    inserted++;
   }
+
+  await activitySync.reconcile(undefined, {
+    presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
+      workouts.map((workout) =>
+        buildAppleHealthWorkoutIdentity({
+          syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          sourceName: workout.sourceName,
+        }),
+      ),
+    ),
+  });
 
   return inserted;
 }
@@ -482,6 +553,7 @@ export async function processWorkoutRoutes(
     const flushPendingRows = async () => {
       if (pendingRows.length === 0) return;
       const events = await writeMetricStreamRows({
+        database: db,
         publisher: resolvedPublisher,
         rows: pendingRows,
       });

@@ -1,13 +1,14 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  seedClickHouseActivityPolarizationZone,
   seedClickHouseMetricStreamRows,
 } from "./clickhouse-integration-test-helpers.ts";
 
@@ -18,7 +19,7 @@ import {
  * - efficiency (aerobicDecoupling, polarizationTrend)
  * - cycling-advanced (pedalDynamics)
  * - power (powerCurve, eftpTrend)
- * - supplements (list, save)
+ * - supplements (list)
  * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
@@ -84,6 +85,7 @@ describe("Router data coverage", () => {
     //
     // We insert 6 activities with 1-second data (1800 samples each = 30 min).
     // Batch insert (100 rows at a time) for speed.
+    let polarizationActivity: { id: string; startedAt: string } | null = null;
     for (let actIdx = 0; actIdx < 6; actIdx++) {
       const daysAgo = 5 + actIdx * 7;
       const durationSec = 1800; // 30 minutes
@@ -93,9 +95,9 @@ describe("Router data coverage", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`training-ride-${actIdx}`}, 'cycling', 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
@@ -106,6 +108,12 @@ describe("Router data coverage", () => {
       if (actId) {
         activityIds.push(actId);
         const activityStartedAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+        if (actIdx === 0) {
+          polarizationActivity = {
+            id: actId,
+            startedAt: activityStartedAt.toISOString(),
+          };
+        }
         for (let s = 0; s < durationSec; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
           const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
@@ -222,9 +230,9 @@ describe("Router data coverage", () => {
     const runDurationSec = 1200; // 20 minutes
     const runResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, 'running',
+            'test_provider', ${TEST_USER_ID}, 'router-data-morning-run', 'running', 'running',
             CURRENT_TIMESTAMP - INTERVAL '3 days',
             CURRENT_TIMESTAMP - INTERVAL '3 days' + ${runDurationSec}::int * INTERVAL '1 second',
             'Morning Run'
@@ -272,13 +280,13 @@ describe("Router data coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-              efficiency_pct, sleep_type
+              efficiency_pct, staging_available, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${duration}, ${deep}, ${rem}, ${light}, ${awake},
-	              ${efficiency}, 'sleep'
+	              ${efficiency}, true, 'sleep'
 	            )`,
       );
       const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
@@ -337,10 +345,10 @@ describe("Router data coverage", () => {
     for (let i = 0; i < 8; i++) {
       const workoutResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, external_id, started_at, name, activity_type
+              provider_id, user_id, external_id, started_at, name, canonical_type, provider_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID}, ${`sw-${i}`},
-              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session', 'strength'
+              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session', 'strength', 'strength'
             ) ON CONFLICT DO NOTHING RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;
@@ -367,12 +375,13 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, food_description, confirmed
+                user_id, provider_id, date, meal, food_name, food_description, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
                 'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
-                true
+                true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -395,11 +404,11 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, meal, food_name, confirmed, nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
-                'lunch', ${`Chicken Salad ${i}`}, true
+                'lunch', ${`Chicken Salad ${i}`}, true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -422,11 +431,12 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true, 'daily_aggregate'
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -447,6 +457,18 @@ describe("Router data coverage", () => {
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    if (!polarizationActivity) {
+      throw new Error("Polarization activity fixture was not created");
+    }
+    await seedClickHouseActivityPolarizationZone(testCtx, {
+      activityId: polarizationActivity.id,
+      userId: TEST_USER_ID,
+      startedAt: polarizationActivity.startedAt,
+      maxHr: 190,
+      z1Seconds: 900,
+      z2Seconds: 300,
+      z3Seconds: 600,
+    });
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -593,6 +615,8 @@ describe("Router data coverage", () => {
     });
 
     it("polarizationTrend returns weekly zone distribution", async () => {
+      await queryCache.invalidateByPrefix(`${TEST_USER_ID}:efficiency.polarizationTrend`);
+
       const result = await query<{
         maxHr: number | null;
         weeks: {
@@ -605,20 +629,14 @@ describe("Router data coverage", () => {
       }>("efficiency.polarizationTrend", { days: 90 });
 
       expect(result.maxHr).toBe(190);
-      expect(Array.isArray(result.weeks)).toBe(true);
-
-      for (const week of result.weeks) {
-        expect(week.week).toBeTruthy();
-        expect(week.z1Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z2Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z3Seconds).toBeGreaterThanOrEqual(0);
-
-        // If all three zones have time, PI should be computed
-        if (week.z1Seconds > 0 && week.z2Seconds > 0 && week.z3Seconds > 0) {
-          expect(week.polarizationIndex).not.toBeNull();
-          expect(typeof week.polarizationIndex).toBe("number");
-        }
-      }
+      expect(result.weeks).toHaveLength(1);
+      expect(result.weeks[0]).toMatchObject({
+        z1Seconds: 900,
+        z2Seconds: 300,
+        z3Seconds: 600,
+      });
+      expect(result.weeks[0]?.week).toBeTruthy();
+      expect(result.weeks[0]?.polarizationIndex).not.toBeNull();
     });
   });
 
@@ -656,9 +674,10 @@ describe("Router data coverage", () => {
         {
           date: string;
           activityName: string;
+          activityType: string;
           verticalAscentRate: number;
           elevationGainMeters: number;
-          climbingMinutes: number;
+          elapsedMinutes: number;
         }[]
       >("cyclingAdvanced.verticalAscentRate", { days: 90 });
 
@@ -667,11 +686,12 @@ describe("Router data coverage", () => {
 
       for (const row of result) {
         expect(row.date).toBeTruthy();
+        expect(row.activityType).toBeTruthy();
         expect(typeof row.verticalAscentRate).toBe("number");
         expect(row.verticalAscentRate).toBeGreaterThanOrEqual(0);
         expect(typeof row.elevationGainMeters).toBe("number");
-        expect(typeof row.climbingMinutes).toBe("number");
-        expect(row.climbingMinutes).toBeGreaterThan(0);
+        expect(typeof row.elapsedMinutes).toBe("number");
+        expect(row.elapsedMinutes).toBeGreaterThan(0);
       }
     });
 
@@ -764,40 +784,12 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Supplements — list and save
+  // Supplements — list
   // ══════════════════════════════════════════════════════════════
   describe("supplements", () => {
     it("list returns an array (possibly empty)", async () => {
       const result = await query<unknown[]>("supplements.list");
       expect(Array.isArray(result)).toBe(true);
-    });
-
-    it("save stores supplements and list retrieves them", async () => {
-      const supplements = [
-        { name: "Vitamin D3", amount: 5000, unit: "IU", form: "softgel", vitaminDMcg: 125 },
-        { name: "Magnesium Glycinate", amount: 400, unit: "mg", magnesiumMg: 400 },
-      ];
-      const saveResult = await mutate<{ success: boolean; count: number }>("supplements.save", {
-        supplements,
-      });
-      expect(saveResult.success).toBe(true);
-      expect(saveResult.count).toBe(2);
-
-      // Invalidate cache and verify list returns saved data
-      await queryCache.invalidateAll();
-      const listResult =
-        await query<{ name: string; amount: number; unit: string }[]>("supplements.list");
-      expect(listResult.length).toBe(2);
-      expect(listResult[0]?.name).toBe("Vitamin D3");
-      expect(listResult[1]?.name).toBe("Magnesium Glycinate");
-
-      const nutritionRows = await testCtx.db.execute<{ count: string }>(
-        sql`SELECT COUNT(*)::text AS count
-            FROM fitness.supplement_nutrient sn
-            JOIN fitness.supplement s ON s.id = sn.supplement_id
-            WHERE s.user_id = ${TEST_USER_ID}`,
-      );
-      expect(nutritionRows[0]?.count).toBe("2");
     });
   });
 
@@ -856,34 +848,34 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Settings — get, set, getAll, slackStatus
+  // Settings — get, set, getAll
   // ══════════════════════════════════════════════════════════════
   describe("settings", () => {
     it("set creates a setting and get retrieves it", async () => {
       const setResult = await mutate<{ key: string; value: unknown }>("settings.set", {
-        key: "theme",
-        value: "dark",
+        key: "unitSystem",
+        value: "metric",
       });
-      expect(setResult.key).toBe("theme");
+      expect(setResult.key).toBe("unitSystem");
 
       await queryCache.invalidateAll();
 
       const getResult = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
       expect(getResult).not.toBeNull();
-      expect(getResult?.key).toBe("theme");
-      expect(getResult?.value).toBe("dark");
+      expect(getResult?.key).toBe("unitSystem");
+      expect(getResult?.value).toBe("metric");
     });
 
     it("set upserts an existing setting", async () => {
-      await mutate("settings.set", { key: "theme", value: "light" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
-      expect(result?.value).toBe("light");
+      expect(result?.value).toBe("imperial");
     });
 
     it("get returns null for missing key", async () => {
@@ -893,25 +885,15 @@ describe("Router data coverage", () => {
 
     it("getAll returns all settings", async () => {
       // Set a second setting
-      await mutate("settings.set", { key: "locale", value: "en-US" });
+      await mutate("settings.set", { key: "whoop.wearLocation", value: "wrist" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown }[]>("settings.getAll");
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeGreaterThanOrEqual(2);
       const keys = result.map((r) => r.key);
-      expect(keys).toContain("theme");
-      expect(keys).toContain("locale");
-    });
-
-    it("slackStatus returns configured and connected booleans", async () => {
-      const result = await query<{ configured: boolean; connected: boolean }>(
-        "settings.slackStatus",
-      );
-      expect(typeof result.configured).toBe("boolean");
-      expect(typeof result.connected).toBe("boolean");
-      // Environment-dependent, just ensure they are booleans
-      expect(result.connected).toBe(false);
+      expect(keys).toContain("unitSystem");
+      expect(keys).toContain("whoop.wearLocation");
     });
   });
 
@@ -962,14 +944,6 @@ describe("Router data coverage", () => {
   // Food — search, quickAdd, update, delete, list with meal filter
   // ══════════════════════════════════════════════════════════════
   describe("food", () => {
-    it("search returns matching food entries", async () => {
-      const result = await query<{ food_name: string }[]>("food.search", { query: "Oatmeal" });
-      expect(result.length).toBeGreaterThan(0);
-      for (const row of result) {
-        expect(row.food_name.toLowerCase()).toContain("oatmeal");
-      }
-    });
-
     it("list with meal filter returns only matching entries", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -983,76 +957,6 @@ describe("Router data coverage", () => {
       for (const row of result) {
         expect(row.meal).toBe("lunch");
       }
-    });
-
-    it("quickAdd creates a food entry with minimal fields", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await mutate<{ id: string; food_name: string; calories: number }>(
-        "food.quickAdd",
-        {
-          date: today,
-          meal: "snack",
-          foodName: "Protein Bar",
-          calories: 200,
-          proteinG: 20,
-        },
-      );
-      expect(result.food_name).toBe("Protein Bar");
-      expect(Number(result.calories)).toBe(200);
-    });
-
-    it("update modifies a food entry", async () => {
-      // Get a food entry id
-      const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      expect(entries.length).toBeGreaterThan(0);
-      const entryId = entries[0]?.id;
-      expect(entryId).toBeTruthy();
-
-      const updated = await mutate<{ id: string; calories: number } | null>("food.update", {
-        id: entryId,
-        calories: 999,
-      });
-      expect(updated).not.toBeNull();
-      expect(Number(updated?.calories)).toBe(999);
-    });
-
-    it("update with date field modification", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      const entryId = entries[0]?.id;
-
-      // Update date and set some fields to null (covers null-clearing branches)
-      const updated = await mutate<{ id: string } | null>("food.update", {
-        id: entryId,
-        date: today,
-        foodDescription: null,
-        proteinG: null,
-      });
-      expect(updated).not.toBeNull();
-    });
-
-    it("update with no fields returns null", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      const entryId = entries[0]?.id;
-      const result = await mutate<null>("food.update", { id: entryId });
-      expect(result).toBeNull();
-    });
-
-    it("delete removes a food entry", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const before = await query<{ id: string }[]>("food.byDate", { date: today });
-      const countBefore = before.length;
-      expect(countBefore).toBeGreaterThan(0);
-
-      const entryId = before[0]?.id;
-      const deleteResult = await mutate<{ success: boolean }>("food.delete", { id: entryId });
-      expect(deleteResult.success).toBe(true);
-
-      await queryCache.invalidateAll();
-      const after = await query<{ id: string }[]>("food.byDate", { date: today });
-      expect(after.length).toBe(countBefore - 1);
     });
 
     it("dailyTotals aggregates calories and macros by day", async () => {
@@ -1200,20 +1104,6 @@ describe("Router data coverage", () => {
           expect(row.proteinPerKg).toBeGreaterThan(0);
         }
       }
-    });
-
-    it("caloricBalance returns daily calorie balance with rolling avg", async () => {
-      const result = await query<
-        {
-          date: string;
-          caloriesIn: number;
-          balance: number;
-          rollingAvgBalance: number | null;
-        }[]
-      >("nutritionAnalytics.caloricBalance", { days: 30 });
-
-      // May be empty if derived daily nutrition and daily_metrics don't overlap on dates
-      expect(Array.isArray(result)).toBe(true);
     });
   });
 
@@ -1427,12 +1317,24 @@ describe("Router data coverage", () => {
           zone4: number;
           zone5: number;
         }[];
+        intensityDistribution: {
+          model: "karvonen-five-zone";
+          activityScope: "endurance";
+          totalSeconds: number;
+          zones: Array<{ zone: number; seconds: number; percent: number }>;
+          explanation: string;
+        };
       }>("training.hrZones", { days: 90 });
 
       // User profile has max_hr = 190, so maxHr should be set
       if (result.maxHr) {
         expect(result.maxHr).toBe(190);
         expect(Array.isArray(result.weeks)).toBe(true);
+        expect(result.intensityDistribution).toMatchObject({
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+        });
+        expect(result.intensityDistribution.totalSeconds).toBeGreaterThanOrEqual(0);
       }
     });
   });
@@ -1445,11 +1347,12 @@ describe("Router data coverage", () => {
         nightly: {
           date: string;
           durationMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
-          efficiency: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          efficiency: number | null;
+          stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
         sleepDebt: number;
@@ -1470,7 +1373,7 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns acute/chronic ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
@@ -1480,6 +1383,12 @@ describe("Router data coverage", () => {
           chronicLoad: number;
           workloadRatio: number | null;
         }[];
+        context: {
+          label: "Recent-to-baseline workload ratio";
+          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.";
+          recentDays: 7;
+          baselineDays: 28;
+        };
         displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });

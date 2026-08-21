@@ -61,4 +61,14 @@ describe("PageSection", () => {
     const html = container.innerHTML;
     expect(html).not.toContain("zinc");
   });
+
+  it("exposes an optional anchor for same-page drill-downs", () => {
+    const { container } = render(
+      <PageSection id="sleep-data-sources" title="Data Sources">
+        <p>Records</p>
+      </PageSection>,
+    );
+
+    expect(container.querySelector("section")?.getAttribute("id")).toBe("sleep-data-sources");
+  });
 });

@@ -1,0 +1,231 @@
+name: Version npm Packages
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-npm
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Open version pull request
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      # The App token (not GITHUB_TOKEN) is required here: pull requests opened
+      # with GITHUB_TOKEN do not trigger workflows, so the required checks would
+      # never report and auto-merge would wait forever.
+      - name: Mint release token
+        id: release_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Check out canonical source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ steps.release_token.outputs.token }}
+
+      - name: Confirm the tested commit is current
+        id: current
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$(git rev-parse HEAD)" = "$TESTED_SHA" ]; then
+            echo "should_version=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_version=false" >> "$GITHUB_OUTPUT"
+            echo "A newer commit is on main; its CI run will version instead."
+          fi
+
+      - name: Check for an open version pull request
+        if: steps.current.outputs.should_version == 'true'
+        id: open_pr
+        env:
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          MATCHING_PR_NUMBER=$(
+            gh api --paginate --slurp \
+              "/repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&per_page=100" |
+              jq -r --arg owner "$REPOSITORY_OWNER" '
+                [
+                  .[][]
+                  | select(
+                      .title == "chore(release): version npm packages" and
+                      (.head.ref | startswith("release/npm-")) and
+                      .head.repo.owner.login == $owner
+                    )
+                  | .number
+                ]
+                | first // empty
+              '
+          )
+          if [ -n "$MATCHING_PR_NUMBER" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "number=$MATCHING_PR_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "An npm version pull request is already open:"
+            gh pr view "$MATCHING_PR_NUMBER" --json number,headRefName \
+              --jq '"#\(.number) (\(.headRefName))"'
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js and pnpm
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.open_pr.outputs.exists != 'true'
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Find changed packages
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.open_pr.outputs.exists != 'true'
+        id: changed
+        run: |
+          # A merged version bump reaches main before "Release npm Packages" has
+          # published it. Both workflows start from the same CI run, so without
+          # this guard `lerna changed` could open a second bump on top of the first.
+          # The registry is the publication source of truth: a tag can exist while
+          # pointing at an unmerged commit or while its version is absent from npm.
+          PENDING=$(
+            pnpm exec lerna list --json --loglevel silent |
+              jq -r '.[] | "\(.name)@\(.version)"' |
+              while read -r PACKAGE_VERSION; do
+                if NPM_OUTPUT=$(npm view "$PACKAGE_VERSION" version --registry=https://registry.npmjs.org/ 2>&1); then
+                  continue
+                elif grep -q 'E404' <<< "$NPM_OUTPUT"; then
+                  echo "$PACKAGE_VERSION"
+                else
+                  echo "Unable to verify $PACKAGE_VERSION in the npm registry:" >&2
+                  echo "$NPM_OUTPUT" >&2
+                  exit 1
+                fi
+              done
+          )
+          if [ -n "$PENDING" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "A release is already in flight; these versions are not published on npm yet:"
+            echo "$PENDING"
+            exit 0
+          fi
+          # `lerna changed` exits non-zero to mean "nothing changed", which is a
+          # normal outcome here rather than a failure.
+          CHANGED_PACKAGES=$(pnpm exec lerna changed --json --loglevel silent) || CHANGED_PACKAGES='[]'
+          if [ "$(jq 'length' <<< "$CHANGED_PACKAGES")" -eq 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No package changes since the last release."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            jq -r '.[].name' <<< "$CHANGED_PACKAGES"
+          fi
+
+      - name: Check version branch
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true'
+        id: branch
+        run: |
+          BRANCH="release/npm-$(git rev-parse --short HEAD)"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "$BRANCH already exists; its pull request is still open."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Version package manifests
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
+          steps.branch.outputs.exists != 'true'
+        run: pnpm exec lerna version patch --yes --no-git-tag-version --no-push
+
+      - name: Commit version manifests
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Stage only package manifests and the workspace lockfile changed by
+          # versioning; unrelated worktree files must not enter the release PR.
+          git add --update -- \
+            'package.json' \
+            ':(glob)packages/**/package.json' \
+            'pnpm-lock.yaml'
+          if git diff --cached --quiet; then
+            echo "Lerna did not update a package manifest or workspace lockfile."
+            exit 1
+          fi
+          git commit -m "chore(release): version npm packages"
+          git branch "$BRANCH"
+
+      - name: Push version branch
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: git push origin "$BRANCH"
+
+      - name: Open the version pull request
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(release): version npm packages" \
+            --body "Automated version bump for the npm packages changed since the last release. Publishing happens on main once this merges."
+
+      - name: Enable version pull request auto-merge
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.changed.outputs.has_changes == 'true' &&
+          steps.open_pr.outputs.exists != 'true' &&
+          steps.branch.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+        run: |
+          gh pr merge "$BRANCH" --auto --squash
+
+      - name: Restore existing version pull request auto-merge
+        if: >
+          steps.current.outputs.should_version == 'true' &&
+          steps.open_pr.outputs.exists == 'true'
+        env:
+          PR_NUMBER: ${{ steps.open_pr.outputs.number }}
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
+        run: gh pr merge "$PR_NUMBER" --auto --squash

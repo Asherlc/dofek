@@ -1,5 +1,5 @@
+import type { WhoopWeightliftingWorkoutResponse } from "@dofek/whoop/types";
 import { describe, expect, it } from "vitest";
-import type { WhoopWeightliftingWorkoutResponse } from "whoop-whoop/types";
 import { parseWeightliftingWorkout } from "./whoop/parsing.ts";
 
 // ============================================================

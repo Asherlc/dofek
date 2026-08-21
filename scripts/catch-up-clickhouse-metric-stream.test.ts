@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { METRIC_STREAM_TABLE } from "../src/metric-stream/clickhouse-table.ts";
 import {
   buildMetricStreamCatchUpStatement,
   buildMetricStreamCatchUpWindows,
@@ -80,12 +81,12 @@ describe("buildMetricStreamCatchUpStatement", () => {
       start: new Date("2026-06-05T00:00:00Z"),
     });
 
-    expect(sql).toContain("INSERT INTO postgres_fitness.metric_stream");
+    expect(sql).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
     expect(sql).toContain(
       "postgresql('db:5432', 'health', 'metric_stream', 'health', 'p\\'ass', 'fitness')",
     );
     expect(sql).toContain("LEFT ANY JOIN");
-    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
+    expect(sql).toContain(`FROM ${METRIC_STREAM_TABLE} FINAL`);
     expect(sql).toContain("metric_stream.channel != 'imu'");
     expect(sql).toContain("existing_metric_stream.id IS NULL");
     expect(sql).toContain(
@@ -93,8 +94,8 @@ describe("buildMetricStreamCatchUpStatement", () => {
     );
     expect(sql).toContain("toDateTime64('2026-06-05 00:00:00.000', 6, 'UTC')");
     expect(sql).toContain("toDateTime64('2026-06-05 01:00:00.000', 6, 'UTC')");
-    expect(sql).toContain("_peerdb_synced_at");
-    expect(sql).toContain("_peerdb_is_deleted");
-    expect(sql).toContain("_peerdb_version");
+    expect(sql).toContain("ingested_at");
+    expect(sql).toContain("is_deleted");
+    expect(sql).toContain("version");
   });
 });

@@ -1,5 +1,6 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -35,11 +36,12 @@ export class AccelerometerSyncRepository {
 
   /** Ensure the apple_motion provider row exists. */
   async ensureProvider(): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'Apple Motion', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#db,
+      providerId: PROVIDER_ID,
+      providerName: "Apple Motion",
+      userId: this.#userId,
+    });
   }
 
   /**

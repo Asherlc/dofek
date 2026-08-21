@@ -6,6 +6,7 @@ import { RecentActivitiesSection } from "./RecentActivitiesSection.tsx";
 
 const mutate = vi.fn();
 const mutateAsync = vi.fn();
+const activityList = vi.fn();
 
 vi.mock("../lib/trainingDaysContext.ts", () => ({
   useTrainingDays: () => ({ days: 30 }),
@@ -39,11 +40,17 @@ vi.mock("../lib/trpc.ts", () => ({
 }));
 
 vi.mock("./ActivityList.tsx", () => ({
-  ActivityList: ({ onBulkDelete }: { onBulkDelete: (ids: string[]) => void }) => (
-    <button type="button" onClick={() => onBulkDelete(["00000000-0000-0000-0000-000000000001"])}>
-      Delete selected
-    </button>
-  ),
+  ActivityList: (props: { onBulkDelete: (ids: string[]) => void }) => {
+    activityList(props);
+    return (
+      <button
+        type="button"
+        onClick={() => props.onBulkDelete(["00000000-0000-0000-0000-000000000001"])}
+      >
+        Delete selected
+      </button>
+    );
+  },
 }));
 
 describe("RecentActivitiesSection", () => {
@@ -54,5 +61,35 @@ describe("RecentActivitiesSection", () => {
 
     expect(mutate).toHaveBeenCalledWith({ ids: ["00000000-0000-0000-0000-000000000001"] });
     expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("forwards additional columns and their loading state", () => {
+    const additionalColumns = [{ key: "attempts", label: "Attempts", renderCell: () => 8 }];
+
+    render(
+      <RecentActivitiesSection
+        additionalColumns={additionalColumns}
+        additionalDataLoading={true}
+      />,
+    );
+
+    expect(activityList).toHaveBeenCalledWith(
+      expect.objectContaining({
+        additionalColumns,
+        loading: true,
+      }),
+    );
+  });
+
+  it("forwards a scoped empty-state message", () => {
+    render(
+      <RecentActivitiesSection emptyMessage="No strength workouts in the selected 30-day range." />,
+    );
+
+    expect(activityList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        emptyMessage: "No strength workouts in the selected 30-day range.",
+      }),
+    );
   });
 });

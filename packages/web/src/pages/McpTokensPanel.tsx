@@ -1,19 +1,20 @@
 import { formatDateTime } from "@dofek/format/format";
 import { useState } from "react";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 type McpScope =
   | "health:read"
   | "activity:read"
-  | "nutrition:write"
+  | "nutrition:read"
   | "providers:read"
   | "sync:write";
 
 const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:read", label: "Health summaries" },
   { value: "activity:read", label: "Activity history" },
-  { value: "nutrition:write", label: "Log food" },
+  { value: "nutrition:read", label: "Nutrition summaries" },
   { value: "providers:read", label: "Provider status" },
   { value: "sync:write", label: "Start sync jobs" },
 ];
@@ -29,8 +30,12 @@ function formatTimestamp(value: Date | string | null): string {
 export function McpTokensPanel() {
   const trpcUtils = trpc.useUtils();
   const tokens = trpc.mcp.listTokens.useQuery();
-  const createTokenMutation = trpc.mcp.createToken.useMutation();
-  const revokeTokenMutation = trpc.mcp.revokeToken.useMutation();
+  const createTokenMutation = trpc.mcp.createToken.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const revokeTokenMutation = trpc.mcp.revokeToken.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const [name, setName] = useState("Codex");
   const [expiresAt, setExpiresAt] = useState("");
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
@@ -139,25 +144,35 @@ export function McpTokensPanel() {
     <div className="space-y-5">
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div>
-          <p className="text-sm font-medium text-foreground">
-            Install in Model Context Protocol (MCP) client settings
-          </p>
+          <p className="text-sm font-medium text-foreground">Connect with OAuth (Recommended)</p>
           <p className="mt-1 text-sm text-subtle">
-            Create a token, then add this remote server to your Model Context Protocol client
-            settings.
+            For clients that support OAuth auto-discovery (Claude, ChatGPT, and others). Paste the
+            URL and sign in when prompted.
           </p>
         </div>
         <div className="space-y-1">
           <p className="text-xs font-medium text-subtle">Remote URL</p>
-          <code className="block overflow-x-auto rounded bg-white/70 px-3 py-2 text-xs text-foreground">
+          <code className="block overflow-x-auto rounded bg-surface px-3 py-2 text-xs text-foreground">
             {mcpEndpoint}
           </code>
         </div>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-subtle">
-            Client settings JavaScript Object Notation (JSON)
+        <p className="text-xs text-dim">
+          OAuth clients discover endpoints automatically and handle authentication. No manual token
+          is required.
+        </p>
+      </div>
+
+      <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">Connect with a manual token</p>
+          <p className="mt-1 text-sm text-subtle">
+            For clients that support custom HTTP headers, such as Codex. Create a token below, then
+            configure your client.
           </p>
-          <pre className="overflow-x-auto rounded bg-white/70 p-3 text-xs text-foreground">
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-subtle">Client settings JSON</p>
+          <pre className="overflow-x-auto rounded bg-surface p-3 text-xs text-foreground">
             <code>{`{
   "mcpServers": {
     "dofek": {
@@ -171,7 +186,7 @@ export function McpTokensPanel() {
           </pre>
         </div>
         <p className="text-xs text-dim">
-          Some clients call this file or screen Settings, MCP Servers, or Connectors.
+          Some clients call this screen Settings, MCP Servers, or Connectors.
         </p>
       </div>
 
@@ -183,7 +198,7 @@ export function McpTokensPanel() {
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="w-full rounded border border-border-strong bg-white/70 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
           </label>
           <label className="space-y-1">
@@ -192,7 +207,7 @@ export function McpTokensPanel() {
               type="date"
               value={expiresAt}
               onChange={(event) => setExpiresAt(event.target.value)}
-              className="w-full rounded border border-border-strong bg-white/70 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
           </label>
         </div>
@@ -203,7 +218,7 @@ export function McpTokensPanel() {
             {mcpScopeOptions.map((option) => (
               <label
                 key={option.value}
-                className="flex items-center gap-2 rounded border border-border bg-white/50 px-3 py-2 text-sm text-foreground"
+                className="flex items-center gap-2 rounded border border-border bg-surface/70 px-3 py-2 text-sm text-foreground"
               >
                 <input
                   type="checkbox"
@@ -221,7 +236,7 @@ export function McpTokensPanel() {
           type="button"
           disabled={!canCreate}
           onClick={createToken}
-          className="rounded bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-accent px-3 py-2 text-sm font-medium text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {createTokenMutation.isPending ? "Creating..." : "Create Token"}
         </button>
@@ -236,7 +251,7 @@ export function McpTokensPanel() {
             <input
               readOnly
               value={createdToken}
-              className="min-w-0 flex-1 rounded border border-border-strong bg-white/80 px-3 py-2 font-mono text-xs text-foreground"
+              className="min-w-0 flex-1 rounded border border-border-strong bg-surface px-3 py-2 font-mono text-xs text-foreground"
             />
             <button
               type="button"

@@ -1,7 +1,9 @@
-import type { InertialMeasurementUnitSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 
 const UPLOAD_BATCH_SIZE = 5000;
 const TWELVE_HOURS_SECONDS = 12 * 3600;
+const SENSOR_QUERY_WINDOW_MS = 10 * 60 * 1000;
 const SENSOR_HISTORY_LOOKBACK_MS = 2.9 * 24 * 60 * 60 * 1000;
 
 /** Abstraction over CoreMotion native module for testability */
@@ -32,6 +34,7 @@ export interface InertialMeasurementUnitSyncOptions {
   coreMotion: InertialMeasurementUnitAdapter;
   deviceId: string;
   deviceType: string;
+  minimumSampleDate?: string | null;
   onProgress?: (message: string) => void;
 }
 
@@ -43,7 +46,7 @@ export interface InertialMeasurementUnitSyncResult {
 /**
  * Sync recorded IMU data from CMSensorRecorder to the server.
  *
- * 1. Queries from lastSyncTimestamp (or 3 days ago) to now
+ * 1. Queries from lastSyncTimestamp (or 3 days ago) in bounded windows
  * 2. Batches samples into 5,000-sample chunks
  * 3. Uploads each batch via tRPC
  * 4. Advances the sync cursor only after all batches succeed
@@ -52,7 +55,14 @@ export interface InertialMeasurementUnitSyncResult {
 export async function syncInertialMeasurementUnitToServer(
   options: InertialMeasurementUnitSyncOptions,
 ): Promise<InertialMeasurementUnitSyncResult> {
-  const { trpcClient, coreMotion, deviceId, deviceType, onProgress } = options;
+  const {
+    trpcClient,
+    coreMotion,
+    deviceId,
+    deviceType,
+    minimumSampleDate = null,
+    onProgress,
+  } = options;
 
   if (!coreMotion.isAccelerometerRecordingAvailable()) {
     onProgress?.("Accelerometer recording not available on this device");
@@ -64,8 +74,19 @@ export async function syncInertialMeasurementUnitToServer(
   const lastSync = coreMotion.getLastSyncTimestamp();
   const oldestQueryableDate = new Date(now.getTime() - SENSOR_HISTORY_LOOKBACK_MS);
   const requestedFromDate = lastSync ? new Date(lastSync) : oldestQueryableDate;
-  const fromDate =
-    requestedFromDate < oldestQueryableDate ? oldestQueryableDate : requestedFromDate;
+  let fromDate = requestedFromDate < oldestQueryableDate ? oldestQueryableDate : requestedFromDate;
+  if (minimumSampleDate !== null) {
+    const cutoffDate = new Date(minimumSampleDate);
+    if (!Number.isFinite(cutoffDate.getTime())) {
+      throw new Error("Device erasure cutoff is invalid.");
+    }
+    if (cutoffDate > fromDate) {
+      fromDate = cutoffDate;
+    }
+  }
+  const queryWindowEndDate = new Date(
+    Math.min(fromDate.getTime() + SENSOR_QUERY_WINDOW_MS, now.getTime()),
+  );
 
   // Don't query into the future or if fromDate is after now
   if (fromDate >= now) {
@@ -75,11 +96,16 @@ export async function syncInertialMeasurementUnitToServer(
   }
 
   onProgress?.(`Querying IMU data from ${fromDate.toISOString()}...`);
-  const samples = await coreMotion.queryRecordedData(fromDate.toISOString(), now.toISOString());
+  const samples = (
+    await coreMotion.queryRecordedData(fromDate.toISOString(), queryWindowEndDate.toISOString())
+  ).filter(
+    (sample) =>
+      minimumSampleDate === null || isAfterDeviceErasureCutoff(sample.timestamp, minimumSampleDate),
+  );
 
   if (samples.length === 0) {
     onProgress?.("No new IMU samples");
-    coreMotion.setLastSyncTimestamp(now.toISOString());
+    coreMotion.setLastSyncTimestamp(queryWindowEndDate.toISOString());
     await ensureRecording(coreMotion, onProgress);
     return { inserted: 0, recording: true };
   }
@@ -105,7 +131,7 @@ export async function syncInertialMeasurementUnitToServer(
   }
 
   // All batches succeeded — advance the cursor
-  coreMotion.setLastSyncTimestamp(now.toISOString());
+  coreMotion.setLastSyncTimestamp(queryWindowEndDate.toISOString());
   onProgress?.(`Synced ${totalInserted} IMU samples`);
 
   await ensureRecording(coreMotion, onProgress);

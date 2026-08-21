@@ -1,5 +1,8 @@
+import { createHmac, randomBytes } from "node:crypto";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as resolveTokensModule from "../auth/resolve-tokens.ts";
+import * as fitImportQueueModule from "../jobs/enqueue-fit-file-import.ts";
 import {
   mapSuuntoActivityType,
   parseSuuntoWorkout,
@@ -14,26 +17,55 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
+
+function createWebhookDb() {
+  const chain = {
+    values: vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+      onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    }),
+  };
+  return {
+    select: vi.fn(),
+    insert: vi.fn().mockReturnValue(chain),
+    delete: vi.fn(),
+    execute: vi.fn(),
+  };
+}
+
 describe("mapSuuntoActivityType", () => {
   it("maps all known activity types", () => {
-    expect(mapSuuntoActivityType(2)).toBe("running");
-    expect(mapSuuntoActivityType(3)).toBe("cycling");
-    expect(mapSuuntoActivityType(4)).toBe("cross_country_skiing");
-    expect(mapSuuntoActivityType(11)).toBe("walking");
-    expect(mapSuuntoActivityType(12)).toBe("hiking");
-    expect(mapSuuntoActivityType(14)).toBe("strength");
-    expect(mapSuuntoActivityType(23)).toBe("yoga");
-    expect(mapSuuntoActivityType(27)).toBe("swimming");
-    expect(mapSuuntoActivityType(67)).toBe("trail_running");
-    expect(mapSuuntoActivityType(69)).toBe("rowing");
-    expect(mapSuuntoActivityType(82)).toBe("virtual_cycling");
-    expect(mapSuuntoActivityType(83)).toBe("running");
-    expect(mapSuuntoActivityType(1)).toBe("other");
-    expect(mapSuuntoActivityType(5)).toBe("other");
+    expect(mapSuuntoActivityType(2).canonicalType).toBe("running");
+    expect(mapSuuntoActivityType(3).canonicalType).toBe("cycling");
+    expect(mapSuuntoActivityType(4).canonicalType).toBe("skiing");
+    expect(mapSuuntoActivityType(11).canonicalType).toBe("walking");
+    expect(mapSuuntoActivityType(12).canonicalType).toBe("hiking");
+    expect(mapSuuntoActivityType(14).canonicalType).toBe("strength");
+    expect(mapSuuntoActivityType(23).canonicalType).toBe("yoga");
+    expect(mapSuuntoActivityType(27).canonicalType).toBe("swimming");
+    expect(mapSuuntoActivityType(67).canonicalType).toBe("running");
+    expect(mapSuuntoActivityType(69).canonicalType).toBe("rowing");
+    expect(mapSuuntoActivityType(82).canonicalType).toBe("cycling");
+    expect(mapSuuntoActivityType(83).canonicalType).toBe("running");
+    expect(mapSuuntoActivityType(1).canonicalType).toBe("other");
+    expect(mapSuuntoActivityType(5).canonicalType).toBe("other");
   });
 
   it("returns other for unknown", () => {
-    expect(mapSuuntoActivityType(999)).toBe("other");
+    expect(mapSuuntoActivityType(999).canonicalType).toBe("other");
   });
 });
 
@@ -58,14 +90,13 @@ describe("parseSuuntoWorkout", () => {
 
     const parsed = parseSuuntoWorkout(workout);
     expect(parsed.externalId).toBe("suunto-w-123");
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("Morning Ride");
     expect(parsed.startedAt).toEqual(new Date(1709290800000));
     expect(parsed.endedAt).toEqual(new Date(1709294400000));
     expect(parsed.raw.totalDistance).toBe(30000);
     expect(parsed.raw.avgHeartRate).toBe(145);
     expect(parsed.raw.maxHeartRate).toBe(175);
-    expect(parsed.raw.calories).toBe(700);
     expect(parsed.raw.steps).toBe(0);
   });
 
@@ -159,6 +190,84 @@ describe("SuuntoProvider", () => {
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("hands downloaded FIT workouts to the canonical import job", async () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    process.env.SUUNTO_SUBSCRIPTION_KEY = "key";
+    vi.spyOn(resolveTokensModule, "resolveOAuthTokens").mockResolvedValue({
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      scopes: null,
+    });
+    const enqueueFitImportSpy = vi
+      .spyOn(fitImportQueueModule, "enqueueFitFileImportAndWait")
+      .mockResolvedValue({ recordsSynced: 0, errors: [] });
+    const provider = new SuuntoProvider(async (input) => {
+      const url = String(input);
+      if (url.includes("/v2/workouts?since=")) {
+        return Response.json({
+          payload: [
+            {
+              workoutKey: "suunto-w-123",
+              activityId: 3,
+              workoutName: "Morning Ride",
+              startTime: 1_709_290_800_000,
+              stopTime: 1_709_294_400_000,
+              totalTime: 3600,
+              totalDistance: 30_000,
+              totalAscent: 300,
+              totalDescent: 280,
+              avgSpeed: 8.33,
+              maxSpeed: 12,
+              energyConsumption: 700,
+              stepCount: 0,
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/v2/workout/exportFit/suunto-w-123")) {
+        return new Response(new Uint8Array([1, 2, 3]));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const db = createWebhookDb();
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+    const result = await provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2024-03-01T00:00:00.000Z") }),
+        userId: "user-1",
+        metricStreamPublisher,
+      }),
+    );
+
+    expect(result).toEqual(expect.objectContaining({ recordsSynced: 1, errors: [] }));
+    expect(enqueueFitImportSpy).toHaveBeenCalledWith({
+      fitBuffer: Buffer.from([1, 2, 3]),
+      providerId: "suunto",
+      sourceName: "Suunto",
+      userId: "user-1",
+      db,
+      metricStreamPublisher,
+      activitySummary: {
+        externalId: "suunto-w-123",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "3",
+          modality: null,
+        },
+        startedAtIso: "2024-03-01T11:00:00.000Z",
+        endedAtIso: "2024-03-01T12:00:00.000Z",
+        name: "Morning Ride",
+        raw: expect.objectContaining({ totalDistance: 30_000, totalTime: 3600 }),
+      },
+    });
   });
 });
 
@@ -264,37 +373,40 @@ describe("SuuntoProvider.syncWebhookEvent", () => {
     expect(result.provider).toBe("suunto");
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: "suunto-w-123",
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "3",
+          modality: null,
+        },
+        name: "Morning Ride",
+      }),
+      expect.objectContaining({
+        activityType: {
+          canonicalType: "cycling",
+          providerType: "3",
+          modality: null,
+        },
+        name: "Morning Ride",
+        startedAt: new Date("2024-03-01T11:00:00.000Z"),
+        endedAt: new Date("2024-03-01T12:00:00.000Z"),
+        raw: expect.objectContaining({
+          totalDistance: 30000,
+          totalTime: 3600,
+        }),
+      }),
+    );
     // insert called for: ensureProvider + withSyncLog(logSync) + activity upsert
     expect(mockInsert).toHaveBeenCalled();
   });
 
   it("collects DB insert errors without crashing", async () => {
     const dbError = new Error("DB connection lost");
-    let insertCallCount = 0;
-    const mockInsert = vi.fn().mockReturnValue({
-      values: vi.fn().mockImplementation(() => {
-        insertCallCount++;
-        // First insert call is ensureProvider — let it succeed.
-        // Second insert call is the activity inside withSyncLog — make it fail.
-        // Third+ calls are logSync — let them succeed.
-        if (insertCallCount === 2) {
-          return {
-            onConflictDoUpdate: vi.fn().mockRejectedValue(dbError),
-            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-          };
-        }
-        return {
-          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        };
-      }),
-    });
-    const mockDb = {
-      select: vi.fn(),
-      insert: mockInsert,
-      delete: vi.fn(),
-      execute: vi.fn(),
-    };
+    providerActivityAbsenceMocks.upsertProviderActivity.mockRejectedValueOnce(dbError);
+    const mockDb = createWebhookDb();
 
     const provider = new SuuntoProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -386,11 +498,10 @@ describe("SuuntoProvider — precise webhook assertions", () => {
   });
 
   it("verifyWebhookSignature with correct HMAC-SHA256 returns true", () => {
-    const { createHmac } = require("node:crypto");
     const provider = new SuuntoProvider(async () => new Response());
 
     const body = Buffer.from('{"type":"WORKOUT_CREATED","username":"test"}');
-    const secret = "my-signing-secret";
+    const secret = randomBytes(32).toString("hex");
     const hmac = createHmac("sha256", secret);
     hmac.update(body);
     const validSig = hmac.digest("hex");
@@ -401,16 +512,19 @@ describe("SuuntoProvider — precise webhook assertions", () => {
   });
 
   it("verifyWebhookSignature with wrong secret returns false", () => {
-    const { createHmac } = require("node:crypto");
     const provider = new SuuntoProvider(async () => new Response());
 
     const body = Buffer.from("test");
-    const hmac = createHmac("sha256", "correct-secret");
+    const hmac = createHmac("sha256", randomBytes(32));
     hmac.update(body);
     const sig = hmac.digest("hex");
 
     expect(
-      provider.verifyWebhookSignature(body, { "x-hmac-sha256-signature": sig }, "wrong-secret"),
+      provider.verifyWebhookSignature(
+        body,
+        { "x-hmac-sha256-signature": sig },
+        randomBytes(32).toString("hex"),
+      ),
     ).toBe(false);
   });
 
@@ -465,28 +579,8 @@ describe("SuuntoProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent returns error externalId from parsed workout", async () => {
     const dbError = new Error("Test error");
-    let insertCallCount = 0;
-    const mockInsert = vi.fn().mockReturnValue({
-      values: vi.fn().mockImplementation(() => {
-        insertCallCount++;
-        if (insertCallCount === 2) {
-          return {
-            onConflictDoUpdate: vi.fn().mockRejectedValue(dbError),
-            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-          };
-        }
-        return {
-          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        };
-      }),
-    });
-    const mockDb = {
-      select: vi.fn(),
-      insert: mockInsert,
-      delete: vi.fn(),
-      execute: vi.fn(),
-    };
+    providerActivityAbsenceMocks.upsertProviderActivity.mockRejectedValueOnce(dbError);
+    const mockDb = createWebhookDb();
 
     const provider = new SuuntoProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -572,7 +666,6 @@ describe("parseSuuntoWorkout — precise raw object assertions", () => {
       totalDescent: 90,
       avgSpeed: 2.78,
       maxSpeed: 3.5,
-      calories: 500,
       steps: 5000,
       avgHeartRate: undefined,
       maxHeartRate: undefined,
@@ -599,7 +692,7 @@ describe("parseSuuntoWorkout — precise raw object assertions", () => {
     const parsed = parseSuuntoWorkout(workout);
     expect(parsed.raw.avgHeartRate).toBe(150);
     expect(parsed.raw.maxHeartRate).toBe(180);
-    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.activityType.canonicalType).toBe("cycling");
     expect(parsed.name).toBe("Suunto cycling");
   });
 
@@ -693,6 +786,52 @@ describe("SuuntoProvider.authSetup — apiBaseUrl", () => {
     const provider = new SuuntoProvider();
     const setup = provider.authSetup();
     expect(setup.exchangeCode).toBeTypeOf("function");
+  });
+
+  it("replays the documented deauthorization request", async () => {
+    process.env.SUUNTO_CLIENT_ID = "suunto-client";
+    process.env.SUUNTO_CLIENT_SECRET = "suunto-secret";
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const revoke = new SuuntoProvider(fetchFn).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "suunto-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      refreshToken: "suunto-refresh",
+      scopes: "workout",
+    };
+
+    await revoke(tokens);
+    await revoke(tokens);
+
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    for (const [input, init] of fetchFn.mock.calls) {
+      const url = new URL(String(input));
+      expect(url.origin + url.pathname).toBe("https://cloudapi-oauth.suunto.com/oauth/deauthorize");
+      expect(url.searchParams.get("client_id")).toBe("suunto-client");
+      expect(init?.method).toBe("GET");
+      expect(init?.headers).toEqual({
+        Accept: "application/json",
+        Authorization: "Bearer suunto-access",
+      });
+    }
+  });
+
+  it("accepts only Suunto's documented 200 deauthorization response", async () => {
+    process.env.SUUNTO_CLIENT_ID = "suunto-client";
+    process.env.SUUNTO_CLIENT_SECRET = "suunto-secret";
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 400 }));
+    const revoke = new SuuntoProvider(fetchFn).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+
+    await expect(
+      revoke({
+        accessToken: "suunto-access",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+        refreshToken: "suunto-refresh",
+        scopes: "workout",
+      }),
+    ).rejects.toThrow("Suunto authorization revocation failed (400)");
   });
 
   it("throws when env vars are missing", () => {

@@ -1,6 +1,5 @@
 import {
   formatBodyCompositionPercent,
-  formatCalories,
   formatDateMedium,
   formatDateYmd,
   formatDurationMinutes,
@@ -10,8 +9,12 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { useState } from "react";
 import { z } from "zod";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { PaginationControls } from "./PaginationControls.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const lifeEventSchema = z.object({
   id: z.string(),
@@ -32,7 +35,6 @@ const analysisMetricSchema = z.object({
   avg_resting_hr: z.number().optional(),
   avg_hrv: z.number().optional(),
   avg_steps: z.number().optional(),
-  avg_active_energy: z.number().optional(),
   avg_sleep_min: z.number().optional(),
   avg_deep_min: z.number().optional(),
   avg_rem_min: z.number().optional(),
@@ -51,24 +53,34 @@ const eventAnalysisDataSchema = z.object({
 type EventAnalysisData = z.infer<typeof eventAnalysisDataSchema>;
 
 const CATEGORIES = ["diet", "supplement", "injury", "lifestyle", "training", "other"] as const;
+const PAGE_SIZE = 20;
 
 export function LifeEventsPanel() {
   const [showForm, setShowForm] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
   const [windowDays, setWindowDays] = useState(30);
+  const [page, setPage] = useState(0);
 
   const utils = trpc.useUtils();
   const events = trpc.lifeEvents.list.useQuery();
   const createMutation = trpc.lifeEvents.create.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => {
       utils.lifeEvents.list.invalidate();
       setShowForm(false);
     },
+    onError: (error) => {
+      captureException(error, { operation: "lifeEvents.create" });
+    },
   });
   const deleteMutation = trpc.lifeEvents.delete.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => {
       utils.lifeEvents.list.invalidate();
       setSelectedEvent(null);
+    },
+    onError: (error) => {
+      captureException(error, { operation: "lifeEvents.delete" });
     },
   });
   const analysis = trpc.lifeEvents.analyze.useQuery(
@@ -76,14 +88,31 @@ export function LifeEventsPanel() {
     { enabled: !!selectedEvent },
   );
 
-  const eventList = z.array(lifeEventSchema).parse(events.data ?? []);
+  const eventList =
+    events.data === undefined ? undefined : z.array(lifeEventSchema).parse(events.data);
+  const totalPages = Math.ceil((eventList?.length ?? 0) / PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
+  const visibleEvents = eventList?.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
     <div className="space-y-4">
+      {events.isLoading && events.data === undefined ? (
+        <QueryStatePanel variant="loading" height={96} />
+      ) : null}
+      {events.error ? (
+        <QueryStatePanel
+          error={events.error}
+          height={96}
+          onRetry={() => void events.refetch()}
+          retryLabel="Retry life events"
+          retrying={events.isFetching}
+        />
+      ) : null}
+
       {/* Event list + add button */}
-      <div className="flex items-center justify-between">
-        <div className="flex flex-wrap gap-2">
-          {eventList.map((e) => (
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-wrap gap-2">
+          {visibleEvents?.map((e) => (
             <button
               key={e.id}
               type="button"
@@ -106,37 +135,70 @@ export function LifeEventsPanel() {
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
-          className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors"
+          className="w-full shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors sm:w-auto"
         >
           + Add event
         </button>
       </div>
 
+      <PaginationControls
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        totalItems={eventList?.length ?? 0}
+        itemLabel="life events"
+        onPageChange={(nextPage) => {
+          setPage(nextPage);
+          setSelectedEvent(null);
+        }}
+      />
+
+      {eventList?.length === 0 ? (
+        <p className="text-dim text-sm text-center py-6">No life events yet.</p>
+      ) : null}
+
       {/* Add form */}
       {showForm && (
-        <AddEventForm
-          onSubmit={(data) => createMutation.mutate(data)}
-          onCancel={() => setShowForm(false)}
-          loading={createMutation.isPending}
-        />
+        <>
+          <AddEventForm
+            onSubmit={(data) => createMutation.mutate(data)}
+            onCancel={() => setShowForm(false)}
+            loading={createMutation.isPending}
+          />
+          {createMutation.error ? (
+            <p className="text-xs text-red-400">{createMutation.error.message}</p>
+          ) : null}
+        </>
       )}
 
       {/* Analysis */}
       {(() => {
-        if (!selectedEvent || eventList.length === 0) return null;
-        const foundEvent = eventList.find((e) => e.id === selectedEvent);
-        const fallbackEvent = eventList[0];
-        const event = foundEvent ?? fallbackEvent;
+        if (!selectedEvent || !eventList || eventList.length === 0) return null;
+        const event = eventList.find((e) => e.id === selectedEvent);
         if (!event) return null;
         return (
-          <EventAnalysis
-            event={event}
-            analysis={eventAnalysisDataSchema.nullable().parse(analysis.data ?? null)}
-            loading={analysis.isLoading}
-            windowDays={windowDays}
-            onWindowChange={setWindowDays}
-            onDelete={() => deleteMutation.mutate({ id: selectedEvent })}
-          />
+          <>
+            {analysis.error ? (
+              <QueryStatePanel
+                error={analysis.error}
+                height={96}
+                onRetry={() => void analysis.refetch()}
+                retryLabel="Retry event analysis"
+                retrying={analysis.isFetching}
+              />
+            ) : null}
+            <EventAnalysis
+              event={event}
+              analysis={eventAnalysisDataSchema.nullable().parse(analysis.data ?? null)}
+              loading={analysis.isLoading && analysis.data === undefined}
+              windowDays={windowDays}
+              onWindowChange={setWindowDays}
+              onDelete={() => deleteMutation.mutate({ id: selectedEvent })}
+              deleting={deleteMutation.isPending}
+            />
+            {deleteMutation.error ? (
+              <p className="text-xs text-red-400">{deleteMutation.error.message}</p>
+            ) : null}
+          </>
         );
       })()}
     </div>
@@ -168,8 +230,8 @@ function AddEventForm({
 
   return (
     <div className="card p-4 space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
           <label htmlFor="life-event-label" className="text-xs text-subtle block mb-1">
             Label
           </label>
@@ -185,7 +247,7 @@ function AddEventForm({
 
         <div>
           <span className="text-xs text-subtle block mb-1">Type</span>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             {(["point", "range", "ongoing"] as const).map((t) => (
               <button
                 key={t}
@@ -250,7 +312,7 @@ function AddEventForm({
           </div>
         )}
 
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <label htmlFor="life-event-notes" className="text-xs text-subtle block mb-1">
             Notes (optional)
           </label>
@@ -265,7 +327,7 @@ function AddEventForm({
         </div>
       </div>
 
-      <div className="flex gap-2 justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <button
           type="button"
           onClick={onCancel}
@@ -302,6 +364,7 @@ function EventAnalysis({
   windowDays,
   onWindowChange,
   onDelete,
+  deleting,
 }: {
   event: LifeEvent;
   analysis: EventAnalysisData | null;
@@ -309,6 +372,7 @@ function EventAnalysis({
   windowDays: number;
   onWindowChange: (days: number) => void;
   onDelete: () => void;
+  deleting: boolean;
 }) {
   const units = useUnitConverter();
   if (loading) {
@@ -342,12 +406,12 @@ function EventAnalysis({
 
   return (
     <div className="card p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h3 className="text-sm font-medium text-foreground">
             {categoryIcon(event.category)} {event.label}
           </h3>
-          <p className="text-xs text-subtle mt-0.5">
+          <p className="mt-0.5 break-words text-xs text-subtle">
             {formatDate(event.started_at)}
             {event.ended_at
               ? ` — ${formatDate(event.ended_at)}`
@@ -357,28 +421,33 @@ function EventAnalysis({
             {event.notes && ` · ${event.notes}`}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
             <span className="text-xs text-dim">Window:</span>
-            {[14, 30, 60, 90].map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => onWindowChange(d)}
-                className={`text-xs px-2 py-0.5 rounded transition-colors ${
-                  windowDays === d ? "bg-accent/15 text-foreground" : "text-dim hover:text-muted"
-                }`}
-              >
-                {d}d
-              </button>
-            ))}
+            <div className="grid grid-cols-4 gap-1.5 sm:flex">
+              {[14, 30, 60, 90].map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => onWindowChange(days)}
+                  className={`w-full text-xs px-2 py-0.5 rounded transition-colors sm:w-auto ${
+                    windowDays === days
+                      ? "bg-accent/15 text-foreground"
+                      : "text-dim hover:text-muted"
+                  }`}
+                >
+                  {days}d
+                </button>
+              ))}
+            </div>
           </div>
           <button
             type="button"
             onClick={onDelete}
-            className="text-xs text-red-800 hover:text-red-500 transition-colors"
+            disabled={deleting}
+            className="w-full text-xs text-red-800 hover:text-red-500 transition-colors sm:w-auto"
           >
-            Delete
+            {deleting ? "Deleting..." : "Delete"}
           </button>
         </div>
       </div>
@@ -404,13 +473,6 @@ function EventAnalysis({
           before={before.metrics?.avg_steps}
           after={after.metrics?.avg_steps}
           periodLabel={periodLabel}
-        />
-        <CompareCard
-          label="Active Energy"
-          before={before.metrics?.avg_active_energy}
-          after={after.metrics?.avg_active_energy}
-          periodLabel={periodLabel}
-          formatValue={formatCalories}
         />
         <CompareCard
           label="Sleep"

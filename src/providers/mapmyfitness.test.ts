@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
@@ -22,23 +23,23 @@ import {
 
 describe("mapMapMyFitnessActivityType", () => {
   it("maps all known activity types", () => {
-    expect(mapMapMyFitnessActivityType("Running")).toBe("running");
-    expect(mapMapMyFitnessActivityType("Trail Run")).toBe("running");
-    expect(mapMapMyFitnessActivityType("Road Ride")).toBe("cycling");
-    expect(mapMapMyFitnessActivityType("Mountain Biking")).toBe("cycling");
-    expect(mapMapMyFitnessActivityType("Cycling")).toBe("cycling");
-    expect(mapMapMyFitnessActivityType("Walking")).toBe("walking");
-    expect(mapMapMyFitnessActivityType("Swimming")).toBe("swimming");
-    expect(mapMapMyFitnessActivityType("Hiking")).toBe("hiking");
-    expect(mapMapMyFitnessActivityType("Yoga Class")).toBe("yoga");
-    expect(mapMapMyFitnessActivityType("Weight Training")).toBe("strength");
-    expect(mapMapMyFitnessActivityType("Strength Training")).toBe("strength");
-    expect(mapMapMyFitnessActivityType("Rowing Machine")).toBe("rowing");
+    expect(mapMapMyFitnessActivityType("Running").canonicalType).toBe("running");
+    expect(mapMapMyFitnessActivityType("Trail Run").canonicalType).toBe("running");
+    expect(mapMapMyFitnessActivityType("Road Ride").canonicalType).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Mountain Biking").canonicalType).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Cycling").canonicalType).toBe("cycling");
+    expect(mapMapMyFitnessActivityType("Walking").canonicalType).toBe("walking");
+    expect(mapMapMyFitnessActivityType("Swimming").canonicalType).toBe("swimming");
+    expect(mapMapMyFitnessActivityType("Hiking").canonicalType).toBe("hiking");
+    expect(mapMapMyFitnessActivityType("Yoga Class").canonicalType).toBe("yoga");
+    expect(mapMapMyFitnessActivityType("Weight Training").canonicalType).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Strength Training").canonicalType).toBe("strength");
+    expect(mapMapMyFitnessActivityType("Rowing Machine").canonicalType).toBe("rowing");
   });
 
   it("returns other for unknown types", () => {
-    expect(mapMapMyFitnessActivityType("Juggling")).toBe("other");
-    expect(mapMapMyFitnessActivityType("")).toBe("other");
+    expect(mapMapMyFitnessActivityType("Juggling").canonicalType).toBe("other");
+    expect(mapMapMyFitnessActivityType("").canonicalType).toBe("other");
   });
 });
 
@@ -66,7 +67,7 @@ describe("parseMapMyFitnessWorkout", () => {
 
     const parsed = parseMapMyFitnessWorkout(workout);
     expect(parsed.externalId).toBe("w-123");
-    expect(parsed.activityType).toBe("running");
+    expect(parsed.activityType.canonicalType).toBe("running");
     expect(parsed.name).toBe("Morning Run");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
     expect(parsed.endedAt).toEqual(
@@ -78,7 +79,6 @@ describe("parseMapMyFitnessWorkout", () => {
     expect(parsed.raw.avgPower).toBe(200);
     expect(parsed.raw.maxPower).toBe(400);
     expect(parsed.raw.avgCadence).toBe(170);
-    expect(parsed.raw.calories).toBe(500);
   });
 
   it("handles missing aggregates", () => {
@@ -93,8 +93,7 @@ describe("parseMapMyFitnessWorkout", () => {
 
     const parsed = parseMapMyFitnessWorkout(workout);
     expect(parsed.externalId).toBe("w-min");
-    expect(parsed.activityType).toBe("walking");
-    expect(parsed.raw.calories).toBeUndefined();
+    expect(parsed.activityType.canonicalType).toBe("walking");
     expect(parsed.raw.distanceMeters).toBeUndefined();
   });
 
@@ -123,9 +122,11 @@ describe("parseMapMyFitnessWorkout", () => {
     };
 
     const parsed = parseMapMyFitnessWorkout(workout);
-    // Falls through to the name since activity_type is empty/falsy
-    // but the function uses activity_type ?? name, and "" is not nullish
-    expect(parsed.activityType).toBe("other");
+    expect(parsed.activityType).toEqual({
+      canonicalType: "cycling",
+      providerType: "Cycling Session",
+      modality: null,
+    });
   });
 });
 
@@ -140,11 +141,10 @@ describe("MapMyFitnessClient", () => {
   });
 
   it("throws a ProviderRateLimitError with providerId on 429", async () => {
-    // Kills the constructor ObjectLiteral mutant on
-    // createRateLimitAwareFetch(fetchFn, { providerId: "mapmyfitness" }) → {}.
     const mockFetch = vi.fn().mockResolvedValue(new Response("slow down", { status: 429 }));
+    const rateLimitedFetch = createProviderRateLimitFetch("mapmyfitness", mockFetch);
 
-    const client = new MapMyFitnessClient("token", "client-id", mockFetch);
+    const client = new MapMyFitnessClient("token", "client-id", rateLimitedFetch);
     const error = await client
       .getWorkouts("user-1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z")
       .catch((caught: unknown) => caught);
@@ -226,13 +226,16 @@ describe("MapMyFitnessProvider", () => {
     process.env.MAPMYFITNESS_CLIENT_ID = "id";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "secret";
 
-    const mockFetch = vi.fn().mockResolvedValue(
-      Response.json({
-        access_token: "access-xyz",
-        refresh_token: "refresh-xyz",
-        expires_in: 3600,
-      }),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: "access-xyz",
+          refresh_token: "refresh-xyz",
+          expires_in: 3600,
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ id: 123456 }));
 
     const setup = new MapMyFitnessProvider(mockFetch).authSetup();
     const { exchangeCode } = setup;
@@ -240,9 +243,96 @@ describe("MapMyFitnessProvider", () => {
     const tokens = await exchangeCode("auth-code-123");
 
     expect(tokens.accessToken).toBe("access-xyz");
+    expect(tokens.providerAccountId).toBe("123456");
     const [url, init] = mockFetch.mock.calls[0] ?? [];
     expect(String(url)).toContain("/oauth2/access_token/");
     expect(String(init?.body)).toContain("auth-code-123");
+    expect(String(mockFetch.mock.calls[1]?.[0])).toBe(
+      "https://api.mapmyfitness.com/v7.1/user/self/",
+    );
+  });
+
+  it("exposes issued tokens before identity lookup can fail", async () => {
+    process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: "access-xyz",
+          refresh_token: "refresh-xyz",
+          expires_in: 3600,
+          user_id: "123456",
+        }),
+      )
+      .mockResolvedValueOnce(new Response("identity unavailable", { status: 503 }));
+    const issuedTokens = vi.fn();
+    const setup = new MapMyFitnessProvider(mockFetch).authSetup();
+    if (!setup.exchangeCode) throw new Error("exchangeCode not defined");
+
+    await expect(setup.exchangeCode("auth-code-123", undefined, issuedTokens)).rejects.toThrow(
+      "mapmyfitness API service unavailable (503)",
+    );
+    expect(issuedTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: "access-xyz", providerAccountId: "123456" }),
+    );
+  });
+
+  it("replays the documented authorization revocation request", async () => {
+    process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";
+    const mockFetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const setup = new MapMyFitnessProvider(mockFetch).authSetup();
+    const revoke = setup.revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "map-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      providerAccountId: "123456",
+      refreshToken: "map-refresh",
+      scopes: "read",
+    };
+
+    await revoke(tokens);
+    await revoke(tokens);
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    for (const [input, init] of mockFetch.mock.calls) {
+      const url = new URL(String(input));
+      expect(url.origin + url.pathname).toBe(
+        "https://api.mapmyfitness.com/v7.1/oauth2/connection/",
+      );
+      expect(url.searchParams.get("user_id")).toBe("123456");
+      expect(url.searchParams.get("client_id")).toBe("map-client");
+      expect(init?.method).toBe("DELETE");
+      expect(init?.headers).toEqual({
+        Accept: "application/json",
+        Authorization: "Bearer map-access",
+        "Api-Key": "map-client",
+      });
+    }
+  });
+
+  it("requires a durable user id and the documented 204 response", async () => {
+    process.env.MAPMYFITNESS_CLIENT_ID = "map-client";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "map-secret";
+    const mockFetch = vi.fn().mockResolvedValue(new Response("not found", { status: 404 }));
+    const revoke = new MapMyFitnessProvider(mockFetch).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "map-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      refreshToken: "map-refresh",
+      scopes: "read",
+    };
+
+    await expect(revoke(tokens)).rejects.toThrow(
+      "Reconnect MapMyFitness before deleting your account",
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+    await expect(revoke({ ...tokens, providerAccountId: "123456" })).rejects.toThrow(
+      "MapMyFitness authorization revocation failed (404)",
+    );
   });
 
   it("validate returns errors for missing env vars", () => {

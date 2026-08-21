@@ -1,0 +1,30 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+spotlight_testing = true
+
+file_include_globs = """
+.env*
+"""
+
+[prompts]
+create_pr = "Monitor the CI run. You should fix any jobs that fail, push and keep checking. As part of your monitoring, look for CR comments, and address them using the skill. You should not stop until all CR comments are resolved and all of CI is green. You should also resolve any conflicts with the parent branch."
+
+[scripts]
+archive = "mise exec -- pnpm tsx scripts/conductor-archive.ts"
+run_mode = "concurrent"
+setup = "command -v mise >/dev/null || { echo 'mise is required: https://mise.jdx.dev/getting-started.html' >&2; exit 1; }; export MISE_LOCKED=1; mise install --locked && mise run cloud:prebuild"
+
+[scripts.run.web]
+available_in = [ "local" ]
+command = "mise exec -- pnpm --filter dofek-web dev --host 127.0.0.1 --port \"$CONDUCTOR_PORT\""
+default = true
+icon = "play"
+
+[scripts.run.doctor]
+available_in = [ "local", "cloud" ]
+command = "mise run doctor"
+icon = "stethoscope"
+
+[scripts.run.cloud-init]
+available_in = [ "cloud" ]
+command = "mise run agent:codex && mise run cloud:start"
+icon = "cloud"

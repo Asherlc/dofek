@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AccessTokenExpiredError } from "../auth-errors.ts";
+import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import { ProviderHttpClient } from "../http-client.ts";
 
 export const WAHOO_API_BASE = "https://api.wahooligan.com";
@@ -111,6 +111,33 @@ export const wahooWebhookPayloadSchema = createWahooWebhookPayloadSchema();
 
 // ── Client ──
 
+const maxWahooErrorBodyExcerptLength = 200;
+
+function formatWahooErrorBodyExcerpt(text: string): string {
+  const trimmedText = text.trim();
+  if (trimmedText.length === 0) {
+    return "(empty response body)";
+  }
+  return trimmedText.length > maxWahooErrorBodyExcerptLength
+    ? `${trimmedText.slice(0, maxWahooErrorBodyExcerptLength)}…`
+    : trimmedText;
+}
+
+export class WahooApiError extends Error {
+  readonly statusCode: number;
+  readonly path: string;
+  readonly responseBodyExcerpt: string;
+
+  constructor(statusCode: number, path: string, responseBody: string) {
+    const responseBodyExcerpt = formatWahooErrorBodyExcerpt(responseBody);
+    super(`API error ${statusCode} on ${path}: ${responseBodyExcerpt}`);
+    this.name = "WahooApiError";
+    this.statusCode = statusCode;
+    this.path = path;
+    this.responseBodyExcerpt = responseBodyExcerpt;
+  }
+}
+
 const wahooErrorResponseSchema = z.object({
   error: z.string().optional(),
 });
@@ -132,10 +159,12 @@ export class WahooClient extends ProviderHttpClient {
 
   protected override async handleErrorResponse(response: Response, path: string): Promise<never> {
     const text = await response.text();
-    const truncated = text.length > 200 ? `${text.slice(0, 200)}…` : text;
-    const apiError = new Error(`API error ${response.status} on ${path}: ${truncated}`);
+    const apiError = new WahooApiError(response.status, path, text);
     if (response.status === 401 && isAccessTokenExpiredResponse(text)) {
       throw new AccessTokenExpiredError("Wahoo", { cause: apiError });
+    }
+    if (response.status === 401 && text.trim() === "") {
+      throw new ProviderAuthenticationFailedError("Wahoo", { cause: apiError });
     }
     throw apiError;
   }

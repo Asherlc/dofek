@@ -1,6 +1,9 @@
 import { formatDateShort, formatIntensity, formatNumber } from "@dofek/format/format";
-import type { ActivityVariabilityRow } from "dofek-server/types";
+import { POWER_UNIT_LABEL } from "@dofek/format/units";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
+import type { ActivityVariabilityEmptyReason, ActivityVariabilityRow } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
+import { PaginationControls } from "./PaginationControls.tsx";
 
 interface ActivityVariabilityTableProps {
   data: ActivityVariabilityRow[];
@@ -9,12 +12,23 @@ interface ActivityVariabilityTableProps {
   limit: number;
   onPageChange: (newOffset: number) => void;
   loading?: boolean;
+  emptyReason?: ActivityVariabilityEmptyReason | null;
 }
 
 function getVariabilityColor(variabilityIndex: number): string {
   if (variabilityIndex < 1.05) return "text-green-400";
   if (variabilityIndex <= 1.1) return "text-yellow-400";
   return "text-red-400";
+}
+
+function getEmptyMessage(emptyReason: ActivityVariabilityEmptyReason | null | undefined): string {
+  if (emptyReason === "no_ftp_estimate") {
+    return "No recent cycling activities long enough to estimate threshold power.";
+  }
+  if (emptyReason === "no_normalized_power") {
+    return "No cycling activities with enough power samples for variability yet.";
+  }
+  return "No cycling activities available.";
 }
 
 export function ActivityVariabilityTable({
@@ -24,6 +38,7 @@ export function ActivityVariabilityTable({
   limit,
   onPageChange,
   loading,
+  emptyReason,
 }: ActivityVariabilityTableProps) {
   if (loading) {
     return (
@@ -36,13 +51,12 @@ export function ActivityVariabilityTable({
   if (data.length === 0 && offset === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-dim text-sm">No activities with power data available</span>
+        <span className="text-dim text-sm">{getEmptyMessage(emptyReason)}</span>
       </div>
     );
   }
 
-  const currentPage = Math.floor(offset / limit) + 1;
-  const totalPages = Math.ceil(totalCount / limit);
+  const currentPage = Math.floor(offset / limit);
   const columns: ActivityTableColumn<ActivityVariabilityRow>[] = [
     {
       key: "date",
@@ -60,14 +74,14 @@ export function ActivityVariabilityTable({
     },
     {
       key: "normalizedPower",
-      label: "Normalized Power (W)",
+      label: `${TRAINING_TERMINOLOGY.normalizedPower.plainLabel} (${POWER_UNIT_LABEL})`,
       headerClassName: "text-right py-2 px-3 text-muted font-medium",
       cellClassName: "py-2 px-3 text-right text-foreground",
       renderCell: (row) => formatNumber(row.normalizedPower),
     },
     {
       key: "averagePower",
-      label: "Avg Power (W)",
+      label: `Avg Power (${POWER_UNIT_LABEL})`,
       headerClassName: "text-right py-2 px-3 text-muted font-medium",
       cellClassName: "py-2 px-3 text-right text-foreground",
       renderCell: (row) => formatNumber(row.averagePower),
@@ -98,29 +112,14 @@ export function ActivityVariabilityTable({
         <span className="text-yellow-400">1.05-1.1 moderate</span> /{" "}
         <span className="text-red-400">&gt;1.1 variable</span>
       </p>
-      {totalPages > 1 && (
-        <div className="flex items-center gap-2 text-xs">
-          <button
-            type="button"
-            disabled={offset === 0}
-            onClick={() => onPageChange(Math.max(0, offset - limit))}
-            className="px-2 py-1 rounded border border-border-strong text-muted hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Previous
-          </button>
-          <span className="text-subtle">
-            {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            disabled={offset + limit >= totalCount}
-            onClick={() => onPageChange(offset + limit)}
-            className="px-2 py-1 rounded border border-border-strong text-muted hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Next
-          </button>
-        </div>
-      )}
+      <PaginationControls
+        page={currentPage}
+        pageSize={limit}
+        totalItems={totalCount}
+        itemLabel="activities"
+        onPageChange={(page) => onPageChange(page * limit)}
+        className="min-w-[240px] border-t-0 pt-0"
+      />
     </div>
   );
 

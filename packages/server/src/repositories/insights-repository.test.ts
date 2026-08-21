@@ -65,7 +65,6 @@ describe("InsightsRepository", () => {
               hrv: 62,
               spo2_avg: 98,
               steps: 8_000,
-              active_energy_kcal: 420,
               skin_temp_c: 33.2,
             },
             {
@@ -74,7 +73,6 @@ describe("InsightsRepository", () => {
               hrv: 58,
               spo2_avg: 97,
               steps: 6_500,
-              active_energy_kcal: 360,
               skin_temp_c: 33.4,
             },
           ])
@@ -96,7 +94,6 @@ describe("InsightsRepository", () => {
             hrv: 62,
             spo2_avg: 98,
             steps: 8_000,
-            active_energy_kcal: 420,
             skin_temp_c: 33.2,
           },
           {
@@ -105,7 +102,6 @@ describe("InsightsRepository", () => {
             hrv: 58,
             spo2_avg: 97,
             steps: 6_500,
-            active_energy_kcal: 360,
             skin_temp_c: 33.4,
           },
         ],

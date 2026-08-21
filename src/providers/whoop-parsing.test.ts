@@ -1,5 +1,4 @@
-import { describe, expect, it } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
+import { WhoopClient } from "@dofek/whoop/client";
 import type {
   WhoopCycle,
   WhoopMetricValue,
@@ -7,7 +6,8 @@ import type {
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
+} from "@dofek/whoop/types";
+import { describe, expect, it } from "vitest";
 import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   buildV2ActivityTypeLookup,
@@ -22,6 +22,7 @@ import {
   parseWeightliftingWorkout,
   parseWorkout,
   resolveActivityType,
+  resolveInlineSleepExternalId,
 } from "./whoop/parsing.ts";
 
 // ============================================================
@@ -331,6 +332,7 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     expect(parsed?.remMinutes).toBe(81); // 4852630 / 60000
     expect(parsed?.lightMinutes).toBe(261); // 15647370 / 60000
     expect(parsed?.awakeMinutes).toBe(51); // 3063020 / 60000
+    expect(parsed?.stagingAvailable).toBe(true);
     expect(parsed?.efficiencyPct).toBe(89.4);
     expect(parsed?.sleepType).toBe("sleep");
     expect(parsed?.isNap).toBe(false);
@@ -356,6 +358,22 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     const parsed1 = parseInlineSleep(inlineSleep(), 1);
     expect(parsed0?.externalId).not.toBe(parsed1?.externalId);
     expect(parsed0?.externalId).toContain("inline-");
+  });
+
+  it("resolveInlineSleepExternalId prefers WHOOP sleep ids for main sleeps", () => {
+    const cycle = {
+      sleep: { id: 12345 },
+      recovery: {
+        sleep_id: 12345,
+        user_id: 10129,
+        created_at: "2026-03-01T00:00:00Z",
+        updated_at: "2026-03-01T00:00:00Z",
+      },
+    };
+    expect(resolveInlineSleepExternalId(cycle, inlineSleep(), 0)).toBe("12345");
+    expect(resolveInlineSleepExternalId(cycle, inlineSleep({ significant: false }), 1)).toContain(
+      "inline-",
+    );
   });
 
   it("handles missing optional fields", () => {
@@ -405,11 +423,12 @@ describe("parseSleep — edge cases", () => {
     const parsed = parseSleep(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("300");
-    expect(parsed?.deepMinutes).toBe(0);
-    expect(parsed?.remMinutes).toBe(0);
-    expect(parsed?.lightMinutes).toBe(0);
-    expect(parsed?.awakeMinutes).toBe(0);
-    expect(parsed?.durationMinutes).toBe(0);
+    expect(parsed?.deepMinutes).toBeUndefined();
+    expect(parsed?.remMinutes).toBeUndefined();
+    expect(parsed?.lightMinutes).toBeUndefined();
+    expect(parsed?.awakeMinutes).toBeUndefined();
+    expect(parsed?.durationMinutes).toBeUndefined();
+    expect(parsed?.stagingAvailable).toBe(false);
     expect(parsed?.efficiencyPct).toBeUndefined();
     expect(parsed?.isNap).toBe(false);
   });
@@ -511,10 +530,9 @@ describe("parseWorkout — edge cases", () => {
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("uuid-400");
-    expect(parsed?.activityType).toBe("running");
+    expect(parsed?.activityType.canonicalType).toBe("running");
     expect(parsed?.durationSeconds).toBe(3600);
     expect(parsed?.distanceMeters).toBeUndefined();
-    expect(parsed?.calories).toBeUndefined();
     expect(parsed?.avgHeartRate).toBeUndefined();
     expect(parsed?.maxHeartRate).toBeUndefined();
     expect(parsed?.totalElevationGain).toBeUndefined();
@@ -534,25 +552,7 @@ describe("parseWorkout — edge cases", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.activityType).toBe("other");
-  });
-
-  it("converts kilojoules to calories", () => {
-    const record: WhoopWorkoutRecord = {
-      activity_id: "uuid-402",
-      during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
-      timezone_offset: "-05:00",
-      sport_id: 44, // yoga
-      score: 3,
-      average_heart_rate: 100,
-      max_heart_rate: 120,
-      kilojoules: 418.4,
-    };
-
-    const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBe(100); // 418.4 / 4.184 = ~100
-    expect(parsed?.activityType).toBe("yoga");
+    expect(parsed?.activityType.canonicalType).toBe("other");
   });
 
   it("handles score with zero kilojoule", () => {
@@ -569,8 +569,7 @@ describe("parseWorkout — edge cases", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBeUndefined(); // 0 is falsy
-    expect(parsed?.activityType).toBe("meditation");
+    expect(parsed?.activityType.canonicalType).toBe("meditation");
   });
 
   it("maps various sport IDs correctly", () => {
@@ -585,14 +584,14 @@ describe("parseWorkout — edge cases", () => {
       kilojoules: 1000,
     });
 
-    expect(parseWorkout(makeRecord(1))?.activityType).toBe("cycling");
-    expect(parseWorkout(makeRecord(33))?.activityType).toBe("swimming");
-    expect(parseWorkout(makeRecord(52))?.activityType).toBe("hiking");
-    expect(parseWorkout(makeRecord(63))?.activityType).toBe("walking");
-    expect(parseWorkout(makeRecord(45))?.activityType).toBe("strength");
-    expect(parseWorkout(makeRecord(18))?.activityType).toBe("rowing");
-    expect(parseWorkout(makeRecord(65))?.activityType).toBe("elliptical");
-    expect(parseWorkout(makeRecord(29))?.activityType).toBe("skiing");
+    expect(parseWorkout(makeRecord(1))?.activityType.canonicalType).toBe("cycling");
+    expect(parseWorkout(makeRecord(33))?.activityType.canonicalType).toBe("swimming");
+    expect(parseWorkout(makeRecord(52))?.activityType.canonicalType).toBe("hiking");
+    expect(parseWorkout(makeRecord(63))?.activityType.canonicalType).toBe("walking");
+    expect(parseWorkout(makeRecord(45))?.activityType.canonicalType).toBe("strength");
+    expect(parseWorkout(makeRecord(18))?.activityType.canonicalType).toBe("rowing");
+    expect(parseWorkout(makeRecord(65))?.activityType.canonicalType).toBe("elliptical");
+    expect(parseWorkout(makeRecord(29))?.activityType.canonicalType).toBe("skiing");
   });
 
   it("falls back to v2_activity type name when sport_id maps to other", () => {
@@ -608,10 +607,10 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // Without v2 type name → "other"
-    expect(parseWorkout(record)?.activityType).toBe("other");
+    expect(parseWorkout(record)?.activityType.canonicalType).toBe("other");
 
     // With v2 type name "walk" → "walking"
-    expect(parseWorkout(record, "walk")?.activityType).toBe("walking");
+    expect(parseWorkout(record, "walk")?.activityType.canonicalType).toBe("walking");
   });
 
   it("prefers sport_id mapping over v2_activity type when sport_id is known", () => {
@@ -627,33 +626,34 @@ describe("parseWorkout — edge cases", () => {
     };
 
     // sport_id 63 → "walking" even if v2 type says something else
-    expect(parseWorkout(record, "run")?.activityType).toBe("walking");
+    expect(parseWorkout(record, "run")?.activityType.canonicalType).toBe("walking");
   });
 });
 
 describe("resolveActivityType", () => {
   it("returns sport_id mapping when it is not other", () => {
-    expect(resolveActivityType(63)).toBe("walking");
-    expect(resolveActivityType(0)).toBe("running");
-    expect(resolveActivityType(1)).toBe("cycling");
+    expect(resolveActivityType(63).canonicalType).toBe("walking");
+    expect(resolveActivityType(0).canonicalType).toBe("running");
+    expect(resolveActivityType(1).canonicalType).toBe("cycling");
   });
 
   it("falls back to v2 type name when sport_id maps to other", () => {
-    expect(resolveActivityType(9999, "walk")).toBe("walking");
-    expect(resolveActivityType(9999, "dog-walk")).toBe("walking");
-    expect(resolveActivityType(9999, "spin")).toBe("indoor_cycling");
-    expect(resolveActivityType(9999, "functional-fitness")).toBe("functional_fitness");
+    expect(resolveActivityType(9999, "walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "dog-walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "spin").canonicalType).toBe("cycling");
+    expect(resolveActivityType(9999, "functional-fitness").canonicalType).toBe("strength");
+    expect(resolveActivityType(9999, "functional-fitness").modality).toBe("functional");
   });
 
   it("returns other when both sport_id and v2 type are unknown", () => {
-    expect(resolveActivityType(9999)).toBe("other");
-    expect(resolveActivityType(9999, "unknown-activity")).toBe("other");
+    expect(resolveActivityType(9999).canonicalType).toBe("other");
+    expect(resolveActivityType(9999, "unknown-activity").canonicalType).toBe("other");
   });
 
   it("is case-insensitive for v2 type names", () => {
-    expect(resolveActivityType(9999, "Walk")).toBe("walking");
-    expect(resolveActivityType(9999, "WALK")).toBe("walking");
-    expect(resolveActivityType(9999, "Dog-Walk")).toBe("walking");
+    expect(resolveActivityType(9999, "Walk").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "WALK").canonicalType).toBe("walking");
+    expect(resolveActivityType(9999, "Dog-Walk").canonicalType).toBe("walking");
   });
 });
 
@@ -890,7 +890,11 @@ describe("WhoopClient.authenticate — MFA required path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "my-tok", RefreshToken: "my-ref" },
+            AuthenticationResult: {
+              AccessToken: "my-tok",
+              RefreshToken: "my-ref",
+              ExpiresIn: 3600,
+            },
           }),
         );
       }
@@ -912,7 +916,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
           }),
         );
       }
@@ -989,7 +993,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-access" },
+            AuthenticationResult: { AccessToken: "new-access", ExpiresIn: 3600 },
           }),
         );
       }
@@ -1012,7 +1016,11 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-access", RefreshToken: "new-refresh" },
+            AuthenticationResult: {
+              AccessToken: "new-access",
+              RefreshToken: "new-refresh",
+              ExpiresIn: 3600,
+            },
           }),
         );
       }

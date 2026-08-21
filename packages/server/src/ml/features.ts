@@ -19,7 +19,6 @@ export interface DailyFeatureRow {
   hrv: number | null;
   spo2_avg: number | null;
   steps: number | null;
-  active_energy_kcal: number | null;
   skin_temp_c: number | null;
   sleep_duration_min: number | null;
   deep_min: number | null;
@@ -108,11 +107,6 @@ export function getAllFeatures(): FeatureDefinition[] {
       name: "strength_minutes",
       description: "Strength training duration",
       extract: (d) => d.strength_minutes,
-    },
-    {
-      name: "active_kcal",
-      description: "Active energy burned (kcal)",
-      extract: (d) => d.active_energy_kcal,
     },
     {
       name: "steps",

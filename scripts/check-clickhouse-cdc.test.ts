@@ -63,6 +63,8 @@ const trackedEnvVars = [
 ] as const;
 
 describe("check-clickhouse-cdc", () => {
+  let clickHouseClient: ClickHouseClient;
+
   const originalValues: Record<(typeof trackedEnvVars)[number], string | undefined> = {
     CLICKHOUSE_URL: undefined,
     DATABASE_URL: undefined,
@@ -83,7 +85,7 @@ describe("check-clickhouse-cdc", () => {
     pgClientInstances.length = 0;
     vi.clearAllMocks();
     vi.spyOn(process, "exit").mockImplementation(() => undefined);
-    const clickHouseClient: ClickHouseClient = {
+    clickHouseClient = {
       close: vi.fn().mockResolvedValue(undefined),
       command: vi.fn().mockResolvedValue(undefined),
       query: vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
@@ -176,6 +178,8 @@ describe("check-clickhouse-cdc", () => {
     process.env.PEERDB_CDC_PASSWORD = "peerdb-dedicated-password";
     process.env.PEERDB_CDC_PORT = "9900";
 
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
     await expect(main()).resolves.toBeUndefined();
 
     expect(pgClientInstances.map((client) => client.connectionString)).toEqual([
@@ -183,5 +187,8 @@ describe("check-clickhouse-cdc", () => {
       "postgres://peerdb:peerdb-dedicated-password@127.0.0.1:9900/peerdb",
     ]);
     expect(process.exit).toHaveBeenCalledWith(0);
+    expect(consoleLog).toHaveBeenCalledWith(
+      "[clickhouse-cdc-health] ok: checked 0 slots and 1 mirror",
+    );
   });
 });

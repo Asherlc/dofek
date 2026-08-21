@@ -1,11 +1,13 @@
 import { formatDateShort, formatIntensity, formatTrainingLoad } from "@dofek/format/format";
-import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
+import { StrainScore } from "@dofek/scoring/scoring";
 import { duration, easing } from "@dofek/scoring/tokens";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface StrainCardProps {
   data: WorkloadRatioResult | undefined;
@@ -153,24 +155,28 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
               <p className="text-lg font-bold text-foreground tabular-nums">
                 {formatTrainingLoad(today?.acuteLoad)}
               </p>
-              <p className="text-[10px] text-subtle">Acute (7d)</p>
+              <p className="text-[10px] text-subtle">Recent {data.context.recentDays}-day load</p>
             </div>
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">
                 {formatTrainingLoad(today?.chronicLoad)}
               </p>
-              <p className="text-[10px] text-subtle">Chronic (28d)</p>
+              <p className="text-[10px] text-subtle">
+                {data.context.baselineDays}-day baseline load
+              </p>
             </div>
             <div>
-              <p
-                className="text-lg font-bold tabular-nums"
-                style={{ color: new WorkloadRatio(workloadRatio ?? null).color }}
-              >
+              <p className="text-lg font-bold text-foreground tabular-nums">
                 {workloadRatio != null ? workloadRatio.toFixed(2) : "--"}
               </p>
-              <p className="text-[10px] text-subtle">Workload Ratio</p>
+              <p className="text-[10px] text-subtle">{data.context.label}</p>
             </div>
           </div>
+          <MethodExplanation
+            className="text-[11px]"
+            technicalName={TRAINING_TERMINOLOGY.workloadRatio.technicalName}
+            lines={[data.context.description]}
+          />
 
           {strainTarget && (
             <div className="mt-1 pt-2 border-t border-border">

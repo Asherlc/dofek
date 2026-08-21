@@ -1,9 +1,12 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { captureException } from "@sentry/node";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
+import { ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ZeppInvalidCredentialsError } from "zepp-client/client";
-import { activity as activityTable } from "../db/schema.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
+import { captureException } from "../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   AmazfitZeppClient,
   AmazfitZeppProvider,
@@ -13,20 +16,26 @@ import {
   encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
-import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
+import { AccessTokenExpiredError, ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
 
-vi.mock("@dofek/provider-http/rate-limit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@dofek/provider-http/rate-limit")>();
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
+vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/provider-rate-limit-fetch.ts")>();
   return {
     ...actual,
-    createRateLimitAwareFetch: vi.fn(actual.createRateLimitAwareFetch),
+    createProviderRateLimitFetch: vi.fn(actual.createProviderRateLimitFetch),
   };
 });
 
-vi.mock("@sentry/node", () => ({
+vi.mock("../lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
 }));
 
@@ -35,20 +44,23 @@ vi.mock("../db/tokens.ts", async (importOriginal) => {
   return {
     ...actual,
     loadTokens: vi.fn(actual.loadTokens),
+    deleteTokens: vi.fn(),
   };
 });
 
 const TEST_USER_ID = "11111111-1111-4111-8111-111111111111";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...actual,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -110,7 +122,7 @@ describe("AmazfitZeppClient workout history", () => {
     };
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await client.getWorkoutHistory();
+    await client.getWorkoutHistory("amazfit-zepp");
 
     const request = requests[0];
     expect(String(request?.url)).toContain("/v1/sport/run/history.json");
@@ -161,9 +173,9 @@ describe("AmazfitZeppClient workout history", () => {
     };
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    const summaries = await client.getWorkoutHistory();
+    const summaries = await client.getWorkoutHistory("amazfit-zepp");
 
-    expect(summaries).toHaveLength(3);
+    expect(summaries.items).toHaveLength(3);
     expect(historyRequests).toHaveLength(2);
     expect(historyRequests[1]).toContain(`trackid=${secondPageCursor}`);
   });
@@ -191,14 +203,15 @@ describe("AmazfitZeppClient workout history", () => {
       );
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    const [summary] = await client.getWorkoutHistory();
+    const result = await client.getWorkoutHistory("amazfit-zepp");
 
-    expect(summary?.trackid).toBe(startedAt.getTime() / 1000);
-    expect(summary?.type).toBe(9);
-    expect(summary?.source).toBeUndefined();
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.trackid).toBe(startedAt.getTime() / 1000);
+    expect(result.items[0]?.type).toBe(9);
+    expect(result.items[0]?.source).toBeUndefined();
   });
 
-  it("throws when workout history pagination repeats a cursor", async () => {
+  it("returns a pagination_stalled degradation when cursor repeats", async () => {
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const repeatedCursor = startedAt.getTime() / 1000;
     const fetchFn: typeof globalThis.fetch = async () =>
@@ -214,19 +227,74 @@ describe("AmazfitZeppClient workout history", () => {
       );
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow(
-      `Amazfit/Zepp workout API error: repeated pagination cursor ${repeatedCursor}`,
-    );
+    const result = await client.getWorkoutHistory("amazfit-zepp");
+
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]?.trackid).toBe(repeatedCursor);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_stalled",
+        context: expect.objectContaining({
+          cursorFingerprint: expect.stringMatching(/^[0-9a-f]{12}$/),
+          pagesFetched: 2,
+        }),
+      }),
+    ]);
   });
 
-  it("throws a specific error for non-success HTTP responses", async () => {
+  it("throws a provider service-unavailable error for HTTP 500 responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow(
-      "Amazfit/Zepp workout API error (500): server error",
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
     );
+  });
+
+  it("throws AccessTokenExpiredError for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
+  it("includes status code in error cause for workout HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getWorkoutHistory("amazfit-zepp");
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("401");
+    }
+  });
+
+  it("includes message in error cause for workout code 1002 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 1002, message: "workout token expired", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getWorkoutHistory("amazfit-zepp");
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("workout token expired");
+    }
   });
 
   it("throws a specific error for non-success API payloads", async () => {
@@ -237,8 +305,21 @@ describe("AmazfitZeppClient workout history", () => {
       });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow(
-      "Amazfit/Zepp workout API error: invalid token",
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
+  it("throws generic error for non-1002 workout API error codes", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 9999, message: "some other error", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
+      "Amazfit/Zepp workout API error: some other error",
     );
   });
 
@@ -253,7 +334,7 @@ describe("AmazfitZeppClient workout history", () => {
       );
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow();
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow();
   });
 });
 
@@ -261,7 +342,7 @@ describe("Amazfit/Zepp provider", () => {
   afterEach(async () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockReset();
   });
@@ -299,7 +380,7 @@ describe("Amazfit/Zepp provider", () => {
       date_time: "2026-02-06",
       summary: encodeBase64(
         JSON.stringify({
-          stp: { ttl: 8123, dis: 6400, cal: 410 },
+          stp: { ttl: 8123, dis: 6400 },
           slp: {
             st: 1707199200,
             ed: 1707224400,
@@ -319,7 +400,6 @@ describe("Amazfit/Zepp provider", () => {
     expect(parsed.dailyMetrics).toEqual({
       date: "2026-02-06",
       steps: 8123,
-      activeEnergyKcal: 410,
       distanceKm: 6.4,
     });
     expect(parsed.sleep).toEqual({
@@ -331,6 +411,7 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: 280,
       remMinutes: 45,
       awakeMinutes: 20,
+      stagingAvailable: true,
     });
     expect(parsed.heartRateSamples).toHaveLength(2);
   });
@@ -340,7 +421,7 @@ describe("Amazfit/Zepp provider", () => {
       date_time: "2026-02-06",
       summary: encodeBase64(
         JSON.stringify({
-          stp: { ttl: "8123.4", dis: "6400", cal: "410" },
+          stp: { ttl: "8123.4", dis: "6400" },
           slp: { st: "1320", ed: "1800", dp: "85.4", lt: "280.2", dt: "45.3", wk: "20.2" },
         }),
       ),
@@ -349,7 +430,6 @@ describe("Amazfit/Zepp provider", () => {
     expect(parsed.dailyMetrics).toEqual({
       date: "2026-02-06",
       steps: 8123,
-      activeEnergyKcal: 410,
       distanceKm: 6.4,
     });
     expect(parsed.sleep).toEqual({
@@ -361,6 +441,29 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: 280,
       remMinutes: 45,
       awakeMinutes: 20,
+      stagingAvailable: true,
+    });
+  });
+
+  it("retains daily metrics when only steps or only distance is present", () => {
+    const stepsOnly = parseZeppBandDay({
+      date_time: "2026-02-06",
+      summary: encodeBase64(JSON.stringify({ stp: { ttl: 8123 } })),
+    });
+    const distanceOnly = parseZeppBandDay({
+      date_time: "2026-02-07",
+      summary: encodeBase64(JSON.stringify({ stp: { dis: 6400 } })),
+    });
+
+    expect(stepsOnly.dailyMetrics).toEqual({
+      date: "2026-02-06",
+      steps: 8123,
+      distanceKm: undefined,
+    });
+    expect(distanceOnly.dailyMetrics).toEqual({
+      date: "2026-02-07",
+      steps: undefined,
+      distanceKm: 6.4,
     });
   });
 
@@ -381,23 +484,35 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: undefined,
       remMinutes: undefined,
       awakeMinutes: undefined,
+      stagingAvailable: false,
     });
   });
 
-  it("parses partial daily metrics without inventing missing fields", () => {
+  it.each([
+    "dp",
+    "lt",
+    "dt",
+    "wk",
+  ] as const)("marks staging unavailable when %s is omitted", (omittedField) => {
+    const stages = { dp: 85, lt: 280, dt: 45, wk: 20 };
+    delete stages[omittedField];
+
     const parsed = parseZeppBandDay({
       date_time: "2026-02-06",
-      summary: encodeBase64(JSON.stringify({ stp: { cal: 75 } })),
+      summary: encodeBase64(
+        JSON.stringify({
+          slp: { st: 1320, ed: 1800, ...stages },
+        }),
+      ),
     });
 
-    expect(parsed.dailyMetrics).toEqual({
-      date: "2026-02-06",
-      steps: undefined,
-      activeEnergyKcal: 75,
-      distanceKm: undefined,
+    expect(parsed.sleep).toMatchObject({
+      stagingAvailable: false,
+      deepMinutes: omittedField === "dp" ? undefined : 85,
+      lightMinutes: omittedField === "lt" ? undefined : 280,
+      remMinutes: omittedField === "dt" ? undefined : 45,
+      awakeMinutes: omittedField === "wk" ? undefined : 20,
     });
-    expect(parsed.sleep).toBeUndefined();
-    expect(parsed.heartRateSamples).toEqual([]);
   });
 
   it("omits daily metrics and sleep when summary values are incomplete", () => {
@@ -451,14 +566,62 @@ describe("Amazfit/Zepp provider", () => {
     });
   });
 
-  it("throws a specific error for non-success HTTP responses", async () => {
+  it("throws a provider service-unavailable error for HTTP 500 responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
-      "Amazfit/Zepp API error (500): server error",
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toMatchObject({
+      statusCode: 500,
+    });
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
     );
+  });
+
+  it("throws AccessTokenExpiredError for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
+  it("includes status code in error cause for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getBandData("2026-02-01", "2026-02-06");
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("401");
+    }
+  });
+
+  it("includes message in error cause for code 1002 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 1002, message: "token expired", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getBandData("2026-02-01", "2026-02-06");
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("token expired");
+    }
   });
 
   it("throws a specific error for non-success API payloads", async () => {
@@ -470,7 +633,20 @@ describe("Amazfit/Zepp provider", () => {
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
     await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
-      "Amazfit/Zepp API error: invalid token",
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
+  it("throws generic error for non-1002 API error codes", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 9999, message: "some other error", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
+      "Amazfit/Zepp API error: some other error",
     );
   });
 
@@ -518,7 +694,7 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.recordsSynced).toBe(4);
-    expect(spies.onConflictDoUpdate).toHaveBeenCalledTimes(3);
+    expect(spies.onConflictDoUpdate).toHaveBeenCalledTimes(2);
     expect(spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
         date: "2026-02-06",
@@ -526,7 +702,6 @@ describe("Amazfit/Zepp provider", () => {
         userId: TEST_USER_ID,
         sourceName: "Zepp",
         steps: 8123,
-        activeEnergyKcal: 410,
         distanceKm: 6.4,
       }),
     );
@@ -544,7 +719,6 @@ describe("Amazfit/Zepp provider", () => {
         set: expect.objectContaining({
           sourceName: "Zepp",
           steps: 8123,
-          activeEnergyKcal: 410,
           distanceKm: 6.4,
         }),
       }),
@@ -584,7 +758,7 @@ describe("Amazfit/Zepp provider", () => {
   it("syncs every workout summary returned by Zepp history as activities", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const endedAt = new Date("2026-02-06T15:00:00.000Z");
     const secondStartedAt = new Date(startedAt.getTime() + 7200 * 1000);
@@ -616,7 +790,6 @@ describe("Amazfit/Zepp provider", () => {
                     source: "watch",
                     end_time: String(thirdEndedAt.getTime() / 1000),
                     run_time: "3600",
-                    type: 999,
                     dis: "1000",
                     calorie: "120",
                     app_name: "Zepp",
@@ -675,42 +848,45 @@ describe("Amazfit/Zepp provider", () => {
     expect(result.recordsSynced).toBe(3);
     expect(historyRequests).toHaveLength(2);
     expect(historyRequests[1]).toContain(`trackid=${secondPageCursor}`);
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
       expect.objectContaining({
         providerId: "amazfit-zepp",
         userId: TEST_USER_ID,
         externalId: String(startedAt.getTime() / 1000),
-        activityType: "running",
+        activityType: expect.objectContaining({ canonicalType: "running" }),
+        startedAt,
+        endedAt,
+        sourceName: "Zepp",
+      }),
+      expect.objectContaining({
+        activityType: expect.objectContaining({ canonicalType: "running" }),
         startedAt,
         endedAt,
         sourceName: "Zepp",
       }),
     );
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
       expect.objectContaining({
-        activityType: "cycling",
+        activityType: expect.objectContaining({ canonicalType: "cycling" }),
         externalId: String(secondStartedAt.getTime() / 1000),
       }),
-    );
-    expect(spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
-        activityType: "other",
+        activityType: expect.objectContaining({ canonicalType: "cycling" }),
+      }),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        activityType: expect.objectContaining({ canonicalType: "other", providerType: "unknown" }),
         externalId: String(thirdStartedAt.getTime() / 1000),
       }),
-    );
-    expect(spies.onConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: [activityTable.userId, activityTable.providerId, activityTable.externalId],
-        set: expect.objectContaining({
-          activityType: "running",
-          startedAt,
-          endedAt,
-          sourceName: "Zepp",
-          providerAbsentAt: null,
-        }),
+        activityType: expect.objectContaining({ canonicalType: "other" }),
       }),
     );
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "amazfit-zepp",
@@ -727,7 +903,7 @@ describe("Amazfit/Zepp provider", () => {
   it("derives workout endedAt from run_time when end_time is missing", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const fetchFn: typeof globalThis.fetch = async (input) => {
       const url = String(input);
@@ -763,9 +939,15 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.recordsSynced).toBe(1);
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
       expect.objectContaining({
-        activityType: "walking",
+        activityType: expect.objectContaining({ canonicalType: "walking" }),
+        startedAt,
+        endedAt: new Date("2026-02-06T15:00:00.000Z"),
+      }),
+      expect.objectContaining({
+        activityType: expect.objectContaining({ canonicalType: "walking" }),
         startedAt,
         endedAt: new Date("2026-02-06T15:00:00.000Z"),
       }),
@@ -775,7 +957,7 @@ describe("Amazfit/Zepp provider", () => {
   it("skips workouts outside the sync window", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const onProgress = vi.fn();
     const inWindowStartedAt = new Date("2026-02-06T14:00:00.000Z");
     const beforeWindowStartedAt = new Date("2026-01-31T14:00:00.000Z");
@@ -834,19 +1016,16 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.recordsSynced).toBe(1);
-    const activityInserts = spies.values.mock.calls
-      .map(([value]) => value)
-      .filter(
-        (value): value is Record<string, unknown> =>
-          typeof value === "object" && value !== null && "activityType" in value,
-      );
-    expect(activityInserts).toHaveLength(1);
-    expect(activityInserts[0]).toMatchObject({
+    const activityUpserts = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls.map(
+      (call) => call[1],
+    );
+    expect(activityUpserts).toHaveLength(1);
+    expect(activityUpserts[0]).toMatchObject({
       externalId: String(inWindowStartedAt.getTime() / 1000),
-      activityType: "cycling",
+      activityType: expect.objectContaining({ canonicalType: "cycling" }),
     });
     expect(onProgress).toHaveBeenCalledWith(100, "3/3 workouts");
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "amazfit-zepp",
@@ -973,24 +1152,24 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toMatchObject([
-      { message: "workouts: Amazfit/Zepp workout API error: invalid token" },
+      { message: "workouts: Amazfit/Zepp access token expired." },
     ]);
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { provider: "amazfit-zepp", dataType: "workouts", phase: "sync" },
-    });
+    expect(captureException).not.toHaveBeenCalled();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    expect(deleteTokens).toHaveBeenCalledWith(db, "amazfit-zepp", TEST_USER_ID);
   });
 
   it("records per-workout insert failures and continues", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     let activityUpserts = 0;
-    spies.onConflictDoUpdate.mockImplementation(() => {
+    providerActivityAbsenceMocks.upsertProviderActivity.mockImplementation(async () => {
       activityUpserts++;
       if (activityUpserts === 2) {
         throw new Error("activity insert failed");
       }
-      return { returning: vi.fn().mockResolvedValue([]) };
+      return { id: "activity-id" };
     });
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const endedAt = new Date("2026-02-06T15:00:00.000Z");
@@ -1262,10 +1441,109 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toMatchObject([
-      { message: "band_data: Amazfit/Zepp API error: invalid token" },
+      { message: "band_data: Amazfit/Zepp access token expired." },
+    ]);
+    expect(captureException).not.toHaveBeenCalled();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    expect(deleteTokens).toHaveBeenCalledWith(db, "amazfit-zepp", TEST_USER_ID);
+  });
+
+  it("reports non-auth errors to Sentry with correct tags", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(JSON.stringify({ code: 9999, message: "server error", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toMatchObject([
+      { message: "band_data: Amazfit/Zepp API error: server error" },
     ]);
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { provider: "amazfit-zepp", dataType: "band_data", phase: "sync" },
+    });
+  });
+
+  it("reports workout non-auth errors to Sentry with correct tags", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/data/band_data.json")) {
+        return new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ code: 9999, message: "workout error", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.errors).toMatchObject([
+      { message: "workouts: Amazfit/Zepp workout API error: workout error" },
+    ]);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "amazfit-zepp", dataType: "workouts", phase: "sync" },
+    });
+  });
+
+  it("reports deleteTokens errors but continues with sync result", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    vi.mocked(deleteTokens).mockRejectedValueOnce(new Error("token deletion failed"));
+
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(JSON.stringify({ code: 1002, message: "invalid token", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.errors).toMatchObject([
+      { message: "band_data: Amazfit/Zepp access token expired." },
+    ]);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "amazfit-zepp", phase: "token_deletion" },
     });
   });
 
@@ -1289,6 +1567,53 @@ describe("Amazfit/Zepp provider", () => {
         }),
       ),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("rethrows Zepp HTTP 500 errors without reporting them to Sentry", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("upstream outage", { status: 500 });
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const sync = provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    await expect(sync).rejects.toMatchObject({ statusCode: 500 });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("rethrows workout-history HTTP 500 errors without reporting them to Sentry", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      if (String(input).includes("/v1/data/band_data.json")) {
+        return new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("upstream outage", { status: 500 });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+          userId: TEST_USER_ID,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ProviderServiceUnavailableError);
     expect(captureException).not.toHaveBeenCalled();
   });
 });
@@ -1346,11 +1671,15 @@ describe("AmazfitZeppProvider auth", () => {
     vi.clearAllMocks();
   });
 
-  it("wraps fetch with amazfit-zepp rate limit config", () => {
+  it("wraps fetch with amazfit-zepp rate limit and service-unavailable config", () => {
     new AmazfitZeppProvider();
-    expect(createRateLimitAwareFetch).toHaveBeenCalledWith(expect.any(Function), {
-      providerId: "amazfit-zepp",
-    });
+    expect(createProviderRateLimitFetch).toHaveBeenCalledWith(
+      "amazfit-zepp",
+      expect.any(Function),
+      {
+        additionalServiceUnavailableStatusCodes: [500],
+      },
+    );
   });
 
   it("authSetup returns credential configuration", () => {

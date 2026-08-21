@@ -11,7 +11,9 @@
 WITH source_records AS (
     SELECT
         activity_id,
+        provider_id,
         user_id,
+        canonical_type,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ ref('activity_source_records') }} FINAL
@@ -22,6 +24,8 @@ tombstoned_records AS (
     SELECT
         activity.id AS activity_id,
         activity.user_id AS user_id,
+        activity.provider_id AS provider_id,
+        activity.canonical_type AS canonical_type,
         activity.started_at AS started_at,
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
@@ -47,15 +51,36 @@ active_duplicate_matches AS (
     INNER JOIN source_records AS right_activity
         ON left_activity.user_id = right_activity.user_id
         AND toString(left_activity.activity_id) < toString(right_activity.activity_id)
-        AND dateDiff(
-            'second',
-            greatest(left_activity.started_at, right_activity.started_at),
-            least(left_activity.ended_at, right_activity.ended_at)
-        ) / nullIf(dateDiff(
-            'second',
-            least(left_activity.started_at, right_activity.started_at),
-            greatest(left_activity.ended_at, right_activity.ended_at)
-        ), 0) > 0.8
+        AND (
+            dateDiff(
+                'second',
+                greatest(left_activity.started_at, right_activity.started_at),
+                least(left_activity.ended_at, right_activity.ended_at)
+            ) / nullIf(dateDiff(
+                'second',
+                least(left_activity.started_at, right_activity.started_at),
+                greatest(left_activity.ended_at, right_activity.ended_at)
+            ), 0) > 0.8
+            OR (
+                left_activity.provider_id != right_activity.provider_id
+                AND left_activity.canonical_type = right_activity.canonical_type
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) / nullIf(least(
+                    dateDiff('second', left_activity.started_at, left_activity.ended_at),
+                    dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                ), 0) > 0.8
+            )
+        )
 ),
 
 active_to_tombstoned_matches AS (
@@ -74,15 +99,36 @@ active_to_tombstoned_matches AS (
     FROM source_records AS left_activity
     INNER JOIN tombstoned_records AS right_activity
         ON left_activity.user_id = right_activity.user_id
-        AND dateDiff(
-            'second',
-            greatest(left_activity.started_at, right_activity.started_at),
-            least(left_activity.ended_at, right_activity.ended_at)
-        ) / nullIf(dateDiff(
-            'second',
-            least(left_activity.started_at, right_activity.started_at),
-            greatest(left_activity.ended_at, right_activity.ended_at)
-        ), 0) > 0.8
+        AND (
+            dateDiff(
+                'second',
+                greatest(left_activity.started_at, right_activity.started_at),
+                least(left_activity.ended_at, right_activity.ended_at)
+            ) / nullIf(dateDiff(
+                'second',
+                least(left_activity.started_at, right_activity.started_at),
+                greatest(left_activity.ended_at, right_activity.ended_at)
+            ), 0) > 0.8
+            OR (
+                left_activity.provider_id != right_activity.provider_id
+                AND left_activity.canonical_type = right_activity.canonical_type
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) / nullIf(least(
+                    dateDiff('second', left_activity.started_at, left_activity.ended_at),
+                    dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                ), 0) > 0.8
+            )
+        )
 ),
 
 current_duplicate_matches AS (

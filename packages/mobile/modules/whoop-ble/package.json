@@ -1,0 +1,56 @@
+{
+  "name": "@dofek/whoop-ble",
+  "version": "0.1.12",
+  "description": "Reverse-engineered WHOOP strap BLE protocol and Expo iOS client",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/mobile/modules/whoop-ble"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/mobile/modules/whoop-ble#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "whoop",
+    "bluetooth",
+    "ble",
+    "expo",
+    "react-native",
+    "imu"
+  ],
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "sideEffects": false,
+  "files": [
+    "build",
+    "ios",
+    "Package.swift",
+    "expo-module.config.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./build/index.js",
+    "types": "./build/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./build/index.d.ts",
+        "import": "./build/index.js",
+        "default": "./build/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "expo-modules-core": ">=2.0.0"
+  }
+}

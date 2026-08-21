@@ -6,6 +6,7 @@ import {
   fetchRestingHeartRateRows,
   localDateString,
   representativeRestingHeartRate,
+  restingHeartRateClickHouseCte,
 } from "./resting-heart-rate-query.ts";
 
 describe("fetchRestingHeartRateRows", () => {
@@ -34,6 +35,20 @@ describe("fetchRestingHeartRateRows", () => {
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("derived_resting_heart_rate");
+  });
+});
+
+describe("restingHeartRateClickHouseCte", () => {
+  it("includes the window start predicate by default", () => {
+    const cteSql = restingHeartRateClickHouseCte();
+
+    expect(cteSql).toContain("toDate({rhrWindowStart:String})");
+  });
+
+  it("omits the window start predicate for unbounded queries", () => {
+    const cteSql = restingHeartRateClickHouseCte({ includeWindowStart: false });
+
+    expect(cteSql).not.toContain("toDate({rhrWindowStart:String})");
   });
 });
 

@@ -55,7 +55,7 @@ the view without breaking callers.
 | Column                      | Decision   | Reason |
 | --------------------------- | ---------- | ------ |
 | `id`, `user_id`, `provider_id`, `date`, `source_name`, `created_at` | **stay native** | Row identity; needed for FKs, indexes, dedup |
-| `hrv`, `spo2_avg`, `respiratory_rate_avg`, `steps`, `active_energy_kcal`, `basal_energy_kcal`, `distance_km`, `cycling_distance_km`, `flights_climbed`, `exercise_minutes`, `walking_speed`, `walking_step_length`, `walking_double_support_pct`, `walking_asymmetry_pct`, `walking_steadiness`, `stand_hours`, `skin_temp_c`, `stress_high_minutes`, `recovery_high_minutes`, `push_count`, `wheelchair_distance_km`, `uv_exposure` | **move to KV** | All numeric, all sparse, all read through the view |
+| `hrv`, `spo2_avg`, `respiratory_rate_avg`, `steps`, `distance_km`, `flights_climbed`, `exercise_minutes`, `walking_speed`, `walking_step_length`, `walking_double_support_pct`, `walking_asymmetry_pct`, `walking_steadiness`, `stand_hours`, `skin_temp_c`, `stress_high_minutes`, `recovery_high_minutes`, `push_count`, `wheelchair_distance_km`, `uv_exposure` | **move to KV** | All numeric, all sparse, all read through the view |
 | `resilience_level` (text)   | **decide** | KV `value` column is `real`. Options below. |
 
 ### `resilience_level` (text enum) options
@@ -86,7 +86,6 @@ VALUES
   ('spo2_avg',               'SpO₂ (avg)',         '%',       'recovery', 20, false),
   ('respiratory_rate_avg',   'Respiratory rate',   'br/min',  'recovery', 30, false),
   ('steps',                  'Steps',              'count',   'activity', 40, true),
-  ('active_energy_kcal',     'Active energy',      'kcal',    'activity', 50, false),
   -- ...
 ON CONFLICT (id) DO NOTHING;
 ```
@@ -192,9 +191,10 @@ golden-path queries.
   field names from `daily_metrics`. They should change to read from the view
   type, not the table type. The view shape stays stable, so no domain logic
   change.
-- **DISCONNECT_CHILD_TABLES**: when a provider is disconnected, deleting from
-  `daily_metrics` already cascades to `daily_metric_value` via the FK
-  (`onDelete: "cascade"` in schema). No change needed.
+- **Provider data deletion**: Disconnect retains `daily_metrics`. **Delete All
+  Data** and account deletion remove `daily_metrics`, which cascades to
+  `daily_metric_value` through the FK (`onDelete: "cascade"` in
+  [`schema.ts`](../src/db/schema.ts)). No change needed.
 - **Mobile app**: HealthKit sync writes via the tRPC routers — server-side
   change only. Mobile code unaffected.
 - **ClickHouse mirror**: `analytics.daily_metrics` proxies the Postgres table.

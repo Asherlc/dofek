@@ -17,9 +17,6 @@ let readTypes: Set<HKObjectType> = {
         .height,
         .stepCount,
         .distanceWalkingRunning,
-        .distanceCycling,
-        .activeEnergyBurned,
-        .basalEnergyBurned,
         .flightsClimbed,
         .appleExerciseTime,
         .appleStandTime,
@@ -28,6 +25,7 @@ let readTypes: Set<HKObjectType> = {
         .walkingStepLength,
         .walkingDoubleSupportPercentage,
         .walkingAsymmetryPercentage,
+        .appleWalkingSteadiness,
         .dietaryEnergyConsumed,
         .dietaryProtein,
         .dietaryCarbohydrates,
@@ -110,7 +108,48 @@ let readTypes: Set<HKObjectType> = {
     return types
 }()
 
-/// Types we want to write (dietary data back to HealthKit)
+/// HealthKit sample types that should wake the app for background sync.
+let backgroundDeliveryTypes: Set<HKSampleType> = {
+    var types = Set<HKSampleType>()
+
+    let quantityTypes: [HKQuantityTypeIdentifier] = [
+        .stepCount,
+        .distanceWalkingRunning,
+        .flightsClimbed,
+        .appleExerciseTime,
+        .bodyMass,
+        .bodyFatPercentage,
+        .heartRate,
+        .restingHeartRate,
+        .heartRateVariabilitySDNN,
+        .vo2Max,
+        .oxygenSaturation,
+        .respiratoryRate,
+        .appleSleepingWristTemperature,
+        .walkingSpeed,
+        .walkingStepLength,
+        .walkingDoubleSupportPercentage,
+        .walkingAsymmetryPercentage,
+        .appleWalkingSteadiness,
+    ]
+    for identifier in quantityTypes {
+        if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
+            types.insert(type)
+        }
+    }
+    if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+        types.insert(sleepType)
+    }
+    if let menstrualFlowType = HKCategoryType.categoryType(forIdentifier: .menstrualFlow) {
+        types.insert(menstrualFlowType)
+    }
+    types.insert(HKWorkoutType.workoutType())
+    types.insert(HKSeriesType.workoutRoute())
+
+    return types
+}()
+
+/// Types used to remove legacy Dofek-written dietary samples from HealthKit.
 let writeTypes: Set<HKSampleType> = {
     var types = Set<HKSampleType>()
     let dietaryTypes: [HKQuantityTypeIdentifier] = [
@@ -126,10 +165,3 @@ let writeTypes: Set<HKSampleType> = {
     }
     return types
 }()
-
-func dietaryWriteQuantityType(for typeIdentifier: String) -> HKQuantityType? {
-    guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
-        return nil
-    }
-    return writeTypes.contains(quantityType) ? quantityType : nil
-}

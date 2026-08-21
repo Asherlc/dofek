@@ -103,7 +103,7 @@ describe("MonthlyReportRepository", () => {
       getHeartRateCurveRows: vi.fn(),
       getPaceCurveRows: vi.fn(),
     };
-    const repo = new MonthlyReportRepository("user-1", sensorStore, "America/Los_Angeles");
+    const repo = new MonthlyReportRepository("user-1", sensorStore);
     return { repo, execute: query };
   }
 
@@ -122,18 +122,42 @@ describe("MonthlyReportRepository", () => {
 
   it("returns null current and empty history for empty rows", async () => {
     const { repo } = makeRepository([]);
-    const result = await repo.getReport(6);
-    expect(result).toEqual({ current: null, history: [] });
+    const result = await repo.getReport(6, "2026-07-24");
+    expect(result.current).toBeNull();
+    expect(result.history).toEqual([]);
+    expect(result.emptyState).toEqual(
+      expect.objectContaining({
+        reportKind: "monthly",
+        minimumObservedDays: 1,
+      }),
+    );
+    expect(result.decisionSupport).toBeNull();
+  });
+
+  it("binds the requested user and month window", async () => {
+    const { repo, execute } = makeRepository([]);
+
+    await repo.getReport(12, "2026-07-24");
+
+    expect(execute).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      userId: "user-1",
+      startDate: "2025-08-01",
+      endDate: "2026-07-24",
+    });
+    expect(execute.mock.calls[0]?.[1]).not.toContain("today()");
   });
 
   it("returns single month as current with empty history", async () => {
     const { repo } = makeRepository([makeDbRow({ month_start: "2025-03-01" })]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
     expect(result.current).not.toBeNull();
     expect(result.current?.monthStart).toBe("2025-03-01");
     expect(result.current?.trainingHoursTrend).toBeNull();
     expect(result.current?.avgSleepTrend).toBeNull();
     expect(result.history).toEqual([]);
+    expect(result.decisionSupport?.whatChanged).toEqual([
+      "This is the first observed month, so month-over-month changes are not available yet.",
+    ]);
   });
 
   it("returns multiple months with trends computed correctly", async () => {
@@ -142,7 +166,7 @@ describe("MonthlyReportRepository", () => {
       makeDbRow({ month_start: "2025-02-01", training_hours: 12, avg_sleep_minutes: 420 }),
       makeDbRow({ month_start: "2025-03-01", training_hours: 15, avg_sleep_minutes: 400 }),
     ]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
 
     expect(result.history).toHaveLength(2);
     expect(result.current?.monthStart).toBe("2025-03-01");
@@ -164,20 +188,9 @@ describe("MonthlyReportRepository", () => {
 
   it("preserves null HR and HRV values", async () => {
     const { repo } = makeRepository([makeDbRow({ avg_resting_hr: null, avg_hrv: null })]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
     expect(result.current?.avgRestingHr).toBeNull();
     expect(result.current?.avgHrv).toBeNull();
-  });
-
-  it("uses the configured timezone for resting heart rate dates", async () => {
-    const { repo, execute } = makeRepository([]);
-    await repo.getReport(6);
-
-    expect(execute).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      expect.objectContaining({ timezone: "America/Los_Angeles" }),
-    );
   });
 
   it("returns null trend when previous training hours is zero", async () => {
@@ -185,14 +198,14 @@ describe("MonthlyReportRepository", () => {
       makeDbRow({ month_start: "2025-01-01", training_hours: 0, avg_sleep_minutes: 0 }),
       makeDbRow({ month_start: "2025-02-01", training_hours: 10, avg_sleep_minutes: 420 }),
     ]);
-    const result = await repo.getReport(6);
+    const result = await repo.getReport(6, "2026-07-24");
     expect(result.current?.trainingHoursTrend).toBeNull();
     expect(result.current?.avgSleepTrend).toBeNull();
   });
 
   it("calls execute once", async () => {
     const { repo, execute } = makeRepository([]);
-    await repo.getReport(6);
+    await repo.getReport(6, "2026-07-24");
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });

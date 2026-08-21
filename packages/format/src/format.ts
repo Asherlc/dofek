@@ -1,7 +1,32 @@
 /** Format a Date as YYYY-MM-DD for API queries. */
 export function formatDateYmd(date?: Date): string {
   const resolvedDate = date ?? new Date();
-  return `${resolvedDate.getFullYear()}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
+  return `${String(resolvedDate.getFullYear()).padStart(4, "0")}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
+}
+
+/** Shift a YYYY-MM-DD value by calendar days in the device's local timezone. */
+export function shiftDateYmd(value: string, dayOffset: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match || !Number.isInteger(dayOffset)) {
+    throw new Error("Expected a valid YYYY-MM-DD date and an integer day offset");
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    throw new Error("Expected a valid YYYY-MM-DD date");
+  }
+
+  const shiftedTimestamp = date.setDate(date.getDate() + dayOffset);
+  if (!Number.isFinite(shiftedTimestamp) || date.getFullYear() < 0 || date.getFullYear() > 9999) {
+    throw new Error("Expected a valid YYYY-MM-DD date and an integer day offset");
+  }
+
+  return formatDateYmd(date);
 }
 
 /** Format a date as YYYY-MM-DD in a specific timezone. */
@@ -35,6 +60,13 @@ export function formatDurationSeconds(seconds: number): string {
     return `${fixedDecimalFormatter(decimals).format(seconds)}s`;
   }
   return formatDurationMinutes(Math.round(seconds / 60));
+}
+
+export function formatClimbingAttemptResult(sent: boolean, attemptCount: number): string {
+  if (sent) {
+    return `Sent in ${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
+  }
+  return `Attempted ${attemptCount} ${attemptCount === 1 ? "time" : "times"}`;
 }
 
 /** Parse a timestamp string into a Date, returning null if invalid.
@@ -128,13 +160,14 @@ export function formatWeekdayShort(value: DateInput, options: DateFormatOptions 
   return formatDateInput(value, { weekday: "short" }, options);
 }
 
-/** Format a date and time for human display: "Jan 1, 2:30 PM" */
+/** Format a date and time for human display: "Jan 1, 2024, 2:30 PM" */
 export function formatDateTime(value: DateInput, options: DateFormatOptions = {}): string {
   return formatDateInput(
     value,
     {
       month: "short",
       day: "numeric",
+      year: "numeric",
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -215,6 +248,24 @@ export function formatTime(iso: string): string {
   return formatDateTime(iso);
 }
 
+const dateOnlyValuePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const dateTimeValuePattern = /^(\d{4})-(\d{2})-(\d{2})[ T]/;
+
+/** Format a database/API value for display in table cells and detail modals. */
+export function formatTableCellValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return JSON.stringify(value);
+  const str = String(value);
+  if (dateOnlyValuePattern.test(str)) {
+    return formatDateMedium(str);
+  }
+  if (dateTimeValuePattern.test(str) && parseValidDate(str)) {
+    return formatDateTime(str);
+  }
+  return str;
+}
+
 /** Format a number with a fixed number of decimal places. Returns "--" for non-finite values. */
 export function formatNumber(value: number, decimals = 1): string {
   if (!Number.isFinite(value)) return "--";
@@ -235,6 +286,21 @@ export function formatSigned(value: number, decimals = 1): string {
   return formatted;
 }
 
+/** Format a readiness percentage difference with a neutral direction label. */
+export function formatReadinessDifference(value: number): string {
+  if (!Number.isFinite(value)) return "--";
+  if (value > 0) return `${formatNumber(Math.abs(value), 1)}% higher`;
+  if (value < 0) return `${formatNumber(Math.abs(value), 1)}% lower`;
+  return "0.0% difference";
+}
+
+export function formatAssociationEstimateLabel(estimateLabel: string): string {
+  const normalizedLabel = estimateLabel.trim();
+  return /^Estimate(?::|\s|$)/.test(normalizedLabel)
+    ? normalizedLabel
+    : `Estimate: ${normalizedLabel}`;
+}
+
 export type NullableNumber = number | null | undefined;
 
 export interface FormattedMeasurementPart {
@@ -252,6 +318,10 @@ export type FormattedMeasurementFormatter = (value: NullableNumber) => Formatted
 const numberFormatters = new Map<string, Intl.NumberFormat>();
 const unitFormatters = new Map<string, Intl.NumberFormat>();
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+const standardDeviationFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
 const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const SUPPORTED_INTL_UNITS = new Set(["gram", "percent", "millisecond"]);
 
@@ -456,6 +526,17 @@ export function formatHRV(value: NullableNumber): string {
 /** Format heart rate variability display values with value and unit separated for UI styling. */
 export const formatHRVMeasurement: FormattedMeasurementFormatter = (value) =>
   formatMetricMeasurement(value, 0, "ms");
+
+/** Format step counts as grouped integers. */
+export function formatSteps(value: NullableNumber): string {
+  return formatMetricValue(value, 0, true);
+}
+
+/** Format a z-score as standard deviations from baseline, preserving its meaningful precision. */
+export function formatStandardDeviation(value: NullableNumber): string {
+  if (value == null || !Number.isFinite(value)) return "--";
+  return standardDeviationFormatter.format(value);
+}
 
 /** Format intensity display values with 0 decimals. */
 export function formatIntensity(value: NullableNumber): string {

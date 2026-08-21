@@ -13,11 +13,13 @@ const mockProviders = {
   peloton: { id: "peloton" },
   fatsecret: { id: "fatsecret" },
   whoop: { id: "whoop" },
+  kaya: { id: "kaya" },
   "ride-with-gps": { id: "ride-with-gps" },
   "strong-csv": { id: "strong-csv" },
   polar: { id: "polar" },
-  fitbit: { id: "fitbit" },
   garmin: { id: "garmin" },
+  "garmin-dump": { id: "garmin-dump" },
+  "fit-file": { id: "fit-file" },
   strava: { id: "strava" },
   "cronometer-csv": { id: "cronometer-csv" },
   oura: { id: "oura" },
@@ -26,18 +28,16 @@ const mockProviders = {
   zwift: { id: "zwift" },
   trainerroad: { id: "trainerroad" },
   ultrahuman: { id: "ultrahuman" },
-  mapmyfitness: { id: "mapmyfitness" },
-  suunto: { id: "suunto" },
-  coros: { id: "coros" },
   concept2: { id: "concept2" },
-  komoot: { id: "komoot" },
   xert: { id: "xert" },
   "cycling-analytics": { id: "cycling-analytics" },
   wger: { id: "wger" },
-  decathlon: { id: "decathlon" },
   velohero: { id: "velohero" },
+  "mountain-project": { id: "mountain-project" },
   "auto-supplements": { id: "auto-supplements" },
   "amazfit-zepp": { id: "amazfit-zepp" },
+  "kaya-export": { id: "kaya-export" },
+  "zos-app": { id: "zos-app" },
 };
 
 vi.mock("../providers/wahoo/provider.ts", () => ({
@@ -55,6 +55,9 @@ vi.mock("../providers/fatsecret/provider.ts", () => ({
 vi.mock("../providers/whoop/provider.ts", () => ({
   WhoopProvider: vi.fn(() => mockProviders.whoop),
 }));
+vi.mock("../providers/kaya-sync.ts", () => ({
+  KayaSyncProvider: vi.fn(() => mockProviders.kaya),
+}));
 vi.mock("../providers/ride-with-gps.ts", () => ({
   RideWithGpsProvider: vi.fn(() => mockProviders["ride-with-gps"]),
 }));
@@ -64,11 +67,14 @@ vi.mock("../providers/strong-csv.ts", () => ({
 vi.mock("../providers/polar/provider.ts", () => ({
   PolarProvider: vi.fn(() => mockProviders.polar),
 }));
-vi.mock("../providers/fitbit/provider.ts", () => ({
-  FitbitProvider: vi.fn(() => mockProviders.fitbit),
-}));
-vi.mock("../providers/garmin.ts", () => ({
+vi.mock("../providers/garmin/provider.ts", () => ({
   GarminProvider: vi.fn(() => mockProviders.garmin),
+}));
+vi.mock("../providers/garmin-dump.ts", () => ({
+  GarminDumpProvider: vi.fn(() => mockProviders["garmin-dump"]),
+}));
+vi.mock("../providers/fit-file.ts", () => ({
+  FitFileProvider: vi.fn(() => mockProviders["fit-file"]),
 }));
 vi.mock("../providers/strava.ts", () => ({
   StravaProvider: vi.fn(() => mockProviders.strava),
@@ -94,20 +100,8 @@ vi.mock("../providers/trainerroad.ts", () => ({
 vi.mock("../providers/ultrahuman.ts", () => ({
   UltrahumanProvider: vi.fn(() => mockProviders.ultrahuman),
 }));
-vi.mock("../providers/mapmyfitness.ts", () => ({
-  MapMyFitnessProvider: vi.fn(() => mockProviders.mapmyfitness),
-}));
-vi.mock("../providers/suunto.ts", () => ({
-  SuuntoProvider: vi.fn(() => mockProviders.suunto),
-}));
-vi.mock("../providers/coros.ts", () => ({
-  CorosProvider: vi.fn(() => mockProviders.coros),
-}));
 vi.mock("../providers/concept2.ts", () => ({
   Concept2Provider: vi.fn(() => mockProviders.concept2),
-}));
-vi.mock("../providers/komoot.ts", () => ({
-  KomootProvider: vi.fn(() => mockProviders.komoot),
 }));
 vi.mock("../providers/xert.ts", () => ({
   XertProvider: vi.fn(() => mockProviders.xert),
@@ -118,17 +112,23 @@ vi.mock("../providers/cycling-analytics.ts", () => ({
 vi.mock("../providers/wger.ts", () => ({
   WgerProvider: vi.fn(() => mockProviders.wger),
 }));
-vi.mock("../providers/decathlon.ts", () => ({
-  DecathlonProvider: vi.fn(() => mockProviders.decathlon),
-}));
 vi.mock("../providers/velohero.ts", () => ({
   VeloHeroProvider: vi.fn(() => mockProviders.velohero),
+}));
+vi.mock("../providers/mountain-project.ts", () => ({
+  MountainProjectProvider: vi.fn(() => mockProviders["mountain-project"]),
 }));
 vi.mock("../providers/auto-supplements.ts", () => ({
   AutoSupplementsProvider: vi.fn(() => mockProviders["auto-supplements"]),
 }));
 vi.mock("../providers/amazfit-zepp.ts", () => ({
   AmazfitZeppProvider: vi.fn(() => mockProviders["amazfit-zepp"]),
+}));
+vi.mock("../providers/kaya/provider.ts", () => ({
+  KayaProvider: vi.fn(() => mockProviders["kaya-export"]),
+}));
+vi.mock("../providers/zos-app/provider.ts", () => ({
+  ZosAppProvider: vi.fn(() => mockProviders["zos-app"]),
 }));
 
 const PROVIDER_COUNT = Object.keys(mockProviders).length;
@@ -144,7 +144,7 @@ describe("provider-registration", () => {
     vi.restoreAllMocks();
   });
 
-  it("registers all providers", async () => {
+  it("registers all production providers", async () => {
     const { ensureProvidersRegistered } = await import("./provider-registration.ts");
     await ensureProvidersRegistered();
 

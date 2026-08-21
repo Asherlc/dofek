@@ -1,10 +1,18 @@
+import type { ActivityDataState } from "@dofek/format/activity-data-state";
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import {
+  buildKarvonenIntensityDistribution,
+  type IntensityDistribution,
+} from "@dofek/training/training-distribution";
 import type { Database } from "dofek/db";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import {
   heartRateZoneCountColumns,
@@ -26,7 +34,7 @@ const activityMetaHeartRateExpressions = {
 
 const weeklyVolumeRowSchema = z.object({
   week: dateStringSchema,
-  activity_type: z.string(),
+  canonical_type: z.string(),
   count: z.number(),
   hours: z.coerce.number(),
 });
@@ -46,9 +54,15 @@ const hrZoneRowSchema = z.object({
 
 export type HrZoneRow = z.infer<typeof hrZoneRowSchema>;
 
+export interface TrainingHrZonesResult {
+  maxHr: number | null;
+  weeks: HrZoneRow[];
+  intensityDistribution: IntensityDistribution;
+}
+
 const activityStatsRowSchema = z.object({
   id: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   name: z.string().nullable(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -62,7 +76,13 @@ const activityStatsRowSchema = z.object({
   distance_meters: z.coerce.number().nullable(),
 });
 
-export type ActivityStatsRow = z.infer<typeof activityStatsRowSchema>;
+export type ActivityStatsRow = z.infer<typeof activityStatsRowSchema> & {
+  distance_state: ActivityDataState;
+};
+
+const rawActivityCountRowSchema = z.object({
+  activity_count: z.coerce.number(),
+});
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -83,7 +103,7 @@ export class TrainingRepository extends BaseRepository {
   }
 
   /** Weekly training volume grouped by activity type. */
-  async getWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
+  async getWeeklyVolume(days: RangeDays): Promise<WeeklyVolumeRow[]> {
     const rawActivityCount = await this.#loadRawActivityCount(
       days,
       undefined,
@@ -98,16 +118,23 @@ export class TrainingRepository extends BaseRepository {
   }
 
   /** HR zone distribution per week using the canonical Karvonen model. */
-  async getHrZones(days: number): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
+  async getHrZones(days: RangeDays): Promise<TrainingHrZonesResult> {
     const rawActivityCount = await this.#loadRawActivityCount(days, ENDURANCE_TYPES, true);
     if (rawActivityCount === 0) {
-      return { maxHr: null, weeks: [] };
+      return {
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: buildKarvonenIntensityDistribution([]),
+      };
     }
 
     const today = new Date().toISOString().slice(0, 10);
+    const range = ChartRange.fromDays(days);
+    const activityRangeFilter = range.clickHouseDateAfterToday("asum.started_at");
+    const rhrWindowStart = range.windowStartString(today);
     const rows = await this.#sensorStore.query(
       hrZoneRowSchema,
-      `WITH ${restingHeartRateClickHouseCte()},
+      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: days !== null })},
       activity_meta AS (
         SELECT
           asum.activity_id AS id,
@@ -118,15 +145,16 @@ export class TrainingRepository extends BaseRepository {
           nullIf(up.max_hr, 0) AS max_hr,
           coalesce(drhr.resting_hr, nullIf(up.resting_hr, 0), 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity va
-          ON va.id = asum.activity_id
-         AND va.user_id = asum.user_id
+        INNER JOIN analytics.deduped_activities activity FINAL
+          ON activity.activity_id = asum.activity_id
+         AND activity.user_id = asum.user_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          AND has({enduranceTypes:Array(String)}, asum.canonical_type)
+          ${activityRangeFilter}
+          AND activity.is_deleted = 0
           AND up.max_hr > 0
       ),
       zone_counts AS (
@@ -154,21 +182,31 @@ export class TrainingRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        days,
-        rhrWindowStart: dateWindowStartString(today, days),
         rhrEndDate: today,
+        ...(rhrWindowStart ? { rhrWindowStart } : {}),
+        ...range.params(),
         enduranceTypes: ENDURANCE_TYPES,
         ...heartRateZoneSqlParams(),
       },
     );
     const rawMaxHr = rows[0]?.max_hr;
     const maxHr = typeof rawMaxHr === "number" ? rawMaxHr : null;
-    if (!maxHr) return { maxHr: null, weeks: [] };
-    return { maxHr, weeks: rows };
+    if (!maxHr) {
+      return {
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: buildKarvonenIntensityDistribution([]),
+      };
+    }
+    return {
+      maxHr,
+      weeks: rows,
+      intensityDistribution: buildKarvonenIntensityDistribution(rows),
+    };
   }
 
   /** Per-activity summary with HR and power stats. */
-  async getActivityStats(days: number): Promise<ActivityStatsRow[]> {
+  async getActivityStats(days: RangeDays): Promise<ActivityStatsRow[]> {
     const rawActivityCount = await this.#loadRawActivityCount(
       days,
       undefined,
@@ -183,7 +221,7 @@ export class TrainingRepository extends BaseRepository {
   }
 
   /** Activity stats and weekly volume with a single activity-count lookup. */
-  async getActivityStatsAndWeeklyVolume(days: number): Promise<{
+  async getActivityStatsAndWeeklyVolume(days: RangeDays): Promise<{
     activities: ActivityStatsRow[];
     weeklyVolume: WeeklyVolumeRow[];
   }> {
@@ -222,13 +260,15 @@ export class TrainingRepository extends BaseRepository {
     };
   }
 
-  async #queryActivityStats(days: number): Promise<ActivityStatsRow[]> {
+  async #queryActivityStats(days: RangeDays): Promise<ActivityStatsRow[]> {
     const { predicate, params } = this.#activitySummaryAccessFilter("a");
+    const range = ChartRange.fromDays(days);
+    const rangeFilter = range.clickHouseDateAfterToday("a.started_at");
     const rows = await this.#sensorStore.query(
       activityStatsRowSchema,
       `SELECT
         toString(a.activity_id) AS id,
-        a.activity_type AS activity_type,
+        a.canonical_type AS canonical_type,
         a.name AS name,
         formatDateTime(a.started_at, '%Y-%m-%dT%H:%i:%SZ') AS started_at,
         formatDateTime(a.ended_at, '%Y-%m-%dT%H:%i:%SZ') AS ended_at,
@@ -242,64 +282,86 @@ export class TrainingRepository extends BaseRepository {
         a.total_distance AS distance_meters
       FROM analytics.activity_summary a
       WHERE a.user_id = {userId:UUID}
-        AND a.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         ${predicate}
       ORDER BY a.started_at DESC`,
-      { userId: this.userId, days, ...params },
+      { userId: this.userId, ...range.params(), ...params },
     );
-    return activityRepositoryFor(
+    const visibleRows = await activityRepositoryFor(
       this.db,
       this.userId,
       this.timezone,
       this.accessWindow,
     ).filterToVisibleActivities(rows);
+    return visibleRows.map((row) => ({
+      ...row,
+      distance_state: activityMeasurementState("Distance", row.distance_meters),
+    }));
   }
 
-  async #queryWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
+  async #queryWeeklyVolume(days: RangeDays): Promise<WeeklyVolumeRow[]> {
     const { predicate, params } = this.#activitySummaryAccessFilter("asum");
+    const range = ChartRange.fromDays(days);
+    const rangeFilter = range.clickHouseDateAfterToday("asum.started_at");
 
     return this.#sensorStore.query(
       weeklyVolumeRowSchema,
       `SELECT
         toString(toMonday(toDate(toTimeZone(asum.started_at, {timezone:String})))) AS week,
-        asum.activity_type,
+        asum.canonical_type,
         toInt32(count()) AS count,
         round(sum(dateDiff('second', asum.started_at, asum.ended_at)) / 3600, 2) AS hours
       FROM analytics.activity_summary asum
-      INNER JOIN analytics.v_activity va
-        ON va.id = asum.activity_id
-       AND va.user_id = asum.user_id
+      INNER JOIN analytics.deduped_activities activity FINAL
+        ON activity.activity_id = asum.activity_id
+       AND activity.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
-        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND asum.ended_at IS NOT NULL
+        AND activity.is_deleted = 0
         ${predicate}
-      GROUP BY week, activity_type
+      GROUP BY week, canonical_type
       ORDER BY week`,
       {
         userId: this.userId,
         timezone: this.timezone,
-        days,
+        ...range.params(),
         ...params,
       },
     );
   }
 
   async #loadRawActivityCount(
-    days: number,
+    days: RangeDays,
     activityTypes?: string[],
     requireEndedAt = false,
     accessWindow?: AccessWindow,
   ): Promise<number> {
-    return activityRepositoryFor(
-      this.db,
-      this.userId,
-      this.timezone,
-      this.accessWindow,
-    ).countVisibleInWindow({
-      days,
-      activityTypes,
-      requireEndedAt,
-      accessWindow,
-    });
+    const activityTypePredicate =
+      activityTypes && activityTypes.length > 0
+        ? sql`AND canonical_type IN (${sql.join(
+            activityTypes.map((activityType) => sql`${activityType}`),
+            sql`, `,
+          )})`
+        : sql``;
+    const endedAtPredicate = requireEndedAt ? sql`AND ended_at IS NOT NULL` : sql``;
+    const resolvedAccessWindow = accessWindow ?? this.accessWindow;
+    const accessWindowPredicate =
+      resolvedAccessWindow.kind === "limited"
+        ? sql`AND started_at >= ${resolvedAccessWindow.startDate}::timestamptz
+              AND started_at < ${resolvedAccessWindow.endDateExclusive}::timestamptz`
+        : sql``;
+    const rangeFilter = ChartRange.fromDays(days).currentDateAfter(sql`started_at::date`, ">=");
+    const rows = await this.query(
+      rawActivityCountRowSchema,
+      sql`SELECT count(*)::int AS activity_count
+          FROM fitness.v_activity
+          WHERE user_id = ${this.userId}::uuid
+            ${rangeFilter}
+            ${endedAtPredicate}
+            ${activityTypePredicate}
+            ${accessWindowPredicate}`,
+    );
+    return rows[0]?.activity_count ?? 0;
   }
 }

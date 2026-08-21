@@ -1,17 +1,21 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { Mock } from "vitest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import {
   ACTIVITY_DELETE_DBT_SELECT,
   type ActivityReadModelSpawner,
   countActivePeerDbActivities,
+  countActivePeerDbProviderRows,
   countProviderAbsentPeerDbActivities,
   runActivityReadModelBuild,
+  runProviderDeleteReadModelBuild,
   type SpawnedProcess,
+  waitForMetricStreamDeleteAcknowledgement,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
+  waitForPeerDbProviderDeletes,
 } from "./activity-read-model-build.ts";
 
 function createMockClickHouseClient(query: Mock): ClickHouseClient {
@@ -28,6 +32,11 @@ function createMockChildProcess(): SpawnedProcess {
 }
 
 describe("activity-read-model-build", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it("returns zero without querying when no activity ids are provided", async () => {
     const query = vi.fn();
     const client = createMockClickHouseClient(query);
@@ -246,6 +255,210 @@ describe("activity-read-model-build", () => {
         stdio: ["ignore", "ignore", "pipe"],
       },
     );
+  });
+
+  it("waits until the metric-stream delete event is acknowledged by the ClickHouse sink", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 0 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 1 }]) });
+    const client = createMockClickHouseClient(query);
+
+    await waitForMetricStreamDeleteAcknowledgement(client, "30000000-0000-4000-8000-000000000001", {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        query_params: { eventId: "30000000-0000-4000-8000-000000000001" },
+      }),
+    );
+  });
+
+  it("treats a missing metric-stream acknowledgement row as zero", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 1 }]) });
+    const client = createMockClickHouseClient(query);
+
+    await waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects malformed metric-stream acknowledgement counts", async () => {
+    const client = createMockClickHouseClient(
+      vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ acknowledgement_count: "invalid" }]),
+      }),
+    );
+
+    await expect(
+      waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+        pollIntervalMs: 0,
+        timeoutMs: 100,
+      }),
+    ).rejects.toThrow("acknowledgement_count");
+  });
+
+  it("honors the metric-stream deletion timeout boundary", async () => {
+    const query = vi.fn();
+    const client = createMockClickHouseClient(query);
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(10);
+
+    await expect(
+      waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+        pollIntervalMs: 0,
+        timeoutMs: 10,
+      }),
+    ).rejects.toThrow("Timed out waiting for ClickHouse");
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("waits for the configured interval before polling metric-stream deletes again", async () => {
+    vi.useFakeTimers();
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 0 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 1 }]) });
+    const client = createMockClickHouseClient(query);
+
+    const waitPromise = waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+      pollIntervalMs: 25,
+      timeoutMs: 100,
+    });
+    await vi.advanceTimersByTimeAsync(24);
+    expect(query).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(waitPromise).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits until every provider-scoped Postgres source is deleted in ClickHouse", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 3 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 0 }]) });
+    const client = createMockClickHouseClient(query);
+
+    await waitForPeerDbProviderDeletes(client, "user-1", "strava", {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ query_params: { userId: "user-1", providerId: "strava" } }),
+    );
+    expect(query.mock.calls[0]?.[0].query).toContain("postgres_fitness.daily_metrics FINAL");
+    expect(query.mock.calls[0]?.[0].query).toContain("postgres_fitness.journal_entry FINAL");
+  });
+
+  it("returns zero when the provider PeerDB count query returns no rows", async () => {
+    const client = createMockClickHouseClient(
+      vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
+    );
+
+    await expect(countActivePeerDbProviderRows(client, "user-1", "strava")).resolves.toBe(0);
+  });
+
+  it("honors the provider PeerDB deletion timeout boundary", async () => {
+    const query = vi.fn();
+    const client = createMockClickHouseClient(query);
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(10);
+
+    await expect(
+      waitForPeerDbProviderDeletes(client, "user-1", "strava", {
+        pollIntervalMs: 0,
+        timeoutMs: 10,
+      }),
+    ).rejects.toThrow("Timed out waiting for PeerDB");
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("waits for the configured interval before polling provider PeerDB deletes again", async () => {
+    vi.useFakeTimers();
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 1 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 0 }]) });
+    const client = createMockClickHouseClient(query);
+
+    const waitPromise = waitForPeerDbProviderDeletes(client, "user-1", "strava", {
+      pollIntervalMs: 25,
+      timeoutMs: 100,
+    });
+    await vi.advanceTimersByTimeAsync(24);
+    expect(query).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(waitPromise).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs every incremental dbt model after provider deletion", async () => {
+    const child = createMockChildProcess();
+    const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
+
+    const buildPromise = runProviderDeleteReadModelBuild(spawnImpl);
+    child.emit("close", 0);
+
+    await expect(buildPromise).resolves.toBeUndefined();
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "dbt",
+      ["build", "--project-dir", "analytics", "--profiles-dir", "analytics", "--threads", "1"],
+      { env: process.env, stdio: ["ignore", "ignore", "pipe"] },
+    );
+  });
+
+  it("includes trimmed stderr when the provider analytics build fails", async () => {
+    const child = createMockChildProcess();
+    const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
+
+    const buildPromise = runProviderDeleteReadModelBuild(spawnImpl);
+    if (child.stderr instanceof PassThrough) child.stderr.write("  provider model failed  ");
+    child.emit("close", 2);
+
+    await expect(buildPromise).rejects.toThrow(
+      "dbt build after provider deletion failed with exit code 2: provider model failed",
+    );
+  });
+
+  it("reports an unknown provider analytics build exit status", async () => {
+    const child = createMockChildProcess();
+    const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
+
+    const buildPromise = runProviderDeleteReadModelBuild(spawnImpl);
+    child.emit("close", null);
+
+    await expect(buildPromise).rejects.toThrow("exit code unknown");
+  });
+
+  it("rejects when spawning the provider analytics build fails", async () => {
+    const child = createMockChildProcess();
+    const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
+
+    const buildPromise = runProviderDeleteReadModelBuild(spawnImpl);
+    child.emit("error", new Error("provider dbt not found"));
+
+    await expect(buildPromise).rejects.toThrow("provider dbt not found");
+  });
+
+  it("supports provider analytics child processes without stderr", async () => {
+    const child: SpawnedProcess = Object.assign(new EventEmitter(), { stderr: null });
+    const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
+
+    const buildPromise = runProviderDeleteReadModelBuild(spawnImpl);
+    child.emit("close", 0);
+
+    await expect(buildPromise).resolves.toBeUndefined();
   });
 
   it("rejects when dbt exits with a non-zero status", async () => {

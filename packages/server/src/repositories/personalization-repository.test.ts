@@ -1,5 +1,6 @@
 import { DEFAULT_PARAMS } from "dofek/personalization/params";
 import { describe, expect, it, vi } from "vitest";
+import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import { PersonalizationRepository } from "./personalization-repository.ts";
 
 // Mock the personalization modules
@@ -20,25 +21,9 @@ const mockedLoadParams = vi.mocked(loadPersonalizedParams);
 const mockedRefitAll = vi.mocked(refitAllParams);
 
 describe("PersonalizationRepository", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-  function makeSensorStore(): any {
-    return {
-      query: vi.fn().mockResolvedValue([]),
-      getActivitySummaries: vi.fn().mockResolvedValue([]),
-      getStream: vi.fn().mockResolvedValue([]),
-      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-      getPaceCurveRows: vi.fn().mockResolvedValue([]),
-    };
-  }
-
   function makeRepository() {
     const execute = vi.fn().mockResolvedValue([]);
-    const sensorStore = makeSensorStore();
+    const sensorStore = makeMockSensorStore();
     const repo = new PersonalizationRepository({ execute }, "user-1", sensorStore);
     return { repo, execute, sensorStore };
   }
@@ -61,6 +46,8 @@ describe("PersonalizationRepository", () => {
         stressThresholds: null,
         trainingImpulseConstants: null,
       });
+      expect(result.modelCards).toHaveLength(5);
+      expect(result.modelCards.every((card) => card.status === "default")).toBe(true);
     });
 
     it("returns isPersonalized=true when any parameter is fitted", async () => {
@@ -80,6 +67,11 @@ describe("PersonalizationRepository", () => {
       expect(result.isPersonalized).toBe(true);
       expect(result.fittedAt).toBe("2025-06-01T00:00:00Z");
       expect(result.parameters.sleepTarget).toEqual({ minutes: 450, sampleCount: 30 });
+      expect(result.modelCards.find((card) => card.key === "sleepTarget")).toMatchObject({
+        status: "personalized",
+        lastSuccessfulFitAt: null,
+        lastFitSummary: "Successful fit time unavailable until this model is refit",
+      });
     });
 
     it("returns isPersonalized=true when only exponentialMovingAverage is fitted", async () => {
@@ -585,7 +577,7 @@ describe("PersonalizationRepository", () => {
   });
 
   describe("getStatus returns complete object structure", () => {
-    it("returns object with exactly five keys: isPersonalized, fittedAt, defaults, effective, parameters", async () => {
+    it("returns the status fields and server-built model cards", async () => {
       mockedLoadParams.mockResolvedValue(null);
       const { repo } = makeRepository();
       const result = await repo.getStatus();
@@ -594,6 +586,7 @@ describe("PersonalizationRepository", () => {
         "effective",
         "fittedAt",
         "isPersonalized",
+        "modelCards",
         "parameters",
       ]);
     });

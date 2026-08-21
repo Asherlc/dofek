@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import { average, IntervalsRepository, maxVal, summarizeSegment } from "./intervals-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -158,22 +159,6 @@ function makeDb(rows: Record<string, unknown>[] = []) {
   return { execute: vi.fn().mockResolvedValueOnce(rows) };
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test mock helper
-function makeSensorStore(rows: unknown[] = []): any {
-  return {
-    query: vi.fn().mockResolvedValue(rows),
-    getActivitySummaries: vi.fn().mockResolvedValue([]),
-    getStream: vi.fn().mockResolvedValue([]),
-    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-    getPaceCurveRows: vi.fn().mockResolvedValue([]),
-  };
-}
-
 describe("IntervalsRepository", () => {
   describe("getByActivity", () => {
     it("aggregates per-interval metrics from sensor samples", async () => {
@@ -211,7 +196,7 @@ describe("IntervalsRepository", () => {
         },
       ];
       const db = makeDb(intervalRows);
-      const sensorStore = makeSensorStore(sensorRows);
+      const sensorStore = makeMockSensorStore(sensorRows);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -288,7 +273,7 @@ describe("IntervalsRepository", () => {
         },
       ];
       const db = makeDb(intervalRows);
-      const sensorStore = makeSensorStore(sensorRows);
+      const sensorStore = makeMockSensorStore(sensorRows);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -311,7 +296,7 @@ describe("IntervalsRepository", () => {
 
     it("returns empty array when no intervals exist", async () => {
       const db = makeDb([]);
-      const sensorStore = makeSensorStore([]);
+      const sensorStore = makeMockSensorStore([]);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -323,7 +308,7 @@ describe("IntervalsRepository", () => {
   describe("detect", () => {
     function makeRepo(rows: Record<string, unknown>[] = []) {
       const db = { execute: vi.fn() };
-      const sensorStore = makeSensorStore(rows);
+      const sensorStore = makeMockSensorStore(rows);
       return new IntervalsRepository(db, "user-1", sensorStore);
     }
 

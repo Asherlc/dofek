@@ -1,9 +1,6 @@
 import type { SyncDatabase } from "../../db/index.ts";
-import { replaceMetricStreamBatch, writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { activity } from "../../db/schema.ts";
-import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
-import { parseFitFile } from "../../fit/parser.ts";
-import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../../fit/records.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import { enqueueFitFileImportAndWait } from "../../jobs/enqueue-fit-file-import.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { SyncError } from "../types.ts";
@@ -20,54 +17,44 @@ export class WahooActivityPersister {
   readonly #providerId: string;
   readonly #client: WahooClient;
   readonly #db: SyncDatabase;
-  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
   readonly #userId?: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
   constructor(
     providerId: string,
     client: WahooClient,
     db: SyncDatabase,
-    metricStreamPublisher?: MetricStreamEventPublisher,
     userId?: string,
+    metricStreamPublisher?: MetricStreamEventPublisher,
   ) {
     this.#providerId = providerId;
     this.#client = client;
     this.#db = db;
-    this.#metricStreamPublisher = metricStreamPublisher;
     this.#userId = userId;
+    this.#metricStreamPublisher = metricStreamPublisher;
   }
 
-  async persist(
-    parsed: ParsedCardioActivity,
-    options?: {
-      deleteExistingSamples?: boolean;
-      formatLogMessage?: (rowCount: number, externalId: string) => string;
-    },
-  ): Promise<PersistResult> {
+  async persist(parsed: ParsedCardioActivity): Promise<PersistResult> {
     const errors: SyncError[] = [];
 
     try {
-      const [row] = await this.#db
-        .insert(activity)
-        .values({
+      const row = await upsertProviderActivity(
+        this.#db,
+        {
           providerId: this.#providerId,
           externalId: parsed.externalId,
           activityType: parsed.activityType,
           startedAt: parsed.startedAt,
           endedAt: parsed.endedAt,
           name: parsed.name,
-        })
-        .onConflictDoUpdate({
-          target: [activity.userId, activity.providerId, activity.externalId],
-          set: {
-            activityType: parsed.activityType,
-            startedAt: parsed.startedAt,
-            endedAt: parsed.endedAt,
-            name: parsed.name,
-            providerAbsentAt: null,
-          },
-        })
-        .returning({ id: activity.id });
+        },
+        {
+          activityType: parsed.activityType,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          name: parsed.name,
+        },
+      );
 
       const activityId = row?.id;
       if (!activityId) {
@@ -77,38 +64,23 @@ export class WahooActivityPersister {
       if (parsed.fitFileUrl) {
         try {
           const fitBuffer = await this.#client.downloadFitFile(parsed.fitFileUrl);
-          const fitData = await parseFitFile(fitBuffer);
-          const metricRows = fitRecordsToMetricStream(
-            fitData.records,
-            this.#providerId,
-            activityId,
-            parsed.activityType,
-          ).map((row) => ({ ...row, userId: this.#userId }));
-
-          if (metricRows.length > 0) {
-            if (options?.deleteExistingSamples) {
-              await replaceMetricStreamBatch(
-                this.#db,
-                { activityId },
-                metricRows,
-                SOURCE_TYPE_FILE,
-                this.#metricStreamPublisher,
-              );
-            } else {
-              await writeMetricStreamBatch(
-                this.#db,
-                metricRows,
-                SOURCE_TYPE_FILE,
-                undefined,
-                this.#metricStreamPublisher,
-              );
-            }
-
-            const logMessage = options?.formatLogMessage
-              ? options.formatLogMessage(metricRows.length, parsed.externalId)
-              : `[wahoo] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`;
-            logger.info(logMessage);
-          }
+          await enqueueFitFileImportAndWait({
+            fitBuffer,
+            providerId: this.#providerId,
+            sourceName: "Wahoo",
+            ...(this.#userId ? { userId: this.#userId } : {}),
+            ...(this.#metricStreamPublisher
+              ? { db: this.#db, metricStreamPublisher: this.#metricStreamPublisher }
+              : {}),
+            activitySummary: {
+              externalId: parsed.externalId,
+              activityType: parsed.activityType,
+              startedAtIso: parsed.startedAt.toISOString(),
+              ...(parsed.endedAt ? { endedAtIso: parsed.endedAt.toISOString() } : {}),
+              name: parsed.name ?? `Wahoo ${parsed.activityType.canonicalType.replace(/_/g, " ")}`,
+            },
+          });
+          logger.info(`[wahoo] Imported FIT file for workout ${parsed.externalId}`);
         } catch (fitErr) {
           errors.push({
             message: `FIT file for ${parsed.externalId}: ${fitErr instanceof Error ? fitErr.message : String(fitErr)}`,

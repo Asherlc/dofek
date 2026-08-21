@@ -1,40 +1,48 @@
 import {
-  formatCalories,
+  type ActivityDataState,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatDateMedium,
   formatDurationMinutes,
   formatNumber,
   parseValidDate,
 } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import type { ActivityMapPreview } from "./ActivityMapTile.tsx";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
+import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { PaginationControls } from "./PaginationControls.tsx";
 
 export interface Activity {
   id: string;
   started_at: string;
   ended_at: string | null;
-  activity_type: string;
+  canonical_type: string;
   name: string | null;
   provider_id: string;
   source_providers: string[] | null;
-  distance_meters?: number | null;
-  calories?: number | null;
+  distance_meters: number | null;
+  distance_state: ActivityDataState;
+  elevation_gain_m: number | null;
+  elevation_state: ActivityDataState;
   location?: {
     centroidLat: number;
     centroidLng: number;
     mapPreview: ActivityMapPreview;
-    distanceMeters: number | null;
-    elevationGainM: number | null;
   } | null;
 }
 
 interface ActivityListProps {
   activities: Activity[];
+  additionalColumns?: Array<ActivityTableColumn<Activity>>;
   loading?: boolean;
   error?: string;
+  emptyMessage?: string;
   totalCount?: number;
   page?: number;
   pageSize?: number;
@@ -60,8 +68,10 @@ function formatActivityDuration(startedAt: string, endedAt: string | null): stri
 
 export function ActivityList({
   activities,
+  additionalColumns = [],
   loading,
   error,
+  emptyMessage = "No recent activities",
   totalCount,
   page,
   pageSize,
@@ -74,6 +84,7 @@ export function ActivityList({
   const [selectMode, setSelectMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const selectionGuidanceId = useId();
 
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
@@ -84,14 +95,15 @@ export function ActivityList({
   }
 
   if (activities.length === 0) {
-    return <div className="text-subtle text-sm py-4">No recent activities</div>;
+    return <div className="text-subtle text-sm py-4">{emptyMessage}</div>;
   }
 
-  const totalPages =
-    totalCount != null && pageSize != null ? Math.ceil(totalCount / pageSize) : undefined;
   const currentPage = page ?? 0;
   const selectedCount = selectedActivityIds.size;
   const selectedIds = [...selectedActivityIds];
+  const selectedCountLabel = `${selectedCount} ${
+    selectedCount === 1 ? "activity" : "activities"
+  } selected`;
 
   const toggleSelected = (activityId: string) => {
     setSelectedActivityIds((current) => {
@@ -130,7 +142,7 @@ export function ActivityList({
     renderCell: (activity) => (
       <input
         type="checkbox"
-        aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.activity_type)}`}
+        aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.canonical_type)}`}
         checked={selectedActivityIds.has(activity.id)}
         onChange={() => toggleSelected(activity.id)}
         onClick={(event) => event.stopPropagation()}
@@ -146,7 +158,9 @@ export function ActivityList({
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 whitespace-nowrap",
       renderCell: (activity) => {
-        if (!activity.location) return "—";
+        if (!activity.location) {
+          return <ActivityTypeIcon activityType={activity.canonical_type} variant="compact" />;
+        }
         const { mapPreview } = activity.location;
 
         return (
@@ -192,7 +206,7 @@ export function ActivityList({
       label: "Type",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 whitespace-nowrap",
-      renderCell: (activity) => formatActivityTypeLabel(activity.activity_type),
+      renderCell: (activity) => formatActivityTypeLabel(activity.canonical_type),
     },
     {
       key: "name",
@@ -213,18 +227,22 @@ export function ActivityList({
       label: "Distance",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
-      renderCell: (activity) =>
-        activity.distance_meters
-          ? `${formatNumber(units.convertDistance(activity.distance_meters / 1000))} ${units.distanceLabel}`
-          : "—",
-    },
-    {
-      key: "calories",
-      label: "Calories",
-      headerClassName: "pb-2 pr-4 whitespace-nowrap",
-      cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
-      renderCell: (activity) =>
-        activity.calories != null ? formatCalories(activity.calories) : "—",
+      renderCell: (activity) => {
+        const metric = formatActivityMetric(
+          "Distance",
+          activity.distance_meters,
+          activity.distance_state,
+          (value) => `${formatNumber(units.convertDistance(value / 1000))} ${units.distanceLabel}`,
+        );
+        if (metric.status !== "available") {
+          return (
+            <span data-state={metric.status}>
+              {metric.label} {activityDataStateLabel(metric.status)}: {metric.reason}
+            </span>
+          );
+        }
+        return <span data-state="available">{metric.value}</span>;
+      },
     },
     {
       key: "provider",
@@ -241,42 +259,36 @@ export function ActivityList({
       renderCell: (activity) => activity.source_providers?.join(", "),
     },
   ];
-  const columns = selectMode ? [selectionColumn, ...baseColumns] : baseColumns;
+  const activityColumns = [...baseColumns, ...additionalColumns];
+  const columns = selectMode ? [selectionColumn, ...activityColumns] : activityColumns;
   const footer =
-    totalPages != null && totalPages > 1 && onPageChange ? (
-      <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">
-        <span className="text-xs text-subtle tabular-nums">{totalCount} activities</span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={currentPage <= 0}
-            className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            Previous
-          </button>
-          <span className="text-xs text-subtle tabular-nums">
-            {currentPage + 1} / {totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={currentPage >= totalPages - 1}
-            className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            Next
-          </button>
-        </div>
-      </div>
+    totalCount != null && pageSize != null && onPageChange ? (
+      <PaginationControls
+        page={currentPage}
+        pageSize={pageSize}
+        totalItems={totalCount}
+        itemLabel="activities"
+        onPageChange={onPageChange}
+        className="mt-2"
+      />
     ) : null;
 
   return (
     <div className="space-y-3">
       {onBulkDelete ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
+          <p id={selectionGuidanceId} className="text-xs text-muted">
+            Choose one or more activities to delete.
+          </p>
           {selectMode ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-subtle tabular-nums">{selectedCount} selected</span>
+              <output
+                aria-live="polite"
+                aria-atomic="true"
+                className="text-xs text-subtle tabular-nums"
+              >
+                {selectedCountLabel}
+              </output>
               {confirmDelete ? (
                 <>
                   <span className="text-xs text-muted">
@@ -314,9 +326,10 @@ export function ActivityList({
             <button
               type="button"
               onClick={() => setSelectMode(true)}
+              aria-describedby={selectionGuidanceId}
               className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
             >
-              Select
+              Select activities
             </button>
           )}
         </div>

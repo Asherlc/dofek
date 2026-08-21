@@ -1,4 +1,5 @@
 import { createClient } from "@clickhouse/client";
+import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "./clickhouse-metric-stream-bootstrap.ts";
 
 export interface ClickHouseCommandClient {
@@ -11,11 +12,15 @@ export interface ClickHouseCommandClient {
     table: string;
     values: readonly object[];
     format: "JSONEachRow";
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<unknown>;
   query?<TRow extends object>(options: {
     query: string;
+    query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
+    abort_signal?: AbortSignal;
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
   close?(): Promise<void>;
 }
@@ -23,8 +28,11 @@ export interface ClickHouseCommandClient {
 export interface ClickHouseClient extends ClickHouseCommandClient {
   query<TRow extends object>(options: {
     query: string;
+    query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
+    abort_signal?: AbortSignal;
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
 }
 
@@ -111,12 +119,12 @@ export function createClickHouseClientFromEnv(
 }
 
 export async function bootstrapClickHouseFromEnv(client: ClickHouseCommandClient): Promise<void> {
-  await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
+  await waitForClickHouseTable(client, "ingest", "metric_stream");
   await waitForClickHouseTable(client, "analytics", "deduped_sensor");
   await waitForClickHouseTable(client, "analytics", "deduped_activities");
   await waitForClickHouseTable(client, "analytics", "activity_summary");
   await waitForClickHouseTable(client, "analytics", "activity_trend_daily");
-  await smokeTestClickHouseTable(client, "postgres_fitness.metric_stream");
+  await smokeTestClickHouseTable(client, METRIC_STREAM_TABLE);
   await smokeTestClickHouseTable(client, "analytics.deduped_sensor");
   await smokeTestClickHouseTable(client, "analytics.deduped_activities");
   await smokeTestClickHouseTable(client, "analytics.activity_summary");

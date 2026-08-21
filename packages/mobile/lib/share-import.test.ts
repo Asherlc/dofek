@@ -5,6 +5,12 @@ import {
   inferImportProviderFromFile,
 } from "./share-import";
 
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry", () => ({
+  captureException: mockCaptureException,
+}));
+
 describe("inferImportProviderFromFile", () => {
   it("detects Strong CSV by header", () => {
     const provider = inferImportProviderFromFile({
@@ -35,9 +41,236 @@ describe("inferImportProviderFromFile", () => {
     });
     expect(provider).toBe("apple-health");
   });
+
+  it("detects Garmin dump before generic zip handling", () => {
+    const provider = inferImportProviderFromFile({
+      fileName: "garmin-export.zip",
+      fileExtension: ".zip",
+      mimeType: "application/zip",
+      csvHeaderLine: "",
+    });
+    expect(provider).toBe("garmin-dump");
+  });
+
+  it("detects a generic FIT file by extension", () => {
+    const provider = inferImportProviderFromFile({
+      fileName: "morning-ride.fit",
+      fileExtension: ".fit",
+      mimeType: "application/octet-stream",
+      csvHeaderLine: "",
+    });
+    expect(provider).toBe("fit-file");
+  });
+
+  it("detects Kaya CSV by filename", () => {
+    const provider = inferImportProviderFromFile({
+      fileName: "kaya-export.csv",
+      fileExtension: ".csv",
+      mimeType: "text/csv",
+      csvHeaderLine: "Date,Climb,Grade",
+    });
+    expect(provider).toBe("kaya-export");
+  });
 });
 
 describe("importSharedFile", () => {
+  it("uploads a FIT file to the generic FIT provider", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const customReadBlob = vi
+      .fn()
+      .mockResolvedValue(new Blob(["fit-data"], { type: "application/octet-stream" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-fit" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/morning-ride.fit",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+        now: () => 321,
+      },
+    );
+
+    expect(result).toEqual({ providerId: "fit-file", jobId: "job-fit" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/fit-file",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "x-file-ext": ".fit",
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/upload/fit-file/status/job-fit",
+      expect.anything(),
+    );
+  });
+
+  it("uploads an explicitly selected Garmin dump ZIP", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const customReadBlob = vi
+      .fn()
+      .mockResolvedValue(new Blob(["garmin-export"], { type: "application/zip" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-garmin" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ status: "processing", progress: 64, message: "Importing activities" }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const progressMessages: string[] = [];
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/export.zip",
+        providerId: "garmin-dump",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+        onProgress: (progress) => progressMessages.push(progress.message),
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+        now: () => 123,
+      },
+    );
+
+    expect(result).toEqual({ providerId: "garmin-dump", jobId: "job-garmin" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/garmin-dump",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": expect.stringMatching(/^share-123-/),
+          "x-chunk-index": "0",
+          "x-chunk-total": "1",
+          "x-file-ext": ".zip",
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/upload/garmin-dump/status/job-garmin",
+      expect.anything(),
+    );
+    expect(progressMessages).toContain("Importing activities");
+  });
+
+  it("splits large Garmin dumps into shared upload chunks", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const chunkSize = 50 * 1024 * 1024;
+    const largeBlob = new Blob(["garmin-export"], { type: "application/zip" });
+    Object.defineProperty(largeBlob, "size", { value: chunkSize + 1 });
+    const slice = vi
+      .spyOn(largeBlob, "slice")
+      .mockImplementation(() => new Blob(["chunk"], { type: "application/octet-stream" }));
+    const customReadBlob = vi.fn().mockResolvedValue(largeBlob);
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "uploading", jobId: "large-upload" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "assembling", jobId: "large-upload" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/garmin-export.zip",
+        providerId: "garmin-dump",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+        now: () => 999,
+      },
+    );
+
+    expect(result).toEqual({ providerId: "garmin-dump", jobId: "large-upload" });
+    expect(slice).toHaveBeenNthCalledWith(1, 0, chunkSize);
+    expect(slice).toHaveBeenNthCalledWith(2, chunkSize, chunkSize + 1);
+    const firstChunkHeaders = new Headers(fetchImpl.mock.calls[0]?.[1]?.headers);
+    const secondChunkHeaders = new Headers(fetchImpl.mock.calls[1]?.[1]?.headers);
+    expect(firstChunkHeaders.get("x-upload-id")).toMatch(/^share-999-/);
+    expect(secondChunkHeaders.get("x-upload-id")).toBe(firstChunkHeaders.get("x-upload-id"));
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/garmin-dump",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/upload/garmin-dump",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        }),
+      }),
+    );
+  });
+
   it("uploads a Strong CSV and polls until done", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
@@ -81,6 +314,7 @@ describe("importSharedFile", () => {
       {
         fetchImpl,
         sleep: async () => {},
+        now: () => 456,
       },
     );
 
@@ -95,7 +329,65 @@ describe("importSharedFile", () => {
       2,
       "https://example.com/api/upload/strong-csv?units=kg",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer session-token" }),
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": expect.stringMatching(/^share-456-/),
+          "x-chunk-index": "0",
+          "x-chunk-total": "1",
+          "x-file-ext": ".csv",
+        }),
+      }),
+    );
+  });
+
+  it("uploads an explicitly selected Kaya CSV through the shared chunked path", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const fileBody = "Date,Climb,Grade\n2026-03-10,Test Boulder,V5";
+    const customReadBlob = vi.fn().mockResolvedValue(new Blob([fileBody], { type: "text/csv" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-kaya" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/kaya-export.csv",
+        providerId: "kaya-export",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+        now: () => 567,
+      },
+    );
+
+    expect(result).toEqual({ providerId: "kaya-export", jobId: "job-kaya" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/kaya-export",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": expect.stringMatching(/^share-567-/),
+          "x-chunk-index": "0",
+          "x-chunk-total": "1",
+          "x-file-ext": ".csv",
+        }),
       }),
     );
   });
@@ -251,5 +543,54 @@ describe("importSharedFile", () => {
     // fetchImpl called 3 times: fallback read, upload, poll
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(fetchImpl).toHaveBeenNthCalledWith(1, "file:///tmp/fallback.csv");
+  });
+
+  it("does not report non-json status errors as json parse failures", async () => {
+    mockCaptureException.mockClear();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
+    const customReadBlob = vi.fn().mockResolvedValue(new Blob([fileBody], { type: "text/csv" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-html-error" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("<html>Bad Gateway</html>", {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+
+    await expect(
+      importSharedFile(
+        {
+          fileUri: "file:///tmp/export.csv",
+          serverUrl: "https://example.com",
+          sessionToken: "session-token",
+        },
+        {
+          fetchImpl,
+          readBlob: customReadBlob,
+          sleep: async () => {},
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "Error",
+      message: expect.stringContaining("Status check failed (HTTP 502)"),
+    });
+
+    const jsonParseCapture = mockCaptureException.mock.calls.find(([, context]) => {
+      return (
+        typeof context === "object" &&
+        context !== null &&
+        "source" in context &&
+        context.source === "share-import-status-response-json-parse"
+      );
+    });
+    expect(jsonParseCapture).toBeUndefined();
   });
 });

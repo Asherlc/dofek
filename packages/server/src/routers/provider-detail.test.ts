@@ -27,12 +27,15 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("dofek/db/schema", () => ({
+vi.mock("dofek/db/schema/events", () => ({
   syncLog: {
     userId: "userId",
     providerId: "providerId",
     syncedAt: "syncedAt",
   },
+}));
+
+vi.mock("dofek/db/schema/reference", () => ({
   oauthToken: {
     providerId: "providerId",
   },
@@ -44,24 +47,35 @@ vi.mock("dofek/db/schema", () => ({
 
 const {
   mockLoadTokens,
+  mockDeleteProviderAuthorization,
   mockGetAllProviders,
   mockEnsureProvidersRegistered,
   mockRevokeToken,
   mockLoggerInfo,
   mockLoggerWarn,
   mockSentryCaptureException,
+  mockProviderDataDeletesInc,
+  mockGetProviderDataDeletionJob,
 } = vi.hoisted(() => ({
   mockLoadTokens: vi.fn(),
+  mockDeleteProviderAuthorization: vi.fn(),
   mockGetAllProviders: vi.fn(),
   mockEnsureProvidersRegistered: vi.fn(),
   mockRevokeToken: vi.fn(),
   mockLoggerInfo: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockSentryCaptureException: vi.fn(),
+  mockProviderDataDeletesInc: vi.fn(),
+  mockGetProviderDataDeletionJob: vi.fn(),
+}));
+
+vi.mock("dofek/jobs/queues", () => ({
+  getProviderDataDeletionQueue: () => ({ getJob: mockGetProviderDataDeletionJob }),
 }));
 
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
+  deleteProviderAuthorization: (...args: unknown[]) => mockDeleteProviderAuthorization(...args),
 }));
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: () => mockGetAllProviders(),
@@ -83,13 +97,12 @@ vi.mock("../logger.ts", () => ({
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockSentryCaptureException(...args),
 }));
+vi.mock("../lib/metrics.ts", () => ({
+  providerDataDeletesTotal: { inc: (...args: unknown[]) => mockProviderDataDeletesInc(...args) },
+}));
 
-import {
-  DISCONNECT_CHILD_TABLES,
-  dataTypeEnum,
-  providerDetailRouter,
-  tableInfo,
-} from "./provider-detail.ts";
+import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
+import { dataTypeEnum, providerDetailRouter, tableInfo } from "./provider-detail.ts";
 
 // Zod schemas for drizzle SQL object introspection
 const stringChunkSchema = z.object({ value: z.array(z.string()) });
@@ -123,9 +136,15 @@ function extractSqlText(sqlObj: unknown): string {
 function extractSqlParams(sqlObj: unknown): Array<string | number> {
   const parsed = sqlObjectSchema.safeParse(sqlObj);
   if (!parsed.success) return [];
-  return parsed.data.queryChunks.filter(
-    (c): c is string | number => typeof c === "string" || typeof c === "number",
-  );
+  const params: Array<string | number> = [];
+  for (const chunk of parsed.data.queryChunks) {
+    if (typeof chunk === "string" || typeof chunk === "number") {
+      params.push(chunk);
+      continue;
+    }
+    params.push(...extractSqlParams(chunk));
+  }
+  return params;
 }
 
 const expectedListColumns = {
@@ -133,7 +152,9 @@ const expectedListColumns = {
     "id",
     "provider_id",
     "external_id",
-    "activity_type",
+    "canonical_type",
+    "provider_type",
+    "modality",
     "started_at",
     "ended_at",
     "name",
@@ -149,7 +170,6 @@ const expectedListColumns = {
     "hrv",
     "respiratory_rate_avg",
     "steps",
-    "active_energy_kcal",
     "distance_km",
     "source_name",
     "created_at",
@@ -269,8 +289,8 @@ describe("providerDetailRouter", () => {
       ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
-      ["metricStream", "postgres_fitness.metric_stream", "recorded_at", "id"],
-      ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
+      ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
+      ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
       ["journalEntries", "fitness.journal_entry", "date", "id"],
@@ -316,39 +336,42 @@ describe("providerDetailRouter", () => {
     });
   });
 
-  // ── DISCONNECT_CHILD_TABLES ──
+  // ── PROVIDER_ACCOUNT_TABLES ──
 
-  describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 11 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(11);
+  describe("PROVIDER_ACCOUNT_TABLES", () => {
+    it("contains 18 child tables", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(18);
     });
 
     it("includes all required child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.metric_stream");
-      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
-      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.body_measurement");
-      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.nutrition_daily");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sleep_session");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.food_entry");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.health_event");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.journal_entry");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.dexa_scan");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sync_log");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.activity");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.oauth_token");
+      expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.metric_stream");
+      expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.strength_workout");
+      expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.body_measurement");
+      expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.nutrition_daily");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.daily_metrics");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sleep_session");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_result");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_panel");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.medication_dose_event");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.supplement_dose_event");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.health_event");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.journal_entry");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.dexa_scan");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sync_log");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.activity");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.oauth_token");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.provider_connection");
     });
 
-    it("ends with activity then oauth_token (FK order)", () => {
-      const lastTwo = DISCONNECT_CHILD_TABLES.slice(-2);
-      expect(lastTwo).toEqual(["fitness.activity", "fitness.oauth_token"]);
+    it("ends with OAuth token then provider connection (FK order)", () => {
+      const lastTwo = PROVIDER_ACCOUNT_TABLES.slice(-2);
+      expect(lastTwo).toEqual(["fitness.oauth_token", "fitness.provider_connection"]);
     });
 
     it("deletes lab_result before lab_panel (FK order)", () => {
-      const resultIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.lab_result");
-      const panelIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.lab_panel");
+      const resultIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_result");
+      const panelIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_panel");
       expect(resultIndex).toBeLessThan(panelIndex);
     });
   });
@@ -483,6 +506,79 @@ describe("providerDetailRouter", () => {
       expect(mockLimit).toHaveBeenCalledWith(50);
       expect(mockOffset).toHaveBeenCalledWith(0);
     });
+
+    it("applies server-side filters to sync logs", async () => {
+      const mockWhere = vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            offset: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+      const mockSelect = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: mockWhere,
+        }),
+      });
+
+      const caller = createCaller({
+        db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.logs({
+        providerId: "strava",
+        filters: { status: "error", dataType: "activities" },
+      });
+
+      expect(mockWhere).toHaveBeenCalledTimes(1);
+      const whereSql = extractSqlText(mockWhere.mock.calls[0]?.[0]);
+      expect(whereSql).toContain("ILIKE");
+      expect(whereSql).toContain("status");
+      expect(whereSql).toContain("data_type");
+    });
+  });
+
+  describe("logFilterOptions", () => {
+    it("returns distinct sync log dropdown values for a provider", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([{ value: "success" }, { value: "error" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.logFilterOptions({ providerId: "strava" });
+
+      expect(result.status).toEqual([{ value: "success" }, { value: "error" }]);
+      expect(result.dataType).toEqual([{ value: "success" }, { value: "error" }]);
+    });
+  });
+
+  describe("availableDataTypes", () => {
+    it("returns the provider data types reported by both stores", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([{ data_type: "activities" }]);
+      const sensorQuery = vi.fn().mockResolvedValue([{ data_type: "metricStream" }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore: { query: sensorQuery },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.availableDataTypes({ providerId: "whoop" })).resolves.toEqual([
+        "activities",
+        "metricStream",
+      ]);
+      expect(mockExecute).toHaveBeenCalledOnce();
+      expect(sensorQuery).toHaveBeenCalledOnce();
+      expect(sensorQuery.mock.calls[0]?.[2]).toEqual({
+        userId: "user-1",
+        providerId: "whoop",
+      });
+    });
   });
 
   // ── records ──
@@ -495,7 +591,7 @@ describe("providerDetailRouter", () => {
             {
               id: "act-1",
               name: "Morning Run",
-              activity_type: "running",
+              canonical_type: "running",
               started_at: "2024-01-14T08:00:00Z",
             },
           ]),
@@ -513,6 +609,23 @@ describe("providerDetailRouter", () => {
 
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.name).toBe("Morning Run");
+    });
+
+    it("returns distinct record dropdown values for a provider data type", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([{ value: "running" }, { value: "cycling" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.recordFilterOptions({
+        providerId: "strava",
+        dataType: "activities",
+      });
+
+      expect(result.canonical_type).toEqual([{ value: "running" }, { value: "cycling" }]);
     });
 
     it.each(
@@ -576,6 +689,43 @@ describe("providerDetailRouter", () => {
 
       expect(mockExecute).not.toHaveBeenCalled();
       expect(sensorQuery.mock.calls[0]?.[1]).toContain("analytics.v_body_measurement");
+    });
+
+    it("queries metric stream records through ClickHouse", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const sensorQuery = vi.fn().mockResolvedValue([
+        {
+          id: "stream-1",
+          recorded_at: "2026-04-12T10:00:00.000000Z",
+          provider_id: "whoop",
+          channel: "heart_rate",
+          scalar: 72,
+        },
+      ]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore: { query: sensorQuery },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.records({
+        providerId: "whoop",
+        dataType: "metricStream",
+        limit: 25,
+        offset: 0,
+      });
+
+      expect(mockExecute).not.toHaveBeenCalled();
+      expect(sensorQuery).toHaveBeenCalledTimes(1);
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("FROM ingest.metric_stream");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain(
+        "row_number() OVER (PARTITION BY id ORDER BY version DESC)",
+      );
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("version_rank = 1");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("is_deleted = 0");
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]?.channel).toBe("heart_rate");
     });
 
     it("passes user ID and provider ID as parameters", async () => {
@@ -657,6 +807,48 @@ describe("providerDetailRouter", () => {
       expect(params).toContain(50);
       expect(params).toContain(0);
     });
+
+    it("applies server-side filters to activity records", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.records({
+        providerId: "strava",
+        dataType: "activities",
+        filters: { canonical_type: "run", name: "Morning" },
+      });
+
+      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+      expect(sqlText).toContain("ILIKE");
+      expect(sqlText).toContain("canonical_type");
+      expect(sqlText).toContain("name");
+    });
+
+    it("returns filterable columns with record rows", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([{ id: "act-1", name: "Morning Run" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.records({
+        providerId: "strava",
+        dataType: "activities",
+      });
+
+      expect(result.columns).toContain("canonical_type");
+      expect(result.columns).toContain("name");
+      expect(result.columns).not.toContain("provider_id");
+      expect(result.filterColumns).toContain("provider_id");
+      expect(result.filterColumns).toContain("canonical_type");
+      expect(result.rows).toHaveLength(1);
+    });
   });
 
   // ── recordDetail ──
@@ -670,7 +862,7 @@ describe("providerDetailRouter", () => {
               id: "act-1",
               provider_id: "strava",
               name: "Morning Run",
-              activity_type: "running",
+              canonical_type: "running",
               started_at: "2024-01-14T08:00:00Z",
               raw: { distance: 5000, elapsed_time: 1400 },
             },
@@ -817,29 +1009,22 @@ describe("providerDetailRouter", () => {
   // ── disconnect ──
 
   describe("disconnect", () => {
-    it("deletes all user-scoped provider rows in a transaction", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
+    it("removes authorization without deleting imported provider records", async () => {
       const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
-
+      const mockTransaction = vi.fn();
+      const db = { execute: mockExecute, transaction: mockTransaction };
       const caller = createCaller({
-        db: {
-          execute: mockExecute,
-          transaction: mockTransaction,
-        },
+        db,
         userId: "user-1",
         timezone: "UTC",
       });
 
-      const result = await caller.disconnect({ providerId: "strava" });
-      expect(result).toEqual({ success: true });
-      expect(mockExecute).toHaveBeenCalledTimes(1);
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      await expect(caller.disconnect({ providerId: "strava" })).resolves.toEqual({
+        success: true,
+      });
+
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(db, "strava", "user-1");
+      expect(mockTransaction).not.toHaveBeenCalled();
     });
 
     it("verifies ownership before disconnecting", async () => {
@@ -862,59 +1047,8 @@ describe("providerDetailRouter", () => {
       // Verify ownership check SQL contains correct table and conditions
       const ownerSql = mockExecute.mock.calls[0][0];
       const ownerText = extractSqlText(ownerSql);
-      expect(ownerText).toContain("fitness.oauth_token");
+      expect(ownerText).toContain("fitness.provider_connection");
       expect(ownerText).toContain("SELECT");
-    });
-
-    it("deletes from each child table with correct table names", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
-
-      const caller = createCaller({
-        db: { execute: mockExecute, transaction: mockTransaction },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await caller.disconnect({ providerId: "strava" });
-
-      // Verify each child table DELETE was issued in order
-      for (let i = 0; i < DISCONNECT_CHILD_TABLES.length; i++) {
-        const callSql = txExecute.mock.calls[i][0];
-        const callText = extractSqlText(callSql);
-        expect(callText).toContain("DELETE FROM");
-        expect(callText).toContain(DISCONNECT_CHILD_TABLES[i]);
-      }
-    });
-
-    it("passes provider ID as parameter to each delete", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-      const mockExecute = vi.fn().mockResolvedValue([{ id: "my-provider" }]);
-
-      const caller = createCaller({
-        db: { execute: mockExecute, transaction: mockTransaction },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await caller.disconnect({ providerId: "my-provider" });
-
-      // Each child table delete should include the provider ID as a parameter
-      for (let i = 0; i < DISCONNECT_CHILD_TABLES.length; i++) {
-        const callSql = txExecute.mock.calls[i][0];
-        const params = extractSqlParams(callSql);
-        expect(params).toContain("my-provider");
-      }
     });
 
     it("throws when provider is not owned by user", async () => {
@@ -930,7 +1064,7 @@ describe("providerDetailRouter", () => {
       });
 
       await expect(caller.disconnect({ providerId: "unknown" })).rejects.toThrow(
-        "Provider not found or not owned by user",
+        "This provider is not connected to your account.",
       );
     });
 
@@ -948,7 +1082,7 @@ describe("providerDetailRouter", () => {
       expect(mockTransaction).not.toHaveBeenCalled();
     });
 
-    it("calls revokeExistingTokens before deleting data when provider supports it", async () => {
+    it("calls revokeExistingTokens before removing authorization when provider supports it", async () => {
       const mockRevokeExisting = vi.fn().mockResolvedValue(undefined);
       const storedTokens = {
         accessToken: "access-123",
@@ -989,7 +1123,11 @@ describe("providerDetailRouter", () => {
 
       expect(mockLoadTokens).toHaveBeenCalledWith(expect.anything(), "wahoo", "user-1");
       expect(mockRevokeExisting).toHaveBeenCalledWith(storedTokens);
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "user-1",
+      );
     });
 
     it("uses standard OAuth revocation when provider has revokeUrl but no revokeExistingTokens", async () => {
@@ -1043,7 +1181,11 @@ describe("providerDetailRouter", () => {
         expect.objectContaining({ revokeUrl: "https://www.strava.com/oauth/deauthorize" }),
         "refresh-def",
       );
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        "user-1",
+      );
     });
 
     it("skips standard OAuth revocation when provider has no OAuth config", async () => {
@@ -1082,8 +1224,11 @@ describe("providerDetailRouter", () => {
       await caller.disconnect({ providerId: "manual-provider" });
 
       expect(mockRevokeToken).not.toHaveBeenCalled();
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "manual-provider",
+        "user-1",
+      );
     });
 
     it("does not call standard OAuth revocation for a missing access token", async () => {
@@ -1178,11 +1323,14 @@ describe("providerDetailRouter", () => {
         expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
         "expired-token",
       );
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "user-1",
+      );
     });
 
-    it("still deletes data when all revocation methods fail", async () => {
+    it("still removes local authorization when all remote revocation methods fail", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "expired-token",
         refreshToken: "expired-refresh",
@@ -1229,8 +1377,11 @@ describe("providerDetailRouter", () => {
       );
       expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(Error));
       expect(mockSentryCaptureException).toHaveBeenCalledTimes(3);
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "user-1",
+      );
     });
 
     it("skips revocation when no stored tokens exist", async () => {
@@ -1267,7 +1418,11 @@ describe("providerDetailRouter", () => {
       await caller.disconnect({ providerId: "wahoo" });
 
       expect(mockRevokeExistingNoTokens).not.toHaveBeenCalled();
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "user-1",
+      );
     });
 
     it("skips revocation when provider has no authSetup", async () => {
@@ -1305,7 +1460,11 @@ describe("providerDetailRouter", () => {
 
       expect(result).toEqual({ success: true });
       expect(mockRevokeToken).not.toHaveBeenCalled();
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "apple-health",
+        "user-1",
+      );
     });
 
     it("only revokes access token when no refresh token exists", async () => {
@@ -1351,6 +1510,270 @@ describe("providerDetailRouter", () => {
         expect.objectContaining({ revokeUrl: "https://strava.com/revoke" }),
         "access-token",
       );
+    });
+  });
+
+  describe("deleteAllData", () => {
+    it("requires the exact DELETE confirmation", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn(), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "delete" }),
+      ).rejects.toThrow();
+    });
+
+    it("returns queued progress while the deletion request waits for dispatch", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          failure_reason: null,
+          generation: "1",
+          provider_id: "strava",
+          status: "pending",
+          user_id: userId,
+        },
+      ]);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "queued",
+        message: "Provider data deletion is pending...",
+      });
+      expect(mockGetProviderDataDeletionJob).not.toHaveBeenCalled();
+    });
+
+    it("returns generic progress for an active deletion job", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          failure_reason: null,
+          generation: "1",
+          provider_id: "strava",
+          status: "dispatched",
+          user_id: userId,
+        },
+      ]);
+      mockGetProviderDataDeletionJob.mockResolvedValue({
+        failedReason: undefined,
+        getState: vi.fn().mockResolvedValue("active"),
+        progress: { percentage: 50, message: "Tombstoned 10,000 metric stream rows..." },
+      });
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "running",
+        percentage: 50,
+        message: "Tombstoned 10,000 metric stream rows...",
+      });
+    });
+
+    it("returns completed progress without looking up a queue job", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          failure_reason: null,
+          generation: "1",
+          provider_id: "strava",
+          status: "completed",
+          user_id: userId,
+        },
+      ]);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "completed",
+        percentage: 100,
+        message: "Provider data deleted",
+      });
+      expect(mockGetProviderDataDeletionJob).not.toHaveBeenCalled();
+    });
+
+    it("returns a durable failure after the deletion job is evicted", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          failure_reason: "Provider credentials were rejected",
+          generation: "1",
+          provider_id: "strava",
+          status: "failed",
+          user_id: userId,
+        },
+      ]);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "failed",
+        message: "Provider credentials were rejected",
+      });
+      expect(mockGetProviderDataDeletionJob).not.toHaveBeenCalled();
+    });
+
+    it("returns queued progress when the deletion job is not available yet", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          failure_reason: null,
+          generation: "1",
+          provider_id: "strava",
+          status: "dispatched",
+          user_id: userId,
+        },
+      ]);
+      mockGetProviderDataDeletionJob.mockResolvedValue(undefined);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "queued",
+        message: "Provider data deletion is pending...",
+      });
+    });
+
+    it("reports queue lookup errors with an actionable client error", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const queueError = new Error("Redis unavailable");
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          failure_reason: null,
+          generation: "1",
+          provider_id: "strava",
+          status: "dispatched",
+          user_id: userId,
+        },
+      ]);
+      mockGetProviderDataDeletionJob.mockRejectedValue(queueError);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(
+        caller.deletionStatus({ providerId: "strava", operationId }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to check provider data deletion progress",
+        cause: queueError,
+      });
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(queueError, {
+        tags: { operation: "providerDataDeletionStatus" },
+      });
+    });
+
+    it("does not expose deletion progress owned by another user", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+        userId: "00000000-0000-4000-8000-000000000001",
+      });
+
+      await expect(
+        caller.deletionStatus({
+          providerId: "strava",
+          operationId: "30000000-0000-4000-8000-000000000001",
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("rejects deletion when the provider is not owned by the user", async () => {
+      const transaction = vi.fn();
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]), transaction },
+        sensorStore: { query: vi.fn().mockResolvedValue([{ has_data: 0 }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "DELETE" }),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "No connected provider or retained provider data was found for your account.",
+      });
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it("accepts canonical deletion for a disconnected user with retained records", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: true }]);
+      const transactionExecute = vi.fn().mockResolvedValue([
+        {
+          event_id: "30000000-0000-4000-8000-000000000002",
+          generation: "1",
+          provider_id: "strava",
+          user_id: userId,
+        },
+      ]);
+      const transaction = vi.fn(
+        async (callback: (database: { execute: typeof transactionExecute }) => Promise<unknown>) =>
+          callback({ execute: transactionExecute }),
+      );
+      const sensorQuery = vi.fn();
+      const caller = createCaller({
+        db: { execute, transaction },
+        sensorStore: { query: sensorQuery },
+        userId,
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "DELETE" }),
+      ).resolves.toEqual({
+        success: true,
+        operationId: "30000000-0000-4000-8000-000000000002",
+      });
+      expect(sensorQuery).not.toHaveBeenCalled();
+      expect(transaction).toHaveBeenCalledOnce();
+    });
+
+    it("atomically deletes provider records and writes a transactional outbox request", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const txExecute = vi.fn().mockResolvedValue([
+        {
+          event_id: "30000000-0000-4000-8000-000000000001",
+          generation: "1",
+          provider_id: "strava",
+          user_id: userId,
+        },
+      ]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<unknown>) => {
+          return fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValueOnce([{ id: "strava" }]);
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId,
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "DELETE" }),
+      ).resolves.toEqual({
+        success: true,
+        operationId: "30000000-0000-4000-8000-000000000001",
+      });
+
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockProviderDataDeletesInc).toHaveBeenCalledWith({ provider_id: "strava" });
+      const deleteSql = txExecute.mock.calls.map((call) => extractSqlText(call[0])).join("\n");
+      expect(deleteSql).not.toContain("fitness.oauth_token");
+      expect(deleteSql).toContain("fitness.provider_data_generation");
+      expect(deleteSql).toContain("fitness.provider_data_deletion_outbox");
     });
   });
 });

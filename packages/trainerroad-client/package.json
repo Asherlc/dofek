@@ -1,14 +1,63 @@
 {
-  "name": "trainerroad-client",
-  "version": "0.1.0",
+  "name": "@dofek/trainerroad",
+  "version": "0.1.12",
   "description": "Unofficial TrainerRoad API client using reverse-engineered cookie-based authentication",
   "type": "module",
-  "exports": {
-    "./client": "./src/client.ts",
-    "./parsing": "./src/parsing.ts",
-    "./types": "./src/types.ts"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/trainerroad-client"
   },
-  "scripts": { "test": "vitest run", "test:watch": "vitest --watch", "build": "tsc", "lint": "biome check ." },
-  "dependencies": { "@dofek/provider-http": "workspace:*" },
-  "devDependencies": { "typescript": "5.9.3", "vitest": "3.2.4" }
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/trainerroad-client#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "trainerroad",
+    "cycling",
+    "api-client",
+    "unofficial",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/client.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dofek/provider-http": "workspace:*",
+    "@dofek/training": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "3.2.6"
+  }
 }

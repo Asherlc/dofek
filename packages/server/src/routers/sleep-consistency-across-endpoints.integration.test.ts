@@ -1,11 +1,14 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration test: sleep data consistency across all dashboard endpoints.
@@ -112,18 +115,56 @@ describe("sleep data consistency across endpoints", () => {
     for (let daysAgo = 90; daysAgo >= 0; daysAgo--) {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps,
-              active_energy_kcal, basal_energy_kcal
+              date, provider_id, user_id, hrv, steps
             ) VALUES (
               CURRENT_DATE - ${daysAgo}::int,
-              'whoop', ${TEST_USER_ID}, 60, 8000, 500, 1800
+              'whoop', ${TEST_USER_ID}, 60, 8000
             ) ON CONFLICT DO NOTHING`,
       );
     }
 
-    // Refresh sleep materialized view
+    // Seed a real activity load on the date sleepNeed.calculate treats as
+    // yesterday (one day before its endDate), so this test exercises the
+    // ClickHouse daily_strain-backed availability path.
+    const loadActivityRows = await testCtx.db.execute<{ id: string; started_at: Date | string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type, modality, started_at, ended_at, name
+          ) VALUES (
+            'whoop', ${TEST_USER_ID}, 'sleep-consistency-load-activity',
+            'cycling', 'cycling', NULL,
+            (CURRENT_DATE - 2) + TIME '10:00:00',
+            (CURRENT_DATE - 2) + TIME '10:30:00',
+            'Sleep consistency load activity'
+          )
+          RETURNING id, started_at`,
+    );
+    const loadActivity = loadActivityRows[0];
+    if (!loadActivity) {
+      throw new Error("Expected the sleep consistency load activity to be inserted");
+    }
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const loadStartedAt = new Date(loadActivity.started_at);
+    await seedClickHouseMetricStreamRows(testCtx, [
+      {
+        activityId: loadActivity.id,
+        userId: TEST_USER_ID,
+        recordedAt: loadStartedAt.toISOString(),
+        channel: "heart_rate",
+        providerId: "whoop",
+        sourceType: "api",
+        scalar: 120,
+      },
+      {
+        activityId: loadActivity.id,
+        userId: TEST_USER_ID,
+        recordedAt: new Date(loadStartedAt.getTime() + 5 * 60 * 1000).toISOString(),
+        channel: "heart_rate",
+        providerId: "whoop",
+        sourceType: "api",
+        scalar: 140,
+      },
+    ]);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -209,6 +250,7 @@ describe("sleep data consistency across endpoints", () => {
     const result = await query<{
       recentNights: { date: string; actualMinutes: number | null }[];
     }>("sleepNeed.calculate", { endDate });
+    expect(result).toBeDefined();
 
     for (const night of result.recentNights) {
       if (night.actualMinutes !== null) {
@@ -272,6 +314,7 @@ describe("sleep data consistency across endpoints", () => {
     const sleepNeed = await query<{
       recentNights: { date: string; actualMinutes: number | null }[];
     }>("sleepNeed.calculate", { endDate });
+    expect(sleepNeed).not.toBeNull();
     const needByDate = new Map<string, number>();
     for (const night of sleepNeed.recentNights) {
       if (night.actualMinutes !== null) {

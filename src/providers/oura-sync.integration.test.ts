@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, healthEvent, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { healthEvent } from "../db/schema/clinical.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -396,13 +397,13 @@ describe("OuraProvider.sync() (integration)", () => {
       .where(eq(activity.providerId, "oura"));
     const workout = activityRows.find((r) => r.externalId === "workout-001");
     expect(workout).toBeDefined();
-    expect(workout?.activityType).toBe("running");
+    expect(workout?.canonicalType).toBe("running");
     expect(workout?.name).toBe("Morning Run");
 
     // Verify sessions → activity table
     const session = activityRows.find((r) => r.externalId === "session-001");
     expect(session).toBeDefined();
-    expect(session?.activityType).toBe("meditation");
+    expect(session?.canonicalType).toBe("meditation");
 
     // Verify heart rate metric stream events
     const hrRows = metricStreamCapture.publishedMetricStreamRows;
@@ -561,7 +562,7 @@ describe("OuraProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "oura"));
 
     const provider = new OuraProvider();

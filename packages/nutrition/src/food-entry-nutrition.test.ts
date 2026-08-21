@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   foodEntryNutrientDetailsFromLegacyColumns,
+  formatFoodEntryNutrientDetailsForAccessibility,
   groupFoodEntryNutrientDetails,
 } from "./food-entry-nutrition";
 
@@ -69,5 +70,18 @@ describe("groupFoodEntryNutrientDetails", () => {
         nutrients: [expect.objectContaining({ id: "vitamin_d" })],
       },
     ]);
+  });
+});
+
+describe("formatFoodEntryNutrientDetailsForAccessibility", () => {
+  it("formats nutrient labels and values as a concise description", () => {
+    const details = foodEntryNutrientDetailsFromLegacyColumns({
+      protein_g: 32,
+      sodium_mg: 680,
+    });
+
+    expect(formatFoodEntryNutrientDetailsForAccessibility(details)).toBe(
+      "Macros: Protein: 32 g. Other nutrients: Sodium: 680 mg",
+    );
   });
 });

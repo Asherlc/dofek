@@ -1,5 +1,7 @@
 packages:
   - .
+  - packages/zepp
+  - packages/filter-columns
   - packages/format
   - packages/scoring
   - packages/nutrition
@@ -12,20 +14,130 @@ packages:
   - packages/zones
   - packages/auth
   - packages/heart-rate-variability
+  - packages/imu
   - packages/server
   - packages/web
   - packages/mobile
+  - packages/mobile/modules/whoop-ble
   - packages/whoop-whoop
   - packages/eight-sleep
   - packages/zwift-client
   - packages/zepp-client
+  - packages/kaya-client
   - packages/trainerroad-client
   - packages/velohero-client
+  - packages/mountain-project-client
   - packages/garmin-connect
   - packages/trainingpeaks-connect
+  - packages/peloton-client
+  - packages/xert-client
 
-ignoredBuiltDependencies:
-  - cpu-features
-  - esbuild
-  - protobufjs
-  - ssh2
+dedupePeers: true
+
+audit:
+  ignore:
+    - GHSA-w3rx-r6r6-pgpr
+    - GHSA-5p2g-fcmc-qvqq
+
+overrides:
+  "@expo/dom-webview": 55.0.5
+  "@expo/xcpretty>js-yaml": 4.3.1
+  "@grpc/grpc-js": 1.14.4
+  "@opentelemetry/core": 2.9.0
+  "@protobufjs/utf8": 1.1.2
+  "@xmldom/xmldom": 0.9.10
+  "archiver@<8.0.0": 8.0.0
+  axios: 1.18.1
+  body-parser: 2.3.0
+  brace-expansion: 5.0.9
+  esbuild: 0.28.1
+  "fast-uri@>=3.0.0 <3.1.5": 3.1.5
+  form-data: 4.0.6
+  "gel>shell-quote": 1.10.0
+  hono: 4.12.25
+  ip-address: 10.4.0
+  "inquirer@0.11.0>lodash": 4.18.1
+  "lerna>minimatch": 3.1.4
+  "minimatch@3>brace-expansion": 1.1.18
+  minimatch: 10.2.5
+  "nanoid@<3.3.17": 3.3.18
+  image-size: "file:vendor/image-size"
+  "picomatch@>=4.0.0 <4.0.4": 4.0.4
+  postcss: 8.5.23
+  protobufjs: 8.7.1
+  qs: 6.15.2
+  react: 19.2.3
+  react-dom: 19.2.3
+  "router>path-to-regexp": 8.4.2
+  shell-quote: 1.10.0
+  tar: 7.5.20
+  "test-exclude@<8.0.0": 8.0.0
+  "undici@>=6.0.0 <6.27.0": 6.27.0
+  uuid: 11.1.1
+  ws: 8.21.0
+  yaml: 2.9.0
+
+packageExtensions:
+  "@bacons/apple-targets@4.0.7":
+    dependencies:
+      "@expo/image-utils": 0.11.1
+
+patchedDependencies:
+  "@expo/plist@0.0.18": patches/@expo__plist@0.0.18.patch
+  "@expo/plist@0.8.1": patches/@expo__plist@0.8.1.patch
+  "@tanstack/router-generator@1.167.17": patches/@tanstack__router-generator@1.167.17.patch
+  "@tanstack/router-generator@1.167.18": patches/@tanstack__router-generator@1.167.18.patch
+
+allowBuilds:
+  "@sentry/cli": true
+  core-js: true
+  cpu-features: false
+  cypress: true
+  esbuild: false
+  msgpackr-extract: true
+  msw: true
+  nx: false
+  protobufjs: false
+  sharp: true
+  ssh2: false
+
+minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@4.0.36'
+  - '@ai-sdk/otel@1.0.47'
+  - '@ai-sdk/provider-utils@5.0.18'
+  - ai@7.0.47
+  - '@expo/cli@57.0.11 || 57.0.12 || 57.0.13 || 57.0.14 || 57.0.15 || 57.0.17'
+  - '@expo/inline-modules@0.1.4 || 0.1.5'
+  - '@expo/local-build-cache-provider@57.0.5 || 57.0.6 || 57.0.7'
+  - '@expo/log-box@57.0.2'
+  - '@expo/metro-runtime@57.0.8 || 57.0.9 || 57.0.10 || 57.0.12'
+  - '@expo/prebuild-config@57.0.10 || 57.0.11 || 57.0.12 || 57.0.13'
+  - '@expo/ui@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11 || 57.0.12'
+  - babel-preset-expo@57.0.5 || 57.0.6 || 57.0.7
+  - expo@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12 || 57.0.13 || 57.0.15
+  - expo-asset@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11 || 57.0.13
+  - expo-build-properties@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11 || 57.0.13
+  - expo-constants@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11 || 57.0.13
+  - expo-dev-client@57.0.10 || 57.0.11 || 57.0.12 || 57.0.14
+  - expo-dev-launcher@57.0.10 || 57.0.11 || 57.0.12 || 57.0.14
+  - expo-dev-menu@57.0.10 || 57.0.11 || 57.0.12 || 57.0.14
+  - expo-modules-core@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11 || 57.0.12
+  - expo-notifications@57.0.8 || 57.0.9 || 57.0.10 || 57.0.11 || 57.0.13
+  - expo-router@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12 || 57.0.13 || 57.0.15
+  - expo-sharing@57.0.8 || 57.0.10 || 57.0.11 || 57.0.12 || 57.0.14
+  - expo-updates@57.0.11 || 57.0.12 || 57.0.13 || 57.0.14 || 57.0.16
+  - '@posthog/core@1.46.1'
+  - posthog-node@5.47.3
+  - posthog-react-native@4.61.2
+  - '@expo/router-server@57.0.5 || 57.0.6 || 57.0.7'
+  - expo-linking@57.0.5 || 57.0.6 || 57.0.7
+  - '@expo/config-plugins@57.0.7 || 57.0.8'
+  - expo-file-system@57.0.2 || 57.0.4 || 57.0.5
+  - expo-symbols@57.0.2
+  - nanoid@3.3.18
+  - '@expo/fingerprint@0.20.7 || 0.20.9'
+  - '@expo/metro-config@57.0.8 || 57.0.9'
+  - expo-server@57.0.2 || 57.0.3
+  - expo-splash-screen@57.0.6
+  - expo-modules-autolinking@57.0.10
+  - expo-modules-jsi@57.0.5

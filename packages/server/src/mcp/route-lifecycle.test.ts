@@ -86,7 +86,12 @@ function getPort(server: Server): number {
 
 async function request(body: unknown): Promise<{ status: number; text: string }> {
   const app = express();
-  app.use("/api/mcp", createMcpRouter({ db: { execute: vi.fn(), select: vi.fn() } }));
+  app.use(
+    "/api/mcp",
+    createMcpRouter({
+      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+    }),
+  );
 
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
@@ -115,6 +120,9 @@ describe("createMcpRouter lifecycle handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     routeMocks.validateMcpToken.mockResolvedValue({
+      expiresAt: null,
+      oauthClientId: null,
+      oauthResource: null,
       scopes: ["health:read"],
       tokenId: "token-id",
       userId: "user-id",

@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
@@ -6,9 +6,10 @@ import {
   activity as activityTable,
   dailyMetrics as dailyMetricsTable,
   sleepSession as sleepSessionTable,
-} from "../../db/schema.ts";
+} from "../../db/schema/activity.ts";
 import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import type { WebhookEvent } from "../types.ts";
 import type {
   FitbitActivity,
@@ -17,6 +18,12 @@ import type {
   FitbitWeightLog,
 } from "./client.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./provider.ts";
+
+vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 const { publishedMetricStreamBatches, replacementScopes } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -121,10 +128,10 @@ function createMockDb() {
     select: vi.fn(),
     insert: insertFn,
     delete: deleteFn,
-    execute: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   };
 
-  return Object.assign(db, chain);
+  return makeTransactionalTestDatabase(Object.assign(db, chain));
 }
 
 function expectConflictTarget(
@@ -389,6 +396,8 @@ describe("fitbitOAuthConfig", () => {
     expect(config?.scopes).toContain("heartrate");
     expect(config?.authorizeUrl).toContain("fitbit.com");
     expect(config?.tokenUrl).toContain("fitbit.com");
+    expect(config?.revokeUrl).toBe("https://api.fitbit.com/oauth2/revoke");
+    expect(config?.tokenAuthMethod).toBe("basic");
   });
 });
 
@@ -573,7 +582,7 @@ describe("FitbitProvider", () => {
   describe("verifyWebhookSignature()", () => {
     it("returns true for valid HMAC-SHA1 signature", () => {
       const provider = new FitbitProvider();
-      const signingSecret = "my-secret";
+      const signingSecret = randomBytes(32).toString("hex");
       const body = Buffer.from('{"test": true}');
 
       const hmac = createHmac("sha1", `${signingSecret}&`);
@@ -746,7 +755,7 @@ describe("FitbitProvider", () => {
       expectConflictSetContainsKey(
         db,
         [activityTable.userId, activityTable.providerId, activityTable.externalId],
-        "activityType",
+        "canonicalType",
       );
       expectConflictTarget(db, [
         sleepSessionTable.userId,
@@ -783,8 +792,13 @@ describe("FitbitProvider", () => {
       );
       expect(replacementScopes).toContainEqual({
         activityId: "10000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-0000-0000-000000000001",
       });
-      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
+      expect(replacementScopes).toContainEqual({
+        providerId: "fitbit",
+        externalId: "55555",
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
     });
 
     it("captures per-record insert errors without aborting the whole sync", async () => {
@@ -1038,69 +1052,345 @@ describe("FitbitProvider", () => {
       expectReasonableDuration(result.duration);
     });
 
+    it("retains activities when pagination stalls on a non-advancing offset", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        let activityRequests = 0;
+
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            activityRequests += 1;
+            if (activityRequests > 1) {
+              throw new Error("activity pagination should stop after the first stalled page");
+            }
+            return Response.json({
+              activities: [sampleActivity],
+              pagination: { next: "/next", previous: "", limit: 0, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/sleep/list.json")) {
+            return Response.json({
+              sleep: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          if (url.endsWith(".tcx")) {
+            return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", {
+              status: 200,
+            });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        expect(activityRequests).toBe(1);
+        expect(findValuesCall(db, (value) => value.externalId === "12345678").name).toBe("Run");
+        expect(db.delete).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("retains earlier activities when a later pagination request fails", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const seenOffsets: number[] = [];
+
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            const offsetMatch = url.match(/[?&]offset=(\d+)/);
+            const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+            seenOffsets.push(offset);
+            if (offset === 0) {
+              return Response.json({
+                activities: [sampleActivity],
+                pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+              });
+            }
+            throw new Error("later activity page failed");
+          }
+          if (url.includes("/sleep/list.json")) {
+            return Response.json({
+              sleep: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          if (url.endsWith(".tcx")) {
+            return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", {
+              status: 200,
+            });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(seenOffsets).toEqual([0, 1]);
+        expect(result.errors).toContainEqual(
+          expect.objectContaining({
+            message: "activity: later activity page failed",
+          }),
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "12345678").name).toBe("Run");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("paginates sleep sync by increasing offset", async () => {
       setupEnv();
       vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const firstSleep: FitbitSleepLog = sampleSleep;
+        const secondSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654322 };
+        const seenSleepOffsets: number[] = [];
 
-      const firstSleep: FitbitSleepLog = sampleSleep;
-      const secondSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654322 };
-      const seenSleepOffsets: number[] = [];
-
-      const mockFetch: typeof globalThis.fetch = async (
-        input: RequestInfo | URL,
-      ): Promise<Response> => {
-        const url = input.toString();
-        if (url.includes("/activities/list.json")) {
-          return Response.json({
-            activities: [],
-            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
-          });
-        }
-        if (url.includes("/sleep/list.json")) {
-          const offsetMatch = url.match(/[?&]offset=(\d+)/);
-          const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
-          seenSleepOffsets.push(offset);
-          if (offset === 0) {
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
             return Response.json({
-              sleep: [firstSleep],
-              pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+              activities: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
             });
           }
-          return Response.json({
-            sleep: [secondSleep],
-            pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
-          });
-        }
-        if (url.includes("/activities/date/")) {
-          return Response.json(sampleDailySummary);
-        }
-        if (url.includes("/body/log/weight/date/")) {
-          return Response.json({ weight: [] });
-        }
-        return new Response("Not found", { status: 404 });
-      };
+          if (url.includes("/sleep/list.json")) {
+            const offsetMatch = url.match(/[?&]offset=(\d+)/);
+            const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+            seenSleepOffsets.push(offset);
+            if (offset === 0) {
+              return Response.json({
+                sleep: [firstSleep],
+                pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+              });
+            }
+            return Response.json({
+              sleep: [secondSleep],
+              pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          return new Response("Not found", { status: 404 });
+        };
 
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        // Both pages fetched: offset advanced from 0 to limit (1). A stopped loop
+        // (hasMore = false) would only see [0]; a decremented offset would not be [0, 1].
+        expect(seenSleepOffsets).toEqual([0, 1]);
+        expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+          465,
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
+          465,
+        );
+        expectReasonableDuration(result.duration);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("fetches a third sleep page when offset advances beyond the first page", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const sleeps: FitbitSleepLog[] = [
+          { ...sampleSleep, logId: 87654321 },
+          { ...sampleSleep, logId: 87654322 },
+          { ...sampleSleep, logId: 87654323 },
+        ];
+        const seenSleepOffsets: number[] = [];
+
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            return Response.json({
+              activities: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/sleep/list.json")) {
+            const offsetMatch = url.match(/[?&]offset=(\d+)/);
+            const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+            seenSleepOffsets.push(offset);
+            const pageIndex = offset / 10;
+            return Response.json({
+              sleep: [sleeps[pageIndex] ?? sleeps[0]],
+              pagination: {
+                next: pageIndex < 2 ? "/next" : "",
+                previous: "",
+                limit: 10,
+                offset,
+                sort: "asc",
+              },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        expect(seenSleepOffsets).toEqual([0, 10, 20]);
+        expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+          465,
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
+          465,
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "87654323").durationMinutes).toBe(
+          465,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("captures per-record sleep insert errors without aborting the whole sync", async () => {
+      setupEnv();
+      const mockFetch = createMockApiFetch({
+        sleep: [sampleSleep, { ...sampleSleep, logId: 87654322 }],
+      });
       const provider = new FitbitProvider(mockFetch);
       const db = createMockDb();
+      let sleepInsertCount = 0;
+      db.onConflictDoUpdate.mockImplementation(() => {
+        sleepInsertCount += 1;
+        if (sleepInsertCount === 1) {
+          throw new Error("sleep insert failed");
+        }
+        return db;
+      });
+
       const result = await provider.sync(
         new SyncRun({
           db: db,
           window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
         }),
       );
-      vi.useRealTimers();
 
-      expect(result.errors).toHaveLength(0);
-      // Both pages fetched: offset advanced from 0 to limit (1). A stopped loop
-      // (hasMore = false) would only see [0]; a decremented offset would not be [0, 1].
-      expect(seenSleepOffsets).toEqual([0, 1]);
-      expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
-        465,
-      );
+      expect(result.errors.length).toBeGreaterThanOrEqual(1);
+      expect(result.errors.some((error) => error.externalId === "87654321")).toBe(true);
       expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
         465,
       );
-      expectReasonableDuration(result.duration);
+    });
+
+    it("retains sleep records when pagination stalls on a repeated offset", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const stalledSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654321 };
+        let sleepRequests = 0;
+
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            return Response.json({
+              activities: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/sleep/list.json")) {
+            sleepRequests += 1;
+            return Response.json({
+              sleep: [stalledSleep],
+              pagination: { next: "/next", previous: "", limit: 0, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        expect(sleepRequests).toBe(1);
+        expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+          465,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -1134,7 +1424,8 @@ describe("FitbitProvider", () => {
         db,
         (v) => v.externalId === "12345678" && v.providerId === "fitbit",
       );
-      expect(activityValues.activityType).toBe("running");
+      expect(activityValues.canonicalType).toBe("running");
+      expect(activityValues.providerType).toBe("90009");
       expect(activityValues.name).toBe("Run");
       expectConflictTarget(db, [
         activityTable.userId,
@@ -1144,7 +1435,7 @@ describe("FitbitProvider", () => {
       expectConflictSetContainsKey(
         db,
         [activityTable.userId, activityTable.providerId, activityTable.externalId],
-        "activityType",
+        "canonicalType",
       );
       expectConflictTarget(db, [
         dailyMetricsTable.userId,
@@ -1338,6 +1629,7 @@ describe("FitbitProvider", () => {
         (v) => v.externalId === "87654321" && v.providerId === "fitbit",
       );
       expect(sleepValues.durationMinutes).toBe(465);
+      expect(sleepValues.stagingAvailable).toBe(true);
       expect(sleepValues.efficiencyPct).toBe(92);
       expect(sleepValues.sleepType).toBe("main");
       expectConflictTarget(db, [
@@ -1388,7 +1680,11 @@ describe("FitbitProvider", () => {
           value.channel === "body_fat_percentage",
       );
       expect(bodyFatValues).toMatchObject({ scalar: 18.5 });
-      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
+      expect(replacementScopes).toContainEqual({
+        providerId: "fitbit",
+        externalId: "55555",
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
     });
 
     it("returns empty result for unknown objectType", async () => {

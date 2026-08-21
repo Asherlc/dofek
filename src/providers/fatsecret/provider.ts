@@ -1,11 +1,12 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../../auth/oauth.ts";
 import { nutrientAmountEntriesFromLegacyFields } from "../../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient } from "../../db/schema.ts";
+import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { SyncError, SyncProvider, SyncResult } from "../types.ts";
@@ -36,7 +37,7 @@ export class FatSecretProvider implements SyncProvider {
   constructor(fetchFn: FetchFn = globalThis.fetch) {
     this.#consumerKey = process.env.FATSECRET_CONSUMER_KEY ?? null;
     this.#consumerSecret = process.env.FATSECRET_CONSUMER_SECRET ?? null;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
+    this.#fetchFn = createProviderRateLimitFetch("fatsecret", fetchFn);
   }
 
   validate(): string | null {
@@ -184,6 +185,7 @@ export class FatSecretProvider implements SyncProvider {
                 providerId: this.id,
                 externalId: e.externalId,
                 date: e.date,
+                nutritionGrain: "itemized",
                 meal: e.meal,
                 foodName: e.foodName,
                 foodDescription: e.foodDescription,
@@ -236,7 +238,7 @@ export class FatSecretProvider implements SyncProvider {
         // shape that fails Zod validation on the food_entries key (empty day variant).
         const isNoEntriesMessage = err instanceof Error && err.message.includes("No entries found");
         const isFoodEntriesZodError =
-          err instanceof z.ZodError && err.errors.some((issue) => issue.path[0] === "food_entries");
+          err instanceof z.ZodError && err.issues.some((issue) => issue.path[0] === "food_entries");
         if (!isNoEntriesMessage && !isFoodEntriesZodError) {
           const msg = err instanceof Error ? err.message : String(err);
           errors.push({ message: `Date ${current.toISOString().split("T")[0]}: ${msg}` });

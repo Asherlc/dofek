@@ -9,6 +9,11 @@ describe("UnitConverter", () => {
   const metric = new UnitConverter("metric");
   const imperial = new UnitConverter("imperial");
 
+  it("sets the unit system", () => {
+    expect(new UnitConverter("metric").system).toBe("metric");
+    expect(new UnitConverter("imperial").system).toBe("imperial");
+  });
+
   describe("weight (kg input)", () => {
     it("returns kg unchanged for metric", () => {
       expect(metric.convertWeight(80)).toBeCloseTo(80);
@@ -107,6 +112,9 @@ describe("unit labels", () => {
     expect(metric.distanceLabel).toBe("km");
     expect(metric.elevationLabel).toBe("m");
     expect(metric.temperatureLabel).toBe("°C");
+    expect(metric.percentageLabel).toBe("%");
+    expect(metric.calorieLabel).toBe("kcal");
+    expect(metric.caloriesPerDayLabel).toBe("kcal/day");
     expect(metric.speedLabel).toBe("km/h");
     expect(metric.heightLabel).toBe("cm");
     expect(metric.paceLabel).toBe("/km");
@@ -163,6 +171,11 @@ describe("format functions", () => {
         { type: "unit", value: "°F" },
       ],
     });
+  });
+
+  it("formats temperature deltas without applying the absolute-temperature offset", () => {
+    expect(formatMeasurementText(metric.formatTemperatureDelta(1))).toBe("1.0°C");
+    expect(formatMeasurementText(imperial.formatTemperatureDelta(1))).toBe("1.8°F");
   });
 
   it("formats speed with 1 decimal", () => {

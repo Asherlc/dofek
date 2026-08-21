@@ -29,9 +29,13 @@ runs:
         fi
 
         if [ "${RUNNER_OS}" = "Linux" ]; then
-          curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
-          sudo apt-get update
-          sudo apt-get install -y infisical
+          version="0.43.96"
+          tmpdir="$(mktemp -d)"
+          curl -sSfL "https://github.com/Infisical/cli/releases/download/v${version}/cli_${version}_linux_amd64.tar.gz" \
+            -o "${tmpdir}/infisical.tar.gz"
+          tar -xzf "${tmpdir}/infisical.tar.gz" -C "${tmpdir}" infisical
+          sudo install -m 755 "${tmpdir}/infisical" /usr/local/bin/infisical
+          rm -rf "${tmpdir}"
           exit 0
         fi
 
@@ -100,8 +104,19 @@ runs:
           exit 1
         fi
 
+        mask_value() {
+          local mask_line
+          while IFS= read -r mask_line || [ -n "$mask_line" ]; do
+            mask_line="${mask_line//'%'/'%25'}"
+            mask_line="${mask_line//$'\r'/'%0D'}"
+            mask_line="${mask_line//$'\n'/'%0A'}"
+            printf '::add-mask::%s\n' "$mask_line"
+          done <<< "$1"
+        }
+
         while IFS= read -r key; do
           if ! value="$(infisical secrets get "$key" --env="$INFISICAL_ENV" --projectId="$project_id" --token="$infisical_access_token" --plain --silent 2>&1)"; then
+            mask_value "$value"
             echo "::error::Failed to fetch Infisical secret: $key (env=$INFISICAL_ENV, project=$project_id)"
             echo "$value"
             exit 1
@@ -111,6 +126,8 @@ runs:
             echo "::error::Missing required Infisical secret: $key (env=$INFISICAL_ENV)"
             exit 1
           fi
+
+          mask_value "$value"
 
           if printf '%s' "$value" | grep -q $'\n'; then
             marker="INFISICAL_${key}_$(uuidgen)"

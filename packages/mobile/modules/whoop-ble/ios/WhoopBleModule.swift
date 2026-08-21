@@ -1,5 +1,6 @@
 import CoreBluetooth
 import ExpoModulesCore
+import Foundation
 
 /// Expo native module that connects to a WHOOP strap via CoreBluetooth
 /// and streams raw IMU (accelerometer + gyroscope) data.
@@ -8,6 +9,7 @@ import ExpoModulesCore
 /// sample buffer, orientation processor, and data watchdog, and exposes
 /// them as Expo functions/events to the JS layer.
 public class WhoopBleModule: Module {
+    private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
 
     private let connectionManager = WhoopBleConnectionManager()
     private let sampleBuffer = WhoopBleSampleBuffer()
@@ -36,6 +38,11 @@ public class WhoopBleModule: Module {
         OnCreate {
             self.connectionManager.delegate = self
             self.watchdog.delegate = self
+            if let cutoff = UserDefaults.standard.object(
+                forKey: Self.deviceErasureCutoffKey
+            ) as? Date {
+                self.sampleBuffer.advanceErasureCutoff(to: cutoff)
+            }
         }
 
         // MARK: - Availability
@@ -60,20 +67,8 @@ public class WhoopBleModule: Module {
                 case .success(let value):
                     promise.resolve(value)
                 case .failure(let error):
-                    switch error {
-                    case .invalidPeripheralId(let identifier):
-                        promise.reject("INVALID_ID", "Invalid peripheral ID: \(identifier)")
-                    case .peripheralNotFound(let identifier):
-                        promise.reject("NOT_FOUND", "Peripheral not found: \(identifier)")
-                    case .timeout:
-                        promise.reject("TIMEOUT", "Connection timed out")
-                    case .serviceNotFound:
-                        promise.reject("NO_SERVICE", "WHOOP service not found")
-                    case .characteristicsNotFound:
-                        promise.reject("NO_CHARACTERISTICS", "Required characteristics not found")
-                    case .disconnected(let message):
-                        promise.reject("DISCONNECTED", message ?? "Disconnected")
-                    }
+                    let rejection = error.rejection
+                    promise.reject(rejection.code, rejection.message)
                 }
             }
         }
@@ -173,8 +168,10 @@ public class WhoopBleModule: Module {
                     "lastWriteError": self.connectionManager.lastWriteError ?? "none",
                     "realtimeBufferCount": self.sampleBuffer.realtimeSampleCount,
                     "watchdogRetryCount": Int(self.watchdog.retryCount),
-                    "droppedFrames": Int(self.frameParser.droppedFrameCount),
-                    "droppedCmdFrames": Int(self.cmdFrameParser.droppedFrameCount),
+                    "malformedFrames": Int(self.frameParser.malformedFrameCount),
+                    "malformedCmdFrames": Int(self.cmdFrameParser.malformedFrameCount),
+                    "coalescedFrames": Int(self.frameParser.coalescedFrameCount),
+                    "coalescedCmdFrames": Int(self.cmdFrameParser.coalescedFrameCount),
                 ]
             }
         }
@@ -255,6 +252,50 @@ public class WhoopBleModule: Module {
         Function("disconnect") {
             self.connectionManager.disconnect()
         }
+
+        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
+            guard let cutoff = self.parseIsoDate(cutoffString) else {
+                promise.reject(
+                    "WHOOP_BLE_INVALID_ERASURE_CUTOFF",
+                    "Invalid device erasure cutoff"
+                )
+                return
+            }
+            let retainedCutoff =
+                (UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date)
+                .map { max($0, cutoff) } ?? cutoff
+            UserDefaults.standard.set(
+                retainedCutoff,
+                forKey: Self.deviceErasureCutoffKey
+            )
+
+            self.connectionManager.bleQueue.async {
+                self.watchdog.stop()
+                self.sampleBuffer.advanceErasureCutoff(to: retainedCutoff)
+                self.frameParser.reset()
+                self.cmdFrameParser.reset()
+                self.orientationProcessor.reset()
+                self.dataNotificationCount = 0
+                self.cmdNotificationCount = 0
+                self.totalFramesParsed = 0
+                self.totalSamplesExtracted = 0
+                self.emptyExtractions = 0
+                self.packetTypeCounts.removeAll()
+                self.lastCommandResponse = "none"
+                self.connectionManager.disconnect()
+                promise.resolve(true)
+            }
+        }
+    }
+
+    private func parseIsoDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: value) {
+            return parsed
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     // MARK: - Activation commands
@@ -332,6 +373,8 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         _ manager: WhoopBleConnectionManager,
         didReceiveData data: Data
     ) {
+        guard let deviceId = manager.connectedPeripheral?.identifier.uuidString else { return }
+
         dataNotificationCount += 1
         watchdog.recordDataReceived()
 
@@ -358,7 +401,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             }
         }
 
-        sampleBuffer.appendRealtimeData(newRealtimeData)
+        sampleBuffer.appendRealtimeData(newRealtimeData, deviceId: deviceId)
 
         if newImuSamples.isEmpty && newRealtimeData.isEmpty {
             emptyExtractions += 1
@@ -381,7 +424,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             }
         }
 
-        sampleBuffer.appendImuSamples(newImuSamples)
+        sampleBuffer.appendImuSamples(newImuSamples, deviceId: deviceId)
     }
 
     func connectionManager(

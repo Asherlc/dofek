@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { OnboardingPage } from "./OnboardingPage.tsx";
@@ -23,27 +23,39 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
+vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
+  PrimaryGoalSelector: () => (
+    <div>
+      <h2>Primary goal</h2>
+      <button type="button">Race preparation</button>
+      <button type="button">Sleep consistency</button>
+      <button type="button">Strength progression</button>
+      <button type="button">Weight trend</button>
+    </div>
+  ),
+}));
+
 describe("OnboardingPage", () => {
-  it("renders goals and the setup checklist", () => {
+  it("renders the first-run setup actions", () => {
     render(<OnboardingPage />);
 
-    expect(screen.getByRole("heading", { name: "Set up Dofek" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /understand training/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /improve recovery/i })).toBeTruthy();
-    expect(screen.getByText("Connect your data sources")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Set up Dofek with your real data" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Primary goal" })).toBeTruthy();
+    expect(screen.getByText("Race preparation")).toBeTruthy();
+    expect(screen.getByText("Sleep consistency")).toBeTruthy();
+    expect(screen.getByText("Strength progression")).toBeTruthy();
+    expect(screen.getByText("Weight trend")).toBeTruthy();
+    expect(screen.getByText("Connect your sources")).toBeTruthy();
+    expect(screen.getByText("Check your dashboard")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Set up data sources" }).getAttribute("href")).toBe(
       "/settings",
     );
     expect(screen.getByRole("link", { name: "Open dashboard" }).getAttribute("href")).toBe(
       "/dashboard",
     );
-  });
-
-  it("marks a selected goal", () => {
-    render(<OnboardingPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: /track nutrition/i }));
-
-    expect(screen.getByText("Selected: Track nutrition")).toBeTruthy();
+    expect(screen.getByText("Get the iOS app")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open TestFlight invite" }).getAttribute("href")).toBe(
+      "https://testflight.apple.com/join/FXywHr9c",
+    );
   });
 });

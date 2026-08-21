@@ -4,7 +4,9 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, oauthToken, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -201,11 +203,11 @@ describe("CorosProvider.sync() (integration)", () => {
 
     const run = rows.find((r) => r.externalId === "coros-w-1001");
     if (!run) throw new Error("expected workout coros-w-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     const ride = rows.find((r) => r.externalId === "coros-w-1002");
     if (!ride) throw new Error("expected workout coros-w-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
   });
 
   it("publishes FIT samples through scoped Redpanda replacement", async () => {
@@ -241,7 +243,10 @@ describe("CorosProvider.sync() (integration)", () => {
     const activityId = rows[0]?.id;
     if (!activityId) throw new Error("expected activity id");
     expect(metricStreamCapture.publishedMetricStreamRows.length).toBeGreaterThan(0);
-    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({ activityId });
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      activityId,
+      userId: TEST_USER_ID,
+    });
   });
 
   it("syncs daily data into daily_metrics table", async () => {
@@ -323,6 +328,7 @@ describe("CorosProvider.sync() (integration)", () => {
     expect(sleepRow.lightMinutes).toBe(200);
     expect(sleepRow.remMinutes).toBe(110);
     expect(sleepRow.awakeMinutes).toBe(30);
+    expect(sleepRow.stagingAvailable).toBe(true);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

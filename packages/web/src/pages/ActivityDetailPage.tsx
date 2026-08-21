@@ -1,10 +1,16 @@
 import {
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
   formatDateLong,
   formatDateTime,
   formatDurationSeconds,
   formatNumber,
   formatTimeOnly,
 } from "@dofek/format/format";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
@@ -22,25 +28,34 @@ import {
   formatActivityTypeLabel,
   isCyclingActivity,
 } from "@dofek/training/training";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
+import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
+import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
+import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import {
   chartThemeColors,
   dofekAxis,
   dofekGrid,
   dofekLegend,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ClimbingEntryBreakdown } from "./activity-detail/components/ClimbingEntryBreakdown.tsx";
+import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
+import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
+import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
 const CHART_COLORS = {
   heartRate: activityMetricColors.heartRate,
@@ -78,10 +93,16 @@ function buildAxisPointerEvents(
   };
 }
 
-const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
-
 function isStrengthActivityType(activityType: string): boolean {
-  return STRENGTH_ACTIVITY_TYPES.has(activityType);
+  return activityType === "strength";
+}
+
+function isClimbingActivityType(activityType: string): boolean {
+  return activityType === "climbing";
+}
+
+function isHangboardingActivityType(activityType: string): boolean {
+  return activityType === "hangboard";
 }
 
 export function ActivityDetailPage() {
@@ -89,17 +110,38 @@ export function ActivityDetailPage() {
 
   const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
-  const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
-  const hrZones = trpc.activity.hrZones.useQuery({ id });
+  const stream = trpc.activity.stream.useQuery(
+    { id, maxPoints: 500 },
+    { placeholderData: (previousData) => previousData },
+  );
+  const hrZones = trpc.activity.hrZones.useQuery(
+    { id },
+    { placeholderData: (previousData) => previousData },
+  );
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
-  const powerZones = trpc.activity.powerZones.useQuery({ id }, { enabled: isCycling && hasPower });
+  const powerZones = trpc.activity.powerZones.useQuery(
+    { id },
+    { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
+  );
   const isStrengthActivity =
     detail.data != null && isStrengthActivityType(detail.data.activityType);
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id },
     { enabled: isStrengthActivity },
+  );
+  const isClimbingActivity =
+    detail.data != null && isClimbingActivityType(detail.data.activityType);
+  const climbingEntries = trpc.climbing.activityEntries.useQuery(
+    { id },
+    { enabled: isClimbingActivity },
+  );
+  const isHangboardingActivity =
+    detail.data != null && isHangboardingActivityType(detail.data.activityType);
+  const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
+    { id },
+    { enabled: isHangboardingActivity },
   );
 
   // Ref-based hover callback avoids re-rendering the entire page on every mouse move.
@@ -117,7 +159,7 @@ export function ActivityDetailPage() {
     );
   }
 
-  if (detail.error || !detail.data) {
+  if (detail.error && !detail.data && detail.error.data?.code === "NOT_FOUND") {
     return (
       <PageLayout>
         <div className="py-8 text-center">
@@ -130,14 +172,31 @@ export function ActivityDetailPage() {
     );
   }
 
+  if (!detail.data) {
+    return (
+      <PageLayout>
+        <QueryStatePanel
+          error={
+            detail.error ??
+            new Error("Activity details are unavailable. Return to Activities and try again.")
+          }
+          height={400}
+        />
+      </PageLayout>
+    );
+  }
+
   const activity = detail.data;
   const zones = hrZones.data ?? [];
+  const exercises = strengthExercises.data ?? [];
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
   const hasHr = points.some((p) => p.heartRate != null);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
-  const showHrZones = hasHr || zones.length > 0;
+  const showHrZones = hrZones.error != null || hasHr || zones.length > 0;
+  const hrZonesHaveCachedData = zones.length > 0;
+  const strengthExercisesHaveCachedData = exercises.length > 0;
 
   return (
     <PageLayout>
@@ -150,14 +209,30 @@ export function ActivityDetailPage() {
           <span className="text-foreground">{activity.name ?? activity.activityType}</span>
         </div>
         <div className="flex items-center gap-2">
+          <RecomputeActivityButton key={id} activityId={id} />
           <ActivityExportDropdown activityId={id} hasGps={hasGps} />
           <DeleteActivityButton activityId={id} />
         </div>
       </div>
 
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
+      {activity.sourceDecision ? (
+        <ActivitySourceDecisionCard decision={activity.sourceDecision} />
+      ) : null}
 
-      <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
+      <ActivityHeader activity={activity} units={units} />
+      <ActivityPerceivedExertion value={activity.perceivedExertion} />
+
+      {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
+
+      {stream.error ? (
+        <Section
+          title="Sensor Data"
+          description="The recorded route and sensor samples for this activity."
+        >
+          <QueryStatePanel error={stream.error} height={72} />
+        </Section>
+      ) : null}
 
       {hasGps && (
         <Section
@@ -187,13 +262,51 @@ export function ActivityDetailPage() {
         </Section>
       )}
 
-      {(strengthExercises.data?.length ?? 0) > 0 && (
+      {isStrengthActivity &&
+        (strengthExercises.isLoading || strengthExercises.error || exercises.length > 0) && (
+          <Section
+            title="Exercises"
+            description="Exercises performed during this strength workout, with details for each set."
+          >
+            {strengthExercises.error && !strengthExercisesHaveCachedData ? (
+              <QueryStatePanel error={strengthExercises.error} height={160} />
+            ) : strengthExercises.isLoading && !strengthExercisesHaveCachedData ? (
+              <QueryStatePanel variant="loading" height={160} />
+            ) : (
+              <>
+                <WorkoutMuscleMap exercises={exercises} />
+                <StrengthExerciseBreakdown exercises={exercises} units={units} />
+                {strengthExercises.error ? (
+                  <QueryStatePanel error={strengthExercises.error} height={72} />
+                ) : null}
+              </>
+            )}
+          </Section>
+        )}
+
+      {isClimbingActivity && (climbingEntries.error || (climbingEntries.data?.length ?? 0) > 0) && (
         <Section
-          title="Exercises"
-          description="Exercises performed during this strength workout, with details for each set."
+          title="Climbs"
+          description="The climbs recorded during this session, including grades and send status."
         >
-          <WorkoutMuscleMap exercises={strengthExercises.data ?? []} />
-          <StrengthExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
+          {climbingEntries.error ? (
+            <p className="text-sm text-red-400">{climbingEntries.error.message}</p>
+          ) : (
+            <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+          )}
+        </Section>
+      )}
+
+      {isHangboardingActivity && (
+        <Section
+          title={formatActivityTypeLabel(activity.activityType)}
+          description="The hangboard plan, board, and intervals recorded during this session."
+        >
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
         </Section>
       )}
 
@@ -217,24 +330,34 @@ export function ActivityDetailPage() {
             title="Heart Rate Zones"
             description="This chart shows how much time you spent in each heart rate zone."
           >
-            <HrZonesChart
-              zones={zones}
-              loading={hrZones.isLoading}
-              errorMessage={hrZones.error?.message}
-            />
+            {hrZones.error && !hrZonesHaveCachedData ? (
+              <QueryStatePanel error={hrZones.error} height={250} />
+            ) : (
+              <>
+                <HrZonesChart zones={zones} loading={hrZones.isLoading} />
+                {hrZones.error ? <QueryStatePanel error={hrZones.error} height={72} /> : null}
+              </>
+            )}
           </Section>
         )}
 
-        {isCycling && hasPower && powerZones.data != null && (
+        {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
           <Section
             title="Power Zones"
             description="This chart shows how much time you spent in each power zone."
           >
-            <PowerZonesChart
-              zones={powerZones.data.zones}
-              ftp={powerZones.data.ftp}
-              loading={powerZones.isLoading}
-            />
+            {powerZones.error && powerZones.data == null ? (
+              <QueryStatePanel error={powerZones.error} height={250} />
+            ) : powerZones.data ? (
+              <>
+                <PowerZonesChart
+                  zones={powerZones.data.zones}
+                  ftp={powerZones.data.ftp}
+                  loading={powerZones.isLoading}
+                />
+                {powerZones.error ? <QueryStatePanel error={powerZones.error} height={72} /> : null}
+              </>
+            ) : null}
           </Section>
         )}
       </div>
@@ -242,102 +365,12 @@ export function ActivityDetailPage() {
   );
 }
 
-function DeleteActivityButton({ activityId }: { activityId: string }) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const navigate = useNavigate();
-  const trpcUtils = trpc.useUtils();
-  const deleteMutation = trpc.activity.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
-        trpcUtils.calendar.activityOverview.invalidate(),
-      ]);
-      navigate({ to: "/dashboard" });
-    },
-  });
-
-  if (showConfirm) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">Delete this activity? This cannot be undone.</span>
-        <button
-          type="button"
-          onClick={() => deleteMutation.mutate({ id: activityId })}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          {deleteMutation.isPending ? "Deleting..." : "Confirm Delete"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowConfirm(false)}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setShowConfirm(true)}
-      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors cursor-pointer"
-    >
-      Delete Activity
-    </button>
-  );
-}
-
-export function ProviderAbsentBanner({ activity }: { activity: ActivityDetail }) {
-  const providerLabel = providerSourceLabel(activity.providerId, activity.subsource);
-
-  return (
-    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-      <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-        Removed from provider sync
-      </div>
-      <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-            Status
-          </dt>
-          <dd className="mt-0.5 text-foreground">Removed</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-            Provider
-          </dt>
-          <dd className="mt-0.5 text-foreground">{providerLabel}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
-            Removed at
-          </dt>
-          <dd className="mt-0.5 text-foreground">
-            {activity.providerAbsentAt ? formatDateTime(activity.providerAbsentAt) : "—"}
-          </dd>
-        </div>
-      </dl>
-      <p className="mt-3 text-xs text-amber-800/80 dark:text-amber-200/80">
-        This activity was hidden because {providerLabel} reported it as deleted or missing. You can
-        restore it from the activities page while showing hidden activities.
-      </p>
-    </div>
-  );
-}
-
 export function ActivityHeader({
   activity,
   units,
-  hasGps,
 }: {
   activity: ActivityDetail;
   units: UnitConverter;
-  hasGps: boolean;
 }) {
   const durationMin =
     activity.startedAt && activity.endedAt
@@ -352,42 +385,61 @@ export function ActivityHeader({
     return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
   };
 
-  const stats: Array<{ label: string; value: string }> = [];
+  const stats: Array<ActivityMetric | { label: string; value: string }> = [];
 
   if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
-  if (hasGps && activity.totalDistance != null)
-    stats.push({
-      label: "Distance",
-      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
-    });
-  if (hasGps && activity.elevationGain != null)
-    stats.push({
-      label: "Elevation Gain",
-      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
-    });
-  if (activity.avgHr != null)
-    stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
-  if (activity.maxHr != null)
-    stats.push({ label: "Max Heart Rate", value: `${Math.round(activity.maxHr)} bpm` });
-  if (activity.avgPower != null)
-    stats.push({ label: "Avg Power", value: `${Math.round(activity.avgPower)} W` });
-  if (activity.maxPower != null)
-    stats.push({ label: "Max Power", value: `${Math.round(activity.maxPower)} W` });
-  if (hasGps && activity.avgSpeed != null)
-    stats.push({
-      label: "Avg Speed",
-      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
-    });
-  if (activity.avgCadence != null)
-    stats.push({
-      label: "Avg Cadence",
-      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
-    });
-  if (activity.perceivedExertion != null)
-    stats.push({
-      label: "Session effort",
-      value: `${activity.perceivedExertion} / 10`,
-    });
+  stats.push(
+    formatActivityMetric(
+      "Distance",
+      activity.totalDistance,
+      activity.totalDistanceState,
+      (distanceMeters) =>
+        `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
+    ),
+    formatActivityMetric(
+      "Elevation Gain",
+      activity.elevationGain,
+      activity.elevationGainState,
+      (elevationMeters) =>
+        `${Math.round(units.convertElevation(elevationMeters))} ${units.elevationLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Heart Rate",
+      activity.avgHr,
+      activity.avgHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Max Heart Rate",
+      activity.maxHr,
+      activity.maxHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Avg Power",
+      activity.avgPower,
+      activity.avgPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Max Power",
+      activity.maxPower,
+      activity.maxPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Avg Speed",
+      activity.avgSpeed,
+      activity.avgSpeedState,
+      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Cadence",
+      activity.avgCadence,
+      activity.avgCadenceState,
+      (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
+    ),
+  );
 
   return (
     <div>
@@ -400,7 +452,10 @@ export function ActivityHeader({
         </span>
       </div>
       <p className="text-sm text-subtle">
-        {formatDateLong(activity.startedAt)} at {formatTimeOnly(activity.startedAt)}
+        {formatDateLong(activity.startedAt)} at{" "}
+        {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
+          ? "Local time unavailable"
+          : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
         <p className="text-xs text-subtle mb-4">
@@ -410,12 +465,33 @@ export function ActivityHeader({
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
-          {stats.map((s) => (
-            <div key={s.label} className="card px-4 py-3">
-              <div className="text-xs text-subtle mb-0.5">{s.label}</div>
-              <div className="text-lg font-medium tabular-nums">{s.value}</div>
-            </div>
-          ))}
+          {stats
+            .filter((stat) => !("status" in stat) || stat.status !== "missing")
+            .map((s) => {
+              const metric = "status" in s ? s : null;
+              const unavailableMetric = metric?.status !== "available" ? metric : null;
+              const displayedValue =
+                "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
+              return (
+                <section
+                  key={s.label}
+                  className="card px-4 py-3"
+                  data-state={metric?.status}
+                  aria-label={
+                    unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+                      : undefined
+                  }
+                >
+                  <div className="text-xs text-subtle mb-0.5">
+                    {unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                      : s.label}
+                  </div>
+                  <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
+                </section>
+              );
+            })}
         </div>
       )}
     </div>
@@ -423,43 +499,63 @@ export function ActivityHeader({
 }
 
 function SourceLinks({ activity }: { activity: ActivityDetail }) {
-  const linkMap = new Map(activity.sourceLinks.map((link) => [link.providerId, link]));
+  if (activity.sourceLinks.length > 0) {
+    return (
+      <>
+        {activity.sourceLinks.map((link, index) => (
+          <span key={`${link.providerId}:${link.externalId}:${link.memberActivityId ?? ""}`}>
+            {index > 0 && ", "}
+            <SourceLinkLabel link={link} />
+          </span>
+        ))}
+      </>
+    );
+  }
 
   return (
     <>
       {activity.sourceProviders.map((providerId, index) => {
-        const link = linkMap.get(providerId);
         return (
           <span key={providerId}>
             {index > 0 && ", "}
-            {link?.providerAbsentAt ? (
-              <span
-                className="text-amber-700 dark:text-amber-300 line-through decoration-amber-500/60"
-                title={
-                  link.providerAbsentAt
-                    ? `Removed ${formatDateTime(link.providerAbsentAt)}`
-                    : "Removed from provider sync"
-                }
-              >
-                {link.label} (removed)
-              </span>
-            ) : link?.url ? (
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-secondary underline"
-              >
-                {link.label}
-              </a>
-            ) : (
-              providerSourceLabel(providerId, activity.subsource)
-            )}
+            {providerSourceLabel(providerId, activity.subsource)}
           </span>
         );
       })}
     </>
   );
+}
+
+function SourceLinkLabel({ link }: { link: ActivityDetail["sourceLinks"][number] }) {
+  if (link.providerAbsentAt) {
+    return (
+      <span
+        className="text-amber-700 dark:text-amber-300 line-through decoration-amber-500/60"
+        title={
+          link.providerAbsentAt
+            ? `Removed ${formatDateTime(link.providerAbsentAt)}`
+            : "Removed from provider sync"
+        }
+      >
+        {link.label} (removed)
+      </span>
+    );
+  }
+
+  if (link.url) {
+    return (
+      <a
+        href={link.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-accent hover:text-accent-secondary underline"
+      >
+        {link.label}
+      </a>
+    );
+  }
+
+  return <>{link.label}</>;
 }
 
 function RouteMap({
@@ -701,7 +797,7 @@ function MetricsChart({
     grid: {
       top: 40,
       right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
-      bottom: 60,
+      bottom: 86,
       left: 60,
     },
     tooltip: dofekTooltip(),
@@ -713,12 +809,24 @@ function MetricsChart({
         xAxisIndex: 0,
         start: 0,
         end: 100,
-        height: 20,
-        bottom: 10,
+        height: 32,
+        bottom: 16,
+        showDataShadow: false,
+        showDetail: true,
+        labelFormatter: (_value: number, valueText: string) => formatTimeOnly(valueText),
+        handleSize: "100%",
+        moveHandleSize: 8,
+        brushSelect: false,
+        borderRadius: 4,
         borderColor: chartThemeColors.tooltipBorder,
         backgroundColor: chartThemeColors.tooltipBackground,
         fillerColor: `${statusColors.positive}26`,
-        handleStyle: { color: statusColors.positive },
+        handleStyle: {
+          color: statusColors.positive,
+          borderColor: chartThemeColors.tooltipBackground,
+          borderWidth: 2,
+        },
+        moveHandleStyle: { color: statusColors.positive },
         textStyle: { color: chartThemeColors.axisLabel },
       },
     ],
@@ -732,7 +840,15 @@ function MetricsChart({
     series,
   };
 
-  return <DofekChart option={option} height={350} onEvents={chartEvents} />;
+  return (
+    <figure className="m-0">
+      <DofekChart option={option} height={380} onEvents={chartEvents} />
+      <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
+        <span className="font-medium text-muted">Zoom timeline</span>
+        <span>Drag the handles to focus on part of the activity.</span>
+      </figcaption>
+    </figure>
+  );
 }
 
 function ElevationChart({
@@ -761,7 +877,7 @@ function ElevationChart({
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const firstParam = params[0];
         if (!firstParam) return "";
-        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${units.elevationLabel}`;
+        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${escapeTooltipHtml(units.elevationLabel)}`;
       },
     }),
     xAxis: dofekAxis.category({

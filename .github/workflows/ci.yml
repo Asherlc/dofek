@@ -20,24 +20,44 @@ concurrency:
 jobs:
   # ── CI ─────────────────────────────────────────────────────────────────
 
+  detect-changes:
+    name: Detect Changes
+    uses: ./.github/workflows/detect-changes.yml
+
   build-mobile:
     name: Build Mobile
+    needs: detect-changes
     uses: ./.github/workflows/build-mobile.yml
+    with:
+      changed: ${{ needs.detect-changes.outputs.mobile == 'true' }}
     secrets: inherit
 
   build-web:
     name: Build Web
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
     uses: ./.github/workflows/build-web.yml
     secrets: inherit
 
+  build-zepp:
+    name: Build Zepp
+    needs: detect-changes
+    if: needs.detect-changes.outputs.zepp == 'true'
+    uses: ./.github/workflows/build-zepp.yml
+
   test:
     name: Test
+    needs: detect-changes
     uses: ./.github/workflows/test.yml
+    with:
+      run_e2e_web: ${{ needs.detect-changes.outputs.e2e_web == 'true' }}
+      run_image_scan: ${{ needs.detect-changes.outputs.docker_server == 'true' }}
+      run_mobile_checks: ${{ needs.detect-changes.outputs.mobile == 'true' }}
     secrets: inherit
 
   ci-gate:
     name: CI Gate
-    needs: [build-mobile, build-web, test]
+    needs: [build-mobile, build-web, build-zepp, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +66,7 @@ jobs:
           for result in \
             "${{ needs.build-mobile.result }}" \
             "${{ needs.build-web.result }}" \
+            "${{ needs.build-zepp.result }}" \
             "${{ needs.test.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "CI gate failed"
@@ -65,17 +86,19 @@ jobs:
             echo "- [Deploy OTA](${REPO_URL}/actions/workflows/deploy-ota.yml)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Docker image (main only, after CI passes) ─────────────────────────
+  # ── Docker image (main push always publishes deploy image; others gated on changes) ──────
 
   build-docker:
     name: Build Docker
-    needs: [ci-gate]
+    needs: detect-changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || needs.detect-changes.outputs.docker_server == 'true'
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
   build-docker-ml:
     name: Build Docker ML
-    needs: [ci-gate]
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docker_ml == 'true'
     uses: ./.github/workflows/build-docker-ml.yml
     secrets: inherit
 
@@ -83,20 +106,22 @@ jobs:
 
   build-storybook:
     name: Build Storybook
-    if: github.event_name == 'pull_request'
+    needs: detect-changes
+    if: github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     uses: ./.github/workflows/build-storybook.yml
     secrets: inherit
 
   build-storybook-mobile:
     name: Build Mobile Storybook
-    if: github.event_name == 'pull_request'
+    needs: detect-changes
+    if: github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     uses: ./.github/workflows/build-storybook-mobile.yml
     secrets: inherit
 
   storybook-preview:
     name: Storybook Preview
-    if: github.event_name == 'pull_request'
-    needs: [build-storybook, build-storybook-mobile]
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
+    needs: [detect-changes, build-storybook, build-storybook-mobile]
     uses: ./.github/workflows/storybook-preview.yml
     secrets:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

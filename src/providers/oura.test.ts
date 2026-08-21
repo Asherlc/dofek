@@ -3,16 +3,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
-  activity as activityTable,
   dailyMetrics as dailyMetricsTable,
-  healthEvent as healthEventTable,
   sleepSession as sleepSessionTable,
-} from "../db/schema.ts";
-import { logger } from "../logger.ts";
+} from "../db/schema/activity.ts";
+import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
 import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
-import { fetchAllPagesOptional } from "./oura/pagination.ts";
-import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
+import {
+  mapOuraActivityType,
+  ouraProviderOffsetColumns,
+  parseOuraDailyMetrics,
+  parseOuraSleep,
+} from "./oura/parsing.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import {
   type OuraDailyActivity,
@@ -48,6 +50,13 @@ import {
 } from "./oura/schemas.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
+
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -55,15 +64,23 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: [],
 }));
 
-const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+const { syncLogEntries } = vi.hoisted<{
+  syncLogEntries: Record<string, unknown>[];
+}>(() => ({
+  syncLogEntries: [],
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -87,8 +104,11 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockReset();
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockResolvedValue(undefined);
+  syncLogEntries.length = 0;
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
+  providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-id" });
 });
 
 // ============================================================
@@ -99,12 +119,36 @@ vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
     async (
       _db: unknown,
-      _providerId: string,
-      _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: unknown }>,
+      providerId: string,
+      dataType: string,
+      fn: () => Promise<{
+        recordCount: number;
+        result: unknown;
+        degradations?: Record<string, unknown>[];
+      }>,
     ) => {
-      const { result } = await fn();
-      return result;
+      try {
+        const { recordCount, result, degradations = [] } = await fn();
+        const firstDegradation = degradations[0];
+        syncLogEntries.push({
+          providerId,
+          dataType,
+          status: firstDegradation ? "degraded" : "success",
+          recordCount,
+          errorMessage: firstDegradation?.message,
+          degradationKind: firstDegradation?.kind,
+        });
+        return result;
+      } catch (err) {
+        syncLogEntries.push({
+          providerId,
+          dataType,
+          status: "error",
+          recordCount: undefined,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
     },
   ),
 }));
@@ -164,10 +208,10 @@ function createMockDb() {
     select: vi.fn(),
     insert: insertFn,
     delete: vi.fn(),
-    execute: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   };
 
-  return Object.assign(db, chain);
+  return makeTransactionalTestDatabase(Object.assign(db, chain));
 }
 
 function expectConflictTarget(
@@ -245,6 +289,17 @@ function findValuesCall(
     if (parsed.success && predicate(parsed.data)) return parsed.data;
   }
   throw new Error("No matching values call found");
+}
+
+function findUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    const parsed = recordSchema.safeParse(values);
+    if (parsed.success && predicate(parsed.data)) return parsed.data;
+  }
+  throw new Error("No matching upsert values call found");
 }
 
 /**
@@ -677,6 +732,19 @@ const sampleResilience: OuraDailyResilience = {
 // ============================================================
 
 describe("Oura Provider", () => {
+  describe("ouraProviderOffsetColumns", () => {
+    it("maps independent timestamp offsets to provider-local persistence columns", () => {
+      expect(
+        ouraProviderOffsetColumns("2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00"),
+      ).toEqual({
+        timezone: null,
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_offset",
+      });
+    });
+  });
+
   describe("parseOuraSleep", () => {
     it("maps sleep fields correctly", () => {
       const result = parseOuraSleep(sampleSleep);
@@ -689,6 +757,7 @@ describe("Oura Provider", () => {
       expect(result.remMinutes).toBe(95);
       expect(result.lightMinutes).toBe(240);
       expect(result.awakeMinutes).toBe(55);
+      expect(result.stagingAvailable).toBe(true);
       expect(result.efficiencyPct).toBe(87);
       expect(result.isNap).toBe(false);
     });
@@ -730,6 +799,7 @@ describe("Oura Provider", () => {
       expect(result.lightMinutes).toBeUndefined();
       expect(result.awakeMinutes).toBeUndefined();
       expect(result.durationMinutes).toBeUndefined();
+      expect(result.stagingAvailable).toBe(false);
     });
 
     it("rounds seconds to nearest minute", () => {
@@ -786,7 +856,6 @@ describe("Oura Provider", () => {
 
       expect(result.date).toBe("2026-03-01");
       expect(result.steps).toBe(9500);
-      expect(result.activeEnergyKcal).toBe(450);
       expect(result.hrv).toBe(48);
       expect(result.restingHr).toBe(45);
       expect(result.exerciseMinutes).toBe(75);
@@ -875,7 +944,6 @@ describe("Oura Provider", () => {
       );
 
       expect(result.steps).toBeUndefined();
-      expect(result.activeEnergyKcal).toBeUndefined();
       expect(result.exerciseMinutes).toBeUndefined();
       expect(result.hrv).toBe(48);
       expect(result.restingHr).toBe(45);
@@ -1130,6 +1198,7 @@ describe("OuraProvider.getUserIdentity()", () => {
     const identity = await setup.getUserIdentity("test-token");
     expect(identity.providerAccountId).toBe("abc-123");
     expect(identity.email).toBe("ring@test.com");
+    expect(identity.emailVerified).toBe(false);
     expect(identity.name).toBeNull();
   });
 
@@ -1360,6 +1429,45 @@ describe("OuraClient", () => {
     await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
       "Invalid API key provided",
     );
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(
+      "Invalid API key provided…",
+    );
+  });
+
+  it("throws OuraApiError with structured status on API failures", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      name: "OuraApiError",
+      status: 401,
+    });
+  });
+
+  it("includes error bodies up to 200 characters without truncation", async () => {
+    const body = "a".repeat(200);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body, { status: 500 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(body);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(`${body}…`);
+  });
+
+  it("truncates error bodies longer than 200 characters", async () => {
+    const body = "x".repeat(250);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body, { status: 500 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
+      `${"x".repeat(200)}…`,
+    );
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(body);
   });
 
   it("fetches daily SpO2 data successfully", async () => {
@@ -1444,6 +1552,30 @@ describe("OuraClient", () => {
 
     const client = new OuraClient("token", mockFetch);
     await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow("API error 500");
+  });
+
+  it("truncates long error response bodies at 200 characters", async () => {
+    const longBody = "x".repeat(201);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(longBody, { status: 500 });
+    };
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      message: expect.stringContaining("…"),
+    });
+  });
+
+  it("does not truncate error responses exactly at 200 characters", async () => {
+    const body200 = "x".repeat(200);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body200, { status: 500 });
+    };
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      message: expect.not.stringContaining("…"),
+    });
   });
 
   it("fetches workouts with correct URL", async () => {
@@ -1596,21 +1728,21 @@ describe("OuraClient", () => {
 
 describe("mapOuraActivityType", () => {
   it("maps known activity types", () => {
-    expect(mapOuraActivityType("walking")).toBe("walking");
-    expect(mapOuraActivityType("running")).toBe("running");
-    expect(mapOuraActivityType("cycling")).toBe("cycling");
-    expect(mapOuraActivityType("swimming")).toBe("swimming");
-    expect(mapOuraActivityType("strength_training")).toBe("strength");
+    expect(mapOuraActivityType("walking").canonicalType).toBe("walking");
+    expect(mapOuraActivityType("running").canonicalType).toBe("running");
+    expect(mapOuraActivityType("cycling").canonicalType).toBe("cycling");
+    expect(mapOuraActivityType("swimming").canonicalType).toBe("swimming");
+    expect(mapOuraActivityType("strength_training").canonicalType).toBe("strength");
   });
 
   it("handles case-insensitive input", () => {
-    expect(mapOuraActivityType("Walking")).toBe("walking");
-    expect(mapOuraActivityType("RUNNING")).toBe("running");
+    expect(mapOuraActivityType("Walking").canonicalType).toBe("walking");
+    expect(mapOuraActivityType("RUNNING").canonicalType).toBe("running");
   });
 
   it("returns other for unknown types", () => {
-    expect(mapOuraActivityType("kickboxing")).toBe("other");
-    expect(mapOuraActivityType("CrossFit")).toBe("other");
+    expect(mapOuraActivityType("kickboxing").canonicalType).toBe("other");
+    expect(mapOuraActivityType("CrossFit").canonicalType).toBe("other");
   });
 });
 
@@ -1657,6 +1789,7 @@ describe("OuraProvider.sync()", () => {
     expect(sleepValues.remMinutes).toBe(95);
     expect(sleepValues.lightMinutes).toBe(240);
     expect(sleepValues.awakeMinutes).toBe(55);
+    expect(sleepValues.stagingAvailable).toBe(true);
     expect(sleepValues.efficiencyPct).toBe(87);
     expect(sleepValues.sleepType).toBe("long_sleep");
     expect(sleepValues.startedAt).toEqual(new Date("2026-02-28T22:30:00+00:00"));
@@ -1666,6 +1799,86 @@ describe("OuraProvider.sync()", () => {
       sleepSessionTable.providerId,
       sleepSessionTable.externalId,
     ]);
+  });
+
+  it("follows Oura pagination tokens when syncing sleep sessions", async () => {
+    setupEnv();
+    const firstSleep = fakeSleepDoc({ id: "sleep-page-1" });
+    const secondSleep = fakeSleepDoc({ id: "sleep-page-2", day: "2026-03-02" });
+    const requestedUrls: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      requestedUrls.push(urlStr);
+      if (urlStr.includes("/v2/usercollection/sleep_time")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep") && urlStr.includes("next_token=page-2")) {
+        return Response.json({ data: [secondSleep], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [firstSleep], next_token: "page-2" });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const sleepExternalIds = filterValuesCalls(
+      db,
+      (values) => values.providerId === "oura" && typeof values.externalId === "string",
+    ).map((values) => values.externalId);
+    expect(sleepExternalIds).toContain("sleep-page-1");
+    expect(sleepExternalIds).toContain("sleep-page-2");
+    expect(
+      requestedUrls.some(
+        (requestedUrl) =>
+          requestedUrl.includes("/v2/usercollection/sleep") &&
+          requestedUrl.includes("next_token=page-2"),
+      ),
+    ).toBe(true);
+  });
+
+  it("persists Oura sleep pages fetched before a later page failure", async () => {
+    setupEnv();
+    const firstSleep = fakeSleepDoc({ id: "sleep-before-error" });
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/sleep_time")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep") && urlStr.includes("next_token=page-2")) {
+        return new Response("temporary failure", { status: 502 });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [firstSleep], next_token: "page-2" });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors.some((error) => error.message.includes("sleep"))).toBe(true);
+    const persistedSleep = findValuesCall(
+      db,
+      (values) => values.externalId === "sleep-before-error" && values.providerId === "oura",
+    );
+    expect(persistedSleep.durationMinutes).toBe(480);
+    expect(syncLogEntries).toContainEqual(
+      expect.objectContaining({
+        providerId: "oura",
+        dataType: "sleep",
+        status: "error",
+      }),
+    );
   });
 
   it("syncs workouts to activity table", async () => {
@@ -1682,22 +1895,20 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify workout values
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "workout-001" && v.activityType === "running",
+    const val = findUpsertValues(
+      (v) =>
+        v.externalId === "workout-001" &&
+        typeof v.activityType === "object" &&
+        v.activityType !== null &&
+        Reflect.get(v.activityType, "canonicalType") === "running",
     );
     expect(val.providerId).toBe("oura");
+    expect(val.activityType).toMatchObject({ providerType: "running" });
     expect(val.name).toBe("Morning Run");
     expect(val.startedAt).toEqual(new Date("2026-03-01T08:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T08:30:00+00:00"));
     expect(val.raw).toEqual(workout);
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "oura",
@@ -1709,7 +1920,7 @@ describe("OuraProvider.sync()", () => {
 
   it("reports activity absence reconciliation errors without rejecting sync", async () => {
     setupEnv();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockRejectedValueOnce(
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
       new Error("write failed"),
     );
     const workout = fakeWorkout();
@@ -1742,20 +1953,19 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "session-001" && v.activityType === "meditation",
+    const val = findUpsertValues(
+      (v) =>
+        v.externalId === "session-001" &&
+        typeof v.activityType === "object" &&
+        v.activityType !== null &&
+        Reflect.get(v.activityType, "canonicalType") === "meditation",
     );
     expect(val.providerId).toBe("oura");
+    expect(val.activityType).toMatchObject({ providerType: "meditation" });
     expect(val.name).toBe("meditation");
     expect(val.startedAt).toEqual(new Date("2026-03-01T07:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T07:15:00+00:00"));
     expect(val.raw).toEqual(session);
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
   });
 
   it("maps breathing sessions to breathwork activity type", async () => {
@@ -1770,8 +1980,8 @@ describe("OuraProvider.sync()", () => {
     );
 
     expect(result.errors).toHaveLength(0);
-    const value = findValuesCall(db, (record) => record.externalId === "session-breathing");
-    expect(value.activityType).toBe("breathwork");
+    const value = findUpsertValues((record) => record.externalId === "session-breathing");
+    expect(value.activityType).toMatchObject({ canonicalType: "breathwork" });
   });
 
   it("syncs heart rate data", async () => {
@@ -2070,7 +2280,6 @@ describe("OuraProvider.sync()", () => {
       (v) => v.date === "2026-03-01" && v.providerId === "oura" && v.steps === 9500,
     );
     expect(val.steps).toBe(9500);
-    expect(val.activeEnergyKcal).toBe(450);
     // HRV comes from sleep data (actual measurements), not readiness contributor scores.
     // Resting HR and VO2 Max are derived by server-side views, not stored from providers.
     expect(val.hrv).toBe(48);
@@ -2167,7 +2376,7 @@ describe("OuraProvider.sync()", () => {
 
     // Verify tags endpoint was actually called (phases after workout still ran)
     expect(callCount).toBe(1);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("handles empty API responses gracefully", async () => {
@@ -2227,7 +2436,7 @@ describe("OuraProvider.sync()", () => {
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
 
-    // No errors — 401s on optional scopes are silently skipped
+    // No errors — optional scope failures become degradations, not sync errors
     expect(result.errors).toHaveLength(0);
     // Readiness + activity should still have synced
     const val = findValuesCall(
@@ -2238,63 +2447,85 @@ describe("OuraProvider.sync()", () => {
     // Stress/resilience fields are absent when scope is missing
     expect(val.stressHighMinutes).toBeUndefined();
     expect(val.resilienceLevel).toBeUndefined();
+    const optionalEndpointRows = filterValuesCalls(
+      db,
+      (values) =>
+        values.type === "oura_daily_stress" ||
+        values.type === "oura_daily_resilience" ||
+        values.type === "oura_vo2_max" ||
+        values.type === "oura_cardiovascular_age",
+    );
+    expect(optionalEndpointRows).toHaveLength(0);
+    expect(syncLogEntries).toContainEqual(
+      expect.objectContaining({
+        providerId: "oura",
+        dataType: "daily_metrics",
+        status: "degraded",
+        errorMessage: "Missing OAuth scope for vO2_max",
+        degradationKind: "optional_endpoint_unavailable",
+      }),
+    );
   });
-});
 
-// ============================================================
-// fetchAllPagesOptional tests
-// ============================================================
-
-describe("fetchAllPagesOptional", () => {
-  it("returns data normally when the fetch succeeds", async () => {
-    const fetchPage = async () => ({ data: [{ id: "x" }], next_token: null });
-    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
-    expect(result).toEqual([{ id: "x" }]);
-  });
-
-  it("returns empty array on API error 401", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 401: Unauthorized");
+  it("reports non-Oura 401-shaped errors from scope-gated endpoints", async () => {
+    setupEnv();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/daily_readiness")) {
+        return Response.json({ data: [readiness], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_activity")) {
+        return Response.json({ data: [dailyActivity], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_stress")) {
+        throw Object.assign(new Error("network auth failure"), { status: 401 });
+      }
+      return Response.json({ data: [], next_token: null });
     };
-    const result = await fetchAllPagesOptional(fetchPage, "daily_stress");
-    expect(result).toEqual([]);
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors.some((error) => error.message.includes("daily_metrics"))).toBe(true);
   });
 
-  it("logs a warning on 401 with the endpoint name", async () => {
-    const warnSpy = vi.mocked(logger.warn);
-    warnSpy.mockClear();
-
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 401: Unauthorized");
+  it("reports non-401 Oura API errors from scope-gated endpoints", async () => {
+    setupEnv();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/daily_readiness")) {
+        return Response.json({ data: [readiness], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_activity")) {
+        return Response.json({ data: [dailyActivity], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_stress")) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      return Response.json({ data: [], next_token: null });
     };
-    await fetchAllPagesOptional(fetchPage, "daily_resilience");
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
 
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("daily_resilience"));
-  });
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
-  it("re-throws non-401 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 500: Internal Server Error");
-    };
-    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 500");
-  });
-
-  it("re-throws 403 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 403: Forbidden");
-    };
-    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 403");
-  });
-
-  it("paginates through multiple pages before returning", async () => {
-    let page = 0;
-    const fetchPage = async (_nextToken?: string) => {
-      page++;
-      if (page === 1) return { data: [{ id: "a" }], next_token: "tok2" };
-      return { data: [{ id: "b" }], next_token: null };
-    };
-    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
-    expect(result).toEqual([{ id: "a" }, { id: "b" }]);
+    expect(result.errors.some((error) => error.message.includes("daily_stress"))).toBe(true);
+    expect(syncLogEntries).toContainEqual(
+      expect.objectContaining({
+        providerId: "oura",
+        dataType: "daily_stress",
+        status: "error",
+      }),
+    );
   });
 });
 
@@ -2314,7 +2545,7 @@ describe("OuraProvider.registerWebhook()", () => {
     process.env.OURA_CLIENT_SECRET = "test-client-secret";
 
     const requestBodies: Array<Record<string, unknown>> = [];
-    const requestHeaders: Array<Record<string, string>> = [];
+    const requestHeaders: Array<Record<string, unknown>> = [];
 
     const mockFetch: typeof globalThis.fetch = async (
       _input: RequestInfo | URL,
@@ -2322,10 +2553,10 @@ describe("OuraProvider.registerWebhook()", () => {
     ): Promise<Response> => {
       const headers = init?.headers;
       if (headers && typeof headers === "object" && !Array.isArray(headers)) {
-        requestHeaders.push(z.record(z.string()).parse(headers));
+        requestHeaders.push(z.record(z.string(), z.unknown()).parse(headers));
       }
       if (init?.body) {
-        const bodyParsed = z.record(z.unknown()).parse(JSON.parse(String(init.body)));
+        const bodyParsed = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init.body)));
         requestBodies.push(bodyParsed);
       }
       return Response.json({ id: "sub-first-type" });
@@ -2440,7 +2671,7 @@ describe("OuraProvider.unregisterWebhook()", () => {
 
     let capturedUrl = "";
     let capturedMethod = "";
-    let capturedHeaders: Record<string, string> = {};
+    let capturedHeaders: Record<string, unknown> = {};
 
     const mockFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
@@ -2449,7 +2680,7 @@ describe("OuraProvider.unregisterWebhook()", () => {
       capturedUrl = input.toString();
       capturedMethod = init?.method ?? "GET";
       if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
-        capturedHeaders = z.record(z.string()).parse(init.headers);
+        capturedHeaders = z.record(z.string(), z.unknown()).parse(init.headers);
       }
       return new Response(null, { status: 204 });
     };
@@ -2584,27 +2815,9 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.recordsSynced).toBe(1);
     expectReasonableDuration(result.duration);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "workout-001" && v.providerId === "oura",
-    );
-    expect(val.activityType).toBe("running");
+    const val = findUpsertValues((v) => v.externalId === "workout-001" && v.providerId === "oura");
+    expect(val.activityType).toMatchObject({ canonicalType: "running" });
     expect(val.name).toBe("Morning Run");
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "activityType",
-    );
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "raw",
-    );
   });
 
   it("syncs sessions when data_type is session", async () => {
@@ -2627,22 +2840,9 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.recordsSynced).toBe(1);
     expectReasonableDuration(result.duration);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "session-001" && v.providerId === "oura",
-    );
-    expect(val.activityType).toBe("meditation");
+    const val = findUpsertValues((v) => v.externalId === "session-001" && v.providerId === "oura");
+    expect(val.activityType).toMatchObject({ canonicalType: "meditation" });
     expect(val.name).toBe("meditation");
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "activityType",
-    );
   });
 
   it("syncs sleep when data_type is daily_sleep", async () => {
@@ -2796,7 +2996,7 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     const healthEventBatches = db.values.mock.calls
       .map((callArgs) => recordArraySchema.safeParse(callArgs[0]))
       .filter(
-        (parsed): parsed is z.SafeParseSuccess<Array<Record<string, unknown>>> => parsed.success,
+        (parsed): parsed is z.ZodSafeParseSuccess<Array<Record<string, unknown>>> => parsed.success,
       )
       .map((parsed) => parsed.data)
       .filter(

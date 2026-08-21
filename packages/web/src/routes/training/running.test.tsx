@@ -3,16 +3,32 @@
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { TrainingChartAvailability } from "dofek-server/types";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
+const recentActivitiesSection = vi.hoisted(() => vi.fn());
+const state = vi.hoisted<{
+  queryCalls: Array<{ name: string; input: unknown }>;
+  selectedDays: number | null;
+}>(() => ({
+  queryCalls: [],
+  selectedDays: 90,
+}));
 
 vi.mock("echarts-for-react", () => ({
   default: (props: { option: Record<string, unknown> }) => {
     capturedOptions.push(props.option);
     return <div data-testid="echarts" />;
+  },
+}));
+
+vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
+  RecentActivitiesSection: (props: { activityTypes?: readonly string[] }) => {
+    recentActivitiesSection(props);
+    return <div />;
   },
 }));
 
@@ -33,6 +49,13 @@ const mockPaceCurveData = {
       activityDate: "2026-03-15",
     },
   ],
+  availability: {
+    status: "available" as const,
+    sourceLabel: "Running pace duration-curve read model",
+    observedCount: 2,
+    minimumCount: 1,
+    message: "Running pace duration data is available.",
+  },
 };
 
 const mockPaceTrendData = [
@@ -59,8 +82,61 @@ const mockDynamicsData = [
   },
 ];
 
+const mockPaceTrendResponse = {
+  data: mockPaceTrendData,
+  availability: {
+    status: "available" as const,
+    sourceLabel: "Running activity sensor summaries",
+    observedCount: 1,
+    minimumCount: 1,
+    message: "Running pace data is available.",
+  },
+};
+
+const mockDynamicsResponse = {
+  data: mockDynamicsData,
+  availability: {
+    status: "available" as const,
+    sourceLabel: "Running activity sensor summaries",
+    observedCount: 1,
+    minimumCount: 1,
+    message: "Running dynamics data is available.",
+  },
+};
+
+interface QueryResult<Data> {
+  data: Data;
+  isLoading: boolean;
+  error: Error | null;
+}
+
+type PaceCurveResponse = {
+  points: typeof mockPaceCurveData.points;
+  availability: TrainingChartAvailability;
+};
+type ChartResponse<Data> = {
+  data: Data;
+  availability: TrainingChartAvailability;
+};
+
+let paceCurveQuery: QueryResult<PaceCurveResponse> = {
+  data: mockPaceCurveData,
+  isLoading: false,
+  error: null,
+};
+let paceTrendQuery: QueryResult<ChartResponse<typeof mockPaceTrendData>> = {
+  data: mockPaceTrendResponse,
+  isLoading: false,
+  error: null,
+};
+let dynamicsQuery: QueryResult<ChartResponse<typeof mockDynamicsData>> = {
+  data: mockDynamicsResponse,
+  isLoading: false,
+  error: null,
+};
+
 vi.mock("../../lib/trainingDaysContext.ts", () => ({
-  useTrainingDays: () => ({ days: 90 }),
+  useTrainingDays: () => ({ days: state.selectedDays }),
 }));
 
 vi.mock("../../lib/trpc.ts", () => ({
@@ -71,11 +147,26 @@ vi.mock("../../lib/trpc.ts", () => ({
       },
     }),
     durationCurves: {
-      paceCurve: { useQuery: () => ({ data: mockPaceCurveData, isLoading: false }) },
+      paceCurve: {
+        useQuery: (input: unknown) => {
+          state.queryCalls.push({ name: "paceCurve", input });
+          return paceCurveQuery;
+        },
+      },
     },
     running: {
-      paceTrend: { useQuery: () => ({ data: mockPaceTrendData, isLoading: false }) },
-      dynamics: { useQuery: () => ({ data: mockDynamicsData, isLoading: false }) },
+      paceTrendV2: {
+        useQuery: (input: unknown) => {
+          state.queryCalls.push({ name: "paceTrendV2", input });
+          return paceTrendQuery;
+        },
+      },
+      dynamicsV2: {
+        useQuery: (input: unknown) => {
+          state.queryCalls.push({ name: "dynamicsV2", input });
+          return dynamicsQuery;
+        },
+      },
     },
     activity: {
       list: { useQuery: () => ({ data: { items: [], totalCount: 0 }, isLoading: false }) },
@@ -107,10 +198,51 @@ async function importRunningTab() {
 describe("RunningTab", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    recentActivitiesSection.mockReset();
+    state.queryCalls.length = 0;
+    state.selectedDays = 90;
+    paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: null };
+    paceTrendQuery = { data: mockPaceTrendResponse, isLoading: false, error: null };
+    dynamicsQuery = { data: mockDynamicsResponse, isLoading: false, error: null };
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  describe("selected range queries", () => {
+    it("uses the selected finite days for every chart query", async () => {
+      state.selectedDays = 30;
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(state.queryCalls).toEqual([
+        { name: "paceCurve", input: { days: 30 } },
+        { name: "paceTrendV2", input: { days: 30 } },
+        { name: "dynamicsV2", input: { days: 30 } },
+      ]);
+    });
+
+    it("passes null for All to every selected-range chart query", async () => {
+      state.selectedDays = null;
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(state.queryCalls).toEqual([
+        { name: "paceCurve", input: { days: null } },
+        { name: "paceTrendV2", input: { days: null } },
+        { name: "dynamicsV2", input: { days: null } },
+      ]);
+    });
+  });
+
+  it("requests recent activities by canonical running type", async () => {
+    const RunningTab = await importRunningTab();
+    renderWithUnits(<RunningTab />);
+
+    expect(recentActivitiesSection).toHaveBeenCalledWith({ activityTypes: ["running"] });
   });
 
   describe("RunningDynamicsTable unit display", () => {
@@ -174,6 +306,78 @@ describe("RunningTab", () => {
       });
       expect(tooltipResult).toContain("6:");
       expect(tooltipResult).not.toContain("10:");
+    });
+  });
+
+  describe("background refetch errors", () => {
+    it("keeps cached running data visible when queries have data and an error", async () => {
+      const backgroundError = new Error("Transient refetch failure");
+      paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: backgroundError };
+      paceTrendQuery = { data: mockPaceTrendResponse, isLoading: false, error: backgroundError };
+      dynamicsQuery = { data: mockDynamicsResponse, isLoading: false, error: backgroundError };
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(screen.queryByText("Transient refetch failure")).toBeNull();
+      expect(screen.getAllByText("Morning Run").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByTestId("echarts").length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe("insufficient chart data", () => {
+    it("renders compact empty states for every running chart and table", async () => {
+      paceCurveQuery = {
+        data: {
+          points: [],
+          availability: {
+            status: "insufficient_data",
+            sourceLabel: "Running pace duration-curve read model",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "Pace curve data is unavailable.",
+          },
+        },
+        isLoading: false,
+        error: null,
+      };
+      paceTrendQuery = {
+        data: {
+          data: [],
+          availability: {
+            status: "insufficient_data",
+            sourceLabel: "Running activity sensor summaries",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "Pace trend data is unavailable.",
+          },
+        },
+        isLoading: false,
+        error: null,
+      };
+      dynamicsQuery = {
+        data: {
+          data: [],
+          availability: {
+            status: "insufficient_data",
+            sourceLabel: "Running activity sensor summaries",
+            observedCount: 0,
+            minimumCount: 1,
+            message: "Running dynamics data is unavailable.",
+          },
+        },
+        isLoading: false,
+        error: null,
+      };
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(screen.getByText("Pace curve data is unavailable.")).toBeTruthy();
+      expect(screen.getByText("Pace trend data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText("Running dynamics data is unavailable.")).toHaveLength(2);
+      expect(screen.getAllByTestId("training-chart-empty-state")).toHaveLength(4);
+      expect(screen.queryAllByTestId("echarts")).toHaveLength(0);
     });
   });
 

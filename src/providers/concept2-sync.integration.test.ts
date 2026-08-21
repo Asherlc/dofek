@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -54,7 +55,13 @@ function fakeResult(overrides: Partial<FakeConcept2Result> = {}): FakeConcept2Re
 
 function concept2Handlers(
   results: FakeConcept2Result[],
-  opts?: { totalPages?: number; apiError?: boolean },
+  opts?: {
+    totalPages?: number;
+    apiError?: boolean;
+    apiErrorPage?: number;
+    pageResults?: (page: number) => FakeConcept2Result[];
+    onResultRequest?: (page: number) => void;
+  },
 ) {
   const totalPages = opts?.totalPages ?? 1;
 
@@ -77,9 +84,14 @@ function concept2Handlers(
 
       const url = new URL(request.url);
       const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+      if (opts?.apiErrorPage === page) {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }
+      opts?.onResultRequest?.(page);
 
       // For pagination tests: return results only on the requested page
-      const pageResults = totalPages > 1 ? (page === 1 ? results : []) : results;
+      const pageResults =
+        opts?.pageResults?.(page) ?? (totalPages > 1 ? (page === 1 ? results : []) : results);
 
       return HttpResponse.json({
         data: pageResults,
@@ -152,11 +164,11 @@ describe("Concept2Provider.sync() (integration)", () => {
 
     const rower = rows.find((r) => r.externalId === "5001");
     if (!rower) throw new Error("expected result 5001");
-    expect(rower.activityType).toBe("rowing");
+    expect(rower.canonicalType).toBe("rowing");
 
     const skierg = rows.find((r) => r.externalId === "5002");
     if (!skierg) throw new Error("expected result 5002");
-    expect(skierg.activityType).toBe("skiing");
+    expect(skierg.canonicalType).toBe("skiing");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -216,6 +228,117 @@ describe("Concept2Provider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("reports degraded pagination and skips reconciliation when an empty page still has a next page", async () => {
+    await saveTokens(ctx.db, "concept2", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user:read results:read",
+    });
+    const userId = "00000000-0000-0000-0000-000000000001";
+    await ctx.db.insert(activity).values({
+      providerId: "concept2",
+      userId,
+      externalId: "concept2-degraded-missing",
+      canonicalType: "rowing",
+      providerType: "rower",
+      modality: null,
+      startedAt: new Date("2026-04-01T10:00:00Z"),
+      endedAt: new Date("2026-04-01T11:00:00Z"),
+    });
+
+    server.use(
+      ...concept2Handlers([], {
+        totalPages: 3,
+        pageResults: (page) =>
+          page === 1 ? [fakeResult({ id: 6101, date: "2026-04-01 10:00:00" })] : [],
+      }),
+    );
+
+    const provider = new Concept2Provider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        userId,
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.degradations?.[0]?.kind).toBe("pagination_empty_page_with_cursor");
+
+    const [missing] = await ctx.db
+      .select({ providerAbsentAt: activity.providerAbsentAt })
+      .from(activity)
+      .where(eq(activity.externalId, "concept2-degraded-missing"));
+    expect(missing?.providerAbsentAt).toBeNull();
+  });
+
+  it("persists already fetched results before a later page request fails", async () => {
+    await saveTokens(ctx.db, "concept2", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user:read results:read",
+    });
+
+    server.use(
+      ...concept2Handlers([], {
+        totalPages: 2,
+        apiErrorPage: 2,
+        pageResults: (page) =>
+          page === 1 ? [fakeResult({ id: 6151, date: "2026-04-01 10:00:00" })] : [],
+      }),
+    );
+
+    const provider = new Concept2Provider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("API error");
+    expect(result.recordsSynced).toBe(1);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "concept2"));
+    expect(rows.some((row) => row.externalId === "6151")).toBe(true);
+  });
+
+  it("reports max-page degradation while preserving page <= totalPages semantics", async () => {
+    await saveTokens(ctx.db, "concept2", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user:read results:read",
+    });
+
+    const requestedPages: number[] = [];
+    server.use(
+      ...concept2Handlers([], {
+        totalPages: 101,
+        pageResults: (page) => [fakeResult({ id: 6200 + page, date: "2026-04-01 10:00:00" })],
+        onResultRequest: (page) => requestedPages.push(page),
+      }),
+    );
+
+    const provider = new Concept2Provider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(100);
+    expect(result.degradations?.[0]?.kind).toBe("pagination_max_pages_exceeded");
+    expect(requestedPages).toHaveLength(100);
+    expect(requestedPages[0]).toBe(1);
+    expect(requestedPages.at(-1)).toBe(100);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

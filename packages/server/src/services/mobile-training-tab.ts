@@ -1,32 +1,41 @@
-import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { StrainScore } from "@dofek/scoring/scoring";
-import { computeStrainTarget } from "@dofek/scoring/strain-target";
-import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import { computeCurrentStrain } from "../lib/current-strain.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
-import { dateStringSchema } from "../lib/typed-sql.ts";
-import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { CyclingAdvancedRepository } from "../repositories/cycling-advanced-repository.ts";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import {
-  type ActivityStatsRow,
-  TrainingRepository,
-  type WeeklyVolumeRow,
-} from "../repositories/training-repository.ts";
-import type { VerticalAscentRow } from "../routers/cycling-advanced.ts";
-import type { StrainTargetResult, WorkloadRatioResult } from "../routers/recovery.ts";
+  type MobileTrainingTabResult,
+  mobileTrainingTabOutputSchema,
+} from "../contracts/mobile-dashboard-contracts.ts";
+import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import { ConcurrencyLimiter } from "../lib/concurrency-limiter.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
+import { StrengthRepository } from "../repositories/strength-repository.ts";
+import { TrainingRepository } from "../repositories/training-repository.ts";
+import {
+  buildStrainTargetResult,
+  clickHouseDateAccessWindowClause,
+  clickHouseDateAccessWindowParams,
+  strainTargetReadinessRowSchema,
+} from "./strain-target-result.ts";
+import { buildWorkloadRatioResult, type WorkloadRatioResult } from "./workload-ratio.ts";
 
-export interface MobileTrainingTabResult {
-  workloadRatio: WorkloadRatioResult;
-  strainTarget: StrainTargetResult;
-  activities: ActivityStatsRow[];
-  weeklyVolume: WeeklyVolumeRow[];
-  verticalAscent: VerticalAscentRow[];
-}
+export { type MobileTrainingTabResult, mobileTrainingTabOutputSchema };
+
+/**
+ * Caps how many of the training-tab repository reads run at once. It stays
+ * below the PostgreSQL pool `max` (see `src/db/index.ts`) so a single request
+ * can never demand every connection and time out its own queued reads, and so
+ * it leaves connections free for other requests on the same process pool.
+ */
+const TRAINING_TAB_READ_CONCURRENCY = 4;
 
 interface MobileTrainingTabContext {
   db: Pick<Database, "execute">;
@@ -44,46 +53,6 @@ const strainRowSchema = z.object({
   workload_ratio: z.coerce.number().nullable(),
 });
 
-const strainTargetReadinessRowSchema = z.object({
-  date: dateStringSchema,
-  hrv_score: z.coerce.number().nullable(),
-  resting_hr_score: z.coerce.number().nullable(),
-  sleep_score: z.coerce.number().nullable(),
-  respiratory_rate_score: z.coerce.number().nullable(),
-});
-
-function strainAccessClause(accessWindow?: AccessWindow): string {
-  return accessWindow?.kind === "limited"
-    ? `AND strain.date >= toDate({accessStartDate:String})
-       AND strain.date < toDate({accessEndDateExclusive:String})`
-    : "";
-}
-
-function strainAccessParams(accessWindow?: AccessWindow): Record<string, string> {
-  return accessWindow?.kind === "limited"
-    ? {
-        accessStartDate: accessWindow.startDate,
-        accessEndDateExclusive: accessWindow.endDateExclusive,
-      }
-    : {};
-}
-
-function recoveryAccessClause(accessWindow?: AccessWindow): string {
-  return accessWindow?.kind === "limited"
-    ? `AND recovery.date >= toDate({accessStartDate:String})
-       AND recovery.date < toDate({accessEndDateExclusive:String})`
-    : "";
-}
-
-function recoveryAccessParams(accessWindow?: AccessWindow): Record<string, string> {
-  return accessWindow?.kind === "limited"
-    ? {
-        accessStartDate: accessWindow.startDate,
-        accessEndDateExclusive: accessWindow.endDateExclusive,
-      }
-    : {};
-}
-
 function computeWorkloadRatio(rows: z.infer<typeof strainRowSchema>[]): WorkloadRatioResult {
   const timeSeries = rows.map((row) => {
     const dailyLoad = Math.round(Number(row.daily_load) * 10) / 10;
@@ -98,71 +67,7 @@ function computeWorkloadRatio(rows: z.infer<typeof strainRowSchema>[]): Workload
         row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
     };
   });
-  const displayed = selectRecentDailyLoad(timeSeries);
-  return {
-    timeSeries,
-    displayedStrain: displayed?.strain ?? 0,
-    displayedDate: displayed?.date ?? null,
-  };
-}
-
-function computeStrainTargetFromLoads(
-  loads: Array<{ date: string; daily_load: number }>,
-  readinessMetrics: z.infer<typeof strainTargetReadinessRowSchema> | undefined,
-  endDate: string,
-  weights: ReturnType<typeof getEffectiveParams>["readinessWeights"],
-): StrainTargetResult {
-  let readinessScore = 50;
-  if (readinessMetrics) {
-    const components: ReadinessComponents = {
-      hrvScore: Math.round(readinessMetrics.hrv_score ?? 62),
-      restingHrScore: Math.round(readinessMetrics.resting_hr_score ?? 62),
-      sleepScore: Math.round(readinessMetrics.sleep_score ?? 62),
-      respiratoryRateScore: Math.round(readinessMetrics.respiratory_rate_score ?? 62),
-    };
-    readinessScore = new ReadinessScore(components, weights).score;
-  }
-
-  const acuteWindow = 7;
-  const chronicWindow = 28;
-  let acuteLoadTotal = 0;
-  let chronicLoad = 0;
-
-  for (const row of loads) {
-    const daysAgo = Math.floor(
-      (new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${row.date}T00:00:00Z`).getTime()) /
-        86400000,
-    );
-    if (daysAgo < acuteWindow) acuteLoadTotal += row.daily_load;
-    if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
-  }
-  const acuteLoad = acuteLoadTotal / acuteWindow;
-  chronicLoad /= chronicWindow;
-
-  const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
-  const todayLoadRow = loads.find((row) => row.date === endDate);
-  const todayLoad = todayLoadRow?.daily_load ?? 0;
-  const currentStrain = computeCurrentStrain({ fallbackActivityLoad: todayLoad });
-  const roundedCurrentStrain = Math.round(currentStrain.currentStrain * 10) / 10;
-  const roundedAcuteLoad = Math.round(acuteLoad * 10) / 10;
-  const roundedChronicLoad = Math.round(chronicLoad * 10) / 10;
-  const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
-
-  return {
-    targetStrain: target.targetStrain,
-    currentStrain: roundedCurrentStrain,
-    currentStrainSource: currentStrain.currentStrainSource,
-    currentPhysiologyLoad: currentStrain.currentPhysiologyLoad,
-    progressPercent:
-      target.targetStrain > 0 ? Math.round((roundedCurrentStrain / target.targetStrain) * 100) : 0,
-    zone: target.zone,
-    explanation: target.explanation,
-    dailyLoad: Math.round(todayLoad * 10) / 10,
-    acuteLoad: roundedAcuteLoad,
-    chronicLoad: roundedChronicLoad,
-    workloadRatio: workloadRatio != null ? Math.round(workloadRatio * 100) / 100 : null,
-    readinessScore,
-  };
+  return buildWorkloadRatioResult(timeSeries);
 }
 
 export async function loadMobileTrainingTab(
@@ -177,21 +82,33 @@ export async function loadMobileTrainingTab(
     ctx.sensorStore,
     ctx.accessWindow,
   );
-  const cyclingRepo = new CyclingAdvancedRepository(
+  const cyclingRepo = new CyclingAnalyticsRepository(
     ctx.db,
     ctx.userId,
     ctx.timezone,
     ctx.sensorStore,
+    ctx.accessWindow,
   );
+  const hangboardingRepo = new HangboardingRepository(
+    ctx.db,
+    ctx.userId,
+    ctx.timezone,
+    ctx.accessWindow,
+  );
+  const strengthRepo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
 
   const windowStart = dateWindowStartString(endDate, days);
-  const accessParams = strainAccessParams(ctx.accessWindow);
+  const accessParams = clickHouseDateAccessWindowParams(ctx.accessWindow);
 
-  const [storedParams, strainRows, readinessRows] = await Promise.all([
-    loadPersonalizedParams(ctx.db, ctx.userId),
-    ctx.sensorStore.query(
-      strainRowSchema,
-      `SELECT
+  const limiter = new ConcurrencyLimiter(TRAINING_TAB_READ_CONCURRENCY);
+
+  const [storedParams, climbingGradePreference, strainRows, readinessRows] = await Promise.all([
+    limiter.run(() => loadPersonalizedParams(ctx.db, ctx.userId)),
+    limiter.run(() => loadClimbingGradePreference(ctx.db, ctx.userId)),
+    limiter.run(() =>
+      ctx.sensorStore.query(
+        strainRowSchema,
+        `SELECT
         toString(toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))) AS date,
         strain.daily_load AS daily_load,
         strain.acute_load_7d AS acute_load,
@@ -199,21 +116,25 @@ export async function loadMobileTrainingTab(
         strain.workload_ratio AS workload_ratio
       FROM analytics.daily_strain AS strain FINAL
       WHERE strain.user_id = {userId:UUID}
+        AND strain.is_deleted = 0
         AND strain.date > toDate({outputWindowStart:String})
         AND strain.date <= toDate({endDate:String})
-        ${strainAccessClause(ctx.accessWindow)}
+        ${clickHouseDateAccessWindowClause(ctx.accessWindow, "strain")}
       ORDER BY date ASC`,
-      {
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        endDate,
-        outputWindowStart: windowStart,
-        ...accessParams,
-      },
+        {
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          endDate,
+          outputWindowStart: windowStart,
+          ...accessParams,
+        },
+        { priority: "dashboard" },
+      ),
     ),
-    ctx.sensorStore.query(
-      strainTargetReadinessRowSchema,
-      `SELECT
+    limiter.run(() =>
+      ctx.sensorStore.query(
+        strainTargetReadinessRowSchema,
+        `SELECT
         toString(recovery.date) AS date,
         recovery.hrv_score AS hrv_score,
         recovery.resting_hr_score AS resting_hr_score,
@@ -221,32 +142,64 @@ export async function loadMobileTrainingTab(
         recovery.respiratory_rate_score AS respiratory_rate_score
       FROM analytics.daily_recovery AS recovery FINAL
       WHERE recovery.user_id = {userId:UUID}
+        AND recovery.is_deleted = 0
         AND recovery.date > toDate({windowStart:String})
         AND recovery.date <= toDate({endDate:String})
-        ${recoveryAccessClause(ctx.accessWindow)}
+        ${clickHouseDateAccessWindowClause(ctx.accessWindow, "recovery")}
       ORDER BY recovery.date DESC
       LIMIT 1`,
-      {
-        userId: ctx.userId,
-        windowStart,
-        endDate,
-        ...recoveryAccessParams(ctx.accessWindow),
-      },
+        {
+          userId: ctx.userId,
+          windowStart,
+          endDate,
+          ...accessParams,
+        },
+        { priority: "dashboard" },
+      ),
     ),
   ]);
 
-  const effective = getEffectiveParams(storedParams);
-  const workloadRatio = computeWorkloadRatio(strainRows);
-  const strainTarget = computeStrainTargetFromLoads(
-    strainRows.map((row) => ({ date: row.date, daily_load: row.daily_load })),
-    readinessRows[0],
-    endDate,
-    effective.readinessWeights,
+  const climbingRepo = new ClimbingRepository(
+    ctx.db,
+    ctx.userId,
+    ctx.timezone,
+    ctx.accessWindow,
+    climbingGradePreference,
   );
 
-  const [{ activities, weeklyVolume }, verticalAscentModels] = await Promise.all([
-    trainingRepo.getActivityStatsAndWeeklyVolume(days),
-    cyclingRepo.getVerticalAscentRates(days),
+  const effective = getEffectiveParams(storedParams);
+  const workloadRatio = computeWorkloadRatio(strainRows);
+  const strainTarget =
+    buildStrainTargetResult({
+      endDate,
+      readinessMetrics: readinessRows[0],
+      loads: strainRows.map((row) => ({ date: row.date, daily_load: row.daily_load })),
+      readinessWeights: effective.readinessWeights,
+    }) ?? undefined;
+
+  const [
+    { activities, weeklyVolume },
+    cyclingAnalytics,
+    gradeProgressionModels,
+    volumeByGradeModels,
+    sessionSummaryModels,
+    hangboardingSummary,
+    progressiveOverloadModels,
+  ] = await Promise.all([
+    limiter.run(() => trainingRepo.getActivityStatsAndWeeklyVolume(days)),
+    limiter.run(() =>
+      cyclingRepo.getActivities(ChartRange.fromDays(days), {
+        activityLimit: 1,
+        activityOffset: 0,
+        variabilityLimit: 1,
+        variabilityOffset: 0,
+      }),
+    ),
+    limiter.run(() => climbingRepo.getGradeProgression(days)),
+    limiter.run(() => climbingRepo.getVolumeByGrade(days)),
+    limiter.run(() => climbingRepo.getSessionSummaries(days)),
+    limiter.run(() => hangboardingRepo.getSummary(days)),
+    limiter.run(() => strengthRepo.getProgressiveOverload(days)),
   ]);
 
   return {
@@ -254,71 +207,36 @@ export async function loadMobileTrainingTab(
     strainTarget,
     activities,
     weeklyVolume,
-    verticalAscent: verticalAscentModels.map((model) => model.toDetail()),
+    progressiveOverload: progressiveOverloadModels.map((model) => model.toDetail()),
+    verticalAscent: cyclingAnalytics.verticalAscent,
+    chartAvailability: {
+      strainTrend: makeTrainingChartAvailability({
+        sourceLabel: "Daily strain model",
+        observedCount: strainRows.length,
+        minimumCount: 2,
+        messages: {
+          available: "Daily strain trend is available from the daily strain model.",
+          insufficientData:
+            "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart.",
+        },
+      }),
+      verticalAscent: makeTrainingChartAvailability({
+        sourceLabel: "Cycling activity altitude sensor summaries",
+        observedCount: cyclingAnalytics.verticalAscent.length,
+        minimumCount: 1,
+        messages: {
+          available:
+            "Vertical ascent data is available from cycling activity altitude sensor summaries.",
+          insufficientData:
+            "No vertical ascent data is available from cycling activity altitude sensor summaries. Record at least 1 cycling activity with altitude data to show this chart.",
+        },
+      }),
+    },
+    climbing: {
+      gradeProgression: gradeProgressionModels.map((model) => model.toDetail()),
+      volumeByGrade: volumeByGradeModels.map((model) => model.toDetail()),
+      sessionSummary: sessionSummaryModels.map((model) => model.toDetail()),
+      hangboarding: hangboardingSummary,
+    },
   };
 }
-
-export const mobileTrainingTabOutputSchema = z.object({
-  workloadRatio: z.object({
-    timeSeries: z.array(
-      z.object({
-        date: z.string(),
-        dailyLoad: z.number(),
-        strain: z.number(),
-        acuteLoad: z.number(),
-        chronicLoad: z.number(),
-        workloadRatio: z.number().nullable(),
-      }),
-    ),
-    displayedStrain: z.number(),
-    displayedDate: z.string().nullable(),
-  }),
-  strainTarget: z.object({
-    targetStrain: z.number(),
-    currentStrain: z.number(),
-    currentStrainSource: z.enum(["activity", "none"]).optional(),
-    currentPhysiologyLoad: z.number().nullable().optional(),
-    progressPercent: z.number(),
-    zone: z.enum(["Push", "Maintain", "Recovery"]),
-    explanation: z.string(),
-    dailyLoad: z.number().optional(),
-    acuteLoad: z.number().optional(),
-    chronicLoad: z.number().optional(),
-    workloadRatio: z.number().nullable().optional(),
-    readinessScore: z.number().optional(),
-  }),
-  activities: z.array(
-    z.object({
-      id: z.string(),
-      activity_type: z.string(),
-      name: z.string().nullable(),
-      started_at: z.string(),
-      ended_at: z.string().nullable(),
-      avg_hr: z.number().nullable(),
-      max_hr: z.number().nullable(),
-      avg_power: z.number().nullable(),
-      max_power: z.number().nullable(),
-      avg_cadence: z.number().nullable(),
-      hr_samples: z.number().nullable(),
-      power_samples: z.number().nullable(),
-      distance_meters: z.number().nullable(),
-    }),
-  ),
-  weeklyVolume: z.array(
-    z.object({
-      week: z.string(),
-      activity_type: z.string(),
-      count: z.number(),
-      hours: z.number(),
-    }),
-  ),
-  verticalAscent: z.array(
-    z.object({
-      date: z.string(),
-      activityName: z.string(),
-      verticalAscentRate: z.number(),
-      elevationGainMeters: z.number(),
-      climbingMinutes: z.number(),
-    }),
-  ),
-}) satisfies z.ZodType<MobileTrainingTabResult>;

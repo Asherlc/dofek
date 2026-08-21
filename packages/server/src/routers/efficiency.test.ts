@@ -116,7 +116,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 190,
           date: "2024-01-15",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
           avg_power_z2: 180,
           avg_hr_z2: 140,
@@ -157,6 +157,60 @@ describe("efficiencyRouter", () => {
       expect(result.activities).toEqual([]);
     });
 
+    it("defaults omitted days to the existing finite window", async () => {
+      const sensorStore = makeSensorStore([
+        {
+          max_hr: 190,
+          date: "2024-01-15",
+          canonical_type: "cycling",
+          name: "Ride",
+          avg_power_z2: 180,
+          avg_hr_z2: 140,
+          efficiency_factor: 1.286,
+          z2_samples: 600,
+        },
+      ]);
+      const caller = createCaller({
+        db: makeAerobicEfficiencyDb([]),
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.aerobicEfficiency({});
+
+      const queryCall = vi.mocked(sensorStore.query).mock.calls[0];
+      expect(queryCall?.[1]).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
+      expect(queryCall?.[2]).toHaveProperty("days", 180);
+    });
+
+    it("accepts null days as an unbounded range", async () => {
+      const sensorStore = makeSensorStore([
+        {
+          max_hr: 190,
+          date: "2024-01-15",
+          canonical_type: "cycling",
+          name: "Ride",
+          avg_power_z2: 180,
+          avg_hr_z2: 140,
+          efficiency_factor: 1.286,
+          z2_samples: 600,
+        },
+      ]);
+      const caller = createCaller({
+        db: makeAerobicEfficiencyDb([]),
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.aerobicEfficiency({ days: null });
+
+      const queryCall = vi.mocked(sensorStore.query).mock.calls[0];
+      expect(queryCall?.[1]).not.toContain("started_at > now() - INTERVAL");
+      expect(queryCall?.[2]).not.toHaveProperty("days");
+    });
+
     it("preserves the YYYY-MM-DD date string emitted by ClickHouse", async () => {
       // CH SQL uses toString(toDate(toTimeZone(...))), so the JSONEachRow
       // payload includes date as a "YYYY-MM-DD" string. Verify the schema
@@ -165,7 +219,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 190,
           date: "2024-01-15",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Ride",
           avg_power_z2: 180,
           avg_hr_z2: 140,
@@ -189,7 +243,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 185,
           date: "2024-01-10",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Run A",
           avg_power_z2: 250,
           avg_hr_z2: 145,
@@ -199,7 +253,7 @@ describe("efficiencyRouter", () => {
         {
           max_hr: 185,
           date: "2024-01-12",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Ride B",
           avg_power_z2: 190,
           avg_hr_z2: 138,
@@ -227,7 +281,7 @@ describe("efficiencyRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Long Run",
           first_half_ratio: 1.5,
           second_half_ratio: 1.3,
@@ -270,7 +324,7 @@ describe("efficiencyRouter", () => {
       const rows = [
         {
           date: "2024-01-15",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Long Run",
           first_half_ratio: 1.5,
           second_half_ratio: 1.3,
@@ -312,13 +366,21 @@ describe("efficiencyRouter", () => {
       expect(result.maxHr).toBe(190);
       expect(result.weeks).toHaveLength(1);
 
-      // Treff PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total time
+      // Treff polarization index uses each zone's fraction of total time.
       const total = 5000 + 500 + 100;
-      const f1 = 5000 / total;
-      const f2 = 500 / total;
-      const f3 = 100 / total;
-      const expected = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
+      const easyZoneFraction = 5000 / total;
+      const thresholdZoneFraction = 500 / total;
+      const highZoneFraction = 100 / total;
+      const expected =
+        Math.round(
+          Math.log10((easyZoneFraction / thresholdZoneFraction) * highZoneFraction * 100) * 1000,
+        ) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
+      expect(result.method.formula).toBe(
+        "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
+      );
+      expect(result.method.interpretation).not.toContain("diagnosis");
+      expect(result.method.source.url).toBe("https://doi.org/10.3389/fphys.2019.00707");
     });
 
     it("returns null polarization index when z2 is 0", async () => {
@@ -428,12 +490,15 @@ describe("efficiencyRouter", () => {
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
-      // Treff PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total time
+      // Treff polarization index uses each zone's fraction of total time.
       const total = 3600 + 1800 + 600;
-      const f1 = 3600 / total;
-      const f2 = 1800 / total;
-      const f3 = 600 / total;
-      const expected = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
+      const easyZoneFraction = 3600 / total;
+      const thresholdZoneFraction = 1800 / total;
+      const highZoneFraction = 600 / total;
+      const expected =
+        Math.round(
+          Math.log10((easyZoneFraction / thresholdZoneFraction) * highZoneFraction * 100) * 1000,
+        ) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
     });
   });

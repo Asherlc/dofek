@@ -68,6 +68,13 @@ const riskyStatementRules: MigrationPolicyRule[] = [
   },
 ];
 
+const drizzleConcurrentIndexRule: MigrationPolicyRule = {
+  ruleName: "drizzle-concurrent-index",
+  pattern: /\bCONCURRENTLY\b/i,
+  message:
+    "Drizzle-managed Postgres migrations run in a transaction and must not use concurrent index DDL.",
+};
+
 function stripSqlComments(content: string): string {
   let output = "";
   let inBlockComment = false;
@@ -372,6 +379,76 @@ function isNaiveClickHouseMaterializedView(statement: string): boolean {
   return !toTargetPattern.test(header);
 }
 
+function isClickHouseFilePath(filePath: string): boolean {
+  return filePath.startsWith("analytics/") || filePath.startsWith("src/db/clickhouse-sql/");
+}
+
+function isClickHouseOnlyRule(ruleName: string): boolean {
+  return (
+    ruleName.startsWith("clickhouse-") ||
+    ruleName === "system-refresh-view" ||
+    ruleName === "system-wait-view" ||
+    ruleName === "refresh-every" ||
+    ruleName === "optimize-final"
+  );
+}
+
+function normalizeSqlRelationName(value: string): string {
+  return value.replace(/\s+/g, "").toLowerCase();
+}
+
+function readMatchingRelation(
+  statement: string,
+  statementType: "create-table" | "drop-table" | "insert-into",
+): string | null {
+  const content = stripSqlStrings(statement);
+  const match =
+    statementType === "create-table"
+      ? content.match(
+          /\bCREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z_][A-Za-z0-9_$]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_$]*)?)/i,
+        )
+      : statementType === "drop-table"
+        ? content.match(
+            /\bDROP\s+TABLE(?:\s+IF\s+EXISTS)?\s+([A-Za-z_][A-Za-z0-9_$]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_$]*)?)/i,
+          )
+        : content.match(
+            /\bINSERT\s+INTO\s+([A-Za-z_][A-Za-z0-9_$]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_$]*)?)/i,
+          );
+  return match?.[1] ? normalizeSqlRelationName(match[1]) : null;
+}
+
+function readSourceRelations(statement: string): string[] {
+  const content = stripSqlStrings(statement);
+  const relations = new Set<string>();
+  const pattern =
+    /\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_$]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_$]*)?)/gi;
+  for (const match of content.matchAll(pattern)) {
+    if (match[1]) relations.add(normalizeSqlRelationName(match[1]));
+  }
+  return [...relations];
+}
+
+function hasCommaJoin(statement: string): boolean {
+  const fromClause = stripSqlStrings(statement)
+    .split(/\bFROM\b/i, 2)[1]
+    ?.split(/\b(?:WHERE|GROUP\s+BY|ORDER\s+BY|RETURNING)\b|;/i, 1)[0];
+  return fromClause?.includes(",") === true;
+}
+
+function isAtomicNormalizationCopy(
+  statement: SqlStatement,
+  createdRelations: Set<string>,
+  droppedRelations: Set<string>,
+): boolean {
+  const target = readMatchingRelation(statement.text, "insert-into");
+  if (!target || !createdRelations.has(target)) return false;
+  if (hasCommaJoin(statement.text)) return false;
+
+  const sources = readSourceRelations(statement.text);
+  if (sources.length === 0) return false;
+  return sources.every((source) => droppedRelations.has(source));
+}
+
 export function lintMigrationPolicyFile(
   filePath: string,
   content: string,
@@ -379,6 +456,16 @@ export function lintMigrationPolicyFile(
   const uncommentedContent = stripSqlComments(content);
   const statements = splitSqlStatements(uncommentedContent);
   const violations: MigrationPolicyViolation[] = [];
+  const createdRelations = new Set(
+    statements
+      .map((statement) => readMatchingRelation(statement.text, "create-table"))
+      .filter((relation): relation is string => relation != null),
+  );
+  const droppedRelations = new Set(
+    statements
+      .map((statement) => readMatchingRelation(statement.text, "drop-table"))
+      .filter((relation): relation is string => relation != null),
+  );
 
   if (
     filePath.startsWith("analytics/models/") &&
@@ -395,11 +482,29 @@ export function lintMigrationPolicyFile(
   }
 
   for (const statement of statements) {
+    if (
+      filePath.startsWith("drizzle/") &&
+      drizzleConcurrentIndexRule.pattern.test(stripSqlStrings(statement.text))
+    ) {
+      violations.push(buildViolation(filePath, statement, drizzleConcurrentIndexRule));
+    }
+
     for (const rule of riskyStatementRules) {
+      if (isClickHouseOnlyRule(rule.ruleName) && !isClickHouseFilePath(filePath)) {
+        continue;
+      }
+
       if (rule.ruleName === "clickhouse-naive-materialized-view") {
         if (isNaiveClickHouseMaterializedView(statement.text)) {
           violations.push(buildViolation(filePath, statement, rule));
         }
+        continue;
+      }
+
+      if (
+        rule.ruleName === "insert-select" &&
+        isAtomicNormalizationCopy(statement, createdRelations, droppedRelations)
+      ) {
         continue;
       }
 

@@ -60,6 +60,12 @@ export class ProviderAuthenticationFailedError extends ProviderAuthError {
   }
 }
 
+export class ProviderTokenRejectedError extends ProviderAuthError {
+  constructor(providerName: string, instructions: string, options?: ErrorOptions) {
+    super("authentication_failed", `${providerName} rejected this token. ${instructions}`, options);
+  }
+}
+
 export class ProviderInvalidCredentialsError extends ProviderAuthError {
   constructor(providerName: string, options?: ErrorOptions) {
     super(

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { WebhookEvent } from "../types.ts";
 
 const POLAR_WEBHOOK_URL = "https://www.polaraccesslink.com/v3/webhooks";
@@ -22,7 +22,7 @@ export class PolarWebhookService {
   readonly #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "polar" });
+    this.#fetchFn = createProviderRateLimitFetch("polar", fetchFn);
   }
 
   async registerWebhook(

@@ -5,7 +5,7 @@ import type { StorybookConfig } from "@storybook/react-native-web-vite";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
 const config: StorybookConfig = {
-  stories: ["../components/**/*.stories.@(ts|tsx)", "../app/**/*.stories.@(ts|tsx)"],
+  stories: ["../components/**/*.stories.@(ts|tsx)", "../app-stories/**/*.stories.@(ts|tsx)"],
   framework: "@storybook/react-native-web-vite",
   docs: {
     autodocs: "tag",
@@ -13,15 +13,47 @@ const config: StorybookConfig = {
   viteFinal: (viteConfig) => {
     viteConfig.resolve ??= {};
     viteConfig.plugins ??= [];
-    const existingAliases =
-      typeof viteConfig.resolve.alias === "object" && !Array.isArray(viteConfig.resolve.alias)
-        ? viteConfig.resolve.alias
-        : {};
-    viteConfig.resolve.alias = {
+    const existingAliases = Array.isArray(viteConfig.resolve.alias)
+      ? viteConfig.resolve.alias
+      : Object.entries(viteConfig.resolve.alias ?? {}).map(([find, replacement]) => ({
+          find,
+          replacement,
+        }));
+    viteConfig.resolve.alias = [
       ...existingAliases,
-      "expo-router": resolve(currentDir, "./mocks/expo-router.ts"),
-      [resolve(currentDir, "../lib/auth-context")]: resolve(currentDir, "./mocks/auth-context"),
-    };
+      {
+        find: "@react-native-community/datetimepicker",
+        replacement: resolve(currentDir, "./mocks/react-native-community-datetimepicker.tsx"),
+      },
+      {
+        find: "expo-modules-core",
+        replacement: resolve(currentDir, "./mocks/expo-modules-core.ts"),
+      },
+      {
+        find: /^expo-router$/,
+        replacement: resolve(currentDir, "./mocks/expo-router.ts"),
+      },
+      {
+        find: "expo-updates",
+        replacement: resolve(currentDir, "./mocks/expo-updates.ts"),
+      },
+      {
+        find: "react-native-maps",
+        replacement: resolve(currentDir, "./mocks/react-native-maps.tsx"),
+      },
+      {
+        find: "react-native-reanimated",
+        replacement: resolve(currentDir, "./mocks/react-native-reanimated.tsx"),
+      },
+      {
+        find: resolve(currentDir, "../lib/auth-context"),
+        replacement: resolve(currentDir, "./mocks/auth-context"),
+      },
+      {
+        find: resolve(currentDir, "../lib/auth-context.tsx"),
+        replacement: resolve(currentDir, "./mocks/auth-context"),
+      },
+    ];
     viteConfig.plugins.push({
       name: "storybook-health-kit-module-mock",
       enforce: "pre",

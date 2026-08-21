@@ -1,10 +1,6 @@
-import {
-  formatDateLong,
-  formatDateYmd,
-  formatDurationMinutes,
-  formatSleepDebtInline,
-} from "@dofek/format/format";
-import { autoMealType } from "@dofek/nutrition/meal";
+import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -21,19 +17,17 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
+import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
-import { useAutoSync } from "../../lib/useAutoSync";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
-
-function todayString(): string {
-  return formatDateLong(new Date());
-}
 
 export default function TodayScreen() {
   const router = useRouter();
@@ -41,7 +35,17 @@ export default function TodayScreen() {
   const endDate = useTodayQueryDate();
 
   // Consolidated dashboard data fetch
-  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery({ endDate });
+  const dashboardQuery = trpc.mobileDashboard.dashboardV2.useQuery(
+    { endDate },
+    { placeholderData: (previousData) => previousData },
+  );
+  const todayPlanQuery = trpc.todayPlan.get.useQuery(
+    { endDate },
+    { placeholderData: (previousData) => previousData },
+  );
+  const processingStatusQuery = useProcessingStatus({
+    datasets: ["activity", "sleep", "recovery", "training", "body"],
+  });
   const dashboardData = dashboardQuery.data;
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
     { endDate },
@@ -61,26 +65,30 @@ export default function TodayScreen() {
   const strainResult = dashboardData?.strain;
   const dailyStrain = strainResult?.dailyStrain ?? 0;
 
-  // Auto-sync when data is stale
-  useAutoSync(dashboardData?.latestDate ?? undefined);
-
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
+  const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
   const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
-  const isLoading = dashboardQuery.isLoading;
-  const isError = dashboardQuery.isError;
+  const isLoading = shouldShowBlockingLoading({
+    data: dashboardData,
+    isFetching: dashboardQuery.isFetching,
+    isLoading: dashboardQuery.isLoading,
+  });
+  const isError = dashboardQuery.isError && dashboardData == null;
+  const hasBackgroundError = dashboardQuery.isError && dashboardData != null;
 
   const { refreshing, onRefresh } = useRefresh({
     refresh: async () => {
-      await Promise.all([dashboardQuery.refetch(), anomalyQuery.refetch()]);
+      await Promise.all([
+        dashboardQuery.refetch(),
+        todayPlanQuery.refetch(),
+        anomalyQuery.refetch(),
+        processingStatusQuery.refetch(),
+      ]);
     },
     invalidate: null,
   });
-
-  function handleLogFood() {
-    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}&mode=quickadd`);
-  }
 
   if (isError) {
     return (
@@ -110,6 +118,35 @@ export default function TodayScreen() {
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
+      {providerGuide.error ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not refresh provider setup"
+          message={getQueryErrorMessage(providerGuide.error)}
+          minHeight={72}
+        />
+      ) : null}
+
+      <ProcessingStatusWidget
+        data={processingStatusQuery.data}
+        error={processingStatusQuery.error}
+        loading={processingStatusQuery.isLoading}
+      />
+
+      <TodayPlanCard
+        plan={todayPlanQuery.data}
+        loading={todayPlanQuery.isLoading}
+        error={todayPlanQuery.error}
+      />
+
+      {hasBackgroundError ? (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(dashboardQuery.error, "Failed to refresh dashboard.")}
+          minHeight={72}
+        />
+      ) : null}
+
       {/* Anomaly Alert Banner */}
       {anomalies != null && anomalies.anomalies.length > 0 && (
         <View style={styles.anomalyBanner}>
@@ -121,53 +158,61 @@ export default function TodayScreen() {
         </View>
       )}
 
-      <Text style={styles.date}>{todayString()}</Text>
-
-      {/* Log food */}
-      <TouchableOpacity style={styles.quickAddButton} onPress={handleLogFood} activeOpacity={0.7}>
-        <Text style={styles.quickAddPlus}>+</Text>
-        <Text style={styles.quickAddLabel}>Log Food</Text>
-      </TouchableOpacity>
+      {dashboardData?.summaryDateContext ? (
+        <Text style={styles.date}>
+          {formatSummaryDateContext(dashboardData.summaryDateContext)}
+        </Text>
+      ) : null}
 
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>
-        <TouchableOpacity
-          style={styles.ringSection}
-          onPress={() => router.navigate("/(tabs)/recovery")}
-          activeOpacity={0.7}
-        >
+        <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Recovery"
             description="This ring visualizes your readiness score based on recovery-related signals."
             textStyle={styles.sectionLabel}
           />
-          {isLoading ? (
-            <SkeletonCircle size={180} />
-          ) : recoveryScore != null ? (
-            <RecoveryRing score={recoveryScore} size={180} />
-          ) : (
-            <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
-              <Text style={styles.emptyRingText}>--</Text>
-              <Text style={styles.emptyRingSubtext}>No data yet</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.ringSection}
-          onPress={() => router.navigate("/(tabs)/strain")}
-          activeOpacity={0.7}
-        >
+          <TouchableOpacity
+            style={styles.ringTouchTarget}
+            onPress={() => router.navigate("/(tabs)/recovery")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Recovery"
+            accessibilityState={{ busy: isLoading }}
+          >
+            {isLoading ? (
+              <SkeletonCircle size={180} />
+            ) : recoveryScore != null ? (
+              <RecoveryRing score={recoveryScore} size={180} />
+            ) : (
+              <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
+                <Text style={styles.emptyRingText}>--</Text>
+                <Text style={styles.emptyRingSubtext}>No data yet</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Strain"
             description="This gauge shows your most recent daily training strain relative to your recent baseline."
             textStyle={styles.sectionLabel}
           />
-          {isLoading ? (
-            <SkeletonCircle size={120} />
-          ) : (
-            <StrainGauge strain={dailyStrain} size={120} />
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.ringTouchTarget}
+            onPress={() => router.navigate("/(tabs)/strain")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Strain"
+            accessibilityState={{ busy: isLoading }}
+          >
+            {isLoading ? (
+              <SkeletonCircle size={120} />
+            ) : (
+              <StrainGauge strain={dailyStrain} size={120} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Recovery components breakdown */}
@@ -205,22 +250,56 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep summary */}
-      {!isLoading && (
+      {!isLoading && isSleepDataMissing && (
+        <Animated.View
+          entering={FadeInUp.delay(160)
+            .duration(duration.slow)
+            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+        >
+          <Card title="Sleep Data Needed">
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus?.label}</Text>
+            <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
+          </Card>
+        </Animated.View>
+      )}
+
+      {!isLoading && !isSleepDataMissing && (
         <Animated.View
           entering={FadeInUp.delay(160)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           {lastNight ? (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/sleep")}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push("/sleep")}
+              accessibilityRole="button"
+              accessibilityLabel="Open last night sleep details"
+            >
               <Card title="Last Night">
-                <SleepBar
-                  durationMinutes={lastNight.durationMinutes}
-                  deepPercentage={lastNight.deepPct}
-                  remPercentage={lastNight.remPct}
-                  lightPercentage={lastNight.lightPct}
-                  awakePercentage={lastNight.awakePct}
-                />
+                {dashboardData?.summaryDateContext ? (
+                  <Text style={styles.sleepDate}>
+                    Night of{" "}
+                    {formatSummaryDateContext({
+                      ...dashboardData.summaryDateContext,
+                      effectiveDate: lastNight.date,
+                    })}
+                  </Text>
+                ) : null}
+                {lastNight.stagingAvailable ? (
+                  <SleepBar
+                    durationMinutes={lastNight.durationMinutes}
+                    deepPercentage={lastNight.deepPct ?? 0}
+                    remPercentage={lastNight.remPct ?? 0}
+                    lightPercentage={lastNight.lightPct ?? 0}
+                    awakePercentage={lastNight.awakePct ?? 0}
+                  />
+                ) : (
+                  <Text style={styles.noDataText}>
+                    {formatDurationMinutes(lastNight.durationMinutes)} recorded. Sleep stages were
+                    not reported.
+                  </Text>
+                )}
                 {sleepDebt > 0 && (
                   <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
                 )}
@@ -234,47 +313,75 @@ export default function TodayScreen() {
         </Animated.View>
       )}
 
-      {/* Sleep Coach */}
-      {!isLoading && (sleepNeed || !lastNight) && (
+      {/* Sleep estimate */}
+      {!isLoading && !isSleepDataMissing && (sleepNeed || !lastNight) && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
-          <Card title="Sleep Coach">
+          <Card title="Sleep Estimate">
             {sleepNeed == null ? (
               <Text style={styles.noDataText}>No sleep data</Text>
-            ) : sleepNeed.canRecommend ? (
+            ) : sleepNeed.availability === "available" ? (
               <>
+                <Text style={styles.sleepNeedSubtitle}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.sleepNeedTotal}>
-                  {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                  {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
-                <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+                <Text style={styles.sleepNeedSubtitle}>
+                  {sleepNeed.estimateMetadata.summaryLabel}
+                </Text>
                 <View style={styles.sleepNeedBreakdown}>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.baseline}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
                       {formatDurationMinutes(sleepNeed.baselineMinutes)}
                     </Text>
                   </View>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.strainDebt}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
                       +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
                     </Text>
                   </View>
                   <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+                    <Text style={styles.sleepNeedLabel}>
+                      {sleepNeed.estimateMetadata.componentLabels.debtRecovery}
+                    </Text>
                     <Text style={styles.sleepNeedValue}>
-                      +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+                      +{formatDurationMinutes(sleepNeed.debtRecoveryMinutes)}
                     </Text>
                   </View>
                 </View>
+                <View style={styles.sleepNeedMetadata}>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.basisLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.coverageLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.methodLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.uncertaintyLabel}
+                  </Text>
+                  <Text style={styles.sleepNeedMetadataText}>
+                    {sleepNeed.estimateMetadata.limitationLabel}
+                  </Text>
+                </View>
               </>
             ) : (
-              <Text style={styles.sleepNeedMissing}>
-                Need last night's sleep for recommendation
-              </Text>
+              <>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus.label}</Text>
+                <Text style={styles.noDataText}>{sleepNeed.message}</Text>
+                <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
+              </>
             )}
           </Card>
         </Animated.View>
@@ -368,6 +475,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: "500",
   },
+  sleepDate: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
   quickAddButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -416,6 +527,9 @@ const styles = StyleSheet.create({
   ringSection: {
     alignItems: "center",
     gap: 8,
+  },
+  ringTouchTarget: {
+    alignItems: "center",
   },
   ringState: {
     width: 180,
@@ -496,5 +610,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
     fontVariant: ["tabular-nums"],
+  },
+  sleepNeedMetadata: {
+    gap: 4,
+    marginTop: 8,
+  },
+  sleepNeedMetadataText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
   },
 });

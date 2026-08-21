@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "./db/index.ts";
@@ -75,12 +75,21 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "breathwork-sessions.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.breathwork_session WHERE user_id = ${userId} ORDER BY started_at`,
+      ),
+  },
+  {
     name: "nutrition-daily.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.v_nutrition_daily WHERE user_id = ${userId} ORDER BY date`,
+        sql`SELECT * FROM fitness.v_nutrition_provider_daily WHERE user_id = ${userId} ORDER BY date`,
       ),
   },
   {
@@ -89,7 +98,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.v_nutrition_daily WHERE user_id = ${userId} ORDER BY date`,
+        sql`SELECT * FROM fitness.food_entry WHERE user_id = ${userId} ORDER BY date, created_at`,
       ),
   },
   {
@@ -165,6 +174,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "menstrual-periods.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.menstrual_period WHERE user_id = ${userId} ORDER BY start_date`,
+      ),
+  },
+  {
     name: "health-events.csv",
     query: (db, userId) =>
       executeWithSchema(
@@ -231,7 +249,7 @@ export async function generateExport(
   outputPath: string,
   onProgress: (info: ExportProgress) => void,
 ): Promise<ExportResult> {
-  const archive = archiver("zip", { zlib: { level: 6 } });
+  const archive = new ZipArchive({ zlib: { level: 6 } });
   const output = createWriteStream(outputPath);
 
   const finished = new Promise<void>((resolve, reject) => {

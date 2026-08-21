@@ -94,14 +94,16 @@ describe("McpTokensPanel", () => {
     expect(() => renderToString(<McpTokensPanel />)).not.toThrow();
   });
 
-  it("shows install instructions for Model Context Protocol client settings", () => {
+  it("shows OAuth and manual token connection instructions", () => {
     render(<McpTokensPanel />);
 
-    expect(
-      screen.getByText("Install in Model Context Protocol (MCP) client settings"),
-    ).toBeTruthy();
+    expect(screen.getByText("Connect with OAuth (Recommended)")).toBeTruthy();
+    expect(screen.getByText(/For clients that support OAuth auto-discovery/)).toBeTruthy();
     expect(screen.getByText("Remote URL")).toBeTruthy();
-    expect(screen.getByText("Client settings JavaScript Object Notation (JSON)")).toBeTruthy();
+
+    expect(screen.getByText("Connect with a manual token")).toBeTruthy();
+    expect(screen.getByText(/For clients that support custom HTTP headers/)).toBeTruthy();
+    expect(screen.getByText("Client settings JSON")).toBeTruthy();
     expect(screen.getByText(/"mcpServers"/)).toBeTruthy();
     expect(screen.getByText(/Bearer dofek_mcp_your_token/)).toBeTruthy();
   });
@@ -128,7 +130,7 @@ describe("McpTokensPanel", () => {
     await waitFor(() => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
-        scopes: ["health:read", "activity:read", "nutrition:write", "providers:read", "sync:write"],
+        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
         expiresAt: null,
       });
     });

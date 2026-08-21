@@ -1,12 +1,11 @@
-import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
+import { CUSTOM_AUTH_SYNC_PROVIDER_IDS } from "../lib/custom-auth-providers.ts";
+import { getProviderAuthTypeFromSetup, type Provider, type ProviderAuthSetup } from "./types.ts";
 
 /**
- * Sync providers that predated the per-user auth requirement and still use
- * deployment-wide user credentials (env vars) instead of a Connect flow.
- *
- * Do not add new provider IDs here — implement authSetup() instead.
+ * No provider may use deployment-wide user credentials. Keep this exported
+ * empty set while downstream policy checks migrate away from the legacy name.
  */
-export const LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS = new Set(["ultrahuman"]);
+export const LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS = new Set<string>();
 
 /**
  * Sync providers that read/write user-owned data without an external account.
@@ -27,13 +26,6 @@ export type PerUserAuthComplianceResult =
   | { ok: true }
   | { ok: false; providerId: string; reason: string };
 
-function getAuthTypeFromSetup(setup: ProviderAuthSetup): ProviderAuthType | "none" {
-  if (setup.automatedLogin) return "credential";
-  if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig && setup.exchangeCode) return "oauth";
-  return "none";
-}
-
 /**
  * Validates that a provider follows the per-user authentication policy.
  * Import-only, internal, and legacy providers are exempt.
@@ -44,6 +36,10 @@ export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthCompl
   }
 
   if (!requiresPerUserConnect(provider.id)) {
+    return { ok: true };
+  }
+
+  if (CUSTOM_AUTH_SYNC_PROVIDER_IDS.has(provider.id)) {
     return { ok: true };
   }
 
@@ -76,7 +72,7 @@ export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthCompl
     };
   }
 
-  const authType = getAuthTypeFromSetup(setup);
+  const authType = getProviderAuthTypeFromSetup(setup);
   if (authType === "none") {
     return {
       ok: false,

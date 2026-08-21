@@ -1,5 +1,7 @@
 import type { EventSubscription } from "expo-modules-core";
-import BackgroundRefreshModule from "./src/BackgroundRefreshModule";
+import BackgroundRefreshModule, {
+  type BackgroundRefreshEvent,
+} from "./src/BackgroundRefreshModule";
 
 /** Schedule the next background refresh wakeup.
  * Call this after completing background work so the system
@@ -14,10 +16,18 @@ export function isBackgroundRefreshAvailable(): boolean {
   return BackgroundRefreshModule.isAvailable();
 }
 
-/** Listen for background refresh wakeups.
- * The callback fires when iOS wakes the app via BGAppRefreshTask
- * (~every 15-30 minutes). Use it to restart Watch recording,
- * reconnect WHOOP BLE, and sync buffered data. */
-export function addBackgroundRefreshListener(callback: () => void): EventSubscription {
-  return BackgroundRefreshModule.addListener("onBackgroundRefresh", callback);
+/** Listen for background refresh wakeups and bridge the settled handler result
+ * back to the matching native BGAppRefreshTask. */
+export function addBackgroundRefreshListener(callback: () => Promise<void>): EventSubscription {
+  return BackgroundRefreshModule.addListener(
+    "onBackgroundRefresh",
+    ({ taskId }: BackgroundRefreshEvent) => {
+      void Promise.resolve()
+        .then(callback)
+        .then(
+          () => BackgroundRefreshModule.completeRefresh(taskId, true),
+          () => BackgroundRefreshModule.completeRefresh(taskId, false),
+        );
+    },
+  );
 }

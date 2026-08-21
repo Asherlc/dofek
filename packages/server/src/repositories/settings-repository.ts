@@ -1,3 +1,4 @@
+import type { NutritionCalorieTargetType } from "@dofek/nutrition/selected-date-summary";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -8,7 +9,6 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 // ---------------------------------------------------------------------------
 
 const settingRowSchema = z.object({ key: z.string(), value: z.unknown() });
-const providerAccountRowSchema = z.object({ provider_account_id: z.string() });
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -19,9 +19,9 @@ export interface Setting {
   value: unknown;
 }
 
-export interface SlackStatus {
-  configured: boolean;
-  connected: boolean;
+export interface CalorieGoalContext {
+  target: number;
+  type: NutritionCalorieTargetType;
 }
 
 // ---------------------------------------------------------------------------
@@ -32,10 +32,24 @@ const USER_SCOPED_DELETE_TABLES = [
   "fitness.user_settings",
   "fitness.life_events",
   "fitness.sport_settings",
+  "fitness.supplement_dose_event",
   "fitness.supplement",
+  "fitness.breathwork_session",
+  "fitness.menstrual_period",
 ];
 
 const GLOBAL_PROVIDER_TABLES = new Set(["fitness.exercise_alias"]);
+export const DEFAULT_CALORIE_GOAL = 2000;
+
+function parseCalorieGoal(value: unknown): CalorieGoalContext {
+  const numericValue =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  const roundedValue = Math.round(numericValue);
+  if (Number.isFinite(roundedValue) && roundedValue > 0) {
+    return { target: roundedValue, type: "configured" };
+  }
+  return { target: DEFAULT_CALORIE_GOAL, type: "default" };
+}
 
 function isUndefinedTableError(error: unknown): boolean {
   if (error instanceof Error) {
@@ -88,6 +102,17 @@ export class SettingsRepository {
     return rows.map((row) => ({ key: row.key, value: row.value }));
   }
 
+  /** Get the user's positive calorie goal, or the canonical default. */
+  async getCalorieGoal(): Promise<number> {
+    return (await this.getCalorieGoalContext()).target;
+  }
+
+  /** Get the user's calorie target and whether it uses the configured or default value. */
+  async getCalorieGoalContext(): Promise<CalorieGoalContext> {
+    const setting = await this.get("calorieGoal");
+    return parseCalorieGoal(setting?.value);
+  }
+
   /** Upsert a setting. Returns the saved setting or throws on failure. */
   async set(key: string, value: unknown): Promise<Setting> {
     const rows = await executeWithSchema(
@@ -103,49 +128,38 @@ export class SettingsRepository {
     return { key: result.key, value: result.value };
   }
 
-  /** Check Slack integration status (env vars + OAuth connection). */
-  async slackStatus(): Promise<SlackStatus> {
-    const rows = await executeWithSchema(
-      this.#db,
-      providerAccountRowSchema,
-      sql`SELECT provider_account_id FROM fitness.auth_account
-          WHERE user_id = ${this.#userId} AND auth_provider = 'slack'
-          LIMIT 1`,
-    );
-    const oauthMode = !!(process.env.SLACK_CLIENT_ID && process.env.SLACK_SIGNING_SECRET);
-    const socketMode = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN);
-    const configured = oauthMode || socketMode;
-    return {
-      configured,
-      connected: rows.length > 0,
-    };
-  }
-
   /**
    * Delete all user data across provider-scoped and user-scoped tables.
    * Runs inside a transaction.
    */
   async deleteAllUserData(providerChildTables: string[]): Promise<void> {
     await this.#db.transaction(async (transaction) => {
-      for (const table of providerChildTables) {
-        if (GLOBAL_PROVIDER_TABLES.has(table)) {
-          continue;
-        }
+      const deleteTable = async (table: string): Promise<void> => {
+        await transaction.execute(sql`SAVEPOINT dofek_delete_user_data`);
         try {
           await transaction.execute(
             sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
           );
         } catch (error: unknown) {
+          await transaction.execute(sql`ROLLBACK TO SAVEPOINT dofek_delete_user_data`);
+          await transaction.execute(sql`RELEASE SAVEPOINT dofek_delete_user_data`);
           if (!isUndefinedTableError(error)) {
             throw error;
           }
+          return;
         }
+        await transaction.execute(sql`RELEASE SAVEPOINT dofek_delete_user_data`);
+      };
+
+      for (const table of providerChildTables) {
+        if (GLOBAL_PROVIDER_TABLES.has(table)) {
+          continue;
+        }
+        await deleteTable(table);
       }
 
       for (const table of USER_SCOPED_DELETE_TABLES) {
-        await transaction.execute(
-          sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
-        );
+        await deleteTable(table);
       }
     });
   }

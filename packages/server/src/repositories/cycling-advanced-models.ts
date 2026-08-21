@@ -1,3 +1,5 @@
+import type { ActivityModality } from "@dofek/training/activity-types";
+
 export interface RampRateWeekRow {
   week: string;
   ctlStart: number;
@@ -50,6 +52,23 @@ export interface TrainingMonotonyWeekRow {
   monotony: number;
   strain: number;
   weeklyLoad: number;
+  dailyMeanLoad: number;
+  dailyLoadStandardDeviation: number;
+}
+
+function createTrainingMonotonyMethod() {
+  return {
+    formula:
+      "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
+    calendar: "Monday–Sunday calendar weeks include zero-load days.",
+    activityScope: "Cycling activities with computed endurance training load.",
+    interpretation:
+      "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+    source: {
+      title: "Foster (1998), Monitoring training in athletes",
+      url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+    },
+  };
 }
 
 /** Weekly training monotony and strain. */
@@ -66,6 +85,9 @@ export class TrainingMonotonyWeekModel {
       monotony: this.#row.monotony,
       strain: this.#row.strain,
       weeklyLoad: this.#row.weeklyLoad,
+      dailyMeanLoad: this.#row.dailyMeanLoad,
+      dailyLoadStandardDeviation: this.#row.dailyLoadStandardDeviation,
+      method: createTrainingMonotonyMethod(),
     };
   }
 }
@@ -132,11 +154,13 @@ export class ActivityVariabilityModel {
 export interface VerticalAscentRowData {
   date: string;
   activityName: string;
+  activityType: string;
+  modality: ActivityModality | null;
   elevationGainMeters: number;
-  climbingSeconds: number;
+  elapsedSeconds: number;
 }
 
-/** An activity with vertical ascent rate (VAM) for climbing segments. */
+/** An activity with whole-activity vertical ascent rate (VAM). */
 export class VerticalAscentModel {
   readonly #row: VerticalAscentRowData;
 
@@ -152,17 +176,25 @@ export class VerticalAscentModel {
     return this.#row.activityName;
   }
 
+  get activityType(): string {
+    return this.#row.activityType;
+  }
+
+  get modality(): ActivityModality | null {
+    return this.#row.modality;
+  }
+
   get elevationGainMeters(): number {
     return this.#row.elevationGainMeters;
   }
 
-  get climbingMinutes(): number {
-    return Math.round((this.#row.climbingSeconds / 60) * 10) / 10;
+  get elapsedMinutes(): number {
+    return Math.round((this.#row.elapsedSeconds / 60) * 10) / 10;
   }
 
   get verticalAscentRate(): number {
-    return this.#row.climbingSeconds > 0
-      ? Math.round((this.#row.elevationGainMeters / (this.#row.climbingSeconds / 3600)) * 10) / 10
+    return this.#row.elapsedSeconds > 0
+      ? Math.round((this.#row.elevationGainMeters / (this.#row.elapsedSeconds / 3600)) * 10) / 10
       : 0;
   }
 
@@ -170,9 +202,11 @@ export class VerticalAscentModel {
     return {
       date: this.date,
       activityName: this.activityName,
+      activityType: this.activityType,
+      modality: this.modality,
       verticalAscentRate: this.verticalAscentRate,
       elevationGainMeters: this.elevationGainMeters,
-      climbingMinutes: this.climbingMinutes,
+      elapsedMinutes: this.elapsedMinutes,
     };
   }
 }

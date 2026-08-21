@@ -1,9 +1,14 @@
-# Oracle Cloud Always Free — Terraform root
+# Oracle Cloud Ampere A1 — Terraform root
 
 Provisions a single-node Docker Swarm host for Dofek on Oracle Cloud
-Infrastructure (OCI) using the **Always Free** Ampere A1 shape
-(4 OCPU / 24 GB RAM, $0). This is the production host topology for the main
-`deploy/stack.yml` stack.
+Infrastructure (OCI) using the Ampere A1 flexible shape. The checked-in defaults
+request 4 OCPUs and 24 GB RAM; they are deployment configuration, not a promise
+that the tenancy will incur no charges. Check the tenancy's current limits,
+usage, and payment model before applying. Oracle publishes the current free
+allowances and payment-model caveats in
+[Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm).
+
+This is the production host topology for the main `deploy/stack.yml` stack.
 
 This root is **isolated** from the primary `deploy/` root: it uses a local
 backend and the `oracle/oci` provider. The primary `deploy/` root manages
@@ -13,8 +18,10 @@ Cloudflare resources.
 
 - VCN, public subnet, internet gateway, route table, security list (22/80/443)
 - A `VM.Standard.A1.Flex` instance at 4 OCPU / 24 GB on ARM64 Ubuntu 24.04
-- A 50 GB boot volume + a 150 GB data volume mounted at `/mnt/dofek-data`
-  (within the 200 GB Always Free block-storage pool)
+- A 50 GB boot volume plus a 150 GB data volume mounted at
+  `/mnt/dofek-data`. Oracle currently documents a 200 GB combined Always Free
+  boot/block-volume allowance in the tenancy's home region; verify eligibility
+  before relying on it.
 - cloud-init that installs Docker CE, opens the host firewall for 80/443
   (required on OCI — the image ships restrictive iptables), formats/mounts the
   data volume, and initializes a single-node swarm
@@ -24,8 +31,8 @@ Cloudflare resources.
 Terraform needs credentials before it can run, so these steps are unavoidable
 and done once:
 
-1. Sign up for Oracle Cloud and **upgrade to Pay As You Go** (stays $0 within
-   Always Free limits, but gives A1 capacity priority — see below).
+1. Create or select the OCI tenancy and confirm its home region, payment model,
+   service limits, quotas, and expected cost.
 2. Generate an API signing key and register it on your user:
    `oci setup keys`, then add the public key in Console → Profile → API Keys.
 3. Collect the OCIDs: `tenancy_ocid`, `user_ocid`, `compartment_ocid`, your
@@ -71,29 +78,35 @@ reusable-workflow `with:`). The primary `deploy/` root reads it as
 pass it as `server_host` with `ssh_user: ubuntu` and
 `stack_override: deploy/stack.oracle.yml`.
 
-`deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
-CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI, Authentik proxy) that a
-single-user free-tier deployment does not need. The 24 GB node has ample room
-for the core app + PeerDB CDC + ClickHouse + Postgres.
+`deploy/stack.oracle.yml` disables the operator/admin UIs that perform no
+background work (pgAdmin, CloudBeaver, Portainer, Netdata, and PeerDB UI).
+Databasus remains enabled because it owns the production PostgreSQL backup
+schedule. Follow the
+[database backup recovery runbook](../../docs/database-backup-recovery-runbook.md)
+for freshness and isolated restore verification.
 
 The historical Hetzner-to-Oracle migration notes live in
 [`docs/oracle-migration.md`](../../docs/oracle-migration.md).
 
 ## "Out of host capacity"
 
-Always Free A1 capacity is scarce. If `apply` fails with
-`Out of host capacity`:
+If `apply` fails with `Out of host capacity`, Oracle recommends changing the
+shape or availability/fault domain, omitting a fixed fault domain, or retrying
+after capacity changes. See
+[Resolving Out of Host Capacity](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/troubleshooting-out-of-host-capacity.htm).
 
-- Re-run `terraform apply` (capacity frees up intermittently).
-- Try another availability domain: set `availability_domain_index` to `1` or
-  `2` and re-apply.
-- Upgrade the account to **Pay As You Go** — it stays free within Always Free
-  limits but moves you into the priority capacity pool, which is the most
-  reliable fix. PAYG accounts are also exempt from idle-instance reclamation.
+- Check which availability-domain indexes exist in the selected region.
+- Set `availability_domain_index` to another valid index and review a new plan.
+- If the region exposes only one availability domain, wait and retry or choose
+  another supported shape deliberately.
+- Do not assume an account upgrade guarantees capacity or zero cost.
 
 ## Storage layout
 
-The 200 GB Always Free block pool is split as 50 GB boot + 150 GB data by
-default. To keep everything on the boot disk instead, set
+The defaults split 200 GB into a 50 GB boot volume and 150 GB data volume.
+Oracle documents that boot and block volumes share the current Always Free
+allowance, but eligibility depends on tenancy and home region; review the
+Terraform plan and OCI usage before applying. To keep everything on the boot
+disk instead, set
 `data_volume_size_gb = 0`; cloud-init then skips the volume mount and
 `/mnt/dofek-data` is just a directory on the boot volume.

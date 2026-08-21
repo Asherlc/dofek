@@ -1,9 +1,12 @@
+{% set default_microbatch_begin = run_started_at.strftime('%Y-%m-%d') %}
+{% set activity_location_sample_begin = var('activity_location_sample_begin', default_microbatch_begin) %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key='source_metric_stream_id',
     event_time='refreshed_at',
-    begin='2026-01-01',
+    begin=activity_location_sample_begin,
     batch_size='day',
     lookback=3,
     full_refresh=false,
@@ -29,21 +32,21 @@ WITH activity_members AS (
 
 location_versions AS (
     SELECT *
-    FROM {{ source('postgres_fitness', 'metric_stream_freshness') }}
+    FROM {{ source('ingest', 'metric_stream_freshness') }}
     WHERE channel = 'location'
-        AND (point IS NOT NULL OR _peerdb_is_deleted = 1)
+        AND (point IS NOT NULL OR is_deleted = 1)
 ),
 
 location_rows AS (
     SELECT
         id,
-        argMax(activity_id, _peerdb_version) AS member_activity_id,
-        argMax(user_id, _peerdb_version) AS user_id,
-        argMax(recorded_at, _peerdb_version) AS recorded_at,
-        argMax(provider_id, _peerdb_version) AS provider_id,
-        argMax(point, _peerdb_version) AS point,
-        argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
-        argMax(_peerdb_is_deleted, _peerdb_version) AS is_deleted
+        argMax(activity_id, version) AS member_activity_id,
+        argMax(user_id, version) AS user_id,
+        argMax(recorded_at, version) AS recorded_at,
+        argMax(provider_id, version) AS provider_id,
+        argMax(point, version) AS point,
+        argMax(ingested_at, version) AS ingested_at,
+        argMax(is_deleted, version) AS is_deleted
     FROM location_versions
     GROUP BY id
 ),
@@ -96,7 +99,7 @@ SELECT
     )) AS lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     location_rows.is_deleted AS is_deleted,
-    greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS source_refreshed_at,
+    greatest(location_rows.ingested_at, activity_members.source_synced_at) AS source_refreshed_at,
     source_refreshed_at AS refreshed_at
 FROM location_points AS location_rows
 INNER JOIN activity_members

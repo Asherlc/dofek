@@ -1,26 +1,36 @@
 # Cypress Agent Instructions
 
-> **Read the [README.md](./README.md) first** for testing strategy and configuration.
+> Read the [README.md](./README.md) first for the current spec, helper, task, and command inventory.
 
-## High-Level Mandates
-- **Use `cy.login()`**: Never use the UI to log in. Always use the custom command to seed a session.
-- **Isolate Tests**: Always call `cy.cleanTestData()` in `afterEach()`.
-- **Verify the Canvas**: For charts, verify the `<canvas>` element exists. ECharts doesn't render DOM nodes for data points, so canvas presence is the primary indicator of success.
-- **Wait for tRPC**: Always intercept and wait for the relevant tRPC call (e.g., `dailyMetrics.list`) before making assertions on data-dependent UI elements.
+## Test Lifecycle
 
-## Common Tasks
+- Use `cy.login()` for authenticated specs; exercise the UI login flow only when authentication behavior is the subject of the test.
+- Call `cy.cleanTestData()` in `afterEach()` for every spec that creates the E2E user or user-owned records.
+- Keep the fixed user and session identifiers centralized in `support/commands.ts`. Specs that seed SQL must use the same user ID.
+- Wait for an observable UI state. Use `cy.intercept()` and an alias when an assertion specifically depends on a request completing.
+- Assert user-visible behavior or API contracts. Assert a chart canvas only when rendering a populated chart is the behavior under test; use the product's empty-state text for empty datasets.
 
-### Adding a New Test
-1. Create a `<feature>.cy.ts` in `cypress/e2e/`.
-2. Use `beforeEach(() => { cy.login(); })`.
-3. If you need specific data, add a new task to `cypress.config.ts` to seed the database directly.
-4. If you seed a table that has a materialized view (e.g., `daily_metrics`), remember to call `cy.task("refreshDailyMetricsView")`.
+## Adding or Updating a Spec
 
-### Debugging Flaky Tests
-1. Run with `cypress open` and use the time-travel debugger.
-2. Check the `cypress.config.ts` tasks to ensure they are correctly interacting with the E2E database.
-3. Ensure the test user ID (`e2e00000-...`) matches between your spec and the tasks.
+1. Create or update a focused `cypress/e2e/<feature>.cy.ts` spec.
+2. Reuse `cy.login()`, `cy.cleanTestData()`, and `formatLocalDate()` where applicable.
+3. Prefer a named task in `cypress.config.ts` for setup shared by multiple specs.
+4. Use `runQuery` only for trusted, spec-owned SQL when a dedicated shared task would add no value.
+5. Validate the smallest affected spec with `pnpm e2e:web:reuse -- --spec <path>`; use `pnpm e2e:web` when the stack must be rebuilt or reset.
+
+Cypress documents Node-side task execution and its serializable argument/result boundary in the official [`cy.task()` reference](https://docs.cypress.io/api/commands/task).
+
+## Current Helpers and Tasks
+
+- Commands: `cy.login()`, `cy.cleanTestData()`.
+- Shared spec helper: `formatLocalDate()` in `e2e/test-helpers.ts`.
+- Node tasks: `seedTestUser`, `createSession`, `cleanTestData`, `seedDailyMetricsWithSteps`, and `runQuery`.
+
+Keep this inventory and the README synchronized with `support/commands.ts`, `e2e/`, and `cypress.config.ts`.
 
 ## Guardrails
-- **Database Scope**: Tasks in `cypress.config.ts` use `E2E_DATABASE_URL`. Ensure this never points to a production database.
-- **Fail Fast**: Retries are limited to 1 in CI. If a test fails twice, it's a real issue.
+
+- Database tasks must use `E2E_DATABASE_URL`; never point it at production.
+- Do not pass user-controlled or application-derived text to `runQuery`.
+- Keep retries at one in headless mode and zero in interactive mode; fix deterministic failures instead of masking them with retries.
+- Run Compose through the repository's `pnpm` scripts so workspace project isolation is preserved.

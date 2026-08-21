@@ -1,10 +1,10 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { mapVeloHeroSport } from "./sports.ts";
 import type { VeloHeroWorkout } from "./types.ts";
 
 export interface ParsedVeloHeroWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -49,14 +49,13 @@ export function parseVeloHeroWorkout(workout: VeloHeroWorkout): ParsedVeloHeroWo
   const maxPower = parseOptionalNumber(workout.max_power);
   const avgCadence = parseOptionalNumber(workout.avg_cadence);
   const maxCadence = parseOptionalNumber(workout.max_cadence);
-  const calories = parseOptionalNumber(workout.calories);
   const ascent = parseOptionalNumber(workout.ascent);
   const descent = parseOptionalNumber(workout.descent);
 
   return {
     externalId: String(workout.id),
     activityType: mapVeloHeroSport(workout.sport_id),
-    name: workout.title || `${mapVeloHeroSport(workout.sport_id)} workout`,
+    name: workout.title || `${mapVeloHeroSport(workout.sport_id).canonicalType} workout`,
     startedAt,
     endedAt,
     raw: {
@@ -69,7 +68,6 @@ export function parseVeloHeroWorkout(workout: VeloHeroWorkout): ParsedVeloHeroWo
       maxPower,
       avgCadence,
       maxCadence,
-      calories,
       ascent,
       descent,
     },

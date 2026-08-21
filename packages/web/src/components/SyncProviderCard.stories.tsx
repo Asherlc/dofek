@@ -47,7 +47,14 @@ const meta = {
       id: "strava",
       name: "Strava",
       lastSyncedAt: "2026-05-12T10:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+      syncFreshness: {
+        status: "current",
+        label: "Sync current",
+        description: "The last successful sync completed within the expected cadence.",
+      },
       authorized: true,
+      description: null,
     },
     state: { status: "idle" },
     needsAuth: false,
@@ -64,7 +71,6 @@ const meta = {
       },
     ],
     onSync: () => {},
-    onFullSync: () => {},
   },
 } satisfies Meta<typeof SyncProviderCard>;
 
@@ -87,7 +93,34 @@ export const NoSyncHistory: Story = {
       id: "strava",
       name: "Strava",
       lastSyncedAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: {
+        status: "unknown",
+        label: "Sync status unknown",
+        description: "No successful sync has been recorded.",
+      },
       authorized: true,
+      description: null,
+    },
+  },
+};
+
+export const OverdueProvider: Story = {
+  name: "Overdue provider",
+  tags: ["review-scenario", "review-scenario-stale-provider"],
+  args: {
+    provider: {
+      id: "strava",
+      name: "Strava",
+      lastSyncedAt: "2026-08-12T12:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+      syncFreshness: {
+        status: "overdue",
+        label: "Sync overdue",
+        description: "The last successful sync is overdue.",
+      },
+      authorized: true,
+      description: null,
     },
   },
 };
@@ -98,7 +131,10 @@ export const NeedsAuth: Story = {
       id: "oura",
       name: "Oura",
       lastSyncedAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
       authorized: false,
+      description: null,
     },
     needsAuth: true,
     recentLogs: [],
@@ -111,7 +147,14 @@ export const NeedsReauth: Story = {
       id: "whoop",
       name: "WHOOP",
       lastSyncedAt: "2026-05-10T10:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-05-10T10:00:00.000Z",
+      syncFreshness: {
+        status: "overdue",
+        label: "Sync overdue",
+        description: "The last successful sync is overdue.",
+      },
       authorized: true,
+      description: null,
     },
     needsReauth: true,
   },

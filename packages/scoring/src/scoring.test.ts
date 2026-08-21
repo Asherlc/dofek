@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { sleepStageColors, statusColors, textColors } from "./colors.ts";
 import {
   aggregateWeeklyVolume,
+  baselineReadinessComponents,
+  DEFAULT_READINESS_COMPONENT_SCORE,
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
   FORM_ZONE_GREY,
@@ -15,7 +17,6 @@ import {
   SCORE_WARNING_THRESHOLD,
   SCORE_ZONES,
   StrainScore,
-  StrainZone,
   StressScore,
   scoreColor,
   scoreDescription,
@@ -26,9 +27,42 @@ import {
   sleepTierDescription,
   trendColor,
   trendDirection,
-  WorkloadRatio,
   zScoreToRecoveryScore,
 } from "./scoring.ts";
+
+describe("baselineReadinessComponents", () => {
+  it("maps the recovery metrics with their intended polarity", () => {
+    expect(
+      baselineReadinessComponents({
+        hrvZScore: 1,
+        restingHeartRateZScore: 1,
+        respiratoryRateZScore: -1,
+        sleepEfficiency: 85.4,
+      }),
+    ).toEqual({
+      hrvScore: 81,
+      restingHrScore: 31,
+      respiratoryRateScore: 81,
+      sleepScore: 85,
+    });
+  });
+
+  it("uses the named default when baseline context is unavailable", () => {
+    expect(
+      baselineReadinessComponents({
+        hrvZScore: null,
+        restingHeartRateZScore: null,
+        respiratoryRateZScore: null,
+        sleepEfficiency: null,
+      }),
+    ).toEqual({
+      hrvScore: DEFAULT_READINESS_COMPONENT_SCORE,
+      restingHrScore: DEFAULT_READINESS_COMPONENT_SCORE,
+      respiratoryRateScore: DEFAULT_READINESS_COMPONENT_SCORE,
+      sleepScore: DEFAULT_READINESS_COMPONENT_SCORE,
+    });
+  });
+});
 
 describe("zScoreToRecoveryScore", () => {
   it("maps z=0 to 62 (Whoop-aligned average)", () => {
@@ -134,70 +168,6 @@ describe("scoreDescription", () => {
   it("returns a non-empty string for boundary values", () => {
     expect(scoreDescription(70).length).toBeGreaterThan(0);
     expect(scoreDescription(50).length).toBeGreaterThan(0);
-  });
-});
-
-describe("WorkloadRatio", () => {
-  describe("color", () => {
-    it("returns secondary color for null", () => {
-      expect(new WorkloadRatio(null).color).toBe(textColors.secondary);
-    });
-
-    it("returns positive at exact boundaries 0.8 and 1.3", () => {
-      expect(new WorkloadRatio(0.8).color).toBe(statusColors.positive);
-      expect(new WorkloadRatio(1.3).color).toBe(statusColors.positive);
-    });
-
-    it("returns positive in the middle of optimal range", () => {
-      expect(new WorkloadRatio(1.0).color).toBe(statusColors.positive);
-    });
-
-    it("returns warning just outside optimal range", () => {
-      expect(new WorkloadRatio(0.79).color).toBe(statusColors.warning);
-      expect(new WorkloadRatio(1.31).color).toBe(statusColors.warning);
-    });
-
-    it("returns warning at exact boundaries 0.5 and 1.5", () => {
-      expect(new WorkloadRatio(0.5).color).toBe(statusColors.warning);
-      expect(new WorkloadRatio(1.5).color).toBe(statusColors.warning);
-    });
-
-    it("returns danger just outside caution range", () => {
-      expect(new WorkloadRatio(0.49).color).toBe(statusColors.danger);
-      expect(new WorkloadRatio(1.51).color).toBe(statusColors.danger);
-    });
-
-    it("returns danger for extreme values", () => {
-      expect(new WorkloadRatio(0.0).color).toBe(statusColors.danger);
-      expect(new WorkloadRatio(3.0).color).toBe(statusColors.danger);
-    });
-  });
-
-  describe("hint", () => {
-    it("returns null for null", () => {
-      expect(new WorkloadRatio(null).hint).toBeNull();
-    });
-
-    it("returns optimal hint for 0.8-1.3", () => {
-      expect(new WorkloadRatio(0.8).hint).toBe("Optimal training zone");
-      expect(new WorkloadRatio(1.3).hint).toBe("Optimal training zone");
-      expect(new WorkloadRatio(1.0).hint).toBe("Optimal training zone");
-    });
-
-    it("returns detraining hint for < 0.8", () => {
-      expect(new WorkloadRatio(0.79).hint).toBe("Detraining risk - increase load gradually");
-      expect(new WorkloadRatio(0.0).hint).toBe("Detraining risk - increase load gradually");
-    });
-
-    it("returns high load hint for > 1.3 and <= 1.5", () => {
-      expect(new WorkloadRatio(1.31).hint).toBe("High load - monitor recovery closely");
-      expect(new WorkloadRatio(1.5).hint).toBe("High load - monitor recovery closely");
-    });
-
-    it("returns injury risk hint for > 1.5", () => {
-      expect(new WorkloadRatio(1.51).hint).toBe("Injury risk zone - consider rest");
-      expect(new WorkloadRatio(3.0).hint).toBe("Injury risk zone - consider rest");
-    });
   });
 });
 
@@ -600,44 +570,6 @@ describe("healthStatusColor", () => {
 
   it("returns danger for poor", () => {
     expect(healthStatusColor("poor")).toBe(statusColors.danger);
-  });
-});
-
-describe("StrainZone", () => {
-  describe("color", () => {
-    it("returns positive for optimal", () => {
-      expect(new StrainZone("optimal").color).toBe(statusColors.positive);
-    });
-
-    it("returns danger for overreaching", () => {
-      expect(new StrainZone("overreaching").color).toBe(statusColors.danger);
-    });
-
-    it("returns info for restoring", () => {
-      expect(new StrainZone("restoring").color).toBe(statusColors.info);
-    });
-
-    it("returns secondary for unknown zone", () => {
-      expect(new StrainZone("unknown").color).toBe(textColors.secondary);
-    });
-  });
-
-  describe("label", () => {
-    it("returns Optimal for optimal", () => {
-      expect(new StrainZone("optimal").label).toBe("Optimal");
-    });
-
-    it("returns Overreaching for overreaching", () => {
-      expect(new StrainZone("overreaching").label).toBe("Overreaching");
-    });
-
-    it("returns Restoring for restoring", () => {
-      expect(new StrainZone("restoring").label).toBe("Restoring");
-    });
-
-    it("returns the zone string for unknown zones", () => {
-      expect(new StrainZone("something").label).toBe("something");
-    });
   });
 });
 

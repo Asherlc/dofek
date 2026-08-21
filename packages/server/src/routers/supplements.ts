@@ -1,18 +1,21 @@
+import { supplementDoseOccurrencesSchema } from "@dofek/format/supplement-dose-events";
 import { z } from "zod";
-import { SupplementsRepository, supplementSchema } from "../repositories/supplements-repository.ts";
-
+import {
+  SupplementsRepository,
+  supplementListSchema,
+} from "../repositories/supplements-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 export const supplementsRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const repo = new SupplementsRepository(ctx.db, ctx.userId);
-    return repo.list();
+  list: protectedProcedure.output(supplementListSchema).query(async ({ ctx }) => {
+    const repository = new SupplementsRepository(ctx.db, ctx.userId, ctx.timezone);
+    return repository.list();
   }),
-
-  save: protectedProcedure
-    .input(z.object({ supplements: z.array(supplementSchema) }))
-    .mutation(async ({ ctx, input }) => {
-      const repo = new SupplementsRepository(ctx.db, ctx.userId);
-      return repo.save(input.supplements);
+  occurrences: protectedProcedure
+    .input(z.object({ days: z.number().int().min(1).max(30).default(7) }))
+    .output(supplementDoseOccurrencesSchema)
+    .query(async ({ ctx, input }) => {
+      const repository = new SupplementsRepository(ctx.db, ctx.userId, ctx.timezone);
+      return repository.occurrences(input.days);
     }),
 });

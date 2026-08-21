@@ -3,7 +3,7 @@
 `metric_stream` samples publish to Redpanda first. Redpanda Connect archives the
 topic to Cloudflare R2 for long-term replay, and
 `metric-stream-clickhouse-sink` writes the analytics copy into
-`postgres_fitness.metric_stream`. Postgres is no longer the normal forward
+`ingest.metric_stream`. Postgres is no longer the normal forward
 ingestion path for metric-stream samples, and PeerDB does not mirror
 `fitness.metric_stream`.
 
@@ -13,7 +13,7 @@ Redpanda metric-stream-v1
         | R2 archive              | ClickHouse sink
         v                         v
 Cloudflare R2 replay archive
-ClickHouse postgres_fitness.metric_stream
+ClickHouse ingest.metric_stream
         |
         | dbt microbatch projection by recorded_at
         v
@@ -49,14 +49,14 @@ are never synced back to Postgres.
 Start the backing services:
 
 ```bash
-docker compose up -d db clickhouse redis
+pnpm compose -- up -d db clickhouse redis
 pnpm migrate
 ```
 
 To run the CDC path locally (not part of the default compose profile):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.peerdb.yml up -d
+pnpm compose -- -f docker-compose.yml -f docker-compose.peerdb.yml up -d
 pnpm clickhouse-cdc
 ```
 
@@ -81,8 +81,24 @@ Provider record inventory uses the ClickHouse `analytics.provider_stats` read
 model for all provider-owned record counts displayed by sync/provider detail:
 activity, daily metric, sleep, body measurement, food entry, health event,
 metric stream, distinct nutrition day, lab panel, lab result, and journal entry
-counts. The provider detail UI still treats these as raw provider-owned record
-counts, not deduped analytical sample counts.
+counts. Metric-stream counts are maintained by the incremental
+`analytics.provider_metric_stream_daily` model at
+`(user_id, provider_id, recorded_date)` grain. It reads compact
+`analytics.metric_stream_day_change` keys, resolves exact latest state with
+`argMax(tuple(recorded_at, ingested_at, version, is_deleted),
+tuple(version, ingested_at))`, and emits zero rows for fully tombstoned days.
+`provider_stats` sums the daily rows only after every marked day for the
+provider has caught up. The selected-day raw scan prefers the covering
+`ingest.metric_stream.by_provider_current_state_recorded_at` projection;
+projections are optimizer support structures rather than an application source
+of truth:
+<https://clickhouse.com/docs/data-modeling/projections>. The provider detail UI
+still treats these as raw provider-owned record counts, not deduped analytical
+sample counts. Historical marker bootstrap and projection materialization are
+explicit operator actions; use the
+[read-model deploy runbook](clickhouse-read-model-deploy-runbook.md#known-failure-provider_stats-current-state-scan-timeout)
+for rollout verification and stop conditions if the daily model remains dirty
+or raw provider recounts return.
 
 ## Scalar And Location Projections
 
@@ -124,23 +140,42 @@ ClickHouse `Nullable(Point)` columns require
 `allow_experimental_nullable_tuple_type=1`. The app ClickHouse client sends
 that setting with its requests, and Docker deployments also load the checked-in
 server profile at
-`deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml`.
+`deploy/clickhouse/users.d/default-query-guardrails.xml`.
 
 ClickHouse migrations create and update the databases and read models:
 
-- `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` copy of the
+- `ingest.metric_stream`: a ClickHouse-native `ReplacingMergeTree` copy of the
   raw metric stream populated by `metric-stream-clickhouse-sink`. Historical
   rows may still have been backfilled from Postgres, but new forward rows come
-  from Redpanda events.
+  from Redpanda events. Its `version` and `is_deleted` columns encode replacement
+  order and logical deletion so current-state queries can select the latest live
+  row. Its `by_provider_current_state` aggregate projection computes the same
+  latest-row state in advance at provider-record grain for exact inventory counts
+  ([ReplacingMergeTree](https://clickhouse.com/docs/en/guides/replacing-merge-tree),
+  [projections](https://clickhouse.com/docs/data-modeling/projections)).
+- `ingest.metric_stream_delete_acknowledgement`: one receipt per version 2
+  deletion event, written only after the sink's tombstone insert completes.
+- `ingest.metric_stream_processing_acknowledgement`: one receipt per stable
+  processing batch ID, written after the sink applies that batch's events and
+  marker. Processing status requires the operation ID and expected event count
+  to match the Postgres expectation; the table stores evidence, not metric
+  payloads ([acknowledgement table migration](../src/db/clickhouse-migrations/0051_metric_stream_processing_acknowledgement.ts),
+  [reconciliation logic](../src/processing/processing-reconciler.ts)).
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns for lower-volume Postgres-backed raw tables, including
   activity, sleep, daily metrics, provider inventory, and sensor priority
-  tables. Metric-stream rows use compatible metadata columns but are not a
-  PeerDB mirror.
+  tables. The fitness and provider-inventory mirrors write the shared Postgres
+  processing marker into distinct ClickHouse destination tables so each flow's
+  causal fence can be proven independently. Metric-stream rows use compatible
+  metadata columns but are not a PeerDB mirror
+  ([marker table migration](../src/db/clickhouse-migrations/0052_processing_flow_markers.ts),
+  [reconciliation logic](../src/processing/processing-reconciler.ts)).
 - `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
-  `analytics.v_body_measurement`, `analytics.v_daily_metrics`, and
-  `analytics.provider_stats`: normal ClickHouse views over the raw mirrors and
-  body sample projection.
+  `analytics.v_body_measurement`, and `analytics.v_daily_metrics`: normal
+  ClickHouse views over the raw mirrors and body sample projection.
+- `analytics.provider_metric_stream_daily` and `analytics.provider_stats`:
+  dbt-owned incremental `ReplacingMergeTree` serving tables for bounded
+  provider metric counts and their provider-inventory sum.
 - `analytics.body_measurement_sample`: a narrow `ReplacingMergeTree`
   projection of body-related `metric_stream` channels. It is backfilled once by
   migration and kept current by `analytics.body_measurement_sample_ingest`, so
@@ -148,8 +183,8 @@ ClickHouse migrations create and update the databases and read models:
 - `analytics.sensor_scalar_sample`: a narrow dbt `microbatch` incremental
   `ReplacingMergeTree` projection of activity sensor scalar channels. It uses
   `recorded_at` as its dbt event time, writes one current row per raw
-  `metric_stream.id`, and collapses row versions with `_peerdb_version`
-  inside the bounded batch query.
+  `metric_stream.id`, and maps the raw stream's `version` into its
+  `_peerdb_version` projection column inside the bounded batch query.
 - `analytics.deduped_sensor`: an activity-agnostic dbt `microbatch`
   incremental `ReplacingMergeTree` table containing the best live scalar sample
   per `(user_id, channel, recorded_at)` according to mirrored sensor
@@ -157,7 +192,7 @@ ClickHouse migrations create and update the databases and read models:
   and has no `activity_id`; activity reads join samples to activities by time
   window.
 - `analytics.deduped_location`: a normal view over
-  `postgres_fitness.metric_stream` location rows. The Redpanda ClickHouse sink
+  `ingest.metric_stream` location rows. The Redpanda ClickHouse sink
   converts EWKT point payloads into ClickHouse point-compatible values.
 - `analytics.activity_summary`: a normal view over `analytics.deduped_sensor`,
   `analytics.deduped_location`, and `analytics.v_activity`.
@@ -165,12 +200,187 @@ ClickHouse migrations create and update the databases and read models:
   sensor trend row per user and UTC day. It is derived from
   `analytics.deduped_sensor`.
 
-Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
-table and several read models expect CDC-compatible metadata, it keeps the
-metadata columns even though PeerDB no longer feeds it:
-`_peerdb_synced_at`, `_peerdb_is_deleted`, and `_peerdb_version`. The deploy CDC
-setup command repairs these columns idempotently with `ALTER TABLE ... ADD
-COLUMN IF NOT EXISTS` before PeerDB validates the mirror.
+### Provider inventory projection rollout
+
+Migration `0061_provider_current_state_projection` adds the
+`by_provider_current_state` definition. New metric-stream parts populate it
+automatically, but existing parts do not receive a newly added projection until
+an operator materializes it. ClickHouse documents `MATERIALIZE PROJECTION` as
+the required existing-data step:
+<https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
+
+Materialization rewrites historical parts, so it is an explicit maintenance
+operation rather than a deploy migration:
+
+```sql
+ALTER TABLE ingest.metric_stream
+MATERIALIZE PROJECTION by_provider_current_state;
+```
+
+Monitor the mutation until `is_done = 1` and `latest_fail_reason` is empty:
+
+```sql
+SELECT
+  mutation_id,
+  command,
+  is_done,
+  latest_fail_reason
+FROM system.mutations
+WHERE database = 'ingest'
+  AND table = 'metric_stream'
+ORDER BY create_time DESC;
+```
+
+Then verify every active base-table part contains the projection:
+
+```sql
+SELECT countIf(NOT has(
+  projections,
+  'by_provider_current_state'
+)) AS missing_projection_parts
+FROM system.parts
+WHERE active
+  AND database = 'ingest'
+  AND table = 'metric_stream';
+```
+
+### Daily provider metric-count rollout
+
+Migration `0068_provider_metric_stream_daily_counts` adds the compact
+`analytics.metric_stream_day_change` table and its insert-triggered materialized
+view, plus the covering
+`by_provider_current_state_recorded_at` projection. The daily dbt model is
+ordered before `provider_change_watermark` and `provider_stats`; it processes a
+bounded default batch of 32 dirty provider/day keys and leaves provider
+publication dirty while a selected day has not caught up. The model's exact
+latest-state query remains the source of truth; the projection only narrows
+selected-day reads. ClickHouse incremental materialized views consume newly
+inserted blocks, and dbt incremental models own the bounded serving transform:
+[ClickHouse incremental materialized views](https://clickhouse.com/docs/materialized-view/incremental-materialized-view),
+[dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models).
+
+Apply the forward migration through the normal migration container, then
+materialize the projection as an explicit maintenance action. Do not combine
+the historical scan with deploy-time migration execution:
+
+```sql
+ALTER TABLE ingest.metric_stream
+MATERIALIZE PROJECTION by_provider_current_state_recorded_at;
+```
+
+Stop if the mutation reports a non-empty `latest_fail_reason`. Do not continue
+to the active-part check or historical bootstrap until every relevant mutation
+row reports `is_done = 1` and an empty `latest_fail_reason`:
+
+```sql
+SELECT
+  mutation_id,
+  command,
+  is_done,
+  latest_fail_reason
+FROM system.mutations
+WHERE database = 'ingest'
+  AND table = 'metric_stream'
+ORDER BY create_time DESC;
+
+SELECT countIf(NOT has(
+  projections,
+  'by_provider_current_state_recorded_at'
+)) AS missing_projection_parts
+FROM system.parts
+WHERE active
+  AND database = 'ingest'
+  AND table = 'metric_stream';
+```
+
+The active-part result must contain at least one active part and
+`missing_projection_parts = 0`. Bootstrap historical dirty days only after
+that gate passes. Use one explicit provider/date window per bounded batch, keep
+the window checkpoint with the rollout record, and resume at the next window;
+do not run an unrestricted `GROUP BY` over the raw table. The query reads the
+raw canonical table with the materialized covering projection forced and writes
+invalidation keys, not counts:
+
+```sql
+INSERT INTO analytics.metric_stream_day_change
+  (user_id, provider_id, recorded_date, changed_at)
+SELECT
+  user_id,
+  provider_id,
+  toDate(recorded_at) AS recorded_date,
+  now64(9, 'UTC') AS changed_at
+FROM ingest.metric_stream
+WHERE user_id = toUUID('00000000-0000-0000-0000-000000000000')
+  AND provider_id = 'REPLACE_WITH_PROVIDER_ID'
+  AND recorded_at >= toDateTime64('2020-01-01 00:00:00', 6, 'UTC')
+  AND recorded_at < toDateTime64('2020-01-02 00:00:00', 6, 'UTC')
+GROUP BY user_id, provider_id, recorded_date
+SETTINGS
+  force_optimize_projection = 1,
+  force_optimize_projection_name = 'by_provider_current_state_recorded_at';
+```
+
+Replace the example user, provider, and date window before each batch. Record
+the last completed `(user_id, provider_id, recorded_date)` window and resume
+with the next deterministic window. `MATERIALIZE PROJECTION` rewrites existing
+raw parts; this bootstrap only appends compact marker state, so the two costs
+and completion checks remain separate.
+
+After the analytics worker has run, verify that no day marker is newer than its
+daily replacement row:
+
+```sql
+WITH source_days AS (
+  SELECT
+    user_id,
+    provider_id,
+    recorded_date,
+    max(changed_at) AS source_changed_at
+  FROM analytics.metric_stream_day_change
+  GROUP BY user_id, provider_id, recorded_date
+), daily_rows AS (
+  SELECT
+    user_id,
+    provider_id,
+    recorded_date,
+    max(source_changed_at) AS source_changed_at
+  FROM analytics.provider_metric_stream_daily FINAL
+  GROUP BY user_id, provider_id, recorded_date
+)
+SELECT
+  source_days.user_id,
+  source_days.provider_id,
+  source_days.recorded_date,
+  source_days.source_changed_at,
+  daily_rows.source_changed_at AS daily_changed_at
+FROM source_days
+LEFT JOIN daily_rows
+  ON daily_rows.user_id = source_days.user_id
+ AND daily_rows.provider_id = source_days.provider_id
+ AND daily_rows.recorded_date = source_days.recorded_date
+WHERE daily_rows.recorded_date IS NULL
+   OR source_days.source_changed_at > daily_rows.source_changed_at
+ORDER BY source_days.source_changed_at
+LIMIT 50;
+```
+
+Stop rollout if this query returns rows, if any projection mutation fails, or
+if `provider_stats` resumes reading the raw metric stream instead of summing
+`provider_metric_stream_daily`. Confirm a successful `QueryFinish` for the
+model in `system.query_log`, a successful analytics processing marker, and
+downstream provider-inventory freshness before declaring the rollout complete.
+
+### Deletion protocol
+
+New metric-stream deletions are version 2 Redpanda events with a unique event
+ID. The ClickHouse sink first filters `ingest.metric_stream` to the deletion
+scope, selects the latest version of each matching ID, inserts a newer
+`is_deleted = 1` version, and then writes the event ID to
+`ingest.metric_stream_delete_acknowledgement`. The provider deletion worker
+waits for that acknowledgement before rebuilding dbt models and invalidating
+the user's analytics cache; it does not scan the full raw table to infer that
+the event was applied. Archived version 1 deletion events remain replayable,
+but do not have acknowledgement IDs.
 
 The native-table backfill is resumable within a successful migration attempt,
 but migration `0006_backfill_native_metric_stream` intentionally drops the

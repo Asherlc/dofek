@@ -1,0 +1,17 @@
+name: Second fixture workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pinned-reusable-workflow:
+    uses: example/reusable/.github/workflows/reusable.yml@1111111111111111111111111111111111111111
+
+  pinned-action:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "A block scalar appears before the action."
+      - uses: example/action@2222222222222222222222222222222222222222
+      - run: |
+          echo "A block scalar appears after the action."

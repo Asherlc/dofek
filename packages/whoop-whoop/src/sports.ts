@@ -1,10 +1,10 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import type { NormalizedActivityType } from "@dofek/training/activity-types";
 
 // ============================================================
 // Sport ID mapping — complete list from WHOOP developer docs
 // ============================================================
 
-const WHOOP_SPORT_MAP: Record<number, CanonicalActivityType> = {
+const WHOOP_SPORT_MAP: Record<number, NormalizedActivityType> = {
   [-1]: "other",
   0: "running",
   1: "cycling",
@@ -133,7 +133,7 @@ const WHOOP_SPORT_MAP: Record<number, CanonicalActivityType> = {
  * Map a WHOOP sport_id to a canonical activity type.
  * Returns "other" for unknown sport IDs.
  */
-export function mapSportId(sportId: number): CanonicalActivityType {
+export function mapSportId(sportId: number): NormalizedActivityType {
   return WHOOP_SPORT_MAP[sportId] ?? "other";
 }
 
@@ -144,7 +144,7 @@ export function mapSportId(sportId: number): CanonicalActivityType {
 // `type` string (e.g., "walk", "spin", "functional-fitness"). This map
 // provides a fallback when a sport_id is unknown or maps to "other".
 
-const V2_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+const V2_ACTIVITY_TYPE_MAP: Record<string, NormalizedActivityType> = {
   walk: "walking",
   walking: "walking",
   "dog-walk": "walking",
@@ -248,7 +248,7 @@ const V2_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
  * Map a WHOOP v2_activity type string to a canonical activity type.
  * Returns null if the type is unknown (caller should fall back to sport_id).
  */
-export function mapV2ActivityType(typeName: string): CanonicalActivityType | null {
+export function mapV2ActivityType(typeName: string): NormalizedActivityType | null {
   return V2_ACTIVITY_TYPE_MAP[typeName.toLowerCase()] ?? null;
 }
 

@@ -10,6 +10,8 @@ import {
   clickHouseStringLiteral,
   parsePostgresTimestamp,
 } from "../src/db/clickhouse-migrations/sql.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
+import { INGEST_DATABASE, METRIC_STREAM_TABLE } from "../src/metric-stream/clickhouse-table.ts";
 
 export interface MetricStreamCatchUpOptions {
   start: Date;
@@ -166,7 +168,7 @@ export function buildMetricStreamCatchUpStatement(
     options.postgresConnectionString,
   );
 
-  return `INSERT INTO postgres_fitness.metric_stream (
+  return `INSERT INTO ${METRIC_STREAM_TABLE} (
   recorded_at,
   user_id,
   provider_id,
@@ -178,9 +180,9 @@ export function buildMetricStreamCatchUpStatement(
   scalar,
   point,
   id,
-  _peerdb_synced_at,
-  _peerdb_is_deleted,
-  _peerdb_version
+  ingested_at,
+  is_deleted,
+  version
 )
 SELECT
   metric_stream.recorded_at,
@@ -222,9 +224,9 @@ SELECT
     )
   ) AS point,
   metric_stream.id,
-  now64(9) AS _peerdb_synced_at,
-  0 AS _peerdb_is_deleted,
-  toInt64(toUnixTimestamp64Milli(now64(3))) AS _peerdb_version
+  now64(9) AS ingested_at,
+  0 AS is_deleted,
+  toInt64(toUnixTimestamp64Milli(now64(3))) AS version
 FROM (
   SELECT
     metric_stream.recorded_at,
@@ -245,7 +247,7 @@ FROM (
 ) AS metric_stream
 LEFT ANY JOIN (
   SELECT CAST(id, 'Nullable(UUID)') AS id
-  FROM postgres_fitness.metric_stream FINAL
+  FROM ${METRIC_STREAM_TABLE} FINAL
   WHERE recorded_at >= ${lowerBound}
     AND recorded_at < ${upperBound}
 ) AS existing_metric_stream
@@ -267,7 +269,7 @@ async function runMetricStreamCatchUp(
   options: MetricStreamCatchUpOptions,
 ): Promise<void> {
   const windows = buildMetricStreamCatchUpWindows(options);
-  await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
+  await waitForClickHouseTable(client, INGEST_DATABASE, "metric_stream");
 
   for (const window of windows) {
     console.log(
@@ -318,7 +320,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     console.log("[metric-stream-catch-up] complete");
     await Sentry.close(2_000);
   } catch (error: unknown) {
-    Sentry.captureException(error);
+    captureException(error);
     await Sentry.close(2_000);
     throw error;
   } finally {
@@ -332,7 +334,7 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   main().catch(async (error: unknown) => {
-    Sentry.captureException(error);
+    captureException(error);
     await Sentry.close(2_000);
     console.error(`[metric-stream-catch-up] ${error}`);
     process.exit(1);

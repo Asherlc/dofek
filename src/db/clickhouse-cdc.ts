@@ -11,6 +11,41 @@ interface SourcePostgresClient {
   query(queryText: string): Promise<unknown>;
 }
 
+export interface PeerDbTableMapping {
+  sourceTableIdentifier: string;
+  destinationTableIdentifier: string;
+  exclude: readonly string[];
+}
+
+interface PeerDbMirrorStatus {
+  currentFlowState: string;
+  tableMappings: readonly PeerDbTableMapping[];
+}
+
+interface PeerDbCdcFlowConfigUpdate {
+  additional_tables: readonly PeerDbTableMapping[];
+}
+
+interface PeerDbMirrorStateChangeRequest {
+  flowJobName: string;
+  requestedFlowState: "STATUS_PAUSED" | "STATUS_RUNNING";
+  flowConfigUpdate?: {
+    cdcFlowConfigUpdate: PeerDbCdcFlowConfigUpdate;
+  };
+}
+
+export interface PeerDbMirrorListItem {
+  destinationType: number | string;
+  isCdc: boolean;
+  name: string;
+}
+
+export interface PeerDbMirrorApiClient {
+  getMirrorStatus(mirrorName: string): Promise<PeerDbMirrorStatus>;
+  listMirrors(): Promise<PeerDbMirrorListItem[]>;
+  changeMirrorState(request: PeerDbMirrorStateChangeRequest): Promise<void>;
+}
+
 export interface PeerDbSqlTemplateValues {
   clickHouseCredential: string;
   clickHouseHost: string;
@@ -40,6 +75,7 @@ const clickHouseRowCountRowsSchema = z.array(
 );
 
 interface SetupClickHouseCdcOptions {
+  peerDbMirrorApiClient?: PeerDbMirrorApiClient;
   peerDbClient: PeerDbClient;
   sourcePostgresClient: SourcePostgresClient;
   clickHouseClient: ClickHouseCommandClient;
@@ -48,6 +84,8 @@ interface SetupClickHouseCdcOptions {
 }
 
 interface RuntimeConfig {
+  peerDbFlowApiAuthorization: string | undefined;
+  peerDbFlowApiUrl: string;
   peerDbUrl: string;
   templatePath: string;
   templateValues: PeerDbSqlTemplateValues;
@@ -65,10 +103,12 @@ const analyticsSourceTables = [
   "lab_result",
   "journal_entry",
   "provider",
+  "provider_connection",
   "provider_priority",
   "device_priority",
   "sensor_provider_priority",
   "sensor_device_priority",
+  "processing_flow_marker",
   "user_profile",
 ] as const;
 const rawAnalyticsMirrorNames = [
@@ -84,6 +124,33 @@ const existingManagedMirrorQueryResultSchema = z.object({
     }),
   ),
 });
+const peerDbMirrorStatusResponseSchema = z
+  .object({
+    currentFlowState: z.string().min(1),
+    cdcStatus: z.object({
+      config: z.object({
+        tableMappings: z.array(
+          z.object({
+            sourceTableIdentifier: z.string().min(1),
+            destinationTableIdentifier: z.string().min(1),
+            exclude: z.array(z.string()).optional().default([]),
+          }),
+        ),
+      }),
+    }),
+    errorMessage: z.string().optional(),
+    ok: z.boolean().optional(),
+  })
+  .passthrough();
+const peerDbMirrorListResponseSchema = z.object({
+  mirrors: z.array(
+    z.object({
+      destinationType: z.union([z.number().int(), z.string().min(1)]),
+      isCdc: z.boolean(),
+      name: z.string().min(1),
+    }),
+  ),
+});
 const rawAnalyticsMirrorTableMappings: Record<
   (typeof rawAnalyticsMirrorNames)[number],
   readonly string[]
@@ -94,8 +161,10 @@ const rawAnalyticsMirrorTableMappings: Record<
     "sleep_stage",
     "daily_metrics",
     "provider",
+    "provider_connection",
     "provider_priority",
     "device_priority",
+    "processing_flow_marker",
     "user_profile",
   ],
   dofek_provider_inventory_raw_analytics: [
@@ -107,6 +176,31 @@ const rawAnalyticsMirrorTableMappings: Record<
   ],
   dofek_sensor_priority_raw_analytics: ["sensor_provider_priority", "sensor_device_priority"],
 };
+const requiredExistingMirrorTableMappings = {
+  dofek_fitness_raw_analytics: [
+    {
+      sourceTableIdentifier: "fitness.provider_connection",
+      destinationTableIdentifier: "provider_connection",
+      exclude: [],
+    },
+    {
+      sourceTableIdentifier: "fitness.processing_flow_marker",
+      destinationTableIdentifier: "processing_flow_marker",
+      exclude: [],
+    },
+  ],
+  dofek_provider_inventory_raw_analytics: [
+    {
+      sourceTableIdentifier: "fitness.processing_flow_marker",
+      destinationTableIdentifier: "processing_flow_marker_provider_inventory",
+      exclude: [],
+    },
+  ],
+} as const satisfies Partial<
+  Record<(typeof rawAnalyticsMirrorNames)[number], readonly PeerDbTableMapping[]>
+>;
+const peerDbMirrorStatePollIntervalMs = 1_000;
+const peerDbMirrorStatePollTimeoutMs = 120_000;
 const defaultRawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues = {
   dofek_fitness_raw_analytics: true,
   dofek_provider_inventory_raw_analytics: true,
@@ -181,6 +275,109 @@ function buildDefaultPeerDbUrl(credential: string, host: string, port: number): 
   peerDbUrl.username = "peerdb";
   peerDbUrl.password = credential;
   return peerDbUrl.toString();
+}
+
+function buildPeerDbFlowApiConfig(
+  sourcePostgresHost: string,
+  peerDbCredential: string,
+  peerDbUiPort: number,
+): { authorization: string | undefined; url: string } {
+  if (isLocalhost(sourcePostgresHost)) {
+    return {
+      authorization: `Basic ${Buffer.from(`:${peerDbCredential}`).toString("base64")}`,
+      url: `http://127.0.0.1:${peerDbUiPort}/api/v1`,
+    };
+  }
+  return { authorization: undefined, url: "http://peerdb-flow-api:8113/v1" };
+}
+
+async function parsePeerDbApiResponse(response: Response): Promise<unknown> {
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `PeerDB API request failed with HTTP ${response.status}: ${responseText || response.statusText}`,
+    );
+  }
+  if (!responseText) {
+    return {};
+  }
+  return JSON.parse(responseText);
+}
+
+export function createPeerDbMirrorApiClient(
+  baseUrl: string,
+  authorization: string | undefined,
+): PeerDbMirrorApiClient {
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+
+  async function get(path: string): Promise<unknown> {
+    const headers: Record<string, string> = {};
+    if (authorization) {
+      headers.authorization = authorization;
+    }
+    const response = await fetch(`${normalizedBaseUrl}/${path}`, { headers });
+    return parsePeerDbApiResponse(response);
+  }
+
+  async function post(path: string, body: unknown): Promise<unknown> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (authorization) {
+      headers.authorization = authorization;
+    }
+    const response = await fetch(`${normalizedBaseUrl}/${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    return parsePeerDbApiResponse(response);
+  }
+
+  return {
+    async getMirrorStatus(mirrorName) {
+      const result = peerDbMirrorStatusResponseSchema.parse(
+        await post("mirrors/status", {
+          flowJobName: mirrorName,
+          includeFlowInfo: true,
+        }),
+      );
+      if (result.ok === false) {
+        throw new Error(
+          `PeerDB could not inspect mirror ${mirrorName}: ${result.errorMessage || "unknown error"}`,
+        );
+      }
+      return {
+        currentFlowState: result.currentFlowState,
+        tableMappings: result.cdcStatus.config.tableMappings,
+      };
+    },
+    async changeMirrorState(request) {
+      const responseSchema = z
+        .object({ ok: z.boolean().optional(), errorMessage: z.string().optional() })
+        .passthrough();
+      const result = responseSchema.parse(await post("mirrors/state_change", request));
+      if (result.ok === false) {
+        throw new Error(
+          `PeerDB could not change mirror ${request.flowJobName}: ${result.errorMessage || "unknown error"}`,
+        );
+      }
+    },
+    async listMirrors() {
+      return peerDbMirrorListResponseSchema.parse(await get("mirrors/list")).mirrors;
+    },
+  };
+}
+
+export function createPeerDbMirrorApiClientFromEnv(): PeerDbMirrorApiClient {
+  const databaseUrl = new URL(requireEnv("DATABASE_URL"));
+  if (!isLocalhost(databaseUrl.hostname)) {
+    return createPeerDbMirrorApiClient("http://peerdb-flow-api:8113/v1", undefined);
+  }
+  const config = buildPeerDbFlowApiConfig(
+    databaseUrl.hostname,
+    requireEnv("POSTGRES_PASSWORD"),
+    resolveTemplatePort("PEERDB_UI_PORT", 3001),
+  );
+  return createPeerDbMirrorApiClient(config.url, config.authorization);
 }
 
 function parseClickHouseUrl(urlString: string): URL {
@@ -294,8 +491,15 @@ function buildRuntimeConfig(): RuntimeConfig {
   const postgresPassword = decodeURIComponent(
     requireUrlComponent(databaseUrl.password, "password", "DATABASE_URL"),
   );
+  const peerDbFlowApi = buildPeerDbFlowApiConfig(
+    databaseUrl.hostname,
+    postgresCredential,
+    resolveTemplatePort("PEERDB_UI_PORT", 3001),
+  );
 
   return {
+    peerDbFlowApiAuthorization: peerDbFlowApi.authorization,
+    peerDbFlowApiUrl: peerDbFlowApi.url,
     peerDbUrl: buildDefaultPeerDbUrl(postgresCredential, resolvePeerDbHost(), resolvePeerDbPort()),
     templatePath: process.env.PEERDB_CDC_SQL_TEMPLATE_PATH ?? "src/db/peerdb/metric-stream-cdc.sql",
     templateValues: {
@@ -642,6 +846,103 @@ async function reconcileRawAnalyticsMirrors(
   return rawAnalyticsInitialCopyValues;
 }
 
+function mirrorHasTableMapping(
+  status: PeerDbMirrorStatus,
+  requiredMapping: PeerDbTableMapping,
+): boolean {
+  return status.tableMappings.some(
+    (mapping) =>
+      mapping.sourceTableIdentifier === requiredMapping.sourceTableIdentifier &&
+      mapping.destinationTableIdentifier === requiredMapping.destinationTableIdentifier,
+  );
+}
+
+async function waitForPeerDbMirror(
+  peerDbMirrorApiClient: PeerDbMirrorApiClient,
+  mirrorName: string,
+  description: string,
+  predicate: (status: PeerDbMirrorStatus) => boolean,
+): Promise<PeerDbMirrorStatus> {
+  const deadline = Date.now() + peerDbMirrorStatePollTimeoutMs;
+  while (true) {
+    const status = await peerDbMirrorApiClient.getMirrorStatus(mirrorName);
+    if (predicate(status)) {
+      return status;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for PeerDB mirror ${mirrorName} to ${description}`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, peerDbMirrorStatePollIntervalMs));
+  }
+}
+
+async function ensureExistingMirrorTableMappings(
+  peerDbMirrorApiClient: PeerDbMirrorApiClient,
+  existingMirrorNames: ReadonlySet<string>,
+): Promise<void> {
+  for (const [mirrorName, requiredMappings] of Object.entries(
+    requiredExistingMirrorTableMappings,
+  )) {
+    if (!existingMirrorNames.has(mirrorName)) {
+      continue;
+    }
+
+    const status = await peerDbMirrorApiClient.getMirrorStatus(mirrorName);
+    const missingMappings = requiredMappings.filter(
+      (requiredMapping) => !mirrorHasTableMapping(status, requiredMapping),
+    );
+    if (missingMappings.length === 0) {
+      continue;
+    }
+    if (status.currentFlowState !== "STATUS_RUNNING") {
+      throw new Error(
+        `PeerDB mirror ${mirrorName} must be running before adding required processing marker mappings; current state is ${status.currentFlowState}`,
+      );
+    }
+
+    await peerDbMirrorApiClient.changeMirrorState({
+      flowJobName: mirrorName,
+      requestedFlowState: "STATUS_PAUSED",
+    });
+    let resumedWithRequiredMappings = false;
+    try {
+      await waitForPeerDbMirror(
+        peerDbMirrorApiClient,
+        mirrorName,
+        "reach STATUS_PAUSED",
+        (currentStatus) => currentStatus.currentFlowState === "STATUS_PAUSED",
+      );
+      await peerDbMirrorApiClient.changeMirrorState({
+        flowJobName: mirrorName,
+        requestedFlowState: "STATUS_RUNNING",
+        flowConfigUpdate: {
+          cdcFlowConfigUpdate: {
+            additional_tables: missingMappings,
+          },
+        },
+      });
+      await waitForPeerDbMirror(
+        peerDbMirrorApiClient,
+        mirrorName,
+        "include required processing marker mappings and resume CDC",
+        (currentStatus) =>
+          currentStatus.currentFlowState === "STATUS_RUNNING" &&
+          missingMappings.every((requiredMapping) =>
+            mirrorHasTableMapping(currentStatus, requiredMapping),
+          ),
+      );
+      resumedWithRequiredMappings = true;
+    } finally {
+      if (!resumedWithRequiredMappings) {
+        await peerDbMirrorApiClient.changeMirrorState({
+          flowJobName: mirrorName,
+          requestedFlowState: "STATUS_RUNNING",
+        });
+      }
+    }
+  }
+}
+
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
@@ -676,6 +977,12 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
       throw error;
     }
   }
+  if (existingMirrorNames.size > 0) {
+    if (!options.peerDbMirrorApiClient) {
+      throw new Error("PeerDB mirror API client is required to reconcile existing mirror mappings");
+    }
+    await ensureExistingMirrorTableMappings(options.peerDbMirrorApiClient, existingMirrorNames);
+  }
 }
 
 export async function setupClickHouseCdcFromEnv(): Promise<void> {
@@ -689,6 +996,10 @@ export async function setupClickHouseCdcFromEnv(): Promise<void> {
     await peerDbClient.connect();
     await sourcePostgresClient.connect();
     await setupClickHouseCdc({
+      peerDbMirrorApiClient: createPeerDbMirrorApiClient(
+        config.peerDbFlowApiUrl,
+        config.peerDbFlowApiAuthorization,
+      ),
       peerDbClient,
       sourcePostgresClient,
       clickHouseClient,

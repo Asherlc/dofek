@@ -7,7 +7,9 @@ packages/mobile/certs/public-key.pem
 .claude/*
 !.claude/skills/
 .context/
+.worktrees/
 .codegraph/
+paseo.json
 .DS_Store
 *.swp
 *.swo
@@ -41,6 +43,7 @@ test-results/
 muter_logs/
 # Python
 .venv/
+.venv-analytics/
 __pycache__/
 *.pyc
 *.egg-info/
@@ -61,6 +64,11 @@ packages/ios/ios/Dofek.xcworkspace/
 packages/ios/ios/Pods
 packages/ios/ios/build
 
+# iOS xcarchive build artifacts
+ios-xcarchive/
+
 # Gemini CLI
 .gemini/
 .worktrees/
+coverage-integration/
+coverage-integration-*/

@@ -9,9 +9,13 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
+import {
+  clickHouseWindowStartPredicate,
+  dateWindowStartStringOrUndefined,
+  type RangeDays,
+} from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 export type { WeeklyStressRow };
 
@@ -40,12 +44,8 @@ export interface StressResult {
 
 const rawRowSchema = z.object({
   date: dateStringSchema,
-  hrv: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number().nullable(),
-  hrv_mean_60d: z.coerce.number().nullable(),
-  hrv_sd_60d: z.coerce.number().nullable(),
-  rhr_mean_60d: z.coerce.number().nullable(),
-  rhr_sd_60d: z.coerce.number().nullable(),
+  hrv_z_score: z.coerce.number().nullable(),
+  resting_hr_z_score: z.coerce.number().nullable(),
   efficiency_pct: z.coerce.number().nullable(),
 });
 
@@ -56,33 +56,11 @@ type RawRow = z.infer<typeof rawRowSchema>;
 // ---------------------------------------------------------------------------
 
 function computeHrvDeviation(row: RawRow): number | null {
-  if (
-    row.hrv == null ||
-    row.hrv_mean_60d == null ||
-    row.hrv_sd_60d == null ||
-    Number(row.hrv_sd_60d) <= 0
-  ) {
-    return null;
-  }
-  return (
-    Math.round(((Number(row.hrv) - Number(row.hrv_mean_60d)) / Number(row.hrv_sd_60d)) * 100) / 100
-  );
+  return row.hrv_z_score == null ? null : Math.round(row.hrv_z_score * 100) / 100;
 }
 
 function computeRestingHrDeviation(row: RawRow): number | null {
-  if (
-    row.resting_hr == null ||
-    row.rhr_mean_60d == null ||
-    row.rhr_sd_60d == null ||
-    Number(row.rhr_sd_60d) <= 0
-  ) {
-    return null;
-  }
-  return (
-    Math.round(
-      ((Number(row.resting_hr) - Number(row.rhr_mean_60d)) / Number(row.rhr_sd_60d)) * 100,
-    ) / 100
-  );
+  return row.resting_hr_z_score == null ? null : Math.round(row.resting_hr_z_score * 100) / 100;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +82,11 @@ export class StressRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async getStressScores(days: number, endDate: string): Promise<StressResult> {
+  async getStressScores(
+    days: RangeDays,
+    endDate: string,
+    queryOptions?: ActivitySensorQueryOptions,
+  ): Promise<StressResult> {
     const sensorStore = this.#requireSensorStore();
     const accessWindowClause =
       this.accessWindow.kind === "full"
@@ -116,22 +98,24 @@ export class StressRepository extends BaseRepository {
       rawRowSchema,
       `SELECT
         toString(recovery_inputs.date) AS date,
-        hrv,
-        resting_hr,
-        hrv_mean_60d,
-        hrv_sd_60d,
-        rhr_mean_60d,
-        rhr_sd_60d,
+        hrv_z_score,
+        resting_hr_z_score,
         efficiency_pct
       FROM analytics.daily_recovery AS recovery_inputs FINAL
       WHERE recovery_inputs.user_id = {userId:UUID}
-        AND recovery_inputs.date > toDate({windowStart:String})
+        AND recovery_inputs.is_deleted = 0
+        ${clickHouseWindowStartPredicate({
+          expression: "recovery_inputs.date",
+          days,
+        })}
         AND recovery_inputs.date <= toDate({endDate:String})
         ${accessWindowClause}
       ORDER BY recovery_inputs.date ASC`,
       {
         userId: this.userId,
-        windowStart: dateWindowStartString(endDate, days),
+        ...(dateWindowStartStringOrUndefined(endDate, days) !== undefined
+          ? { windowStart: dateWindowStartStringOrUndefined(endDate, days) }
+          : {}),
         endDate,
         ...(this.accessWindow.kind === "full"
           ? {}
@@ -140,6 +124,7 @@ export class StressRepository extends BaseRepository {
               accessEndDateExclusive: this.accessWindow.endDateExclusive,
             }),
       },
+      queryOptions,
     );
 
     const storedParams = await loadPersonalizedParams(this.db, this.userId);

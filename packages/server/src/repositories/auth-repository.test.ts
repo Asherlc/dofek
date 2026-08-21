@@ -154,28 +154,6 @@ describe("AuthRepository", () => {
     });
   });
 
-  describe("getAccountCount", () => {
-    it("returns 0 when no accounts exist", async () => {
-      const { repo } = makeRepository([{ count: "0" }]);
-      expect(await repo.getAccountCount()).toBe(0);
-    });
-
-    it("returns the count as a number", async () => {
-      const { repo } = makeRepository([{ count: "3" }]);
-      expect(await repo.getAccountCount()).toBe(3);
-    });
-
-    it("returns 0 when query returns empty results", async () => {
-      const { repo } = makeRepository([]);
-      expect(await repo.getAccountCount()).toBe(0);
-    });
-
-    it("returns exactly 0 (not just falsy) for empty results", async () => {
-      const { repo } = makeRepository([]);
-      expect(await repo.getAccountCount()).toStrictEqual(0);
-    });
-  });
-
   describe("deleteAccount", () => {
     it("returns deleted account id on success", async () => {
       const { repo } = makeRepository([{ id: "acc-1" }]);

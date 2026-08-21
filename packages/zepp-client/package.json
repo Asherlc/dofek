@@ -1,23 +1,63 @@
 {
-  "name": "zepp-client",
-  "version": "0.1.0",
+  "name": "@dofek/zepp-client",
+  "version": "0.1.12",
   "description": "Unofficial Zepp/Amazfit API client using reverse-engineered Huami authentication",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/zepp-client"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/zepp-client#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "zepp",
+    "amazfit",
+    "huami",
+    "api-client",
+    "unofficial"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
-    "./client": "./src/client.ts",
-    "./types": "./src/types.ts"
+    ".": "./src/client.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest --watch",
     "build": "tsc",
-    "lint": "biome check ."
+    "prepack": "pnpm run build",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "zod": "3.25.76"
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
-    "vitest": "3.2.4"
+    "@types/node": "26.1.2",
+    "typescript": "6.0.3",
+    "vitest": "3.2.6"
   }
 }

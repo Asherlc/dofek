@@ -19,12 +19,11 @@ export interface ActivityMapPreview {
 
 export interface ActivityMapLocation {
   mapPreview: ActivityMapPreview;
-  distanceMeters: number | null;
-  elevationGainM: number | null;
 }
 
 interface ActivityMapTileProps {
   location: ActivityMapLocation;
+  variant?: "card" | "panel";
 }
 
 function formatRouteCoordinate(value: number): string {
@@ -116,11 +115,18 @@ function ActivityRouteOverlay({ mapPreview }: { mapPreview: ActivityMapPreview }
   );
 }
 
-export function ActivityMapTile({ location }: ActivityMapTileProps) {
+export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileProps) {
   const [loadFailed, setLoadFailed] = useState(false);
+  const isPanel = variant === "panel";
 
   return (
-    <div className="relative aspect-[16/9] w-full overflow-hidden bg-surface-secondary">
+    <div
+      data-testid="activity-map-tile"
+      className={[
+        "relative w-full overflow-hidden bg-surface-secondary",
+        isPanel ? "h-full min-h-48" : "aspect-[16/9]",
+      ].join(" ")}
+    >
       {loadFailed ? (
         <div className="flex h-full w-full items-center justify-center text-xs text-muted">
           Map unavailable

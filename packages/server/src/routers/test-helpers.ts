@@ -1,13 +1,76 @@
 import type { AnyRouter } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
+import { sql } from "drizzle-orm";
 import { vi } from "vitest";
+import type {
+  ProviderDataGenerationContext,
+  ProviderDataScope,
+} from "../../../../src/db/provider-data-deletion.ts";
+import type { Database } from "../../../../src/db/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { Context } from "../trpc.ts";
 
 const trpc = initTRPC.context<Context>().create();
 
+export async function resolveProviderDataGenerationsForTest(
+  database: Database,
+  scopes: readonly ProviderDataScope[],
+): Promise<ProviderDataGenerationContext> {
+  await database.execute(sql`SELECT 0 AS generation`);
+  return {
+    generations: scopes.map((scope) => ({ ...scope, generation: 0 })),
+    operationRevision: "1000000000000000",
+  };
+}
+
+export function makeTransactionalTestDatabase<TDatabase extends Database>(
+  database: TDatabase,
+): TDatabase & {
+  transaction<TResult>(work: (transaction: TDatabase) => Promise<TResult>): Promise<TResult>;
+} {
+  async function transaction<TResult>(
+    work: (transaction: TDatabase) => Promise<TResult>,
+  ): Promise<TResult> {
+    return work(database);
+  }
+  return Object.assign(database, { transaction });
+}
+
 export function createTestCallerFactory(router: AnyRouter) {
   return trpc.createCallerFactory(router);
+}
+
+type MockTestDatabase = {
+  execute: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
+};
+
+export function makeTestCaller<TContext, TCaller>(
+  createCaller: (context: TContext) => TCaller,
+  responses: unknown[][] = [],
+  createContext: (db: MockTestDatabase) => TContext,
+) {
+  const execute = vi.fn();
+  for (const response of responses) execute.mockResolvedValueOnce(response);
+  execute.mockResolvedValue([]);
+  const db: MockTestDatabase = { execute, transaction: vi.fn() };
+  db.transaction.mockImplementation(async (callback) => callback(db));
+  return { caller: createCaller(createContext(db)), execute };
+}
+
+export function collectSqlText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return "";
+  const queryChunks = Reflect.get(value, "queryChunks");
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map((queryChunk) => collectSqlText(queryChunk)).join("");
+  }
+  const rawValue = Reflect.get(value, "value");
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((rawChunk) => collectSqlText(rawChunk)).join("");
+  }
+  if (typeof rawValue === "string") return rawValue;
+  return "";
 }
 
 /**

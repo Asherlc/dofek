@@ -1,8 +1,11 @@
 # Metric Stream Timescale Runbook
 
-This is a historical runbook. Postgres `fitness.metric_stream` has been retired
-and should not be recreated; metric-stream durability now lives in Redpanda,
-the R2 archive, and ClickHouse serving tables.
+> **Historical record — do not run these commands.** Postgres
+> `fitness.metric_stream` and the training-export worker have been retired.
+> Current metric-stream durability lives in Redpanda, the R2 archive, and
+> ClickHouse `ingest.metric_stream`. Use
+> [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md)
+> for current operations.
 
 The original runbook converted `fitness.metric_stream` from a regular table to a
 Timescale hypertable, then enabled compression.

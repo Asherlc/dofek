@@ -1,12 +1,10 @@
 import type { Database } from "dofek/db";
-import { decryptCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowEnd } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
+import { fetchDailySleepPerformanceNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -149,18 +147,6 @@ function buildHrvAnomaly(
   };
 }
 
-function slackBotTokenContext(teamId: string): {
-  tableName: string;
-  columnName: string;
-  scopeId: string;
-} {
-  return {
-    tableName: "fitness.slack_installation",
-    columnName: "bot_token",
-    scopeId: teamId,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -278,13 +264,11 @@ export class AnomalyDetectionRepository {
           LEFT JOIN hrv_baseline h ON h.date = target_date.date
           LIMIT 1`,
       ),
-      fetchSleepNights({
+      fetchDailySleepPerformanceNights({
         sensorStore: this.#sensorStore,
         userId: this.#userId,
-        timezone: this.#timezone,
         endDate,
         days: BASELINE_LOOKBACK_DAYS,
-        order: "asc",
       }),
     ]);
 
@@ -540,117 +524,4 @@ export async function checkAnomalies(
 ): Promise<AnomalyCheckResult> {
   const repo = new AnomalyDetectionRepository(db, userId, timezone, sensorStore);
   return repo.check(endDate);
-}
-
-/**
- * Send anomaly alerts to Slack via the bot. Looks up the Slack user linked
- * to the dofek user and sends a DM with the anomaly details.
- */
-export async function sendAnomalyAlertToSlack(
-  db: Database,
-  userId: string,
-  anomalies: AnomalyRow[],
-): Promise<boolean> {
-  if (anomalies.length === 0) return false;
-
-  // Look up Slack credentials and user link
-  const slackRows = await executeWithSchema(
-    db,
-    z.object({ bot_token: z.string(), team_id: z.string().optional() }),
-    sql`SELECT bot_token, team_id FROM fitness.slack_installation LIMIT 1`,
-  );
-  const slackRow = slackRows[0];
-  if (!slackRow) {
-    logger.debug("[anomaly] No Slack installation found, skipping alert");
-    return false;
-  }
-  const decryptedBotToken = await decryptCredentialValue(
-    slackRow.bot_token,
-    slackBotTokenContext(slackRow.team_id ?? "default"),
-  );
-
-  const accountRows = await executeWithSchema(
-    db,
-    z.object({ provider_account_id: z.string() }),
-    sql`SELECT provider_account_id FROM fitness.auth_account
-        WHERE user_id = ${userId} AND auth_provider = 'slack'
-        LIMIT 1`,
-  );
-  const accountRow = accountRows[0];
-  if (!accountRow) {
-    logger.debug("[anomaly] No Slack account linked for user, skipping alert");
-    return false;
-  }
-
-  const blocks = [
-    {
-      type: "header",
-      text: {
-        type: "plain_text",
-        text: anomalies.some((anomaly) => anomaly.severity === "alert")
-          ? "Health Alert"
-          : "Health Warning",
-      },
-    },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "Unusual readings detected in today's health data:",
-      },
-    },
-    ...anomalies.map((anomaly) => ({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*${anomaly.metric}*: ${anomaly.value} (baseline: ${anomaly.baselineMean} \u00b1 ${anomaly.baselineStddev}, z-score: ${anomaly.zScore})`,
-      },
-    })),
-  ];
-
-  // Check for illness pattern: elevated resting HR + depressed HRV
-  const hasElevatedHr = anomalies.some((anomaly) => anomaly.metric === "Resting Heart Rate");
-  const hasDepressedHrv = anomalies.some((anomaly) => anomaly.metric === "Heart Rate Variability");
-  if (hasElevatedHr && hasDepressedHrv) {
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "_Combined elevated resting HR and depressed HRV may indicate your body is fighting something. Consider taking it easy today._",
-      },
-    });
-  }
-
-  try {
-    const response = await fetch("https://slack.com/api/chat.postMessage", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${decryptedBotToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        channel: accountRow.provider_account_id,
-        text: `Health ${anomalies.some((anomaly) => anomaly.severity === "alert") ? "alert" : "warning"}: unusual readings detected`,
-        blocks,
-      }),
-    });
-
-    if (!response.ok) {
-      logger.error(`[anomaly] Slack API returned ${response.status}`);
-      return false;
-    }
-
-    const result: { ok: boolean; error?: string } = await response.json();
-    if (!result.ok) {
-      logger.error(`[anomaly] Slack API error: ${result.error}`);
-      return false;
-    }
-
-    logger.info(`[anomaly] Sent ${anomalies.length} alert(s) to Slack for user ${userId}`);
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error(`[anomaly] Failed to send Slack alert: ${message}`);
-    return false;
-  }
 }

@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -278,6 +279,5 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     if ("maxPower" in raw) expect(raw.maxPower).toBe(480);
     if ("avgHeartRate" in raw) expect(raw.avgHeartRate).toBe(148);
     if ("ascent" in raw) expect(raw.ascent).toBe(750);
-    if ("calories" in raw) expect(raw.calories).toBe(1100);
   });
 });

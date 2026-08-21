@@ -36,9 +36,27 @@ import {
 
 export const OURA_API_BASE = "https://api.ouraring.com";
 
+export class OuraApiError extends Error {
+  readonly status: number;
+  readonly path: string;
+
+  constructor(status: number, path: string, detail: string) {
+    super(`API error ${status} on ${path}: ${detail}`);
+    this.name = "OuraApiError";
+    this.status = status;
+    this.path = path;
+  }
+}
+
 export class OuraClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     super(accessToken, OURA_API_BASE, fetchFn, "oura");
+  }
+
+  protected async handleErrorResponse(response: Response, path: string): Promise<never> {
+    const text = await response.text();
+    const truncated = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    throw new OuraApiError(response.status, path, truncated);
   }
 
   #dateQuery(startDate: string, endDate: string, nextToken?: string): string {

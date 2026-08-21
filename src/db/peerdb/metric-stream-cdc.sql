@@ -42,12 +42,20 @@ WITH TABLE MAPPING
     to: provider
   },
   {
+    from: fitness.provider_connection,
+    to: provider_connection
+  },
+  {
     from: fitness.provider_priority,
     to: provider_priority
   },
   {
     from: fitness.device_priority,
     to: device_priority
+  },
+  {
+    from: fitness.processing_flow_marker,
+    to: processing_flow_marker
   },
   {
     from: fitness.user_profile,
@@ -88,6 +96,10 @@ WITH TABLE MAPPING
   {
     from: fitness.journal_entry,
     to: journal_entry
+  },
+  {
+    from: fitness.processing_flow_marker,
+    to: processing_flow_marker_provider_inventory
   }
 )
 WITH (

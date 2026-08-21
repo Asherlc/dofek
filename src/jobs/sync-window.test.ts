@@ -25,6 +25,22 @@ describe("SyncWindow", () => {
     );
   });
 
+  it("rejects non-finite constructor bounds with the exact boundary name", () => {
+    expect(
+      () =>
+        new SyncWindow({
+          since: new Date(Number.NaN),
+          until: new Date("2026-06-18T15:00:00.000Z"),
+        }),
+    ).toThrow("Invalid sync window since");
+    expect(() =>
+      SyncWindow.fromSince({
+        since: new Date("2026-06-10T00:00:00.000Z"),
+        until: new Date(Number.NaN),
+      }),
+    ).toThrow("Invalid sync window until");
+  });
+
   it("lastDays resolves relative to the anchor day", () => {
     const window = SyncWindow.lastDays(7, { now });
 

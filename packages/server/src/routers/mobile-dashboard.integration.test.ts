@@ -1,7 +1,7 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -52,11 +52,11 @@ describe("mobile-dashboard router integration", () => {
       sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-              sleep_type
+              staging_available, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               NOW() - INTERVAL '8 hours', NOW(),
-              480, 120, 96, 240, 24, 'sleep'
+              480, 120, 96, 240, 24, true, 'sleep'
             )
             ON CONFLICT DO NOTHING`,
     );
@@ -113,10 +113,11 @@ describe("mobile-dashboard router integration", () => {
         lastNight: {
           date: string;
           durationMinutes: number;
-          deepPct: number;
-          remPct: number;
-          lightPct: number;
-          awakePct: number;
+          deepPct: number | null;
+          remPct: number | null;
+          lightPct: number | null;
+          awakePct: number | null;
+          stagingAvailable: boolean;
         } | null;
         sleepDebt: number;
       } | null;
