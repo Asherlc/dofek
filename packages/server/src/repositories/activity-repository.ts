@@ -50,6 +50,7 @@ const activityDetailRowSchema = z.object({
   ended_at: timestampStringSchema.nullable(),
   name: z.string().nullable(),
   notes: z.string().nullable(),
+  perceived_exertion: z.number().nullable(),
   provider_id: z.string(),
   subsource: z.string().nullable(),
   source_providers: z.array(z.string()),
@@ -426,6 +427,7 @@ export class ActivityRepository extends BaseRepository {
             a.ended_at::text AS ended_at,
             a.name,
             a.notes,
+            effort.perceived_exertion,
             a.provider_id,
             a.raw->>'sourceName' AS subsource,
             a.source_providers,
@@ -445,6 +447,24 @@ export class ActivityRepository extends BaseRepository {
             NULL::integer AS sample_count,
             NULL::text AS provider_absent_at
           FROM fitness.v_activity a
+          LEFT JOIN LATERAL (
+            SELECT member_activity.perceived_exertion
+            FROM fitness.activity member_activity
+            LEFT JOIN fitness.provider_priority provider_priority
+              ON provider_priority.provider_id = member_activity.provider_id
+            LEFT JOIN LATERAL (
+              SELECT device_priority.priority
+              FROM fitness.device_priority device_priority
+              WHERE device_priority.provider_id = member_activity.provider_id
+                AND member_activity.source_name LIKE device_priority.source_name_pattern
+              ORDER BY length(device_priority.source_name_pattern) DESC
+              LIMIT 1
+            ) device_priority ON true
+            WHERE member_activity.id = ANY(a.member_activity_ids)
+              AND member_activity.perceived_exertion IS NOT NULL
+            ORDER BY COALESCE(device_priority.priority, provider_priority.priority, 100), member_activity.id
+            LIMIT 1
+          ) effort ON true
           WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
@@ -466,6 +486,7 @@ export class ActivityRepository extends BaseRepository {
             a.ended_at::text AS ended_at,
             a.name,
             a.notes,
+            a.perceived_exertion,
             a.provider_id,
             a.raw->>'sourceName' AS subsource,
             ARRAY[a.provider_id] AS source_providers,

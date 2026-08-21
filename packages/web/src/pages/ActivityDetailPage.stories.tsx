@@ -12,6 +12,7 @@ const baseActivity: ActivityDetail = {
   endedAt: "2026-03-31T09:30:00Z",
   name: "Morning Ride",
   notes: null,
+  perceivedExertion: null,
   providerId: "wahoo",
   subsource: null,
   sourceProviders: ["wahoo", "apple_health"],
@@ -78,6 +79,15 @@ export const Running: HeaderStory = {
       elevationLoss: 45,
       avgSpeed: 3.2,
       avgCadence: 170,
+    },
+  },
+};
+
+export const WithSessionEffort: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      perceivedExertion: 7,
     },
   },
 };

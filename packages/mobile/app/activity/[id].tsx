@@ -804,6 +804,12 @@ export default function ActivityDetailScreen() {
       value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
     });
   }
+  if (activity.perceivedExertion != null) {
+    stats.push({
+      label: "Session effort",
+      value: `${activity.perceivedExertion} / 10`,
+    });
+  }
 
   return (
     <ScrollView

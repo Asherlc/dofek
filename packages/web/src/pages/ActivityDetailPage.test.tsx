@@ -36,6 +36,7 @@ const mockActivity: ActivityDetail = {
   activityType: "running",
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
+  perceivedExertion: null,
   providerId: "whoop",
   subsource: null,
   providerAbsentAt: null,
@@ -315,6 +316,25 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("ActivityHeader unit display", () => {
+    it("shows session effort only when it was recorded", async () => {
+      mockActivity.perceivedExertion = 7;
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Session effort")).toBeDefined();
+      expect(screen.getByText("7 / 10")).toBeDefined();
+
+      mockActivity.perceivedExertion = null;
+    });
+
+    it("does not show a session effort card when it was not recorded", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.queryByText("Session effort")).toBeNull();
+    });
+
     it("shows metric distance and elevation", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />, "metric");

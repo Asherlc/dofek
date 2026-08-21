@@ -228,6 +228,7 @@ const baseCyclingActivity = {
   elevationGain: 400,
   elevationLoss: 380,
   sampleCount: 200,
+  perceivedExertion: null,
 };
 
 const streamPointsWithHrAndPower = Array.from({ length: 5 }, (_, index) => ({
@@ -268,6 +269,27 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
+  });
+
+  it("shows session effort only when it was recorded", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, perceivedExertion: 7 },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Session effort")).toBeTruthy();
+    expect(screen.getByText("7 / 10")).toBeTruthy();
+  });
+
+  it("does not show a session effort card when it was not recorded", async () => {
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.queryByText("Session effort")).toBeNull();
   });
 
   it("renders heart rate and power chart labels for cycling with stream data", async () => {
