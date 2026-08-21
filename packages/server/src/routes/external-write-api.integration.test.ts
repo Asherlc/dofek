@@ -137,22 +137,15 @@ describe.sequential("external write API network contract", () => {
   });
 
   it("provisions a client without persisting the raw secret", async () => {
-    let response: Response | undefined;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      await testContext.db.execute(
-        sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
-            VALUES (${ADMIN_USER_ID}, 'External API Admin Test', NULL, true)
-            ON CONFLICT (id) DO UPDATE SET is_admin = true`,
-      );
-      const session = await createSession(testContext.db, ADMIN_USER_ID);
-      response = await fetch(`${baseUrl}/api/external/v1/clients`, {
-        method: "POST",
-        headers: { Cookie: `session=${session.sessionId}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
-      });
-      if (response.status !== 403) break;
-    }
-    if (!response) throw new Error("Admin client request did not execute");
+    const session = await createSession(testContext.db, ADMIN_USER_ID);
+    const response = await fetch(`${baseUrl}/api/external/v1/clients`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
+    });
     expect(response.status).toBe(201);
     const body: { clientId: string; clientSecret: string } = await response.json();
     const rows = await testContext.db.execute(
