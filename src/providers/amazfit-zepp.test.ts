@@ -1671,9 +1671,11 @@ describe("AmazfitZeppProvider auth", () => {
     vi.clearAllMocks();
   });
 
-  it("wraps fetch with amazfit-zepp rate limit config", () => {
+  it("wraps fetch with amazfit-zepp rate limit and service-unavailable config", () => {
     new AmazfitZeppProvider();
-    expect(createProviderRateLimitFetch).toHaveBeenCalledWith("amazfit-zepp", expect.any(Function));
+    expect(createProviderRateLimitFetch).toHaveBeenCalledWith("amazfit-zepp", expect.any(Function), {
+      additionalServiceUnavailableStatusCodes: [500],
+    });
   });
 
   it("authSetup returns credential configuration", () => {

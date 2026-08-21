@@ -371,7 +371,9 @@ export class AmazfitZeppClient {
   ) {
     this.#appToken = appToken;
     this.#userId = userId;
-    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn);
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn, {
+      additionalServiceUnavailableStatusCodes: [500],
+    });
     this.#apiBaseUrl = apiBaseUrl;
   }
 
@@ -479,7 +481,9 @@ export class AmazfitZeppProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn);
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn, {
+      additionalServiceUnavailableStatusCodes: [500],
+    });
   }
 
   validate(): string | null {

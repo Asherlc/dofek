@@ -1,7 +1,4 @@
-import {
-  ProviderRateLimitError,
-  ProviderServiceUnavailableError,
-} from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { PolarClient } from "./client.ts";
 
@@ -165,8 +162,8 @@ describe("PolarClient — response parsing", () => {
   });
 });
 
-describe("PolarClient — service unavailable responses", () => {
-  it("throws a polar-scoped ProviderServiceUnavailableError for a JSON 500 response", async () => {
+describe("PolarClient — API error responses", () => {
+  it("includes JSON error bodies in API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response('{"message":"bad"}', {
         status: 500,
@@ -175,17 +172,10 @@ describe("PolarClient — service unavailable responses", () => {
 
     const client = new PolarClient("access-token", fetchFn);
 
-    const error = await client.getExercises().catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
-    expect(error).toMatchObject({
-      providerId: "polar",
-      statusCode: 500,
-      responseBody: '{"message":"bad"}',
-    });
+    await expect(client.getExercises()).rejects.toThrow('Polar API error (500): {"message":"bad"}');
   });
 
-  it("throws a polar-scoped ProviderServiceUnavailableError for an empty JSON 500 response", async () => {
+  it("handles API errors with JSON content-type but empty body", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("", {
         status: 500,
@@ -194,17 +184,12 @@ describe("PolarClient — service unavailable responses", () => {
 
     const client = new PolarClient("access-token", fetchFn);
 
-    const error = await client.getExercises().catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
-    expect(error).toMatchObject({
-      providerId: "polar",
-      statusCode: 500,
-      responseBody: "",
-    });
+    await expect(client.getExercises()).rejects.toThrow(
+      "Polar API error (500): (empty JSON error body)",
+    );
   });
 
-  it("throws a polar-scoped ProviderServiceUnavailableError for an HTML 500 response", async () => {
+  it("redacts HTML error pages from API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("<html>error</html>", {
         status: 500,
@@ -213,17 +198,10 @@ describe("PolarClient — service unavailable responses", () => {
 
     const client = new PolarClient("access-token", fetchFn);
 
-    const error = await client.getExercises().catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
-    expect(error).toMatchObject({
-      providerId: "polar",
-      statusCode: 500,
-      responseBody: "<html>error</html>",
-    });
+    await expect(client.getExercises()).rejects.toThrow("Polar API error (500): (HTML error page)");
   });
 
-  it("throws a polar-scoped ProviderServiceUnavailableError for a text 500 response", async () => {
+  it("includes plain-text error bodies in API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("upstream unavailable", {
         status: 500,
@@ -232,14 +210,9 @@ describe("PolarClient — service unavailable responses", () => {
 
     const client = new PolarClient("access-token", fetchFn);
 
-    const error = await client.getExercises().catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
-    expect(error).toMatchObject({
-      providerId: "polar",
-      statusCode: 500,
-      responseBody: "upstream unavailable",
-    });
+    await expect(client.getExercises()).rejects.toThrow(
+      "Polar API error (500): upstream unavailable",
+    );
   });
 });
 

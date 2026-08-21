@@ -1,7 +1,4 @@
-import {
-  ProviderRateLimitError,
-  ProviderServiceUnavailableError,
-} from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -1548,15 +1545,13 @@ describe("OuraClient", () => {
     expect(capturedUrl).toContain("next_token=vo2page");
   });
 
-  it("throws a provider service-unavailable error for VO2 max HTTP 500", async () => {
+  it("throws on non-OK response for VO2 max", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
     };
 
     const client = new OuraClient("token", mockFetch);
-    const request = client.getVO2Max("2026-03-01", "2026-03-02");
-    await expect(request).rejects.toBeInstanceOf(ProviderServiceUnavailableError);
-    await expect(request).rejects.toHaveProperty("statusCode", 500);
+    await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow("API error 500");
   });
 
   it("truncates long error response bodies at 200 characters", async () => {
