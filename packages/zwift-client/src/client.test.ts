@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "./client.ts";
 import type {
@@ -215,11 +218,18 @@ describe("ZwiftClient.getActivities", () => {
     expect(url).toContain("limit=20");
   });
 
-  it("throws on non-200 response", async () => {
+  it("throws a zwift-scoped ProviderServiceUnavailableError on 500", async () => {
     const fetchFn = mockFetch({ status: 500, ok: false, body: "Server Error" });
     const client = new ZwiftClient("test-token", "100", fetchFn);
 
-    await expect(client.getActivities()).rejects.toThrow("Zwift API error (500)");
+    const error = await client.getActivities().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "zwift",
+      statusCode: 500,
+      responseBody: "Server Error",
+    });
   });
 
   it("throws a zwift-scoped ProviderRateLimitError on 429", async () => {
@@ -335,11 +345,18 @@ describe("ZwiftClient.getPowerCurve", () => {
     expect(url).toContain("/api/power-curve/power-profile");
   });
 
-  it("throws on non-200 response", async () => {
+  it("throws a zwift-scoped ProviderServiceUnavailableError on 500", async () => {
     const fetchFn = mockFetch({ status: 500, ok: false, body: "Server Error" });
     const client = new ZwiftClient("test-token", "100", fetchFn);
 
-    await expect(client.getPowerCurve()).rejects.toThrow("Zwift API error (500)");
+    const error = await client.getPowerCurve().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "zwift",
+      statusCode: 500,
+      responseBody: "Server Error",
+    });
   });
 });
 

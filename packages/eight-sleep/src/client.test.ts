@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { EIGHT_SLEEP_CLIENT_ID, EIGHT_SLEEP_CLIENT_SECRET, EightSleepClient } from "./client.ts";
 import { createMockFetch } from "./test-helpers.ts";
@@ -119,13 +122,20 @@ describe("EightSleepClient.getTrends", () => {
     expect(headers.get("Authorization")).toBe("Bearer test-token");
   });
 
-  it("throws on non-200 response", async () => {
+  it("throws an eight-sleep-scoped ProviderServiceUnavailableError on 500", async () => {
     const fetchFn = createMockFetch({ status: 500, ok: false, body: "Internal Server Error" });
     const client = new EightSleepClient("test-token", "user-123", fetchFn);
 
-    await expect(client.getTrends("America/New_York", "2024-01-01", "2024-01-02")).rejects.toThrow(
-      "Eight Sleep API error (500)",
-    );
+    const error = await client
+      .getTrends("America/New_York", "2024-01-01", "2024-01-02")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "eight-sleep",
+      statusCode: 500,
+      responseBody: "Internal Server Error",
+    });
   });
 
   it("throws an eight-sleep-scoped ProviderRateLimitError on 429", async () => {
