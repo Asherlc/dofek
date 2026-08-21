@@ -1439,6 +1439,36 @@ describe("processSyncJob", () => {
     expect(mockLogSync).not.toHaveBeenCalled();
   });
 
+  it("rethrows provider service-unavailable errors so BullMQ retries without Sentry capture", async () => {
+    const serviceUnavailableError = new ProviderServiceUnavailableError({
+      message: "Zepp API service unavailable (500): upstream outage",
+      providerId: "amazfit-zepp",
+      statusCode: 500,
+      responseBody: "upstream outage",
+    });
+    const provider = createMockProvider({
+      id: "amazfit-zepp",
+      name: "Amazfit/Zepp",
+      sync: vi.fn().mockRejectedValue(serviceUnavailableError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "amazfit-zepp" });
+
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(serviceUnavailableError);
+
+    expect(job.updateProgress).toHaveBeenLastCalledWith({
+      providers: {
+        "amazfit-zepp": { status: "running", message: "Service unavailable; retrying" },
+      },
+      percentage: 0,
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
   it("reports returned sync errors to Sentry", async () => {
     const cause = new Error("original cause");
     const context = { activityId: 456, activitySport: "CYCLING" };

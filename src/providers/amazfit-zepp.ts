@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import {
   type LegacyActivityType,
   type ProviderActivityType,
@@ -662,7 +665,12 @@ export class AmazfitZeppProvider implements SyncProvider {
       );
       recordsSynced += count;
     } catch (error: unknown) {
-      if (error instanceof ProviderRateLimitError) throw error;
+      if (
+        error instanceof ProviderRateLimitError ||
+        error instanceof ProviderServiceUnavailableError
+      ) {
+        throw error;
+      }
       const bandDataAuthFailure = authFailureReasonFromError(error);
       if (!bandDataAuthFailure) {
         captureException(error, {
@@ -761,7 +769,12 @@ export class AmazfitZeppProvider implements SyncProvider {
       );
       recordsSynced += count;
     } catch (error: unknown) {
-      if (error instanceof ProviderRateLimitError) throw error;
+      if (
+        error instanceof ProviderRateLimitError ||
+        error instanceof ProviderServiceUnavailableError
+      ) {
+        throw error;
+      }
       if (!authFailureReasonFromError(error)) {
         captureException(error, {
           tags: { provider: this.id, dataType: "workouts", phase: "sync" },

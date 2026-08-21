@@ -1548,7 +1548,7 @@ describe("OuraClient", () => {
     expect(capturedUrl).toContain("next_token=vo2page");
   });
 
-  it("throws on non-OK response for VO2 max", async () => {
+  it("throws a provider service-unavailable error for VO2 max HTTP 500", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
     };

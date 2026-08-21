@@ -582,6 +582,19 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         continue;
       }
 
+      if (err instanceof ProviderServiceUnavailableError) {
+        providerStatus[provider.id] = {
+          status: "running",
+          message: "Service unavailable; retrying",
+        };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        logger.warn(`[worker] ${provider.name} service unavailable, retrying: ${err.message}`);
+        throw err;
+      }
+
       if (isRetryableInfraError(err) && !isProviderTransportError(err)) {
         const message = err instanceof Error ? err.message : String(err);
         captureException(err, {

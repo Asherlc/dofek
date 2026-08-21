@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runWithTokenUser } from "../db/token-user-context.ts";
@@ -239,13 +242,13 @@ describe("AmazfitZeppClient workout history", () => {
     ]);
   });
 
-  it("throws a specific error for non-success HTTP responses", async () => {
+  it("throws a provider service-unavailable error for HTTP 500 responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
-      "Amazfit/Zepp workout API error (500): server error",
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
     );
   });
 
@@ -563,13 +566,16 @@ describe("Amazfit/Zepp provider", () => {
     });
   });
 
-  it("throws a specific error for non-success HTTP responses", async () => {
+  it("throws a provider service-unavailable error for HTTP 500 responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
-      "Amazfit/Zepp API error (500): server error",
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toMatchObject({
+      statusCode: 500,
+    });
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
     );
   });
 
@@ -1561,6 +1567,53 @@ describe("Amazfit/Zepp provider", () => {
         }),
       ),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("rethrows Zepp HTTP 500 errors without reporting them to Sentry", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("upstream outage", { status: 500 });
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const sync = provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    await expect(sync).rejects.toMatchObject({ statusCode: 500 });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("rethrows workout-history HTTP 500 errors without reporting them to Sentry", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      if (String(input).includes("/v1/data/band_data.json")) {
+        return new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("upstream outage", { status: 500 });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+          userId: TEST_USER_ID,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ProviderServiceUnavailableError);
     expect(captureException).not.toHaveBeenCalled();
   });
 });

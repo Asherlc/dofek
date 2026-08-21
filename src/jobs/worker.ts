@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { randomUUID } from "node:crypto";
 import { Job, UnrecoverableError, Worker } from "bullmq";
 import { validateAccountErasureLedgerKeyring } from "../account-erasure/identity.ts";
@@ -551,10 +552,19 @@ for (const worker of allWorkers) {
       worker.name === FIT_FILE_IMPORT_QUEUE && job?.parentKey && err instanceof UnrecoverableError;
     const isAppleHealthImportValidationFailure =
       worker.name === IMPORT_QUEUE && isAppleHealthImportValidationError(err);
-    if (!isFitBatchChildFailure && !isAppleHealthImportValidationFailure) {
+    const isProviderServiceUnavailable = err instanceof ProviderServiceUnavailableError;
+    if (
+      !isFitBatchChildFailure &&
+      !isAppleHealthImportValidationFailure &&
+      !isProviderServiceUnavailable
+    ) {
       captureException(err);
     }
-    logger.error(`[worker] Job failed: ${err.message}`);
+    if (isProviderServiceUnavailable) {
+      logger.warn(`[worker] Job retrying after provider service unavailable: ${err.message}`);
+    } else {
+      logger.error(`[worker] Job failed: ${err.message}`);
+    }
     if (job?.id) {
       const message = `BullMQ job failed: queue=${worker.name} jobId=${job.id} cause=${err.message}`;
       void Job.addJobLog(worker, job.id, `[error] ${message}`, 100).catch((logError: unknown) => {
@@ -612,7 +622,6 @@ for (const worker of allWorkers) {
           `[worker] Failed to append lock renewal failure job log: queue=${worker.name} jobId=${jobId}: ${String(logError)}`,
         );
       });
-    }
   });
 
   worker.on("error", (err) => {
