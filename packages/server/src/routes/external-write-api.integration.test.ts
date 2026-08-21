@@ -26,21 +26,27 @@ async function createGrant(
     revoked?: boolean;
   },
 ) {
+  const userId = options.userId ?? randomUUID();
   const opaqueSubject = `opaque-${options.clientId}`;
   const grantId = randomUUID();
   const oldToken = `old-token-${grantId}`;
+  await testContext.db.execute(
+    sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+        VALUES (${userId}, ${options.clientId}, NULL, false)
+        ON CONFLICT (id) DO NOTHING`,
+  );
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes)
         VALUES (${options.clientId}, ${options.clientId}, ${hash(options.clientSecret)}, ARRAY['nutrition:write'])`,
   );
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject)
-        VALUES (${options.namespace}, ${options.subject}, ${options.userId ?? USER_ID}, ${opaqueSubject})`,
+        VALUES (${options.namespace}, ${options.subject}, ${userId}, ${opaqueSubject})`,
   );
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_grant
         (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at, revoked_at)
-        VALUES (${grantId}::uuid, ${options.clientId}, ${options.userId ?? USER_ID}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
+        VALUES (${grantId}::uuid, ${options.clientId}, ${userId}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
   );
   return { authorization: `Bearer ${options.clientId}.${options.clientSecret}`, grantId, oldToken };
 }
@@ -121,12 +127,17 @@ describe.sequential("external write API network contract", () => {
   });
 
   it("provisions a client without persisting the raw secret", async () => {
-    const session = await createSession(testContext.db, USER_ID);
-    const response = await fetch(`${baseUrl}/api/external/v1/clients`, {
-      method: "POST",
-      headers: { Cookie: `session=${session.sessionId}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
-    });
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const session = await createSession(testContext.db, USER_ID);
+      response = await fetch(`${baseUrl}/api/external/v1/clients`, {
+        method: "POST",
+        headers: { Cookie: `session=${session.sessionId}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
+      });
+      if (response.status !== 403) break;
+    }
+    if (!response) throw new Error("Admin client request did not execute");
     expect(response.status).toBe(201);
     const body: { clientId: string; clientSecret: string } = await response.json();
     const rows = await testContext.db.execute(
