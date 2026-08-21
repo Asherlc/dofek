@@ -41,7 +41,10 @@ const linkExchangeSchema = z.object({
   externalSubject: externalSubjectSchema,
 });
 const linkReissueSchema = externalSubjectSchema;
-const authorizeSchema = z.object({ linkId: z.string().uuid(), approved: z.literal(true) });
+const authorizeSchema = z.object({
+  linkId: z.string().uuid(),
+  approved: z.union([z.literal(true), z.literal("true")]),
+});
 const nutritionSchema = z.object({
   entries: z
     .array(
