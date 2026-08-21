@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildProblem,
   createOpaqueSecret,
+  hashSecret,
   pkceS256,
   verifyPkce,
 } from "./external-write-api-primitives.ts";
@@ -18,6 +19,12 @@ describe("external write API security primitives", () => {
     const challenge = pkceS256(verifier);
     expect(verifyPkce(verifier, challenge)).toBe(true);
     expect(verifyPkce("b".repeat(43), challenge)).toBe(false);
+    expect(verifyPkce("short", challenge)).toBe(false);
+  });
+
+  it("hashes raw secrets consistently", () => {
+    expect(hashSecret("secret-value")).toBe(hashSecret("secret-value"));
+    expect(hashSecret("secret-value")).not.toBe(hashSecret("different-value"));
   });
 
   it("creates a high-entropy opaque secret without returning its hash", () => {
@@ -48,6 +55,48 @@ describe("external write API security primitives", () => {
       message: "The request failed.",
       requestId: "request-2",
       details: [],
+    });
+  });
+
+  it.each([
+    [
+      "EXTERNAL_IDENTITY_ALREADY_LINKED",
+      "External identity already linked",
+      "This external identity is already linked to another Dofek account.",
+    ],
+    ["FORBIDDEN", "Forbidden", "The caller is not allowed to perform this action."],
+    [
+      "IDEMPOTENCY_KEY_REUSED",
+      "Idempotency key reused",
+      "The idempotency key was already used with a different request.",
+    ],
+    [
+      "EXTERNAL_ID_ALREADY_EXISTS",
+      "External ID already exists",
+      "An entry with this external ID already exists for this account.",
+    ],
+    [
+      "INVALID_CREDENTIALS",
+      "Invalid credentials",
+      "The supplied credentials are invalid or revoked.",
+    ],
+    ["INVALID_LINK_CODE", "Invalid link code", "The link code is invalid or expired."],
+    ["NOT_FOUND", "Not found", "The requested resource was not found."],
+    [
+      "REQUEST_IN_PROGRESS",
+      "Request in progress",
+      "An equivalent request is already being processed.",
+    ],
+    ["SERVICE_UNAVAILABLE", "Service unavailable", "The request could not be completed right now."],
+    ["VALIDATION_ERROR", "Validation failed", "The request is invalid."],
+  ])("preserves the explicit problem message for %s", (code, title, message) => {
+    expect(
+      buildProblem(code, 400, "request-3", [{ path: ["field"], message: "invalid" }]),
+    ).toMatchObject({
+      code,
+      title,
+      message,
+      details: [{ path: ["field"], message: "invalid" }],
     });
   });
 });

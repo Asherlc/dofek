@@ -326,6 +326,56 @@ describe.sequential("external write API network contract", () => {
     expect(oldTokenResponse.status).toBe(401);
   });
 
+  it("writes nutrition entries and enforces request validation and idempotency", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "nutrition-client",
+      clientSecret: "nutrition-secret",
+      namespace: "slack",
+      subject: "nutrition-subject",
+    });
+    const entry = {
+      date: "2026-08-20",
+      meal: "lunch",
+      foodName: "Test lunch",
+      externalId: "nutrition-entry-1",
+      nutrients: { calories: 500 },
+    };
+    const request = (body: unknown, key = "nutrition-request-key") =>
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${grant.oldToken}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify(body),
+      });
+
+    const response = await request({ entries: [entry] });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ entries: [{ externalId: entry.externalId }] });
+
+    const replay = await request({ entries: [entry] });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({ entries: [{ externalId: entry.externalId }] });
+
+    const reused = await request(
+      { entries: [{ ...entry, foodName: "Different lunch" }] },
+      "nutrition-request-key",
+    );
+    expect(reused.status).toBe(409);
+    expect((await reused.json()).code).toBe("IDEMPOTENCY_KEY_REUSED");
+
+    const missingKey = await request({ entries: [entry] }, "short");
+    expect(missingKey.status).toBe(422);
+
+    const mixedDates = await request(
+      { entries: [entry, { ...entry, externalId: "nutrition-entry-2", date: "2026-08-21" }] },
+      "nutrition-mixed-date-key",
+    );
+    expect(mixedDates.status).toBe(422);
+  });
+
   it("returns the validation error envelope for an invalid subject", async () => {
     const grant = await createGrant(testContext, {
       clientId: "validation-client",
