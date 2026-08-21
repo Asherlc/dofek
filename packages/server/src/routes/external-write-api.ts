@@ -408,7 +408,7 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
             sql`INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject) VALUES (${parsed.data.externalSubject.namespace}, ${parsed.data.externalSubject.subject}, ${link.user_id}, ${opaqueSubject}) ON CONFLICT (namespace, subject) DO UPDATE SET user_id = EXCLUDED.user_id`,
           );
           await tx.execute(
-            sql`INSERT INTO fitness.external_grant (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at) VALUES (${grantId}::uuid, ${client.clientId}, ${link.user_id}, ${parsed.data.externalSubject.namespace}, ${parsed.data.externalSubject.subject}, ${opaqueSubject}, ${hash(token.value)}, ${link.requested_scopes}, ${new Date(Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000).toISOString()})`,
+            sql`INSERT INTO fitness.external_grant (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at) VALUES (${grantId}::uuid, ${client.clientId}, ${link.user_id}, ${parsed.data.externalSubject.namespace}, ${parsed.data.externalSubject.subject}, ${opaqueSubject}, ${hash(token.value)}, ${textArray(link.requested_scopes)}, ${new Date(Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000).toISOString()})`,
           );
           return {
             opaqueSubject,
