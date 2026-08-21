@@ -95,7 +95,7 @@ final class BleHeartRateConnectionManager: NSObject {
         }
     }
 
-    func disconnect() {
+    func disconnect(completion: (() -> Void)? = nil) {
         bleQueue.async {
             // Settle any in-flight connect so its JS promise never hangs when
             // the user cancels while scanning or mid-handshake.
@@ -109,6 +109,7 @@ final class BleHeartRateConnectionManager: NSObject {
             self.connectedPeripheral = nil
             self.state = .idle
             pendingConnect?(.failure(.disconnected(nil)))
+            completion?()
         }
     }
 
@@ -350,6 +351,8 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
     ) {
         guard
             characteristic.uuid == BleHeartRateConstants.heartRateMeasurementUUID,
+            state == .ready,
+            connectedPeripheral?.identifier == peripheral.identifier,
             let data = characteristic.value,
             let measurement = BleHeartRateMeasurementParser.parse(data)
         else { return }

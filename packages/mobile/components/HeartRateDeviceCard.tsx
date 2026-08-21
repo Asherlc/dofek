@@ -16,9 +16,8 @@ export interface HeartRateDeviceCardProps {
 }
 
 /**
- * Card for pairing and monitoring a Bluetooth heart-rate strap during activity
- * recording. Purely presentational — the record screen wires the native
- * connect/disconnect handlers and live-measurement events.
+ * Card for pairing and monitoring a Bluetooth heart-rate strap. Purely
+ * presentational; its owner wires connection handlers and live measurements.
  */
 export function HeartRateDeviceCard({
   bluetoothAvailable,

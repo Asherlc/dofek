@@ -445,6 +445,25 @@ describe("Apple Health Provider -- parsing", () => {
       );
     });
 
+    it("ignores non-text Hang Ten activity segment metadata", () => {
+      const result = parseWorkout(
+        {
+          workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          startDate: "2026-08-07 07:00:00 -0700",
+          endDate: "2026-08-07 07:10:00 -0700",
+        },
+        {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "Max Hangs",
+          "HangTen.ActivitySegments": 1,
+        },
+      );
+
+      expect(result.hangTen?.rawActivitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegments).toBeUndefined();
+      expect(result.hangTen?.activitySegmentsError).toBeUndefined();
+    });
+
     it("accepts an empty Hang Ten activity segment array", () => {
       const result = parseWorkout(
         {
@@ -846,6 +865,7 @@ describe("Apple Health Provider -- parsing", () => {
       const attrs: Record<string, string> = {
         type: "HKCategoryTypeIdentifierMindfulSession",
         sourceName: "Headspace",
+        sourceBundle: "com.headspace.Headspace",
         value: "1",
         creationDate: "2024-03-01 07:00:00 -0500",
         startDate: "2024-03-01 07:00:00 -0500",
@@ -856,22 +876,10 @@ describe("Apple Health Provider -- parsing", () => {
       expect(result?.type).toBe("HKCategoryTypeIdentifierMindfulSession");
       expect(result?.value).toBe("1");
       expect(result?.sourceName).toBe("Headspace");
+      expect(result?.sourceBundle).toBe("com.headspace.Headspace");
+      expect(result?.metadata).toEqual({});
       expect(result?.startDate).toBeInstanceOf(Date);
       expect(result?.endDate).toBeInstanceOf(Date);
-    });
-
-    it("parses menstrual flow", () => {
-      const attrs: Record<string, string> = {
-        type: "HKCategoryTypeIdentifierMenstrualFlow",
-        sourceName: "Apple Health",
-        value: "HKCategoryValueMenstrualFlowLight",
-        creationDate: "2024-03-01 08:00:00 -0500",
-        startDate: "2024-03-01 08:00:00 -0500",
-        endDate: "2024-03-01 08:00:00 -0500",
-      };
-      const result = parseCategoryRecord(attrs);
-      expect(result?.type).toBe("HKCategoryTypeIdentifierMenstrualFlow");
-      expect(result?.value).toBe("HKCategoryValueMenstrualFlowLight");
     });
 
     it("returns null without type", () => {

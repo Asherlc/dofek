@@ -586,35 +586,6 @@ export class ActivityRepository extends BaseRepository {
     return this.#findProviderAbsentById(activityId);
   }
 
-  /** Set or clear session RPE on every raw member of a visible activity group. */
-  async setPerceivedExertion(
-    activityId: string,
-    value: number | null,
-  ): Promise<{ found: boolean; perceivedExertion: number | null }> {
-    const rows = await this.query(
-      z.object({ perceived_exertion: z.number().nullable() }),
-      sql`UPDATE fitness.activity
-          SET perceived_exertion = ${value}
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (
-              SELECT member_activity_id
-              FROM fitness.v_activity_members
-              WHERE activity_id IN (
-                SELECT id
-                FROM fitness.v_activity
-                WHERE ${activityId}::uuid = ANY(member_activity_ids)
-                  AND user_id = ${this.userId}::uuid
-                  ${this.timestampAccessPredicate(sql`started_at`)}
-              )
-            )
-          RETURNING perceived_exertion`,
-    );
-    return {
-      found: rows.length > 0,
-      perceivedExertion: rows[0]?.perceived_exertion ?? null,
-    };
-  }
-
   async #findActiveById(activityId: string): Promise<ActivityRow | null> {
     const rows = await this.query(
       activityDetailRowSchema,

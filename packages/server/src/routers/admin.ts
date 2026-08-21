@@ -194,7 +194,6 @@ export const adminRouter = router({
             ('provider'),
             ('lab_panel'),
             ('journal_entry'),
-            ('breathwork_session'),
             ('supplement'),
             ('life_events'),
             ('nutrient'),
@@ -202,6 +201,8 @@ export const adminRouter = router({
             ('supplement_definition'),
             ('supplement_definition_nutrient'),
             ('supplement_dose_event'),
+            ('breathwork_session'),
+            ('menstrual_period'),
             ('metric_stream')
         ),
         base_estimates AS (

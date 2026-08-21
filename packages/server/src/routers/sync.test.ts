@@ -235,7 +235,12 @@ const routerConstructionCachedTtlValues = mockCachedProtectedQuery.mock.calls.ma
 
 function createProvidersDbMock() {
   return {
-    execute: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+    execute: vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]),
   };
 }
 
@@ -360,6 +365,7 @@ describe("syncRouter", () => {
             .fn()
             .mockResolvedValueOnce([])
             .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
             .mockResolvedValueOnce([]),
         },
         userId: "user-1",
@@ -422,6 +428,8 @@ describe("syncRouter", () => {
             // Second call: last syncs
             .mockResolvedValueOnce([{ provider_id: "wahoo", last_synced: "2024-01-01" }])
             // Third call: latest errors (none)
+            .mockResolvedValueOnce([])
+            // Fourth call: successful syncs
             .mockResolvedValueOnce([]),
         },
         userId: "user-1",
@@ -474,6 +482,190 @@ describe("syncRouter", () => {
       expect(cronometerCsv?.importOnly).toBe(true);
     });
 
+    it("returns current freshness from the latest successful pull-provider sync", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-12T12:00:00.000Z"));
+      try {
+        mockGetAllProviders.mockReturnValue([
+          {
+            id: "wahoo",
+            name: "Wahoo",
+            validate: () => null,
+            authSetup: () => oauthAuthSetup("https://api.wahoo.com"),
+          },
+        ]);
+        const caller = createCaller({
+          db: {
+            execute: vi
+              .fn()
+              .mockResolvedValueOnce([
+                { provider_id: "wahoo", updated_at: new Date("2026-08-12T10:00:00.000Z") },
+              ])
+              .mockResolvedValueOnce([
+                { provider_id: "wahoo", last_synced: "2026-08-12T11:55:00.000Z" },
+              ])
+              .mockResolvedValueOnce([])
+              .mockResolvedValueOnce([
+                { provider_id: "wahoo", last_synced: "2026-08-12T11:15:00.000Z" },
+              ]),
+          },
+          userId: "user-1",
+          timezone: "UTC",
+        });
+
+        const result = await caller.providers();
+        const wahoo = result.find((provider: { id: string }) => provider.id === "wahoo");
+
+        expect(wahoo).toMatchObject({
+          lastSyncedAt: "2026-08-12T11:55:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-12T11:15:00.000Z",
+          syncFreshness: {
+            status: "current",
+            label: "Sync current",
+            description: "The last successful sync completed within the expected cadence.",
+          },
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("returns overdue freshness beyond the scheduled-sync grace boundary", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-12T12:00:00.000Z"));
+      try {
+        mockGetAllProviders.mockReturnValue([
+          {
+            id: "wahoo",
+            name: "Wahoo",
+            validate: () => null,
+            authSetup: () => oauthAuthSetup("https://api.wahoo.com"),
+          },
+        ]);
+        const caller = createCaller({
+          db: {
+            execute: vi
+              .fn()
+              .mockResolvedValueOnce([
+                { provider_id: "wahoo", updated_at: new Date("2026-08-12T10:00:00.000Z") },
+              ])
+              .mockResolvedValueOnce([
+                { provider_id: "wahoo", last_synced: "2026-08-12T11:55:00.000Z" },
+              ])
+              .mockResolvedValueOnce([])
+              .mockResolvedValueOnce([
+                { provider_id: "wahoo", last_synced: "2026-08-12T10:59:59.999Z" },
+              ]),
+          },
+          userId: "user-1",
+          timezone: "UTC",
+        });
+
+        const result = await caller.providers();
+
+        expect(
+          result.find((provider: { id: string }) => provider.id === "wahoo")?.syncFreshness,
+        ).toEqual({
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("returns unknown freshness for a connected pull provider with no successful sync", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://api.wahoo.com"),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              { provider_id: "wahoo", updated_at: new Date("2026-08-12T10:00:00.000Z") },
+            ])
+            .mockResolvedValueOnce([
+              { provider_id: "wahoo", last_synced: "2026-08-12T11:55:00.000Z" },
+            ])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(
+        result.find((provider: { id: string }) => provider.id === "wahoo")?.syncFreshness,
+      ).toEqual({
+        status: "unknown",
+        label: "Sync status unknown",
+        description: "No successful sync has been recorded.",
+      });
+    });
+
+    it("omits scheduled-sync freshness for disconnected, import-only, and push-only providers", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://www.strava.com/oauth/authorize"),
+        },
+        {
+          id: "strong-csv",
+          name: "Strong CSV",
+          validate: () => null,
+          importOnly: true,
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                provider_id: "strong-csv",
+                updated_at: new Date("2026-08-12T10:00:00.000Z"),
+              },
+              {
+                provider_id: "whoop_ble",
+                updated_at: new Date("2026-08-12T10:00:00.000Z"),
+              },
+            ])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([
+              { provider_id: "strava", last_synced: "2026-08-12T11:45:00.000Z" },
+              { provider_id: "strong-csv", last_synced: "2026-08-12T11:45:00.000Z" },
+              { provider_id: "whoop_ble", last_synced: "2026-08-12T11:45:00.000Z" },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(
+        result.find((provider: { id: string }) => provider.id === "strava")?.syncFreshness,
+      ).toBeNull();
+      expect(
+        result.find((provider: { id: string }) => provider.id === "strong-csv")?.syncFreshness,
+      ).toBeNull();
+      expect(
+        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.syncFreshness,
+      ).toBeNull();
+    });
+
     it("returns needsReauth=true when latest sync has auth error", async () => {
       mockGetAllProviders.mockReturnValue([
         {
@@ -515,7 +707,8 @@ describe("syncRouter", () => {
                 auth_failure_reason: null,
                 synced_at: new Date("2026-06-02T10:00:00Z"),
               },
-            ]),
+            ])
+            .mockResolvedValueOnce([]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -559,7 +752,8 @@ describe("syncRouter", () => {
                 auth_failure_reason: "refresh_token_revoked",
                 synced_at: new Date("2026-06-02T10:00:00Z"),
               },
-            ]),
+            ])
+            .mockResolvedValueOnce([]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -604,7 +798,8 @@ describe("syncRouter", () => {
                 auth_failure_reason: "refresh_token_revoked",
                 synced_at: new Date("2026-06-02T10:00:00Z"),
               },
-            ]),
+            ])
+            .mockResolvedValueOnce([]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -627,6 +822,7 @@ describe("syncRouter", () => {
             .mockResolvedValueOnce([
               { provider_id: "whoop_ble", updated_at: new Date("2026-07-25T00:00:00Z") },
             ])
+            .mockResolvedValueOnce([])
             .mockResolvedValueOnce([])
             .mockResolvedValueOnce([]),
         },
