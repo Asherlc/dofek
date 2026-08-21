@@ -525,7 +525,7 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
         grant_id: z.string(),
         revoked_at: timestampStringSchema.nullable(),
       }),
-      sql`SELECT link.opaque_subject, grant.grant_id, grant.revoked_at FROM fitness.external_identity_link link JOIN fitness.external_grant grant ON grant.namespace = link.namespace AND grant.subject = link.subject WHERE link.namespace = ${parsed.data.namespace} AND link.subject = ${parsed.data.subject} AND grant.client_id = ${client.clientId} ORDER BY grant.created_at DESC LIMIT 1`,
+      sql`SELECT link.opaque_subject, g.grant_id, g.revoked_at FROM fitness.external_identity_link link JOIN fitness.external_grant g ON g.namespace = link.namespace AND g.subject = link.subject WHERE link.namespace = ${parsed.data.namespace} AND link.subject = ${parsed.data.subject} AND g.client_id = ${client.clientId} ORDER BY g.created_at DESC LIMIT 1`,
     );
     const row = rows[0];
     if (!row) return res.status(404).json(buildProblem("NOT_FOUND", 404, requestId(req)));
