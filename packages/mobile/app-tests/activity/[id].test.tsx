@@ -509,7 +509,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("7")).toBeTruthy();
   });
 
-  it("renders server-authored detail state when a metric is unavailable without GPS", async () => {
+  it("hides an unrecorded detail metric without GPS", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
         ...baseCyclingActivity,
@@ -524,9 +524,8 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText("Distance unavailable")).toBeTruthy();
-    expect(screen.getByText("Distance not recorded")).toBeTruthy();
-    expect(screen.getByLabelText("Distance unavailable: Distance not recorded")).toBeTruthy();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
   });
 
   it("renders reasons for every unavailable activity metric state", async () => {

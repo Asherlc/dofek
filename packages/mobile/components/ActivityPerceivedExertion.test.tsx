@@ -12,4 +12,10 @@ describe("ActivityPerceivedExertion", () => {
     expect(screen.getByText("Session effort")).toBeTruthy();
     expect(screen.getByText("7")).toBeTruthy();
   });
+
+  it("does not render when session effort was not recorded", () => {
+    render(<ActivityPerceivedExertion value={null} />);
+
+    expect(screen.queryByText("Session effort")).toBeNull();
+  });
 });

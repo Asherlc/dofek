@@ -465,31 +465,33 @@ export function ActivityHeader({
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
-          {stats.map((s) => {
-            const metric = "status" in s ? s : null;
-            const unavailableMetric = metric?.status !== "available" ? metric : null;
-            const displayedValue =
-              "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
-            return (
-              <section
-                key={s.label}
-                className="card px-4 py-3"
-                data-state={metric?.status}
-                aria-label={
-                  unavailableMetric
-                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-                    : undefined
-                }
-              >
-                <div className="text-xs text-subtle mb-0.5">
-                  {unavailableMetric
-                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                    : s.label}
-                </div>
-                <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
-              </section>
-            );
-          })}
+          {stats
+            .filter((stat) => !("status" in stat) || stat.status !== "missing")
+            .map((s) => {
+              const metric = "status" in s ? s : null;
+              const unavailableMetric = metric?.status !== "available" ? metric : null;
+              const displayedValue =
+                "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
+              return (
+                <section
+                  key={s.label}
+                  className="card px-4 py-3"
+                  data-state={metric?.status}
+                  aria-label={
+                    unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+                      : undefined
+                  }
+                >
+                  <div className="text-xs text-subtle mb-0.5">
+                    {unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                      : s.label}
+                  </div>
+                  <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
+                </section>
+              );
+            })}
         </div>
       )}
     </div>

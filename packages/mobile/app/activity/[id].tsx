@@ -150,30 +150,32 @@ type StatItem = ActivityMetric | { label: string; value: string };
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
-      {stats.map((stat) => {
-        const metric = "status" in stat ? stat : null;
-        const unavailableMetric = metric && metric.status !== "available" ? metric : null;
-        const isUnavailable = unavailableMetric !== null;
-        const accessibleLabel = unavailableMetric
-          ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-          : undefined;
-        const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
-        return (
-          <View
-            key={stat.label}
-            style={statsStyles.card}
-            accessible={isUnavailable}
-            accessibilityLabel={accessibleLabel}
-          >
-            <Text style={statsStyles.label}>
-              {unavailableMetric
-                ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                : stat.label}
-            </Text>
-            <Text style={statsStyles.value}>{displayedValue}</Text>
-          </View>
-        );
-      })}
+      {stats
+        .filter((stat) => !("status" in stat) || stat.status !== "missing")
+        .map((stat) => {
+          const metric = "status" in stat ? stat : null;
+          const unavailableMetric = metric && metric.status !== "available" ? metric : null;
+          const isUnavailable = unavailableMetric !== null;
+          const accessibleLabel = unavailableMetric
+            ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+            : undefined;
+          const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
+          return (
+            <View
+              key={stat.label}
+              style={statsStyles.card}
+              accessible={isUnavailable}
+              accessibilityLabel={accessibleLabel}
+            >
+              <Text style={statsStyles.label}>
+                {unavailableMetric
+                  ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                  : stat.label}
+              </Text>
+              <Text style={statsStyles.value}>{displayedValue}</Text>
+            </View>
+          );
+        })}
     </View>
   );
 }
