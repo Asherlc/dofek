@@ -259,7 +259,10 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
       return sendProblem(res, req, 403, "FORBIDDEN");
     const secret = createOpaqueSecret();
     const result = await deps.db.execute(
-      sql`UPDATE fitness.external_client SET secret_hash = ${secret.hash}, updated_at = NOW() WHERE client_id = ${req.params.clientId} AND revoked_at IS NULL`,
+      sql`UPDATE fitness.external_client
+          SET secret_hash = ${secret.hash}, updated_at = NOW()
+          WHERE client_id = ${req.params.clientId} AND revoked_at IS NULL
+          RETURNING client_id`,
     );
     if (result.length !== 1) return sendProblem(res, req, 404, "NOT_FOUND");
     res.json({ clientId: req.params.clientId, clientSecret: secret.value });
