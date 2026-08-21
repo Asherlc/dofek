@@ -244,7 +244,7 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
     const clientId = `ext_${randomBytes(18).toString("base64url")}`;
     const secret = createOpaqueSecret();
     await deps.db.execute(
-      sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes) VALUES (${clientId}, ${parsed.data.name}, ${secret.hash}, ${parsed.data.scopes})`,
+      sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes) VALUES (${clientId}, ${parsed.data.name}, ${secret.hash}, ${parsed.data.scopes}::text[])`,
     );
     res.status(201).json({ clientId, clientSecret: secret.value, scopes: parsed.data.scopes });
   });
