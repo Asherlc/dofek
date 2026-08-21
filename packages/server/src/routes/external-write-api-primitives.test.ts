@@ -38,4 +38,16 @@ describe("external write API security primitives", () => {
       details: [],
     });
   });
+
+  it("uses a generic envelope for unmapped problem codes", () => {
+    expect(buildProblem("UNMAPPED_CODE", 500, "request-2")).toEqual({
+      type: "https://api.dofek.example/problems/unmapped-code",
+      title: "Request failed",
+      status: 500,
+      code: "UNMAPPED_CODE",
+      message: "The request failed.",
+      requestId: "request-2",
+      details: [],
+    });
+  });
 });

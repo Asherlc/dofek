@@ -138,6 +138,6 @@ minimumReleaseAgeExclude:
   - '@expo/fingerprint@0.20.7 || 0.20.9'
   - '@expo/metro-config@57.0.8 || 57.0.9'
   - expo-server@57.0.2 || 57.0.3
-  - expo-splash-screen@57.0.6
+  - expo-splash-screen@57.0.6 || 57.0.7
   - expo-modules-autolinking@57.0.10
   - expo-modules-jsi@57.0.5

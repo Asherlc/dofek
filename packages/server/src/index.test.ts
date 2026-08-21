@@ -44,7 +44,11 @@ const mockCheckReadiness = vi.fn(async () => ({
     queues: "ok" as const,
   },
 }));
-const mockCreateExternalWriteApiRouter = vi.fn(() => express.Router());
+const mockCreateExternalWriteApiRouter = vi.fn(() => {
+  const router = express.Router();
+  router.get("/__test_external_mount", (_req, res) => res.sendStatus(204));
+  return router;
+});
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -572,5 +576,25 @@ describe("main", () => {
     createApp(fakeDb, makeMockSensorStore());
 
     expect(mockCreateExternalWriteApiRouter).toHaveBeenCalledWith({ db: fakeDb });
+
+    const app = createApp(fakeDb, makeMockSensorStore());
+    const router = Reflect.get(app, "router");
+    const routerStack =
+      router &&
+      (typeof router === "object" || typeof router === "function") &&
+      "stack" in router &&
+      Array.isArray(router.stack)
+        ? router.stack
+        : [];
+    const externalRouter = mockCreateExternalWriteApiRouter.mock.results.at(-1)?.value;
+    expect(
+      routerStack.some(
+        (layer) =>
+          layer &&
+          typeof layer === "object" &&
+          "handle" in layer &&
+          layer.handle === externalRouter,
+      ),
+    ).toBe(true);
   });
 });

@@ -801,20 +801,21 @@ export class FoodRepository {
     const nutrientValueClauses = Object.entries(nutrientValues).map(
       ([nutrientId, amount]) => sql`(${nutrientId}::text, ${amount}::real)`,
     );
+    const foodEntryInsert = sql`INSERT INTO fitness.food_entry (
+      user_id, provider_id, external_id, date, meal, food_name, food_description,
+      category, number_of_units, nutrition_grain
+    ) VALUES (
+      ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
+      ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
+      ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
+    )`;
 
     const idRows = await executeWithSchema(
       this.#db,
       idRowSchema,
       nutrientValueClauses.length > 0
         ? sql`WITH new_entry AS (
-          INSERT INTO fitness.food_entry (
-            user_id, provider_id, external_id, date, meal, food_name, food_description,
-            category, number_of_units, nutrition_grain
-          ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
-            ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
-          ) RETURNING id
+          ${foodEntryInsert} RETURNING id
         ),
         new_nutrients AS (
           INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -823,14 +824,7 @@ export class FoodRepository {
           CROSS JOIN (VALUES ${sql.join(nutrientValueClauses, sql`, `)}) AS vals(nutrient_id, amount)
         )
         SELECT id FROM new_entry`
-        : sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, external_id, date, meal, food_name, food_description,
-            category, number_of_units, nutrition_grain
-          ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
-            ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
-          ) RETURNING id`,
+        : sql`${foodEntryInsert} RETURNING id`,
     );
     const newId = idRows[0]?.id;
     if (!newId) throw new Error("Failed to insert food entry");

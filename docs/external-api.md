@@ -52,7 +52,7 @@ subject already linked to another Dofek account returns
 The link flow is one-time and PKCE-bound:
 
 1. `POST /api/external/v1/link/start` creates a short-lived authorization transaction.
-2. The user authenticates and approves the requested write scope.
+2. The user authenticates and approves the requested write scope. The consent form carries a single-use token bound to that browser session to prevent cross-site request forgery.
 3. The app exchanges the one-time code at `POST /api/external/v1/link/exchange`.
 4. Dofek returns an opaque subject, grant ID, and short-lived access token.
 
@@ -111,8 +111,9 @@ payload.
 
 - Same key and same body: return the original response.
 - Same key and different body: `409 IDEMPOTENCY_KEY_REUSED`.
+- A duplicate application external ID: `409 EXTERNAL_ID_ALREADY_EXISTS`.
 - An in-flight receipt: `409 REQUEST_IN_PROGRESS`.
-- A successful receipt remains replayable for the documented retention period.
+- A successful receipt remains replayable for seven days; completed receipt metadata is then purged opportunistically by accepted nutrition writes.
 
 The application external ID is a domain provenance/idempotency input; it does
 not authorize access to an existing row.

@@ -21,6 +21,8 @@ CREATE TABLE fitness.external_link (
   code_expires_at timestamptz,
   approved_at timestamptz,
   exchanged_at timestamptz,
+  approval_csrf_hash text,
+  approval_session_hash text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -49,7 +51,8 @@ CREATE TABLE fitness.external_grant (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX external_grant_lookup_idx ON fitness.external_grant (client_id, namespace, subject, revoked_at);
+CREATE INDEX external_grant_lookup_idx
+  ON fitness.external_grant (client_id, namespace, subject, revoked_at, created_at DESC);
 
 CREATE TABLE fitness.external_idempotency_receipt (
   grant_id uuid NOT NULL REFERENCES fitness.external_grant (grant_id) ON DELETE CASCADE,
@@ -64,6 +67,10 @@ CREATE TABLE fitness.external_idempotency_receipt (
   PRIMARY KEY (grant_id, method, path, idempotency_key)
 );
 
+CREATE INDEX external_idempotency_receipt_completed_at_idx
+  ON fitness.external_idempotency_receipt (completed_at)
+  WHERE status = 'completed';
+
 CREATE TABLE fitness.external_erasure_ack (
   event_id text PRIMARY KEY,
   grant_id uuid NOT NULL REFERENCES fitness.external_grant (grant_id) ON DELETE CASCADE,
@@ -71,3 +78,5 @@ CREATE TABLE fitness.external_erasure_ack (
   reason_code text,
   acknowledged_at timestamptz NOT NULL DEFAULT now()
 );
+
+SELECT fitness.refresh_account_erasure_write_fences();

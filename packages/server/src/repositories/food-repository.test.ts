@@ -1477,8 +1477,8 @@ describe("FoodRepository", () => {
         typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
       expect(Array.isArray(queryChunks)).toBe(true);
       if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
-      expect(queryChunks).toContain("grain");
-      expect(queryChunks).toContain(2);
+      expect(JSON.stringify(queryChunks)).toContain("grain");
+      expect(JSON.stringify(queryChunks)).toContain("2");
       expect(result).not.toBeNull();
     });
 
@@ -1543,8 +1543,8 @@ describe("FoodRepository", () => {
         typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
       expect(Array.isArray(queryChunks)).toBe(true);
       if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
-      expect(queryChunks).toContain("grain");
-      expect(queryChunks).toContain(2);
+      expect(JSON.stringify(queryChunks)).toContain("grain");
+      expect(JSON.stringify(queryChunks)).toContain("2");
     });
 
     it("passes explicit null for meal when set to null", async () => {

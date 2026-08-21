@@ -8,18 +8,11 @@ import { initiateAccountErasure } from "../../../../src/db/account-erasure.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createExternalWriteApiRouter } from "./external-write-api.ts";
+import { hashSecret } from "./external-write-api-primitives.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
 const ADMIN_USER_ID = "00000000-0000-4000-8000-000000000099";
 const ERASURE_USER_ID = "00000000-0000-4000-8000-000000000022";
-
-function hash(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function accessTokenHash(value: string): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
 
 function pkceChallenge(codeVerifier: string): string {
   return createHash("sha256").update(codeVerifier).digest("base64url");
@@ -34,6 +27,7 @@ async function createGrant(
     subject: string;
     userId?: string;
     revoked?: boolean;
+    expired?: boolean;
   },
 ) {
   const userId = options.userId ?? randomUUID();
@@ -47,7 +41,7 @@ async function createGrant(
   );
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes)
-        VALUES (${options.clientId}, ${options.clientId}, ${hash(options.clientSecret)}, ARRAY['nutrition:write'])`,
+        VALUES (${options.clientId}, ${options.clientId}, ${hashSecret(options.clientSecret)}, ARRAY['nutrition:write'])`,
   );
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject)
@@ -56,7 +50,7 @@ async function createGrant(
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_grant
         (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at, revoked_at)
-        VALUES (${grantId}::uuid, ${options.clientId}, ${userId}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${accessTokenHash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
+        VALUES (${grantId}::uuid, ${options.clientId}, ${userId}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hashSecret(oldToken)}, ARRAY['nutrition:write'], ${options.expired ? sql`NOW() - INTERVAL '1 minute'` : sql`NOW() + INTERVAL '15 minutes'`}, ${options.revoked ? sql`NOW()` : null})`,
   );
   return { authorization: `Bearer ${options.clientId}.${options.clientSecret}`, grantId, oldToken };
 }
@@ -209,7 +203,21 @@ describe.sequential("external write API network contract", () => {
       { headers: { Authorization: `Bearer ${session.sessionId}` } },
     );
     expect(authorizePage.status).toBe(200);
-    expect(await authorizePage.text()).toContain("Approve");
+    const authorizeHtml = await authorizePage.text();
+    expect(authorizeHtml).toContain("Approve");
+    const csrfToken = authorizeHtml.match(/name="csrfToken" value="([^"]+)"/)?.[1];
+    expect(csrfToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const csrfFailure = await fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ linkId: started.linkId, approved: "true" }),
+    });
+    expect(csrfFailure.status).toBe(422);
 
     const authorizeResponse = await fetch(`${baseUrl}/api/external/v1/link/authorize`, {
       method: "POST",
@@ -218,7 +226,11 @@ describe.sequential("external write API network contract", () => {
         Authorization: `Bearer ${session.sessionId}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ linkId: started.linkId, approved: "true" }),
+      body: new URLSearchParams({
+        linkId: started.linkId,
+        approved: "true",
+        csrfToken: csrfToken ?? "",
+      }),
     });
     expect(authorizeResponse.status).toBe(303);
     const location = new URL(authorizeResponse.headers.get("location") ?? "");
@@ -278,6 +290,7 @@ describe.sequential("external write API network contract", () => {
       clientSecret: "client-secret",
       namespace: "slack",
       subject: "team-user-1",
+      expired: true,
     });
     const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
       method: "POST",
@@ -297,8 +310,8 @@ describe.sequential("external write API network contract", () => {
     const rows = await testContext.db.execute(
       sql`SELECT access_token_hash, expires_at FROM fitness.external_grant WHERE grant_id = ${grant.grantId}::uuid`,
     );
-    expect(rows[0]?.access_token_hash).toBe(accessTokenHash(body.accessToken));
-    expect(rows[0]?.access_token_hash).not.toBe(accessTokenHash("old-token"));
+    expect(rows[0]?.access_token_hash).toBe(hashSecret(body.accessToken));
+    expect(rows[0]?.access_token_hash).not.toBe(hashSecret(grant.oldToken));
     expect(new Date(String(rows[0]?.expires_at)).getTime()).toBeGreaterThan(Date.now());
 
     const oldTokenResponse = await fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
@@ -401,6 +414,6 @@ describe.sequential("external write API network contract", () => {
     expect(response.status).toBe(423);
     const body = await response.json();
     expect(body.code).toBe("ACCOUNT_ERASURE_ACTIVE");
-    expect(JSON.stringify(body)).not.toContain(USER_ID);
+    expect(JSON.stringify(body)).not.toContain(ERASURE_USER_ID);
   });
 });
