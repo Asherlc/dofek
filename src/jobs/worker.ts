@@ -552,15 +552,18 @@ for (const worker of allWorkers) {
       worker.name === FIT_FILE_IMPORT_QUEUE && job?.parentKey && err instanceof UnrecoverableError;
     const isAppleHealthImportValidationFailure =
       worker.name === IMPORT_QUEUE && isAppleHealthImportValidationError(err);
-    const isProviderServiceUnavailable = err instanceof ProviderServiceUnavailableError;
+    const isZeppHttp500ServiceUnavailable =
+      err instanceof ProviderServiceUnavailableError &&
+      err.providerId === "amazfit-zepp" &&
+      err.statusCode === 500;
     if (
       !isFitBatchChildFailure &&
       !isAppleHealthImportValidationFailure &&
-      !isProviderServiceUnavailable
+      !isZeppHttp500ServiceUnavailable
     ) {
       captureException(err);
     }
-    if (isProviderServiceUnavailable) {
+    if (isZeppHttp500ServiceUnavailable) {
       logger.warn(`[worker] Job retrying after provider service unavailable: ${err.message}`);
     } else {
       logger.error(`[worker] Job failed: ${err.message}`);

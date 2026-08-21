@@ -36,6 +36,14 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 export const AMAZFIT_ZEPP_API_BASE = "https://api-mifit.zepp.com";
 const AMAZFIT_ZEPP_SOURCE_NAME = "Zepp";
 
+function isZeppHttp500ServiceUnavailable(error: unknown): error is ProviderServiceUnavailableError {
+  return (
+    error instanceof ProviderServiceUnavailableError &&
+    error.providerId === "amazfit-zepp" &&
+    error.statusCode === 500
+  );
+}
+
 const optionalNumber = z.preprocess((value) => {
   if (typeof value === "string" && value.trim() !== "") return Number(value);
   return value;
@@ -669,10 +677,7 @@ export class AmazfitZeppProvider implements SyncProvider {
       );
       recordsSynced += count;
     } catch (error: unknown) {
-      if (
-        error instanceof ProviderRateLimitError ||
-        error instanceof ProviderServiceUnavailableError
-      ) {
+      if (error instanceof ProviderRateLimitError || isZeppHttp500ServiceUnavailable(error)) {
         throw error;
       }
       const bandDataAuthFailure = authFailureReasonFromError(error);
@@ -773,10 +778,7 @@ export class AmazfitZeppProvider implements SyncProvider {
       );
       recordsSynced += count;
     } catch (error: unknown) {
-      if (
-        error instanceof ProviderRateLimitError ||
-        error instanceof ProviderServiceUnavailableError
-      ) {
+      if (error instanceof ProviderRateLimitError || isZeppHttp500ServiceUnavailable(error)) {
         throw error;
       }
       if (!authFailureReasonFromError(error)) {

@@ -874,6 +874,26 @@ describe("worker module", () => {
     );
   });
 
+  it("failed event handler reports unrelated provider service-unavailable errors", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const error = new ProviderServiceUnavailableError({
+      message: "Zwift API service unavailable (503): upstream outage",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "upstream outage",
+    });
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    getWorkerHandler("failed")(undefined, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Job failed: Zwift API service unavailable (503): upstream outage",
+    );
+  });
+
   it("failed event handler does not restart idle timer while another job is active", async () => {
     const Sentry = await import("@sentry/node");
     vi.mocked(Sentry.captureException).mockClear();
