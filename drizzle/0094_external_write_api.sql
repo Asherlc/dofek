@@ -52,7 +52,7 @@ CREATE TABLE fitness.external_grant (
 );
 
 CREATE INDEX external_grant_lookup_idx
-  ON fitness.external_grant (client_id, namespace, subject, revoked_at, created_at DESC);
+ON fitness.external_grant (client_id, namespace, subject, revoked_at, created_at DESC);
 
 CREATE TABLE fitness.external_idempotency_receipt (
   grant_id uuid NOT NULL REFERENCES fitness.external_grant (grant_id) ON DELETE CASCADE,
@@ -68,8 +68,8 @@ CREATE TABLE fitness.external_idempotency_receipt (
 );
 
 CREATE INDEX external_idempotency_receipt_completed_at_idx
-  ON fitness.external_idempotency_receipt (completed_at)
-  WHERE status = 'completed';
+ON fitness.external_idempotency_receipt (completed_at)
+WHERE status = 'completed';
 
 CREATE TABLE fitness.external_erasure_ack (
   event_id text PRIMARY KEY,

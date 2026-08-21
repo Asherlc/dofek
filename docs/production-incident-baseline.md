@@ -23939,6 +23939,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep the calendar, source-ordering, and
   persistence boundary cases when the provider-read model changes.
 
+## 2026-08-20 — PR 2542 migration SQLFluff failure
+
+- **Status:** Resolved; the follow-up migration formatting fix is pushed and CI
+  is rerunning.
+- **Symptoms / impact:** `Test / SQLFluff` failed on PR #2542, blocking the
+  external API change. No production environment was affected.
+- **Evidence / root cause:** The first fatal findings were `LT02` indentation
+  errors at lines 55, 71, and 72 of `drizzle/0094_external_write_api.sql`.
+  SQLFluff requires these migration continuation clauses to start at column 1;
+  the new index definitions used the repository-incompatible indentation.
+  See the [failed SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/32447325607/job/96669374264).
+- **Fix / mitigation:** Aligned the `ON` and partial-index `WHERE` clauses to
+  the repository SQLFluff style. No rule, ignore, retry, timeout, or failure
+  suppression was added.
+- **Validation:** Changed-file Biome, server TypeScript, OpenAPI lint, focused
+  repository/primitives tests, and the equivalent local SQL checks passed;
+  hosted CI rerun remains the final validation.
+- **Remaining risk / follow-up:** Keep migration SQLFluff parity in local
+  pre-push validation so new migration indentation failures are caught before
+  CI.
+
 # 2026-08-19 — CDC health monitor was killed while reconciliation was still running
 
 - **Status:** Fixed by resource-isolating reconciliation from CDC health; deployment verification remains pending.
