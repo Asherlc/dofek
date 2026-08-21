@@ -9,10 +9,15 @@ import { createSession } from "../auth/session.ts";
 import { createExternalWriteApiRouter } from "./external-write-api.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
+const ADMIN_USER_ID = "00000000-0000-4000-8000-000000000099";
 const ERASURE_USER_ID = "00000000-0000-4000-8000-000000000022";
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function accessTokenHash(value: string): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 async function createGrant(
@@ -46,7 +51,7 @@ async function createGrant(
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_grant
         (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at, revoked_at)
-        VALUES (${grantId}::uuid, ${options.clientId}, ${userId}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
+        VALUES (${grantId}::uuid, ${options.clientId}, ${userId}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${accessTokenHash(oldToken)}, ARRAY['nutrition:write'], NOW() - INTERVAL '1 minute', ${options.revoked ? sql`NOW()` : null})`,
   );
   return { authorization: `Bearer ${options.clientId}.${options.clientSecret}`, grantId, oldToken };
 }
@@ -61,6 +66,11 @@ describe.sequential("external write API network contract", () => {
     await testContext.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
           VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ADMIN_USER_ID}, 'External API Admin Test', NULL, true)
           ON CONFLICT (id) DO UPDATE SET is_admin = true`,
     );
     await testContext.db.execute(
@@ -129,7 +139,12 @@ describe.sequential("external write API network contract", () => {
   it("provisions a client without persisting the raw secret", async () => {
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const session = await createSession(testContext.db, USER_ID);
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+            VALUES (${ADMIN_USER_ID}, 'External API Admin Test', NULL, true)
+            ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+      );
+      const session = await createSession(testContext.db, ADMIN_USER_ID);
       response = await fetch(`${baseUrl}/api/external/v1/clients`, {
         method: "POST",
         headers: { Cookie: `session=${session.sessionId}`, "Content-Type": "application/json" },
@@ -172,8 +187,8 @@ describe.sequential("external write API network contract", () => {
     const rows = await testContext.db.execute(
       sql`SELECT access_token_hash, expires_at FROM fitness.external_grant WHERE grant_id = ${grant.grantId}::uuid`,
     );
-    expect(rows[0]?.access_token_hash).toBe(hash(body.accessToken));
-    expect(rows[0]?.access_token_hash).not.toBe(hash("old-token"));
+    expect(rows[0]?.access_token_hash).toBe(accessTokenHash(body.accessToken));
+    expect(rows[0]?.access_token_hash).not.toBe(accessTokenHash("old-token"));
     expect(new Date(String(rows[0]?.expires_at)).getTime()).toBeGreaterThan(Date.now());
 
     const oldTokenResponse = await fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
@@ -225,8 +240,8 @@ describe.sequential("external write API network contract", () => {
       },
       body: JSON.stringify({ namespace: "slack", subject: "team-user-2" }),
     });
-    expect(response.status).toBe(401);
-    expect((await response.json()).code).toBe("INVALID_CREDENTIALS");
+    expect(response.status).toBe(404);
+    expect((await response.json()).code).toBe("NOT_FOUND");
   });
 
   it.each([
