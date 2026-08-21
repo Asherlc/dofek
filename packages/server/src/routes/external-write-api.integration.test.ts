@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import { sql } from "drizzle-orm";
 import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { initiateAccountErasure } from "../../../../src/db/account-erasure.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
@@ -18,6 +19,10 @@ function hash(value: string): string {
 
 function accessTokenHash(value: string): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function pkceChallenge(codeVerifier: string): string {
+  return createHash("sha256").update(codeVerifier).digest("base64url");
 }
 
 async function createGrant(
@@ -154,6 +159,117 @@ describe.sequential("external write API network contract", () => {
     );
     expect(rows[0]?.secret_hash).toBeTruthy();
     expect(rows[0]?.secret_hash).not.toBe(body.clientSecret);
+  });
+
+  it("covers client rotation, linking, status, and erasure acknowledgement", async () => {
+    const session = await createSession(testContext.db, ADMIN_USER_ID);
+    const provisionResponse = await fetch(`${baseUrl}/api/external/v1/clients`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "lifecycle-test", scopes: ["nutrition:write"] }),
+    });
+    expect(provisionResponse.status).toBe(201);
+    const provisioned = z
+      .object({ clientId: z.string(), clientSecret: z.string() })
+      .parse(await provisionResponse.json());
+
+    const rotateResponse = await fetch(
+      `${baseUrl}/api/external/v1/clients/${provisioned.clientId}/rotate`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.sessionId}` },
+      },
+    );
+    expect(rotateResponse.status).toBe(200);
+    const rotated = z.object({ clientSecret: z.string() }).parse(await rotateResponse.json());
+    expect(rotated.clientSecret).not.toBe(provisioned.clientSecret);
+
+    const codeVerifier = "a".repeat(43);
+    const startResponse = await fetch(`${baseUrl}/api/external/v1/link/start`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        redirectUri: "https://slack.example.test/dofek/callback",
+        codeChallenge: pkceChallenge(codeVerifier),
+        requestedScopes: ["nutrition:write"],
+        state: "state-value",
+      }),
+    });
+    expect(startResponse.status).toBe(200);
+    const started = z.object({ linkId: z.string().uuid() }).parse(await startResponse.json());
+
+    const authorizePage = await fetch(
+      `${baseUrl}/api/external/v1/link/authorize?linkId=${started.linkId}`,
+      { headers: { Authorization: `Bearer ${session.sessionId}` } },
+    );
+    expect(authorizePage.status).toBe(200);
+    expect(await authorizePage.text()).toContain("Approve");
+
+    const authorizeResponse = await fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ linkId: started.linkId, approved: "true" }),
+    });
+    expect(authorizeResponse.status).toBe(303);
+    const location = new URL(authorizeResponse.headers.get("location") ?? "");
+    expect(location.searchParams.get("state")).toBe("state-value");
+
+    const exchangeResponse = await fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        linkId: started.linkId,
+        code: location.searchParams.get("code"),
+        codeVerifier,
+        externalSubject: { namespace: "slack", subject: "lifecycle-user" },
+      }),
+    });
+    expect(exchangeResponse.status).toBe(200);
+    const exchanged = z
+      .object({ accessToken: z.string(), grantId: z.string().uuid() })
+      .parse(await exchangeResponse.json());
+
+    const statusResponse = await fetch(`${baseUrl}/api/external/v1/link/status`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ namespace: "slack", subject: "lifecycle-user" }),
+    });
+    expect(statusResponse.status).toBe(200);
+    expect(await statusResponse.json()).toMatchObject({ grantId: exchanged.grantId });
+
+    const ackResponse = await fetch(`${baseUrl}/api/external/v1/erasure/ack`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${exchanged.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ eventId: "lifecycle-event", result: "completed" }),
+    });
+    expect(ackResponse.status).toBe(200);
+    expect(await ackResponse.json()).toEqual({ accepted: true });
+
+    const revokeResponse = await fetch(
+      `${baseUrl}/api/external/v1/clients/${provisioned.clientId}/revoke`,
+      { method: "POST", headers: { Authorization: `Bearer ${session.sessionId}` } },
+    );
+    expect(revokeResponse.status).toBe(200);
+    expect(await revokeResponse.json()).toEqual({ revoked: true });
   });
 
   it("reissues an expired token on the same grant and rotates the stored hash", async () => {
