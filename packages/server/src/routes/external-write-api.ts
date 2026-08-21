@@ -243,8 +243,12 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
     if (!parsed.success) return sendProblem(res, req, 422, "VALIDATION_ERROR");
     const clientId = `ext_${randomBytes(18).toString("base64url")}`;
     const secret = createOpaqueSecret();
+    const scopeArray = sql`ARRAY[${sql.join(
+      parsed.data.scopes.map((scope) => sql`${scope}`),
+      sql`, `,
+    )}]::text[]`;
     await deps.db.execute(
-      sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes) VALUES (${clientId}, ${parsed.data.name}, ${secret.hash}, ${parsed.data.scopes}::text[])`,
+      sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes) VALUES (${clientId}, ${parsed.data.name}, ${secret.hash}, ${scopeArray})`,
     );
     res.status(201).json({ clientId, clientSecret: secret.value, scopes: parsed.data.scopes });
   });
