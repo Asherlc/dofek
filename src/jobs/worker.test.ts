@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME } from "./import-validation-error.ts";
 
@@ -849,6 +850,47 @@ describe("worker module", () => {
     });
     expect(logger.error).toHaveBeenCalledWith(
       "[worker] Failed to append failed job log: queue=sync-strava jobId=failed-fit-log-1: Error: job log Redis unavailable",
+    );
+  });
+
+  it("failed event handler logs provider service-unavailable errors without Sentry capture", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.warn).mockClear();
+
+    getWorkerHandler("active")();
+    const error = new ProviderServiceUnavailableError({
+      message: "Zepp API service unavailable (500): upstream outage",
+      providerId: "amazfit-zepp",
+      statusCode: 500,
+      responseBody: "upstream outage",
+    });
+    getWorkerHandler("failed")(undefined, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[worker] Job retrying after provider service unavailable: Zepp API service unavailable (500): upstream outage",
+    );
+  });
+
+  it("failed event handler reports unrelated provider service-unavailable errors", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const error = new ProviderServiceUnavailableError({
+      message: "Zwift API service unavailable (503): upstream outage",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "upstream outage",
+    });
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    getWorkerHandler("failed")(undefined, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Job failed: Zwift API service unavailable (503): upstream outage",
     );
   });
 
