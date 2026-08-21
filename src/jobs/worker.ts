@@ -1,5 +1,5 @@
-import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { randomUUID } from "node:crypto";
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { Job, UnrecoverableError, Worker } from "bullmq";
 import { validateAccountErasureLedgerKeyring } from "../account-erasure/identity.ts";
 import { createEncryptedAccountErasureSnapshot } from "../account-erasure/remote-snapshot.ts";
@@ -622,6 +622,7 @@ for (const worker of allWorkers) {
           `[worker] Failed to append lock renewal failure job log: queue=${worker.name} jobId=${jobId}: ${String(logError)}`,
         );
       });
+    }
   });
 
   worker.on("error", (err) => {
