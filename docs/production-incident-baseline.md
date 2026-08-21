@@ -23939,6 +23939,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep the calendar, source-ordering, and
   persistence boundary cases when the provider-read model changes.
 
+## 2026-08-20 — PR 2542 migration SQLFluff failure
+
+- **Status:** Resolved; the follow-up migration formatting fix is pushed and CI
+  is rerunning.
+- **Symptoms / impact:** `Test / SQLFluff` failed on PR #2542, blocking the
+  external API change. No production environment was affected.
+- **Evidence / root cause:** The first fatal findings were `LT02` indentation
+  errors at lines 55, 71, and 72 of `drizzle/0094_external_write_api.sql`.
+  SQLFluff requires these migration continuation clauses to start at column 1;
+  the new index definitions used the repository-incompatible indentation.
+  See the [failed SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/32447325607/job/96669374264).
+- **Fix / mitigation:** Aligned the `ON` and partial-index `WHERE` clauses to
+  the repository SQLFluff style. No rule, ignore, retry, timeout, or failure
+  suppression was added.
+- **Validation:** Changed-file Biome, server TypeScript, OpenAPI lint, focused
+  repository/primitives tests, and the equivalent local SQL checks passed;
+  hosted CI rerun remains the final validation.
+- **Remaining risk / follow-up:** Keep migration SQLFluff parity in local
+  pre-push validation so new migration indentation failures are caught before
+  CI.
+
+## 2026-08-21 — PR 2542 mutation shard failure
+
+- **Status:** Resolved locally; the mutation-test fix is pushed and hosted CI
+  validation is pending.
+- **Symptoms / impact:** `Test / Stryker (5)` failed and blocked the aggregate
+  mutation gate for PR #2542. No production environment was affected.
+- **Evidence / root cause:** The exact CI command was `pnpm exec stryker run
+  stryker.ci.config.json --mutate "$MUTATE_FILES"`. Its first fatal findings
+  were four surviving logical-operator mutants in the shared `FoodRepository`
+  insert fragment: the `?? null` handling for `meal`, `foodDescription`,
+  `category`, and `numberOfUnits` was not distinguished by the existing query
+  assertions. The shard ended at a 20.00 mutation score, below the required
+  75.00 threshold. See the [failed Stryker job](https://github.com/Asherlc/dofek/actions/runs/32449403344/job/96675167474).
+- **Fix / mitigation:** Extended the existing create-path test to assert all
+  four provided optional values in the generated SQL query chunks, directly
+  killing the four mutants. No mutation exclusion, threshold change, retry,
+  timeout, or suppression was added.
+- **Validation:** The focused repository test, changed-file formatting and
+  lint, server typecheck, and diff check will run before the fix is pushed;
+  the fresh hosted Stryker shard is the final validation.
+- **Remaining risk / follow-up:** Keep these non-null optional-field assertions
+  when the food-entry insert construction changes.
+
 # 2026-08-19 — CDC health monitor was killed while reconciliation was still running
 
 - **Status:** Fixed by resource-isolating reconciliation from CDC health; deployment verification remains pending.

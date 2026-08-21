@@ -1,0 +1,469 @@
+import { createHash, randomUUID } from "node:crypto";
+import type { Server } from "node:http";
+import { sql } from "drizzle-orm";
+import express from "express";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { initiateAccountErasure } from "../../../../src/db/account-erasure.ts";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { createSession } from "../auth/session.ts";
+import { createExternalWriteApiRouter } from "./external-write-api.ts";
+import { hashSecret } from "./external-write-api-primitives.ts";
+
+const USER_ID = "00000000-0000-0000-0000-000000000001";
+const ADMIN_USER_ID = "00000000-0000-4000-8000-000000000099";
+const ERASURE_USER_ID = "00000000-0000-4000-8000-000000000022";
+
+function pkceChallenge(codeVerifier: string): string {
+  return createHash("sha256").update(codeVerifier).digest("base64url");
+}
+
+async function createGrant(
+  testContext: TestContext,
+  options: {
+    clientId: string;
+    clientSecret: string;
+    namespace: string;
+    subject: string;
+    userId?: string;
+    revoked?: boolean;
+    expired?: boolean;
+  },
+) {
+  const userId = options.userId ?? randomUUID();
+  const opaqueSubject = `opaque-${options.clientId}`;
+  const grantId = randomUUID();
+  const oldToken = `old-token-${grantId}`;
+  await testContext.db.execute(
+    sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+        VALUES (${userId}, ${options.clientId}, NULL, false)
+        ON CONFLICT (id) DO NOTHING`,
+  );
+  await testContext.db.execute(
+    sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes)
+        VALUES (${options.clientId}, ${options.clientId}, ${hashSecret(options.clientSecret)}, ARRAY['nutrition:write'])`,
+  );
+  await testContext.db.execute(
+    sql`INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject)
+        VALUES (${options.namespace}, ${options.subject}, ${userId}, ${opaqueSubject})`,
+  );
+  await testContext.db.execute(
+    sql`INSERT INTO fitness.external_grant
+        (grant_id, client_id, user_id, namespace, subject, opaque_subject, access_token_hash, scopes, expires_at, revoked_at)
+        VALUES (${grantId}::uuid, ${options.clientId}, ${userId}, ${options.namespace}, ${options.subject}, ${opaqueSubject}, ${hashSecret(oldToken)}, ARRAY['nutrition:write'], ${options.expired ? sql`NOW() - INTERVAL '1 minute'` : sql`NOW() + INTERVAL '15 minutes'`}, ${options.revoked ? sql`NOW()` : null})`,
+  );
+  return { authorization: `Bearer ${options.clientId}.${options.clientSecret}`, grantId, oldToken };
+}
+
+describe.sequential("external write API network contract", () => {
+  let testContext: TestContext;
+  let server: Server;
+  let baseUrl: string;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ADMIN_USER_ID}, 'External API Admin Test', NULL, true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(sql`DELETE FROM fitness.external_erasure_ack`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_idempotency_receipt`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_grant`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_identity_link`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_link`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_client`);
+    const app = express();
+    app.use("/api/external/v1", createExternalWriteApiRouter({ db: testContext.db }));
+    await new Promise<void>((resolve) => {
+      server = app.listen(0, () => {
+        const address = server.address();
+        baseUrl = `http://localhost:${typeof address === "object" && address ? address.port : 0}`;
+        resolve();
+      });
+    });
+  }, 120_000);
+
+  beforeEach(async () => {
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.account_erasure_identity_fence
+          WHERE request_id IN (
+            SELECT id
+            FROM fitness.account_erasure_request
+            WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)
+          )`,
+    );
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.account_erasure_preparation
+          WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)`,
+    );
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.account_erasure_request
+          WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)`,
+    );
+    await testContext.db.execute(sql`DELETE FROM fitness.external_erasure_ack`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_idempotency_receipt`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_grant`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_identity_link`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_link`);
+    await testContext.db.execute(sql`DELETE FROM fitness.external_client`);
+  });
+
+  afterAll(async () => {
+    server?.closeAllConnections();
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    await testContext?.cleanup();
+  });
+
+  it("provisions a client without persisting the raw secret", async () => {
+    const session = await createSession(testContext.db, ADMIN_USER_ID);
+    const response = await fetch(`${baseUrl}/api/external/v1/clients`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
+    });
+    const responseBody = await response.text();
+    expect(response.status, responseBody).toBe(201);
+    const body: { clientId: string; clientSecret: string } = JSON.parse(responseBody);
+    const rows = await testContext.db.execute(
+      sql`SELECT secret_hash FROM fitness.external_client WHERE client_id = ${body.clientId}`,
+    );
+    expect(rows[0]?.secret_hash).toBeTruthy();
+    expect(rows[0]?.secret_hash).not.toBe(body.clientSecret);
+  });
+
+  it("covers client rotation, linking, status, and erasure acknowledgement", async () => {
+    const session = await createSession(testContext.db, ADMIN_USER_ID);
+    const provisionResponse = await fetch(`${baseUrl}/api/external/v1/clients`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "lifecycle-test", scopes: ["nutrition:write"] }),
+    });
+    expect(provisionResponse.status).toBe(201);
+    const provisioned = z
+      .object({ clientId: z.string(), clientSecret: z.string() })
+      .parse(await provisionResponse.json());
+
+    const rotateResponse = await fetch(
+      `${baseUrl}/api/external/v1/clients/${provisioned.clientId}/rotate`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.sessionId}` },
+      },
+    );
+    expect(rotateResponse.status).toBe(200);
+    const rotated = z.object({ clientSecret: z.string() }).parse(await rotateResponse.json());
+    expect(rotated.clientSecret).not.toBe(provisioned.clientSecret);
+
+    const codeVerifier = "a".repeat(43);
+    const startResponse = await fetch(`${baseUrl}/api/external/v1/link/start`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        redirectUri: "https://slack.example.test/dofek/callback",
+        codeChallenge: pkceChallenge(codeVerifier),
+        requestedScopes: ["nutrition:write"],
+        state: "state-value",
+      }),
+    });
+    expect(startResponse.status).toBe(200);
+    const started = z.object({ linkId: z.string().uuid() }).parse(await startResponse.json());
+
+    const authorizePage = await fetch(
+      `${baseUrl}/api/external/v1/link/authorize?linkId=${started.linkId}`,
+      { headers: { Authorization: `Bearer ${session.sessionId}` } },
+    );
+    expect(authorizePage.status).toBe(200);
+    const authorizeHtml = await authorizePage.text();
+    expect(authorizeHtml).toContain("Approve");
+    const csrfToken = authorizeHtml.match(/name="csrfToken" value="([^"]+)"/)?.[1];
+    expect(csrfToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const csrfFailure = await fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ linkId: started.linkId, approved: "true" }),
+    });
+    expect(csrfFailure.status).toBe(422);
+
+    const authorizeResponse = await fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        linkId: started.linkId,
+        approved: "true",
+        csrfToken: csrfToken ?? "",
+      }),
+    });
+    expect(authorizeResponse.status).toBe(303);
+    const location = new URL(authorizeResponse.headers.get("location") ?? "");
+    expect(location.searchParams.get("state")).toBe("state-value");
+
+    const exchangeResponse = await fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        linkId: started.linkId,
+        code: location.searchParams.get("code"),
+        codeVerifier,
+        externalSubject: { namespace: "slack", subject: "lifecycle-user" },
+      }),
+    });
+    expect(exchangeResponse.status).toBe(200);
+    const exchanged = z
+      .object({ accessToken: z.string(), grantId: z.string().uuid() })
+      .parse(await exchangeResponse.json());
+
+    const statusResponse = await fetch(`${baseUrl}/api/external/v1/link/status`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ namespace: "slack", subject: "lifecycle-user" }),
+    });
+    expect(statusResponse.status).toBe(200);
+    expect(await statusResponse.json()).toMatchObject({ grantId: exchanged.grantId });
+
+    const ackResponse = await fetch(`${baseUrl}/api/external/v1/erasure/ack`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${exchanged.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ eventId: "lifecycle-event", result: "completed" }),
+    });
+    expect(ackResponse.status).toBe(200);
+    expect(await ackResponse.json()).toEqual({ accepted: true });
+
+    const revokeResponse = await fetch(
+      `${baseUrl}/api/external/v1/clients/${provisioned.clientId}/revoke`,
+      { method: "POST", headers: { Authorization: `Bearer ${session.sessionId}` } },
+    );
+    expect(revokeResponse.status).toBe(200);
+    expect(await revokeResponse.json()).toEqual({ revoked: true });
+  });
+
+  it("reissues an expired token on the same grant and rotates the stored hash", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "reissue-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "team-user-1",
+      expired: true,
+    });
+    const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "slack", subject: "team-user-1" }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      externalSubject: "opaque-reissue-client",
+      grantId: grant.grantId,
+      tokenType: "Bearer",
+      expiresIn: 900,
+      scope: "nutrition:write",
+    });
+    expect(body.accessToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const rows = await testContext.db.execute(
+      sql`SELECT access_token_hash, expires_at FROM fitness.external_grant WHERE grant_id = ${grant.grantId}::uuid`,
+    );
+    expect(rows[0]?.access_token_hash).toBe(hashSecret(body.accessToken));
+    expect(rows[0]?.access_token_hash).not.toBe(hashSecret(grant.oldToken));
+    expect(new Date(String(rows[0]?.expires_at)).getTime()).toBeGreaterThan(Date.now());
+
+    const oldTokenResponse = await fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${grant.oldToken}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "old-token-request-key",
+      },
+      body: "{}",
+    });
+    expect(oldTokenResponse.status).toBe(401);
+  });
+
+  it("writes nutrition entries and enforces request validation and idempotency", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "nutrition-client",
+      clientSecret: "nutrition-secret",
+      namespace: "slack",
+      subject: "nutrition-subject",
+    });
+    const entry = {
+      date: "2026-08-20",
+      meal: "lunch",
+      foodName: "Test lunch",
+      externalId: "nutrition-entry-1",
+      nutrients: { calories: 500 },
+    };
+    const request = (body: unknown, key = "nutrition-request-key") =>
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${grant.oldToken}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify(body),
+      });
+
+    const response = await request({ entries: [entry] });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ entries: [{ externalId: entry.externalId }] });
+
+    const replay = await request({ entries: [entry] });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({ entries: [{ externalId: entry.externalId }] });
+
+    const reused = await request(
+      { entries: [{ ...entry, foodName: "Different lunch" }] },
+      "nutrition-request-key",
+    );
+    expect(reused.status).toBe(409);
+    expect((await reused.json()).code).toBe("IDEMPOTENCY_KEY_REUSED");
+
+    const missingKey = await request({ entries: [entry] }, "short");
+    expect(missingKey.status).toBe(422);
+
+    const mixedDates = await request(
+      { entries: [entry, { ...entry, externalId: "nutrition-entry-2", date: "2026-08-21" }] },
+      "nutrition-mixed-date-key",
+    );
+    expect(mixedDates.status).toBe(422);
+  });
+
+  it("returns the validation error envelope for an invalid subject", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "validation-client",
+      clientSecret: "validation-secret",
+      namespace: "slack",
+      subject: "validation-subject",
+    });
+    const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "" }),
+    });
+    expect(response.status).toBe(422);
+    expect((await response.json()).code).toBe("VALIDATION_ERROR");
+  });
+
+  it("does not reissue a subject owned by another client", async () => {
+    await createGrant(testContext, {
+      clientId: "owner-client",
+      clientSecret: "owner-secret",
+      namespace: "slack",
+      subject: "team-user-2",
+    });
+    await createGrant(testContext, {
+      clientId: "other-client",
+      clientSecret: "other-secret",
+      namespace: "slack",
+      subject: "different-subject",
+    });
+    const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer other-client.other-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ namespace: "slack", subject: "team-user-2" }),
+    });
+    expect(response.status).toBe(404);
+    expect((await response.json()).code).toBe("NOT_FOUND");
+  });
+
+  it.each([
+    ["missing", "missing-subject", false],
+    ["revoked", "revoked-subject", true],
+  ] as const)("returns NOT_FOUND for a %s grant", async (_label, subject, revoked) => {
+    const grant = await createGrant(testContext, {
+      clientId: `reissue-${subject}`,
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject,
+      revoked,
+    });
+    if (!revoked) {
+      await testContext.db.execute(
+        sql`DELETE FROM fitness.external_grant WHERE grant_id = ${grant.grantId}::uuid`,
+      );
+    }
+    const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "slack", subject }),
+    });
+    expect(response.status).toBe(404);
+    expect((await response.json()).code).toBe("NOT_FOUND");
+  });
+
+  it("returns the erasure fence error without exposing account identifiers", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "erasure-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "erasure-subject",
+      userId: ERASURE_USER_ID,
+    });
+    await initiateAccountErasure(
+      testContext.db,
+      ERASURE_USER_ID,
+      async () => "snapshot",
+      async () => undefined,
+    );
+    const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "slack", subject: "erasure-subject" }),
+    });
+    expect(response.status).toBe(423);
+    const body = await response.json();
+    expect(body.code).toBe("ACCOUNT_ERASURE_ACTIVE");
+    expect(JSON.stringify(body)).not.toContain(ERASURE_USER_ID);
+  });
+});

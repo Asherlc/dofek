@@ -9,6 +9,7 @@ const SHARED_SYSTEM_TABLES = new Set([
   "fitness.device_priority",
   "fitness.exercise",
   "fitness.exercise_alias",
+  "fitness.external_client",
   "fitness.journal_question",
   "fitness.mcp_oauth_client",
   "fitness.metric_stream_rebuild_task",

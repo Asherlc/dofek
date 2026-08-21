@@ -75,6 +75,15 @@ function makeFoodEntryRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function collectSqlValues(value: unknown): unknown[] {
+  if (typeof value !== "object" || value === null) return [value];
+  const queryChunks = Reflect.get(value, "queryChunks");
+  if (Array.isArray(queryChunks)) return queryChunks.flatMap(collectSqlValues);
+  const rawValue = Reflect.get(value, "value");
+  if (Array.isArray(rawValue)) return rawValue.flatMap(collectSqlValues);
+  return rawValue === undefined ? [] : [rawValue];
+}
+
 const availableResolutionRow = {
   resolution_status: "available",
   resolution_message: "Totals use the only available nutrition source.",
@@ -742,6 +751,44 @@ describe("FoodRepository", () => {
       expect(result.food_name).toBe("Chicken Breast");
       expect(result.nutrients).toEqual({});
       expect(execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("persists an external identifier when provided", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "External Food",
+        externalId: "external-entry-1",
+        nutrients: { "vitamin-c": 1 },
+      });
+
+      expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-1");
+    });
+
+    it("persists an external identifier without nutrients", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "External Food",
+        externalId: "external-entry-2",
+        nutrients: {},
+      });
+
+      expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-2");
     });
 
     it("inserts junction table rows when nutrients are provided", async () => {
@@ -1439,8 +1486,13 @@ describe("FoodRepository", () => {
         typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
       expect(Array.isArray(queryChunks)).toBe(true);
       if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
-      expect(queryChunks).toContain("grain");
-      expect(queryChunks).toContain(2);
+      expect(JSON.stringify(queryChunks)).toContain("grain");
+      expect(JSON.stringify(queryChunks)).toContain("2");
+      expect(JSON.stringify(queryChunks)).toContain("lunch");
+      expect(JSON.stringify(queryChunks)).toContain("With milk");
+      const sqlValues = collectSqlValues(query);
+      expect(sqlValues).toContain("grain");
+      expect(sqlValues).toContain(2);
       expect(result).not.toBeNull();
     });
 
@@ -1505,8 +1557,8 @@ describe("FoodRepository", () => {
         typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
       expect(Array.isArray(queryChunks)).toBe(true);
       if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
-      expect(queryChunks).toContain("grain");
-      expect(queryChunks).toContain(2);
+      expect(JSON.stringify(queryChunks)).toContain("grain");
+      expect(JSON.stringify(queryChunks)).toContain("2");
     });
 
     it("passes explicit null for meal when set to null", async () => {
