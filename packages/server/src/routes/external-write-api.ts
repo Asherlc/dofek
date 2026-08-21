@@ -149,6 +149,13 @@ function externalIdentity(namespace: string, subject: string) {
   ];
 }
 
+function textArray(values: readonly string[]) {
+  return sql`ARRAY[${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  )}]::text[]`;
+}
+
 function isAllowedRedirectUri(value: string): boolean {
   const uri = new URL(value);
   if (uri.username || uri.password || uri.hash) return false;
@@ -243,12 +250,8 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
     if (!parsed.success) return sendProblem(res, req, 422, "VALIDATION_ERROR");
     const clientId = `ext_${randomBytes(18).toString("base64url")}`;
     const secret = createOpaqueSecret();
-    const scopeArray = sql`ARRAY[${sql.join(
-      parsed.data.scopes.map((scope) => sql`${scope}`),
-      sql`, `,
-    )}]::text[]`;
     await deps.db.execute(
-      sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes) VALUES (${clientId}, ${parsed.data.name}, ${secret.hash}, ${scopeArray})`,
+      sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes) VALUES (${clientId}, ${parsed.data.name}, ${secret.hash}, ${textArray(parsed.data.scopes)})`,
     );
     res.status(201).json({ clientId, clientSecret: secret.value, scopes: parsed.data.scopes });
   });
@@ -294,7 +297,7 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
     const linkId = randomUUID();
     const expiresAt = new Date(Date.now() + LINK_TTL_MS).toISOString();
     await deps.db.execute(
-      sql`INSERT INTO fitness.external_link (link_id, client_id, redirect_uri, code_challenge, requested_scopes, state, expires_at) VALUES (${linkId}::uuid, ${client.clientId}, ${parsed.data.redirectUri}, ${parsed.data.codeChallenge}, ${parsed.data.requestedScopes}, ${parsed.data.state ?? null}, ${expiresAt})`,
+      sql`INSERT INTO fitness.external_link (link_id, client_id, redirect_uri, code_challenge, requested_scopes, state, expires_at) VALUES (${linkId}::uuid, ${client.clientId}, ${parsed.data.redirectUri}, ${parsed.data.codeChallenge}, ${textArray(parsed.data.requestedScopes)}, ${parsed.data.state ?? null}, ${expiresAt})`,
     );
     const authorizationUrl = new URL(
       "/api/external/v1/link/authorize",
