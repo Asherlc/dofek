@@ -86,6 +86,9 @@ services:
         - traefik.http.routers.web.tls.domains[2].main=dofek.live
         - traefik.http.routers.web.tls.domains[2].sans=www.dofek.live
         - traefik.http.services.web.loadbalancer.server.port=3000
+        - traefik.http.services.web.loadbalancer.healthcheck.path=/healthz
+        - traefik.http.services.web.loadbalancer.healthcheck.interval=5s
+        - traefik.http.services.web.loadbalancer.healthcheck.timeout=3s
 
   worker:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
