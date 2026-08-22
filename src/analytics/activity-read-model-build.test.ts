@@ -25,8 +25,9 @@ function createMockClickHouseClient(query: Mock): ClickHouseClient {
   };
 }
 
-function createMockChildProcess(): SpawnedProcess {
+function createMockChildProcess() {
   return Object.assign(new EventEmitter(), {
+    stdout: new PassThrough(),
     stderr: new PassThrough(),
   });
 }
@@ -252,7 +253,7 @@ describe("activity-read-model-build", () => {
       ],
       {
         env: process.env,
-        stdio: ["ignore", "ignore", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
   });
@@ -452,7 +453,7 @@ describe("activity-read-model-build", () => {
   });
 
   it("supports provider analytics child processes without stderr", async () => {
-    const child: SpawnedProcess = Object.assign(new EventEmitter(), { stderr: null });
+    const child: SpawnedProcess = Object.assign(new EventEmitter(), { stdout: null, stderr: null });
     const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
 
     const buildPromise = runProviderDeleteReadModelBuild(spawnImpl);
@@ -484,6 +485,19 @@ describe("activity-read-model-build", () => {
     child.emit("close", 2);
 
     await expect(buildPromise).rejects.toThrow(": model failed");
+  });
+
+  it("includes dbt stdout diagnostics in failure errors", async () => {
+    const child = createMockChildProcess();
+    const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
+
+    const buildPromise = runActivityReadModelBuild(spawnImpl);
+    if (child.stdout instanceof PassThrough) {
+      child.stdout.write("  Database Error in model activity_source_records  ");
+    }
+    child.emit("close", 2);
+
+    await expect(buildPromise).rejects.toThrow("Database Error in model activity_source_records");
   });
 
   it("rejects when spawning dbt fails", async () => {
