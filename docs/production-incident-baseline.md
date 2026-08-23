@@ -7,6 +7,16 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-22 — Rollout request gap and hidden dbt failure diagnostics
+
+- **Symptoms:** Sentry reported a mobile `processing.alerts` request receiving a Cloudflare `502`, unhandled `ECONNRESET` and `ENOTFOUND redis` errors in server tasks, and repeated `dbt build --select activity_source_records+` failures.
+- **User impact:** One mobile user received a failed API request during a production rollout. Activity analytics refresh jobs failed without a usable dbt diagnostic.
+- **Evidence:** Axiom logs show the mobile request gap at `2026-08-20T23:32:18Z` while Swarm web tasks were being replaced; server requests before and after the gap returned `200`. The worker restarted at `2026-08-20T23:31:41Z`. The dbt job failed five times between `2026-08-21T20:00:17Z` and `20:02:45Z`, but its logged error contained only the exit code. The runner had configured dbt stdout as `ignore`.
+- **Root cause:** The activity dbt runner discarded stdout, which is where dbt supplied the model failure details. The immediate cause of the rollout request gap is unconfirmed; the evidence establishes that it coincided with web-task replacement and that Traefik previously had no backend readiness check.
+- **Fix / mitigation:** Configured Traefik to health-check `/healthz` every five seconds before routing to a web task, addressing the identified rollout-readiness risk. The activity dbt runner now captures both stdout and stderr in its thrown error.
+- **Validation:** The new stdout-diagnostic regression test failed before the runner change and passed afterward. `docker stack config` rendered `deploy/stack.yml` successfully with non-secret placeholder environment values.
+- **Remaining risk:** The underlying dbt model failure must be re-run after deployment; the next failure will include its diagnostic in Sentry for direct remediation.
+
 ## 2026-08-14 — One IMU upload received a transient Cloudflare 502
 
 - **Status:** [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G)
