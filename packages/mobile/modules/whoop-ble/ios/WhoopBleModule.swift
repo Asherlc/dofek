@@ -388,11 +388,21 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         sendActivationCommands(includeImu: false)
         watchdog.start()
 
+        WhoopBleStreamRestorer.restoreIfNeeded(
+            wasStreaming: wasStreaming,
+            startStreaming: connectionManager.startStreaming,
+            activateImu: { [self] in
+                connectionManager.writeToStrap(
+                    WhoopBleFrameParser.buildCommandData(
+                        command: WhoopBleConstants.commandToggleImuMode
+                    )
+                )
+            },
+            emitDeviceState: { [self] in
+                emitDeviceState()
+            }
+        )
         if wasStreaming {
-            connectionManager.writeToStrap(
-                WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
-            )
-            _ = connectionManager.startStreaming()
             frameParser.reset()
             cmdFrameParser.reset()
         }

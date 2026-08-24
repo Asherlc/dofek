@@ -8,8 +8,12 @@ final class BleHeartRateConnectionManager: NSObject {
     weak var delegate: BleHeartRateConnectionManagerDelegate?
 
     let bleQueue: DispatchQueue
-    private let centralManagerOwner: BleHeartRateCentralManagerOwner<CBCentralManager>
-    private var centralManager: CBCentralManager? { centralManagerOwner.current }
+    private let centralManagerOwner: BleHeartRateCentralManagerOwner<any BleHeartRateCentralManaging>
+    private let centralManagerFactory: (
+        CBCentralManagerDelegate,
+        DispatchQueue
+    ) -> any BleHeartRateCentralManaging
+    private var centralManager: (any BleHeartRateCentralManaging)? { centralManagerOwner.current }
     private var sessions: [UUID: BleHeartRatePeripheralSession] = [:]
     private var peripherals: [UUID: CBPeripheral] = [:]
     private var connectCompletions: [
@@ -28,16 +32,24 @@ final class BleHeartRateConnectionManager: NSObject {
     private static let scanTimeoutSeconds: TimeInterval = 15
     private static let connectTimeoutSeconds: TimeInterval = 10
 
-    override init() {
+    init(
+        centralManagerFactory: @escaping (
+            CBCentralManagerDelegate,
+            DispatchQueue
+        ) -> any BleHeartRateCentralManaging = { delegate, queue in
+            CBCentralManager(delegate: delegate, queue: queue)
+        }
+    ) {
         let queue = DispatchQueue(label: "com.dofek.ble-heart-rate", qos: .userInitiated)
         bleQueue = queue
         centralManagerOwner = BleHeartRateCentralManagerOwner(queue: queue)
+        self.centralManagerFactory = centralManagerFactory
         super.init()
     }
 
-    private func ensureCentralManager() -> CBCentralManager {
+    private func ensureCentralManager() -> any BleHeartRateCentralManaging {
         centralManagerOwner.getOrCreate {
-            CBCentralManager(delegate: self, queue: bleQueue)
+            centralManagerFactory(self, bleQueue)
         }
     }
 
@@ -190,7 +202,7 @@ final class BleHeartRateConnectionManager: NSObject {
 
     // MARK: - Operation dispatch
 
-    private func runOrDeferScan(manager: CBCentralManager) {
+    private func runOrDeferScan(manager: any BleHeartRateCentralManaging) {
         switch manager.state {
         case .poweredOn:
             startScan(manager)
@@ -210,7 +222,7 @@ final class BleHeartRateConnectionManager: NSObject {
     private func runOrDeferConnect(
         id: UUID,
         session: BleHeartRatePeripheralSession,
-        manager: CBCentralManager
+        manager: any BleHeartRateCentralManaging
     ) {
         switch manager.state {
         case .poweredOn:
@@ -229,7 +241,7 @@ final class BleHeartRateConnectionManager: NSObject {
         }
     }
 
-    private func startScan(_ manager: CBCentralManager) {
+    private func startScan(_ manager: any BleHeartRateCentralManaging) {
         pendingScan = false
         scanState = .scanning
         let token = UUID()
@@ -248,7 +260,7 @@ final class BleHeartRateConnectionManager: NSObject {
     private func performConnect(
         id: UUID,
         session: BleHeartRatePeripheralSession,
-        manager: CBCentralManager
+        manager: any BleHeartRateCentralManaging
     ) {
         guard sessions[id] === session else { return }
         guard let peripheral = manager.retrievePeripherals(withIdentifiers: [id]).first else {
@@ -261,7 +273,7 @@ final class BleHeartRateConnectionManager: NSObject {
     private func beginConnecting(
         to peripheral: CBPeripheral,
         session: BleHeartRatePeripheralSession,
-        manager: CBCentralManager
+        manager: any BleHeartRateCentralManaging
     ) {
         let id = peripheral.identifier
         peripherals[id] = peripheral
@@ -351,7 +363,7 @@ final class BleHeartRateConnectionManager: NSObject {
     }
 
     private func takeScanCompletion(
-        manager: CBCentralManager
+        manager: any BleHeartRateCentralManaging
     ) -> ((Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void)? {
         manager.stopScan()
         pendingScan = false
