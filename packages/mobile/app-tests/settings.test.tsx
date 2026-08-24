@@ -484,6 +484,17 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByText("2 connected")).toBeTruthy();
   });
 
+  it("keeps the Bluetooth Devices settings entry discoverable", async () => {
+    mockSearchParams = {};
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Data Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bluetooth Devices" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/bluetooth-devices");
+  });
+
   it("renders provider logos for connected providers only", async () => {
     const { default: SettingsScreen } = await import("../app/settings");
 

@@ -70,7 +70,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "data-sources",
     label: "Data Sources",
-    searchText: "data sources providers Zepp integrations",
+    searchText: "data sources providers Zepp integrations Bluetooth devices WHOOP heart rate",
   },
   {
     id: "goals-models",
@@ -397,50 +397,64 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Sources</Text>
           <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push("/providers")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Data Sources"
-            accessibilityState={{ busy: providers.isLoading }}
-          >
-            <View style={styles.dataSourcesRow}>
-              <View style={styles.dataSourcesInfo}>
-                {providers.isLoading ? (
-                  <ActivityIndicator color={colors.accent} size="small" />
-                ) : providers.error && providers.data === undefined ? (
-                  <QueryStatePanel
-                    variant="error"
-                    title="Could not load data sources"
-                    message={getQueryErrorMessage(providers.error)}
-                    minHeight={96}
-                  />
-                ) : (
-                  <>
-                    <View style={styles.providerLogos}>
-                      {(providers.data ?? [])
-                        .filter((provider) => provider.authorized)
-                        .slice(0, 5)
-                        .map((provider) => (
-                          <ProviderLogo
-                            key={provider.id}
-                            provider={provider.id}
-                            serverUrl={auth.serverUrl}
-                            size={20}
-                          />
-                        ))}
-                    </View>
-                    <Text style={styles.dataSourcesCount}>
-                      {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
-                      connected
-                    </Text>
-                  </>
-                )}
+          <View style={styles.healthTrackingCards}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/providers")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Data Sources"
+              accessibilityState={{ busy: providers.isLoading }}
+            >
+              <View style={styles.dataSourcesRow}>
+                <View style={styles.dataSourcesInfo}>
+                  {providers.isLoading ? (
+                    <ActivityIndicator color={colors.accent} size="small" />
+                  ) : providers.error && providers.data === undefined ? (
+                    <QueryStatePanel
+                      variant="error"
+                      title="Could not load data sources"
+                      message={getQueryErrorMessage(providers.error)}
+                      minHeight={96}
+                    />
+                  ) : (
+                    <>
+                      <View style={styles.providerLogos}>
+                        {(providers.data ?? [])
+                          .filter((provider) => provider.authorized)
+                          .slice(0, 5)
+                          .map((provider) => (
+                            <ProviderLogo
+                              key={provider.id}
+                              provider={provider.id}
+                              serverUrl={auth.serverUrl}
+                              size={20}
+                            />
+                          ))}
+                      </View>
+                      <Text style={styles.dataSourcesCount}>
+                        {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
+                        connected
+                      </Text>
+                    </>
+                  )}
+                </View>
+                <Text style={styles.devToolChevron}>›</Text>
               </View>
-              <Text style={styles.devToolChevron}>›</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/bluetooth-devices")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Bluetooth Devices"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.devToolLabel}>Bluetooth Devices</Text>
+                <Text style={styles.devToolChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
           {providers.error && providers.data !== undefined ? (
             <QueryStatePanel
               variant="error"

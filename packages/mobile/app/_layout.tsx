@@ -634,6 +634,18 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="bluetooth-devices/index"
+            options={{
+              title: "Bluetooth Devices",
+            }}
+          />
+          <Stack.Screen
+            name="bluetooth-devices/[id]"
+            options={{
+              title: "Bluetooth Device",
+            }}
+          />
+          <Stack.Screen
             name="account-deletion"
             options={{
               title: "Account Deletion Status",
