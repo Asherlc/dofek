@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -62,6 +62,7 @@ const whoop = {
   kind: "whoop" as const,
   name: "WHOOP",
   connectionState: "ready",
+  peripheralId: null,
   diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
 };
 
@@ -138,6 +139,55 @@ describe("BluetoothDeviceDetailScreen", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Connect WHOOP" }));
 
     await waitFor(() => expect(mocks.whoopConnect).toHaveBeenCalledWith("whoop-native"));
+  });
+
+  it("keeps the WHOOP detail rendered across connect and disconnect catalog refreshes", async () => {
+    let publish:
+      | ((update: { state: "ready"; devices: (typeof whoop)[]; error: null }) => void)
+      | undefined;
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices.mockResolvedValue([{ ...whoop, connectionState: "disconnected" }]);
+    mocks.subscribeBluetoothDevices.mockImplementation((listener) => {
+      publish = listener;
+      return { remove: mocks.remove };
+    });
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+    expect(await screen.findByRole("button", { name: "Connect WHOOP" })).toBeTruthy();
+
+    act(() =>
+      publish?.({
+        state: "ready",
+        devices: [{ ...whoop, connectionState: "connected", peripheralId: "whoop-native" }],
+        error: null,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Disconnect WHOOP" })).toBeTruthy();
+    expect(screen.queryByText("Bluetooth device not found.")).toBeNull();
+
+    act(() =>
+      publish?.({
+        state: "ready",
+        devices: [{ ...whoop, connectionState: "disconnected", peripheralId: null }],
+        error: null,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Connect WHOOP" })).toBeTruthy();
+    expect(screen.queryByText("Bluetooth device not found.")).toBeNull();
+  });
+
+  it("connects WHOOP with the retained native peripheral ID without scanning again", async () => {
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices.mockResolvedValue([
+      { ...whoop, connectionState: "disconnected", peripheralId: "whoop-retained" },
+    ]);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Connect WHOOP" }));
+
+    await waitFor(() => expect(mocks.whoopConnect).toHaveBeenCalledWith("whoop-retained"));
+    expect(mocks.whoopFind).not.toHaveBeenCalled();
   });
 
   it("shows the specific initial catalog failure rather than a missing-device state", async () => {

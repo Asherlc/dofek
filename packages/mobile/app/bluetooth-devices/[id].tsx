@@ -106,11 +106,11 @@ export default function BluetoothDeviceDetailScreen() {
             return;
           }
         } else if (action === "connect") {
-          const discoveredWhoop = await findWhoop();
-          if (!discoveredWhoop) {
+          const peripheralId = device.peripheralId ?? (await findWhoop())?.id;
+          if (!peripheralId) {
             throw new Error("WHOOP strap not found");
           }
-          await connectWhoop(discoveredWhoop.id);
+          await connectWhoop(peripheralId);
         } else if (action === "disconnect") {
           disconnectWhoop();
         }

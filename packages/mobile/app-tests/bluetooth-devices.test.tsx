@@ -3,18 +3,41 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  captureException: vi.fn(),
-  getBluetoothDevices: vi.fn(),
-  push: vi.fn(),
-  remove: vi.fn(),
-  scanAndConnect: vi.fn(),
-  subscribeBluetoothDevices: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  let focusEffect: (() => void) | undefined;
 
-vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: mocks.push }),
-}));
+  return {
+    captureException: vi.fn(),
+    focus() {
+      focusEffect?.();
+    },
+    getBluetoothDevices: vi.fn(),
+    push: vi.fn(),
+    remove: vi.fn(),
+    resetFocusEffect() {
+      focusEffect = undefined;
+    },
+    scanAndConnect: vi.fn(),
+    setFocusEffect(callback: () => void) {
+      focusEffect = callback;
+    },
+    subscribeBluetoothDevices: vi.fn(),
+  };
+});
+
+vi.mock("expo-router", async () => {
+  const { useEffect } = await import("react");
+
+  return {
+    useFocusEffect: (callback: () => void) => {
+      useEffect(() => {
+        mocks.setFocusEffect(callback);
+        callback();
+      }, [callback]);
+    },
+    useRouter: () => ({ push: mocks.push }),
+  };
+});
 
 vi.mock("../lib/bluetooth-device-catalog", () => ({
   getBluetoothDevices: mocks.getBluetoothDevices,
@@ -34,6 +57,7 @@ const whoop = {
   kind: "whoop" as const,
   name: "WHOOP",
   connectionState: "ready",
+  peripheralId: null,
   diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
 };
 
@@ -66,6 +90,7 @@ const wahoo = {
 describe("BluetoothDevicesScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resetFocusEffect();
     mocks.getBluetoothDevices.mockResolvedValue([whoop, polar, wahoo]);
     mocks.scanAndConnect.mockResolvedValue({ id: "new-monitor", name: "New monitor" });
     mocks.subscribeBluetoothDevices.mockReturnValue({ remove: mocks.remove });
@@ -137,5 +162,17 @@ describe("BluetoothDevicesScreen", () => {
     view.unmount();
 
     expect(mocks.remove).toHaveBeenCalledOnce();
+  });
+
+  it("removes a forgotten monitor when the list regains focus without remounting", async () => {
+    const { default: BluetoothDevicesScreen } = await import("../app/bluetooth-devices/index");
+    render(<BluetoothDevicesScreen />);
+    expect(await screen.findByText("Polar H10")).toBeTruthy();
+    mocks.getBluetoothDevices.mockResolvedValue([whoop, wahoo]);
+
+    act(() => mocks.focus());
+
+    await waitFor(() => expect(screen.queryByText("Polar H10")).toBeNull());
+    expect(screen.getByText("WHOOP")).toBeTruthy();
   });
 });

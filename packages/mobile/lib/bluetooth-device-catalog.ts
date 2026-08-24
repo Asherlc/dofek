@@ -24,9 +24,10 @@ export interface WhoopDiagnostics {
 
 export type BluetoothDevice =
   | {
-      id: string;
+      id: "whoop";
       kind: "whoop";
       name: string;
+      peripheralId: string | null;
       connectionState: string;
       diagnostics: WhoopDiagnostics;
     }
@@ -48,9 +49,10 @@ export type BluetoothDeviceCatalogUpdate =
 
 function toWhoopDevice(summary: WhoopDeviceSummary): BluetoothDevice {
   return {
-    id: summary.id ?? "whoop",
+    id: "whoop",
     kind: "whoop",
     name: summary.name ?? "WHOOP",
+    peripheralId: summary.id,
     connectionState: summary.connectionState,
     diagnostics: {
       imuBufferedSamples: summary.imuBufferedSamples,

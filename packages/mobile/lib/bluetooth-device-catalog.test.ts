@@ -101,6 +101,7 @@ describe("bluetooth-device-catalog", () => {
         id: "whoop",
         kind: "whoop",
         name: "WHOOP",
+        peripheralId: null,
         connectionState: "ready",
         diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
       },
@@ -159,8 +160,9 @@ describe("bluetooth-device-catalog", () => {
         state: "ready",
         devices: [
           expect.objectContaining({
-            id: "whoop-123",
+            id: "whoop",
             name: "WHOOP 4.0",
+            peripheralId: "whoop-123",
             connectionState: "connected",
           }),
         ],

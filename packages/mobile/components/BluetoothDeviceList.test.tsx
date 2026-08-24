@@ -7,6 +7,7 @@ const whoop: BluetoothDevice = {
   id: "whoop",
   kind: "whoop",
   name: "WHOOP",
+  peripheralId: null,
   connectionState: "ready",
   diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
 };

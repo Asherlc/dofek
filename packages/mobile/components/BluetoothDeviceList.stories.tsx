@@ -7,6 +7,7 @@ const devices = [
     id: "whoop",
     kind: "whoop" as const,
     name: "WHOOP",
+    peripheralId: null,
     connectionState: "ready",
     diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
   },

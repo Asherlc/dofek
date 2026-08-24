@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { BluetoothDeviceList } from "../../components/BluetoothDeviceList";
@@ -59,13 +59,17 @@ export default function BluetoothDevicesScreen() {
       captureException(subscriptionError, { source: "bluetooth-devices-subscribe" });
       setError(errorMessage(subscriptionError));
     }
-    void loadDevices();
-
     return () => {
       mounted.current = false;
       subscription?.remove();
     };
-  }, [loadDevices]);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadDevices();
+    }, [loadDevices]),
+  );
 
   const connectDevice = useCallback(async () => {
     setConnecting(true);
