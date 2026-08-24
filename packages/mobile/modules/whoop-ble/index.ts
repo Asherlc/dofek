@@ -1,4 +1,5 @@
 import type { EventSubscription } from "expo-modules-core";
+import { z } from "zod";
 import WhoopBleModule from "./src/WhoopBleModule";
 
 /** A timestamped accelerometer and gyroscope sample from a WHOOP strap. */
@@ -19,13 +20,15 @@ export interface WhoopDevice {
 }
 
 /** A read-only snapshot of the current WHOOP connection and buffer state. */
-export interface WhoopDeviceSummary {
-  id: string | null;
-  name: string | null;
-  connectionState: string;
-  imuBufferedSamples: number;
-  realtimeBufferedSamples: number;
-}
+export const WhoopDeviceSummarySchema = z.object({
+  id: z.string().nullable(),
+  name: z.string().nullable(),
+  connectionState: z.string().min(1),
+  imuBufferedSamples: z.number().int().nonnegative(),
+  realtimeBufferedSamples: z.number().int().nonnegative(),
+});
+
+export type WhoopDeviceSummary = z.infer<typeof WhoopDeviceSummarySchema>;
 
 /** A single realtime data sample from a 0x28 REALTIME_DATA packet */
 export interface WhoopRealtimeDataSample {
@@ -214,7 +217,7 @@ export function getBufferedSampleCount(): number {
 
 /** Get the current WHOOP identity, connection state, and buffer counts without scanning or connecting. */
 export function getDeviceSummary(): WhoopDeviceSummary {
-  return WhoopBleModule.getDeviceSummary();
+  return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
 }
 
 /** Get BLE data path statistics for debugging. */
@@ -291,7 +294,9 @@ export function addConnectionStateListener(
 export function addDeviceStateListener(
   callback: (summary: WhoopDeviceSummary) => void,
 ): EventSubscription {
-  return WhoopBleModule.addListener("onDeviceStateChanged", callback);
+  return WhoopBleModule.addListener("onDeviceStateChanged", (event: unknown) =>
+    callback(WhoopDeviceSummarySchema.parse(event)),
+  );
 }
 
 /** Real-time orientation from the Madgwick AHRS filter (quaternion + Euler angles) */

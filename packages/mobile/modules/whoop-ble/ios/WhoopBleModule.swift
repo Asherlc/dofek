@@ -20,6 +20,7 @@ public class WhoopBleModule: Module {
     private let cmdFrameParser = WhoopBleFrameParser()
     private var lastKnownDeviceId: String?
     private var lastKnownDeviceName: String?
+    private var deviceStatePublicationScheduled = false
 
     // MARK: - Diagnostic counters
 
@@ -342,6 +343,18 @@ public class WhoopBleModule: Module {
         }
     }
 
+    /// Buffer-count changes arrive at packet rate; publish them at a bounded cadence.
+    /// Lifecycle transitions continue to call `emitDeviceState()` immediately.
+    private func scheduleDeviceStatePublication() {
+        guard !deviceStatePublicationScheduled else { return }
+        deviceStatePublicationScheduled = true
+        connectionManager.bleQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.deviceStatePublicationScheduled = false
+            self.emitDeviceState()
+        }
+    }
+
     // MARK: - Activation commands
 
     /// Send the standard activation commands to the strap.
@@ -483,7 +496,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         }
 
         sampleBuffer.appendImuSamples(newImuSamples, deviceId: deviceId)
-        emitDeviceState()
+        scheduleDeviceStatePublication()
     }
 
     func connectionManager(

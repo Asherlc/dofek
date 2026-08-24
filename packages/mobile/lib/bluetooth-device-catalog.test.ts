@@ -230,6 +230,35 @@ describe("bluetooth-device-catalog", () => {
     });
   });
 
+  it("does not let an older refresh overwrite a newer device state", async () => {
+    let resolveFirst: ((devices: (typeof polar)[]) => void) | undefined;
+    const firstRefresh = new Promise<(typeof polar)[]>((resolve) => {
+      resolveFirst = resolve;
+    });
+    mockHeartRate.getDevices.mockReturnValueOnce(firstRefresh).mockResolvedValueOnce([wahoo]);
+    const { subscribeBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
+    const listener = vi.fn();
+    subscribeBluetoothDevices(listener);
+
+    mockHeartRate.emitDeviceStateChanged(polar);
+    mockHeartRate.emitDeviceStateChanged(wahoo);
+
+    await vi.waitFor(() =>
+      expect(listener).toHaveBeenLastCalledWith({
+        state: "ready",
+        devices: [
+          expect.objectContaining({ id: "whoop" }),
+          expect.objectContaining({ id: "wahoo" }),
+        ],
+        error: null,
+      }),
+    );
+    resolveFirst?.([polar]);
+    await Promise.resolve();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it("removes every native subscription", async () => {
     const { subscribeBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
 

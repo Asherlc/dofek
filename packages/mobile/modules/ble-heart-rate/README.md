@@ -38,11 +38,19 @@ const subscription = addHeartRateListener((sample) => {
   console.log(sample.heartRateBpm, sample.rrIntervalsMs);
 });
 
-const device = await scanAndConnect();
+await scanAndConnect();
 
 try {
   const samples = await peekBufferedSamples();
-  await upload(device.id, samples);
+  const samplesByDevice = new Map<string, typeof samples>();
+  for (const sample of samples) {
+    const deviceSamples = samplesByDevice.get(sample.deviceId) ?? [];
+    deviceSamples.push(sample);
+    samplesByDevice.set(sample.deviceId, deviceSamples);
+  }
+  for (const [deviceId, deviceSamples] of samplesByDevice) {
+    await upload(deviceId, deviceSamples);
+  }
   confirmSamplesDrain(samples.length);
 } finally {
   subscription.remove();

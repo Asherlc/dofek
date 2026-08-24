@@ -1,9 +1,10 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
-export interface HeartRateDeviceCardProps {
+export interface BluetoothDeviceCardProps {
   connectedDeviceCount: number;
   error: string | null;
+  loading: boolean;
   onManageDevices: () => void;
 }
 
@@ -11,16 +12,19 @@ export interface HeartRateDeviceCardProps {
  * Summary of shared Bluetooth device connections during activity recording.
  * Device connection and pairing remain in the Bluetooth device manager.
  */
-export function HeartRateDeviceCard({
+export function BluetoothDeviceCard({
   connectedDeviceCount,
   error,
+  loading,
   onManageDevices,
-}: HeartRateDeviceCardProps) {
+}: BluetoothDeviceCardProps) {
   const connectionSummary =
     error ??
-    (connectedDeviceCount === 0
-      ? "No Bluetooth devices connected"
-      : `${connectedDeviceCount} Bluetooth device${connectedDeviceCount === 1 ? "" : "s"} connected`);
+    (loading
+      ? "Loading Bluetooth devices…"
+      : connectedDeviceCount === 0
+        ? "No Bluetooth devices connected"
+        : `${connectedDeviceCount} Bluetooth device${connectedDeviceCount === 1 ? "" : "s"} connected`);
 
   return (
     <View style={styles.card}>

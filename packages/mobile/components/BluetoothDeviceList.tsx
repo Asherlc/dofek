@@ -14,7 +14,7 @@ export interface BluetoothDeviceListProps {
 
 function diagnosticSummary(device: BluetoothDevice): string {
   if (device.kind === "whoop") {
-    return `${device.diagnostics.imuBufferedSamples} IMU samples · ${device.diagnostics.realtimeBufferedSamples} realtime samples`;
+    return `${device.diagnostics.imuBufferedSamples} inertial measurement unit (IMU) samples · ${device.diagnostics.realtimeBufferedSamples} realtime samples`;
   }
 
   const heartRate =

@@ -462,7 +462,7 @@ extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
         let id = peripheral.identifier
         guard isManaged(peripheral), let session = sessions[id] else { return }
         markDisconnected(session)
-        completeConnect(id: id, with: .failure(.connectTimeout))
+        completeConnect(id: id, with: .failure(.disconnected(error?.localizedDescription)))
         sessions.removeValue(forKey: id)
         peripherals.removeValue(forKey: id)
     }

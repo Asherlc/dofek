@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { HeartRateDeviceCard } from "../components/HeartRateDeviceCard";
+import { BluetoothDeviceCard } from "../components/BluetoothDeviceCard";
 import {
   type ActivityRecorder,
   createActivityRecorder,
@@ -102,6 +102,7 @@ export default function RecordScreen() {
 
   const [connectedDeviceCount, setConnectedDeviceCount] = useState(0);
   const [bluetoothDeviceError, setBluetoothDeviceError] = useState<string | null>(null);
+  const [bluetoothDevicesLoading, setBluetoothDevicesLoading] = useState(true);
 
   // Create recorder once (with IMU service for phone + watch)
   const recorder = useMemo(() => {
@@ -161,6 +162,7 @@ export default function RecordScreen() {
     ) => {
       if (!mounted) return;
       setBluetoothDeviceError(null);
+      setBluetoothDevicesLoading(false);
       setConnectedDeviceCount(
         devices.filter(
           (device) =>
@@ -177,6 +179,7 @@ export default function RecordScreen() {
         captureException(error, { source: "record-bluetooth-devices-load" });
         if (mounted) {
           setBluetoothDeviceError(errorMessage(error));
+          setBluetoothDevicesLoading(false);
         }
       });
 
@@ -187,12 +190,14 @@ export default function RecordScreen() {
           updateConnectedDeviceCount(update.devices);
         } else if (mounted) {
           setBluetoothDeviceError(update.error);
+          setBluetoothDevicesLoading(false);
         }
       });
     } catch (error: unknown) {
       captureException(error, { source: "record-bluetooth-devices-subscribe" });
       if (mounted) {
         setBluetoothDeviceError(errorMessage(error));
+        setBluetoothDevicesLoading(false);
       }
     }
 
@@ -272,9 +277,10 @@ export default function RecordScreen() {
   const state = snapshot?.state ?? "idle";
 
   const heartRateCard = (
-    <HeartRateDeviceCard
+    <BluetoothDeviceCard
       connectedDeviceCount={connectedDeviceCount}
       error={bluetoothDeviceError}
+      loading={bluetoothDevicesLoading}
       onManageDevices={() => router.push("/bluetooth-devices")}
     />
   );

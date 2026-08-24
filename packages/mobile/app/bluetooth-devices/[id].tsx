@@ -193,7 +193,8 @@ export default function BluetoothDeviceDetailScreen() {
         ) : (
           <>
             <Text style={styles.diagnostic}>
-              IMU buffered samples: {device.diagnostics.imuBufferedSamples}
+              Inertial measurement unit (IMU) buffered samples:{" "}
+              {device.diagnostics.imuBufferedSamples}
             </Text>
             <Text style={styles.diagnostic}>
               Realtime buffered samples: {device.diagnostics.realtimeBufferedSamples}
@@ -247,8 +248,8 @@ export default function BluetoothDeviceDetailScreen() {
           accessibilityRole="button"
           accessibilityLabel={
             device.connectionState === "streaming"
-              ? "Stop WHOOP IMU streaming"
-              : "Start WHOOP IMU streaming"
+              ? "Stop WHOOP inertial measurement unit (IMU) streaming"
+              : "Start WHOOP inertial measurement unit (IMU) streaming"
           }
           accessibilityState={{
             busy: pendingAction === "start-streaming" || pendingAction === "stop-streaming",
@@ -263,7 +264,9 @@ export default function BluetoothDeviceDetailScreen() {
           style={[styles.secondaryButton, pendingAction !== null ? styles.disabledButton : null]}
         >
           <Text style={styles.streamingButtonText}>
-            {device.connectionState === "streaming" ? "Stop IMU streaming" : "Start IMU streaming"}
+            {device.connectionState === "streaming"
+              ? "Stop inertial measurement unit (IMU) streaming"
+              : "Start inertial measurement unit (IMU) streaming"}
           </Text>
         </Pressable>
       ) : null}

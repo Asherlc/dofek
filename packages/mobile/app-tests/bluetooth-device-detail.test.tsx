@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BluetoothDevice } from "../lib/bluetooth-device-catalog";
 
 const mocks = vi.hoisted(() => ({
   back: vi.fn(),
@@ -59,7 +60,7 @@ const polar = {
     lastMeasurementAt: "2026-08-24T19:00:00.000Z",
     lastRrIntervalsMs: [820],
   },
-};
+} satisfies BluetoothDevice;
 
 const whoop = {
   id: "whoop",
@@ -68,7 +69,7 @@ const whoop = {
   connectionState: "ready",
   peripheralId: null,
   diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
-};
+} satisfies BluetoothDevice;
 
 describe("BluetoothDeviceDetailScreen", () => {
   beforeEach(() => {
@@ -129,7 +130,9 @@ describe("BluetoothDeviceDetailScreen", () => {
     const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
     render(<BluetoothDeviceDetailScreen />);
 
-    expect(await screen.findByText("IMU buffered samples: 12")).toBeTruthy();
+    expect(
+      await screen.findByText("Inertial measurement unit (IMU) buffered samples: 12"),
+    ).toBeTruthy();
     expect(screen.getByText("Realtime buffered samples: 4")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Disconnect WHOOP" }));
 
@@ -158,11 +161,19 @@ describe("BluetoothDeviceDetailScreen", () => {
     const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
     render(<BluetoothDeviceDetailScreen />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Start WHOOP IMU streaming" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Start WHOOP inertial measurement unit (IMU) streaming",
+      }),
+    );
 
     await waitFor(() => expect(mocks.whoopStartImuStreaming).toHaveBeenCalledOnce());
     expect(screen.getByText("streaming")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Stop WHOOP IMU streaming" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "Stop WHOOP inertial measurement unit (IMU) streaming",
+      }),
+    ).toBeTruthy();
   });
 
   it("stops WHOOP IMU streaming and shows the specific native error", async () => {
@@ -174,7 +185,11 @@ describe("BluetoothDeviceDetailScreen", () => {
     const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
     render(<BluetoothDeviceDetailScreen />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Stop WHOOP IMU streaming" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Stop WHOOP inertial measurement unit (IMU) streaming",
+      }),
+    );
 
     expect(await screen.findByText(streamingError.message)).toBeTruthy();
     expect(mocks.captureException).toHaveBeenCalledWith(streamingError, {

@@ -1,28 +1,36 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { HeartRateDeviceCard, type HeartRateDeviceCardProps } from "./HeartRateDeviceCard";
+import { BluetoothDeviceCard, type BluetoothDeviceCardProps } from "./BluetoothDeviceCard";
 
-const baseProps: HeartRateDeviceCardProps = {
+const baseProps: BluetoothDeviceCardProps = {
   connectedDeviceCount: 0,
   error: null,
+  loading: false,
   onManageDevices: () => {},
 };
 
-describe("HeartRateDeviceCard", () => {
+describe("BluetoothDeviceCard", () => {
+  it("reports device loading separately from an empty completed catalog", () => {
+    render(<BluetoothDeviceCard {...baseProps} loading />);
+
+    expect(screen.getByText("Loading Bluetooth devices…")).toBeTruthy();
+    expect(screen.queryByText("No Bluetooth devices connected")).toBeNull();
+  });
+
   it("explains when no Bluetooth devices are connected", () => {
-    render(<HeartRateDeviceCard {...baseProps} />);
+    render(<BluetoothDeviceCard {...baseProps} />);
     expect(screen.getByText("No Bluetooth devices connected")).toBeTruthy();
   });
 
   it("summarizes the shared connected device count", () => {
-    render(<HeartRateDeviceCard {...baseProps} connectedDeviceCount={2} />);
+    render(<BluetoothDeviceCard {...baseProps} connectedDeviceCount={2} />);
 
     expect(screen.getByText("2 Bluetooth devices connected")).toBeTruthy();
   });
 
   it("renders the Bluetooth catalog error instead of an empty-device summary", () => {
     render(
-      <HeartRateDeviceCard
+      <BluetoothDeviceCard
         {...baseProps}
         error="Bluetooth permission is required to list devices."
       />,
@@ -35,10 +43,11 @@ describe("HeartRateDeviceCard", () => {
   it("opens Bluetooth device management instead of offering a single-device connection", () => {
     const onManageDevices = vi.fn();
     render(
-      <HeartRateDeviceCard
+      <BluetoothDeviceCard
         onManageDevices={onManageDevices}
         connectedDeviceCount={2}
         error={null}
+        loading={false}
       />,
     );
 

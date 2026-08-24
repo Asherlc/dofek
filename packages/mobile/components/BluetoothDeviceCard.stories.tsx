@@ -1,23 +1,28 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import { HeartRateDeviceCard } from "./HeartRateDeviceCard";
+import { BluetoothDeviceCard } from "./BluetoothDeviceCard";
 
 const meta = {
-  title: "Recording/HeartRateDeviceCard",
-  component: HeartRateDeviceCard,
+  title: "Recording/BluetoothDeviceCard",
+  component: BluetoothDeviceCard,
   decorators: [(Story) => <View style={{ width: 360, padding: 16 }}>{Story()}</View>],
   args: {
     connectedDeviceCount: 0,
     error: null,
+    loading: false,
     onManageDevices: () => {},
   },
-} satisfies Meta<typeof HeartRateDeviceCard>;
+} satisfies Meta<typeof BluetoothDeviceCard>;
 
 export default meta;
 
 type Story = StoryObj<typeof meta>;
 
 export const NoConnectedDevices: Story = {};
+
+export const Loading: Story = {
+  args: { loading: true },
+};
 
 export const OneConnectedDevice: Story = {
   args: { connectedDeviceCount: 1 },

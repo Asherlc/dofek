@@ -1,6 +1,6 @@
 # Bluetooth Device Management Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give iOS users a Settings-based list of standard Bluetooth heart-rate monitors and WHOOP, with detail diagnostics and the ability to connect additional heart-rate monitors concurrently.
 
@@ -354,7 +354,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add packages/mobile/components/BluetoothDeviceList.tsx packages/mobile/components/BluetoothDeviceList.test.tsx packages/mobile/components/BluetoothDeviceList.stories.tsx packages/mobile/app/bluetooth-devices/index.tsx packages/mobile/app/bluetooth-devices/[id].tsx packages/mobile/app-tests/bluetooth-devices.test.tsx packages/mobile/app-tests/bluetooth-device-detail.test.tsx packages/mobile/app/settings.tsx packages/mobile/app-tests/settings.test.tsx packages/mobile/app/_layout.tsx
+git add packages/mobile/components/BluetoothDeviceList.tsx packages/mobile/components/BluetoothDeviceList.test.tsx packages/mobile/components/BluetoothDeviceList.stories.tsx packages/mobile/app/bluetooth-devices/index.tsx 'packages/mobile/app/bluetooth-devices/[id].tsx' packages/mobile/app-tests/bluetooth-devices.test.tsx packages/mobile/app-tests/bluetooth-device-detail.test.tsx packages/mobile/app/settings.tsx packages/mobile/app-tests/settings.test.tsx packages/mobile/app/_layout.tsx
 git commit -m "feat: manage Bluetooth devices from settings"
 ~~~
 
@@ -363,9 +363,9 @@ git commit -m "feat: manage Bluetooth devices from settings"
 **Files:**
 
 - Modify: packages/mobile/app/record.tsx
-- Modify: packages/mobile/components/HeartRateDeviceCard.tsx
-- Modify: packages/mobile/components/HeartRateDeviceCard.test.tsx
-- Modify: packages/mobile/components/HeartRateDeviceCard.stories.tsx
+- Modify: packages/mobile/components/BluetoothDeviceCard.tsx
+- Modify: packages/mobile/components/BluetoothDeviceCard.test.tsx
+- Modify: packages/mobile/components/BluetoothDeviceCard.stories.tsx
 - Modify: packages/mobile/lib/heart-rate-recording-service.ts
 - Modify: packages/mobile/lib/heart-rate-recording-service.test.ts
 
@@ -390,7 +390,7 @@ it("uploads a buffered sample under its captured device ID without a selected mo
 
 ~~~tsx
 it("opens Bluetooth device management instead of offering a single-device connection", () => {
-  render(<HeartRateDeviceCard onManageDevices={onManageDevices} connectedDeviceCount={2} />);
+  render(<BluetoothDeviceCard onManageDevices={onManageDevices} connectedDeviceCount={2} />);
   fireEvent.click(screen.getByRole("button", { name: "Manage Bluetooth devices" }));
   expect(onManageDevices).toHaveBeenCalledOnce();
 });
@@ -398,7 +398,7 @@ it("opens Bluetooth device management instead of offering a single-device connec
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: pnpm vitest run --project mobile packages/mobile/lib/heart-rate-recording-service.test.ts packages/mobile/components/HeartRateDeviceCard.test.tsx
+Run: pnpm vitest run --project mobile packages/mobile/lib/heart-rate-recording-service.test.ts packages/mobile/components/BluetoothDeviceCard.test.tsx
 
 Expected: FAIL because the service requires a selected-device fallback and the card owns connect/disconnect.
 
@@ -413,18 +413,18 @@ export interface HeartRateBleDeps {
 const groups = new DeviceSampleGroups(null, toBleHeartRateUploadSample);
 ~~~
 
-Remove getDeviceId and record.tsx's local device/connection/listener state. Keep every upload keyed by the captured sample's required deviceId; if an unexpected legacy sample lacks it, throw a specific error rather than assigning it to an arbitrary connected device. Change HeartRateDeviceCard into a summary that displays connected count and links to /bluetooth-devices; it no longer scans, connects, or disconnects devices.
+Remove getDeviceId and record.tsx's local device/connection/listener state. Keep every upload keyed by the captured sample's required deviceId; if an unexpected legacy sample lacks it, throw a specific error rather than assigning it to an arbitrary connected device. Change BluetoothDeviceCard into a summary that displays connected count and links to /bluetooth-devices; it no longer scans, connects, or disconnects devices.
 
 - [ ] **Step 4: Run the focused tests and typecheck to verify they pass**
 
-Run: pnpm vitest run --project mobile packages/mobile/lib/heart-rate-recording-service.test.ts packages/mobile/components/HeartRateDeviceCard.test.tsx && pnpm --dir packages/mobile typecheck
+Run: pnpm vitest run --project mobile packages/mobile/lib/heart-rate-recording-service.test.ts packages/mobile/components/BluetoothDeviceCard.test.tsx && pnpm --dir packages/mobile typecheck
 
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add packages/mobile/app/record.tsx packages/mobile/components/HeartRateDeviceCard.tsx packages/mobile/components/HeartRateDeviceCard.test.tsx packages/mobile/components/HeartRateDeviceCard.stories.tsx packages/mobile/lib/heart-rate-recording-service.ts packages/mobile/lib/heart-rate-recording-service.test.ts
+git add packages/mobile/app/record.tsx packages/mobile/components/BluetoothDeviceCard.tsx packages/mobile/components/BluetoothDeviceCard.test.tsx packages/mobile/components/BluetoothDeviceCard.stories.tsx packages/mobile/lib/heart-rate-recording-service.ts packages/mobile/lib/heart-rate-recording-service.test.ts
 git commit -m "refactor: share Bluetooth devices with activity recording"
 ~~~
 

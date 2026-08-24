@@ -90,15 +90,17 @@ export function subscribeBluetoothDevices(
   listener: (update: BluetoothDeviceCatalogUpdate) => void,
 ): BluetoothDeviceSubscription {
   let isActive = true;
+  let latestRefresh = 0;
   const publish = async () => {
+    const refresh = ++latestRefresh;
     try {
       const devices = await getBluetoothDevices();
-      if (isActive) {
+      if (isActive && refresh === latestRefresh) {
         listener({ state: "ready", devices, error: null });
       }
     } catch (error) {
       captureException(error, { source: "bluetooth-device-catalog-subscription" });
-      if (isActive) {
+      if (isActive && refresh === latestRefresh) {
         listener({ state: "error", devices: [], error: errorMessage(error) });
       }
     }

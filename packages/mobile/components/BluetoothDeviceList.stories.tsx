@@ -49,6 +49,10 @@ export const Loading: Story = {
   args: { devices: [], loading: true },
 };
 
+export const Connecting: Story = {
+  args: { connecting: true },
+};
+
 export const Empty: Story = {
   args: { devices: [] },
 };

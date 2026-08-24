@@ -40,7 +40,9 @@ describe("BluetoothDeviceList", () => {
 
     expect(screen.getByRole("button", { name: "WHOOP, ready" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Polar H10, disconnected" })).toBeTruthy();
-    expect(screen.getByText("12 IMU samples · 4 realtime samples")).toBeTruthy();
+    expect(
+      screen.getByText("12 inertial measurement unit (IMU) samples · 4 realtime samples"),
+    ).toBeTruthy();
     expect(screen.getByText("142 bpm · 3 buffered samples")).toBeTruthy();
     expect(screen.getAllByRole("header").map((header) => header.textContent)).toEqual([
       "WHOOP",
