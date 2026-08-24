@@ -8,7 +8,8 @@ final class BleHeartRateConnectionManager: NSObject {
     weak var delegate: BleHeartRateConnectionManagerDelegate?
 
     let bleQueue: DispatchQueue
-    private var centralManager: CBCentralManager?
+    private let centralManagerOwner: BleHeartRateCentralManagerOwner<CBCentralManager>
+    private var centralManager: CBCentralManager? { centralManagerOwner.current }
     private var sessions: [UUID: BleHeartRatePeripheralSession] = [:]
     private var peripherals: [UUID: CBPeripheral] = [:]
     private var connectCompletions: [
@@ -28,15 +29,16 @@ final class BleHeartRateConnectionManager: NSObject {
     private static let connectTimeoutSeconds: TimeInterval = 10
 
     override init() {
-        bleQueue = DispatchQueue(label: "com.dofek.ble-heart-rate", qos: .userInitiated)
+        let queue = DispatchQueue(label: "com.dofek.ble-heart-rate", qos: .userInitiated)
+        bleQueue = queue
+        centralManagerOwner = BleHeartRateCentralManagerOwner(queue: queue)
         super.init()
     }
 
     private func ensureCentralManager() -> CBCentralManager {
-        if let manager = centralManager { return manager }
-        let manager = CBCentralManager(delegate: self, queue: bleQueue)
-        centralManager = manager
-        return manager
+        centralManagerOwner.getOrCreate {
+            CBCentralManager(delegate: self, queue: bleQueue)
+        }
     }
 
     var isBluetoothAvailable: Bool {
@@ -509,7 +511,6 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
         setState(.ready, for: session)
         let connectedDevice = device(for: peripheral)
         completeConnect(id: id, with: .success(connectedDevice))
-        delegate?.connectionManagerDidBecomeReady(self, device: connectedDevice)
     }
 
     func peripheral(

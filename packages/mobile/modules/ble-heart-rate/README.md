@@ -85,7 +85,9 @@ and the existing zero-argument `disconnect()` stops every active monitor.
 
 Connection promises reject with specific native codes: `BLUETOOTH_UNAVAILABLE`,
 `INVALID_ID`, `NOT_FOUND`, `SCAN_TIMEOUT`, `CONNECT_TIMEOUT`, `NO_SERVICE`,
-`NO_CHARACTERISTIC`, `NO_NOTIFY`, `DISCONNECTED`, or `BUSY`.
+`NO_CHARACTERISTIC`, `NO_NOTIFY`, `DISCONNECTED`, `BUSY`, or
+`DEVICE_NOT_REGISTERED` when `connect` receives an ID outside the persisted
+app-managed list.
 
 ## Development
 

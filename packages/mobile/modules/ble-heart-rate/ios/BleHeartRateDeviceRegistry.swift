@@ -85,6 +85,12 @@ final class BleHeartRateDeviceRegistry {
         }
     }
 
+    func contains(id: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return registeredDevices.contains(where: { $0.id == id })
+    }
+
     func register(_ device: BleHeartRateDevice) throws {
         lock.lock()
         defer { lock.unlock() }

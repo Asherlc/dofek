@@ -15,13 +15,6 @@ protocol BleHeartRateConnectionManagerDelegate: AnyObject {
         for peripheralId: String
     )
 
-    /// Called when a device is connected and the measurement characteristic is
-    /// subscribed and ready to deliver notifications.
-    func connectionManagerDidBecomeReady(
-        _ manager: BleHeartRateConnectionManager,
-        device: BleHeartRateDevice
-    )
-
     /// Called when the peripheral disconnects.
     func connectionManagerDidDisconnect(
         _ manager: BleHeartRateConnectionManager,
