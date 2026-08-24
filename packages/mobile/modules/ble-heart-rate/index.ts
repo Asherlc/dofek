@@ -84,7 +84,9 @@ export function getBufferedSampleCount(): number {
  * the upload fails, the samples remain buffered for retry — no data loss.
  */
 export async function peekBufferedSamples(maxCount?: number): Promise<BleHeartRateSample[]> {
-  return BleHeartRateModule.peekBufferedSamples(maxCount);
+  return BleHeartRateSampleSchema.array().parse(
+    await BleHeartRateModule.peekBufferedSamples(maxCount),
+  );
 }
 
 /**

@@ -44,16 +44,18 @@ export interface WhoopRealtimeDataSample {
   opticalRawHex: string;
 }
 
-interface NativeWhoopSample {
-  deviceId: string;
-  timestamp: string;
-  accelerometerX: number;
-  accelerometerY: number;
-  accelerometerZ: number;
-  gyroscopeX: number;
-  gyroscopeY: number;
-  gyroscopeZ: number;
-}
+const NativeWhoopSampleSchema = z.object({
+  deviceId: z.string().min(1),
+  timestamp: z.string().min(1),
+  accelerometerX: z.number(),
+  accelerometerY: z.number(),
+  accelerometerZ: z.number(),
+  gyroscopeX: z.number(),
+  gyroscopeY: z.number(),
+  gyroscopeZ: z.number(),
+});
+
+type NativeWhoopSample = z.infer<typeof NativeWhoopSampleSchema>;
 
 function mapNativeSample(native: NativeWhoopSample): WhoopImuSample & { deviceId: string } {
   return {
@@ -152,7 +154,9 @@ export async function startOpticalMode(): Promise<boolean> {
 export async function peekBufferedSamples(
   maxCount?: number,
 ): Promise<Array<WhoopImuSample & { deviceId: string }>> {
-  const natives: NativeWhoopSample[] = await WhoopBleModule.peekBufferedSamples(maxCount);
+  const natives = NativeWhoopSampleSchema.array().parse(
+    await WhoopBleModule.peekBufferedSamples(maxCount),
+  );
   return natives.map(mapNativeSample);
 }
 
@@ -196,7 +200,7 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
 export async function getBufferedSamples(): Promise<Array<WhoopImuSample & { deviceId: string }>> {
-  const natives: NativeWhoopSample[] = await WhoopBleModule.getBufferedSamples();
+  const natives = NativeWhoopSampleSchema.array().parse(await WhoopBleModule.getBufferedSamples());
   return natives.map(mapNativeSample);
 }
 
