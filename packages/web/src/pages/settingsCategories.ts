@@ -46,7 +46,8 @@ export const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText: "advanced dashboard layout MCP developer tools diagnostics",
+    searchText:
+      "advanced dashboard layout MCP developer integrations OAuth callback API tools diagnostics",
   },
 ];
 

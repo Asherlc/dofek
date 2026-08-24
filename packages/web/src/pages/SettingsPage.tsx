@@ -363,6 +363,20 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
+        {activeCategory === "advanced" ? (
+          <PageSection
+            title="Developer integrations"
+            subtitle="Register and manage clients that write data through the external API"
+          >
+            <Link
+              to="/developer-integrations"
+              className="inline-flex rounded border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-hover"
+            >
+              Manage developer integrations
+            </Link>
+          </PageSection>
+        ) : null}
+
         {activeCategory === "goals-models" ? (
           <PageSection
             title="Primary goal"

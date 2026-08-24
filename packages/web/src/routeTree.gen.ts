@@ -42,6 +42,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
 import { Route as NutritionIndexRouteImport } from './routes/nutrition/index'
+import { Route as DeveloperIntegrationsIndexRouteImport } from './routes/developer-integrations/index'
 import { Route as BodyIndexRouteImport } from './routes/body/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as TrainingStrengthRouteImport } from './routes/training/strength'
@@ -225,6 +226,12 @@ const NutritionIndexRoute = NutritionIndexRouteImport.update({
 } as Parameters<typeof NutritionIndexRouteImport.update>[0]).lazy(() =>
   import('./routes/nutrition/index.lazy').then((d) => d.Route),
 )
+const DeveloperIntegrationsIndexRoute =
+  DeveloperIntegrationsIndexRouteImport.update({
+    id: '/developer-integrations/',
+    path: '/developer-integrations/',
+    getParentRoute: () => rootRouteImport,
+  } as Parameters<typeof DeveloperIntegrationsIndexRouteImport.update>[0])
 const BodyIndexRoute = BodyIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -352,6 +359,7 @@ export interface FileRoutesByFullPath {
   '/training/strength': typeof TrainingStrengthRoute
   '/admin/': typeof AdminIndexRoute
   '/body/': typeof BodyIndexRoute
+  '/developer-integrations/': typeof DeveloperIntegrationsIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
@@ -397,6 +405,7 @@ export interface FileRoutesByTo {
   '/training/strength': typeof TrainingStrengthRoute
   '/admin': typeof AdminIndexRoute
   '/body': typeof BodyIndexRoute
+  '/developer-integrations': typeof DeveloperIntegrationsIndexRoute
   '/nutrition': typeof NutritionIndexRoute
   '/providers': typeof ProvidersIndexRoute
   '/training': typeof TrainingIndexRoute
@@ -448,6 +457,7 @@ export interface FileRoutesById {
   '/training/strength': typeof TrainingStrengthRoute
   '/admin/': typeof AdminIndexRoute
   '/body/': typeof BodyIndexRoute
+  '/developer-integrations/': typeof DeveloperIntegrationsIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
@@ -500,6 +510,7 @@ export interface FileRouteTypes {
     | '/training/strength'
     | '/admin/'
     | '/body/'
+    | '/developer-integrations/'
     | '/nutrition/'
     | '/providers/'
     | '/training/'
@@ -545,6 +556,7 @@ export interface FileRouteTypes {
     | '/training/strength'
     | '/admin'
     | '/body'
+    | '/developer-integrations'
     | '/nutrition'
     | '/providers'
     | '/training'
@@ -595,6 +607,7 @@ export interface FileRouteTypes {
     | '/training/strength'
     | '/admin/'
     | '/body/'
+    | '/developer-integrations/'
     | '/nutrition/'
     | '/providers/'
     | '/training/'
@@ -633,6 +646,7 @@ export interface RootRouteChildren {
   TrainingRoute: typeof TrainingRouteWithChildren
   WeeklyReportRoute: typeof WeeklyReportRoute
   ActivityIdRoute: typeof ActivityIdRoute
+  DeveloperIntegrationsIndexRoute: typeof DeveloperIntegrationsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -868,6 +882,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NutritionIndexRouteImport
       parentRoute: typeof NutritionRoute
     }
+    '/developer-integrations/': {
+      id: '/developer-integrations/'
+      path: '/developer-integrations'
+      fullPath: '/developer-integrations/'
+      preLoaderRoute: typeof DeveloperIntegrationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/body/': {
       id: '/body/'
       path: '/'
@@ -1088,6 +1109,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrainingRoute: TrainingRouteWithChildren,
   WeeklyReportRoute: WeeklyReportRoute,
   ActivityIdRoute: ActivityIdRoute,
+  DeveloperIntegrationsIndexRoute: DeveloperIntegrationsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
