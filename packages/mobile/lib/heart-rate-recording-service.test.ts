@@ -21,7 +21,7 @@ const START = "2026-03-30T11:00:00.000Z";
 const END = "2026-03-30T13:00:00.000Z";
 
 function sampleAt(timestamp: string, bpm = 140): BleHeartRateSample {
-  return { timestamp, heartRateBpm: bpm, rrIntervalsMs: [] };
+  return { deviceId: "Polar H10", timestamp, heartRateBpm: bpm, rrIntervalsMs: [] };
 }
 
 /** An in-window sample (between START and END). */
@@ -29,7 +29,7 @@ function sample(bpm: number): BleHeartRateSample {
   return sampleAt("2026-03-30T12:00:00.000Z", bpm);
 }
 
-function sampleForDevice(deviceId: string, bpm: number): BleHeartRateSample & { deviceId: string } {
+function sampleForDevice(deviceId: string, bpm: number): BleHeartRateSample {
   return { ...sample(bpm), deviceId };
 }
 
@@ -77,7 +77,18 @@ describe("createHeartRateRecordingService", () => {
 
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledWith({
         deviceId: "Polar H10",
-        samples: [sample(140), sample(141)],
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRateBpm: 140,
+            rrIntervalsMs: [],
+          },
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRateBpm: 141,
+            rrIntervalsMs: [],
+          },
+        ],
       });
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
     });
@@ -96,14 +107,26 @@ describe("createHeartRateRecordingService", () => {
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenNthCalledWith(1, {
         deviceId: "strap-a",
         samples: [
-          { timestamp: strapA1.timestamp, heartRateBpm: strapA1.heartRateBpm, rrIntervalsMs: [] },
-          { timestamp: strapA2.timestamp, heartRateBpm: strapA2.heartRateBpm, rrIntervalsMs: [] },
+          {
+            timestamp: strapA1.timestamp,
+            heartRateBpm: strapA1.heartRateBpm,
+            rrIntervalsMs: [],
+          },
+          {
+            timestamp: strapA2.timestamp,
+            heartRateBpm: strapA2.heartRateBpm,
+            rrIntervalsMs: [],
+          },
         ],
       });
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenNthCalledWith(2, {
         deviceId: "strap-b",
         samples: [
-          { timestamp: strapB.timestamp, heartRateBpm: strapB.heartRateBpm, rrIntervalsMs: [] },
+          {
+            timestamp: strapB.timestamp,
+            heartRateBpm: strapB.heartRateBpm,
+            rrIntervalsMs: [],
+          },
         ],
       });
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(3);
@@ -161,7 +184,7 @@ describe("createHeartRateRecordingService", () => {
 
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledWith({
         deviceId: "Polar H10",
-        samples: [inWindow],
+        samples: [{ timestamp: inWindow.timestamp, heartRateBpm: 140, rrIntervalsMs: [] }],
       });
       // Both pre-window and in-window are consumed from the buffer.
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
@@ -179,7 +202,7 @@ describe("createHeartRateRecordingService", () => {
 
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledWith({
         deviceId: "Polar H10",
-        samples: [retained],
+        samples: [{ timestamp: retained.timestamp, heartRateBpm: 141, rrIntervalsMs: [] }],
       });
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
     });
@@ -195,7 +218,10 @@ describe("createHeartRateRecordingService", () => {
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledWith({
         deviceId: "Polar H10",
-        samples: [inFirst, inLast],
+        samples: [
+          { timestamp: inFirst.timestamp, heartRateBpm: 140, rrIntervalsMs: [] },
+          { timestamp: inLast.timestamp, heartRateBpm: 141, rrIntervalsMs: [] },
+        ],
       });
       // Only the two in-window samples drain; the post-window one stays buffered.
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);

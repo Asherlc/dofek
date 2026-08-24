@@ -5,7 +5,9 @@ import type { RecordingSensorService } from "./recording-sensor-service.ts";
 
 const UPLOAD_BATCH_SIZE = 5000;
 
-function toBleHeartRateUploadSample(sample: BleHeartRateSample): BleHeartRateSample {
+type BleHeartRateUploadSample = Omit<BleHeartRateSample, "deviceId">;
+
+function toBleHeartRateUploadSample(sample: BleHeartRateSample): BleHeartRateUploadSample {
   return {
     timestamp: sample.timestamp,
     heartRateBpm: sample.heartRateBpm,
@@ -30,7 +32,7 @@ export interface HeartRateUploadClient {
     pushSamples: {
       mutate(input: {
         deviceId: string;
-        samples: BleHeartRateSample[];
+        samples: BleHeartRateUploadSample[];
       }): Promise<{ inserted: number }>;
     };
   };

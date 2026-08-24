@@ -11,7 +11,8 @@ public class BleHeartRateModule: Module {
     private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
     private let connectionManager = BleHeartRateConnectionManager()
     private let sampleBuffer = BleHeartRateSampleBuffer()
-    private let deviceRegistry = BleHeartRateDeviceRegistry()
+    private var deviceRegistry: BleHeartRateDeviceRegistry?
+    private var deviceRegistryError: BleHeartRateDeviceRegistryError?
 
     private let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -26,6 +27,12 @@ public class BleHeartRateModule: Module {
 
         OnCreate {
             self.connectionManager.delegate = self
+            switch Result(catching: { try BleHeartRateDeviceRegistry() }) {
+            case .success(let registry):
+                self.deviceRegistry = registry
+            case .failure(let error):
+                self.deviceRegistryError = error as? BleHeartRateDeviceRegistryError ?? .unavailable
+            }
             if let cutoff = UserDefaults.standard.object(
                 forKey: Self.deviceErasureCutoffKey
             ) as? Date {
@@ -38,19 +45,36 @@ public class BleHeartRateModule: Module {
         }
 
         AsyncFunction("scanAndConnect") { (promise: Promise) in
+            guard self.deviceRegistryOrReject(promise) != nil else { return }
             self.connectionManager.scanAndConnect { result in
-                self.resolveConnect(result, promise: promise, registerDevice: true)
+                self.resolveConnect(
+                    result,
+                    promise: promise,
+                    registerDevice: true,
+                    attemptedDeviceId: nil
+                )
             }
         }
 
         AsyncFunction("connect") { (peripheralId: String, promise: Promise) in
+            guard let registry = self.deviceRegistryOrReject(promise) else { return }
+            registry.setConnectionState(
+                BleHeartRateConnectionState.connecting.rawValue,
+                for: peripheralId
+            )
+            self.emitDeviceState(for: peripheralId)
             self.connectionManager.connect(peripheralId: peripheralId) { result in
-                self.resolveConnect(result, promise: promise, registerDevice: false)
+                self.resolveConnect(
+                    result,
+                    promise: promise,
+                    registerDevice: false,
+                    attemptedDeviceId: peripheralId
+                )
             }
         }
 
-        Function("getDevices") { () -> [[String: Any]] in
-            self.deviceRegistry.devices.compactMap { device in
+        Function("getDevices") { () throws -> [[String: Any]] in
+            try self.requireDeviceRegistry().devices.compactMap { device in
                 self.deviceSnapshotPayload(for: device.id)
             }
         }
@@ -93,6 +117,13 @@ public class BleHeartRateModule: Module {
             let retainedCutoff =
                 (UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date)
                 .map { max($0, cutoff) } ?? cutoff
+            guard let registry = self.deviceRegistryOrReject(promise) else { return }
+            do {
+                try registry.clear()
+            } catch {
+                self.rejectRegistryError(error, promise: promise)
+                return
+            }
             UserDefaults.standard.set(
                 retainedCutoff,
                 forKey: Self.deviceErasureCutoffKey
@@ -116,23 +147,37 @@ public class BleHeartRateModule: Module {
     private func resolveConnect(
         _ result: Result<BleHeartRateDevice, BleHeartRateConnectionError>,
         promise: Promise,
-        registerDevice: Bool
+        registerDevice: Bool,
+        attemptedDeviceId: String?
     ) {
         switch result {
         case .success(let device):
-            if registerDevice {
-                deviceRegistry.register(device)
-                deviceRegistry.setConnectionState(
+            guard let registry = deviceRegistryOrReject(promise) else { return }
+            do {
+                if registerDevice {
+                    try registry.register(device)
+                }
+                registry.setConnectionState(
                     BleHeartRateConnectionState.ready.rawValue,
                     for: device.id
                 )
                 emitDeviceState(for: device.id)
+            } catch {
+                rejectRegistryError(error, promise: promise)
+                return
             }
             // Bridge a nil name to an explicit null so JS sees `name: null`.
             var payload: [String: Any] = ["id": device.id]
             payload["name"] = device.name.map { $0 as Any } ?? NSNull()
             promise.resolve(payload)
         case .failure(let error):
+            if let attemptedDeviceId {
+                deviceRegistry?.setConnectionState(
+                    BleHeartRateConnectionState.idle.rawValue,
+                    for: attemptedDeviceId
+                )
+                emitDeviceState(for: attemptedDeviceId)
+            }
             switch error {
             case .bluetoothUnavailable:
                 promise.reject("BLUETOOTH_UNAVAILABLE", "Bluetooth is not available")
@@ -158,8 +203,31 @@ public class BleHeartRateModule: Module {
         }
     }
 
+    private func requireDeviceRegistry() throws -> BleHeartRateDeviceRegistry {
+        guard let deviceRegistry else {
+            throw deviceRegistryError ?? .unavailable
+        }
+        return deviceRegistry
+    }
+
+    private func deviceRegistryOrReject(_ promise: Promise) -> BleHeartRateDeviceRegistry? {
+        do {
+            return try requireDeviceRegistry()
+        } catch {
+            rejectRegistryError(error, promise: promise)
+            return nil
+        }
+    }
+
+    private func rejectRegistryError(_ error: Error, promise: Promise) {
+        promise.reject(
+            "BLE_HEART_RATE_REGISTRY_PERSISTENCE_FAILED",
+            error.localizedDescription
+        )
+    }
+
     private func deviceSnapshotPayload(for deviceId: String) -> [String: Any]? {
-        guard let snapshot = deviceRegistry.snapshot(
+        guard let snapshot = deviceRegistry?.snapshot(
             id: deviceId,
             bufferedSampleCount: sampleBuffer.sampleCount(for: deviceId)
         ) else {
@@ -208,7 +276,7 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
         _ manager: BleHeartRateConnectionManager,
         device: BleHeartRateDevice
     ) {
-        deviceRegistry.setConnectionState(BleHeartRateConnectionState.ready.rawValue, for: device.id)
+        deviceRegistry?.setConnectionState(BleHeartRateConnectionState.ready.rawValue, for: device.id)
         emitOnMainThread("onConnectionStateChanged", [
             "state": "connected",
             "peripheralId": device.id,
@@ -222,7 +290,7 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
         peripheralId: String,
         error: Error?
     ) {
-        deviceRegistry.setConnectionState(BleHeartRateConnectionState.idle.rawValue, for: peripheralId)
+        deviceRegistry?.setConnectionState(BleHeartRateConnectionState.idle.rawValue, for: peripheralId)
         emitOnMainThread("onConnectionStateChanged", [
             "state": "disconnected",
             "peripheralId": peripheralId,
@@ -245,14 +313,24 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
                 rrIntervalsMs: measurement.rrIntervalsMs
             )
         )
-        deviceRegistry.recordMeasurement(
-            deviceId: deviceId,
-            heartRateBpm: measurement.heartRateBpm,
-            rrIntervalsMs: measurement.rrIntervalsMs,
-            at: timestamp
-        )
+        do {
+            try deviceRegistry?.recordMeasurement(
+                deviceId: deviceId,
+                heartRateBpm: measurement.heartRateBpm,
+                rrIntervalsMs: measurement.rrIntervalsMs,
+                at: timestamp
+            )
+        } catch {
+            emitOnMainThread("onConnectionStateChanged", [
+                "state": "error",
+                "peripheralId": deviceId,
+                "error": error.localizedDescription,
+            ])
+            return
+        }
 
         emitOnMainThread("onHeartRateMeasurement", [
+            "deviceId": deviceId,
             "timestamp": isoFormatter.string(from: timestamp),
             "heartRateBpm": measurement.heartRateBpm,
             "rrIntervalsMs": measurement.rrIntervalsMs,

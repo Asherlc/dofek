@@ -2,8 +2,9 @@
 
 Local Expo iOS module for standard Bluetooth Low Energy heart-rate monitors. It
 scans for the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/)
-(`0x180D`), subscribes to Heart Rate Measurement (`0x2A37`), emits live
-beats-per-minute and R-R intervals, and buffers samples for reliable upload.
+(`0x180D`), subscribes to Heart Rate Measurement (`0x2A37`), emits
+device-attributed live beats-per-minute and R-R intervals, and buffers samples
+for reliable upload.
 
 The Dofek data path and server integration are documented in
 [`docs/ble-heart-rate.md`](../../../../docs/ble-heart-rate.md).
@@ -56,6 +57,9 @@ remove samples, so a failed upload can retry the same page.
 
 - Connection: `isBluetoothAvailable`, `scanAndConnect`, `connect`,
   `getConnectionState`, and `disconnect`.
+- Devices: `getDevices`, `forget`, and `addDeviceStateListener`. `getDevices`
+  returns persisted app-managed monitor snapshots with their latest native
+  measurement, per-device connection state, and buffered-sample count.
 - Buffer: `getBufferedSampleCount`, `peekBufferedSamples`, and
   `confirmSamplesDrain`.
 - Events: `addConnectionStateListener` and `addHeartRateListener`; remove each
@@ -68,11 +72,17 @@ after notification subscription succeeds. Connection events report
 `connected` or `disconnected` with the peripheral ID and available device name
 or error.
 
-Live samples contain an ISO 8601 receipt timestamp, `heartRateBpm`, and an
-`rrIntervalsMs` array that is empty when the monitor reports none; their
-`deviceId` is absent. Buffered samples include the captured `deviceId`. The
-bounded native buffer retains up to 86,400 samples and defaults to pages of
-1,000.
+Live and buffered samples contain the captured `deviceId`, an ISO 8601 receipt
+timestamp, `heartRateBpm`, and an `rrIntervalsMs` array that is empty when the
+monitor reports none. The bounded native buffer retains up to 86,400 samples
+and defaults to pages of 1,000.
+
+`scanAndConnect` adds a monitor to Dofek's persisted app-managed list. Use
+`addDeviceStateListener` to receive each updated device snapshot. The
+multi-device manager will enable `disconnect(peripheralId)` and
+`forget(peripheralId)`; until then, those per-device operations reject with a
+specific unavailable-action error while the existing zero-argument
+`disconnect()` continues to disconnect the current monitor.
 
 Connection promises reject with specific native codes: `BLUETOOTH_UNAVAILABLE`,
 `INVALID_ID`, `NOT_FOUND`, `SCAN_TIMEOUT`, `CONNECT_TIMEOUT`, `NO_SERVICE`,

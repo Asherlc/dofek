@@ -10,12 +10,43 @@ struct BleHeartRateDeviceSnapshot: Codable {
     let bufferedSampleCount: Int
 }
 
-private struct BleHeartRateRegisteredDevice: Codable {
+struct BleHeartRateRegisteredDevice: Codable {
     let id: String
     var name: String?
     var lastMeasurementAt: Date?
     var lastHeartRateBpm: Int?
     var lastRrIntervalsMs: [Int]
+}
+
+enum BleHeartRateDeviceRegistryError: Error, Equatable, LocalizedError {
+    case decodeFailed
+    case encodeFailed
+    case unavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .decodeFailed:
+            "Could not load saved Bluetooth heart-rate monitors"
+        case .encodeFailed:
+            "Could not save Bluetooth heart-rate monitor state"
+        case .unavailable:
+            "Bluetooth heart-rate monitor state is unavailable"
+        }
+    }
+}
+
+struct BleHeartRateDeviceRegistryCodec {
+    let decode: (Data) throws -> [BleHeartRateRegisteredDevice]
+    let encode: ([BleHeartRateRegisteredDevice]) throws -> Data
+
+    static let json = BleHeartRateDeviceRegistryCodec(
+        decode: { data in
+            try JSONDecoder().decode([BleHeartRateRegisteredDevice].self, from: data)
+        },
+        encode: { devices in
+            try JSONEncoder().encode(devices)
+        }
+    )
 }
 
 /// Persists the standard monitors that Dofek has connected to, along with the
@@ -24,16 +55,23 @@ final class BleHeartRateDeviceRegistry {
     private static let storageKey = "dofek_ble_heart_rate_devices_v1"
 
     private let defaults: UserDefaults
+    private let codec: BleHeartRateDeviceRegistryCodec
     private let lock = NSLock()
     private var registeredDevices: [BleHeartRateRegisteredDevice]
     private var connectionStates: [String: String] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        codec: BleHeartRateDeviceRegistryCodec = .json
+    ) throws {
         self.defaults = defaults
-        if let data = defaults.data(forKey: Self.storageKey),
-           let persistedDevices = try? JSONDecoder().decode([BleHeartRateRegisteredDevice].self, from: data)
-        {
-            registeredDevices = persistedDevices
+        self.codec = codec
+        if let data = defaults.data(forKey: Self.storageKey) {
+            do {
+                registeredDevices = try codec.decode(data)
+            } catch {
+                throw BleHeartRateDeviceRegistryError.decodeFailed
+            }
         } else {
             registeredDevices = []
         }
@@ -47,16 +85,17 @@ final class BleHeartRateDeviceRegistry {
         }
     }
 
-    func register(_ device: BleHeartRateDevice) {
+    func register(_ device: BleHeartRateDevice) throws {
         lock.lock()
         defer { lock.unlock() }
 
-        if let index = registeredDevices.firstIndex(where: { $0.id == device.id }) {
+        var updatedDevices = registeredDevices
+        if let index = updatedDevices.firstIndex(where: { $0.id == device.id }) {
             if let name = device.name {
-                registeredDevices[index].name = name
+                updatedDevices[index].name = name
             }
         } else {
-            registeredDevices.append(
+            updatedDevices.append(
                 BleHeartRateRegisteredDevice(
                     id: device.id,
                     name: device.name,
@@ -66,7 +105,7 @@ final class BleHeartRateDeviceRegistry {
                 )
             )
         }
-        persistLocked()
+        try persistLocked(updatedDevices)
     }
 
     func recordMeasurement(
@@ -74,17 +113,18 @@ final class BleHeartRateDeviceRegistry {
         heartRateBpm: Int,
         rrIntervalsMs: [Int],
         at timestamp: Date
-    ) {
+    ) throws {
         lock.lock()
         defer { lock.unlock() }
 
         guard let index = registeredDevices.firstIndex(where: { $0.id == deviceId }) else {
             return
         }
-        registeredDevices[index].lastMeasurementAt = timestamp
-        registeredDevices[index].lastHeartRateBpm = heartRateBpm
-        registeredDevices[index].lastRrIntervalsMs = rrIntervalsMs
-        persistLocked()
+        var updatedDevices = registeredDevices
+        updatedDevices[index].lastMeasurementAt = timestamp
+        updatedDevices[index].lastHeartRateBpm = heartRateBpm
+        updatedDevices[index].lastRrIntervalsMs = rrIntervalsMs
+        try persistLocked(updatedDevices)
     }
 
     func setConnectionState(_ state: String, for deviceId: String) {
@@ -111,18 +151,28 @@ final class BleHeartRateDeviceRegistry {
         )
     }
 
-    func remove(id: String) {
+    func remove(id: String) throws {
         lock.lock()
         defer { lock.unlock() }
-        registeredDevices.removeAll { $0.id == id }
+        try persistLocked(registeredDevices.filter { $0.id != id })
         connectionStates.removeValue(forKey: id)
-        persistLocked()
     }
 
-    private func persistLocked() {
-        guard let data = try? JSONEncoder().encode(registeredDevices) else {
-            return
+    func clear() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try persistLocked([])
+        connectionStates.removeAll()
+    }
+
+    private func persistLocked(_ devices: [BleHeartRateRegisteredDevice]) throws {
+        let data: Data
+        do {
+            data = try codec.encode(devices)
+        } catch {
+            throw BleHeartRateDeviceRegistryError.encodeFailed
         }
         defaults.set(data, forKey: Self.storageKey)
+        registeredDevices = devices
     }
 }
