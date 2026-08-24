@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Server } from "node:http";
+import {
+  DeveloperApiProblemSchema,
+  DeveloperClientSecretSchema,
+} from "@dofek/auth/developer-clients";
 import { sql } from "drizzle-orm";
 import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -7,6 +11,8 @@ import { z } from "zod";
 import { initiateAccountErasure } from "../../../../src/db/account-erasure.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
+import { DeveloperClientRepository } from "../repositories/developer-client-repository.ts";
+import { createDeveloperClientsRouter } from "./developer-clients.ts";
 import { createExternalWriteApiRouter } from "./external-write-api.ts";
 import { hashSecret } from "./external-write-api-primitives.ts";
 
@@ -39,10 +45,12 @@ async function createGrant(
         VALUES (${userId}, ${options.clientId}, NULL, false)
         ON CONFLICT (id) DO NOTHING`,
   );
-  await testContext.db.execute(
-    sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes)
-        VALUES (${options.clientId}, ${options.clientId}, ${hashSecret(options.clientSecret)}, ARRAY['nutrition:write'])`,
-  );
+  await testContext.db.execute(sql`
+    INSERT INTO fitness.external_client
+      (client_id, owner_user_id, name, secret_hash, scopes)
+    VALUES
+      (${options.clientId}, ${userId}::uuid, ${options.clientId}, ${hashSecret(options.clientSecret)}, ARRAY['nutrition:write'])
+  `);
   await testContext.db.execute(
     sql`INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject)
         VALUES (${options.namespace}, ${options.subject}, ${userId}, ${opaqueSubject})`,
@@ -59,6 +67,8 @@ describe.sequential("external write API network contract", () => {
   let testContext: TestContext;
   let server: Server;
   let baseUrl: string;
+  let developerClientIp = 80;
+  let linkStartRateLimitIp = 90;
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
@@ -84,6 +94,14 @@ describe.sequential("external write API network contract", () => {
     await testContext.db.execute(sql`DELETE FROM fitness.external_link`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_client`);
     const app = express();
+    app.set("trust proxy", 1);
+    app.use(
+      "/api/developer/clients",
+      createDeveloperClientsRouter({
+        db: testContext.db,
+        repository: new DeveloperClientRepository(testContext.db),
+      }),
+    );
     app.use("/api/external/v1", createExternalWriteApiRouter({ db: testContext.db }));
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -135,72 +153,144 @@ describe.sequential("external write API network contract", () => {
     await testContext?.cleanup();
   });
 
-  it("provisions a client without persisting the raw secret", async () => {
+  async function createDeveloperClient(
+    name: string,
+    redirectUri = "https://slack.example.test/dofek/callback",
+  ) {
+    developerClientIp += 1;
     const session = await createSession(testContext.db, ADMIN_USER_ID);
-    const response = await fetch(`${baseUrl}/api/external/v1/clients`, {
+    const response = await fetch(`${baseUrl}/api/developer/clients`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${session.sessionId}`,
+        "Content-Type": "application/json",
+        "X-Forwarded-For": `198.51.100.${developerClientIp}`,
+      },
+      body: JSON.stringify({
+        name,
+        redirectUris: [redirectUri],
+        scopes: ["nutrition:write"],
+      }),
+    });
+    const responseBody = await response.text();
+    expect(response.status, responseBody).toBe(201);
+    return {
+      client: DeveloperClientSecretSchema.parse(JSON.parse(responseBody)),
+      sessionId: session.sessionId,
+    };
+  }
+
+  async function countExternalLinks(): Promise<number> {
+    const rows = await testContext.db.execute<{ count: number }>(sql`
+      SELECT COUNT(*)::integer AS count FROM fitness.external_link
+    `);
+    return rows[0]?.count ?? 0;
+  }
+
+  function startLink(input: {
+    authorization: string;
+    codeVerifier: string;
+    ip?: string;
+    redirectUri: string;
+  }): Promise<Response> {
+    return fetch(`${baseUrl}/api/external/v1/link/start`, {
+      method: "POST",
+      headers: {
+        Authorization: input.authorization,
+        "Content-Type": "application/json",
+        "X-Forwarded-For": input.ip ?? "198.51.100.81",
+      },
+      body: JSON.stringify({
+        redirectUri: input.redirectUri,
+        codeChallenge: pkceChallenge(input.codeVerifier),
+        requestedScopes: ["nutrition:write"],
+        state: "state-value",
+      }),
+    });
+  }
+
+  it("provisions an owner client only through the authenticated developer API", async () => {
+    const created = await createDeveloperClient("contract-test");
+    const rows = await testContext.db.execute<{ owner_user_id: string; secret_hash: string }>(sql`
+      SELECT owner_user_id, secret_hash
+      FROM fitness.external_client
+      WHERE client_id = ${created.client.client.clientId}
+    `);
+    expect(rows).toEqual([
+      {
+        owner_user_id: ADMIN_USER_ID,
+        secret_hash: hashSecret(created.client.clientSecret),
+      },
+    ]);
+    expect(rows[0]?.secret_hash).not.toBe(created.client.clientSecret);
+
+    const legacyProvision = await fetch(`${baseUrl}/api/external/v1/clients`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${created.sessionId}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
     });
-    const responseBody = await response.text();
-    expect(response.status, responseBody).toBe(201);
-    const body: { clientId: string; clientSecret: string } = JSON.parse(responseBody);
-    const rows = await testContext.db.execute(
-      sql`SELECT secret_hash FROM fitness.external_client WHERE client_id = ${body.clientId}`,
-    );
-    expect(rows[0]?.secret_hash).toBeTruthy();
-    expect(rows[0]?.secret_hash).not.toBe(body.clientSecret);
+    expect(legacyProvision.status).toBe(404);
+    for (const operation of ["rotate", "revoke"]) {
+      const response = await fetch(`${baseUrl}/api/external/v1/clients/ext_missing/${operation}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${created.sessionId}` },
+      });
+      expect(response.status).toBe(404);
+    }
   });
 
-  it("covers client rotation, linking, status, and erasure acknowledgement", async () => {
-    const session = await createSession(testContext.db, ADMIN_USER_ID);
-    const provisionResponse = await fetch(`${baseUrl}/api/external/v1/clients`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.sessionId}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name: "lifecycle-test", scopes: ["nutrition:write"] }),
-    });
-    expect(provisionResponse.status).toBe(201);
-    const provisioned = z
-      .object({ clientId: z.string(), clientSecret: z.string() })
-      .parse(await provisionResponse.json());
+  it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
+    const created = await createDeveloperClient("lifecycle-test");
+    const provisioned = created.client;
 
     const rotateResponse = await fetch(
-      `${baseUrl}/api/external/v1/clients/${provisioned.clientId}/rotate`,
+      `${baseUrl}/api/developer/clients/${provisioned.client.clientId}/rotate`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.sessionId}` },
+        headers: {
+          Authorization: `Bearer ${created.sessionId}`,
+          "X-Forwarded-For": "198.51.100.82",
+        },
       },
     );
     expect(rotateResponse.status).toBe(200);
-    const rotated = z.object({ clientSecret: z.string() }).parse(await rotateResponse.json());
+    const rotated = DeveloperClientSecretSchema.parse(await rotateResponse.json());
     expect(rotated.clientSecret).not.toBe(provisioned.clientSecret);
 
     const codeVerifier = "a".repeat(43);
-    const startResponse = await fetch(`${baseUrl}/api/external/v1/link/start`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        redirectUri: "https://slack.example.test/dofek/callback",
-        codeChallenge: pkceChallenge(codeVerifier),
-        requestedScopes: ["nutrition:write"],
-        state: "state-value",
-      }),
+    const authorization = `Bearer ${provisioned.client.clientId}.${rotated.clientSecret}`;
+    const rejected = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: "https://unregistered.example/callback",
+    });
+    expect(rejected.status).toBe(422);
+    expect(rejected.headers.get("location")).toBeNull();
+    expect(await countExternalLinks()).toBe(0);
+
+    const nonCanonical = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: "https://slack.example.test:443/dofek/callback",
+    });
+    expect(nonCanonical.status).toBe(422);
+    expect(nonCanonical.headers.get("location")).toBeNull();
+    expect(await countExternalLinks()).toBe(0);
+
+    const startResponse = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: provisioned.client.redirectUris[0] ?? "",
     });
     expect(startResponse.status).toBe(200);
     const started = z.object({ linkId: z.string().uuid() }).parse(await startResponse.json());
 
     const authorizePage = await fetch(
       `${baseUrl}/api/external/v1/link/authorize?linkId=${started.linkId}`,
-      { headers: { Authorization: `Bearer ${session.sessionId}` } },
+      { headers: { Authorization: `Bearer ${created.sessionId}` } },
     );
     expect(authorizePage.status).toBe(200);
     const authorizeHtml = await authorizePage.text();
@@ -212,7 +302,7 @@ describe.sequential("external write API network contract", () => {
       method: "POST",
       redirect: "manual",
       headers: {
-        Authorization: `Bearer ${session.sessionId}`,
+        Authorization: `Bearer ${created.sessionId}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({ linkId: started.linkId, approved: "true" }),
@@ -223,7 +313,7 @@ describe.sequential("external write API network contract", () => {
       method: "POST",
       redirect: "manual",
       headers: {
-        Authorization: `Bearer ${session.sessionId}`,
+        Authorization: `Bearer ${created.sessionId}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
@@ -239,7 +329,7 @@ describe.sequential("external write API network contract", () => {
     const exchangeResponse = await fetch(`${baseUrl}/api/external/v1/link/exchange`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        Authorization: authorization,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -257,13 +347,37 @@ describe.sequential("external write API network contract", () => {
     const statusResponse = await fetch(`${baseUrl}/api/external/v1/link/status`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${provisioned.clientId}.${rotated.clientSecret}`,
+        Authorization: authorization,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ namespace: "slack", subject: "lifecycle-user" }),
     });
     expect(statusResponse.status).toBe(200);
     expect(await statusResponse.json()).toMatchObject({ grantId: exchanged.grantId });
+
+    const nutritionResponse = await fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${exchanged.accessToken}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "lifecycle-nutrition-request",
+      },
+      body: JSON.stringify({
+        entries: [
+          {
+            date: "2026-08-24",
+            meal: "lunch",
+            foodName: "Lifecycle lunch",
+            externalId: "lifecycle-lunch",
+            nutrients: { calories: 500 },
+          },
+        ],
+      }),
+    });
+    expect(nutritionResponse.status).toBe(200);
+    expect(await nutritionResponse.json()).toMatchObject({
+      entries: [{ externalId: "lifecycle-lunch" }],
+    });
 
     const ackResponse = await fetch(`${baseUrl}/api/external/v1/erasure/ack`, {
       method: "POST",
@@ -277,11 +391,36 @@ describe.sequential("external write API network contract", () => {
     expect(await ackResponse.json()).toEqual({ accepted: true });
 
     const revokeResponse = await fetch(
-      `${baseUrl}/api/external/v1/clients/${provisioned.clientId}/revoke`,
-      { method: "POST", headers: { Authorization: `Bearer ${session.sessionId}` } },
+      `${baseUrl}/api/developer/clients/${provisioned.client.clientId}/revoke`,
+      { method: "POST", headers: { Authorization: `Bearer ${created.sessionId}` } },
     );
     expect(revokeResponse.status).toBe(200);
     expect(await revokeResponse.json()).toEqual({ revoked: true });
+  });
+
+  it("returns a structured 429 on the sixty-first authenticated link start per IP", async () => {
+    const created = await createDeveloperClient("link-rate-limit-test");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    linkStartRateLimitIp += 1;
+    const ip = `198.51.100.${linkStartRateLimitIp}`;
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 61; attempt += 1) {
+      const response = await startLink({
+        authorization,
+        codeVerifier: "b".repeat(43),
+        ip,
+        redirectUri: created.client.client.redirectUris[0] ?? "",
+      });
+      statuses.push(response.status);
+      if (attempt === 60) {
+        expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+          code: "RATE_LIMITED",
+          status: 429,
+        });
+      }
+    }
+    expect(statuses.slice(0, 60).every((status) => status === 200)).toBe(true);
+    expect(statuses[60]).toBe(429);
   });
 
   it("reissues an expired token on the same grant and rotates the stored hash", async () => {

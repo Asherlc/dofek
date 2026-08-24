@@ -1,4 +1,5 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { canonicalizeDeveloperRedirectUri } from "@dofek/auth/developer-clients";
 import type { Database, TransactionDatabase } from "dofek/db";
 import {
   AccountErasureIdentityFencedError,
@@ -10,11 +11,11 @@ import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { isAdmin } from "../auth/admin.ts";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { DeveloperClientRepository } from "../repositories/developer-client-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { buildProblem, sendApiProblem } from "./api-problem.ts";
@@ -193,22 +194,6 @@ function isExternalIdConflict(error: unknown): boolean {
   );
 }
 
-function isAllowedRedirectUri(value: string): boolean {
-  let uri: URL;
-  try {
-    uri = new URL(value);
-  } catch {
-    return false;
-  }
-  if (uri.username || uri.password || uri.hash) return false;
-  if (uri.protocol === "https:") return true;
-  return (
-    process.env.NODE_ENV !== "production" &&
-    uri.protocol === "http:" &&
-    uri.hostname === "localhost"
-  );
-}
-
 async function authenticateClient(db: Pick<Database, "execute">, req: express.Request) {
   const credentials = clientCredential(req);
   if (!credentials) return null;
@@ -282,7 +267,22 @@ function handleExternalErrors(
 
 export function createExternalWriteApiRouter(deps: { db: Database }): Router {
   const router = Router();
+  const developerClients = new DeveloperClientRepository(deps.db);
+  const linkStartRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 60,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    skipSuccessfulRequests: false,
+    handler: (request, response) => {
+      sendProblem(response, request, 429, "RATE_LIMITED");
+    },
+  });
 
+  router.use((req, res, next) => {
+    res.locals.externalRequestId = requestId(req);
+    next();
+  });
   router.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,
@@ -290,89 +290,40 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
       standardHeaders: "draft-7",
       legacyHeaders: false,
       skipSuccessfulRequests: true,
-      message: "Too many rejected external API requests — please try again later",
-    }),
-  );
-  router.use((req, res, next) => {
-    res.locals.externalRequestId = requestId(req);
-    next();
-  });
-
-  router.post(
-    "/clients",
-    express.json(),
-    handleExternalErrors("client provisioning", async (req, res) => {
-      const session = await currentSession(deps.db, req);
-      if (!session || !(await isAdmin(deps.db, session.userId)))
-        return sendProblem(res, req, 403, "FORBIDDEN");
-      const parsed = z
-        .object({
-          name: z.string().min(1).max(200),
-          scopes: z.array(z.enum(scopes)).min(1).max(scopes.length),
-        })
-        .safeParse(req.body);
-      if (!parsed.success)
-        return sendProblem(
-          res,
-          req,
-          422,
-          "VALIDATION_ERROR",
-          undefined,
-          validationDetails(parsed.error),
-        );
-      const clientId = `ext_${randomBytes(18).toString("base64url")}`;
-      const secret = createOpaqueSecret();
-      await deps.db.execute(
-        sql`INSERT INTO fitness.external_client (client_id, name, secret_hash, scopes) VALUES (${clientId}, ${parsed.data.name}, ${secret.hash}, ${textArray(parsed.data.scopes)})`,
-      );
-      res.status(201).json({ clientId, clientSecret: secret.value, scopes: parsed.data.scopes });
-    }),
-  );
-
-  router.post(
-    "/clients/:clientId/rotate",
-    express.json(),
-    handleExternalErrors("client rotation", async (req, res) => {
-      const session = await currentSession(deps.db, req);
-      if (!session || !(await isAdmin(deps.db, session.userId)))
-        return sendProblem(res, req, 403, "FORBIDDEN");
-      const secret = createOpaqueSecret();
-      const result = await executeWithSchema(
-        deps.db,
-        z.object({ client_id: z.string() }),
-        sql`UPDATE fitness.external_client
-          SET secret_hash = ${secret.hash}, updated_at = NOW()
-          WHERE client_id = ${req.params.clientId} AND revoked_at IS NULL
-          RETURNING client_id`,
-      );
-      if (!result[0]) return sendProblem(res, req, 404, "NOT_FOUND");
-      res.json({ clientId: req.params.clientId, clientSecret: secret.value });
-    }),
-  );
-
-  router.post(
-    "/clients/:clientId/revoke",
-    handleExternalErrors("client revocation", async (req, res) => {
-      const session = await currentSession(deps.db, req);
-      if (!session || !(await isAdmin(deps.db, session.userId)))
-        return sendProblem(res, req, 403, "FORBIDDEN");
-      await deps.db.execute(
-        sql`UPDATE fitness.external_client SET revoked_at = NOW() WHERE client_id = ${req.params.clientId}`,
-      );
-      await deps.db.execute(
-        sql`UPDATE fitness.external_grant SET revoked_at = NOW() WHERE client_id = ${req.params.clientId} AND revoked_at IS NULL`,
-      );
-      res.json({ revoked: true });
+      skip: (request) => request.path === "/link/start",
+      handler: (request, response) => {
+        sendProblem(response, request, 429, "RATE_LIMITED");
+      },
     }),
   );
 
   router.post(
     "/link/start",
     express.json(),
+    async (req, res, next) => {
+      try {
+        const client = await authenticateClient(deps.db, req);
+        if (!client) {
+          sendProblem(res, req, 401, "INVALID_CREDENTIALS");
+          return;
+        }
+        res.locals.externalClient = client;
+        next();
+      } catch (error) {
+        captureException(error);
+        logger.error(
+          `[external-api] link start authentication failed: ${error instanceof Error ? error.name : "unknown"}`,
+        );
+        sendProblem(res, req, 503, "SERVICE_UNAVAILABLE");
+      }
+    },
+    (request, response, next) => {
+      if (response.headersSent) return;
+      linkStartRateLimit(request, response, next);
+    },
     handleExternalErrors("link start", async (req, res) => {
-      const client = await authenticateClient(deps.db, req);
+      const client = res.locals.externalClient;
       const parsed = linkStartSchema.safeParse(req.body);
-      if (!client) return sendProblem(res, req, 401, "INVALID_CREDENTIALS");
       if (!parsed.success)
         return sendProblem(
           res,
@@ -382,10 +333,17 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
           undefined,
           validationDetails(parsed.error),
         );
-      if (
-        !isAllowedRedirectUri(parsed.data.redirectUri) ||
-        parsed.data.requestedScopes.some((scope) => !client.scopes.includes(scope))
-      )
+      let canonicalRedirectUri: string;
+      try {
+        canonicalRedirectUri = canonicalizeDeveloperRedirectUri(parsed.data.redirectUri);
+      } catch {
+        return sendProblem(res, req, 422, "VALIDATION_ERROR");
+      }
+      if (parsed.data.redirectUri !== canonicalRedirectUri)
+        return sendProblem(res, req, 422, "VALIDATION_ERROR");
+      if (parsed.data.requestedScopes.some((scope) => !client.scopes.includes(scope)))
+        return sendProblem(res, req, 422, "VALIDATION_ERROR");
+      if (!(await developerClients.hasExactRedirect(client.clientId, parsed.data.redirectUri)))
         return sendProblem(res, req, 422, "VALIDATION_ERROR");
       const linkId = randomUUID();
       const expiresAt = new Date(Date.now() + LINK_TTL_MS).toISOString();
