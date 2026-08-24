@@ -32,6 +32,8 @@ export function BluetoothDeviceList({
   onConnectDevice,
   onSelectDevice,
 }: BluetoothDeviceListProps) {
+  const whoopDevices = devices.filter((device) => device.kind === "whoop");
+  const heartRateDevices = devices.filter((device) => device.kind === "heart-rate");
   if (loading && devices.length === 0) {
     return <QueryStatePanel variant="loading" minHeight={180} />;
   }
@@ -67,22 +69,12 @@ export function BluetoothDeviceList({
         />
       ) : (
         <View style={styles.devices}>
-          {devices.map((device) => (
-            <Pressable
-              key={`${device.kind}:${device.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`${device.name}, ${device.connectionState}`}
-              onPress={() => onSelectDevice(device)}
-              style={styles.deviceRow}
-            >
-              <View style={styles.deviceText}>
-                <Text style={styles.deviceName}>{device.name}</Text>
-                <Text style={styles.connectionState}>{device.connectionState}</Text>
-                <Text style={styles.diagnostics}>{diagnosticSummary(device)}</Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </Pressable>
-          ))}
+          <DeviceSection title="WHOOP" devices={whoopDevices} onSelectDevice={onSelectDevice} />
+          <DeviceSection
+            title="Heart-rate monitors"
+            devices={heartRateDevices}
+            onSelectDevice={onSelectDevice}
+          />
         </View>
       )}
       {error ? (
@@ -94,6 +86,40 @@ export function BluetoothDeviceList({
         />
       ) : null}
       <ConnectButton connecting={connecting} onPress={onConnectDevice} />
+    </View>
+  );
+}
+
+function DeviceSection({
+  devices,
+  onSelectDevice,
+  title,
+}: {
+  devices: BluetoothDevice[];
+  onSelectDevice: (device: BluetoothDevice) => void;
+  title: string;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>
+        {title}
+      </Text>
+      {devices.map((device) => (
+        <Pressable
+          key={`${device.kind}:${device.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${device.name}, ${device.connectionState}`}
+          onPress={() => onSelectDevice(device)}
+          style={styles.deviceRow}
+        >
+          <View style={styles.deviceText}>
+            <Text style={styles.deviceName}>{device.name}</Text>
+            <Text style={styles.connectionState}>{device.connectionState}</Text>
+            <Text style={styles.diagnostics}>{diagnosticSummary(device)}</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -121,7 +147,16 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   devices: {
+    gap: spacing.md,
+  },
+  section: {
     gap: spacing.sm,
+  },
+  sectionTitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    textTransform: "uppercase",
   },
   deviceRow: {
     alignItems: "center",

@@ -1,10 +1,11 @@
 import {
+  addDeviceListListener,
   addDeviceStateListener,
   type BleHeartRateDeviceSnapshot,
   getDevices as getHeartRateDevices,
 } from "../modules/ble-heart-rate";
 import {
-  addConnectionStateListener as addWhoopConnectionStateListener,
+  addDeviceStateListener as addWhoopDeviceStateListener,
   getDeviceSummary as getWhoopDeviceSummary,
   type WhoopDeviceSummary,
 } from "../modules/whoop-ble";
@@ -104,12 +105,14 @@ export function subscribeBluetoothDevices(
   };
 
   const heartRateSubscription = addDeviceStateListener(() => void publish());
-  const whoopSubscription = addWhoopConnectionStateListener(() => void publish());
+  const heartRateListSubscription = addDeviceListListener(() => void publish());
+  const whoopSubscription = addWhoopDeviceStateListener(() => void publish());
 
   return {
     remove() {
       isActive = false;
       heartRateSubscription.remove();
+      heartRateListSubscription.remove();
       whoopSubscription.remove();
     },
   };

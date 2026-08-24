@@ -137,6 +137,11 @@ export function addDeviceStateListener(
   return BleHeartRateModule.addListener("onDeviceStateChanged", callback);
 }
 
+/** Subscribe to app-managed registry membership changes. */
+export function addDeviceListListener(callback: () => void): EventSubscription {
+  return BleHeartRateModule.addListener("onDeviceListChanged", callback);
+}
+
 /**
  * Subscribe to live heart-rate measurements for the UI (~1 Hz).
  *

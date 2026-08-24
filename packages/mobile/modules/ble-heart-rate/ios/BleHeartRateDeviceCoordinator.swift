@@ -12,6 +12,10 @@ protocol BleHeartRateConnectionManaging: AnyObject {
     )
     func disconnect(peripheralId: String)
     func disconnectAll()
+    func performAccountPurge(
+        work: @escaping () throws -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    )
 }
 
 extension BleHeartRateConnectionManager: BleHeartRateConnectionManaging {}
@@ -38,6 +42,8 @@ final class BleHeartRateDeviceCoordinator: BleHeartRateConnectionManagerDelegate
     private let onDeviceStateChanged: (BleHeartRateDeviceSnapshot) -> Void
     private let onHeartRateMeasurement: (BleHeartRateSample) -> Void
     private let onRegistryError: (String, Error) -> Void
+    private let measurementGateLock = NSLock()
+    private var acceptsMeasurements = true
 
     init(
         connectionManager: BleHeartRateConnectionManaging,
@@ -61,6 +67,7 @@ final class BleHeartRateDeviceCoordinator: BleHeartRateConnectionManagerDelegate
     func scanAndConnect(
         completion: @escaping (Result<BleHeartRateDevice, BleHeartRateDeviceCoordinatorError>) -> Void
     ) {
+        setAcceptsMeasurements(true)
         connectionManager.scanAndConnect { [self] result in
             switch result {
             case .success(let device):
@@ -96,6 +103,7 @@ final class BleHeartRateDeviceCoordinator: BleHeartRateConnectionManagerDelegate
             completion(.failure(.unmanagedDevice(peripheralId)))
             return
         }
+        setAcceptsMeasurements(true)
         connectionManager.connect(peripheralId: peripheralId) { [self] result in
             switch result {
             case .success(let device):
@@ -105,6 +113,21 @@ final class BleHeartRateDeviceCoordinator: BleHeartRateConnectionManagerDelegate
                 completion(.failure(.connection(error)))
             }
         }
+    }
+
+    func purgeAccountState(
+        cutoff: Date,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        connectionManager.performAccountPurge(
+            work: { [self] in
+                setAcceptsMeasurements(false)
+                sampleBuffer.clearAll()
+                sampleBuffer.advanceErasureCutoff(to: cutoff)
+                try deviceRegistry.clear()
+            },
+            completion: completion
+        )
     }
 
     func connectionManager(
@@ -130,6 +153,7 @@ final class BleHeartRateDeviceCoordinator: BleHeartRateConnectionManagerDelegate
         from deviceId: String,
         at timestamp: Date
     ) {
+        guard isAcceptingMeasurements else { return }
         guard deviceRegistry.contains(id: deviceId) else {
             connectionManager.disconnect(peripheralId: deviceId)
             return
@@ -164,5 +188,17 @@ final class BleHeartRateDeviceCoordinator: BleHeartRateConnectionManagerDelegate
             bufferedSampleCount: sampleBuffer.sampleCount(for: deviceId)
         ) else { return }
         onDeviceStateChanged(snapshot)
+    }
+
+    private var isAcceptingMeasurements: Bool {
+        measurementGateLock.lock()
+        defer { measurementGateLock.unlock() }
+        return acceptsMeasurements
+    }
+
+    private func setAcceptsMeasurements(_ accepts: Bool) {
+        measurementGateLock.lock()
+        acceptsMeasurements = accepts
+        measurementGateLock.unlock()
     }
 }

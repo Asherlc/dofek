@@ -24,7 +24,12 @@ public class BleHeartRateModule: Module {
     public func definition() -> ModuleDefinition {
         Name("BleHeartRate")
 
-        Events("onConnectionStateChanged", "onDeviceStateChanged", "onHeartRateMeasurement")
+        Events(
+            "onConnectionStateChanged",
+            "onDeviceStateChanged",
+            "onDeviceListChanged",
+            "onHeartRateMeasurement"
+        )
 
         OnCreate {
             switch Result(catching: { try BleHeartRateDeviceRegistry() }) {
@@ -65,6 +70,9 @@ public class BleHeartRateModule: Module {
             guard let coordinator = self.deviceCoordinatorOrReject(promise) else { return }
             coordinator.scanAndConnect { result in
                 self.resolveConnect(result, promise: promise)
+                if case .success = result {
+                    self.emitDeviceListChanged()
+                }
             }
         }
 
@@ -108,6 +116,7 @@ public class BleHeartRateModule: Module {
         Function("forget") { (peripheralId: String) throws in
             try self.requireDeviceRegistry().remove(id: peripheralId)
             self.connectionManager.disconnect(peripheralId: peripheralId)
+            self.emitDeviceListChanged()
         }
 
         AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
@@ -121,20 +130,20 @@ public class BleHeartRateModule: Module {
             let retainedCutoff =
                 (UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date)
                 .map { max($0, cutoff) } ?? cutoff
-            guard let registry = self.deviceRegistryOrReject(promise) else { return }
-            do {
-                try registry.clear()
-            } catch {
-                self.rejectRegistryError(error, promise: promise)
-                return
-            }
+            guard let coordinator = self.deviceCoordinatorOrReject(promise) else { return }
             UserDefaults.standard.set(
                 retainedCutoff,
                 forKey: Self.deviceErasureCutoffKey
             )
-            self.connectionManager.disconnectAll()
-            self.sampleBuffer.advanceErasureCutoff(to: retainedCutoff)
-            promise.resolve(true)
+            coordinator.purgeAccountState(cutoff: retainedCutoff) { result in
+                switch result {
+                case .success:
+                    self.emitDeviceListChanged()
+                    promise.resolve(true)
+                case .failure(let error):
+                    self.rejectRegistryError(error, promise: promise)
+                }
+            }
         }
     }
 
@@ -257,6 +266,10 @@ public class BleHeartRateModule: Module {
     private func emitDeviceState(_ snapshot: BleHeartRateDeviceSnapshot) {
         let payload = deviceSnapshotPayload(snapshot)
         emitOnMainThread("onDeviceStateChanged", payload.mapValues { Optional($0) })
+    }
+
+    private func emitDeviceListChanged() {
+        emitOnMainThread("onDeviceListChanged", [:])
     }
 
     private func emitConnectionEvent(_ event: BleHeartRateConnectionEvent) {

@@ -157,7 +157,7 @@ describe("BluetoothDevicesScreen", () => {
   it("unsubscribes from catalog updates when the route unmounts", async () => {
     const { default: BluetoothDevicesScreen } = await import("../app/bluetooth-devices/index");
     const view = render(<BluetoothDevicesScreen />);
-    await screen.findByText("WHOOP");
+    await screen.findByRole("button", { name: "WHOOP, ready" });
 
     view.unmount();
 
@@ -173,6 +173,6 @@ describe("BluetoothDevicesScreen", () => {
     act(() => mocks.focus());
 
     await waitFor(() => expect(screen.queryByText("Polar H10")).toBeNull());
-    expect(screen.getByText("WHOOP")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "WHOOP, ready" })).toBeTruthy();
   });
 });

@@ -18,6 +18,8 @@ public class WhoopBleModule: Module {
 
     private let frameParser = WhoopBleFrameParser()
     private let cmdFrameParser = WhoopBleFrameParser()
+    private var lastKnownDeviceId: String?
+    private var lastKnownDeviceName: String?
 
     // MARK: - Diagnostic counters
 
@@ -33,7 +35,7 @@ public class WhoopBleModule: Module {
     public func definition() -> ModuleDefinition {
         Name("WhoopBle")
 
-        Events("onConnectionStateChanged", "onOrientation")
+        Events("onConnectionStateChanged", "onDeviceStateChanged", "onOrientation")
 
         OnCreate {
             self.connectionManager.delegate = self
@@ -65,8 +67,10 @@ public class WhoopBleModule: Module {
             self.connectionManager.connect(peripheralId: peripheralId) { result in
                 switch result {
                 case .success(let value):
+                    self.emitDeviceState()
                     promise.resolve(value)
                 case .failure(let error):
+                    self.emitDeviceState()
                     let rejection = error.rejection
                     promise.reject(rejection.code, rejection.message)
                 }
@@ -79,6 +83,7 @@ public class WhoopBleModule: Module {
             self.connectionManager.bleQueue.async {
                 if self.connectionManager.state == .streaming {
                     NSLog("[WhoopBLE] startImuStreaming: already streaming, returning success")
+                    self.emitDeviceState()
                     promise.resolve(true)
                     return
                 }
@@ -105,6 +110,7 @@ public class WhoopBleModule: Module {
                 self.orientationProcessor.reset()
 
                 NSLog("[WhoopBLE] startImuStreaming: now streaming")
+                self.emitDeviceState()
                 promise.resolve(true)
             }
         }
@@ -112,6 +118,7 @@ public class WhoopBleModule: Module {
         AsyncFunction("stopImuStreaming") { (promise: Promise) in
             self.connectionManager.bleQueue.async {
                 guard self.connectionManager.cmdCharacteristic != nil else {
+                    self.emitDeviceState()
                     promise.resolve(true)
                     return
                 }
@@ -122,6 +129,7 @@ public class WhoopBleModule: Module {
                 self.connectionManager.writeToStrap(commandData)
                 self.connectionManager.stopStreaming()
 
+                self.emitDeviceState()
                 promise.resolve(true)
             }
         }
@@ -145,16 +153,7 @@ public class WhoopBleModule: Module {
         }
 
         Function("getDeviceSummary") { () -> [String: Any] in
-            self.connectionManager.syncOnBleQueue {
-                let connectedPeripheral = self.connectionManager.connectedPeripheral
-                return [
-                    "id": (connectedPeripheral?.identifier.uuidString as Any?) ?? NSNull(),
-                    "name": (connectedPeripheral?.name as Any?) ?? NSNull(),
-                    "connectionState": self.connectionManager.state.rawValue,
-                    "imuBufferedSamples": self.sampleBuffer.imuSampleCount,
-                    "realtimeBufferedSamples": self.sampleBuffer.realtimeSampleCount,
-                ]
-            }
+            self.deviceSummaryPayload()
         }
 
         Function("getDataPathStats") { () -> [String: Any] in
@@ -230,6 +229,7 @@ public class WhoopBleModule: Module {
 
         Function("confirmSamplesDrain") { (count: Int) in
             self.sampleBuffer.confirmImuDrain(count: count)
+            self.emitDeviceState()
         }
 
         AsyncFunction("peekBufferedRealtimeData") { (maxCount: Int?, promise: Promise) in
@@ -239,16 +239,19 @@ public class WhoopBleModule: Module {
 
         Function("confirmRealtimeDataDrain") { (count: Int) in
             self.sampleBuffer.confirmRealtimeDataDrain(count: count)
+            self.emitDeviceState()
         }
 
         // Legacy drain (used by getBufferedSamples/getBufferedRealtimeData)
         AsyncFunction("getBufferedRealtimeData") { (maxCount: Int?, promise: Promise) in
             let result = self.sampleBuffer.drainRealtimeData(maxCount: maxCount ?? 1000)
+            self.emitDeviceState()
             promise.resolve(result)
         }
 
         AsyncFunction("getBufferedSamples") { (maxCount: Int?, promise: Promise) in
             let result = self.sampleBuffer.drainImuSamples(maxCount: maxCount ?? 1000)
+            self.emitDeviceState()
             promise.resolve(result)
         }
 
@@ -263,7 +266,9 @@ public class WhoopBleModule: Module {
         // MARK: - Disconnect
 
         Function("disconnect") {
-            self.connectionManager.disconnect()
+            self.connectionManager.disconnect { [weak self] in
+                self?.emitDeviceState()
+            }
         }
 
         AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
@@ -295,8 +300,12 @@ public class WhoopBleModule: Module {
                 self.emptyExtractions = 0
                 self.packetTypeCounts.removeAll()
                 self.lastCommandResponse = "none"
-                self.connectionManager.disconnect()
-                promise.resolve(true)
+                self.lastKnownDeviceId = nil
+                self.lastKnownDeviceName = nil
+                self.connectionManager.disconnect { [weak self] in
+                    self?.emitDeviceState()
+                    promise.resolve(true)
+                }
             }
         }
     }
@@ -309,6 +318,28 @@ public class WhoopBleModule: Module {
         }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: value)
+    }
+
+    private func deviceSummaryPayload() -> [String: Any] {
+        connectionManager.syncOnBleQueue {
+            let connectedPeripheral = connectionManager.connectedPeripheral
+            let peripheralId = connectedPeripheral?.identifier.uuidString ?? lastKnownDeviceId
+            let peripheralName = connectedPeripheral?.name ?? lastKnownDeviceName
+            return [
+                "id": (peripheralId as Any?) ?? NSNull(),
+                "name": (peripheralName as Any?) ?? NSNull(),
+                "connectionState": connectionManager.state.rawValue,
+                "imuBufferedSamples": sampleBuffer.imuSampleCount,
+                "realtimeBufferedSamples": sampleBuffer.realtimeSampleCount,
+            ]
+        }
+    }
+
+    private func emitDeviceState() {
+        let payload = deviceSummaryPayload()
+        MainThreadEventEmitter.emit(payload) { [weak self] payload in
+            self?.sendEvent("onDeviceStateChanged", payload)
+        }
     }
 
     // MARK: - Activation commands
@@ -344,12 +375,15 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         cmdCharacteristic: CBCharacteristic,
         wasStreaming: Bool
     ) {
+        lastKnownDeviceId = peripheral.identifier.uuidString
+        lastKnownDeviceName = peripheral.name
         MainThreadEventEmitter.emit([
             "state": "connected",
             "peripheralId": peripheral.identifier.uuidString,
         ]) { [weak self] payload in
             self?.sendEvent("onConnectionStateChanged", payload)
         }
+        emitDeviceState()
 
         sendActivationCommands(includeImu: false)
         watchdog.start()
@@ -380,6 +414,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         ]) { [weak self] payload in
             self?.sendEvent("onConnectionStateChanged", payload)
         }
+        emitDeviceState()
     }
 
     func connectionManager(
@@ -438,6 +473,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         }
 
         sampleBuffer.appendImuSamples(newImuSamples, deviceId: deviceId)
+        emitDeviceState()
     }
 
     func connectionManager(

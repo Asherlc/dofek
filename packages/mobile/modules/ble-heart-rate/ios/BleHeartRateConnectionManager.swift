@@ -153,6 +153,41 @@ final class BleHeartRateConnectionManager: NSObject {
         }
     }
 
+    /// Establishes an account-erasure boundary on the BLE queue. All work
+    /// submitted before the purge drains first; managed sessions are removed
+    /// before account-owned storage is cleared, so later Core Bluetooth
+    /// callbacks cannot append samples through those sessions.
+    func performAccountPurge(
+        work: @escaping () throws -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        bleQueue.async {
+            self.cancelScan(with: .disconnected(nil))
+
+            for id in Array(self.sessions.keys) {
+                guard let session = self.sessions[id] else { continue }
+                self.pendingBluetoothConnects.remove(id)
+                self.markDisconnected(session)
+                self.completeConnect(id: id, with: .failure(.disconnected(nil)))
+                if let peripheral = self.peripherals[id] {
+                    peripheral.delegate = nil
+                    self.centralManager?.cancelPeripheralConnection(peripheral)
+                }
+                self.delegate?.connectionManagerDidDisconnect(
+                    self,
+                    peripheralId: id.uuidString,
+                    error: nil
+                )
+            }
+            self.sessions.removeAll()
+            self.peripherals.removeAll()
+            self.pendingBluetoothConnects.removeAll()
+            self.connectCompletions.removeAll()
+
+            completion(Result(catching: work))
+        }
+    }
+
     // MARK: - Operation dispatch
 
     private func runOrDeferScan(manager: CBCentralManager) {

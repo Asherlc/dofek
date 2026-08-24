@@ -287,6 +287,13 @@ export function addConnectionStateListener(
   return WhoopBleModule.addListener("onConnectionStateChanged", callback);
 }
 
+/** Subscribe to WHOOP identity, connection, streaming, and buffer snapshot changes. */
+export function addDeviceStateListener(
+  callback: (summary: WhoopDeviceSummary) => void,
+): EventSubscription {
+  return WhoopBleModule.addListener("onDeviceStateChanged", callback);
+}
+
 /** Real-time orientation from the Madgwick AHRS filter (quaternion + Euler angles) */
 export interface OrientationEvent {
   /** Quaternion w component */

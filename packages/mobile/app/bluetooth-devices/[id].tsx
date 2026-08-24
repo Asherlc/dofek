@@ -17,10 +17,12 @@ import {
   connect as connectWhoop,
   disconnect as disconnectWhoop,
   findWhoop,
+  startImuStreaming,
+  stopImuStreaming,
 } from "../../modules/whoop-ble";
 import { colors, fontSize, fontWeight, radius, spacing } from "../../theme";
 
-type DeviceAction = "connect" | "disconnect" | "forget";
+type DeviceAction = "connect" | "disconnect" | "forget" | "start-streaming" | "stop-streaming";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -113,6 +115,10 @@ export default function BluetoothDeviceDetailScreen() {
           await connectWhoop(peripheralId);
         } else if (action === "disconnect") {
           disconnectWhoop();
+        } else if (action === "start-streaming") {
+          await startImuStreaming();
+        } else if (action === "stop-streaming") {
+          await stopImuStreaming();
         }
         await loadDevice();
       } catch (actionError: unknown) {
@@ -236,6 +242,30 @@ export default function BluetoothDeviceDetailScreen() {
         >
           <Text style={styles.secondaryButtonText}>Forget device</Text>
         </Pressable>
+      ) : connected ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            device.connectionState === "streaming"
+              ? "Stop WHOOP IMU streaming"
+              : "Start WHOOP IMU streaming"
+          }
+          accessibilityState={{
+            busy: pendingAction === "start-streaming" || pendingAction === "stop-streaming",
+            disabled: pendingAction !== null,
+          }}
+          disabled={pendingAction !== null}
+          onPress={() =>
+            void runAction(
+              device.connectionState === "streaming" ? "stop-streaming" : "start-streaming",
+            )
+          }
+          style={[styles.secondaryButton, pendingAction !== null ? styles.disabledButton : null]}
+        >
+          <Text style={styles.streamingButtonText}>
+            {device.connectionState === "streaming" ? "Stop IMU streaming" : "Start IMU streaming"}
+          </Text>
+        </Pressable>
       ) : null}
     </ScrollView>
   );
@@ -312,6 +342,11 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: colors.danger,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  streamingButtonText: {
+    color: colors.accent,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.bold,
   },

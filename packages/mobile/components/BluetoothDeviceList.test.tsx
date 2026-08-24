@@ -42,6 +42,10 @@ describe("BluetoothDeviceList", () => {
     expect(screen.getByRole("button", { name: "Polar H10, disconnected" })).toBeTruthy();
     expect(screen.getByText("12 IMU samples · 4 realtime samples")).toBeTruthy();
     expect(screen.getByText("142 bpm · 3 buffered samples")).toBeTruthy();
+    expect(screen.getAllByRole("header").map((header) => header.textContent)).toEqual([
+      "WHOOP",
+      "Heart-rate monitors",
+    ]);
   });
 
   it("selects the exact device row that was pressed", () => {

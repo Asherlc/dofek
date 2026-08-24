@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   whoopConnect: vi.fn(),
   whoopDisconnect: vi.fn(),
   whoopFind: vi.fn(),
+  whoopStartImuStreaming: vi.fn(),
+  whoopStopImuStreaming: vi.fn(),
 }));
 
 vi.mock("expo-router", () => ({
@@ -38,6 +40,8 @@ vi.mock("../modules/whoop-ble", () => ({
   connect: mocks.whoopConnect,
   disconnect: mocks.whoopDisconnect,
   findWhoop: mocks.whoopFind,
+  startImuStreaming: mocks.whoopStartImuStreaming,
+  stopImuStreaming: mocks.whoopStopImuStreaming,
 }));
 
 vi.mock("../lib/telemetry", () => ({
@@ -75,6 +79,8 @@ describe("BluetoothDeviceDetailScreen", () => {
     mocks.heartRateConnect.mockResolvedValue({ id: "polar", name: "Polar H10" });
     mocks.whoopFind.mockResolvedValue({ id: "whoop-native", name: "WHOOP" });
     mocks.whoopConnect.mockResolvedValue(true);
+    mocks.whoopStartImuStreaming.mockResolvedValue(true);
+    mocks.whoopStopImuStreaming.mockResolvedValue(true);
   });
 
   it("shows a device's incoming native data and specific connection error", async () => {
@@ -128,6 +134,53 @@ describe("BluetoothDeviceDetailScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Disconnect WHOOP" }));
 
     await waitFor(() => expect(mocks.whoopDisconnect).toHaveBeenCalledOnce());
+  });
+
+  it("starts WHOOP IMU streaming and renders the updated streaming status", async () => {
+    let publish:
+      | ((update: { state: "ready"; devices: (typeof whoop)[]; error: null }) => void)
+      | undefined;
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices.mockResolvedValue([whoop]);
+    mocks.subscribeBluetoothDevices.mockImplementation((listener) => {
+      publish = listener;
+      return { remove: mocks.remove };
+    });
+    mocks.whoopStartImuStreaming.mockImplementation(async () => {
+      mocks.getBluetoothDevices.mockResolvedValue([{ ...whoop, connectionState: "streaming" }]);
+      publish?.({
+        state: "ready",
+        devices: [{ ...whoop, connectionState: "streaming" }],
+        error: null,
+      });
+      return true;
+    });
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start WHOOP IMU streaming" }));
+
+    await waitFor(() => expect(mocks.whoopStartImuStreaming).toHaveBeenCalledOnce());
+    expect(screen.getByText("streaming")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop WHOOP IMU streaming" })).toBeTruthy();
+  });
+
+  it("stops WHOOP IMU streaming and shows the specific native error", async () => {
+    const streamingWhoop = { ...whoop, connectionState: "streaming" };
+    const streamingError = new Error("Could not stop WHOOP IMU streaming");
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices.mockResolvedValue([streamingWhoop]);
+    mocks.whoopStopImuStreaming.mockRejectedValueOnce(streamingError);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Stop WHOOP IMU streaming" }));
+
+    expect(await screen.findByText(streamingError.message)).toBeTruthy();
+    expect(mocks.captureException).toHaveBeenCalledWith(streamingError, {
+      source: "bluetooth-device-detail-stop-streaming",
+      deviceKind: "whoop",
+    });
   });
 
   it("finds and connects the native WHOOP peripheral from a disconnected snapshot", async () => {
