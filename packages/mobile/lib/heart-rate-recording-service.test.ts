@@ -36,7 +36,6 @@ function sampleForDevice(deviceId: string, bpm: number): BleHeartRateSample {
 function makeDeps(): HeartRateRecordingServiceDeps {
   return {
     ble: {
-      getDeviceId: vi.fn().mockReturnValue("Polar H10"),
       peekBufferedSamples: vi.fn().mockResolvedValue([]),
       confirmSamplesDrain: vi.fn(),
     },
@@ -68,6 +67,25 @@ describe("createHeartRateRecordingService", () => {
   });
 
   describe("syncForTimeRange", () => {
+    it("uploads a buffered sample under its captured device ID without a selected monitor", async () => {
+      vi.mocked(deps.ble.peekBufferedSamples)
+        .mockResolvedValueOnce([sampleForDevice("polar", 140)])
+        .mockResolvedValue([]);
+
+      await createHeartRateRecordingService(deps).syncForTimeRange(START, END);
+
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledWith({
+        deviceId: "polar",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRateBpm: 140,
+            rrIntervalsMs: [],
+          },
+        ],
+      });
+    });
+
     it("uploads in-window samples and confirms the drain on success", async () => {
       vi.mocked(deps.ble.peekBufferedSamples)
         .mockResolvedValueOnce([sample(140), sample(141)])
@@ -147,9 +165,7 @@ describe("createHeartRateRecordingService", () => {
       expect(deps.ble.confirmSamplesDrain).not.toHaveBeenCalled();
     });
 
-    it("does not gate on live Bluetooth state — a persisted device ID is enough", async () => {
-      // No isAvailable dependency exists; uploads proceed whenever a device ID
-      // is known, even if the radio is off at save time.
+    it("does not gate on live Bluetooth state when buffered samples identify their device", async () => {
       vi.mocked(deps.ble.peekBufferedSamples)
         .mockResolvedValueOnce([sample(140)])
         .mockResolvedValue([]);
@@ -225,16 +241,6 @@ describe("createHeartRateRecordingService", () => {
       });
       // Only the two in-window samples drain; the post-window one stays buffered.
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
-    });
-
-    it("does not upload or drain an empty buffer when no monitor has ever connected", async () => {
-      vi.mocked(deps.ble.getDeviceId).mockReturnValue(null);
-
-      await createHeartRateRecordingService(deps).syncForTimeRange(START, END);
-
-      expect(deps.ble.peekBufferedSamples).toHaveBeenCalled();
-      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
-      expect(deps.ble.confirmSamplesDrain).not.toHaveBeenCalled();
     });
 
     it("does not upload or drain when there are no buffered samples", async () => {

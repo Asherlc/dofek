@@ -17,9 +17,6 @@ function toBleHeartRateUploadSample(sample: BleHeartRateSample): BleHeartRateUpl
 
 /** Abstraction over the BLE heart-rate module for activity recording. */
 export interface HeartRateBleDeps {
-  /** Whether Bluetooth is available on the device. */
-  /** The connected (or last-connected) monitor's peripheral ID, or null. */
-  getDeviceId(): string | null;
   /** Peek all buffered heart-rate samples without removing them. */
   peekBufferedSamples(): Promise<BleHeartRateSample[]>;
   /** Remove the first `count` samples after a successful upload. */
@@ -46,11 +43,10 @@ export interface HeartRateRecordingServiceDeps {
 /**
  * Recording sensor service for a Bluetooth heart-rate monitor.
  *
- * Connection and live display are driven by the UI (the device card), which
- * connects the strap and starts the native buffer filling. This service is the
- * upload half: on activity save it drains the buffered samples and pushes them
- * to the server, committing the drain only after a successful upload so a
- * failure leaves the samples in place for retry.
+ * The shared Bluetooth device manager owns connections and native buffering.
+ * This service only drains buffered samples on activity save, uploading each
+ * sample under the device ID captured with it and committing a drain only after
+ * successful upload so failures remain retryable.
  */
 export function createHeartRateRecordingService(
   deps: HeartRateRecordingServiceDeps,
@@ -66,12 +62,6 @@ export function createHeartRateRecordingService(
 
     async syncForTimeRange(startedAt: string, endedAt: string): Promise<void> {
       const deviceErasureCutoff = await loadDeviceErasureCutoff();
-
-      // Gate on buffer access (a known device), not on live radio state: the UI
-      // keeps the device ID after a disconnect so buffered samples still upload
-      // on save even when Bluetooth is off. Draining reads the local buffer and
-      // needs no active connection.
-      const fallbackDeviceId = ble.getDeviceId();
 
       // Samples are buffered in arrival (chronological) order. Drain page by
       // page: drop everything at or before endedAt from the buffer, but upload
@@ -92,7 +82,7 @@ export function createHeartRateRecordingService(
             (deviceErasureCutoff === null ||
               isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff)),
         );
-        const groups = new DeviceSampleGroups(fallbackDeviceId, toBleHeartRateUploadSample);
+        const groups = new DeviceSampleGroups(null, toBleHeartRateUploadSample);
         for (const sample of inWindow) {
           groups.add(sample);
         }

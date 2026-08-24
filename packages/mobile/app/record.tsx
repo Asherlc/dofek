@@ -11,15 +11,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import {
-  type HeartRateConnectionState,
-  HeartRateDeviceCard,
-} from "../components/HeartRateDeviceCard";
+import { HeartRateDeviceCard } from "../components/HeartRateDeviceCard";
 import {
   type ActivityRecorder,
   createActivityRecorder,
   type RecordingSnapshot,
 } from "../lib/activity-recording";
+import { getBluetoothDevices, subscribeBluetoothDevices } from "../lib/bluetooth-device-catalog";
 import { createHeartRateRecordingService } from "../lib/heart-rate-recording-service";
 import { createInertialMeasurementUnitService } from "../lib/inertial-measurement-unit-service";
 import { createLocationAdapter } from "../lib/location-service";
@@ -29,14 +27,8 @@ import { trpc } from "../lib/trpc";
 import { syncWatchAltitudeFiles } from "../lib/watch-altitude-file-sync";
 import { syncWatchAccelerometerFiles } from "../lib/watch-file-sync";
 import {
-  addConnectionStateListener as addHeartRateConnectionListener,
-  addHeartRateListener,
-  type BleHeartRateDevice,
   confirmSamplesDrain as confirmHeartRateDrain,
-  disconnect as disconnectHeartRate,
-  isBluetoothAvailable as isHeartRateBluetoothAvailable,
   peekBufferedSamples as peekHeartRateSamples,
-  scanAndConnect as scanAndConnectHeartRate,
 } from "../modules/ble-heart-rate";
 import {
   isAccelerometerRecordingAvailable,
@@ -104,14 +96,7 @@ export default function RecordScreen() {
   const [activityName, setActivityName] = useState("");
   const [activityNotes, setActivityNotes] = useState("");
 
-  // Bluetooth heart-rate monitor state. The connected device is kept in a ref so
-  // the recorder's sensor service (created once) can read the current device ID
-  // without being rebuilt when the device changes.
-  const heartRateDeviceRef = useRef<BleHeartRateDevice | null>(null);
-  const [heartRateDevice, setHeartRateDevice] = useState<BleHeartRateDevice | null>(null);
-  const [heartRateConnecting, setHeartRateConnecting] = useState(false);
-  const [liveBpm, setLiveBpm] = useState<number | null>(null);
-  const [bluetoothAvailable, setBluetoothAvailable] = useState(false);
+  const [connectedDeviceCount, setConnectedDeviceCount] = useState(0);
 
   // Create recorder once (with IMU service for phone + watch)
   const recorder = useMemo(() => {
@@ -148,7 +133,6 @@ export default function RecordScreen() {
 
       const heartRateService = createHeartRateRecordingService({
         ble: {
-          getDeviceId: () => heartRateDeviceRef.current?.id ?? null,
           peekBufferedSamples: () => peekHeartRateSamples(),
           confirmSamplesDrain: confirmHeartRateDrain,
         },
@@ -165,64 +149,44 @@ export default function RecordScreen() {
     return recorderRef.current;
   }, [trpcClient]);
 
-  // Track Bluetooth availability + live heart-rate measurements for the UI.
   useEffect(() => {
-    // CoreBluetooth reports its state asynchronously — the central is `.unknown`
-    // for a moment after launch — so poll until it settles rather than reading
-    // a single (usually stale-false) value on mount.
-    setBluetoothAvailable(isHeartRateBluetoothAvailable());
-    const availabilityInterval = setInterval(() => {
-      setBluetoothAvailable(isHeartRateBluetoothAvailable());
-    }, 2000);
+    let mounted = true;
+    const updateConnectedDeviceCount = (
+      devices: Awaited<ReturnType<typeof getBluetoothDevices>>,
+    ) => {
+      if (!mounted) return;
+      setConnectedDeviceCount(
+        devices.filter(
+          (device) =>
+            device.connectionState === "connected" ||
+            device.connectionState === "ready" ||
+            device.connectionState === "streaming",
+        ).length,
+      );
+    };
 
-    const measurementSubscription = addHeartRateListener((event) => {
-      setLiveBpm(event.heartRateBpm);
-    });
-    const connectionSubscription = addHeartRateConnectionListener((event) => {
-      if (event.state === "disconnected") {
-        // Keep heartRateDeviceRef so samples captured before the drop still
-        // upload under their device on save; only reset the visible state.
-        setHeartRateDevice(null);
-        setLiveBpm(null);
-      }
-    });
+    void getBluetoothDevices()
+      .then(updateConnectedDeviceCount)
+      .catch((error: unknown) =>
+        captureException(error, { source: "record-bluetooth-devices-load" }),
+      );
+
+    let subscription: ReturnType<typeof subscribeBluetoothDevices> | undefined;
+    try {
+      subscription = subscribeBluetoothDevices((update) => {
+        if (update.state === "ready") {
+          updateConnectedDeviceCount(update.devices);
+        }
+      });
+    } catch (error: unknown) {
+      captureException(error, { source: "record-bluetooth-devices-subscribe" });
+    }
 
     return () => {
-      clearInterval(availabilityInterval);
-      measurementSubscription.remove();
-      connectionSubscription.remove();
+      mounted = false;
+      subscription?.remove();
     };
   }, []);
-
-  const handleConnectHeartRate = useCallback(async () => {
-    setHeartRateConnecting(true);
-    try {
-      const device = await scanAndConnectHeartRate();
-      heartRateDeviceRef.current = device;
-      setHeartRateDevice(device);
-    } catch (error: unknown) {
-      captureException(error, { context: "record-connect-heart-rate" });
-      Alert.alert(
-        "No heart-rate monitor found",
-        "Make sure your monitor is on, worn, and nearby, then try again.",
-      );
-    } finally {
-      setHeartRateConnecting(false);
-    }
-  }, []);
-
-  const handleDisconnectHeartRate = useCallback(() => {
-    disconnectHeartRate();
-    // Keep heartRateDeviceRef so any buffered samples still upload on save.
-    setHeartRateDevice(null);
-    setLiveBpm(null);
-  }, []);
-
-  const heartRateConnectionState: HeartRateConnectionState = heartRateDevice
-    ? "connected"
-    : heartRateConnecting
-      ? "connecting"
-      : "disconnected";
 
   // Subscribe to recorder updates
   useEffect(() => {
@@ -295,12 +259,8 @@ export default function RecordScreen() {
 
   const heartRateCard = (
     <HeartRateDeviceCard
-      bluetoothAvailable={bluetoothAvailable}
-      connectionState={heartRateConnectionState}
-      deviceName={heartRateDevice?.name}
-      liveBpm={liveBpm}
-      onConnect={handleConnectHeartRate}
-      onDisconnect={handleDisconnectHeartRate}
+      connectedDeviceCount={connectedDeviceCount}
+      onManageDevices={() => router.push("/bluetooth-devices")}
     />
   );
 
