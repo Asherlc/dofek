@@ -78,11 +78,10 @@ monitor reports none. The bounded native buffer retains up to 86,400 samples
 and defaults to pages of 1,000.
 
 `scanAndConnect` adds a monitor to Dofek's persisted app-managed list. Use
-`addDeviceStateListener` to receive each updated device snapshot. The
-multi-device manager will enable `disconnect(peripheralId)` and
-`forget(peripheralId)`; until then, those per-device operations reject with a
-specific unavailable-action error while the existing zero-argument
-`disconnect()` continues to disconnect the current monitor.
+`addDeviceStateListener` to receive each updated device snapshot. Each monitor
+has an independent native connection session: `disconnect(peripheralId)` stops
+only that monitor, `forget(peripheralId)` removes it from the app-managed list,
+and the existing zero-argument `disconnect()` stops every active monitor.
 
 Connection promises reject with specific native codes: `BLUETOOTH_UNAVAILABLE`,
 `INVALID_ID`, `NOT_FOUND`, `SCAN_TIMEOUT`, `CONNECT_TIMEOUT`, `NO_SERVICE`,

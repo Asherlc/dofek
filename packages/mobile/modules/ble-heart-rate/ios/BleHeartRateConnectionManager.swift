@@ -1,37 +1,30 @@
 import CoreBluetooth
 import Foundation
 
-/// Manages the BLE lifecycle for a standard Heart Rate Service device: scanning,
-/// connecting, discovering the measurement characteristic, and subscribing to
-/// notifications. Decoded measurements are handed to the delegate.
-///
-/// Unlike the WHOOP manager (which piggybacks on a device the WHOOP app already
-/// holds open), this scans for and pairs a fresh heart-rate strap, so the flow
-/// is the textbook central: scan → connect → discover → subscribe.
+/// Manages independent BLE sessions for standard Heart Rate Service devices.
+/// Core Bluetooth objects remain queue-confined here; session lifecycle state
+/// stays in `BleHeartRatePeripheralSession` so one device cannot mutate another.
 final class BleHeartRateConnectionManager: NSObject {
     weak var delegate: BleHeartRateConnectionManagerDelegate?
 
-    private(set) var state: BleHeartRateConnectionState = .idle
-
     let bleQueue: DispatchQueue
     private var centralManager: CBCentralManager?
-    private var connectedPeripheral: CBPeripheral?
-    private var connectCompletion: ((Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void)?
+    private var sessions: [UUID: BleHeartRatePeripheralSession] = [:]
+    private var peripherals: [UUID: CBPeripheral] = [:]
+    private var connectCompletions: [
+        UUID: (Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void
+    ] = [:]
+    private var pendingBluetoothConnects: Set<UUID> = []
 
-    /// A request deferred until Bluetooth reports `.poweredOn`. CoreBluetooth's
-    /// central starts in `.unknown` and only settles asynchronously, so the
-    /// first scan/connect after launch usually has to wait.
-    private enum PendingOperation {
-        case scan
-        case connect(String)
-    }
-    private var pendingOperation: PendingOperation?
+    /// Scanning is the only lifecycle operation without a peripheral ID, so it
+    /// remains a single request while identified peripherals use sessions.
+    private var scanCompletion: ((Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void)?
+    private var scanState: BleHeartRateConnectionState = .idle
+    private var pendingScan = false
+    private var scanToken: UUID?
 
-    /// Time to wait for Bluetooth to power on before giving up.
     private static let poweredOnTimeoutSeconds: TimeInterval = 5
-    /// Time to wait for a strap to appear during a scan.
     private static let scanTimeoutSeconds: TimeInterval = 15
-    /// Time to wait for the connection + discovery handshake.
     private static let connectTimeoutSeconds: TimeInterval = 10
 
     override init() {
@@ -50,161 +43,294 @@ final class BleHeartRateConnectionManager: NSObject {
         ensureCentralManager().state == .poweredOn
     }
 
-    /// Thread-safe read of the current state. `state` is mutated on `bleQueue`,
-    /// so JS-thread reads go through the queue to avoid a data race.
+    /// Compatibility aggregate for existing callers. A ready session wins;
+    /// device-management callers use the per-device snapshots instead.
     var currentStateValue: String {
-        bleQueue.sync { state.rawValue }
+        bleQueue.sync {
+            if sessions.values.contains(where: { $0.state == .ready }) {
+                return BleHeartRateConnectionState.ready.rawValue
+            }
+            if scanState != .idle {
+                return scanState.rawValue
+            }
+            for state in [
+                BleHeartRateConnectionState.subscribing,
+                .discoveringServices,
+                .connecting,
+            ] where sessions.values.contains(where: { $0.state == state }) {
+                return state.rawValue
+            }
+            return BleHeartRateConnectionState.idle.rawValue
+        }
     }
 
     // MARK: - Scan + connect
 
-    /// Scan for a heart-rate strap and connect to the first one found.
     func scanAndConnect(
         completion: @escaping (Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void
     ) {
         let manager = ensureCentralManager()
         bleQueue.async {
-            // Reject if an attempt is in flight OR a peripheral is already
-            // connected — otherwise a second call would orphan the live
-            // peripheral without cancelling it.
-            guard self.connectCompletion == nil, self.connectedPeripheral == nil else {
+            guard self.scanCompletion == nil else {
                 completion(.failure(.busy))
                 return
             }
-            self.connectCompletion = completion
-            self.runOrDefer(.scan, manager: manager)
+            self.scanCompletion = completion
+            self.runOrDeferScan(manager: manager)
         }
     }
 
-    /// Reconnect to a previously discovered strap by its peripheral identifier.
     func connect(
         peripheralId: String,
         completion: @escaping (Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void
     ) {
         let manager = ensureCentralManager()
         bleQueue.async {
-            // Reject if an attempt is in flight OR a peripheral is already
-            // connected — otherwise a second call would orphan the live
-            // peripheral without cancelling it.
-            guard self.connectCompletion == nil, self.connectedPeripheral == nil else {
+            guard let id = UUID(uuidString: peripheralId) else {
+                completion(.failure(.invalidPeripheralId(peripheralId)))
+                return
+            }
+            guard self.sessions[id] == nil, self.peripherals[id] == nil else {
                 completion(.failure(.busy))
                 return
             }
-            self.connectCompletion = completion
-            self.runOrDefer(.connect(peripheralId), manager: manager)
+
+            let session = BleHeartRatePeripheralSession(id: id.uuidString)
+            self.sessions[id] = session
+            self.connectCompletions[id] = completion
+            self.setState(.connecting, for: session)
+            self.runOrDeferConnect(id: id, session: session, manager: manager)
         }
     }
 
-    func disconnect() {
+    func disconnect(peripheralId: String) {
         bleQueue.async {
-            // Settle any in-flight connect so its JS promise never hangs when
-            // the user cancels while scanning or mid-handshake.
-            let pendingConnect = self.connectCompletion
-            self.connectCompletion = nil
-            self.pendingOperation = nil
-            self.centralManager?.stopScan()
-            if let peripheral = self.connectedPeripheral {
+            guard
+                let id = UUID(uuidString: peripheralId),
+                let session = self.sessions[id]
+            else { return }
+
+            self.pendingBluetoothConnects.remove(id)
+            self.markDisconnected(session)
+            self.completeConnect(id: id, with: .failure(.disconnected(nil)))
+
+            if let peripheral = self.peripherals[id] {
                 self.centralManager?.cancelPeripheralConnection(peripheral)
+            } else {
+                self.sessions.removeValue(forKey: id)
+                self.delegate?.connectionManagerDidDisconnect(
+                    self,
+                    peripheralId: id.uuidString,
+                    error: nil
+                )
             }
-            self.connectedPeripheral = nil
-            self.state = .idle
-            pendingConnect?(.failure(.disconnected(nil)))
+        }
+    }
+
+    func disconnectAll() {
+        bleQueue.async {
+            self.cancelScan(with: .disconnected(nil))
+
+            for id in Array(self.sessions.keys) {
+                guard let session = self.sessions[id] else { continue }
+                self.pendingBluetoothConnects.remove(id)
+                self.markDisconnected(session)
+                self.completeConnect(id: id, with: .failure(.disconnected(nil)))
+
+                if let peripheral = self.peripherals[id] {
+                    self.centralManager?.cancelPeripheralConnection(peripheral)
+                } else {
+                    self.sessions.removeValue(forKey: id)
+                    self.delegate?.connectionManagerDidDisconnect(
+                        self,
+                        peripheralId: id.uuidString,
+                        error: nil
+                    )
+                }
+            }
         }
     }
 
     // MARK: - Operation dispatch
 
-    private func runOrDefer(_ operation: PendingOperation, manager: CBCentralManager) {
+    private func runOrDeferScan(manager: CBCentralManager) {
         switch manager.state {
         case .poweredOn:
-            perform(operation, manager: manager)
+            startScan(manager)
         case .unknown, .resetting:
-            // Wait for the state to settle, then run (or fail on timeout).
-            pendingOperation = operation
+            pendingScan = true
+            let token = UUID()
+            scanToken = token
             bleQueue.asyncAfter(deadline: .now() + Self.poweredOnTimeoutSeconds) {
-                guard self.pendingOperation != nil else { return }
-                self.pendingOperation = nil
-                self.failPendingConnect(with: .bluetoothUnavailable)
+                guard self.pendingScan, self.scanToken == token else { return }
+                self.cancelScan(with: .bluetoothUnavailable)
             }
         default:
-            // poweredOff, unauthorized, unsupported — not going to work.
-            failPendingConnect(with: .bluetoothUnavailable)
+            cancelScan(with: .bluetoothUnavailable)
         }
     }
 
-    private func perform(_ operation: PendingOperation, manager: CBCentralManager) {
-        switch operation {
-        case .scan:
-            startScan(manager)
-        case .connect(let peripheralId):
-            performConnect(peripheralId: peripheralId, manager: manager)
+    private func runOrDeferConnect(
+        id: UUID,
+        session: BleHeartRatePeripheralSession,
+        manager: CBCentralManager
+    ) {
+        switch manager.state {
+        case .poweredOn:
+            performConnect(id: id, session: session, manager: manager)
+        case .unknown, .resetting:
+            pendingBluetoothConnects.insert(id)
+            bleQueue.asyncAfter(deadline: .now() + Self.poweredOnTimeoutSeconds) {
+                guard
+                    self.pendingBluetoothConnects.remove(id) != nil,
+                    self.sessions[id] === session
+                else { return }
+                self.failUnassociatedSession(id: id, error: .bluetoothUnavailable)
+            }
+        default:
+            failUnassociatedSession(id: id, error: .bluetoothUnavailable)
         }
     }
 
     private func startScan(_ manager: CBCentralManager) {
-        state = .scanning
+        pendingScan = false
+        scanState = .scanning
+        let token = UUID()
+        scanToken = token
         manager.scanForPeripherals(
             withServices: [BleHeartRateConstants.heartRateServiceUUID],
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
         bleQueue.asyncAfter(deadline: .now() + Self.scanTimeoutSeconds) {
-            guard self.state == .scanning else { return }
+            guard self.scanState == .scanning, self.scanToken == token else { return }
             manager.stopScan()
-            self.state = .idle
-            self.failPendingConnect(with: .scanTimeout)
+            self.cancelScan(with: .scanTimeout)
         }
     }
 
-    private func performConnect(peripheralId: String, manager: CBCentralManager) {
-        guard let uuid = UUID(uuidString: peripheralId) else {
-            failPendingConnect(with: .invalidPeripheralId(peripheralId))
+    private func performConnect(
+        id: UUID,
+        session: BleHeartRatePeripheralSession,
+        manager: CBCentralManager
+    ) {
+        guard sessions[id] === session else { return }
+        guard let peripheral = manager.retrievePeripherals(withIdentifiers: [id]).first else {
+            failUnassociatedSession(id: id, error: .peripheralNotFound(session.id))
             return
         }
-        guard let peripheral = manager.retrievePeripherals(withIdentifiers: [uuid]).first else {
-            failPendingConnect(with: .peripheralNotFound(peripheralId))
-            return
-        }
-        beginConnecting(to: peripheral, manager: manager)
+        beginConnecting(to: peripheral, session: session, manager: manager)
     }
 
-    private func beginConnecting(to peripheral: CBPeripheral, manager: CBCentralManager) {
-        connectedPeripheral = peripheral
+    private func beginConnecting(
+        to peripheral: CBPeripheral,
+        session: BleHeartRatePeripheralSession,
+        manager: CBCentralManager
+    ) {
+        let id = peripheral.identifier
+        peripherals[id] = peripheral
         peripheral.delegate = self
-        state = .connecting
+        setState(.connecting, for: session)
         manager.connect(peripheral, options: nil)
 
         bleQueue.asyncAfter(deadline: .now() + Self.connectTimeoutSeconds) {
             guard
-                self.state == .connecting
-                    || self.state == .discoveringServices
-                    || self.state == .subscribing
+                self.sessions[id] === session,
+                self.peripherals[id] === peripheral,
+                session.state == .connecting
+                    || session.state == .discoveringServices
+                    || session.state == .subscribing
             else { return }
+            session.markTimedOut()
+            self.emitState(for: session)
+            self.completeConnect(id: id, with: .failure(.connectTimeout))
             manager.cancelPeripheralConnection(peripheral)
-            self.state = .idle
-            self.failPendingConnect(with: .connectTimeout)
         }
     }
 
-    private func failPendingConnect(with error: BleHeartRateConnectionError) {
-        let completion = connectCompletion
-        connectCompletion = nil
-        completion?(.failure(error))
+    private func setState(
+        _ state: BleHeartRateConnectionState,
+        for session: BleHeartRatePeripheralSession
+    ) {
+        guard session.state != state else { return }
+        session.state = state
+        emitState(for: session)
     }
 
-    /// Tear down a half-open connection after a failed handshake so CoreBluetooth
-    /// does not stay connected to a strap this manager considers idle.
+    private func markDisconnected(_ session: BleHeartRatePeripheralSession) {
+        guard session.state != .idle else { return }
+        session.markDisconnected()
+        emitState(for: session)
+    }
+
+    private func emitState(for session: BleHeartRatePeripheralSession) {
+        delegate?.connectionManager(
+            self,
+            didChangeState: session.state,
+            for: session.id
+        )
+    }
+
+    private func completeConnect(
+        id: UUID,
+        with result: Result<BleHeartRateDevice, BleHeartRateConnectionError>
+    ) {
+        let completion = connectCompletions.removeValue(forKey: id)
+        completion?(result)
+    }
+
+    private func failUnassociatedSession(id: UUID, error: BleHeartRateConnectionError) {
+        pendingBluetoothConnects.remove(id)
+        if let session = sessions[id] {
+            markDisconnected(session)
+        }
+        completeConnect(id: id, with: .failure(error))
+        sessions.removeValue(forKey: id)
+        peripherals.removeValue(forKey: id)
+    }
+
     private func abortConnection(
         _ peripheral: CBPeripheral,
         with error: BleHeartRateConnectionError
     ) {
+        let id = peripheral.identifier
+        guard
+            let session = sessions[id],
+            peripherals[id] === peripheral
+        else { return }
+
+        markDisconnected(session)
+        completeConnect(id: id, with: .failure(error))
         centralManager?.cancelPeripheralConnection(peripheral)
-        connectedPeripheral = nil
-        state = .idle
-        failPendingConnect(with: error)
+    }
+
+    private func cancelScan(with error: BleHeartRateConnectionError) {
+        centralManager?.stopScan()
+        pendingScan = false
+        scanState = .idle
+        scanToken = nil
+        let completion = scanCompletion
+        scanCompletion = nil
+        completion?(.failure(error))
+    }
+
+    private func takeScanCompletion(
+        manager: CBCentralManager
+    ) -> ((Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void)? {
+        manager.stopScan()
+        pendingScan = false
+        scanState = .idle
+        scanToken = nil
+        let completion = scanCompletion
+        scanCompletion = nil
+        return completion
     }
 
     private func device(for peripheral: CBPeripheral) -> BleHeartRateDevice {
         BleHeartRateDevice(id: peripheral.identifier.uuidString, name: peripheral.name)
+    }
+
+    private func isManaged(_ peripheral: CBPeripheral) -> Bool {
+        peripherals[peripheral.identifier] === peripheral
     }
 }
 
@@ -212,20 +338,43 @@ final class BleHeartRateConnectionManager: NSObject {
 
 extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state == .poweredOn {
-            if let operation = pendingOperation {
-                pendingOperation = nil
-                perform(operation, manager: central)
+        switch central.state {
+        case .poweredOn:
+            if pendingScan {
+                startScan(central)
+            }
+            let pendingIds = Array(pendingBluetoothConnects)
+            pendingBluetoothConnects.removeAll()
+            for id in pendingIds {
+                guard let session = sessions[id] else { continue }
+                performConnect(id: id, session: session, manager: central)
             }
             return
+        case .unknown, .resetting:
+            return
+        default:
+            break
         }
 
-        // Bluetooth went (or stayed) unavailable — abandon any in-flight work.
-        if pendingOperation != nil || state != .idle {
-            pendingOperation = nil
-            central.stopScan()
-            state = .idle
-            failPendingConnect(with: .bluetoothUnavailable)
+        if pendingScan || scanState != .idle {
+            cancelScan(with: .bluetoothUnavailable)
+        }
+
+        for id in Array(sessions.keys) {
+            guard let session = sessions[id] else { continue }
+            let wasReady = session.state == .ready
+            markDisconnected(session)
+            completeConnect(id: id, with: .failure(.bluetoothUnavailable))
+            pendingBluetoothConnects.remove(id)
+            sessions.removeValue(forKey: id)
+            peripherals.removeValue(forKey: id)
+            if wasReady {
+                delegate?.connectionManagerDidDisconnect(
+                    self,
+                    peripheralId: id.uuidString,
+                    error: nil
+                )
+            }
         }
     }
 
@@ -235,13 +384,24 @@ extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard state == .scanning else { return }
-        central.stopScan()
-        beginConnecting(to: peripheral, manager: central)
+        guard scanState == .scanning else { return }
+        let id = peripheral.identifier
+        guard sessions[id] == nil, peripherals[id] == nil else { return }
+        guard let completion = takeScanCompletion(manager: central) else { return }
+
+        let session = BleHeartRatePeripheralSession(id: id.uuidString)
+        sessions[id] = session
+        connectCompletions[id] = completion
+        beginConnecting(to: peripheral, session: session, manager: central)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        state = .discoveringServices
+        guard
+            isManaged(peripheral),
+            let session = sessions[peripheral.identifier],
+            session.state == .connecting
+        else { return }
+        setState(.discoveringServices, for: session)
         peripheral.discoverServices([BleHeartRateConstants.heartRateServiceUUID])
     }
 
@@ -250,9 +410,12 @@ extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
-        state = .idle
-        connectedPeripheral = nil
-        failPendingConnect(with: .connectTimeout)
+        let id = peripheral.identifier
+        guard isManaged(peripheral), let session = sessions[id] else { return }
+        markDisconnected(session)
+        completeConnect(id: id, with: .failure(.connectTimeout))
+        sessions.removeValue(forKey: id)
+        peripherals.removeValue(forKey: id)
     }
 
     func centralManager(
@@ -260,19 +423,18 @@ extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
-        // If the active peripheral dropped mid-handshake, fail the pending
-        // connect with a typed error rather than letting it wait out the connect
-        // timeout. Ignore stale callbacks from a peripheral we've moved on from.
-        let wasConnecting = connectCompletion != nil
-            && connectedPeripheral?.identifier == peripheral.identifier
-        state = .idle
-        connectedPeripheral = nil
-        if wasConnecting {
-            failPendingConnect(with: .disconnected(error?.localizedDescription))
-        }
+        let id = peripheral.identifier
+        guard isManaged(peripheral), let session = sessions[id] else { return }
+        markDisconnected(session)
+        completeConnect(
+            id: id,
+            with: .failure(.disconnected(error?.localizedDescription))
+        )
+        sessions.removeValue(forKey: id)
+        peripherals.removeValue(forKey: id)
         delegate?.connectionManagerDidDisconnect(
             self,
-            peripheralId: peripheral.identifier.uuidString,
+            peripheralId: id.uuidString,
             error: error
         )
     }
@@ -283,6 +445,12 @@ extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
 extension BleHeartRateConnectionManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard
+            isManaged(peripheral),
+            let session = sessions[peripheral.identifier],
+            session.state == .discoveringServices
+        else { return }
+        guard
+            error == nil,
             let service = peripheral.services?.first(where: {
                 $0.uuid == BleHeartRateConstants.heartRateServiceUUID
             })
@@ -302,6 +470,12 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
         error: Error?
     ) {
         guard
+            isManaged(peripheral),
+            let session = sessions[peripheral.identifier],
+            session.state == .discoveringServices
+        else { return }
+        guard
+            error == nil,
             let characteristic = service.characteristics?.first(where: {
                 $0.uuid == BleHeartRateConstants.heartRateMeasurementUUID
             })
@@ -310,10 +484,7 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
             return
         }
 
-        // Don't declare the connection ready until the subscription is confirmed
-        // in didUpdateNotificationStateFor — otherwise a failed setNotifyValue
-        // would leave callers "connected" with no live data and no retry path.
-        state = .subscribing
+        setState(.subscribing, for: session)
         peripheral.setNotifyValue(true, for: characteristic)
     }
 
@@ -322,12 +493,12 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        // Ignore late callbacks from a peripheral we're no longer subscribing to,
-        // so a stale event can't complete the wrong connection attempt.
+        let id = peripheral.identifier
         guard
             characteristic.uuid == BleHeartRateConstants.heartRateMeasurementUUID,
-            state == .subscribing,
-            connectedPeripheral?.identifier == peripheral.identifier
+            isManaged(peripheral),
+            let session = sessions[id],
+            session.state == .subscribing
         else { return }
 
         if error != nil || !characteristic.isNotifying {
@@ -335,11 +506,9 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
             return
         }
 
-        state = .ready
+        setState(.ready, for: session)
         let connectedDevice = device(for: peripheral)
-        let completion = connectCompletion
-        connectCompletion = nil
-        completion?(.success(connectedDevice))
+        completeConnect(id: id, with: .success(connectedDevice))
         delegate?.connectionManagerDidBecomeReady(self, device: connectedDevice)
     }
 
@@ -350,6 +519,9 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
     ) {
         guard
             characteristic.uuid == BleHeartRateConstants.heartRateMeasurementUUID,
+            isManaged(peripheral),
+            sessions[peripheral.identifier]?.state == .ready,
+            error == nil,
             let data = characteristic.value,
             let measurement = BleHeartRateMeasurementParser.parse(data)
         else { return }

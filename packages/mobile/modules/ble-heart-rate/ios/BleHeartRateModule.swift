@@ -50,25 +50,18 @@ public class BleHeartRateModule: Module {
                 self.resolveConnect(
                     result,
                     promise: promise,
-                    registerDevice: true,
-                    attemptedDeviceId: nil
+                    registerDevice: true
                 )
             }
         }
 
         AsyncFunction("connect") { (peripheralId: String, promise: Promise) in
-            guard let registry = self.deviceRegistryOrReject(promise) else { return }
-            registry.setConnectionState(
-                BleHeartRateConnectionState.connecting.rawValue,
-                for: peripheralId
-            )
-            self.emitDeviceState(for: peripheralId)
+            guard self.deviceRegistryOrReject(promise) != nil else { return }
             self.connectionManager.connect(peripheralId: peripheralId) { result in
                 self.resolveConnect(
                     result,
                     promise: promise,
-                    registerDevice: false,
-                    attemptedDeviceId: peripheralId
+                    registerDevice: false
                 )
             }
         }
@@ -95,15 +88,17 @@ public class BleHeartRateModule: Module {
             self.sampleBuffer.confirmDrain(count: count)
         }
 
-        Function("disconnect") { (peripheralId: String?) throws in
-            guard peripheralId == nil else {
-                throw BleHeartRateModuleError.perDeviceActionsUnavailable
+        Function("disconnect") { (peripheralId: String?) in
+            if let peripheralId {
+                self.connectionManager.disconnect(peripheralId: peripheralId)
+            } else {
+                self.connectionManager.disconnectAll()
             }
-            self.connectionManager.disconnect()
         }
 
-        Function("forget") { (_: String) throws in
-            throw BleHeartRateModuleError.perDeviceActionsUnavailable
+        Function("forget") { (peripheralId: String) throws in
+            try self.requireDeviceRegistry().remove(id: peripheralId)
+            self.connectionManager.disconnect(peripheralId: peripheralId)
         }
 
         AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
@@ -128,7 +123,7 @@ public class BleHeartRateModule: Module {
                 retainedCutoff,
                 forKey: Self.deviceErasureCutoffKey
             )
-            self.connectionManager.disconnect()
+            self.connectionManager.disconnectAll()
             self.sampleBuffer.advanceErasureCutoff(to: retainedCutoff)
             promise.resolve(true)
         }
@@ -147,8 +142,7 @@ public class BleHeartRateModule: Module {
     private func resolveConnect(
         _ result: Result<BleHeartRateDevice, BleHeartRateConnectionError>,
         promise: Promise,
-        registerDevice: Bool,
-        attemptedDeviceId: String?
+        registerDevice: Bool
     ) {
         switch result {
         case .success(let device):
@@ -156,12 +150,12 @@ public class BleHeartRateModule: Module {
             do {
                 if registerDevice {
                     try registry.register(device)
+                    registry.setConnectionState(
+                        BleHeartRateConnectionState.ready.rawValue,
+                        for: device.id
+                    )
+                    emitDeviceState(for: device.id)
                 }
-                registry.setConnectionState(
-                    BleHeartRateConnectionState.ready.rawValue,
-                    for: device.id
-                )
-                emitDeviceState(for: device.id)
             } catch {
                 rejectRegistryError(error, promise: promise)
                 return
@@ -171,13 +165,6 @@ public class BleHeartRateModule: Module {
             payload["name"] = device.name.map { $0 as Any } ?? NSNull()
             promise.resolve(payload)
         case .failure(let error):
-            if let attemptedDeviceId {
-                deviceRegistry?.setConnectionState(
-                    BleHeartRateConnectionState.idle.rawValue,
-                    for: attemptedDeviceId
-                )
-                emitDeviceState(for: attemptedDeviceId)
-            }
             switch error {
             case .bluetoothUnavailable:
                 promise.reject("BLUETOOTH_UNAVAILABLE", "Bluetooth is not available")
@@ -261,28 +248,27 @@ public class BleHeartRateModule: Module {
     }
 }
 
-private enum BleHeartRateModuleError: LocalizedError {
-    case perDeviceActionsUnavailable
-
-    var errorDescription: String? {
-        "Per-device Bluetooth actions are unavailable until multi-device connections are enabled"
-    }
-}
-
 // MARK: - BleHeartRateConnectionManagerDelegate
 
 extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
+    func connectionManager(
+        _ manager: BleHeartRateConnectionManager,
+        didChangeState state: BleHeartRateConnectionState,
+        for peripheralId: String
+    ) {
+        deviceRegistry?.setConnectionState(state.rawValue, for: peripheralId)
+        emitDeviceState(for: peripheralId)
+    }
+
     func connectionManagerDidBecomeReady(
         _ manager: BleHeartRateConnectionManager,
         device: BleHeartRateDevice
     ) {
-        deviceRegistry?.setConnectionState(BleHeartRateConnectionState.ready.rawValue, for: device.id)
         emitOnMainThread("onConnectionStateChanged", [
             "state": "connected",
             "peripheralId": device.id,
             "name": device.name,
         ])
-        emitDeviceState(for: device.id)
     }
 
     func connectionManagerDidDisconnect(
@@ -290,13 +276,11 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
         peripheralId: String,
         error: Error?
     ) {
-        deviceRegistry?.setConnectionState(BleHeartRateConnectionState.idle.rawValue, for: peripheralId)
         emitOnMainThread("onConnectionStateChanged", [
             "state": "disconnected",
             "peripheralId": peripheralId,
             "error": error?.localizedDescription,
         ])
-        emitDeviceState(for: peripheralId)
     }
 
     func connectionManager(
