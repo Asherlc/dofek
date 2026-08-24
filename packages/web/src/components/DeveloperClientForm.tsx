@@ -6,6 +6,7 @@ import { type FormEvent, useRef, useState } from "react";
 import type { z } from "zod";
 
 interface DeveloperClientFormProps {
+  disabled?: boolean;
   error?: string | null;
   initialValue?: { name: string; redirectUris: string[] };
   isSubmitting?: boolean;
@@ -14,6 +15,7 @@ interface DeveloperClientFormProps {
 }
 
 export function DeveloperClientForm({
+  disabled = false,
   error,
   initialValue,
   isSubmitting = false,
@@ -64,6 +66,7 @@ export function DeveloperClientForm({
         <span className="text-sm font-medium text-foreground">Integration name</span>
         <input
           type="text"
+          disabled={disabled}
           value={name}
           onChange={(event) => {
             setName(event.target.value);
@@ -82,6 +85,7 @@ export function DeveloperClientForm({
               <span className="sr-only">Redirect URI {index + 1}</span>
               <input
                 type="url"
+                disabled={disabled}
                 value={redirect.value}
                 onChange={(event) => updateRedirect(index, event.target.value)}
                 aria-label={`Redirect URI ${index + 1}`}
@@ -91,7 +95,7 @@ export function DeveloperClientForm({
             </label>
             <button
               type="button"
-              disabled={redirects.length === 1}
+              disabled={disabled || redirects.length === 1}
               onClick={() => removeRedirect(index)}
               aria-label={`Remove redirect URI ${index + 1}`}
               className="rounded border border-border px-3 py-2 text-sm text-muted disabled:opacity-40"
@@ -102,6 +106,7 @@ export function DeveloperClientForm({
         ))}
         <button
           type="button"
+          disabled={disabled}
           onClick={() => {
             const id = nextRedirectId.current;
             nextRedirectId.current += 1;
@@ -132,7 +137,7 @@ export function DeveloperClientForm({
 
       <button
         type="submit"
-        disabled={isSubmitting}
+        disabled={disabled || isSubmitting}
         className="rounded bg-accent px-4 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
       >
         {isSubmitting ? "Saving…" : submitLabel}

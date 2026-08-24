@@ -55,6 +55,7 @@ import { Route as TrainingClimbingRouteImport } from './routes/training/climbing
 import { Route as ProvidersIdRouteImport } from './routes/providers/$id'
 import { Route as NutritionSupplementsRouteImport } from './routes/nutrition/supplements'
 import { Route as NutritionAnalyticsRouteImport } from './routes/nutrition/analytics'
+import { Route as DeveloperIntegrationsClientIdRouteImport } from './routes/developer-integrations/$clientId'
 import { Route as BodyHeartRateRouteImport } from './routes/body/heart-rate'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users/$userId'
@@ -296,6 +297,12 @@ const NutritionAnalyticsRoute = NutritionAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => NutritionRoute,
 } as Parameters<typeof NutritionAnalyticsRouteImport.update>[0])
+const DeveloperIntegrationsClientIdRoute =
+  DeveloperIntegrationsClientIdRouteImport.update({
+    id: '/developer-integrations/$clientId',
+    path: '/developer-integrations/$clientId',
+    getParentRoute: () => rootRouteImport,
+  } as Parameters<typeof DeveloperIntegrationsClientIdRouteImport.update>[0])
 const BodyHeartRateRoute = BodyHeartRateRouteImport.update({
   id: '/heart-rate',
   path: '/heart-rate',
@@ -347,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
+  '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
   '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
@@ -393,6 +401,7 @@ export interface FileRoutesByTo {
   '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
+  '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
   '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
@@ -445,6 +454,7 @@ export interface FileRoutesById {
   '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
+  '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
   '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
@@ -498,6 +508,7 @@ export interface FileRouteTypes {
     | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
+    | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
     | '/nutrition/supplements'
     | '/providers/$id'
@@ -544,6 +555,7 @@ export interface FileRouteTypes {
     | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
+    | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
     | '/nutrition/supplements'
     | '/providers/$id'
@@ -595,6 +607,7 @@ export interface FileRouteTypes {
     | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
+    | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
     | '/nutrition/supplements'
     | '/providers/$id'
@@ -646,6 +659,7 @@ export interface RootRouteChildren {
   TrainingRoute: typeof TrainingRouteWithChildren
   WeeklyReportRoute: typeof WeeklyReportRoute
   ActivityIdRoute: typeof ActivityIdRoute
+  DeveloperIntegrationsClientIdRoute: typeof DeveloperIntegrationsClientIdRoute
   DeveloperIntegrationsIndexRoute: typeof DeveloperIntegrationsIndexRoute
 }
 
@@ -973,6 +987,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NutritionAnalyticsRouteImport
       parentRoute: typeof NutritionRoute
     }
+    '/developer-integrations/$clientId': {
+      id: '/developer-integrations/$clientId'
+      path: '/developer-integrations/$clientId'
+      fullPath: '/developer-integrations/$clientId'
+      preLoaderRoute: typeof DeveloperIntegrationsClientIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/body/heart-rate': {
       id: '/body/heart-rate'
       path: '/heart-rate'
@@ -1109,6 +1130,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrainingRoute: TrainingRouteWithChildren,
   WeeklyReportRoute: WeeklyReportRoute,
   ActivityIdRoute: ActivityIdRoute,
+  DeveloperIntegrationsClientIdRoute: DeveloperIntegrationsClientIdRoute,
   DeveloperIntegrationsIndexRoute: DeveloperIntegrationsIndexRoute,
 }
 export const routeTree = rootRouteImport
