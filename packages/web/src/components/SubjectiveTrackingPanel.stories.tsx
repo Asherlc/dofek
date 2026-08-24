@@ -11,13 +11,7 @@ const regions = [
   { id: "right-knee", label: "Right knee", kind: "joint", parent_id: "lower-limb" },
 ];
 
-type SubjectiveStoryScenario =
-  | "all-clear"
-  | "error"
-  | "injuries"
-  | "loading"
-  | "not-logged"
-  | "symptoms";
+type SubjectiveStoryScenario = "error" | "injuries" | "loading";
 
 function createMockLink(scenario: SubjectiveStoryScenario): TRPCLink<AppRouter> {
   return () =>
@@ -32,23 +26,7 @@ function createMockLink(scenario: SubjectiveStoryScenario): TRPCLink<AppRouter> 
 
           let data: unknown;
           if (op.path === "subjective.regions") data = regions;
-          else if (op.path === "subjective.checkIn") {
-            data = {
-              date: "2026-08-02",
-              logged: scenario !== "not-logged",
-              symptoms:
-                scenario === "symptoms"
-                  ? [
-                      {
-                        id: "symptom-story",
-                        body_region_id: "left-hand",
-                        kind: "tenderness",
-                        score: 4,
-                      },
-                    ]
-                  : [],
-            };
-          } else if (op.path === "subjective.injuries") {
+          else if (op.path === "subjective.injuries") {
             data =
               scenario === "injuries"
                 ? [
@@ -108,15 +86,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
-  render: () => <SubjectiveStory scenario="all-clear" />,
-};
-
-export const NotLogged: Story = {
-  render: () => <SubjectiveStory scenario="not-logged" />,
-};
-
-export const SymptomsLogged: Story = {
-  render: () => <SubjectiveStory scenario="symptoms" />,
+  render: () => <SubjectiveStory scenario="injuries" />,
 };
 
 export const InjuriesPresent: Story = {

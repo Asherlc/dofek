@@ -7,7 +7,7 @@ import { View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { SubjectiveTrackingPanel } from "./SubjectiveTrackingPanel";
 
-type SubjectiveStoryScenario = "empty" | "logged" | "error" | "loading";
+type SubjectiveStoryScenario = "empty" | "injuries" | "error" | "loading";
 
 const regions = [{ id: "left_hand", label: "Left hand", kind: "hand", parent_id: null }];
 
@@ -24,39 +24,23 @@ function createMockLink(scenario: SubjectiveStoryScenario): TRPCLink<AppRouter> 
           const data =
             op.path === "subjective.regions"
               ? regions
-              : op.path === "subjective.checkIn"
-                ? {
-                    date: "2026-08-02",
-                    logged: scenario === "logged",
-                    symptoms:
-                      scenario === "logged"
-                        ? [
-                            {
-                              id: "symptom-story",
-                              body_region_id: "left_hand",
-                              kind: "tenderness",
-                              score: 4,
-                            },
-                          ]
-                        : [],
-                  }
-                : op.path === "subjective.injuries"
-                  ? scenario === "logged"
-                    ? [
-                        {
-                          id: "injury-story",
-                          kind: "niggle",
-                          body_region_id: "left_hand",
-                          onset_date: "2026-08-01",
-                          resolved_date: null,
-                          severity: 3,
-                          description: "Morning tenderness",
-                          created_at: "2026-08-01T08:00:00.000Z",
-                          updated_at: "2026-08-01T08:00:00.000Z",
-                        },
-                      ]
-                    : []
-                  : null;
+              : op.path === "subjective.injuries"
+                ? scenario === "injuries"
+                  ? [
+                      {
+                        id: "injury-story",
+                        kind: "niggle",
+                        body_region_id: "left_hand",
+                        onset_date: "2026-08-01",
+                        resolved_date: null,
+                        severity: 3,
+                        description: "Morning tenderness",
+                        created_at: "2026-08-01T08:00:00.000Z",
+                        updated_at: "2026-08-01T08:00:00.000Z",
+                      },
+                    ]
+                  : []
+                : null;
           observer.next?.({ result: { data } });
           observer.complete?.();
           return { unsubscribe: () => {} };
@@ -101,7 +85,7 @@ export const Empty: Story = {
 };
 
 export const LoggedWithInjury: Story = {
-  render: () => <SubjectiveStoryFrame scenario="logged" />,
+  render: () => <SubjectiveStoryFrame scenario="injuries" />,
 };
 
 export const Loading: Story = {
