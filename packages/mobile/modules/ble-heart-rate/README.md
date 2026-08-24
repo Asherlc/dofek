@@ -77,11 +77,29 @@ timestamp, `heartRateBpm`, and an `rrIntervalsMs` array that is empty when the
 monitor reports none. The bounded native buffer retains up to 86,400 samples
 and defaults to pages of 1,000.
 
-`scanAndConnect` adds a monitor to Dofek's persisted app-managed list. Use
-`addDeviceStateListener` to receive each updated device snapshot. Each monitor
-has an independent native connection session: `disconnect(peripheralId)` stops
-only that monitor, `forget(peripheralId)` removes it from the app-managed list,
-and the existing zero-argument `disconnect()` stops every active monitor.
+`scanAndConnect` adds a monitor to Dofek's persisted **app-managed** list. This
+is Dofek's own registry, not a list of every peripheral iOS knows, has paired,
+or is currently connected to. `connect(peripheralId)` is limited to an ID in
+that registry, then resolves the previously known Core Bluetooth peripheral via
+[`retrievePeripherals(withIdentifiers:)`](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/retrieveperipherals(withidentifiers:)).
+`forget(peripheralId)` removes only Dofek's registry entry; it does not alter
+the system's Bluetooth pairing state.
+
+Use `addDeviceStateListener` to receive each updated device snapshot. Each
+standard monitor has an independent native connection session, so multiple
+registered Heart Rate Service monitors can receive notifications concurrently.
+`disconnect(peripheralId)` stops only that monitor, `forget(peripheralId)`
+removes it from the app-managed list, and the existing zero-argument
+`disconnect()` stops every active monitor. Core Bluetooth separately exposes
+currently connected service-matching peripherals through
+[`retrieveConnectedPeripherals(withServices:)`](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/retrieveconnectedperipherals(withservices:));
+that result is not used as Dofek's saved-device registry.
+
+Each device snapshot supplies diagnostics for that device: connection state,
+the latest measurement time, latest heart rate, latest R-R intervals, and its
+buffered sample count. A snapshot update follows connection-state changes and
+each received measurement, allowing the Settings device list and detail screen
+to show independent live state rather than a single aggregate monitor status.
 
 Connection promises reject with specific native codes: `BLUETOOTH_UNAVAILABLE`,
 `INVALID_ID`, `NOT_FOUND`, `SCAN_TIMEOUT`, `CONNECT_TIMEOUT`, `NO_SERVICE`,
@@ -101,4 +119,10 @@ pnpm --dir ../.. typecheck
 
 The Swift tests cover assigned UUIDs, measurement parsing, and bounded
 peek/confirm buffering. TypeScript checking validates the Expo-facing surface;
-an iOS development build is still required to validate the native bridge.
+an iOS development build is still required to validate the native bridge. The
+iOS Simulator does not validate the BLE radio lifecycle. Physical-device
+acceptance must connect two standard monitors, confirm their list/detail
+diagnostics update after notifications, disconnect one without interrupting
+the other, add another monitor from Settings, and verify the separate WHOOP
+catalog entry reports its connected/disconnected state. Record the hardware,
+iOS version, build, and observed result with the release evidence.
