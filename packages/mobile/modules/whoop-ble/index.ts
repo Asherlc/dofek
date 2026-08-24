@@ -18,6 +18,15 @@ export interface WhoopDevice {
   name: string | null;
 }
 
+/** A read-only snapshot of the current WHOOP connection and buffer state. */
+export interface WhoopDeviceSummary {
+  id: string | null;
+  name: string | null;
+  connectionState: string;
+  imuBufferedSamples: number;
+  realtimeBufferedSamples: number;
+}
+
 /** A single realtime data sample from a 0x28 REALTIME_DATA packet */
 export interface WhoopRealtimeDataSample {
   deviceId?: string;
@@ -201,6 +210,11 @@ export function getBluetoothState(): string {
 /** Get the number of IMU samples currently buffered. */
 export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
+}
+
+/** Get the current WHOOP identity, connection state, and buffer counts without scanning or connecting. */
+export function getDeviceSummary(): WhoopDeviceSummary {
+  return WhoopBleModule.getDeviceSummary();
 }
 
 /** Get BLE data path statistics for debugging. */

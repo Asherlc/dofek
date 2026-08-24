@@ -144,6 +144,19 @@ public class WhoopBleModule: Module {
             self.sampleBuffer.imuSampleCount
         }
 
+        Function("getDeviceSummary") { () -> [String: Any] in
+            self.connectionManager.syncOnBleQueue {
+                let connectedPeripheral = self.connectionManager.connectedPeripheral
+                return [
+                    "id": (connectedPeripheral?.identifier.uuidString as Any?) ?? NSNull(),
+                    "name": (connectedPeripheral?.name as Any?) ?? NSNull(),
+                    "connectionState": self.connectionManager.state.rawValue,
+                    "imuBufferedSamples": self.sampleBuffer.imuSampleCount,
+                    "realtimeBufferedSamples": self.sampleBuffer.realtimeSampleCount,
+                ]
+            }
+        }
+
         Function("getDataPathStats") { () -> [String: Any] in
             self.connectionManager.syncOnBleQueue {
                 let packetTypeSummary = self.packetTypeCounts
