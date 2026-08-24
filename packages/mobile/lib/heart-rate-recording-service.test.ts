@@ -86,6 +86,17 @@ describe("createHeartRateRecordingService", () => {
       });
     });
 
+    it("leaves a blank-device sample buffered instead of assigning it to another device", async () => {
+      vi.mocked(deps.ble.peekBufferedSamples).mockResolvedValue([sampleForDevice("   ", 140)]);
+
+      await expect(
+        createHeartRateRecordingService(deps).syncForTimeRange(START, END),
+      ).rejects.toThrow("Buffered sample is missing deviceId");
+
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
+      expect(deps.ble.confirmSamplesDrain).not.toHaveBeenCalled();
+    });
+
     it("uploads in-window samples and confirms the drain on success", async () => {
       vi.mocked(deps.ble.peekBufferedSamples)
         .mockResolvedValueOnce([sample(140), sample(141)])

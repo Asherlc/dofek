@@ -4,6 +4,7 @@ import { HeartRateDeviceCard, type HeartRateDeviceCardProps } from "./HeartRateD
 
 const baseProps: HeartRateDeviceCardProps = {
   connectedDeviceCount: 0,
+  error: null,
   onManageDevices: () => {},
 };
 
@@ -19,9 +20,27 @@ describe("HeartRateDeviceCard", () => {
     expect(screen.getByText("2 Bluetooth devices connected")).toBeTruthy();
   });
 
+  it("renders the Bluetooth catalog error instead of an empty-device summary", () => {
+    render(
+      <HeartRateDeviceCard
+        {...baseProps}
+        error="Bluetooth permission is required to list devices."
+      />,
+    );
+
+    expect(screen.getByText("Bluetooth permission is required to list devices.")).toBeTruthy();
+    expect(screen.queryByText("No Bluetooth devices connected")).toBeNull();
+  });
+
   it("opens Bluetooth device management instead of offering a single-device connection", () => {
     const onManageDevices = vi.fn();
-    render(<HeartRateDeviceCard onManageDevices={onManageDevices} connectedDeviceCount={2} />);
+    render(
+      <HeartRateDeviceCard
+        onManageDevices={onManageDevices}
+        connectedDeviceCount={2}
+        error={null}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Manage Bluetooth devices" }));
 

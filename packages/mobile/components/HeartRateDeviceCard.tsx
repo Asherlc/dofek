@@ -3,6 +3,7 @@ import { colors, radius, spacing } from "../theme";
 
 export interface HeartRateDeviceCardProps {
   connectedDeviceCount: number;
+  error: string | null;
   onManageDevices: () => void;
 }
 
@@ -12,17 +13,19 @@ export interface HeartRateDeviceCardProps {
  */
 export function HeartRateDeviceCard({
   connectedDeviceCount,
+  error,
   onManageDevices,
 }: HeartRateDeviceCardProps) {
   const connectionSummary =
-    connectedDeviceCount === 0
+    error ??
+    (connectedDeviceCount === 0
       ? "No Bluetooth devices connected"
-      : `${connectedDeviceCount} Bluetooth device${connectedDeviceCount === 1 ? "" : "s"} connected`;
+      : `${connectedDeviceCount} Bluetooth device${connectedDeviceCount === 1 ? "" : "s"} connected`);
 
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Bluetooth Devices</Text>
-      <Text style={styles.summary}>{connectionSummary}</Text>
+      <Text style={error === null ? styles.summary : styles.error}>{connectionSummary}</Text>
       <Pressable
         style={styles.manageButton}
         onPress={onManageDevices}
@@ -52,6 +55,11 @@ const styles = StyleSheet.create({
   },
   summary: {
     color: colors.textTertiary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  error: {
+    color: colors.danger,
     fontSize: 13,
     lineHeight: 18,
   },

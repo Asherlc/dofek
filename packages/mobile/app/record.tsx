@@ -87,6 +87,10 @@ function formatPaceMinPerKm(metersPerSecond: number | null): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export default function RecordScreen() {
   const router = useRouter();
   const trpcClient = trpc.useUtils().client;
@@ -97,6 +101,7 @@ export default function RecordScreen() {
   const [activityNotes, setActivityNotes] = useState("");
 
   const [connectedDeviceCount, setConnectedDeviceCount] = useState(0);
+  const [bluetoothDeviceError, setBluetoothDeviceError] = useState<string | null>(null);
 
   // Create recorder once (with IMU service for phone + watch)
   const recorder = useMemo(() => {
@@ -155,6 +160,7 @@ export default function RecordScreen() {
       devices: Awaited<ReturnType<typeof getBluetoothDevices>>,
     ) => {
       if (!mounted) return;
+      setBluetoothDeviceError(null);
       setConnectedDeviceCount(
         devices.filter(
           (device) =>
@@ -167,19 +173,27 @@ export default function RecordScreen() {
 
     void getBluetoothDevices()
       .then(updateConnectedDeviceCount)
-      .catch((error: unknown) =>
-        captureException(error, { source: "record-bluetooth-devices-load" }),
-      );
+      .catch((error: unknown) => {
+        captureException(error, { source: "record-bluetooth-devices-load" });
+        if (mounted) {
+          setBluetoothDeviceError(errorMessage(error));
+        }
+      });
 
     let subscription: ReturnType<typeof subscribeBluetoothDevices> | undefined;
     try {
       subscription = subscribeBluetoothDevices((update) => {
         if (update.state === "ready") {
           updateConnectedDeviceCount(update.devices);
+        } else if (mounted) {
+          setBluetoothDeviceError(update.error);
         }
       });
     } catch (error: unknown) {
       captureException(error, { source: "record-bluetooth-devices-subscribe" });
+      if (mounted) {
+        setBluetoothDeviceError(errorMessage(error));
+      }
     }
 
     return () => {
@@ -260,6 +274,7 @@ export default function RecordScreen() {
   const heartRateCard = (
     <HeartRateDeviceCard
       connectedDeviceCount={connectedDeviceCount}
+      error={bluetoothDeviceError}
       onManageDevices={() => router.push("/bluetooth-devices")}
     />
   );

@@ -8,6 +8,7 @@ const meta = {
   decorators: [(Story) => <View style={{ width: 360, padding: 16 }}>{Story()}</View>],
   args: {
     connectedDeviceCount: 0,
+    error: null,
     onManageDevices: () => {},
   },
 } satisfies Meta<typeof HeartRateDeviceCard>;
@@ -24,4 +25,8 @@ export const OneConnectedDevice: Story = {
 
 export const MultipleConnectedDevices: Story = {
   args: { connectedDeviceCount: 2 },
+};
+
+export const CatalogError: Story = {
+  args: { error: "Bluetooth permission is required to list devices." },
 };
