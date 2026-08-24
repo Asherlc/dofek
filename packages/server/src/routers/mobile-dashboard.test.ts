@@ -854,7 +854,13 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
     dailyMetrics: [],
     baselineRelative: [],
     weight: [],
-    bodyFat: [],
+    bodyFatTrend: [],
+    bodyFatPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      projectionLine: [],
+    },
     decisionContext: null,
     weightPrediction: {
       ratePerWeek: null,
@@ -1022,7 +1028,7 @@ describe("mobileDashboard.recovery", () => {
 
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
-    expect(result.bodyFat).toEqual([]);
+    expect(result.bodyFatTrend).toEqual([]);
     const timingCall = vi
       .mocked(logger.info)
       .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] recovery timings"));
@@ -1040,7 +1046,13 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
-      bodyFat: [],
+      bodyFatTrend: [],
+      bodyFatPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        projectionLine: [],
+      },
       decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
@@ -1116,7 +1128,13 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
-      bodyFat: [],
+      bodyFatTrend: [],
+      bodyFatPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        projectionLine: [],
+      },
       decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,

@@ -242,7 +242,6 @@ const mockActivityHangboardDetailsInvalidate = vi.fn().mockResolvedValue(undefin
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
-const mockPerceivedExertionMutate = vi.fn();
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -270,9 +269,6 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
-      setPerceivedExertion: {
-        useMutation: () => ({ mutate: mockPerceivedExertionMutate, isPending: false, error: null }),
-      },
     },
     climbing: {
       activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
@@ -387,7 +383,6 @@ beforeEach(() => {
   mockActivityListInvalidate.mockClear();
   mockCalendarWeekListInvalidate.mockClear();
   mockCalendarActivityOverviewInvalidate.mockClear();
-  mockPerceivedExertionMutate.mockClear();
   vi.mocked(Alert.alert).mockClear();
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
@@ -496,11 +491,11 @@ describe("ActivityDetailScreen", () => {
     const rerendered = render(React.createElement(ActivityDetailScreen));
     rerendered.rerender(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockHangboardDetailsQuery.mock.calls.at(-1)?.[1])).toBe(true);
-    expect(screen.getByText("Hangboarding")).toBeTruthy();
-    expect(screen.getByText("Imported 7/3")).toBeTruthy();
+    expect(screen.getAllByText("Hangboarding").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Imported 7/3").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("renders the activity's session perceived exertion control", async () => {
+  it("renders the activity's stored session perceived exertion", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, perceivedExertion: 7 },
       isLoading: false,
@@ -514,7 +509,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("7")).toBeTruthy();
   });
 
-  it("renders server-authored detail state when a metric is unavailable without GPS", async () => {
+  it("hides an unrecorded detail metric without GPS", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
         ...baseCyclingActivity,
@@ -529,9 +524,8 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText("Distance unavailable")).toBeTruthy();
-    expect(screen.getByText("Distance not recorded")).toBeTruthy();
-    expect(screen.getByLabelText("Distance unavailable: Distance not recorded")).toBeTruthy();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
   });
 
   it("renders reasons for every unavailable activity metric state", async () => {

@@ -237,7 +237,7 @@ export default function TrackingScreen() {
           <QueryStatePanel
             variant="empty"
             title="No numeric journal data to chart"
-            message="Log a numeric or Yes/No journal value to start reviewing trends."
+            message="Sync a numeric or Yes/No journal observation to start reviewing trends."
           />
         </>
       ) : evidence ? (

@@ -51,6 +51,7 @@ export interface ProcessingStatusOperation {
   datasets: ProcessingDatasetKey[];
   dismissed: boolean;
   errorMessage: string | null;
+  errorCode?: string | null;
   timeline: Array<{
     sequence: number;
     stage: ProcessingStage;
@@ -196,6 +197,21 @@ function buildProcessingAlert(
   }
 
   if (operation.kind === "provider_sync" && sourceLabel) {
+    if (failedEvent?.errorCode === "provider_auth_failed") {
+      return {
+        id: alertId,
+        providerId: operation.providerId,
+        providerLabel: sourceLabel,
+        datasetKeys,
+        datasetLabels,
+        occurredAt,
+        title: `${sourceLabel} needs to reconnect`,
+        message: `Dofek couldn’t authenticate with ${sourceLabel}. Reconnect ${sourceLabel}, then start the sync again.`,
+        action: "reconnect",
+        actionLabel: `Reconnect ${sourceLabel}`,
+      };
+    }
+
     if (failedEvent?.stage === "ingest" || failedEvent?.errorCode === "provider_sync_failed") {
       return {
         id: alertId,
@@ -205,9 +221,9 @@ function buildProcessingAlert(
         datasetLabels,
         occurredAt,
         title: `${sourceLabel} couldn’t sync`,
-        message: `Dofek couldn’t get the latest data from ${sourceLabel}. Reconnect ${sourceLabel}, then start the sync again.`,
-        action: "reconnect",
-        actionLabel: `Reconnect ${sourceLabel}`,
+        message: `Dofek couldn’t get the latest data from ${sourceLabel}. Try the sync again later.`,
+        action: "retry_sync",
+        actionLabel: `Retry ${sourceLabel} sync`,
       };
     }
 
@@ -387,6 +403,7 @@ export class ProcessingRepository {
           datasets: operationDatasetKeys,
           dismissed: dismissedOperationIds.has(operation.id),
           errorMessage: operationError?.errorMessage ?? null,
+          errorCode: operationError?.errorCode ?? null,
           timeline: operation.events
             .filter(
               (event) =>

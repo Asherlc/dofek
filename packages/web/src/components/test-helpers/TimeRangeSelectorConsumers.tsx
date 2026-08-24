@@ -35,9 +35,6 @@ vi.mock("../../lib/unitContext.ts", () => ({
   }),
 }));
 
-vi.mock("../AddJournalEntryModal.tsx", () => ({
-  AddJournalEntryModal: () => <div data-testid="add-journal-entry-modal" />,
-}));
 vi.mock("../AdaptiveTdeeChart.tsx", () => ({ AdaptiveTdeeChart: () => <div /> }));
 vi.mock("../BehaviorImpactChart.tsx", async () => {
   const actual = await vi.importActual<typeof import("../BehaviorImpactChart.tsx")>(
@@ -127,7 +124,10 @@ vi.mock("../../lib/trpc.ts", () => {
   return {
     trpc: {
       useUtils: () => ({
-        journal: { entries: { invalidate: vi.fn() } },
+        processing: {
+          alerts: { invalidate: vi.fn() },
+          status: { invalidate: vi.fn() },
+        },
       }),
       behaviorImpact: {
         impactSummary: recordQuery("behaviorImpact.impactSummary"),
@@ -160,10 +160,7 @@ vi.mock("../../lib/trpc.ts", () => {
         compute: recordQuery("insights.compute"),
       },
       journal: {
-        create: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false, error: null }) },
-        delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
         entries: recordQuery("journal.entries"),
-        questions: recordQuery("journal.questions"),
         trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
       nutritionAnalytics: {

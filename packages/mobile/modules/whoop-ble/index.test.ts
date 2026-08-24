@@ -46,7 +46,10 @@ describe("WhoopBle native bridge", () => {
     nativeModule.addListener.mockReturnValue({ remove: vi.fn() });
 
     addDeviceStateListener(listener);
-    const onDeviceState = nativeModule.addListener.mock.calls[0][1] as (event: unknown) => void;
+    const onDeviceState = nativeModule.addListener.mock.calls[0][1];
+    if (typeof onDeviceState !== "function") {
+      throw new Error("Expected native device-state listener");
+    }
 
     expect(() => onDeviceState({ connectionState: "ready" })).toThrow(/id/);
   });

@@ -757,6 +757,27 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
   endDate="2024-03-01 07:15:00 -0500"
   value="1"/>
 
+ <Record type="HKCategoryTypeIdentifierMenstrualFlow"
+  sourceName="Cycle Source"
+  sourceBundle="com.example.cycle-source"
+  creationDate="2024-03-03 08:05:00 -0500"
+  startDate="2024-03-03 08:00:00 -0500"
+  endDate="2024-03-03 08:05:00 -0500"
+  value="HKCategoryValueMenstrualFlowMedium">
+  <MetadataEntry key="HKMenstrualCycleStart" value="1"/>
+  <MetadataEntry key="CycleSource.Note" value="first day"/>
+ </Record>
+
+ <Record type="HKCategoryTypeIdentifierMenstrualFlow"
+  sourceName="Cycle Source"
+  sourceBundle="com.example.cycle-source"
+  creationDate="2024-03-04 08:05:00 -0500"
+  startDate="2024-03-04 08:00:00 -0500"
+  endDate="2024-03-04 08:05:00 -0500"
+  value="HKCategoryValueMenstrualFlowLight">
+  <MetadataEntry key="HKMenstrualCycleStart" value="0"/>
+ </Record>
+
 </HealthData>`;
 
 describe("importAppleHealthFile — full DB integration", () => {
@@ -982,12 +1003,43 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(mindful?.sourceName).toBe("Headspace");
   });
 
+  it("stores raw menstrual-flow rows with cycle-start metadata and source identity", async () => {
+    const rows = await ctx.db
+      .select()
+      .from(schema.healthEvent)
+      .where(eq(schema.healthEvent.type, "HKCategoryTypeIdentifierMenstrualFlow"));
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.externalId)).toEqual([
+      expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+    ]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceName: "Cycle Source",
+          sourceBundle: "com.example.cycle-source",
+          metadata: {
+            HKMetadataKeyMenstrualCycleStart: true,
+            "CycleSource.Note": "first day",
+          },
+        }),
+        expect.objectContaining({
+          sourceName: "Cycle Source",
+          sourceBundle: "com.example.cycle-source",
+          metadata: { HKMetadataKeyMenstrualCycleStart: false },
+        }),
+      ]),
+    );
+  });
+
   it("is idempotent — re-import does not duplicate records", async () => {
     const since = new Date("2024-01-01");
 
     // Count before
     const sleepBefore = await ctx.db.select().from(schema.sleepSession);
     const activitiesBefore = await ctx.db.select().from(schema.activity);
+    const healthEventsBefore = await ctx.db.select().from(schema.healthEvent);
 
     // Re-import with an XML file (non-zip path to avoid clinical records branch)
     const xmlPath = join(tmpDir, "export.xml");
@@ -998,9 +1050,11 @@ describe("importAppleHealthFile — full DB integration", () => {
     // Count after — should be same due to upsert/conflict handling
     const sleepAfter = await ctx.db.select().from(schema.sleepSession);
     const activitiesAfter = await ctx.db.select().from(schema.activity);
+    const healthEventsAfter = await ctx.db.select().from(schema.healthEvent);
 
     expect(sleepAfter.length).toBe(sleepBefore.length);
     expect(activitiesAfter.length).toBe(activitiesBefore.length);
+    expect(healthEventsAfter.length).toBe(healthEventsBefore.length);
   }, 60_000);
 });
 

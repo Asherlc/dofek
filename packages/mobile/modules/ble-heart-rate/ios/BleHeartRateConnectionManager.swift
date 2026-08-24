@@ -141,7 +141,17 @@ final class BleHeartRateConnectionManager: NSObject {
         }
     }
 
+    /// Disconnect every app-managed monitor after the current BLE-queue work
+    /// completes. The optional completion fences account/session teardown.
+    func disconnect(completion: (() -> Void)? = nil) {
+        disconnectAll(completion: completion)
+    }
+
     func disconnectAll() {
+        disconnectAll(completion: nil)
+    }
+
+    private func disconnectAll(completion: (() -> Void)?) {
         bleQueue.async {
             self.cancelScan(with: .disconnected(nil))
 
@@ -162,6 +172,7 @@ final class BleHeartRateConnectionManager: NSObject {
                     )
                 }
             }
+            completion?()
         }
     }
 

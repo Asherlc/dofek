@@ -3,43 +3,27 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-type SaveCheckInInput = {
-  date: string;
-  symptoms: Array<{
-    bodyRegionId: string;
-    kind: "soreness" | "stiffness" | "tenderness";
-    score: number;
-  }>;
-};
-
-type MutationOptions = {
-  onSuccess?: (result: {
-    symptoms?: Array<{ body_region_id: string; kind: string; score: number }>;
-  }) => void;
-  onError?: (error: Error) => void;
-};
+type MutationOptions = { onSuccess?: () => void };
 
 const mocks = vi.hoisted(() => {
-  const regionData: Array<{ id: string; label: string }> | undefined = [
-    { id: "left_hand", label: "Left hand" },
-  ];
-  const regionError: Error | null = null;
+  const regionsResult: {
+    data: Array<{ id: string; label: string }> | undefined;
+    error: Error | null;
+    isLoading: boolean;
+  } = {
+    data: [{ id: "left_hand", label: "Left hand" }],
+    error: null,
+    isLoading: false,
+  };
+
   return {
     captureException: vi.fn(),
-    checkInResult: { data: { logged: false, symptoms: [] }, error: null, isLoading: false },
     createInjury: vi.fn(),
-    saveCheckIn: vi.fn(),
     invokeMutationSuccess: false,
-    invokeMutationError: false,
     injuriesResult: { data: [], error: null, isLoading: false },
-    checkInInvalidate: vi.fn(),
     injuriesInvalidate: vi.fn(),
     timelineInvalidate: vi.fn(),
-    regionsResult: {
-      data: regionData,
-      error: regionError,
-      isLoading: false,
-    },
+    regionsResult,
   };
 });
 
@@ -49,49 +33,23 @@ vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
       subjective: {
-        checkIn: { invalidate: mocks.checkInInvalidate },
         injuries: { invalidate: mocks.injuriesInvalidate },
         timeline: { invalidate: mocks.timelineInvalidate },
       },
     }),
     subjective: {
-      checkIn: { useQuery: () => mocks.checkInResult },
       createInjury: {
-        useMutation: (options: MutationOptions) => {
-          return {
-            error: null,
-            isPending: false,
-            mutate: (input: unknown) => {
-              mocks.createInjury(input);
-              if (mocks.invokeMutationSuccess) options.onSuccess?.({});
-              if (mocks.invokeMutationError) options.onError?.(new Error("Injury unavailable"));
-            },
-          };
-        },
+        useMutation: (options: MutationOptions) => ({
+          error: null,
+          isPending: false,
+          mutate: (input: unknown) => {
+            mocks.createInjury(input);
+            if (mocks.invokeMutationSuccess) options.onSuccess?.();
+          },
+        }),
       },
       injuries: { useQuery: () => mocks.injuriesResult },
       regions: { useQuery: () => mocks.regionsResult },
-      saveCheckIn: {
-        useMutation: (options: MutationOptions) => {
-          return {
-            error: null,
-            isPending: false,
-            mutate: (input: SaveCheckInInput) => {
-              mocks.saveCheckIn(input);
-              if (mocks.invokeMutationSuccess) {
-                options.onSuccess?.({
-                  symptoms: input.symptoms.map((symptom) => ({
-                    body_region_id: symptom.bodyRegionId,
-                    kind: symptom.kind,
-                    score: symptom.score,
-                  })),
-                });
-              }
-              if (mocks.invokeMutationError) options.onError?.(new Error("Check-in unavailable"));
-            },
-          };
-        },
-      },
     },
   },
 }));
@@ -102,18 +60,12 @@ describe("SubjectiveTrackingPanel", () => {
   beforeEach(() => {
     mocks.captureException.mockReset();
     mocks.createInjury.mockReset();
-    mocks.saveCheckIn.mockReset();
     mocks.invokeMutationSuccess = false;
-    mocks.invokeMutationError = false;
-    mocks.checkInInvalidate.mockReset();
     mocks.injuriesInvalidate.mockReset();
     mocks.timelineInvalidate.mockReset();
     mocks.regionsResult.data = [{ id: "left_hand", label: "Left hand" }];
     mocks.regionsResult.error = null;
     mocks.regionsResult.isLoading = false;
-    mocks.checkInResult.data = { logged: false, symptoms: [] };
-    mocks.checkInResult.error = null;
-    mocks.checkInResult.isLoading = false;
     mocks.injuriesResult.data = [];
     mocks.injuriesResult.error = null;
     mocks.injuriesResult.isLoading = false;
@@ -163,45 +115,7 @@ describe("SubjectiveTrackingPanel", () => {
     );
   });
 
-  it("preserves unsaved symptoms when the check-in refetches", () => {
-    const view = render(<SubjectiveTrackingPanel />);
-
-    fireEvent.click(screen.getByLabelText("Choose body region"));
-    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
-
-    mocks.checkInResult.data = { logged: false, symptoms: [] };
-    view.rerender(<SubjectiveTrackingPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(mocks.saveCheckIn).toHaveBeenCalledWith({
-      date: "2026-08-02",
-      symptoms: [{ bodyRegionId: "left_hand", kind: "soreness", score: 1 }],
-    });
-  });
-
-  it("uses independent region pickers for symptoms and injuries", () => {
-    mocks.regionsResult.data = [
-      { id: "left_hand", label: "Left hand" },
-      { id: "right_hand", label: "Right hand" },
-    ];
-    render(<SubjectiveTrackingPanel />);
-
-    fireEvent.click(screen.getByLabelText("Choose body region"));
-    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
-    fireEvent.click(screen.getByLabelText("Choose injury body region"));
-    fireEvent.click(screen.getByRole("button", { name: "Right hand" }));
-    fireEvent.change(screen.getByLabelText("Injury description"), {
-      target: { value: "Right hand pain" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
-
-    expect(mocks.createInjury).toHaveBeenCalledWith(
-      expect.objectContaining({ bodyRegionId: "right_hand" }),
-    );
-  });
-
-  it("runs mutation callbacks so success and failure side effects are testable", () => {
+  it("invalidates injury data after a successful mutation", () => {
     mocks.invokeMutationSuccess = true;
     render(<SubjectiveTrackingPanel />);
 
@@ -211,15 +125,9 @@ describe("SubjectiveTrackingPanel", () => {
       target: { value: "Morning pain" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
+
     expect(mocks.injuriesInvalidate).toHaveBeenCalledTimes(1);
     expect(mocks.timelineInvalidate).toHaveBeenCalledTimes(1);
-    expect(mocks.checkInInvalidate).not.toHaveBeenCalled();
-
-    mocks.invokeMutationError = true;
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
-      operation: "subjective.saveCheckIn",
-    });
   });
 
   it("does not submit an injury without an onset date", () => {
@@ -244,8 +152,8 @@ describe("SubjectiveTrackingPanel", () => {
 
     render(<SubjectiveTrackingPanel />);
 
-    expect(screen.getAllByTestId("query-state-error")).toHaveLength(2);
-    expect(screen.getAllByText("Regions unavailable")).toHaveLength(2);
+    expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
+    expect(screen.getByText("Regions unavailable")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add injury" })).toHaveProperty("disabled", true);
   });
 });

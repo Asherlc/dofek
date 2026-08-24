@@ -46,8 +46,11 @@ describe("BleHeartRate native bridge", () => {
     addDeviceStateListener(deviceStateListener);
     addHeartRateListener(measurementListener);
 
-    const onDeviceState = nativeModule.addListener.mock.calls[0][1] as (event: unknown) => void;
-    const onMeasurement = nativeModule.addListener.mock.calls[1][1] as (event: unknown) => void;
+    const onDeviceState = nativeModule.addListener.mock.calls[0][1];
+    const onMeasurement = nativeModule.addListener.mock.calls[1][1];
+    if (typeof onDeviceState !== "function" || typeof onMeasurement !== "function") {
+      throw new Error("Expected native bridge listeners");
+    }
 
     expect(() => onDeviceState({ id: "polar" })).toThrow(/connectionState/);
     expect(() => onMeasurement({ heartRateBpm: 61 })).toThrow(/deviceId/);

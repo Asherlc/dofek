@@ -56,10 +56,6 @@ vi.mock("../components/AccountErasurePanel", () => ({
   AccountErasurePanel: () => React.createElement("div", null, "AccountErasurePanel"),
 }));
 
-vi.mock("../components/SlackIntegrationPanel", () => ({
-  SlackIntegrationPanel: () => React.createElement("div", null, "SlackIntegrationPanel"),
-}));
-
 vi.mock("../components/ProviderLogo", () => ({
   ProviderLogo: ({ provider }: { provider: string }) =>
     React.createElement("span", { "data-testid": `provider-logo-${provider}` }),
@@ -570,17 +566,6 @@ describe("SettingsScreen data sources", () => {
     fireEvent.click(screen.getByText("2 connected"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
-  });
-
-  it("navigates to cycle tracking from the health tracking section", async () => {
-    mockSearchParams = { tab: "goals-models" };
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Cycle Tracking" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/cycle");
   });
 
   it("navigates to journal trends from the health tracking section", async () => {

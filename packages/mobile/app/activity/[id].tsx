@@ -150,30 +150,32 @@ type StatItem = ActivityMetric | { label: string; value: string };
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
-      {stats.map((stat) => {
-        const metric = "status" in stat ? stat : null;
-        const unavailableMetric = metric && metric.status !== "available" ? metric : null;
-        const isUnavailable = unavailableMetric !== null;
-        const accessibleLabel = unavailableMetric
-          ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-          : undefined;
-        const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
-        return (
-          <View
-            key={stat.label}
-            style={statsStyles.card}
-            accessible={isUnavailable}
-            accessibilityLabel={accessibleLabel}
-          >
-            <Text style={statsStyles.label}>
-              {unavailableMetric
-                ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                : stat.label}
-            </Text>
-            <Text style={statsStyles.value}>{displayedValue}</Text>
-          </View>
-        );
-      })}
+      {stats
+        .filter((stat) => !("status" in stat) || stat.status !== "missing")
+        .map((stat) => {
+          const metric = "status" in stat ? stat : null;
+          const unavailableMetric = metric && metric.status !== "available" ? metric : null;
+          const isUnavailable = unavailableMetric !== null;
+          const accessibleLabel = unavailableMetric
+            ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+            : undefined;
+          const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
+          return (
+            <View
+              key={stat.label}
+              style={statsStyles.card}
+              accessible={isUnavailable}
+              accessibilityLabel={accessibleLabel}
+            >
+              <Text style={statsStyles.label}>
+                {unavailableMetric
+                  ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                  : stat.label}
+              </Text>
+              <Text style={statsStyles.value}>{displayedValue}</Text>
+            </View>
+          );
+        })}
     </View>
   );
 }
@@ -835,7 +837,40 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
-      <ActivityPerceivedExertion activityId={id ?? ""} value={activity.perceivedExertion} />
+      <ActivityPerceivedExertion value={activity.perceivedExertion} />
+
+      {isHangboardingActivity && (
+        <View style={hangboardingStyles.container}>
+          <Text style={hangboardingStyles.title}>Hangboarding</Text>
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
+        </View>
+      )}
+
+      {isHangboardingActivity && (
+        <View style={hangboardingStyles.container}>
+          <Text style={hangboardingStyles.title}>Hangboarding</Text>
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
+        </View>
+      )}
+
+      {isHangboardingActivity && (
+        <View style={hangboardingStyles.container}>
+          <Text style={hangboardingStyles.title}>Hangboarding</Text>
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
+        </View>
+      )}
 
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>

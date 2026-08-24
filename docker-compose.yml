@@ -33,7 +33,7 @@ services:
       retries: 10
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.7.1.1315-alpine
+    image: clickhouse/clickhouse-server:26.7.3.19-alpine
     restart: unless-stopped
     mem_limit: 1536m
     environment:
@@ -168,7 +168,7 @@ services:
         condition: service_started
 
   collector:
-    image: otel/opentelemetry-collector-contrib:0.157.0-386
+    image: otel/opentelemetry-collector-contrib:0.158.0-386
     restart: unless-stopped
     user: "0:0"
     environment:

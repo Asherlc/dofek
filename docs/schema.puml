@@ -204,6 +204,7 @@ entity "climbing_entry" {
   grade : text
   sent : boolean
   attempt_count : integer
+  lead : boolean
   wall_angle_degrees : real
   hold_type : climbing_hold_type
   route_name : text
@@ -497,6 +498,8 @@ entity "health_event" {
   value_text : text
   unit : text
   source_name : text
+  source_bundle : text
+  metadata : jsonb
   start_date : timestamp
   end_date : timestamp
   created_at : timestamp
@@ -742,29 +745,6 @@ entity "session" {
   created_at : timestamp
 }
 
-entity "slack_installation" {
-  * id : uuid <<PK>>
-  --
-  team_id : text
-  team_name : text
-  bot_token : text
-  bot_id : text
-  bot_user_id : text
-  app_id : text
-  installer_slack_user_id : text
-  raw_installation : jsonb
-  installed_at : timestamp
-  updated_at : timestamp
-}
-
-entity "slack_team_membership" {
-  team_id : text <<FK>>
-  user_id : uuid <<FK>>
-  slack_user_id : text
-  created_at : timestamp
-  updated_at : timestamp
-}
-
 entity "stripe_webhook_event" {
   * event_id : text <<PK>>
   --
@@ -816,10 +796,10 @@ entity "user_settings" {
 entity "body_region" {
   * id : text <<PK>>
   --
-  parent_id : text
+  parent_id : text <<FK>>
   label : text
   kind : text
-  sort_order : integer
+  sort_order : bigint
 }
 
 entity "breathwork_session" {
@@ -949,7 +929,7 @@ entity "injury_event" {
   body_region_id : text <<FK>>
   onset_date : date
   resolved_date : date
-  severity : integer
+  severity : bigint
   description : text
   created_at : timestamp
   updated_at : timestamp
@@ -1077,7 +1057,7 @@ entity "subjective_symptom" {
   check_in_id : uuid <<FK>>
   body_region_id : text <<FK>>
   kind : text
-  score : integer
+  score : bigint
 }
 
 entity "sync_log" {
@@ -1087,12 +1067,19 @@ entity "sync_log" {
   user_id : uuid <<FK>>
   data_type : text
   status : text
+  origin : text
   record_count : integer
   error_message : text
   auth_failure_reason : text
   degradation_kind : text
   duration_ms : integer
   synced_at : timestamp
+}
+
+entity "processing_alert_dismissal" {
+  user_id : uuid <<FK>>
+  operation_id : uuid <<FK>>
+  dismissed_at : timestamp
 }
 
 entity "processing_flow_marker" {
@@ -1233,12 +1220,11 @@ user_profile ||--o{ mcp_oauth_refresh_token
 mcp_access_token ||--o{ mcp_oauth_refresh_token
 mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
-slack_installation ||--o{ slack_team_membership
-user_profile ||--o{ slack_team_membership
 user_profile ||--o{ user_billing
 user_profile ||--o{ user_external_effect
 user_profile ||--o{ user_password_credential
 user_profile ||--o{ user_settings
+body_region ||--o{ body_region
 user_profile ||--o{ breathwork_session
 provider ||--o{ dexa_scan
 user_profile ||--o{ dexa_scan
@@ -1264,6 +1250,8 @@ subjective_check_in ||--o{ subjective_symptom
 body_region ||--o{ subjective_symptom
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
+user_profile ||--o{ processing_alert_dismissal
+processing_operation ||--o{ processing_alert_dismissal
 processing_operation ||--o{ processing_flow_marker
 processing_operation ||--o{ processing_metric_stream_batch
 user_profile ||--o{ processing_operation

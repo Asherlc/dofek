@@ -29,7 +29,7 @@ Core Bluetooth operations begin only after `CBCentralManager` reports
 import {
   addHeartRateListener,
   confirmSamplesDrain,
-  disconnect,
+  disconnectAndClearBufferedSamples,
   peekBufferedSamples,
   scanAndConnect,
 } from "./modules/ble-heart-rate";
@@ -54,7 +54,7 @@ try {
   confirmSamplesDrain(samples.length);
 } finally {
   subscription.remove();
-  disconnect();
+  await disconnectAndClearBufferedSamples();
 }
 ```
 
@@ -64,7 +64,8 @@ remove samples, so a failed upload can retry the same page.
 ## Public API
 
 - Connection: `isBluetoothAvailable`, `scanAndConnect`, `connect`,
-  `getConnectionState`, and `disconnect`.
+  `getConnectionState`, `disconnect`, and the account-session teardown fence
+  `disconnectAndClearBufferedSamples`.
 - Devices: `getDevices`, `forget`, and `addDeviceStateListener`. `getDevices`
   returns persisted app-managed monitor snapshots with their latest native
   measurement, per-device connection state, and buffered-sample count.

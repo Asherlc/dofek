@@ -26,7 +26,7 @@ export const SETTINGS_CATEGORIES: readonly {
     id: "goals-models",
     label: "Goals & Models",
     searchText:
-      "goals models primary goal units cycle tracking journal trends health reports goal weight algorithm personalization",
+      "goals models primary goal units journal trends health reports goal weight algorithm personalization",
   },
   {
     id: "privacy-export",

@@ -113,6 +113,11 @@ export function forget(peripheralId: string): void {
   BleHeartRateModule.forget(peripheralId);
 }
 
+/** Await native disconnect and discard all samples owned by the ending session. */
+export async function disconnectAndClearBufferedSamples(): Promise<void> {
+  await BleHeartRateModule.disconnectAndClearBufferedSamples();
+}
+
 /** Disconnect and clear buffered heart-rate samples for the deleted account. */
 export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
   return BleHeartRateModule.purgeAccountState(deviceErasureCutoff);

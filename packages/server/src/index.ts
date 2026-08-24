@@ -59,10 +59,10 @@ import { authRateLimiter } from "./routes/auth/shared.ts";
 import { createCompanionPairingRouter } from "./routes/companion-pairing.ts";
 import { createCompanionTokenHttpRouter } from "./routes/companion-token.ts";
 import { createExportRouter } from "./routes/export.ts";
+import { createExternalWriteApiRouter } from "./routes/external-write-api.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
-import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
 export function onUnhandledRejection(reason: unknown): void {
@@ -245,6 +245,7 @@ function setupRoutes(
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
+  app.use("/api/external/v1", createExternalWriteApiRouter({ db }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
@@ -339,7 +340,6 @@ function setupRoutes(
           req.path.startsWith("/api/") ||
           req.path.startsWith("/auth/") ||
           req.path.startsWith("/admin/queues") ||
-          req.path.startsWith("/slack/") ||
           extname(req.path) !== ""
         ) {
           next();
@@ -350,20 +350,6 @@ function setupRoutes(
       });
     }
   }
-}
-
-/**
- * Fire-and-forget startup tasks.
- * Errors are logged and reported to Sentry but don't crash the server.
- */
-export function runStartupTasks(
-  db: ReturnType<typeof createDatabaseFromEnv>,
-  app: express.Express,
-) {
-  startSlackBot(db, app).catch((err) => {
-    logger.error(`[slack] Slack bot error: ${err}`);
-    captureException(err);
-  });
 }
 
 /** Validate env, create app, and start listening. */
@@ -399,7 +385,6 @@ export async function main() {
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
-    runStartupTasks(db, app);
   });
 }
 

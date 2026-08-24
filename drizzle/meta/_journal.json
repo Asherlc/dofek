@@ -603,6 +603,90 @@
       "when": 1786380000000,
       "tag": "0073_processing_stage_event_latest_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1786466044000,
+      "tag": "0074_climbing_grade_systems",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1786467000000,
+      "tag": "0075_hang_ten_activity_priority",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1786487760586,
+      "tag": "0086_climbing-entry-lead",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1786569600000,
+      "tag": "0087_sync_log_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1786570000000,
+      "tag": "0088_remove_slack_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1786716655000,
+      "tag": "0089_remove_cycle_tracking_and_breathwork",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1786726296000,
+      "tag": "0090_remove_nutrition_write_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1786741200000,
+      "tag": "0091_health_event_source_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1786805000000,
+      "tag": "0092_restore_retained_health_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1786812000000,
+      "tag": "0093_health_event_source_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1786812000001,
+      "tag": "0094_external_write_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1786812000002,
+      "tag": "0095_external_client_erasure_policy",
+      "breakpoints": true
     }
   ]
 }

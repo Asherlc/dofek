@@ -16,6 +16,7 @@ const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundWatchSync = vi.fn();
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
 const mockUseWhoopBleSync = vi.fn();
+const mockUseBleHeartRateSync = vi.fn();
 const mockRefreshRemove = vi.fn();
 const mockLoadStatusCapability = vi.fn();
 const mockLoadPreparation = vi.fn();
@@ -155,6 +156,10 @@ vi.mock("../lib/background-whoop-ble-sync", () => ({
     mockTeardownBackgroundWhoopBleSync(...args),
 }));
 
+vi.mock("../lib/background-ble-heart-rate-sync", () => ({
+  syncBleHeartRate: vi.fn(),
+}));
+
 vi.mock("../lib/server", () => ({
   getTrpcUrl: () => "https://dofek.test/api/trpc",
 }));
@@ -184,6 +189,10 @@ vi.mock("../lib/useWhoopBleSync", () => ({
   useWhoopBleSync: (...args: unknown[]) => mockUseWhoopBleSync(...args),
 }));
 
+vi.mock("../lib/useBleHeartRateSync", () => ({
+  useBleHeartRateSync: (...args: unknown[]) => mockUseBleHeartRateSync(...args),
+}));
+
 vi.mock("../lib/version-headers", () => ({
   getVersionHeaders: () => ({
     "x-app-version": "1.0.0",
@@ -210,6 +219,17 @@ vi.mock("../modules/whoop-ble", () => ({
   stopImuStreaming: vi.fn(),
 }));
 
+vi.mock("../modules/ble-heart-rate", () => ({
+  addConnectionStateListener: vi.fn(),
+  addHeartRateListener: vi.fn(),
+  disconnectAndClearBufferedSamples: vi.fn(() => Promise.resolve()),
+  confirmSamplesDrain: vi.fn(),
+  disconnect: vi.fn(),
+  isBluetoothAvailable: vi.fn(),
+  peekBufferedSamples: vi.fn(),
+  scanAndConnect: vi.fn(),
+}));
+
 const mockGetRequestStatus = vi.fn<() => Promise<string>>();
 const mockIsHealthKitAvailable = vi.fn<() => boolean>();
 const mockHasEverAuthorized = vi.fn<() => boolean>();
@@ -225,6 +245,7 @@ vi.mock("../modules/health-kit", async () => {
     completeAnchoredQuery: vi.fn().mockResolvedValue(true),
     queryAnchoredSamples: vi.fn().mockResolvedValue(createEmptyAnchoredQueryResult()),
     queryDailyStatistics: vi.fn().mockResolvedValue([]),
+    queryCategorySamples: vi.fn().mockResolvedValue([]),
     queryQuantitySamples: vi.fn().mockResolvedValue([]),
     queryWorkouts: vi.fn().mockResolvedValue([]),
     querySleepSamples: vi.fn().mockResolvedValue([]),
@@ -252,6 +273,9 @@ mockCreateClient.mockImplementation(() => ({
   },
   whoopBleSync: {
     pushRealtimeData: { mutate: vi.fn() },
+  },
+  bleHeartRateSync: {
+    pushSamples: { mutate: vi.fn() },
   },
 }));
 
@@ -465,6 +489,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+    expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
   });
 
   it("blocks a later authenticated account and all producers while cleanup is pending", async () => {
@@ -483,6 +508,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+    expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
   });
 
   it("keeps producers gated after a locked restore and retries cleanup state on foreground", async () => {
@@ -507,6 +533,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+    expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
   });
 
   it("does not let an old account cleanup gate or purge a later session generation", async () => {
@@ -565,6 +592,7 @@ describe("RootLayout background cleanup", () => {
       expect(mockInitBackgroundAccelerometerSync).toHaveBeenCalledOnce();
       expect(mockInitBackgroundWatchSync).toHaveBeenCalledOnce();
       expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
+      expect(mockUseBleHeartRateSync).toHaveBeenCalledOnce();
       expect(mockStartStartupPhase).toHaveBeenCalledWith("service-bootstrap");
       expect(mockFinishStartupPhase).toHaveBeenCalledWith("service-bootstrap", "ready");
     });

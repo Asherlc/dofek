@@ -141,6 +141,19 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.sampleCount, 0)
     }
 
+    func testClearAllEndsPriorPeekOwnershipBeforeTheNextSessionDrains() {
+        let buffer = BleHeartRateSampleBuffer()
+        buffer.append(sample(bpm: 60))
+        _ = buffer.peekSamples()
+
+        buffer.clearAll()
+        buffer.append(sample(bpm: 61))
+        _ = buffer.peekSamples()
+        buffer.confirmDrain(count: 1)
+
+        XCTAssertEqual(buffer.sampleCount, 0)
+    }
+
     func testErasureCutoffDropsExistingAndFutureSamplesAtOrBeforeBoundary() {
         let buffer = BleHeartRateSampleBuffer()
         buffer.append(sample(at: 1_000, bpm: 60))

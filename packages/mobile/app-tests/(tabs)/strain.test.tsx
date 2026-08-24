@@ -434,6 +434,20 @@ describe("StrainScreen recent activity navigation", () => {
     expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
   });
 
+  it("does not report transient or cancelled training query errors", async () => {
+    mockHrZonesState.isError = true;
+    mockHrZonesState.error = new Error("User canceled");
+    mockPolarizationState.isError = true;
+    mockPolarizationState.error = new Error("User cancelled");
+    mockMonotonyState.isError = true;
+    mockMonotonyState.error = new Error("Network request failed");
+
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it("keeps cached server models visible with background query failures", async () => {
     mockHrZonesState.data = {
       maxHr: 190,

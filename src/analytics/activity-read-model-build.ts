@@ -6,6 +6,7 @@ import { METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE } from "../metric-stream/cli
 export const ACTIVITY_DELETE_DBT_SELECT = "activity_source_records+";
 
 export interface SpawnedProcess {
+  stdout: NodeJS.ReadableStream | null;
   stderr: NodeJS.ReadableStream | null;
   on(event: "error", listener: (error: Error) => void): this;
   on(event: "close", listener: (code: number | null) => void): this;
@@ -235,14 +236,16 @@ export async function runActivityReadModelBuild(
       ],
       {
         env: process.env,
-        stdio: ["ignore", "ignore", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
 
-    let stderr = "";
-    child.stderr?.on("data", (chunk: Buffer | string) => {
-      stderr += String(chunk);
-    });
+    let output = "";
+    for (const stream of [child.stdout, child.stderr]) {
+      stream?.on("data", (chunk: Buffer | string) => {
+        output += String(chunk);
+      });
+    }
 
     child.on("error", reject);
     child.on("close", (code) => {
@@ -252,7 +255,7 @@ export async function runActivityReadModelBuild(
       }
       reject(
         new Error(
-          `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT} failed with exit code ${code ?? "unknown"}${stderr ? `: ${stderr.trim()}` : ""}`,
+          `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT} failed with exit code ${code ?? "unknown"}${output ? `: ${output.trim()}` : ""}`,
         ),
       );
     });
