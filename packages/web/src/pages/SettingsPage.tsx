@@ -21,7 +21,6 @@ import {
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-import { McpTokensPanel } from "./McpTokensPanel.tsx";
 import {
   normalizeSettingsCategory,
   SETTINGS_CATEGORIES,
@@ -354,12 +353,6 @@ export function SettingsPage() {
                 <p className="text-xs text-red-400">{zeppPairingMutation.error.message}</p>
               ) : null}
             </div>
-          </PageSection>
-        ) : null}
-
-        {activeCategory === "advanced" ? (
-          <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
-            <McpTokensPanel />
           </PageSection>
         ) : null}
 

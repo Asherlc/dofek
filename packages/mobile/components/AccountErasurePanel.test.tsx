@@ -184,6 +184,12 @@ describe("mobile AccountErasurePanel", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(
       /Account deletion was accepted and your session was closed/i,
     );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Check the account deletion status page for updates.",
+    );
+    expect(screen.getByRole("alert").textContent).not.toMatch(
+      /preparation|capability|confirmation response/i,
+    );
     const telemetry = mockCaptureException.mock.calls
       .map(
         ([error, context]) =>

@@ -418,7 +418,7 @@ afterAll(() => {
 });
 
 describe("worker module", () => {
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
+  // 2 per-provider workers (strava, garmin) + 1 shared sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
   // + 1 activity-delete-analytics + 1 provider-data-deletion + 1 account-erasure = 13
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
@@ -1306,16 +1306,13 @@ describe("worker module", () => {
     expect(processSyncJob).toHaveBeenCalled();
   });
 
-  it("legacy sync processor delegates to processSyncJob and logs warning", async () => {
+  it("shared sync processor delegates to processSyncJob", async () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
-    const { logger } = await import("../logger.ts");
     vi.mocked(processSyncJob).mockClear();
-    vi.mocked(logger.warn).mockClear();
 
     await invokeProcessor("sync-queue", { providerId: "wahoo", userId: "user-1" });
 
     expect(processSyncJob).toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalled();
   });
 
   it("import processor delegates to processFileUploadImportJob", async () => {

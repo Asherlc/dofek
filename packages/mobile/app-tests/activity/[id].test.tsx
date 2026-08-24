@@ -203,6 +203,7 @@ vi.mock("@dofek/training/muscle-groups", () => ({}));
 
 vi.mock("@dofek/training/training", () => ({
   formatActivityTypeLabel: (type: string) => type,
+  isActivityDetailType: (activityType: string, detailType: string) => activityType === detailType,
   isCyclingActivity: (type: string) => type === "cycling",
   cadenceUnit: (type: string) => (type === "cycling" ? "rpm" : "steps/min"),
 }));
