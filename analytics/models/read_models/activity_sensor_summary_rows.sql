@@ -164,7 +164,7 @@ restored_dirty_keys AS (
     {% endif %}
 ),
 
-dirty_keys AS materialized (
+dirty_keys AS MATERIALIZED (
     SELECT DISTINCT
         assumeNotNull(activity_id) AS activity_id,
         assumeNotNull(user_id) AS user_id
@@ -205,7 +205,7 @@ active_dirty_keys AS (
     FROM dirty_keys
 ),
 
-latest_sensor_samples AS materialized (
+latest_sensor_samples AS MATERIALIZED (
     SELECT *
     FROM (
         SELECT *
@@ -324,7 +324,7 @@ channel_aggs AS (
     GROUP BY activity_id, user_id
 ),
 
-power_cumulative AS materialized (
+power_cumulative AS MATERIALIZED (
     SELECT
         activity_id,
         recorded_at,
