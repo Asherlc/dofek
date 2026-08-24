@@ -7,6 +7,17 @@ export interface BleHeartRateDevice {
   name: string | null;
 }
 
+/** Persisted state and latest native measurement for a heart-rate monitor. */
+export interface BleHeartRateDeviceSnapshot {
+  id: string;
+  name: string | null;
+  connectionState: string;
+  lastMeasurementAt: string | null;
+  lastHeartRateBpm: number | null;
+  lastRrIntervalsMs: number[];
+  bufferedSampleCount: number;
+}
+
 /**
  * A single heart-rate notification.
  *
@@ -46,6 +57,11 @@ export async function connect(peripheralId: string): Promise<BleHeartRateDevice>
   return BleHeartRateModule.connect(peripheralId);
 }
 
+/** List the app-managed Bluetooth heart-rate monitors and their native state. */
+export function getDevices(): BleHeartRateDeviceSnapshot[] {
+  return BleHeartRateModule.getDevices();
+}
+
 /** Get the current BLE connection state (idle, scanning, connecting, ready). */
 export function getConnectionState(): string {
   return BleHeartRateModule.getConnectionState();
@@ -74,9 +90,20 @@ export function confirmSamplesDrain(count: number): void {
   BleHeartRateModule.confirmSamplesDrain(count);
 }
 
-/** Disconnect from the heart-rate monitor. */
-export function disconnect(): void {
-  BleHeartRateModule.disconnect();
+/** Disconnect the current monitor, or a persisted monitor when specified. */
+export function disconnect(): void;
+export function disconnect(peripheralId: string): void;
+export function disconnect(peripheralId?: string): void {
+  if (peripheralId === undefined) {
+    BleHeartRateModule.disconnect();
+    return;
+  }
+  BleHeartRateModule.disconnect(peripheralId);
+}
+
+/** Forget one persisted monitor. */
+export function forget(peripheralId: string): void {
+  BleHeartRateModule.forget(peripheralId);
 }
 
 /** Disconnect and clear buffered heart-rate samples for the deleted account. */
@@ -101,6 +128,13 @@ export function addConnectionStateListener(
   callback: (event: ConnectionStateEvent) => void,
 ): EventSubscription {
   return BleHeartRateModule.addListener("onConnectionStateChanged", callback);
+}
+
+/** Subscribe to a persisted monitor's latest native snapshot. */
+export function addDeviceStateListener(
+  callback: (snapshot: BleHeartRateDeviceSnapshot) => void,
+): EventSubscription {
+  return BleHeartRateModule.addListener("onDeviceStateChanged", callback);
 }
 
 /**

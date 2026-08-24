@@ -18,6 +18,22 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.sampleCount, 2)
     }
 
+    func testSampleCountForDeviceCountsOnlyThatDevicesSamples() {
+        let buffer = BleHeartRateSampleBuffer()
+        buffer.append(sample(bpm: 60))
+        buffer.append(
+            BleHeartRateSample(
+                deviceId: "strap-b",
+                timestamp: Date(timeIntervalSince1970: 1_711_800_001),
+                heartRateBpm: 61,
+                rrIntervalsMs: []
+            )
+        )
+
+        XCTAssertEqual(buffer.sampleCount(for: "strap-a"), 1)
+        XCTAssertEqual(buffer.sampleCount(for: "strap-b"), 1)
+    }
+
     func testPeekDoesNotRemoveSamples() {
         let buffer = BleHeartRateSampleBuffer()
         buffer.append(sample(bpm: 60))

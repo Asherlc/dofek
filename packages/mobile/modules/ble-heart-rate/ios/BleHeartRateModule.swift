@@ -11,6 +11,7 @@ public class BleHeartRateModule: Module {
     private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
     private let connectionManager = BleHeartRateConnectionManager()
     private let sampleBuffer = BleHeartRateSampleBuffer()
+    private let deviceRegistry = BleHeartRateDeviceRegistry()
 
     private let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -21,7 +22,7 @@ public class BleHeartRateModule: Module {
     public func definition() -> ModuleDefinition {
         Name("BleHeartRate")
 
-        Events("onConnectionStateChanged", "onHeartRateMeasurement")
+        Events("onConnectionStateChanged", "onDeviceStateChanged", "onHeartRateMeasurement")
 
         OnCreate {
             self.connectionManager.delegate = self
@@ -38,13 +39,19 @@ public class BleHeartRateModule: Module {
 
         AsyncFunction("scanAndConnect") { (promise: Promise) in
             self.connectionManager.scanAndConnect { result in
-                self.resolveConnect(result, promise: promise)
+                self.resolveConnect(result, promise: promise, registerDevice: true)
             }
         }
 
         AsyncFunction("connect") { (peripheralId: String, promise: Promise) in
             self.connectionManager.connect(peripheralId: peripheralId) { result in
-                self.resolveConnect(result, promise: promise)
+                self.resolveConnect(result, promise: promise, registerDevice: false)
+            }
+        }
+
+        Function("getDevices") { () -> [[String: Any]] in
+            self.deviceRegistry.devices.compactMap { device in
+                self.deviceSnapshotPayload(for: device.id)
             }
         }
 
@@ -64,8 +71,15 @@ public class BleHeartRateModule: Module {
             self.sampleBuffer.confirmDrain(count: count)
         }
 
-        Function("disconnect") {
+        Function("disconnect") { (peripheralId: String?) throws in
+            guard peripheralId == nil else {
+                throw BleHeartRateModuleError.perDeviceActionsUnavailable
+            }
             self.connectionManager.disconnect()
+        }
+
+        Function("forget") { (_: String) throws in
+            throw BleHeartRateModuleError.perDeviceActionsUnavailable
         }
 
         AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
@@ -101,10 +115,19 @@ public class BleHeartRateModule: Module {
 
     private func resolveConnect(
         _ result: Result<BleHeartRateDevice, BleHeartRateConnectionError>,
-        promise: Promise
+        promise: Promise,
+        registerDevice: Bool
     ) {
         switch result {
         case .success(let device):
+            if registerDevice {
+                deviceRegistry.register(device)
+                deviceRegistry.setConnectionState(
+                    BleHeartRateConnectionState.ready.rawValue,
+                    for: device.id
+                )
+                emitDeviceState(for: device.id)
+            }
             // Bridge a nil name to an explicit null so JS sees `name: null`.
             var payload: [String: Any] = ["id": device.id]
             payload["name"] = device.name.map { $0 as Any } ?? NSNull()
@@ -135,6 +158,29 @@ public class BleHeartRateModule: Module {
         }
     }
 
+    private func deviceSnapshotPayload(for deviceId: String) -> [String: Any]? {
+        guard let snapshot = deviceRegistry.snapshot(
+            id: deviceId,
+            bufferedSampleCount: sampleBuffer.sampleCount(for: deviceId)
+        ) else {
+            return nil
+        }
+        return [
+            "id": snapshot.id,
+            "name": snapshot.name ?? NSNull(),
+            "connectionState": snapshot.connectionState,
+            "lastMeasurementAt": snapshot.lastMeasurementAt.map(isoFormatter.string) ?? NSNull(),
+            "lastHeartRateBpm": snapshot.lastHeartRateBpm ?? NSNull(),
+            "lastRrIntervalsMs": snapshot.lastRrIntervalsMs,
+            "bufferedSampleCount": snapshot.bufferedSampleCount,
+        ]
+    }
+
+    private func emitDeviceState(for deviceId: String) {
+        guard let payload = deviceSnapshotPayload(for: deviceId) else { return }
+        emitOnMainThread("onDeviceStateChanged", payload.mapValues { Optional($0) })
+    }
+
     private func emitOnMainThread(_ event: String, _ payload: [String: Any?]) {
         let bridgePayload = payload.compactMapValues { $0 }
         if Thread.isMainThread {
@@ -147,6 +193,14 @@ public class BleHeartRateModule: Module {
     }
 }
 
+private enum BleHeartRateModuleError: LocalizedError {
+    case perDeviceActionsUnavailable
+
+    var errorDescription: String? {
+        "Per-device Bluetooth actions are unavailable until multi-device connections are enabled"
+    }
+}
+
 // MARK: - BleHeartRateConnectionManagerDelegate
 
 extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
@@ -154,11 +208,13 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
         _ manager: BleHeartRateConnectionManager,
         device: BleHeartRateDevice
     ) {
+        deviceRegistry.setConnectionState(BleHeartRateConnectionState.ready.rawValue, for: device.id)
         emitOnMainThread("onConnectionStateChanged", [
             "state": "connected",
             "peripheralId": device.id,
             "name": device.name,
         ])
+        emitDeviceState(for: device.id)
     }
 
     func connectionManagerDidDisconnect(
@@ -166,11 +222,13 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
         peripheralId: String,
         error: Error?
     ) {
+        deviceRegistry.setConnectionState(BleHeartRateConnectionState.idle.rawValue, for: peripheralId)
         emitOnMainThread("onConnectionStateChanged", [
             "state": "disconnected",
             "peripheralId": peripheralId,
             "error": error?.localizedDescription,
         ])
+        emitDeviceState(for: peripheralId)
     }
 
     func connectionManager(
@@ -187,11 +245,18 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
                 rrIntervalsMs: measurement.rrIntervalsMs
             )
         )
+        deviceRegistry.recordMeasurement(
+            deviceId: deviceId,
+            heartRateBpm: measurement.heartRateBpm,
+            rrIntervalsMs: measurement.rrIntervalsMs,
+            at: timestamp
+        )
 
         emitOnMainThread("onHeartRateMeasurement", [
             "timestamp": isoFormatter.string(from: timestamp),
             "heartRateBpm": measurement.heartRateBpm,
             "rrIntervalsMs": measurement.rrIntervalsMs,
         ])
+        emitDeviceState(for: deviceId)
     }
 }

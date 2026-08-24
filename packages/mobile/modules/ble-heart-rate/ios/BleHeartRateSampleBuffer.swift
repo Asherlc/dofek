@@ -50,6 +50,12 @@ final class BleHeartRateSampleBuffer {
         return samples.count
     }
 
+    func sampleCount(for deviceId: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return samples.count(where: { $0.deviceId == deviceId })
+    }
+
     func append(_ sample: BleHeartRateSample) {
         lock.lock()
         defer { lock.unlock() }
