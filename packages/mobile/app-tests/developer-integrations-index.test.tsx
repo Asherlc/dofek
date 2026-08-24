@@ -109,6 +109,8 @@ describe("DeveloperIntegrationsScreen", () => {
     renderScreen();
 
     expect(await screen.findByText("No developer integrations yet.")).toBeTruthy();
+    expect(screen.getByText(/POST \/api\/external\/v1\/link\/start/)).toBeTruthy();
+    expect(screen.getByText(/requestedScopes: nutrition:write/)).toBeTruthy();
   });
 
   it("shows active/revoked clients and navigates to detail and external docs", async () => {
@@ -157,6 +159,14 @@ describe("DeveloperIntegrationsScreen", () => {
     expect(JSON.stringify(queryClient.getQueryData(["developer-clients"]))).not.toContain(
       "raw-created-mobile-secret",
     );
+    expect(
+      JSON.stringify(
+        queryClient
+          .getMutationCache()
+          .getAll()
+          .map((mutation) => mutation.state.data),
+      ),
+    ).not.toContain("raw-created-mobile-secret");
 
     fireEvent.click(screen.getByRole("button", { name: "Copy client secret" }));
     await waitFor(() =>

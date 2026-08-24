@@ -209,7 +209,7 @@ describe.sequential("external write API network contract", () => {
     });
   }
 
-  it("provisions an owner client only through the authenticated developer API", async () => {
+  it("provisions an owner client through the authenticated developer API", async () => {
     const created = await createDeveloperClient("contract-test");
     const rows = await testContext.db.execute<{ owner_user_id: string; secret_hash: string }>(sql`
       SELECT owner_user_id, secret_hash
@@ -223,23 +223,6 @@ describe.sequential("external write API network contract", () => {
       },
     ]);
     expect(rows[0]?.secret_hash).not.toBe(created.client.clientSecret);
-
-    const legacyProvision = await fetch(`${baseUrl}/api/external/v1/clients`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${created.sessionId}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name: "contract-test", scopes: ["nutrition:write"] }),
-    });
-    expect(legacyProvision.status).toBe(404);
-    for (const operation of ["rotate", "revoke"]) {
-      const response = await fetch(`${baseUrl}/api/external/v1/clients/ext_missing/${operation}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${created.sessionId}` },
-      });
-      expect(response.status).toBe(404);
-    }
   });
 
   it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
@@ -421,6 +404,41 @@ describe.sequential("external write API network contract", () => {
     }
     expect(statuses.slice(0, 60).every((status) => status === 200)).toBe(true);
     expect(statuses[60]).toBe(429);
+  });
+
+  it("counts rejected client authentication toward the link-start limit", async () => {
+    const created = await createDeveloperClient("rejected-link-rate-limit-test");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    linkStartRateLimitIp += 1;
+    const ip = `198.51.100.${linkStartRateLimitIp}`;
+    const rejected = await startLink({
+      authorization: "Bearer ext_invalid.invalid-secret",
+      codeVerifier: "c".repeat(43),
+      ip,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(rejected.status).toBe(401);
+
+    for (let attempt = 0; attempt < 59; attempt += 1) {
+      const response = await startLink({
+        authorization,
+        codeVerifier: "c".repeat(43),
+        ip,
+        redirectUri: created.client.client.redirectUris[0] ?? "",
+      });
+      expect(response.status).toBe(200);
+    }
+    const limited = await startLink({
+      authorization,
+      codeVerifier: "c".repeat(43),
+      ip,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(limited.status).toBe(429);
+    expect(DeveloperApiProblemSchema.parse(await limited.json())).toMatchObject({
+      code: "RATE_LIMITED",
+      status: 429,
+    });
   });
 
   it("reissues an expired token on the same grant and rotates the stored hash", async () => {

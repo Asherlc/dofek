@@ -170,6 +170,14 @@ describe("DeveloperClientDetailPage", () => {
     expect(
       JSON.stringify(queryClient.getQueryData(["developer-clients", "ext_detail"])),
     ).not.toContain("raw-rotated-secret");
+    expect(
+      JSON.stringify(
+        queryClient
+          .getMutationCache()
+          .getAll()
+          .map((mutation) => mutation.state.data),
+      ),
+    ).not.toContain("raw-rotated-secret");
     fireEvent.click(screen.getByRole("button", { name: "I saved the secret" }));
     expect(screen.queryByText("raw-rotated-secret")).toBeNull();
   });

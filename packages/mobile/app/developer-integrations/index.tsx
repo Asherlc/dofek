@@ -62,9 +62,10 @@ export function DeveloperIntegrationsScreenView({
           >
             <Text style={styles.link}>External API contract</Text>
           </TouchableOpacity>
-          <Text selectable style={styles.code}>{`POST /api/external/link/start
+          <Text selectable style={styles.code}>{`POST /api/external/v1/link/start
 Authorization: Bearer <client-id>.<client-secret>
-codeChallengeMethod: S256`}</Text>
+requestedScopes: nutrition:write
+codeChallenge: <S256-challenge>`}</Text>
         </View>
 
         <View style={styles.card}>
@@ -160,9 +161,11 @@ export default function DeveloperIntegrationsScreen() {
     queryFn: () => developerClientsApi.list(),
   });
   const createClient = useMutation({
-    mutationFn: (input: DeveloperClientInput) => developerClientsApi.create(input),
-    onSuccess: async (secret) => {
+    mutationFn: async (input: DeveloperClientInput) => {
+      const secret = await developerClientsApi.create(input);
       setCreatedSecret(secret);
+    },
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["developer-clients"] });
     },
   });

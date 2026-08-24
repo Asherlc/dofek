@@ -24,6 +24,9 @@ export interface DeveloperClientSecret {
 }
 
 export function canonicalizeDeveloperRedirectUri(value: string): string {
+  if (value.includes("#")) {
+    throw new Error("Redirect URIs must not contain a fragment.");
+  }
   const redirectUri = new URL(value);
   if (redirectUri.protocol !== "https:") {
     throw new Error("Redirect URIs must use HTTPS.");

@@ -12,9 +12,10 @@ contract.
 ## Client credentials and browser authorization
 
 An authenticated Dofek user registers and manages their own client from
-[Developer integrations](/developer-integrations). The creation response
-contains a client ID and client secret exactly once. Dofek stores only a
-SHA-256 hash of the secret; logs and database rows never contain the raw value.
+[Developer integrations](https://dofek.asherlc.com/developer-integrations).
+The creation response contains a client ID and client secret exactly once.
+Dofek stores only a SHA-256 hash of the secret; logs and database rows never
+contain the raw value.
 Owners can update callback URIs, rotate the secret, or revoke the client;
 revocation immediately revokes all grants for that client. Clients send
 `Authorization: Bearer <clientId>.<clientSecret>`.
@@ -59,10 +60,10 @@ ID as an authority claim.
 
 ## Explicit relinking
 
-Existing Slack links in `fitness.auth_account` and
-`fitness.slack_team_membership` are not migrated automatically. After the
-Slack extraction, a user must complete the new linking flow explicitly. A
-subject already linked to another Dofek account returns
+The prior in-process Slack integration state was removed by
+[migration 0088](../drizzle/0088_remove_slack_storage.sql) and is not converted
+into developer-client grants. A user must complete the new linking flow
+explicitly. A subject already linked to another Dofek account returns
 `EXTERNAL_IDENTITY_ALREADY_LINKED`; it is never silently reassigned.
 
 The link flow is one-time and PKCE-bound:

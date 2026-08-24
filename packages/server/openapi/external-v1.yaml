@@ -171,13 +171,6 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
-    ExternalClientSecret:
-      type: object
-      required: [clientId, clientSecret]
-      properties:
-        clientId: { type: string }
-        clientSecret: { type: string, minLength: 43, maxLength: 43 }
-        scopes: { type: array, items: { type: string } }
     LinkAuthorizationRequest:
       type: object
       required: [linkId, approved, csrfToken]

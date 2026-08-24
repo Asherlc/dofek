@@ -300,6 +300,9 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
   router.post(
     "/link/start",
     express.json(),
+    (request, response, next) => {
+      linkStartRateLimit(request, response, next);
+    },
     async (req, res, next) => {
       try {
         const client = await authenticateClient(deps.db, req);
@@ -316,10 +319,6 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
         );
         sendProblem(res, req, 503, "SERVICE_UNAVAILABLE");
       }
-    },
-    (request, response, next) => {
-      if (response.headersSent) return;
-      linkStartRateLimit(request, response, next);
     },
     handleExternalErrors("link start", async (req, res) => {
       const client = res.locals.externalClient;

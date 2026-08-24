@@ -322,7 +322,10 @@ The migration must:
 8. replace fitness.account_erasure_relation_is_ownership_neutral so external_client is no longer listed as ownership-neutral; and
 9. retain nullable ownership only for the revoked legacy rows.
 
-Use an explicit transaction in the SQL file. Do not put a production owner mapping or user ID in source control.
+Keep the SQL file transaction-compatible and omit file-level `BEGIN`/`COMMIT`;
+the repository's Drizzle migrator supplies the transaction as documented in
+the [database migration guidance](../../../src/db/README.md#migrations). Do not
+put a production owner mapping or user ID in source control.
 
 - [ ] **Step 5: Register and apply the migration**
 
@@ -489,8 +492,6 @@ Add api-problem.test.ts first, expecting buildProblem and sendApiProblem to prod
 
 Mount createDeveloperClientsRouter against setupTestDatabase and cover:
 
-Mount createDeveloperClientsRouter against setupTestDatabase and cover:
-
 - 401 for no or invalid Dofek session;
 - list never includes a secret or hash;
 - create returns client plus raw secret once, while the database contains only its SHA-256 hash;
@@ -498,7 +499,8 @@ Mount createDeveloperClientsRouter against setupTestDatabase and cover:
 - another authenticated user receives the same 404 problem as a missing client;
 - revoked detail follows Decision 1 and revoked mutations return 404;
 - malformed names, duplicate canonical redirects, HTTP, credentials, and fragments return 422 with field details;
-- sixth create and sixth rotate attempt in one hour return 429 with the structured problem;
+- sixth create and sixth rotate attempt in one hour return 429 with the structured problem,
+  including when an earlier attempt failed session authentication;
 - unexpected database failures call captureException and return a safe 503 without identifiers or exception text.
 
 - [ ] **Step 2: Run the tests and verify the red state**
@@ -516,7 +518,7 @@ Move buildProblem into api-problem.ts and add sendApiProblem(response, requestId
 
 Authenticate with the same cookie-or-Bearer session extraction used by /api/auth/me. Generate client IDs as ext_ plus 18 random base64url bytes and secrets with createOpaqueSecret. Pass only secret.hash to the repository and place secret.value only in the immediate 201/200 response.
 
-Create separate express-rate-limit instances for registration and rotation using Decision 3. Use standard draft-7 headers, disable legacy headers, count all requests, and use sendApiProblem for 429. Mount:
+Create separate express-rate-limit instances for registration and rotation using Decision 3. Use standard draft-7 headers, disable legacy headers, count all requests, and use sendApiProblem for 429. Apply each limiter before session authentication so rejected authentication attempts count. Mount:
 
 ~~~typescript
 app.use(
@@ -593,14 +595,16 @@ Expected: FAIL because link start currently accepts any allowed HTTPS URI and th
 
 Remove POST /clients, /clients/:clientId/rotate, and /clients/:clientId/revoke from the external router. At link start:
 
-1. authenticate the client;
-2. parse the request;
-3. reject when redirectUri !== canonicalizeDeveloperRedirectUri(redirectUri);
-4. verify requested scopes are owned by the client;
-5. query hasExactRedirect(clientId, redirectUri);
-6. only then insert fitness.external_link.
+1. apply the sixty-per-fifteen-minute client-facing IP limiter;
+2. authenticate the client;
+3. parse the request;
+4. reject when redirectUri !== canonicalizeDeveloperRedirectUri(redirectUri);
+5. verify requested scopes are owned by the client;
+6. query hasExactRedirect(clientId, redirectUri);
+7. only then insert fitness.external_link.
 
-Add the sixty-per-fifteen-minute link-start limiter from Decision 3 after client authentication and before transaction creation. Its response must use the structured 429 problem.
+The limiter's response must use the structured 429 problem, and rejected client
+authentication attempts must count without querying or returning client details.
 
 - [ ] **Step 4: Run focused integration tests**
 

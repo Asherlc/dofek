@@ -89,6 +89,8 @@ describe("DeveloperIntegrationsPage", () => {
     renderPage();
 
     expect(await screen.findByText("No developer integrations yet.")).toBeTruthy();
+    expect(screen.getByText(/POST \/api\/external\/v1\/link\/start/)).toBeTruthy();
+    expect(screen.getByText(/"requestedScopes":\["nutrition:write"\]/)).toBeTruthy();
   });
 
   it("shows active and revoked client summaries with detail links", async () => {
@@ -129,6 +131,14 @@ describe("DeveloperIntegrationsPage", () => {
     expect(JSON.stringify(queryClient.getQueryData(["developer-clients"]))).not.toContain(
       "raw-created-secret",
     );
+    expect(
+      JSON.stringify(
+        queryClient
+          .getMutationCache()
+          .getAll()
+          .map((mutation) => mutation.state.data),
+      ),
+    ).not.toContain("raw-created-secret");
 
     fireEvent.click(screen.getByRole("button", { name: "I saved the secret" }));
     await waitFor(() => expect(screen.queryByText("raw-created-secret")).toBeNull());

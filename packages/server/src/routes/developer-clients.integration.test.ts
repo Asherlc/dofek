@@ -291,6 +291,58 @@ describe.sequential("developer client management API", () => {
     });
   });
 
+  it("counts rejected authentication attempts toward create and rotation limits", async () => {
+    const createIp = "192.0.2.53";
+    const rejectedCreate = await request("/api/developer/clients", {
+      method: "POST",
+      ip: createIp,
+      sessionId: "invalid-session",
+      body: validInput("Rejected create"),
+    });
+    expect(rejectedCreate.status).toBe(401);
+    for (let index = 0; index < 4; index += 1) {
+      const response = await request("/api/developer/clients", {
+        method: "POST",
+        ip: createIp,
+        body: validInput(
+          `Counted create ${index}`,
+          `https://counted-create-${index}.example/callback`,
+        ),
+      });
+      expect(response.status).toBe(201);
+    }
+    const limitedCreate = await request("/api/developer/clients", {
+      method: "POST",
+      ip: createIp,
+      body: validInput("Limited counted create", "https://limited-create.example/callback"),
+    });
+    expect(limitedCreate.status).toBe(429);
+
+    const created = DeveloperClientSecretSchema.parse(
+      await (
+        await request("/api/developer/clients", {
+          method: "POST",
+          ip: "192.0.2.54",
+          body: validInput("Counted rotation", "https://counted-rotation.example/callback"),
+        })
+      ).json(),
+    );
+    const rotatePath = `/api/developer/clients/${created.client.clientId}/rotate`;
+    const rotateIp = "192.0.2.55";
+    const rejectedRotate = await request(rotatePath, {
+      method: "POST",
+      ip: rotateIp,
+      sessionId: "invalid-session",
+    });
+    expect(rejectedRotate.status).toBe(401);
+    for (let index = 0; index < 4; index += 1) {
+      const response = await request(rotatePath, { method: "POST", ip: rotateIp });
+      expect(response.status).toBe(200);
+    }
+    const limitedRotate = await request(rotatePath, { method: "POST", ip: rotateIp });
+    expect(limitedRotate.status).toBe(429);
+  });
+
   it("reports unexpected failures and returns a safe 503", async () => {
     const databaseFailure = new Error("database exploded around ext_private_identifier");
     const repository = new DeveloperClientRepository(context.db);

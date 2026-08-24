@@ -29,6 +29,7 @@ describe("developer client schemas", () => {
     "http://client.example/callback",
     "https://user:password@client.example/callback",
     "https://client.example/callback#fragment",
+    "https://client.example/callback#",
     "not a uri",
   ])("rejects an unsafe redirect URI: %s", (redirectUri) => {
     expect(() => canonicalizeDeveloperRedirectUri(redirectUri)).toThrow();

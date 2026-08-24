@@ -1,5 +1,3 @@
-BEGIN;
---> statement-breakpoint
 ALTER TABLE fitness.external_client
   ADD COLUMN owner_user_id uuid
     REFERENCES fitness.user_profile (id) ON DELETE CASCADE,
@@ -81,5 +79,3 @@ AS $$
     true
   );
 $$;
---> statement-breakpoint
-COMMIT;

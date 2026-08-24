@@ -109,10 +109,13 @@ export function DeveloperClientDetailPage() {
   });
 
   const rotateClient = useMutation({
-    mutationFn: () => developerClientsApi.rotate(clientId),
-    onSuccess: async (rotated) => {
+    mutationFn: async () => {
+      const rotated = await developerClientsApi.rotate(clientId);
       setRotatedSecret(rotated);
-      queryClient.setQueryData(detailQueryKey, rotated.client);
+      return rotated.client;
+    },
+    onSuccess: async (rotatedClient) => {
+      queryClient.setQueryData(detailQueryKey, rotatedClient);
       await invalidateClientQueries();
     },
   });

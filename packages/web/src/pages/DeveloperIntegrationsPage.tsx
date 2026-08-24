@@ -57,11 +57,11 @@ export function DeveloperIntegrationsPageView({
             External API contract
           </a>
           <pre className="overflow-x-auto rounded-lg border border-border bg-background p-3 text-xs text-foreground">
-            <code>{`POST /api/external/link/start
+            <code>{`POST /api/external/v1/link/start
 Authorization: Bearer <client-id>.<client-secret>
 Content-Type: application/json
 
-{"redirectUri":"https://integration.example/callback","scopes":["nutrition:write"],"codeChallenge":"<S256-challenge>","codeChallengeMethod":"S256"}`}</code>
+{"redirectUri":"https://integration.example/callback","requestedScopes":["nutrition:write"],"codeChallenge":"<S256-challenge>"}`}</code>
           </pre>
         </div>
       </PageSection>
@@ -139,9 +139,11 @@ export function DeveloperIntegrationsPage() {
     queryFn: () => developerClientsApi.list(),
   });
   const createClient = useMutation({
-    mutationFn: (input: DeveloperClientInput) => developerClientsApi.create(input),
-    onSuccess: async (secret) => {
+    mutationFn: async (input: DeveloperClientInput) => {
+      const secret = await developerClientsApi.create(input);
       setCreatedSecret(secret);
+    },
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["developer-clients"] });
     },
   });

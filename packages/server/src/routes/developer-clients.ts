@@ -93,6 +93,8 @@ export function createDeveloperClientsRouter(deps: {
     response.set("x-request-id", response.locals.developerRequestId);
     next();
   });
+  router.post("/", registrationRateLimit);
+  router.post("/:clientId/rotate", rotationRateLimit);
   router.use(express.json());
   router.use(async (request, response, next) => {
     try {
@@ -122,7 +124,6 @@ export function createDeveloperClientsRouter(deps: {
 
   router.post(
     "/",
-    registrationRateLimit,
     handleDeveloperErrors("create", async (request, response) => {
       const input = DeveloperClientInputSchema.safeParse(request.body);
       if (!input.success) {
@@ -189,7 +190,6 @@ export function createDeveloperClientsRouter(deps: {
 
   router.post(
     "/:clientId/rotate",
-    rotationRateLimit,
     handleDeveloperErrors("rotate", async (request, response) => {
       const secret = createOpaqueSecret();
       const client = await deps.repository.rotateOwned(

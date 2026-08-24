@@ -194,6 +194,14 @@ describe("DeveloperClientDetailScreen", () => {
     expect(
       JSON.stringify(queryClient.getQueryData(["developer-clients", "ext_detail"])),
     ).not.toContain("raw-mobile-rotated-secret");
+    expect(
+      JSON.stringify(
+        queryClient
+          .getMutationCache()
+          .getAll()
+          .map((mutation) => mutation.state.data),
+      ),
+    ).not.toContain("raw-mobile-rotated-secret");
     fireEvent.click(screen.getByRole("button", { name: "I saved the secret" }));
     expect(screen.queryByText("raw-mobile-rotated-secret")).toBeNull();
   });
