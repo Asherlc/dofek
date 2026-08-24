@@ -85,10 +85,6 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {
-  render: () => <SubjectiveStory scenario="injuries" />,
-};
-
 export const InjuriesPresent: Story = {
   render: () => <SubjectiveStory scenario="injuries" />,
 };

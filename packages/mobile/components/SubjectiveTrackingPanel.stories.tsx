@@ -84,7 +84,7 @@ export const Empty: Story = {
   tags: ["review-scenario", "review-scenario-empty-data"],
 };
 
-export const LoggedWithInjury: Story = {
+export const InjuriesPresent: Story = {
   render: () => <SubjectiveStoryFrame scenario="injuries" />,
 };
 
