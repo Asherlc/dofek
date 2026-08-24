@@ -7,6 +7,7 @@ import { z } from "zod";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { DeveloperClientRepository } from "../repositories/developer-client-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
 
 // ── Schemas for admin queries ──
@@ -164,6 +165,8 @@ const paginationInput = z.object({
 });
 
 const countSchema = z.object({ count: z.coerce.number() });
+const developerClientNotFoundMessage =
+  "The developer integration was not found or is already revoked.";
 
 function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefined) {
   if (!sensorStore) {
@@ -173,6 +176,23 @@ function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefine
 }
 
 export const adminRouter = router({
+  externalClients: adminProcedure.query(({ ctx }) =>
+    new DeveloperClientRepository(ctx.db).listForSupport(),
+  ),
+
+  revokeExternalClient: adminProcedure
+    .input(z.object({ clientId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const revoked = await new DeveloperClientRepository(ctx.db).revokeForSupport(
+        ctx.userId,
+        input.clientId,
+      );
+      if (!revoked) {
+        throw new TRPCError({ code: "NOT_FOUND", message: developerClientNotFoundMessage });
+      }
+      return { revoked: true as const };
+    }),
+
   /** High-level overview: row counts for all key tables */
   overview: adminProcedure.query(async ({ ctx }) => {
     const bodyStore = requireBodyMeasurementStore(ctx.sensorStore);
