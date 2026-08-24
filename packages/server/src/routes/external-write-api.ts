@@ -17,12 +17,8 @@ import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
-import {
-  buildProblem,
-  createOpaqueSecret,
-  hashSecret,
-  verifyPkce,
-} from "./external-write-api-primitives.ts";
+import { buildProblem, sendApiProblem } from "./api-problem.ts";
+import { createOpaqueSecret, hashSecret, verifyPkce } from "./external-write-api-primitives.ts";
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const LINK_TTL_MS = 10 * 60 * 1000;
@@ -138,9 +134,11 @@ function sendProblem(
   details: unknown[] = [],
 ): void {
   const id = res.locals.externalRequestId ?? requestId(req);
-  const problem = buildProblem(code, status, id, details);
-  if (message) problem.message = message;
-  res.status(status).json(problem);
+  if (message) {
+    res.status(status).json({ ...buildProblem(code, status, id, details), message });
+    return;
+  }
+  sendApiProblem(res, id, status, code, details);
 }
 
 function validationDetails(

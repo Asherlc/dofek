@@ -199,6 +199,14 @@ describe("tRPC API", () => {
       expect(data.name).toBeDefined();
     });
 
+    it("mounts the authenticated developer-client management API", async () => {
+      const res = await fetch(`${baseUrl}/api/developer/clients`, {
+        headers: { Cookie: sessionCookie },
+      });
+      expect(res.status).toBe(200);
+      expect(Array.isArray(await res.json())).toBe(true);
+    });
+
     it("GET /api/auth/me returns 401 without session cookie", async () => {
       const res = await fetch(`${baseUrl}/api/auth/me`);
       expect(res.status).toBe(401);
