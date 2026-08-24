@@ -569,6 +569,8 @@ describe("SettingsScreen data sources", () => {
     expect(
       screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
     ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");
   });
 
   it("navigates to providers screen when tapped", async () => {

@@ -107,7 +107,8 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText: "advanced dashboard layout developer tools diagnostics",
+    searchText:
+      "advanced dashboard layout developer integrations OAuth callback API tools diagnostics",
   },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
@@ -852,6 +853,27 @@ export default function SettingsScreen() {
           >
             <View style={styles.dataSourcesRow}>
               <Text style={styles.devToolLabel}>Contact Support</Text>
+              <Text style={styles.devToolChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {activeCategory === "advanced" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Developer integrations</Text>
+          <Text style={styles.sectionDescription}>
+            Register and manage clients that write data through the external API
+          </Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/developer-integrations")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Manage developer integrations"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.devToolLabel}>Manage developer integrations</Text>
               <Text style={styles.devToolChevron}>›</Text>
             </View>
           </TouchableOpacity>

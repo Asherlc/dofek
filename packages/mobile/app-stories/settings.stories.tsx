@@ -200,3 +200,9 @@ export const AccountPassword: Story = {
     await userEvent.click(await within(canvasElement).findByRole("button", { name: "Account" }));
   },
 };
+
+export const Advanced: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Advanced" }));
+  },
+};
