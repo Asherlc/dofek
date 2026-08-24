@@ -8,6 +8,7 @@ import {
   getDeviceSummary as getWhoopDeviceSummary,
   type WhoopDeviceSummary,
 } from "../modules/whoop-ble";
+import { captureException } from "./telemetry";
 
 export interface HeartRateDiagnostics {
   bufferedSampleCount: number;
@@ -40,6 +41,10 @@ export type BluetoothDevice =
 export interface BluetoothDeviceSubscription {
   remove(): void;
 }
+
+export type BluetoothDeviceCatalogUpdate =
+  | { state: "ready"; devices: BluetoothDevice[]; error: null }
+  | { state: "error"; devices: []; error: string };
 
 function toWhoopDevice(summary: WhoopDeviceSummary): BluetoothDevice {
   return {
@@ -74,20 +79,30 @@ export async function getBluetoothDevices(): Promise<BluetoothDevice[]> {
   return [toWhoopDevice(getWhoopDeviceSummary()), ...heartRateDevices.map(toHeartRateDevice)];
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function subscribeBluetoothDevices(
-  listener: (devices: BluetoothDevice[]) => void,
+  listener: (update: BluetoothDeviceCatalogUpdate) => void,
 ): BluetoothDeviceSubscription {
   let isActive = true;
-  const publish = () => {
-    void getBluetoothDevices().then((devices) => {
+  const publish = async () => {
+    try {
+      const devices = await getBluetoothDevices();
       if (isActive) {
-        listener(devices);
+        listener({ state: "ready", devices, error: null });
       }
-    });
+    } catch (error) {
+      captureException(error, { source: "bluetooth-device-catalog-subscription" });
+      if (isActive) {
+        listener({ state: "error", devices: [], error: errorMessage(error) });
+      }
+    }
   };
 
-  const heartRateSubscription = addDeviceStateListener(publish);
-  const whoopSubscription = addWhoopConnectionStateListener(publish);
+  const heartRateSubscription = addDeviceStateListener(() => void publish());
+  const whoopSubscription = addWhoopConnectionStateListener(() => void publish());
 
   return {
     remove() {

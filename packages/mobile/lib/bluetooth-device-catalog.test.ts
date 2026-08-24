@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockHeartRate = vi.hoisted(() => {
@@ -128,10 +129,14 @@ describe("bluetooth-device-catalog", () => {
     mockHeartRate.emitDeviceStateChanged(polar);
 
     await vi.waitFor(() =>
-      expect(listener).toHaveBeenCalledWith([
-        expect.objectContaining({ id: "whoop" }),
-        expect.objectContaining({ id: "polar" }),
-      ]),
+      expect(listener).toHaveBeenCalledWith({
+        state: "ready",
+        devices: [
+          expect.objectContaining({ id: "whoop" }),
+          expect.objectContaining({ id: "polar" }),
+        ],
+        error: null,
+      }),
     );
   });
 
@@ -150,14 +155,40 @@ describe("bluetooth-device-catalog", () => {
     mockWhoop.emitConnectionStateChanged({ state: "connected", peripheralId: "whoop-123" });
 
     await vi.waitFor(() =>
-      expect(listener).toHaveBeenCalledWith([
-        expect.objectContaining({
-          id: "whoop-123",
-          name: "WHOOP 4.0",
-          connectionState: "connected",
-        }),
-      ]),
+      expect(listener).toHaveBeenCalledWith({
+        state: "ready",
+        devices: [
+          expect.objectContaining({
+            id: "whoop-123",
+            name: "WHOOP 4.0",
+            connectionState: "connected",
+          }),
+        ],
+        error: null,
+      }),
     );
+  });
+
+  it("publishes the native device error when a catalog refresh fails", async () => {
+    const { subscribeBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
+    const listener = vi.fn();
+    const error = new Error("Heart-rate device registry is unavailable");
+    mockHeartRate.getDevices.mockRejectedValue(error);
+    subscribeBluetoothDevices(listener);
+
+    mockHeartRate.emitDeviceStateChanged(polar);
+
+    await vi.waitFor(() =>
+      expect(listener).toHaveBeenCalledWith({
+        state: "error",
+        devices: [],
+        error: "Heart-rate device registry is unavailable",
+      }),
+    );
+    expect(Sentry.captureException).toHaveBeenCalledWith(error, {
+      tags: { source: "bluetooth-device-catalog-subscription" },
+      extra: { source: "bluetooth-device-catalog-subscription" },
+    });
   });
 
   it("removes both native subscriptions", async () => {
