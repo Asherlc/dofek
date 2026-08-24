@@ -6,62 +6,6 @@ info:
 servers:
   - url: /
 paths:
-  /api/external/v1/clients:
-    post:
-      operationId: provisionExternalClient
-      summary: Provision an external client
-      security: [{ sessionAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, scopes]
-              properties:
-                name: { type: string, minLength: 1, maxLength: 200 }
-                scopes:
-                  type: array
-                  minItems: 1
-                  maxItems: 1
-                  items: { type: string, enum: ['nutrition:write'] }
-      responses:
-        '201':
-          description: Client created. The secret is returned only once.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ExternalClientSecret' }
-        '403': { $ref: '#/components/responses/Problem' }
-        '422': { $ref: '#/components/responses/Problem' }
-  /api/external/v1/clients/{clientId}/rotate:
-    post:
-      operationId: rotateExternalClientSecret
-      summary: Rotate an external client secret
-      security: [{ sessionAuth: [] }]
-      parameters:
-        - { name: clientId, in: path, required: true, schema: { type: string } }
-      responses:
-        '200':
-          description: Rotated client secret. The secret is returned only once.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ExternalClientSecret' }
-        '403': { $ref: '#/components/responses/Problem' }
-        '404': { $ref: '#/components/responses/Problem' }
-  /api/external/v1/clients/{clientId}/revoke:
-    post:
-      operationId: revokeExternalClient
-      summary: Revoke an external client
-      security: [{ sessionAuth: [] }]
-      parameters:
-        - { name: clientId, in: path, required: true, schema: { type: string } }
-      responses:
-        '200':
-          description: Client and all grants revoked
-          content:
-            application/json:
-              schema: { type: object, required: [revoked], properties: { revoked: { type: boolean } } }
-        '403': { $ref: '#/components/responses/Problem' }
   /api/external/v1/link/start:
     post:
       operationId: startExternalLink
@@ -80,6 +24,7 @@ paths:
               schema: { $ref: '#/components/schemas/LinkStartResponse' }
         '401': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
   /api/external/v1/link/exchange:
     post:
       operationId: exchangeExternalLink
@@ -250,7 +195,10 @@ components:
       type: object
       required: [redirectUri, codeChallenge, requestedScopes]
       properties:
-        redirectUri: { type: string, format: uri }
+        redirectUri:
+          type: string
+          format: uri
+          description: The complete canonical HTTPS callback URI. It must exactly match one URI registered for the authenticated developer client.
         codeChallenge: { type: string, minLength: 43, maxLength: 128 }
         state: { type: string, maxLength: 500 }
         requestedScopes:
