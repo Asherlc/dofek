@@ -15,7 +15,12 @@ import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
-import { cadenceUnit, formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
+import {
+  cadenceUnit,
+  formatActivityTypeLabel,
+  isActivityDetailType,
+  isCyclingActivity,
+} from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -45,18 +50,6 @@ import { ActivitySourceDecisionCard } from "./ActivitySourceDecisionCard";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
 import { styles } from "./styles";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
-
-function isStrengthActivityType(activityType: string): boolean {
-  return activityType === "strength";
-}
-
-function isClimbingActivityType(activityType: string): boolean {
-  return activityType === "climbing";
-}
-
-function isHangboardingActivityType(activityType: string): boolean {
-  return activityType === "hangboard";
-}
 
 function activityIcon(type: string): string {
   return getActivityIconInfo(type).emoji;
@@ -606,19 +599,19 @@ export default function ActivityDetailScreen() {
     },
   );
   const isStrengthActivity =
-    detail.data != null && isStrengthActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
   );
   const isClimbingActivity =
-    detail.data != null && isClimbingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityEntries.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isClimbingActivity },
   );
   const isHangboardingActivity =
-    detail.data != null && isHangboardingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isHangboardingActivity },

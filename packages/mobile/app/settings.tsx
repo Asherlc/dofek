@@ -4,13 +4,12 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
-import { formatDateMedium, formatDateTime } from "@dofek/format/format";
+import { formatDateMedium } from "@dofek/format/format";
 import {
   type ClimbingGradePreference,
   resolveClimbingGradePreference,
 } from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -100,8 +99,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText:
-      "advanced dashboard layout developer integrations OAuth callback API tools diagnostics",
+    searchText: "advanced dashboard layout developer integrations OAuth callback API",
   },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
@@ -167,10 +165,6 @@ function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined
   return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
 }
 
-function formatLocalizedDateTime(date: Date | null | undefined): string {
-  if (!date) return "n/a";
-  return formatDateTime(date);
-}
 function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
   const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
@@ -466,7 +460,7 @@ export default function SettingsScreen() {
                     </>
                   )}
                 </View>
-                <Text style={styles.devToolChevron}>›</Text>
+                <Text style={styles.navigationChevron}>›</Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity
@@ -477,8 +471,8 @@ export default function SettingsScreen() {
               accessibilityLabel="Bluetooth Devices"
             >
               <View style={styles.dataSourcesRow}>
-                <Text style={styles.devToolLabel}>Bluetooth Devices</Text>
-                <Text style={styles.devToolChevron}>›</Text>
+                <Text style={styles.navigationLabel}>Bluetooth Devices</Text>
+                <Text style={styles.navigationChevron}>›</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -507,8 +501,8 @@ export default function SettingsScreen() {
               accessibilityLabel="Journal Trends"
             >
               <View style={styles.dataSourcesRow}>
-                <Text style={styles.devToolLabel}>Journal Trends</Text>
-                <Text style={styles.devToolChevron}>›</Text>
+                <Text style={styles.navigationLabel}>Journal Trends</Text>
+                <Text style={styles.navigationChevron}>›</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -539,8 +533,8 @@ export default function SettingsScreen() {
             accessibilityLabel="Health Reports"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Open Health Reports</Text>
-              <Text style={styles.devToolChevron}>›</Text>
+              <Text style={styles.navigationLabel}>Open Health Reports</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -824,8 +818,8 @@ export default function SettingsScreen() {
             accessibilityLabel="Contact Support"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Contact Support</Text>
-              <Text style={styles.devToolChevron}>›</Text>
+              <Text style={styles.navigationLabel}>Contact Support</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -851,70 +845,6 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       ) : null}
-
-      {/* ── Developer Tools ── */}
-      {activeCategory === "advanced" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Developer Tools</Text>
-          <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/ble-probe");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Bluetooth Low Energy probe"
-            >
-              <Text style={styles.devToolLabel}>Bluetooth Low Energy probe</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/imu-visualization");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Inertial measurement unit visualization"
-            >
-              <Text style={styles.devToolLabel}>Inertial measurement unit visualization</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/heart-rate-visualization");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Heart Rate Visualization"
-            >
-              <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <View style={[styles.devToolRow, styles.devToolRowLast]}>
-              <View>
-                <Text style={styles.devToolLabel}>OTA Update</Text>
-                <Text style={styles.devToolDetail}>
-                  {Updates.updateId ?? "embedded bundle"}
-                  {"\n"}
-                  Channel: {Updates.channel ?? "none"}
-                  {"\n"}
-                  Runtime: {Updates.runtimeVersion ?? "unknown"}
-                  {"\n"}
-                  Created: {formatLocalizedDateTime(Updates.createdAt)}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      ) : null}
-
       {/* ── Danger Zone ── */}
       {activeCategory === "privacy-export" ? (
         <View style={styles.section}>

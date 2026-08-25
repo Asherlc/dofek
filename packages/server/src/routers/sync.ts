@@ -216,8 +216,8 @@ const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as co
 
 export { sanitizeErrorMessage };
 
-/** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
-const legacySyncQueue = createSyncQueue();
+/** Shared CLI queue included in sync status and active-sync listings. */
+const sharedSyncQueue = createSyncQueue();
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -387,7 +387,7 @@ const syncRouterProcedures = {
       }
       // Fall back to legacy queue for old jobs
       if (!job) {
-        job = await legacySyncQueue.getJob(rawId);
+        job = await sharedSyncQueue.getJob(rawId);
       }
     } catch (error: unknown) {
       captureException(error, {
@@ -463,7 +463,7 @@ const syncRouterProcedures = {
       ]);
       const jobArrays: Job<SyncJobData>[][] = await Promise.all([
         ...[...providerIds].map((id) => getProviderSyncQueue(id).getJobs(states)),
-        legacySyncQueue.getJobs(states),
+        sharedSyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();
     } catch (error: unknown) {

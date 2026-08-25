@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import { formatDateTime } from "@dofek/format/format";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { Alert } from "react-native";
@@ -34,14 +33,6 @@ vi.mock("expo-file-system", () => {
 
 vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
-}));
-
-vi.mock("expo-updates", () => ({
-  updateId: null,
-  channel: null,
-  runtimeVersion: null,
-  createdAt: null,
-  isEmbeddedLaunch: true,
 }));
 
 vi.mock("../lib/medication-reminder-notifications", () => ({
@@ -543,7 +534,7 @@ describe("SettingsScreen data sources", () => {
     expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
   });
 
-  it("uses layman-readable names for Bluetooth and motion developer tools", async () => {
+  it("navigates to developer integrations from Advanced settings", async () => {
     mockSearchParams = { tab: "advanced" };
     const { default: SettingsScreen } = await import("../app/settings");
 
@@ -552,10 +543,6 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
-    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
     expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");
   });
@@ -899,29 +886,6 @@ describe("SettingsScreen export UI rendering", () => {
     });
 
     vi.unstubAllGlobals();
-  });
-});
-
-describe("SettingsScreen OTA debug details", () => {
-  beforeEach(() => {
-    mockSearchParams = { tab: "advanced" };
-  });
-
-  it("renders OTA created time in the local timezone format", async () => {
-    const updatesModule = await import("expo-updates");
-    const otaCreatedAt = new Date("2026-03-31T18:22:00.000Z");
-    updatesModule.createdAt = otaCreatedAt;
-
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    const expectedLocalTimestamp = formatDateTime(otaCreatedAt);
-    expect(
-      screen.getByText((content) => content.includes(`Created: ${expectedLocalTimestamp}`)),
-    ).toBeTruthy();
-
-    updatesModule.createdAt = null;
   });
 });
 

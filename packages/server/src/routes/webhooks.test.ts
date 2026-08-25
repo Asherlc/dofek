@@ -133,7 +133,7 @@ async function request(
   body?: string,
   headers?: Record<string, string>,
 ): Promise<{ status: number; body: string; headers: Record<string, string> }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const addr = server.address();
       if (addr === null || typeof addr === "string") throw new Error("unexpected address");
@@ -153,9 +153,9 @@ async function request(
           });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error", headers: {} });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
   });

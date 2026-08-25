@@ -62,11 +62,9 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema modules (`src/db/schema/`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.
-- `fix-ts-expect-errors.ts`: Automated removal of `@ts-expect-error` comments across the codebase.
-  - Handles standalone lines, inline comments, and specific test patterns like `MockFetchFn`.
 - `no-suppressions.ts`: Scans every tracked TypeScript file and rejects lint,
   type-check, coverage, or mutation-test suppression comments. Generated TanStack
-  route trees and the suppression-removal utility are the only exclusions.
+  route trees are the only exclusion.
   File discovery uses Git's tracked-file index via
   [`git ls-files`](https://git-scm.com/docs/git-ls-files).
   - Usage: `pnpm lint:suppressions`

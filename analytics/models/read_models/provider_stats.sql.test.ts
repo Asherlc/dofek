@@ -19,7 +19,7 @@ describe("provider_stats model", () => {
     expect(modelSql).not.toContain("source_provider_refreshes AS");
     expect(modelSql).toContain("current_provider_state AS (");
     expect(modelSql).toContain("existing_provider_state AS");
-    expect(modelSql).toContain("source_dirty_providers AS materialized");
+    expect(modelSql).toContain("source_dirty_providers AS MATERIALIZED");
     expect(modelSql).not.toContain("stale_providers AS");
     expect(modelSql).toContain("ref('provider_metric_stream_daily')");
     expect(modelSql).toContain("source('analytics', 'metric_stream_day_change')");
@@ -32,7 +32,7 @@ describe("provider_stats model", () => {
     expect(modelSql).toContain("ref('provider_metric_stream_daily') }} FINAL");
     expect(modelSql).toContain("'enable_materialized_cte': 1");
     expect(modelSql).toContain("'optimize_aggregation_in_order': 1");
-    expect(modelSql).toContain("providers AS materialized");
+    expect(modelSql).toContain("providers AS MATERIALIZED");
     expect(modelSql).toContain("provider_dirty_key_batch_size");
     expect(normalizedSql).toContain("LIMIT {{ provider_dirty_key_batch_size }}");
     expect(normalizedSql).toContain("existing_provider_state.refreshed_at");
