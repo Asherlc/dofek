@@ -1807,6 +1807,20 @@ describe("upsertWorkoutBatch", () => {
     expect(raw).not.toHaveProperty("maxHeartRate");
   });
 
+  it("omits an empty Apple Health metadata map from raw JSONB", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [makeWorkout({ metadata: {} })]);
+
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      appleHealth: {
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        sourceName: "Apple Watch",
+      },
+    });
+    expect(findActivityUpsertValues(() => true)?.raw).not.toHaveProperty("appleHealth.metadata");
+  });
+
   it("does not update existing heart-rate metric_stream rows after workout insert", async () => {
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
