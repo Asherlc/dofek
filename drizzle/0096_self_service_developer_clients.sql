@@ -3,7 +3,8 @@ ADD COLUMN owner_user_id uuid,
 ADD COLUMN last_rotated_at timestamptz;
 --> statement-breakpoint
 UPDATE fitness.external_client
-SET last_rotated_at = created_at;
+SET last_rotated_at = created_at
+WHERE last_rotated_at IS NULL;
 --> statement-breakpoint
 ALTER TABLE fitness.external_client
 ALTER COLUMN last_rotated_at SET DEFAULT now(),
