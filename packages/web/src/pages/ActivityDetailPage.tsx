@@ -26,6 +26,7 @@ import {
   cadenceAxisLabel,
   cadenceUnit,
   formatActivityTypeLabel,
+  isActivityDetailType,
   isCyclingActivity,
 } from "@dofek/training/training";
 import { Link, useParams } from "@tanstack/react-router";
@@ -93,18 +94,6 @@ function buildAxisPointerEvents(
   };
 }
 
-function isStrengthActivityType(activityType: string): boolean {
-  return activityType === "strength";
-}
-
-function isClimbingActivityType(activityType: string): boolean {
-  return activityType === "climbing";
-}
-
-function isHangboardingActivityType(activityType: string): boolean {
-  return activityType === "hangboard";
-}
-
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
@@ -126,19 +115,19 @@ export function ActivityDetailPage() {
     { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
   );
   const isStrengthActivity =
-    detail.data != null && isStrengthActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id },
     { enabled: isStrengthActivity },
   );
   const isClimbingActivity =
-    detail.data != null && isClimbingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityEntries.useQuery(
     { id },
     { enabled: isClimbingActivity },
   );
   const isHangboardingActivity =
-    detail.data != null && isHangboardingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
     { id },
     { enabled: isHangboardingActivity },

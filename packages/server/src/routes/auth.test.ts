@@ -258,7 +258,7 @@ async function request(
   body: string;
   headers: Record<string, string | string[] | undefined>;
 }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
       const fetchOptions: RequestInit = { method: method.toUpperCase(), redirect: "manual" };
@@ -281,9 +281,9 @@ async function request(
           resolve({ status: res.status, body, headers });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error", headers: {} });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
   });

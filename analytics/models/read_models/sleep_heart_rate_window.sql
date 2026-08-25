@@ -38,7 +38,7 @@ sleep_source AS (
     FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
 ),
 
-completed_sleep AS materialized (
+completed_sleep AS MATERIALIZED (
     SELECT
         sleep_id,
         user_id,
@@ -57,7 +57,7 @@ cutover AS (
     FROM {{ source('analytics', 'sleep_heart_rate_cutover') }}
 ),
 
-activity_source AS materialized (
+activity_source AS MATERIALIZED (
     SELECT
         id,
         user_id,
@@ -100,7 +100,7 @@ activity_changes AS (
         completed_sleep.sleep_id
 ),
 
-current_sleep_state AS materialized (
+current_sleep_state AS MATERIALIZED (
     SELECT
         completed_sleep.sleep_id AS sleep_id,
         completed_sleep.user_id AS user_id,
@@ -128,7 +128,7 @@ current_sleep_state AS materialized (
         AND activity_changes.sleep_id = completed_sleep.sleep_id
 ),
 
-existing_sleep_state AS materialized (
+existing_sleep_state AS MATERIALIZED (
     {% if is_incremental() %}
         SELECT
             sleep_id,
@@ -191,7 +191,7 @@ stale_sleep_dirty_keys AS (
         AND current_sleep_state.sleep_id IS NULL
 ),
 
-dirty_keys AS materialized (
+dirty_keys AS MATERIALIZED (
     SELECT
         user_id,
         sleep_id
@@ -218,7 +218,7 @@ dirty_keys AS materialized (
     LIMIT {{ sleep_dirty_key_batch_size }}
 ),
 
-active_dirty_sleep AS materialized (
+active_dirty_sleep AS MATERIALIZED (
     SELECT
         current_sleep_state.sleep_id AS sleep_id,
         current_sleep_state.user_id AS user_id,

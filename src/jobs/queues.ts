@@ -283,7 +283,7 @@ export function getSharedRedisConnection(): RedisConnection {
 
 // ── Queue factories ──
 
-/** @deprecated Use createProviderSyncQueue() for new code. Kept for legacy queue drain. */
+/** Creates the shared sync queue used by the CLI and queue dashboard. */
 export function createSyncQueue(connection?: ConnectionOptions): Queue<SyncJobData> {
   return new Queue(SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
 }

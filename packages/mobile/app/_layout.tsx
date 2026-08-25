@@ -765,12 +765,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="ble-probe"
-            options={{
-              title: "BLE Probe",
-            }}
-          />
-          <Stack.Screen
             name="preview"
             options={{
               title: "Preview Update",
