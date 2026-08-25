@@ -14,18 +14,18 @@ final class BleHeartRateConnectionManager: NSObject {
         DispatchQueue
     ) -> any BleHeartRateCentralManaging
     private var centralManager: (any BleHeartRateCentralManaging)? { centralManagerOwner.current }
-    private var sessions: [UUID: BleHeartRatePeripheralSession] = [:]
-    private var peripherals: [UUID: CBPeripheral] = [:]
-    private var connectCompletions: [
+    internal var sessions: [UUID: BleHeartRatePeripheralSession] = [:]
+    internal var peripherals: [UUID: CBPeripheral] = [:]
+    internal var connectCompletions: [
         UUID: (Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void
     ] = [:]
-    private var pendingBluetoothConnects: Set<UUID> = []
+    internal var pendingBluetoothConnects: Set<UUID> = []
 
     /// Scanning is the only lifecycle operation without a peripheral ID, so it
     /// remains a single request while identified peripherals use sessions.
     private var scanCompletion: ((Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void)?
-    private var scanState: BleHeartRateConnectionState = .idle
-    private var pendingScan = false
+    internal var scanState: BleHeartRateConnectionState = .idle
+    internal var pendingScan = false
     private var scanToken: UUID?
 
     private static let poweredOnTimeoutSeconds: TimeInterval = 5
@@ -252,7 +252,7 @@ final class BleHeartRateConnectionManager: NSObject {
         }
     }
 
-    private func startScan(_ manager: any BleHeartRateCentralManaging) {
+    internal func startScan(_ manager: any BleHeartRateCentralManaging) {
         pendingScan = false
         scanState = .scanning
         let token = UUID()
@@ -268,7 +268,7 @@ final class BleHeartRateConnectionManager: NSObject {
         }
     }
 
-    private func performConnect(
+    internal func performConnect(
         id: UUID,
         session: BleHeartRatePeripheralSession,
         manager: any BleHeartRateCentralManaging
@@ -281,7 +281,7 @@ final class BleHeartRateConnectionManager: NSObject {
         beginConnecting(to: peripheral, session: session, manager: manager)
     }
 
-    private func beginConnecting(
+    internal func beginConnecting(
         to peripheral: CBPeripheral,
         session: BleHeartRatePeripheralSession,
         manager: any BleHeartRateCentralManaging
@@ -307,7 +307,7 @@ final class BleHeartRateConnectionManager: NSObject {
         }
     }
 
-    private func setState(
+    internal func setState(
         _ state: BleHeartRateConnectionState,
         for session: BleHeartRatePeripheralSession
     ) {
@@ -316,7 +316,7 @@ final class BleHeartRateConnectionManager: NSObject {
         emitState(for: session)
     }
 
-    private func markDisconnected(_ session: BleHeartRatePeripheralSession) {
+    internal func markDisconnected(_ session: BleHeartRatePeripheralSession) {
         guard session.state != .idle else { return }
         session.markDisconnected()
         emitState(for: session)
@@ -330,7 +330,7 @@ final class BleHeartRateConnectionManager: NSObject {
         )
     }
 
-    private func completeConnect(
+    internal func completeConnect(
         id: UUID,
         with result: Result<BleHeartRateDevice, BleHeartRateConnectionError>
     ) {
@@ -363,7 +363,7 @@ final class BleHeartRateConnectionManager: NSObject {
         centralManager?.cancelPeripheralConnection(peripheral)
     }
 
-    private func cancelScan(with error: BleHeartRateConnectionError) {
+    internal func cancelScan(with error: BleHeartRateConnectionError) {
         centralManager?.stopScan()
         pendingScan = false
         scanState = .idle
@@ -373,7 +373,7 @@ final class BleHeartRateConnectionManager: NSObject {
         completion?(.failure(error))
     }
 
-    private func takeScanCompletion(
+    internal func takeScanCompletion(
         manager: any BleHeartRateCentralManaging
     ) -> ((Result<BleHeartRateDevice, BleHeartRateConnectionError>) -> Void)? {
         manager.stopScan()
@@ -389,114 +389,8 @@ final class BleHeartRateConnectionManager: NSObject {
         BleHeartRateDevice(id: peripheral.identifier.uuidString, name: peripheral.name)
     }
 
-    private func isManaged(_ peripheral: CBPeripheral) -> Bool {
+    internal func isManaged(_ peripheral: CBPeripheral) -> Bool {
         peripherals[peripheral.identifier] === peripheral
-    }
-}
-
-// MARK: - CBCentralManagerDelegate
-
-extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        switch central.state {
-        case .poweredOn:
-            if pendingScan {
-                startScan(central)
-            }
-            let pendingIds = Array(pendingBluetoothConnects)
-            pendingBluetoothConnects.removeAll()
-            for id in pendingIds {
-                guard let session = sessions[id] else { continue }
-                performConnect(id: id, session: session, manager: central)
-            }
-            return
-        case .unknown, .resetting:
-            return
-        default:
-            break
-        }
-
-        if pendingScan || scanState != .idle {
-            cancelScan(with: .bluetoothUnavailable)
-        }
-
-        for id in Array(sessions.keys) {
-            guard let session = sessions[id] else { continue }
-            let wasReady = session.state == .ready
-            markDisconnected(session)
-            completeConnect(id: id, with: .failure(.bluetoothUnavailable))
-            pendingBluetoothConnects.remove(id)
-            sessions.removeValue(forKey: id)
-            peripherals.removeValue(forKey: id)
-            if wasReady {
-                delegate?.connectionManagerDidDisconnect(
-                    self,
-                    peripheralId: id.uuidString,
-                    error: nil
-                )
-            }
-        }
-    }
-
-    func centralManager(
-        _ central: CBCentralManager,
-        didDiscover peripheral: CBPeripheral,
-        advertisementData: [String: Any],
-        rssi RSSI: NSNumber
-    ) {
-        guard scanState == .scanning else { return }
-        let id = peripheral.identifier
-        guard sessions[id] == nil, peripherals[id] == nil else { return }
-        guard let completion = takeScanCompletion(manager: central) else { return }
-
-        let session = BleHeartRatePeripheralSession(id: id.uuidString)
-        sessions[id] = session
-        connectCompletions[id] = completion
-        beginConnecting(to: peripheral, session: session, manager: central)
-    }
-
-    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        guard
-            isManaged(peripheral),
-            let session = sessions[peripheral.identifier],
-            session.state == .connecting
-        else { return }
-        setState(.discoveringServices, for: session)
-        peripheral.discoverServices([BleHeartRateConstants.heartRateServiceUUID])
-    }
-
-    func centralManager(
-        _ central: CBCentralManager,
-        didFailToConnect peripheral: CBPeripheral,
-        error: Error?
-    ) {
-        let id = peripheral.identifier
-        guard isManaged(peripheral), let session = sessions[id] else { return }
-        markDisconnected(session)
-        completeConnect(id: id, with: .failure(.disconnected(error?.localizedDescription)))
-        sessions.removeValue(forKey: id)
-        peripherals.removeValue(forKey: id)
-    }
-
-    func centralManager(
-        _ central: CBCentralManager,
-        didDisconnectPeripheral peripheral: CBPeripheral,
-        error: Error?
-    ) {
-        let id = peripheral.identifier
-        guard isManaged(peripheral), let session = sessions[id] else { return }
-        markDisconnected(session)
-        completeConnect(
-            id: id,
-            with: .failure(.disconnected(error?.localizedDescription))
-        )
-        sessions.removeValue(forKey: id)
-        peripherals.removeValue(forKey: id)
-        delegate?.connectionManagerDidDisconnect(
-            self,
-            peripheralId: id.uuidString,
-            error: error
-        )
     }
 }
 

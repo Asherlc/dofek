@@ -39,7 +39,7 @@ struct BleHeartRateDeviceRegistryCodec {
     let decode: (Data) throws -> [BleHeartRateRegisteredDevice]
     let encode: ([BleHeartRateRegisteredDevice]) throws -> Data
 
-    static let json = BleHeartRateDeviceRegistryCodec(
+    static let json = Self(
         decode: { data in
             try JSONDecoder().decode([BleHeartRateRegisteredDevice].self, from: data)
         },

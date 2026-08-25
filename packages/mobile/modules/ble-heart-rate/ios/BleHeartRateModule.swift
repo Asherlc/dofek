@@ -31,56 +31,18 @@ public class BleHeartRateModule: Module {
             "onHeartRateMeasurement"
         )
 
-        OnCreate {
-            switch Result(catching: { try BleHeartRateDeviceRegistry() }) {
-            case .success(let registry):
-                self.deviceRegistry = registry
-                self.deviceCoordinator = BleHeartRateDeviceCoordinator(
-                    connectionManager: self.connectionManager,
-                    deviceRegistry: registry,
-                    sampleBuffer: self.sampleBuffer,
-                    onConnectionEvent: { [weak self] event in
-                        self?.emitConnectionEvent(event)
-                    },
-                    onDeviceStateChanged: { [weak self] snapshot in
-                        self?.emitDeviceState(snapshot)
-                    },
-                    onHeartRateMeasurement: { [weak self] sample in
-                        self?.emitHeartRateMeasurement(sample)
-                    },
-                    onRegistryError: { [weak self] deviceId, error in
-                        self?.emitRegistryError(deviceId: deviceId, error: error)
-                    }
-                )
-            case .failure(let error):
-                self.deviceRegistryError = error as? BleHeartRateDeviceRegistryError ?? .unavailable
-            }
-            if let cutoff = UserDefaults.standard.object(
-                forKey: Self.deviceErasureCutoffKey
-            ) as? Date {
-                self.sampleBuffer.advanceErasureCutoff(to: cutoff)
-            }
-        }
+        OnCreate { self.initializeDeviceCoordinator() }
 
         Function("isBluetoothAvailable") { () -> Bool in
             self.connectionManager.isBluetoothAvailable
         }
 
         AsyncFunction("scanAndConnect") { (promise: Promise) in
-            guard let coordinator = self.deviceCoordinatorOrReject(promise) else { return }
-            coordinator.scanAndConnect { result in
-                self.resolveConnect(result, promise: promise)
-                if case .success = result {
-                    self.emitDeviceListChanged()
-                }
-            }
+            self.scanAndConnect(promise: promise)
         }
 
         AsyncFunction("connect") { (peripheralId: String, promise: Promise) in
-            guard let coordinator = self.deviceCoordinatorOrReject(promise) else { return }
-            coordinator.connect(peripheralId: peripheralId) { result in
-                self.resolveConnect(result, promise: promise)
-            }
+            self.connect(peripheralId: peripheralId, promise: promise)
         }
 
         Function("getDevices") { () throws -> [[String: Any]] in
@@ -110,44 +72,101 @@ public class BleHeartRateModule: Module {
         }
 
         Function("disconnect") { (peripheralId: String?) in
-            if let peripheralId {
-                self.connectionManager.disconnect(peripheralId: peripheralId)
-            } else {
-                self.connectionManager.disconnectAll()
-            }
+            self.disconnect(peripheralId: peripheralId)
         }
 
         Function("forget") { (peripheralId: String) throws in
-            try self.requireDeviceRegistry().remove(id: peripheralId)
-            self.connectionManager.disconnect(peripheralId: peripheralId)
-            self.emitDeviceListChanged()
+            try self.forget(peripheralId: peripheralId)
         }
 
         AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
-            guard let cutoff = self.parseIsoDate(cutoffString) else {
-                promise.reject(
-                    "BLE_HEART_RATE_INVALID_ERASURE_CUTOFF",
-                    "Invalid device erasure cutoff"
-                )
-                return
+            self.purgeAccountState(cutoffString: cutoffString, promise: promise)
+        }
+    }
+
+    private func scanAndConnect(promise: Promise) {
+        guard let coordinator = deviceCoordinatorOrReject(promise) else { return }
+        coordinator.scanAndConnect { result in
+            self.resolveConnect(result, promise: promise)
+            if case .success = result {
+                self.emitDeviceListChanged()
             }
-            let retainedCutoff =
-                (UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date)
-                .map { max($0, cutoff) } ?? cutoff
-            guard let coordinator = self.deviceCoordinatorOrReject(promise) else { return }
-            UserDefaults.standard.set(
-                retainedCutoff,
-                forKey: Self.deviceErasureCutoffKey
+        }
+    }
+
+    private func connect(peripheralId: String, promise: Promise) {
+        guard let coordinator = deviceCoordinatorOrReject(promise) else { return }
+        coordinator.connect(peripheralId: peripheralId) { result in
+            self.resolveConnect(result, promise: promise)
+        }
+    }
+
+    private func disconnect(peripheralId: String?) {
+        if let peripheralId {
+            connectionManager.disconnect(peripheralId: peripheralId)
+        } else {
+            connectionManager.disconnectAll()
+        }
+    }
+
+    private func forget(peripheralId: String) throws {
+        try requireDeviceRegistry().remove(id: peripheralId)
+        connectionManager.disconnect(peripheralId: peripheralId)
+        emitDeviceListChanged()
+    }
+
+    private func purgeAccountState(cutoffString: String, promise: Promise) {
+        guard let cutoff = parseIsoDate(cutoffString) else {
+            promise.reject(
+                "BLE_HEART_RATE_INVALID_ERASURE_CUTOFF",
+                "Invalid device erasure cutoff"
             )
-            coordinator.purgeAccountState(cutoff: retainedCutoff) { result in
-                switch result {
-                case .success:
-                    self.emitDeviceListChanged()
-                    promise.resolve(true)
-                case .failure(let error):
-                    self.rejectRegistryError(error, promise: promise)
-                }
+            return
+        }
+        let retainedCutoff =
+            (UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date)
+            .map { max($0, cutoff) } ?? cutoff
+        guard let coordinator = deviceCoordinatorOrReject(promise) else { return }
+        UserDefaults.standard.set(retainedCutoff, forKey: Self.deviceErasureCutoffKey)
+        coordinator.purgeAccountState(cutoff: retainedCutoff) { result in
+            switch result {
+            case .success:
+                self.emitDeviceListChanged()
+                promise.resolve(true)
+            case .failure(let error):
+                self.rejectRegistryError(error, promise: promise)
             }
+        }
+    }
+
+    private func initializeDeviceCoordinator() {
+        switch Result(catching: { try BleHeartRateDeviceRegistry() }) {
+        case .success(let registry):
+            deviceRegistry = registry
+            deviceCoordinator = BleHeartRateDeviceCoordinator(
+                connectionManager: connectionManager,
+                deviceRegistry: registry,
+                sampleBuffer: sampleBuffer,
+                onConnectionEvent: { [weak self] event in
+                    self?.emitConnectionEvent(event)
+                },
+                onDeviceStateChanged: { [weak self] snapshot in
+                    self?.emitDeviceState(snapshot)
+                },
+                onHeartRateMeasurement: { [weak self] sample in
+                    self?.emitHeartRateMeasurement(sample)
+                },
+                onRegistryError: { [weak self] deviceId, error in
+                    self?.emitRegistryError(deviceId: deviceId, error: error)
+                }
+            )
+        case .failure(let error):
+            deviceRegistryError = error as? BleHeartRateDeviceRegistryError ?? .unavailable
+        }
+        if let cutoff = UserDefaults.standard.object(
+            forKey: Self.deviceErasureCutoffKey
+        ) as? Date {
+            sampleBuffer.advanceErasureCutoff(to: cutoff)
         }
     }
 
