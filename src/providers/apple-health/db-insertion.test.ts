@@ -1766,6 +1766,35 @@ describe("upsertWorkoutBatch", () => {
     });
   });
 
+  it("preserves the original Apple Health workout classification input in raw JSONB", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType(
+          "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          "strength",
+        ),
+        sourceName: null,
+        metadata: {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "7/3 Repeaters",
+        },
+      }),
+    ]);
+
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      appleHealth: {
+        workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+        sourceName: null,
+        metadata: {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "7/3 Repeaters",
+        },
+      },
+    });
+  });
+
   it("omits undefined optional fields from raw JSONB", async () => {
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
@@ -1776,6 +1805,20 @@ describe("upsertWorkoutBatch", () => {
     expect(raw).not.toHaveProperty("distanceMeters");
     expect(raw).not.toHaveProperty("avgHeartRate");
     expect(raw).not.toHaveProperty("maxHeartRate");
+  });
+
+  it("omits an empty Apple Health metadata map from raw JSONB", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [makeWorkout({ metadata: {} })]);
+
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      appleHealth: {
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        sourceName: "Apple Watch",
+      },
+    });
+    expect(findActivityUpsertValues(() => true)?.raw).not.toHaveProperty("appleHealth.metadata");
   });
 
   it("does not update existing heart-rate metric_stream rows after workout insert", async () => {
