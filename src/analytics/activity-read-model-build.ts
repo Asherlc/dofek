@@ -1,4 +1,7 @@
 import { type SpawnOptions, spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE } from "../metric-stream/clickhouse-table.ts";
@@ -217,79 +220,73 @@ export async function waitForPeerDbProviderDeletes(
   );
 }
 
+async function runReadModelDbtBuild(
+  spawnImpl: ActivityReadModelSpawner,
+  selectArguments: readonly string[],
+  failureDescription: string,
+): Promise<void> {
+  const targetPath = await mkdtemp(join(tmpdir(), "dofek-dbt-delete-artifacts-"));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawnImpl(
+        "dbt",
+        [
+          "build",
+          "--project-dir",
+          "analytics",
+          "--profiles-dir",
+          "analytics",
+          "--threads",
+          "1",
+          "--target-path",
+          targetPath,
+          ...selectArguments,
+        ],
+        {
+          env: process.env,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+
+      // dbt writes its errors to stdout, so capture both streams to surface the real cause.
+      let output = "";
+      const appendOutput = (chunk: Buffer | string) => {
+        output += String(chunk);
+      };
+      child.stdout?.on("data", appendOutput);
+      child.stderr?.on("data", appendOutput);
+
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        const trimmedOutput = output.trim();
+        reject(
+          new Error(
+            `${failureDescription} failed with exit code ${code ?? "unknown"}${trimmedOutput ? `: ${trimmedOutput}` : ""}`,
+          ),
+        );
+      });
+    });
+  } finally {
+    await rm(targetPath, { recursive: true, force: true });
+  }
+}
+
 export async function runActivityReadModelBuild(
   spawnImpl: ActivityReadModelSpawner = defaultActivityReadModelSpawner,
 ): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawnImpl(
-      "dbt",
-      [
-        "build",
-        "--project-dir",
-        "analytics",
-        "--profiles-dir",
-        "analytics",
-        "--threads",
-        "1",
-        "--select",
-        ACTIVITY_DELETE_DBT_SELECT,
-      ],
-      {
-        env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-
-    let output = "";
-    for (const stream of [child.stdout, child.stderr]) {
-      stream?.on("data", (chunk: Buffer | string) => {
-        output += String(chunk);
-      });
-    }
-
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(
-          `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT} failed with exit code ${code ?? "unknown"}${output ? `: ${output.trim()}` : ""}`,
-        ),
-      );
-    });
-  });
+  await runReadModelDbtBuild(
+    spawnImpl,
+    ["--select", ACTIVITY_DELETE_DBT_SELECT],
+    `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT}`,
+  );
 }
 
 export async function runProviderDeleteReadModelBuild(
   spawnImpl: ActivityReadModelSpawner = defaultActivityReadModelSpawner,
 ): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawnImpl(
-      "dbt",
-      ["build", "--project-dir", "analytics", "--profiles-dir", "analytics", "--threads", "1"],
-      {
-        env: process.env,
-        stdio: ["ignore", "ignore", "pipe"],
-      },
-    );
-
-    let stderr = "";
-    child.stderr?.on("data", (chunk: Buffer | string) => {
-      stderr += String(chunk);
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(
-          `dbt build after provider deletion failed with exit code ${code ?? "unknown"}${stderr ? `: ${stderr.trim()}` : ""}`,
-        ),
-      );
-    });
-  });
+  await runReadModelDbtBuild(spawnImpl, [], "dbt build after provider deletion");
 }
