@@ -8,13 +8,26 @@ export interface BleHeartRateDevice {
   name: string | null;
 }
 
+/**
+ * Accept a native optional field that is absent as either `null` or `undefined`
+ * and settle on `null`.
+ *
+ * The iOS bridge builds an absent value as `NSNull()`. The `getDevices` return
+ * path serializes that to `undefined` in JavaScript, while the event path maps
+ * it to `null`. `.nullable()` alone rejects `undefined`, so a monitor that has
+ * not reported a beat yet would fail to parse.
+ */
+function nativeNullable<Schema extends z.ZodTypeAny>(schema: Schema) {
+  return schema.nullish().transform((value) => value ?? null);
+}
+
 /** Persisted state and latest native measurement for a heart-rate monitor. */
 export const BleHeartRateDeviceSnapshotSchema = z.object({
   id: z.string().min(1),
-  name: z.string().nullable(),
+  name: nativeNullable(z.string()),
   connectionState: z.string().min(1),
-  lastMeasurementAt: z.string().nullable(),
-  lastHeartRateBpm: z.number().nullable(),
+  lastMeasurementAt: nativeNullable(z.string()),
+  lastHeartRateBpm: nativeNullable(z.number()),
   lastRrIntervalsMs: z.array(z.number()),
   bufferedSampleCount: z.number().int().nonnegative(),
 });
