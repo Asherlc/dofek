@@ -50,14 +50,9 @@ import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener } from "../modules/background-refresh";
 import {
-  addConnectionStateListener as addHeartRateConnectionStateListener,
-  addHeartRateListener,
   confirmSamplesDrain as confirmHeartRateSamplesDrain,
   disconnectAndClearBufferedSamples as disconnectAndClearHeartRateBufferedSamples,
-  disconnect as disconnectHeartRate,
-  isBluetoothAvailable as isHeartRateBluetoothAvailable,
   peekBufferedSamples as peekHeartRateSamples,
-  scanAndConnect as scanAndConnectHeartRate,
 } from "../modules/ble-heart-rate";
 import {
   addConnectionStateListener as addWhoopConnectionStateListener,
@@ -180,14 +175,9 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 }
 
 const bleHeartRateDeps = {
-  isBluetoothAvailable: isHeartRateBluetoothAvailable,
-  scanAndConnect: scanAndConnectHeartRate,
   peekBufferedSamples: peekHeartRateSamples,
   confirmSamplesDrain: confirmHeartRateSamplesDrain,
   disconnectAndClearBufferedSamples: disconnectAndClearHeartRateBufferedSamples,
-  addConnectionStateListener: addHeartRateConnectionStateListener,
-  addHeartRateListener,
-  disconnect: disconnectHeartRate,
 };
 
 function createBleHeartRateUploadClient(trpcClient: ReturnType<typeof trpc.createClient>) {
@@ -665,6 +655,18 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="bluetooth-devices/index"
+            options={{
+              title: "Bluetooth Devices",
+            }}
+          />
+          <Stack.Screen
+            name="bluetooth-devices/[id]"
+            options={{
+              title: "Bluetooth Device",
+            }}
+          />
+          <Stack.Screen
             name="account-deletion"
             options={{
               title: "Account Deletion Status",
@@ -680,6 +682,12 @@ function AuthGate() {
             name="data-quality"
             options={{
               title: "Data Quality",
+            }}
+          />
+          <Stack.Screen
+            name="cycle"
+            options={{
+              title: "Cycle Tracking",
             }}
           />
           <Stack.Screen
@@ -719,12 +727,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="breathwork"
-            options={{
-              title: "Breathwork",
-            }}
-          />
-          <Stack.Screen
             name="activity/[id]"
             options={{
               title: "Activity",
@@ -760,12 +762,6 @@ function AuthGate() {
             name="experiments"
             options={{
               title: "Personal Experiments",
-            }}
-          />
-          <Stack.Screen
-            name="ble-probe"
-            options={{
-              title: "BLE Probe",
             }}
           />
           <Stack.Screen

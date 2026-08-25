@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME } from "./import-validation-error.ts";
 
@@ -417,7 +418,7 @@ afterAll(() => {
 });
 
 describe("worker module", () => {
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
+  // 2 per-provider workers (strava, garmin) + 1 shared sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
   // + 1 activity-delete-analytics + 1 provider-data-deletion + 1 account-erasure = 13
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
@@ -852,6 +853,47 @@ describe("worker module", () => {
     );
   });
 
+  it("failed event handler logs provider service-unavailable errors without Sentry capture", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.warn).mockClear();
+
+    getWorkerHandler("active")();
+    const error = new ProviderServiceUnavailableError({
+      message: "Zepp API service unavailable (500): upstream outage",
+      providerId: "amazfit-zepp",
+      statusCode: 500,
+      responseBody: "upstream outage",
+    });
+    getWorkerHandler("failed")(undefined, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[worker] Job retrying after provider service unavailable: Zepp API service unavailable (500): upstream outage",
+    );
+  });
+
+  it("failed event handler reports unrelated provider service-unavailable errors", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const error = new ProviderServiceUnavailableError({
+      message: "Zwift API service unavailable (503): upstream outage",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "upstream outage",
+    });
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    getWorkerHandler("failed")(undefined, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Job failed: Zwift API service unavailable (503): upstream outage",
+    );
+  });
+
   it("failed event handler does not restart idle timer while another job is active", async () => {
     const Sentry = await import("@sentry/node");
     vi.mocked(Sentry.captureException).mockClear();
@@ -1264,16 +1306,13 @@ describe("worker module", () => {
     expect(processSyncJob).toHaveBeenCalled();
   });
 
-  it("legacy sync processor delegates to processSyncJob and logs warning", async () => {
+  it("shared sync processor delegates to processSyncJob", async () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
-    const { logger } = await import("../logger.ts");
     vi.mocked(processSyncJob).mockClear();
-    vi.mocked(logger.warn).mockClear();
 
     await invokeProcessor("sync-queue", { providerId: "wahoo", userId: "user-1" });
 
     expect(processSyncJob).toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalled();
   });
 
   it("import processor delegates to processFileUploadImportJob", async () => {

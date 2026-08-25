@@ -96,6 +96,9 @@ services:
         - traefik.http.routers.web.tls.domains[2].main=dofek.live
         - traefik.http.routers.web.tls.domains[2].sans=www.dofek.live
         - traefik.http.services.web.loadbalancer.server.port=3000
+        - traefik.http.services.web.loadbalancer.healthcheck.path=/healthz
+        - traefik.http.services.web.loadbalancer.healthcheck.interval=5s
+        - traefik.http.services.web.loadbalancer.healthcheck.timeout=3s
 
   worker:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
@@ -217,6 +220,29 @@ services:
       timeout: 15s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 200M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  processing-reconciliation:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["processing-reconciliation"]
+    env_file: ${CDC_HEALTH_ENV_FILE:?CDC_HEALTH_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      OTEL_SERVICE_NAME: dofek-processing-reconciliation
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
     deploy:
       resources:
         limits:
@@ -360,7 +386,11 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f metric-stream-clickhouse-sink || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "node -e 'fetch(\"http://127.0.0.1:3001/readyz\").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -385,7 +415,7 @@ services:
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
     configs:
-      - source: metric_stream_r2_archive_config_v2
+      - source: metric_stream_r2_archive_config_v4
         target: /connect/metric-stream-r2-archive.connect.yml
         mode: 0444
     deploy:
@@ -625,7 +655,7 @@ services:
         - traefik.http.services.pgadmin.loadbalancer.server.port=80
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     volumes:
       - /mnt/dofek-data/redis:/data
     healthcheck:
@@ -755,5 +785,5 @@ configs:
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and
   # the service rolls onto it — same convention as netdata_db_limits_v2.
-  metric_stream_r2_archive_config_v2:
+  metric_stream_r2_archive_config_v4:
     file: ./redpanda/metric-stream-r2-archive.connect.yml

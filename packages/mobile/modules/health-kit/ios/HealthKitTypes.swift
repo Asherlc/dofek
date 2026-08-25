@@ -140,6 +140,9 @@ let backgroundDeliveryTypes: Set<HKSampleType> = {
     if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
         types.insert(sleepType)
     }
+    if let menstrualFlowType = HKCategoryType.categoryType(forIdentifier: .menstrualFlow) {
+        types.insert(menstrualFlowType)
+    }
     types.insert(HKWorkoutType.workoutType())
     types.insert(HKSeriesType.workoutRoute())
 

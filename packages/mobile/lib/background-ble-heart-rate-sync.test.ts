@@ -3,8 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type BleHeartRateSyncDeps,
   type BleHeartRateUploadClient,
-  connectBleHeartRateMonitor,
-  getBleHeartRateSyncState,
   initBackgroundBleHeartRateSync,
   syncBleHeartRate,
   teardownBackgroundBleHeartRateSync,
@@ -32,15 +30,7 @@ vi.mock("./telemetry", () => ({
 }));
 
 let appStateCallback: ((state: string) => void) | null = null;
-let connectionStateCallback:
-  | ((event: { state: string; peripheralId?: string; name?: string; error?: string }) => void)
-  | null = null;
-let heartRateCallback:
-  | ((event: { timestamp: string; heartRateBpm: number; rrIntervalsMs: number[] }) => void)
-  | null = null;
 const mockAppStateRemove = vi.fn();
-const mockConnectionRemove = vi.fn();
-const mockHeartRateRemove = vi.fn();
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -56,20 +46,9 @@ vi.mock("react-native", () => ({
 
 function makeDeps(): BleHeartRateSyncDeps {
   return {
-    isBluetoothAvailable: vi.fn().mockReturnValue(true),
-    scanAndConnect: vi.fn().mockResolvedValue({ id: "polar-123", name: "Polar H10" }),
     peekBufferedSamples: vi.fn().mockResolvedValue([]),
     confirmSamplesDrain: vi.fn(),
     disconnectAndClearBufferedSamples: vi.fn().mockResolvedValue(undefined),
-    addConnectionStateListener: vi.fn().mockImplementation((callback) => {
-      connectionStateCallback = callback;
-      return { remove: mockConnectionRemove };
-    }),
-    addHeartRateListener: vi.fn().mockImplementation((callback) => {
-      heartRateCallback = callback;
-      return { remove: mockHeartRateRemove };
-    }),
-    disconnect: vi.fn(),
   };
 }
 
@@ -92,8 +71,6 @@ describe("background BLE heart-rate sync", () => {
     mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     AppState.currentState = "active";
     appStateCallback = null;
-    connectionStateCallback = null;
-    heartRateCallback = null;
     deps = makeDeps();
     uploadClient = makeUploadClient();
     await teardownBackgroundBleHeartRateSync();
@@ -150,25 +127,6 @@ describe("background BLE heart-rate sync", () => {
     await expect(syncBleHeartRate()).rejects.toThrow("network unavailable");
 
     expect(deps.confirmSamplesDrain).not.toHaveBeenCalled();
-  });
-
-  it("connects a monitor on demand and publishes live measurements", async () => {
-    await initBackgroundBleHeartRateSync(uploadClient, deps);
-
-    await connectBleHeartRateMonitor();
-    heartRateCallback?.({
-      timestamp: "2026-08-13T12:00:00.000Z",
-      heartRateBpm: 137,
-      rrIntervalsMs: [876],
-    });
-
-    expect(deps.scanAndConnect).toHaveBeenCalledOnce();
-    expect(getBleHeartRateSyncState()).toEqual({
-      bluetoothAvailable: true,
-      connectionState: "connected",
-      device: { id: "polar-123", name: "Polar H10" },
-      liveBpm: 137,
-    });
   });
 
   it("uploads buffered samples when the authenticated app returns to foreground", async () => {
@@ -322,21 +280,13 @@ describe("background BLE heart-rate sync", () => {
     expect(laterClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
   });
 
-  it("removes listeners and disconnects during authenticated-service teardown", async () => {
+  it("removes its app-state listener during authenticated-service teardown", async () => {
     await initBackgroundBleHeartRateSync(uploadClient, deps);
-    connectionStateCallback?.({
-      state: "connected",
-      peripheralId: "polar-123",
-      name: "Polar H10",
-    });
     vi.mocked(deps.disconnectAndClearBufferedSamples).mockClear();
 
     await teardownBackgroundBleHeartRateSync();
 
     expect(mockAppStateRemove).toHaveBeenCalledOnce();
-    expect(mockConnectionRemove).toHaveBeenCalledOnce();
-    expect(mockHeartRateRemove).toHaveBeenCalledOnce();
-    expect(deps.disconnect).not.toHaveBeenCalled();
     expect(deps.disconnectAndClearBufferedSamples).toHaveBeenCalledOnce();
   });
 });

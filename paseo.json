@@ -1,6 +1,6 @@
 {
   "worktree": {
-    "setup": "git pull\npnpm install",
+    "setup": "git pull\ngit merge origin/main\npnpm install",
     "teardown": "mise exec -- pnpm tsx scripts/conductor-archive.ts"
   },
   "metadataGeneration": {

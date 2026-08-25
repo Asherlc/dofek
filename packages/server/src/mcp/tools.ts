@@ -49,10 +49,6 @@ function jsonContent(value: unknown) {
   };
 }
 
-function dateFromOptionalDateTime(value: string | undefined, timezone: string): string {
-  return localDateString(value ? new Date(value) : new Date(), timezone);
-}
-
 const healthMetricSchema = z.enum([
   "hrv",
   "resting_hr",
@@ -616,30 +612,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       assertDateRange(start_date, end_date);
       const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
       return jsonContent(await repository.timeline(start_date, end_date));
-    },
-  );
-
-  server.registerTool(
-    "log_food",
-    {
-      title: "Log Food",
-      description: "Create a Dofek food entry from a natural-language food description.",
-      inputSchema: {
-        text: z.string().min(1).max(500),
-        occurredAt: z.string().datetime().optional(),
-        mealType: z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).optional(),
-      },
-    },
-    async ({ text, occurredAt, mealType }) => {
-      requireMcpScope(context.scopes, "nutrition:write");
-      const repository = new FoodRepository(context.db, context.userId, context.timezone);
-      const entry = await repository.create({
-        date: dateFromOptionalDateTime(occurredAt, context.timezone),
-        meal: mealType ?? "other",
-        foodName: text,
-        nutrients: {},
-      });
-      return jsonContent(entry ?? null);
     },
   );
 

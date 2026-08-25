@@ -176,9 +176,9 @@ describe("SettingsRepository", () => {
         if (transactionAborted) {
           throw new Error("current transaction is aborted");
         }
-        if (queryText.includes("fitness.menstrual_period")) {
+        if (queryText.includes("fitness.life_events")) {
           transactionAborted = true;
-          throw Object.assign(new Error('relation "fitness.menstrual_period" does not exist'), {
+          throw Object.assign(new Error('relation "fitness.life_events" does not exist'), {
             code: "42P01",
           });
         }
@@ -219,7 +219,7 @@ describe("SettingsRepository", () => {
             ? (Reflect.get(query, "queryChunks") ?? [])
             : [],
         );
-        if (queryText.includes("fitness.menstrual_period")) {
+        if (queryText.includes("fitness.life_events")) {
           throw deletionError;
         }
         return [];
@@ -251,7 +251,7 @@ describe("SettingsRepository", () => {
       expect(queries.some((query) => query.includes("RELEASE SAVEPOINT"))).toBe(true);
     });
 
-    it("deletes exactly 6 user-scoped tables including menstrual periods", async () => {
+    it("deletes every user-scoped table", async () => {
       const transactionExecute = vi.fn().mockResolvedValue([]);
       const transaction = vi
         .fn()
@@ -272,7 +272,9 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(7);
+      expect(queries.some((query) => query.includes("fitness.life_events"))).toBe(true);
+      expect(queries.some((query) => query.includes("fitness.breathwork_session"))).toBe(true);
       expect(queries.some((query) => query.includes("fitness.menstrual_period"))).toBe(true);
     });
 
@@ -283,8 +285,8 @@ describe("SettingsRepository", () => {
             ? (Reflect.get(query, "queryChunks") ?? [])
             : [],
         );
-        if (queryText.includes("fitness.menstrual_period")) {
-          throw Object.assign(new Error('relation "fitness.menstrual_period" does not exist'), {
+        if (queryText.includes("fitness.life_events")) {
+          throw Object.assign(new Error('relation "fitness.life_events" does not exist'), {
             code: "42P01",
           });
         }
@@ -312,7 +314,7 @@ describe("SettingsRepository", () => {
             : [],
         ),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(7);
       expect(queries.some((query) => query.includes("fitness.supplement"))).toBe(true);
     });
 
@@ -338,8 +340,8 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      // 2 child tables + 6 user-scoped tables = 8 delete statements.
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(8);
+      // 2 child tables + 7 user-scoped tables = 9 delete statements.
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(9);
     });
   });
 });

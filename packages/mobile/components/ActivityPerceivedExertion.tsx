@@ -2,11 +2,13 @@ import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
 export function ActivityPerceivedExertion({ value }: { value: number | null }) {
+  if (value == null) return null;
+
   return (
     <View style={styles.container} accessibilityLabel="Session perceived exertion">
       <Text style={styles.title}>Session effort</Text>
       <Text style={styles.subtitle}>Stored perceived exertion for this session (0–10).</Text>
-      <Text style={styles.value}>{value ?? "—"}</Text>
+      <Text style={styles.value}>{value}</Text>
     </View>
   );
 }

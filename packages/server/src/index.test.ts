@@ -44,6 +44,16 @@ const mockCheckReadiness = vi.fn(async () => ({
     queues: "ok" as const,
   },
 }));
+const mockCreateExternalWriteApiRouter = vi.fn(() => {
+  const router = express.Router();
+  router.get("/__test_external_mount", (_req, res) => res.sendStatus(204));
+  return router;
+});
+const mockCreateDeveloperClientsRouter = vi.fn(() => {
+  const router = express.Router();
+  router.get("/__test_developer_mount", (_req, res) => res.sendStatus(204));
+  return router;
+});
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -156,6 +166,12 @@ vi.mock("../routes/activity-export.ts", () => ({
 }));
 vi.mock("../routes/auth/index.ts", () => ({ createAuthRouter: vi.fn(() => express.Router()) }));
 vi.mock("../routes/export.ts", () => ({ createExportRouter: vi.fn(() => express.Router()) }));
+vi.mock("./routes/external-write-api.ts", () => ({
+  createExternalWriteApiRouter: mockCreateExternalWriteApiRouter,
+}));
+vi.mock("./routes/developer-clients.ts", () => ({
+  createDeveloperClientsRouter: mockCreateDeveloperClientsRouter,
+}));
 vi.mock("./routes/ingest-zos-health.ts", () => ({
   createIngestZosHealthRouter: vi.fn(() => express.Router()),
 }));
@@ -361,6 +377,23 @@ describe("createApp", () => {
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
   });
 
+  it("mounts the developer-client router with its required repository", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const { DeveloperClientRepository } = await import(
+      "./repositories/developer-client-repository.ts"
+    );
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    expect(mockCreateDeveloperClientsRouter).toHaveBeenCalledWith({
+      db: fakeDb,
+      repository: expect.any(DeveloperClientRepository),
+    });
+    expect(
+      (await request(app, "GET", "/api/developer/clients/__test_developer_mount")).status,
+    ).toBe(204);
+  });
+
   it("does not apply the password-login rate limit to companion status checks", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     const app = createApp(createDatabaseFromEnv(), makeMockSensorStore());
@@ -559,5 +592,34 @@ describe("main", () => {
       message: "Invalid x-timezone header",
     });
     expect(getAccessWindowForUser).not.toHaveBeenCalled();
+  });
+
+  it("mounts the external write API router with the application database", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    createApp(fakeDb, makeMockSensorStore());
+
+    expect(mockCreateExternalWriteApiRouter).toHaveBeenCalledWith({ db: fakeDb });
+
+    const app = createApp(fakeDb, makeMockSensorStore());
+    const router = Reflect.get(app, "router");
+    const routerStack =
+      router &&
+      (typeof router === "object" || typeof router === "function") &&
+      "stack" in router &&
+      Array.isArray(router.stack)
+        ? router.stack
+        : [];
+    const externalRouter = mockCreateExternalWriteApiRouter.mock.results.at(-1)?.value;
+    expect(
+      routerStack.some(
+        (layer) =>
+          layer &&
+          typeof layer === "object" &&
+          "handle" in layer &&
+          layer.handle === externalRouter,
+      ),
+    ).toBe(true);
   });
 });

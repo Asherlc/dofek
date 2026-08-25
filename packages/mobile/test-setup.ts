@@ -556,6 +556,7 @@ vi.mock("./modules/health-kit", async () => {
     requestPermissions: vi.fn(() => Promise.resolve(true)),
     requestAuthorization: vi.fn(() => Promise.resolve(true)),
     queryDailyStatistics: vi.fn(() => Promise.resolve([])),
+    queryCategorySamples: vi.fn(() => Promise.resolve([])),
     queryQuantitySamples: vi.fn(() => Promise.resolve([])),
     queryWorkouts: vi.fn(() => Promise.resolve([])),
     queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),

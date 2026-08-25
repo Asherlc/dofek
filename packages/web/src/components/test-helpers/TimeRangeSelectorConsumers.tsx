@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { type ComponentType, type ReactNode, useEffect, useState } from "react";
+import { type ComponentType, type ReactNode, useState } from "react";
 import { expect, vi } from "vitest";
 import { BodyDaysContext } from "../../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
@@ -124,7 +124,10 @@ vi.mock("../../lib/trpc.ts", () => {
   return {
     trpc: {
       useUtils: () => ({
-        journal: { entries: { invalidate: vi.fn() } },
+        processing: {
+          alerts: { invalidate: vi.fn() },
+          status: { invalidate: vi.fn() },
+        },
       }),
       behaviorImpact: {
         impactSummary: recordQuery("behaviorImpact.impactSummary"),
@@ -157,7 +160,6 @@ vi.mock("../../lib/trpc.ts", () => {
         compute: recordQuery("insights.compute"),
       },
       journal: {
-        delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
         entries: recordQuery("journal.entries"),
         trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
@@ -224,15 +226,8 @@ export function getCapturedRouteComponent(path: string): ComponentType | undefin
   return state.routeComponents[path];
 }
 
-export function BodyHarness() {
+export function BodyHarness({ BodyPage }: { BodyPage: ComponentType }) {
   const [days, setDays] = useState<number | null>(30);
-  const [BodyPage, setBodyPage] = useState<ComponentType | null>(null);
-
-  useEffect(() => {
-    void import("../../pages/BodyPage.tsx").then((mod) => setBodyPage(() => mod.BodyPage));
-  }, []);
-
-  if (!BodyPage) return null;
   return (
     <BodyDaysContext.Provider
       value={{

@@ -199,7 +199,6 @@ async function seedSyncLogs(sql: Sql): Promise<void> {
     ["strava", "streams", "success", 1_400, null, 1_560, 1],
     ["bodyspec", "body_composition", "success", 2, null, 330, 3],
     ["manual_review", "journal", "success", 60, null, 120, 1],
-    ["manual_review", "breathwork", "success", 16, null, 140, 1],
     ["manual_review", "cycle", "success", 6, null, 170, 1],
   ] as const;
 

@@ -50,6 +50,7 @@ import { logger } from "./logger.ts";
 import { createMcpOAuthRouter, type McpAuthRateLimitOptions } from "./mcp/oauth-route.ts";
 import { createMcpRouter } from "./mcp/route.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
+import { DeveloperClientRepository } from "./repositories/developer-client-repository.ts";
 import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
 import { ensureProvidersRegistered } from "./routers/sync-helpers.ts";
@@ -58,7 +59,9 @@ import { createAuthRouter } from "./routes/auth/index.ts";
 import { authRateLimiter } from "./routes/auth/shared.ts";
 import { createCompanionPairingRouter } from "./routes/companion-pairing.ts";
 import { createCompanionTokenHttpRouter } from "./routes/companion-token.ts";
+import { createDeveloperClientsRouter } from "./routes/developer-clients.ts";
 import { createExportRouter } from "./routes/export.ts";
+import { createExternalWriteApiRouter } from "./routes/external-write-api.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
@@ -244,6 +247,14 @@ function setupRoutes(
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
+  app.use(
+    "/api/developer/clients",
+    createDeveloperClientsRouter({
+      db,
+      repository: new DeveloperClientRepository(db),
+    }),
+  );
+  app.use("/api/external/v1", createExternalWriteApiRouter({ db }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));

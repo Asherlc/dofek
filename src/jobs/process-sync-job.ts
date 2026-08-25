@@ -237,6 +237,14 @@ function isProviderTransportError(error: unknown): boolean {
   return isProviderServiceUnavailableError(error) || isProviderRequestTimeoutError(error);
 }
 
+function isZeppHttp500ServiceUnavailable(error: unknown): error is ProviderServiceUnavailableError {
+  return (
+    error instanceof ProviderServiceUnavailableError &&
+    error.providerId === "amazfit-zepp" &&
+    error.statusCode === 500
+  );
+}
+
 function shouldReportProviderError(error: unknown): boolean {
   return !isProviderTransportError(error) && !authFailureReasonFromError(error);
 }
@@ -580,6 +588,19 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
         syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
         continue;
+      }
+
+      if (isZeppHttp500ServiceUnavailable(err)) {
+        providerStatus[provider.id] = {
+          status: "running",
+          message: "Service unavailable; retrying",
+        };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        logger.warn(`[worker] ${provider.name} service unavailable, retrying: ${err.message}`);
+        throw err;
       }
 
       if (isRetryableInfraError(err) && !isProviderTransportError(err)) {

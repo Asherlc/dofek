@@ -1,4 +1,5 @@
 import type { EventSubscription } from "expo-modules-core";
+import { z } from "zod";
 import BleHeartRateModule from "./src/BleHeartRateModule";
 
 /** A discovered / connected Bluetooth heart-rate monitor. */
@@ -8,18 +9,46 @@ export interface BleHeartRateDevice {
 }
 
 /**
+ * Accept a native optional field that is absent as either `null` or `undefined`
+ * and settle on `null`.
+ *
+ * The iOS bridge builds an absent value as `NSNull()`. The `getDevices` return
+ * path serializes that to `undefined` in JavaScript, while the event path maps
+ * it to `null`. `.nullable()` alone rejects `undefined`, so a monitor that has
+ * not reported a beat yet would fail to parse.
+ */
+function nativeNullable<Schema extends z.ZodTypeAny>(schema: Schema) {
+  return schema.nullish().transform((value) => value ?? null);
+}
+
+/** Persisted state and latest native measurement for a heart-rate monitor. */
+export const BleHeartRateDeviceSnapshotSchema = z.object({
+  id: z.string().min(1),
+  name: nativeNullable(z.string()),
+  connectionState: z.string().min(1),
+  lastMeasurementAt: nativeNullable(z.string()),
+  lastHeartRateBpm: nativeNullable(z.number()),
+  lastRrIntervalsMs: z.array(z.number()),
+  bufferedSampleCount: z.number().int().nonnegative(),
+});
+
+export type BleHeartRateDeviceSnapshot = z.infer<typeof BleHeartRateDeviceSnapshotSchema>;
+
+/**
  * A single heart-rate notification.
  *
  * `heartRateBpm` is the value from the Heart Rate Measurement characteristic
  * (0x2A37); `rrIntervalsMs` carries the optional beat-to-beat intervals from the
  * same notification (empty when the strap does not report them).
  */
-export interface BleHeartRateSample {
-  deviceId?: string;
-  timestamp: string; // ISO 8601
-  heartRateBpm: number;
-  rrIntervalsMs: number[];
-}
+export const BleHeartRateSampleSchema = z.object({
+  deviceId: z.string().min(1),
+  timestamp: z.string().min(1),
+  heartRateBpm: z.number(),
+  rrIntervalsMs: z.array(z.number()),
+});
+
+export type BleHeartRateSample = z.infer<typeof BleHeartRateSampleSchema>;
 
 /** Check whether Bluetooth is powered on and available. */
 export function isBluetoothAvailable(): boolean {
@@ -46,6 +75,11 @@ export async function connect(peripheralId: string): Promise<BleHeartRateDevice>
   return BleHeartRateModule.connect(peripheralId);
 }
 
+/** List the app-managed Bluetooth heart-rate monitors and their native state. */
+export function getDevices(): BleHeartRateDeviceSnapshot[] {
+  return BleHeartRateDeviceSnapshotSchema.array().parse(BleHeartRateModule.getDevices());
+}
+
 /** Get the current BLE connection state (idle, scanning, connecting, ready). */
 export function getConnectionState(): string {
   return BleHeartRateModule.getConnectionState();
@@ -63,7 +97,9 @@ export function getBufferedSampleCount(): number {
  * the upload fails, the samples remain buffered for retry — no data loss.
  */
 export async function peekBufferedSamples(maxCount?: number): Promise<BleHeartRateSample[]> {
-  return BleHeartRateModule.peekBufferedSamples(maxCount);
+  return BleHeartRateSampleSchema.array().parse(
+    await BleHeartRateModule.peekBufferedSamples(maxCount),
+  );
 }
 
 /**
@@ -74,14 +110,25 @@ export function confirmSamplesDrain(count: number): void {
   BleHeartRateModule.confirmSamplesDrain(count);
 }
 
+/** Disconnect the current monitor, or a persisted monitor when specified. */
+export function disconnect(): void;
+export function disconnect(peripheralId: string): void;
+export function disconnect(peripheralId?: string): void {
+  if (peripheralId === undefined) {
+    BleHeartRateModule.disconnect();
+    return;
+  }
+  BleHeartRateModule.disconnect(peripheralId);
+}
+
+/** Forget one persisted monitor. */
+export function forget(peripheralId: string): void {
+  BleHeartRateModule.forget(peripheralId);
+}
+
 /** Await native disconnect and discard all samples owned by the ending session. */
 export async function disconnectAndClearBufferedSamples(): Promise<void> {
   await BleHeartRateModule.disconnectAndClearBufferedSamples();
-}
-
-/** Disconnect from the heart-rate monitor. */
-export function disconnect(): void {
-  BleHeartRateModule.disconnect();
 }
 
 /** Disconnect and clear buffered heart-rate samples for the deleted account. */
@@ -108,6 +155,20 @@ export function addConnectionStateListener(
   return BleHeartRateModule.addListener("onConnectionStateChanged", callback);
 }
 
+/** Subscribe to a persisted monitor's latest native snapshot. */
+export function addDeviceStateListener(
+  callback: (snapshot: BleHeartRateDeviceSnapshot) => void,
+): EventSubscription {
+  return BleHeartRateModule.addListener("onDeviceStateChanged", (event: unknown) =>
+    callback(BleHeartRateDeviceSnapshotSchema.parse(event)),
+  );
+}
+
+/** Subscribe to app-managed registry membership changes. */
+export function addDeviceListListener(callback: () => void): EventSubscription {
+  return BleHeartRateModule.addListener("onDeviceListChanged", callback);
+}
+
 /**
  * Subscribe to live heart-rate measurements for the UI (~1 Hz).
  *
@@ -116,5 +177,7 @@ export function addConnectionStateListener(
 export function addHeartRateListener(
   callback: (event: BleHeartRateSample) => void,
 ): EventSubscription {
-  return BleHeartRateModule.addListener("onHeartRateMeasurement", callback);
+  return BleHeartRateModule.addListener("onHeartRateMeasurement", (event: unknown) =>
+    callback(BleHeartRateSampleSchema.parse(event)),
+  );
 }

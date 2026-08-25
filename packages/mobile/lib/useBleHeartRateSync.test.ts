@@ -30,14 +30,9 @@ const uploadClient = {
 } satisfies BleHeartRateUploadClient;
 
 const deps = {
-  isBluetoothAvailable: vi.fn().mockReturnValue(true),
-  scanAndConnect: vi.fn().mockResolvedValue({ id: "polar-123", name: "Polar H10" }),
   peekBufferedSamples: vi.fn().mockResolvedValue([]),
   confirmSamplesDrain: vi.fn(),
   disconnectAndClearBufferedSamples: vi.fn().mockResolvedValue(undefined),
-  addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
-  addHeartRateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
-  disconnect: vi.fn(),
 } satisfies BleHeartRateSyncDeps;
 
 describe("useBleHeartRateSync", () => {

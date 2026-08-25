@@ -33,7 +33,6 @@ export const MCP_OAUTH_SCOPES = [
   "health:read",
   "activity:read",
   "nutrition:read",
-  "nutrition:write",
   "providers:read",
   "sync:write",
 ] as const satisfies readonly McpScope[];
@@ -47,7 +46,6 @@ const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   "activity:read": "Search your activities",
   "health:read": "View your daily health summaries",
   "nutrition:read": "View your nutrition summaries",
-  "nutrition:write": "Log food entries",
   "providers:read": "View your connected data sources",
   "sync:write": "Start data synchronization",
 };

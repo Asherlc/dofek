@@ -71,6 +71,11 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(sleepType))
     }
 
+    func testReadTypesContainsMenstrualFlow() {
+        let menstrualFlowType = HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
+        XCTAssertTrue(readTypes.contains(menstrualFlowType))
+    }
+
     func testReadTypesContainsWorkoutType() {
         XCTAssertTrue(readTypes.contains(HKWorkoutType.workoutType()))
     }
@@ -122,6 +127,7 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .stepCount)!))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .heartRate)!))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKWorkoutType.workoutType()))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKSeriesType.workoutRoute()))
     }
@@ -134,19 +140,14 @@ final class HealthKitTypesTests: XCTestCase {
         )
         XCTAssertFalse(
             backgroundDeliveryTypes.contains(
-                HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
-            )
-        )
-        XCTAssertFalse(
-            backgroundDeliveryTypes.contains(
                 HKCategoryType.categoryType(forIdentifier: .mindfulSession)!
             )
         )
     }
 
     func testBackgroundDeliveryTypesTotalCount() {
-        // 18 quantity types + sleep + workout + workout route.
-        XCTAssertEqual(backgroundDeliveryTypes.count, 21)
+        // 18 quantity types + sleep + menstrual flow + workout + workout route.
+        XCTAssertEqual(backgroundDeliveryTypes.count, 22)
     }
 
     // MARK: - writeTypes
@@ -182,5 +183,9 @@ final class HealthKitTypesTests: XCTestCase {
             let type = HKQuantityType.quantityType(forIdentifier: identifier)!
             XCTAssertFalse(writeTypes.contains(type), "writeTypes should not contain \(identifier.rawValue)")
         }
+
+        XCTAssertFalse(
+            writeTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!)
+        )
     }
 }

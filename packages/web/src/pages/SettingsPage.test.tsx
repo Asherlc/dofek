@@ -98,9 +98,6 @@ vi.mock("../components/AccountErasurePanel.tsx", () => ({
 vi.mock("../components/UnitSystemToggle.tsx", () => ({
   UnitSystemToggle: () => <div>UnitSystemToggle</div>,
 }));
-vi.mock("./McpTokensPanel.tsx", () => ({
-  McpTokensPanel: () => <div>McpTokensPanel</div>,
-}));
 
 vi.mock("../lib/dashboardLayoutContext.ts", () => ({
   SECTION_LABELS: {},
@@ -287,7 +284,6 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByText("MCP")).toBeTruthy();
     expect(screen.getByText("Dashboard Layout")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Data Sources" })).toBeNull();
   });

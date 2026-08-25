@@ -258,7 +258,7 @@ async function request(
   body: string;
   headers: Record<string, string | string[] | undefined>;
 }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
       const fetchOptions: RequestInit = { method: method.toUpperCase(), redirect: "manual" };
@@ -281,9 +281,9 @@ async function request(
           resolve({ status: res.status, body, headers });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error", headers: {} });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
   });
@@ -955,11 +955,14 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(404);
     });
 
-    it("returns 401 when not logged in", async () => {
+    it("redirects to login when not logged in", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/google");
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.location, "http://localhost");
+      expect(location.pathname).toBe("/login");
+      expect(location.searchParams.get("returnTo")).toBe("/auth/link/google");
     });
 
     it("returns 400 for unconfigured provider", async () => {
@@ -975,12 +978,15 @@ describe("createAuthRouter", () => {
       vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
     });
 
-    it("returns 401 when session is expired", async () => {
+    it("redirects to login when the session is expired", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/google");
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.location, "http://localhost");
+      expect(location.pathname).toBe("/login");
+      expect(location.searchParams.get("returnTo")).toBe("/auth/link/google");
     });
 
     it("redirects when logged in with valid session", async () => {
@@ -1032,19 +1038,25 @@ describe("createAuthRouter", () => {
   });
 
   describe("GET /auth/link/data/:provider", () => {
-    it("returns 401 when not logged in", async () => {
+    it("redirects to login when not logged in", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/data/wahoo");
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.location, "http://localhost");
+      expect(location.pathname).toBe("/login");
+      expect(location.searchParams.get("returnTo")).toBe("/auth/link/data/wahoo");
     });
 
-    it("returns 401 when session is expired", async () => {
+    it("redirects to login when the session is expired", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/data/wahoo");
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.location, "http://localhost");
+      expect(location.pathname).toBe("/login");
+      expect(location.searchParams.get("returnTo")).toBe("/auth/link/data/wahoo");
     });
   });
 
@@ -4282,15 +4294,6 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/data/wahoo");
       expect(res.status).toBe(302);
-    });
-
-    it("returns 401 with expired session message", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("expired-sess");
-      vi.mocked(validateSession).mockResolvedValue(null);
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/auth/link/data/wahoo");
-      expect(res.status).toBe(401);
-      expect(res.body).toContain("Session expired");
     });
   });
 

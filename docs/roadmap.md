@@ -29,8 +29,8 @@ Resolve public-facing trust problems and add product measurement before launchin
 - [ ] Add equivalent web and mobile product events for onboarding completion, source connection, first useful insight, Daily Brief engagement, journal or experiment engagement, subscription conversion, and relevant failure states. Web page views alone are not sufficient product measurement; see [`posthog.ts`](../packages/web/src/lib/posthog.ts).
 - [ ] Establish an automated web/mobile product-surface parity review for every user-facing feature. Platform-specific hardware and administrative features may differ intentionally, but user outcomes should remain equivalent.
 - [ ] Publish and maintain a product-surface matrix covering route discoverability, web/mobile parity, fixture coverage, and release evidence.
-- [ ] Resolve or intentionally retire low-discoverability product surfaces, including behavior impact, breathwork, cycle tracking, reports, predictions, and insights that exist but are absent from primary navigation.
-- [ ] Prioritize mobile parity for journal and life events, body and goal-weight context, behavior impact, breathwork, and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
+- [ ] Resolve or intentionally retire low-discoverability product surfaces, including behavior impact, reports, predictions, and insights that exist but are absent from primary navigation.
+- [ ] Prioritize mobile parity for journal and life events, body and goal-weight context, behavior impact, and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
 
 This gate is complete when the acquisition surfaces make no contradictory or prohibited claims, a seeded review account can be audited on both platforms, and the team can measure activation and retention without relying only on page views.
 
@@ -169,6 +169,19 @@ Connect each daily decision to a longer-term outcome. First slice shipped: persi
 Implementation-level backlog. Checked items are complete; unchecked are open.
 
 ### Data Ingestion
+- [x] Read-only menstrual-cycle tracking from explicit Apple Health menstrual-flow records,
+  including the upstream cycle-start marker, source attribution, background HealthKit delivery,
+  XML import, and provider-only correction workflow
+  ([HealthKit menstrual flow](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
+- [ ] Add Garmin Women's Health only after Connect Developer Program approval and access to the
+  official payload contract; do not extend the private Garmin provider with guessed endpoints
+  ([Garmin Women's Health API](https://developer.garmin.com/gc-developer-program/womens-health-api/),
+  [program FAQ](https://developer.garmin.com/gc-developer-program/program-faq/)).
+- [ ] Add Android Health Connect menstrual records if an Android client is introduced
+  ([MenstruationPeriodRecord](https://developer.android.com/reference/androidx/health/connect/client/records/MenstruationPeriodRecord)).
+- [x] Record WHOOP, Oura, Fitbit, Polar, Withings, and Google Health as unsupported explicit
+  menstrual-record sources under their current public APIs; see
+  [`provider-api-audit.md`](provider-api-audit.md#unsupported-public-menstrual-record-sources).
 - [x] Apple Health XML parser (HR streams, HRV, sleep stages, workouts, body measurements, blood glucose, nutrition, walking stats, mindful sessions)
 - [x] Apple Health HTTP upload with chunked transfer and progress indicator
 - [x] Apple Health workout routes (GPS data from WorkoutRoute elements → metric_stream)

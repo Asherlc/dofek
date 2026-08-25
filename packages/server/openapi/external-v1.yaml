@@ -9,6 +9,7 @@ paths:
   /api/external/v1/link/start:
     post:
       operationId: startExternalLink
+      summary: Start PKCE external linking
       security: [{ externalClient: [] }]
       requestBody:
         required: true
@@ -21,11 +22,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LinkStartResponse' }
-        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
   /api/external/v1/link/exchange:
     post:
       operationId: exchangeExternalLink
+      summary: Exchange a one-time link code
       security: [{ externalClient: [] }]
       requestBody:
         required: true
@@ -41,9 +44,32 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '423': { $ref: '#/components/responses/Problem' }
+  /api/external/v1/link/reissue:
+    post:
+      operationId: reissueExternalLinkToken
+      summary: Reissue an external link access token
+      description: Rotates the opaque bearer token for the latest active grant owned by this external client and subject. The grant ID and idempotency scope remain unchanged; the previous token is invalid immediately.
+      security: [{ externalClient: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalSubject' }
+      responses:
+        '200':
+          description: Fresh 15-minute external grant token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinkExchangeResponse' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '423': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
   /api/external/v1/link/status:
     post:
       operationId: getExternalLinkStatus
+      summary: Get external link status
       security: [{ externalClient: [] }]
       requestBody:
         required: true
@@ -56,10 +82,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LinkStatusResponse' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/external/v1/link/authorize:
+    get:
+      operationId: showExternalLinkConsent
+      summary: Show external link consent
+      security: [{ sessionAuth: [] }]
+      parameters:
+        - { name: linkId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: HTML consent page, content: { text/html: { schema: { type: string } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: approveExternalLink
+      summary: Approve an external link
+      security: [{ sessionAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/LinkAuthorizationRequest' }
+      responses:
+        '200': { description: Approval accepted before redirecting to the registered URI. }
+        '303': { description: "Redirect to the exact registered redirect URI with one-time code, link_id, and optional state." }
+        '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
   /api/external/v1/nutrition/entries:
     post:
       operationId: createNutritionEntries
+      summary: Create confirmed nutrition entries
       security: [{ bearerAuth: [] }]
       parameters:
         - name: Idempotency-Key
@@ -87,6 +141,7 @@ paths:
   /api/external/v1/erasure/ack:
     post:
       operationId: acknowledgeExternalErasure
+      summary: Acknowledge an erasure event
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -108,6 +163,7 @@ components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: opaque }
     externalClient: { type: http, scheme: bearer, bearerFormat: opaque-client-credential }
+    sessionAuth: { type: apiKey, in: cookie, name: session }
   responses:
     Problem:
       description: Structured external API error
@@ -115,6 +171,13 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    LinkAuthorizationRequest:
+      type: object
+      required: [linkId, approved, csrfToken]
+      properties:
+        linkId: { type: string, format: uuid }
+        approved: { type: boolean, const: true }
+        csrfToken: { type: string, minLength: 43, maxLength: 128 }
     ExternalSubject:
       type: object
       required: [namespace, subject]
@@ -125,8 +188,12 @@ components:
       type: object
       required: [redirectUri, codeChallenge, requestedScopes]
       properties:
-        redirectUri: { type: string, format: uri }
+        redirectUri:
+          type: string
+          format: uri
+          description: The complete canonical HTTPS callback URI. It must exactly match one URI registered for the authenticated developer client.
         codeChallenge: { type: string, minLength: 43, maxLength: 128 }
+        state: { type: string, maxLength: 500 }
         requestedScopes:
           type: array
           minItems: 1
@@ -161,7 +228,7 @@ components:
       type: object
       required: [status]
       properties:
-        status: { type: string, enum: [linked, unlinked, revoked] }
+        status: { type: string, enum: [linked, revoked] }
         externalSubject: { type: string }
         grantId: { type: string }
     NutritionEntriesRequest:
@@ -180,9 +247,9 @@ components:
         date: { type: string, format: date }
         meal: { type: string, enum: [breakfast, lunch, dinner, snack, other] }
         foodName: { type: string, minLength: 1, maxLength: 500 }
-        foodDescription: { type: string, maxLength: 2000, nullable: true }
-        category: { type: string, maxLength: 100, nullable: true }
-        numberOfUnits: { type: number, exclusiveMinimum: 0, nullable: true }
+        foodDescription: { type: [string, 'null'], maxLength: 2000 }
+        category: { type: [string, 'null'], maxLength: 100 }
+        numberOfUnits: { type: [number, 'null'], exclusiveMinimum: 0 }
         externalId: { type: string, minLength: 1, maxLength: 500 }
         nutrients:
           type: object
@@ -206,7 +273,7 @@ components:
       properties:
         date: { type: string, format: date }
         state: { type: string, enum: [available, unavailable] }
-        summary: { type: object, nullable: true, additionalProperties: true }
+        summary: { type: [object, 'null'], additionalProperties: true }
         resolution: { type: object, additionalProperties: true }
     ErasureAckRequest:
       type: object

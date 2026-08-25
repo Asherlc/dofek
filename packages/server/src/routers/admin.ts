@@ -7,6 +7,7 @@ import { z } from "zod";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { DeveloperClientRepository } from "../repositories/developer-client-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
 
 // ── Schemas for admin queries ──
@@ -164,6 +165,22 @@ const paginationInput = z.object({
 });
 
 const countSchema = z.object({ count: z.coerce.number() });
+const developerClientSupportSummarySchema = z
+  .object({
+    clientId: z.string(),
+    name: z.string(),
+    scopes: z.array(z.literal("nutrition:write")),
+    status: z.enum(["active", "revoked"]),
+    createdAt: timestampStringSchema,
+    lastRotatedAt: timestampStringSchema,
+    ownerName: z.string().nullable(),
+    ownerEmail: z.string().nullable(),
+  })
+  .strict();
+const developerClientSupportListSchema = z.array(developerClientSupportSummarySchema);
+const developerClientSupportRevokeSchema = z.object({ revoked: z.literal(true) }).strict();
+const developerClientNotFoundMessage =
+  "The developer integration was not found or is already revoked.";
 
 function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefined) {
   if (!sensorStore) {
@@ -173,6 +190,24 @@ function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefine
 }
 
 export const adminRouter = router({
+  externalClients: adminProcedure
+    .output(developerClientSupportListSchema)
+    .query(({ ctx }) => new DeveloperClientRepository(ctx.db).listForSupport()),
+
+  revokeExternalClient: adminProcedure
+    .input(z.object({ clientId: z.string().min(1) }))
+    .output(developerClientSupportRevokeSchema)
+    .mutation(async ({ ctx, input }) => {
+      const revoked = await new DeveloperClientRepository(ctx.db).revokeForSupport(
+        ctx.userId,
+        input.clientId,
+      );
+      if (!revoked) {
+        throw new TRPCError({ code: "NOT_FOUND", message: developerClientNotFoundMessage });
+      }
+      return { revoked: true as const };
+    }),
+
   /** High-level overview: row counts for all key tables */
   overview: adminProcedure.query(async ({ ctx }) => {
     const bodyStore = requireBodyMeasurementStore(ctx.sensorStore);
@@ -194,7 +229,6 @@ export const adminRouter = router({
             ('provider'),
             ('lab_panel'),
             ('journal_entry'),
-            ('breathwork_session'),
             ('supplement'),
             ('life_events'),
             ('nutrient'),
@@ -202,6 +236,8 @@ export const adminRouter = router({
             ('supplement_definition'),
             ('supplement_definition_nutrient'),
             ('supplement_dose_event'),
+            ('breathwork_session'),
+            ('menstrual_period'),
             ('metric_stream')
         ),
         base_estimates AS (

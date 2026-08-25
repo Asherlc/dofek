@@ -287,7 +287,6 @@ describe("climbingRouter", () => {
       getSummary.mockRestore();
     }
   });
-
   it("returns empty arrays when there is no climbing data", async () => {
     const { caller, execute } = makeCaller([]);
 

@@ -10,6 +10,7 @@ export interface HealthKitSample {
   sourceName: string;
   sourceBundle: string;
   uuid: string;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 /** A sub-activity within a workout (iOS 16+). Each represents a distinct
@@ -108,6 +109,15 @@ export async function queryQuantitySamples(
   limit?: number,
 ): Promise<HealthKitSample[]> {
   return HealthKitModule.queryQuantitySamples(typeIdentifier, startDate, endDate, limit ?? 0);
+}
+
+/** Query category samples such as menstrual flow. */
+export async function queryCategorySamples(
+  typeIdentifier: string,
+  startDate: string,
+  endDate: string,
+): Promise<HealthKitSample[]> {
+  return HealthKitModule.queryCategorySamples(typeIdentifier, startDate, endDate);
 }
 
 /** Query workouts */
