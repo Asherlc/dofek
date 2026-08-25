@@ -2,12 +2,22 @@ ALTER TABLE fitness.external_client
 ADD COLUMN owner_user_id uuid,
 ADD COLUMN last_rotated_at timestamptz;
 --> statement-breakpoint
+ALTER TABLE fitness.external_client
+ALTER COLUMN last_rotated_at SET DEFAULT now();
+--> statement-breakpoint
+ALTER TABLE fitness.external_client
+ADD CONSTRAINT external_client_last_rotated_at_not_null
+CHECK (last_rotated_at IS NOT NULL)
+NOT VALID;
+--> statement-breakpoint
 UPDATE fitness.external_client
 SET last_rotated_at = created_at
 WHERE last_rotated_at IS NULL;
 --> statement-breakpoint
 ALTER TABLE fitness.external_client
-ALTER COLUMN last_rotated_at SET DEFAULT now(),
+VALIDATE CONSTRAINT external_client_last_rotated_at_not_null;
+--> statement-breakpoint
+ALTER TABLE fitness.external_client
 ALTER COLUMN last_rotated_at SET NOT NULL;
 --> statement-breakpoint
 ALTER TABLE fitness.external_client
