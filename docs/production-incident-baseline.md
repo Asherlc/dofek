@@ -24049,3 +24049,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completed an iOS bundle successfully.
 - **Remaining risk / follow-up:** Confirm the fresh hosted Mobile Bundle and iOS
   Native Build jobs pass before merging the PR and triggering TestFlight upload.
+
+## 2026-08-25 — Hang Ten workout imported as generic strength
+
+- **Status:** Fixed in source; deployment and a new HealthKit sync are pending.
+- **Symptoms / user impact:** The activity linked from the production dashboard
+  displayed as strength rather than hangboarding.
+- **Evidence / root cause:** The Apple Health record's HealthKit source was
+  `Hang Ten`, while its brand metadata key was absent. Classification required
+  both a generic functional-strength type and `HKMetadataKeyWorkoutBrandName`,
+  then declined to classify records without `HangTen.PlanName`.
+- **Fix / mitigation:** Classify `sourceName === "Hang Ten"` as hangboard. Plan
+  and segment metadata remain optional details and no longer gate activity type.
+- **Validation:** Focused Apple Health parser and HealthKit sync processor tests,
+  full lint, all repository typechecks, and the full local unit/mobile test tier
+  pass.
+- **Remaining risk / follow-up:** Deploy the change and resync the affected
+  HealthKit activity before confirming the production view.
+
+## 2026-08-25 — PR 2555 native mobile builds blocked by CocoaPods CDN rate limiting
+
+- **Status:** Unresolved external CI incident; no source change is warranted.
+- **Symptoms / impact:** The `Build Mobile / iOS Native Build` and `watchOS Build`
+  jobs failed, blocking PR #2555 despite lint, unit, integration, mobile, Swift,
+  and typecheck jobs passing.
+- **Evidence / root cause:** Both jobs failed at `cd packages/mobile/ios && pod
+  install`. Their first fatal line was `CDN: trunk URL couldn't be downloaded ...
+  Sentry.podspec.json Response: 429`, returned by GitHub while CocoaPods fetched
+  the Sentry podspec. See the [iOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867412)
+  and [watchOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867441).
+- **Fix / mitigation:** None in repository code. The rate limit is external to the
+  change; no retry, timeout, or failure suppression was added.
+- **Validation:** The independent hosted checks above passed, and the failed jobs
+  report the same upstream 429 response.
+- **Remaining risk / follow-up:** Rerun the native build jobs only after the
+  upstream rate limit has cleared, then confirm they pass without workflow changes.

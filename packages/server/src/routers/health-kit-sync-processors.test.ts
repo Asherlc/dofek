@@ -136,6 +136,44 @@ describe("processBodyMeasurements", () => {
 });
 
 describe("processWorkouts", () => {
+  it("classifies Hang Ten workouts from the HealthKit source", async () => {
+    providerActivitySyncMocks.upsert.mockClear();
+    const execute = vi.fn(async () => []);
+
+    await processWorkouts(
+      makeTransactionalTestDatabase({ execute }),
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "hang-ten-workout",
+          workoutType: "20",
+          startDate: "2026-08-25T14:50:32.000Z",
+          endDate: "2026-08-25T14:56:13.000Z",
+          duration: 341,
+          totalDistance: null,
+          sourceName: "Hang Ten",
+          sourceBundle: "com.hangten.app",
+        },
+      ],
+      {
+        windowStart: "2026-08-18T00:00:00.000Z",
+        windowEnd: "2026-08-26T00:00:00.000Z",
+      },
+    );
+
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
+        sourceName: "Hang Ten",
+      }),
+      expect.objectContaining({
+        activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
+        sourceName: "Hang Ten",
+      }),
+      expect.anything(),
+    );
+  });
+
   it("reconciles apple_health workouts missing from the HealthKit sync window", async () => {
     hangTenIntervalMocks.replace.mockClear();
     providerActivitySyncMocks.reconcile.mockClear();
@@ -287,8 +325,8 @@ describe("processWorkouts", () => {
           endDate: "2026-06-20T22:17:59.000Z",
           duration: 1738,
           totalDistance: null,
-          sourceName: "Apple Watch",
-          sourceBundle: "com.apple.health",
+          sourceName: "Hang Ten",
+          sourceBundle: "com.hangten.app",
           metadata: {
             HKMetadataKeyWorkoutBrandName: "Hang Ten",
             "HangTen.PlanName": "Max Hangs",
@@ -339,8 +377,8 @@ describe("processWorkouts", () => {
           endDate: "2026-06-20T22:17:59.000Z",
           duration: 1738,
           totalDistance: null,
-          sourceName: "Apple Watch",
-          sourceBundle: "com.apple.health",
+          sourceName: "Hang Ten",
+          sourceBundle: "com.hangten.app",
           metadata: {
             HKMetadataKeyWorkoutBrandName: "Hang Ten",
             "HangTen.PlanName": "Max Hangs",

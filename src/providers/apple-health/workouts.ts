@@ -144,18 +144,22 @@ function parseHangTenActivitySegments(raw: string): {
 
 function hangTenWorkoutOverrides(
   activityType: ProviderActivityType,
+  sourceName: string | null,
   metadata: WorkoutMetadata,
 ): Partial<HealthWorkout> {
-  if (
-    activityType.canonicalType !== "strength" ||
-    activityType.modality !== "functional" ||
-    metadata.HKMetadataKeyWorkoutBrandName !== "Hang Ten"
-  ) {
+  if (sourceName?.trim() !== "Hang Ten") {
     return {};
   }
 
+  const hangTenActivityType: ProviderActivityType = {
+    ...activityType,
+    canonicalType: "hangboard",
+    modality: null,
+  };
   const planName = trimmedMetadataValue(metadata, "HangTen.PlanName");
-  if (!planName) return {};
+  if (!planName) {
+    return { activityType: hangTenActivityType, sourceName: "Hang Ten" };
+  }
 
   const activitySegmentsMetadata = metadata["HangTen.ActivitySegments"];
   const rawActivitySegments =
@@ -164,7 +168,7 @@ function hangTenWorkoutOverrides(
     rawActivitySegments !== undefined ? parseHangTenActivitySegments(rawActivitySegments) : {};
 
   return {
-    activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+    activityType: hangTenActivityType,
     sourceName: "Hang Ten",
     hangTen: {
       sessionId: trimmedMetadataValue(metadata, "HangTen.SessionID"),
@@ -185,7 +189,7 @@ export function applyWorkoutMetadata(
   return {
     ...workout,
     metadata,
-    ...hangTenWorkoutOverrides(workout.activityType, metadata),
+    ...hangTenWorkoutOverrides(workout.activityType, workout.sourceName, metadata),
   };
 }
 
