@@ -13,7 +13,7 @@ import { PageSection } from "../components/PageSection.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { developerClientsApi } from "../lib/developer-clients.ts";
 
-export interface DeveloperIntegrationsPageViewProps {
+export interface DeveloperIntegrationsPageContentProps {
   clients: DeveloperClientSummary[] | undefined;
   createError: unknown;
   createdSecret: DeveloperClientSecret | null;
@@ -28,7 +28,7 @@ function errorMessage(error: unknown): string | null {
   return error instanceof Error ? error.message : null;
 }
 
-export function DeveloperIntegrationsPageView({
+export function DeveloperIntegrationsPageContent({
   clients,
   createError,
   createdSecret,
@@ -37,7 +37,7 @@ export function DeveloperIntegrationsPageView({
   listError,
   onCreate,
   onDismissSecret,
-}: DeveloperIntegrationsPageViewProps) {
+}: DeveloperIntegrationsPageContentProps) {
   return (
     <PageLayout
       title="Developer integrations"
@@ -46,9 +46,9 @@ export function DeveloperIntegrationsPageView({
       <PageSection title="How authorization works">
         <div className="space-y-3 text-sm text-muted">
           <p>
-            Your integration sends users through Dofek sign-in and consent. Keep the PKCE verifier
-            in your integration and send the bearer client credential only in the Authorization
-            header.
+            Your integration sends users through Dofek sign-in and consent. Keep the Proof Key for
+            Code Exchange (PKCE) verifier in your integration and send the bearer client credential
+            only in the Authorization header.
           </p>
           <a
             href="https://github.com/Asherlc/dofek/blob/main/docs/external-api.md"
@@ -79,38 +79,47 @@ Content-Type: application/json
         ) : clients?.length === 0 ? (
           <QueryStatePanel variant="empty" message="No developer integrations yet." height={120} />
         ) : (
-          <div className="grid gap-3">
-            {clients?.map((client) => (
-              <a
-                key={client.clientId}
-                href={`/developer-integrations/${encodeURIComponent(client.clientId)}`}
-                className="card block space-y-2 p-4 transition-colors hover:border-border-strong"
-                aria-label={`${client.name} developer integration`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h2 className="font-medium text-foreground">{client.name}</h2>
-                    <p className="font-mono text-xs text-dim">{client.clientId}</p>
+          <div className="space-y-3">
+            {listError ? (
+              <QueryStatePanel
+                error={listError}
+                contextLabel="Developer integrations"
+                height={80}
+              />
+            ) : null}
+            <div className="grid gap-3">
+              {clients?.map((client) => (
+                <a
+                  key={client.clientId}
+                  href={`/developer-integrations/${encodeURIComponent(client.clientId)}`}
+                  className="card block space-y-2 p-4 transition-colors hover:border-border-strong"
+                  aria-label={`${client.name} developer integration`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="font-medium text-foreground">{client.name}</h2>
+                      <p className="font-mono text-xs text-dim">{client.clientId}</p>
+                    </div>
+                    <span
+                      className={
+                        client.status === "active"
+                          ? "rounded bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300"
+                          : "rounded bg-slate-500/15 px-2 py-1 text-xs text-muted"
+                      }
+                    >
+                      {client.status}
+                    </span>
                   </div>
-                  <span
-                    className={
-                      client.status === "active"
-                        ? "rounded bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300"
-                        : "rounded bg-slate-500/15 px-2 py-1 text-xs text-muted"
-                    }
-                  >
-                    {client.status}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
-                  <span>
-                    Scope: <span className="font-mono">{client.scopes.join(", ")}</span>
-                  </span>
-                  <span>Created {formatDateTime(client.createdAt)}</span>
-                  <span>Last rotated {formatDateTime(client.lastRotatedAt)}</span>
-                </div>
-              </a>
-            ))}
+                  <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
+                    <span>
+                      Scope: <span className="font-mono">{client.scopes.join(", ")}</span>
+                    </span>
+                    <span>Created {formatDateTime(client.createdAt)}</span>
+                    <span>Last rotated {formatDateTime(client.lastRotatedAt)}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
         )}
       </PageSection>
@@ -149,7 +158,7 @@ export function DeveloperIntegrationsPage() {
   });
 
   return (
-    <DeveloperIntegrationsPageView
+    <DeveloperIntegrationsPageContent
       clients={clients.data}
       createError={createClient.error}
       createdSecret={createdSecret}

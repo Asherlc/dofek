@@ -2,7 +2,7 @@
 
 import type { DeveloperClientSecret, DeveloperClientSummary } from "@dofek/auth/developer-clients";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeveloperIntegrationsPage } from "./DeveloperIntegrationsPage.tsx";
@@ -105,6 +105,21 @@ describe("DeveloperIntegrationsPage", () => {
       "href",
       `${window.location.origin}/developer-integrations/ext_active`,
     );
+  });
+
+  it("keeps cached clients visible when a background refresh fails", async () => {
+    mocks.list
+      .mockResolvedValueOnce([activeClient])
+      .mockRejectedValueOnce(new Error("Developer client refresh failed"));
+    const { queryClient } = renderPage();
+    expect(await screen.findByText("Meal importer")).toBeTruthy();
+
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["developer-clients"] });
+    });
+
+    expect(screen.getByText("Meal importer")).toBeTruthy();
+    expect(await screen.findByText("Developer client refresh failed")).toBeTruthy();
   });
 
   it("invalidates only the list, shows the one-time secret locally, and clears it", async () => {

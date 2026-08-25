@@ -7,7 +7,7 @@ import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 export type DeveloperClientSupportItem = AppRouterOutputs["admin"]["externalClients"][number];
 
-export interface DeveloperClientsAdminPanelViewProps {
+export interface DeveloperClientsAdminPanelContentProps {
   clients: DeveloperClientSupportItem[] | undefined;
   error: unknown;
   isLoading: boolean;
@@ -23,7 +23,7 @@ function ownerLabel(client: DeveloperClientSupportItem): string {
   return client.ownerName ?? client.ownerEmail ?? "Owner unavailable";
 }
 
-export function DeveloperClientsAdminPanelView({
+export function DeveloperClientsAdminPanelContent({
   clients,
   error,
   isLoading,
@@ -33,7 +33,7 @@ export function DeveloperClientsAdminPanelView({
   onConfirmRevoke,
   onRequestRevoke,
   selectedClient,
-}: DeveloperClientsAdminPanelViewProps) {
+}: DeveloperClientsAdminPanelContentProps) {
   if (isLoading && !clients) {
     return (
       <QueryStatePanel
@@ -177,7 +177,7 @@ export function DeveloperClientsAdminPanel() {
   });
 
   return (
-    <DeveloperClientsAdminPanelView
+    <DeveloperClientsAdminPanelContent
       clients={clients.data}
       error={clients.error}
       isLoading={clients.isLoading}

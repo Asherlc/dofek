@@ -1,13 +1,35 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { hashSecret } from "../routes/external-write-api-primitives.ts";
 import { DeveloperClientRepository } from "./developer-client-repository.ts";
 
 const firstOwnerId = "00000000-0000-4000-8000-000000000301";
 const secondOwnerId = "00000000-0000-4000-8000-000000000302";
 const administratorId = "00000000-0000-4000-8000-000000000303";
+const storedClientSchema = z.object({
+  action: z.string(),
+  actor_user_id: z.string(),
+  redirect_uri: z.string(),
+  secret_hash: z.string(),
+});
+const redirectAuditSchema = z.object({ action: z.string(), redirect_uris: z.array(z.string()) });
+const rotationAuditSchema = z.object({ actions: z.array(z.string()), secret_hash: z.string() });
+const revocationAuditSchema = z.object({
+  actions: z.array(z.string()),
+  grant_revoked: z.boolean(),
+});
+const actorAuditSchema = z.object({ action: z.string(), actor_user_id: z.string() });
+const cascadeCountSchema = z.object({
+  audit_count: z.coerce.number(),
+  client_count: z.coerce.number(),
+  grant_count: z.coerce.number(),
+  link_count: z.coerce.number(),
+  redirect_count: z.coerce.number(),
+});
 
 describe.sequential("DeveloperClientRepository", () => {
   let context: TestContext;
@@ -64,12 +86,10 @@ describe.sequential("DeveloperClientRepository", () => {
       (await repository.listOwned(secondOwnerId)).map((client) => client.clientId),
     ).not.toContain(clientId);
 
-    const stored = await context.db.execute<{
-      action: string;
-      actor_user_id: string;
-      redirect_uri: string;
-      secret_hash: string;
-    }>(sql`
+    const stored = await executeWithSchema(
+      context.db,
+      storedClientSchema,
+      sql`
       SELECT
         client.secret_hash,
         redirect.redirect_uri,
@@ -81,7 +101,8 @@ describe.sequential("DeveloperClientRepository", () => {
       JOIN fitness.external_client_audit AS audit
         ON audit.client_id = client.client_id
       WHERE client.client_id = ${clientId}
-    `);
+    `,
+    );
     expect(stored).toEqual([
       {
         action: "create",
@@ -120,7 +141,10 @@ describe.sequential("DeveloperClientRepository", () => {
       }),
     ).resolves.toBeNull();
 
-    const rows = await context.db.execute<{ action: string; redirect_uris: string[] }>(sql`
+    const rows = await executeWithSchema(
+      context.db,
+      redirectAuditSchema,
+      sql`
       SELECT
         ARRAY(
           SELECT redirect_uri
@@ -132,7 +156,8 @@ describe.sequential("DeveloperClientRepository", () => {
       FROM fitness.external_client_audit AS audit
       WHERE audit.client_id = ${clientId}
       ORDER BY audit.occurred_at, audit.audit_id
-    `);
+    `,
+    );
     expect(rows).toEqual([
       {
         action: "create",
@@ -201,7 +226,10 @@ describe.sequential("DeveloperClientRepository", () => {
       hashSecret("after-rotation"),
     );
     expect(rotated?.lastRotatedAt).not.toBe(created.lastRotatedAt);
-    const rows = await context.db.execute<{ actions: string[]; secret_hash: string }>(sql`
+    const rows = await executeWithSchema(
+      context.db,
+      rotationAuditSchema,
+      sql`
       SELECT
         client.secret_hash,
         ARRAY(
@@ -212,7 +240,8 @@ describe.sequential("DeveloperClientRepository", () => {
         ) AS actions
       FROM fitness.external_client AS client
       WHERE client.client_id = ${clientId}
-    `);
+    `,
+    );
     expect(rows).toEqual([
       { actions: ["create", "rotate"], secret_hash: hashSecret("after-rotation") },
     ]);
@@ -266,7 +295,10 @@ describe.sequential("DeveloperClientRepository", () => {
     ).resolves.toBeNull();
     await expect(repository.revokeOwned(firstOwnerId, clientId)).resolves.toBe(false);
 
-    const rows = await context.db.execute<{ actions: string[]; grant_revoked: boolean }>(sql`
+    const rows = await executeWithSchema(
+      context.db,
+      revocationAuditSchema,
+      sql`
       SELECT
         grant_record.revoked_at IS NOT NULL AS grant_revoked,
         ARRAY(
@@ -277,7 +309,8 @@ describe.sequential("DeveloperClientRepository", () => {
         ) AS actions
       FROM fitness.external_grant AS grant_record
       WHERE grant_record.client_id = ${clientId}
-    `);
+    `,
+    );
     expect(rows).toEqual([{ actions: ["create", "revoke"], grant_revoked: true }]);
   });
 
@@ -309,12 +342,16 @@ describe.sequential("DeveloperClientRepository", () => {
     expect(client).not.toHaveProperty("redirectUris");
 
     await expect(repository.revokeForSupport(administratorId, clientId)).resolves.toBe(true);
-    const audits = await context.db.execute<{ action: string; actor_user_id: string }>(sql`
+    const audits = await executeWithSchema(
+      context.db,
+      actorAuditSchema,
+      sql`
       SELECT action, actor_user_id
       FROM fitness.external_client_audit
       WHERE client_id = ${clientId}
       ORDER BY occurred_at, audit_id
-    `);
+    `,
+    );
     expect(audits).toEqual([
       { action: "create", actor_user_id: secondOwnerId },
       { action: "revoke", actor_user_id: administratorId },
@@ -383,13 +420,10 @@ describe.sequential("DeveloperClientRepository", () => {
     `);
 
     await context.db.execute(sql`DELETE FROM fitness.user_profile WHERE id = ${ownerId}`);
-    const counts = await context.db.execute<{
-      audit_count: number;
-      client_count: number;
-      grant_count: number;
-      link_count: number;
-      redirect_count: number;
-    }>(sql`
+    const counts = await executeWithSchema(
+      context.db,
+      cascadeCountSchema,
+      sql`
       SELECT
         (SELECT count(*)::int FROM fitness.external_client
           WHERE client_id = ${clientId}) AS client_count,
@@ -401,7 +435,8 @@ describe.sequential("DeveloperClientRepository", () => {
           WHERE client_id = ${clientId}) AS link_count,
         (SELECT count(*)::int FROM fitness.external_grant
           WHERE client_id = ${clientId}) AS grant_count
-    `);
+    `,
+    );
     expect(counts).toEqual([
       {
         audit_count: 0,

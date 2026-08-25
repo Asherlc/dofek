@@ -251,6 +251,32 @@ describe("DeveloperClientDetailScreen", () => {
     );
   });
 
+  it("clears a failed rotation error before a successful revocation", async () => {
+    mocks.get.mockResolvedValueOnce(activeClient).mockResolvedValue(revokedClient);
+    mocks.rotate.mockRejectedValue(new Error("Rotation failed"));
+    mocks.revoke.mockResolvedValue({ revoked: true });
+    renderScreen();
+    await screen.findByText("Meal importer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotate client secret" }));
+    act(() =>
+      latestAlertButtons()
+        ?.find((button) => button.text === "Rotate")
+        ?.onPress?.(),
+    );
+    expect(await screen.findByText("Rotation failed")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke developer integration" }));
+    act(() =>
+      latestAlertButtons()
+        ?.find((button) => button.text === "Revoke")
+        ?.onPress?.(),
+    );
+
+    expect(await screen.findByText("revoked")).toBeTruthy();
+    expect(screen.queryByText("Rotation failed")).toBeNull();
+  });
+
   it("surfaces a mutation error message", async () => {
     mocks.get.mockResolvedValue(activeClient);
     mocks.update.mockRejectedValue(new Error("The redirect URI is already registered"));

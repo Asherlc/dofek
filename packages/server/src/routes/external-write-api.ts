@@ -90,6 +90,7 @@ const reissueGrantSchema = z.object({
   grant_id: z.string(),
   user_id: z.string(),
   opaque_subject: z.string(),
+  access_token_hash: z.string(),
   scopes: z.array(z.string()),
   namespace: z.string(),
   subject: z.string(),
@@ -303,25 +304,9 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
     (request, response, next) => {
       linkStartRateLimit(request, response, next);
     },
-    async (req, res, next) => {
-      try {
-        const client = await authenticateClient(deps.db, req);
-        if (!client) {
-          sendProblem(res, req, 401, "INVALID_CREDENTIALS");
-          return;
-        }
-        res.locals.externalClient = client;
-        next();
-      } catch (error) {
-        captureException(error);
-        logger.error(
-          `[external-api] link start authentication failed: ${error instanceof Error ? error.name : "unknown"}`,
-        );
-        sendProblem(res, req, 503, "SERVICE_UNAVAILABLE");
-      }
-    },
     handleExternalErrors("link start", async (req, res) => {
-      const client = res.locals.externalClient;
+      const client = await authenticateClient(deps.db, req);
+      if (!client) return sendProblem(res, req, 401, "INVALID_CREDENTIALS");
       const parsed = linkStartSchema.safeParse(req.body);
       if (!parsed.success)
         return sendProblem(
@@ -547,7 +532,7 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
     const grants = await executeWithSchema(
       deps.db,
       reissueGrantSchema,
-      sql`SELECT grant_id, user_id, opaque_subject, scopes, namespace, subject
+      sql`SELECT grant_id, user_id, opaque_subject, access_token_hash, scopes, namespace, subject
           FROM fitness.external_grant
           WHERE client_id = ${client.clientId}
             AND namespace = ${parsed.data.namespace}
@@ -576,10 +561,26 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
                   AND client_id = ${client.clientId}
                   AND namespace = ${grant.namespace}
                   AND subject = ${grant.subject}
+                  AND access_token_hash = ${grant.access_token_hash}
                   AND revoked_at IS NULL
-                RETURNING grant_id, user_id, opaque_subject, scopes, namespace, subject`,
+                RETURNING grant_id, user_id, opaque_subject, access_token_hash, scopes, namespace, subject`,
           );
-          if (!rotated[0]) throw new Error("GRANT_NOT_FOUND");
+          if (!rotated[0]) {
+            const current = await executeWithSchema(
+              tx,
+              z.object({ access_token_hash: z.string() }),
+              sql`SELECT access_token_hash
+                  FROM fitness.external_grant
+                  WHERE grant_id = ${grant.grant_id}::uuid
+                    AND client_id = ${client.clientId}
+                    AND namespace = ${grant.namespace}
+                    AND subject = ${grant.subject}
+                    AND revoked_at IS NULL
+                  LIMIT 1`,
+            );
+            if (!current[0]) throw new Error("GRANT_NOT_FOUND");
+            throw new Error("GRANT_REISSUE_CONFLICT");
+          }
           return {
             externalSubject: rotated[0].opaque_subject,
             grantId: rotated[0].grant_id,
@@ -599,6 +600,8 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
         return sendProblem(res, req, 423, "ACCOUNT_ERASURE_ACTIVE");
       if (error instanceof Error && error.message === "GRANT_NOT_FOUND")
         return sendProblem(res, req, 404, "NOT_FOUND");
+      if (error instanceof Error && error.message === "GRANT_REISSUE_CONFLICT")
+        return sendProblem(res, req, 409, "REQUEST_IN_PROGRESS");
       captureException(error);
       logger.error(
         `[external-api] link reissue failed: ${error instanceof Error ? error.name : "unknown"}`,
@@ -699,25 +702,25 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
         },
       });
     }
-    const inserted = await executeWithSchema(
-      deps.db,
-      z.object({ grant_id: z.string() }),
-      sql`INSERT INTO fitness.external_idempotency_receipt (grant_id, method, path, idempotency_key, request_hash, status) VALUES (${grant.grant_id}::uuid, 'POST', ${path}, ${key}, ${bodyHash}, 'in_progress') ON CONFLICT DO NOTHING RETURNING grant_id`,
-    );
-    if (!inserted[0]) return sendProblem(res, req, 409, "REQUEST_IN_PROGRESS");
     try {
       const response = await withAccountErasureUserAndIdentityWriteFence(
         deps.db,
         grant.user_id,
         externalIdentity(grant.namespace, grant.subject),
         async (tx: TransactionDatabase) => {
+          const inserted = await executeWithSchema(
+            tx,
+            z.object({ grant_id: z.string() }),
+            sql`INSERT INTO fitness.external_idempotency_receipt (grant_id, method, path, idempotency_key, request_hash, status) VALUES (${grant.grant_id}::uuid, 'POST', ${path}, ${key}, ${bodyHash}, 'in_progress') ON CONFLICT DO NOTHING RETURNING grant_id`,
+          );
+          if (!inserted[0]) throw new Error("REQUEST_IN_PROGRESS");
           const repo = new FoodRepository(tx, grant.user_id, "UTC");
           const entries = [];
           for (const entry of parsed.data.entries)
             entries.push(await repo.create({ ...entry, externalId: entry.externalId }));
           const calorieGoal = await new SettingsRepository(tx, grant.user_id).getCalorieGoal();
           const nutrition = await repo.nutritionByDate(firstDate, calorieGoal);
-          return {
+          const response = {
             entries: entries.map((entry) => ({ id: entry.id, externalId: entry.external_id })),
             dailyIntake: {
               date: firstDate,
@@ -726,10 +729,23 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
               resolution: nutrition.resolution,
             },
           };
+          const completed = await executeWithSchema(
+            tx,
+            z.object({ grant_id: z.string() }),
+            sql`UPDATE fitness.external_idempotency_receipt
+                SET status = 'completed',
+                    response_json = ${JSON.stringify({ entries: response.entries, date: firstDate })}::jsonb,
+                    completed_at = NOW()
+                WHERE grant_id = ${grant.grant_id}::uuid
+                  AND method = 'POST'
+                  AND path = ${path}
+                  AND idempotency_key = ${key}
+                  AND status = 'in_progress'
+                RETURNING grant_id`,
+          );
+          if (!completed[0]) throw new Error("REQUEST_IN_PROGRESS");
+          return response;
         },
-      );
-      await deps.db.execute(
-        sql`UPDATE fitness.external_idempotency_receipt SET status = 'completed', response_json = ${JSON.stringify({ entries: response.entries, date: firstDate })}::jsonb, completed_at = NOW() WHERE grant_id = ${grant.grant_id}::uuid AND method = 'POST' AND path = ${path} AND idempotency_key = ${key}`,
       );
       res.json(response);
     } catch (error) {
@@ -737,20 +753,13 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
         error instanceof AccountErasureUserFencedError ||
         error instanceof AccountErasureIdentityFencedError
       ) {
-        await deps.db.execute(
-          sql`DELETE FROM fitness.external_idempotency_receipt WHERE grant_id = ${grant.grant_id}::uuid AND method = 'POST' AND path = ${path} AND idempotency_key = ${key}`,
-        );
         return sendProblem(res, req, 423, "ACCOUNT_ERASURE_ACTIVE");
       }
+      if (error instanceof Error && error.message === "REQUEST_IN_PROGRESS")
+        return sendProblem(res, req, 409, "REQUEST_IN_PROGRESS");
       if (isExternalIdConflict(error)) {
-        await deps.db.execute(
-          sql`DELETE FROM fitness.external_idempotency_receipt WHERE grant_id = ${grant.grant_id}::uuid AND method = 'POST' AND path = ${path} AND idempotency_key = ${key}`,
-        );
         return sendProblem(res, req, 409, "EXTERNAL_ID_ALREADY_EXISTS");
       }
-      await deps.db.execute(
-        sql`DELETE FROM fitness.external_idempotency_receipt WHERE grant_id = ${grant.grant_id}::uuid AND method = 'POST' AND path = ${path} AND idempotency_key = ${key}`,
-      );
       captureException(error);
       logger.error(
         `[external-api] nutrition write failed: ${error instanceof Error ? error.name : "unknown"}`,

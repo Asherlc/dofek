@@ -1,6 +1,6 @@
 import type { DeveloperClientSummary } from "@dofek/auth/developer-clients";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { DeveloperIntegrationsPageView } from "./DeveloperIntegrationsPage.tsx";
+import { DeveloperIntegrationsPageContent } from "./DeveloperIntegrationsPage.tsx";
 
 const activeClient = {
   clientId: "ext_example_active",
@@ -20,7 +20,7 @@ const revokedClient = {
 
 const meta = {
   title: "Developer Integrations/List and Create",
-  component: DeveloperIntegrationsPageView,
+  component: DeveloperIntegrationsPageContent,
   parameters: { layout: "fullscreen" },
   args: {
     clients: [],
@@ -32,7 +32,7 @@ const meta = {
     onCreate: () => {},
     onDismissSecret: () => {},
   },
-} satisfies Meta<typeof DeveloperIntegrationsPageView>;
+} satisfies Meta<typeof DeveloperIntegrationsPageContent>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

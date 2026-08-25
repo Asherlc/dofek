@@ -7,8 +7,8 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentProps } from "react";
 import { Alert } from "react-native";
 import { within } from "storybook/test";
-import { DeveloperClientDetailScreenView } from "../app/developer-integrations/[clientId]";
-import { DeveloperIntegrationsScreenView } from "../app/developer-integrations/index";
+import { DeveloperClientDetailScreenContent } from "../app/developer-integrations/[clientId]";
+import { DeveloperIntegrationsScreenContent } from "../app/developer-integrations/index";
 
 const activeClient = {
   clientId: "ext_example_active",
@@ -55,11 +55,11 @@ const detailArgs = {
   onRevoke: () => {},
   onRotate: () => {},
   rotatedSecret: null,
-} satisfies ComponentProps<typeof DeveloperClientDetailScreenView>;
+} satisfies ComponentProps<typeof DeveloperClientDetailScreenContent>;
 
 const meta = {
   title: "Pages/Developer Integrations",
-  component: DeveloperIntegrationsScreenView,
+  component: DeveloperIntegrationsScreenContent,
   args: {
     clients: [],
     createError: null,
@@ -72,7 +72,7 @@ const meta = {
     onOpenDetail: () => {},
     onOpenDocs: () => {},
   },
-} satisfies Meta<typeof DeveloperIntegrationsScreenView>;
+} satisfies Meta<typeof DeveloperIntegrationsScreenContent>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -86,12 +86,12 @@ export const Active: Story = { args: { clients: [activeClient] } };
 export const Revoked: Story = { args: { clients: [revokedClient] } };
 
 export const DetailLoading: Story = {
-  render: () => <DeveloperClientDetailScreenView {...detailArgs} detail={undefined} isLoading />,
+  render: () => <DeveloperClientDetailScreenContent {...detailArgs} detail={undefined} isLoading />,
 };
 
 export const DetailError: Story = {
   render: () => (
-    <DeveloperClientDetailScreenView
+    <DeveloperClientDetailScreenContent
       {...detailArgs}
       detail={undefined}
       error={new Error("Developer integration is unavailable")}
@@ -100,20 +100,20 @@ export const DetailError: Story = {
 };
 
 export const DetailActive: Story = {
-  render: () => <DeveloperClientDetailScreenView {...detailArgs} />,
+  render: () => <DeveloperClientDetailScreenContent {...detailArgs} />,
 };
 
 export const DetailRevoked: Story = {
-  render: () => <DeveloperClientDetailScreenView {...detailArgs} detail={revokedDetail} />,
+  render: () => <DeveloperClientDetailScreenContent {...detailArgs} detail={revokedDetail} />,
 };
 
 export const DetailEdit: Story = {
-  render: () => <DeveloperClientDetailScreenView {...detailArgs} />,
+  render: () => <DeveloperClientDetailScreenContent {...detailArgs} />,
 };
 
 export const RotateConfirmation: Story = {
   render: () => (
-    <DeveloperClientDetailScreenView
+    <DeveloperClientDetailScreenContent
       {...detailArgs}
       onRotate={() =>
         Alert.alert(
@@ -136,13 +136,13 @@ export const RotateConfirmation: Story = {
 
 export const OneTimeSecret: Story = {
   render: () => (
-    <DeveloperClientDetailScreenView {...detailArgs} rotatedSecret={rotatedCredential} />
+    <DeveloperClientDetailScreenContent {...detailArgs} rotatedSecret={rotatedCredential} />
   ),
 };
 
 export const RevokeConfirmation: Story = {
   render: () => (
-    <DeveloperClientDetailScreenView
+    <DeveloperClientDetailScreenContent
       {...detailArgs}
       onRevoke={() =>
         Alert.alert(

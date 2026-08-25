@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type DeveloperClientSupportItem,
   DeveloperClientsAdminPanel,
-  DeveloperClientsAdminPanelView,
+  DeveloperClientsAdminPanelContent,
 } from "./DeveloperClientsAdminPanel.tsx";
 
 const mocks = vi.hoisted(() => ({
@@ -125,7 +125,7 @@ describe("DeveloperClientsAdminPanel", () => {
 
   it("protects the confirmation dialog while revocation is pending", () => {
     render(
-      <DeveloperClientsAdminPanelView
+      <DeveloperClientsAdminPanelContent
         clients={[activeClient, revokedClient]}
         error={null}
         isLoading={false}

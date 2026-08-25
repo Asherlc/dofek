@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import {
   type DeveloperClientSupportItem,
-  DeveloperClientsAdminPanelView,
+  DeveloperClientsAdminPanelContent,
 } from "./DeveloperClientsAdminPanel.tsx";
 
 const activeClient = {
@@ -35,7 +35,7 @@ function PanelStory({
   const [selectedClient, setSelectedClient] = useState<DeveloperClientSupportItem | null>(null);
   return (
     <div className="min-h-screen bg-background p-8">
-      <DeveloperClientsAdminPanelView
+      <DeveloperClientsAdminPanelContent
         clients={clients}
         error={error}
         isLoading={isLoading}
@@ -52,7 +52,7 @@ function PanelStory({
 
 const meta = {
   title: "Admin/DeveloperClientsAdminPanel",
-  component: DeveloperClientsAdminPanelView,
+  component: DeveloperClientsAdminPanelContent,
   parameters: { layout: "fullscreen" },
   args: {
     clients: [],
@@ -65,7 +65,7 @@ const meta = {
     onRequestRevoke: () => {},
     selectedClient: null,
   },
-} satisfies Meta<typeof DeveloperClientsAdminPanelView>;
+} satisfies Meta<typeof DeveloperClientsAdminPanelContent>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

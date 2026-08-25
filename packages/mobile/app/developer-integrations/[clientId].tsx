@@ -22,7 +22,7 @@ const rotateWarning =
 const revokeWarning =
   "The client and all active grants stop working immediately. This cannot be undone.";
 
-export interface DeveloperClientDetailScreenViewProps {
+export interface DeveloperClientDetailScreenContentProps {
   actionError: unknown;
   detail: DeveloperClientDetail | undefined;
   editError: unknown;
@@ -38,7 +38,7 @@ export interface DeveloperClientDetailScreenViewProps {
   rotatedSecret: DeveloperClientSecret | null;
 }
 
-export function DeveloperClientDetailScreenView({
+export function DeveloperClientDetailScreenContent({
   actionError,
   detail,
   editError,
@@ -52,7 +52,7 @@ export function DeveloperClientDetailScreenView({
   onRevoke,
   onRotate,
   rotatedSecret,
-}: DeveloperClientDetailScreenViewProps) {
+}: DeveloperClientDetailScreenContentProps) {
   if (isLoading && !detail) {
     return (
       <>
@@ -115,7 +115,7 @@ export function DeveloperClientDetailScreenView({
           <DeveloperClientForm
             key={JSON.stringify([detail.name, detail.redirectUris])}
             disabled={isRevoked}
-            error={isSaving ? null : getQueryErrorMessage(editError, "") || null}
+            error={isSaving || !editError ? null : getQueryErrorMessage(editError)}
             initialValue={{ name: detail.name, redirectUris: detail.redirectUris }}
             isSubmitting={isSaving}
             onSubmit={onEdit}
@@ -215,7 +215,7 @@ function DeveloperClientDetailContainer({
   });
 
   return (
-    <DeveloperClientDetailScreenView
+    <DeveloperClientDetailScreenContent
       actionError={rotateClient.error ?? revokeClient.error}
       detail={detail.data}
       editError={updateClient.error}
@@ -229,13 +229,27 @@ function DeveloperClientDetailContainer({
       onRevoke={() =>
         Alert.alert("Revoke developer integration?", revokeWarning, [
           { text: "Cancel", style: "cancel" },
-          { text: "Revoke", style: "destructive", onPress: () => revokeClient.mutate() },
+          {
+            text: "Revoke",
+            style: "destructive",
+            onPress: () => {
+              rotateClient.reset();
+              revokeClient.mutate();
+            },
+          },
         ])
       }
       onRotate={() =>
         Alert.alert("Rotate client secret?", rotateWarning, [
           { text: "Cancel", style: "cancel" },
-          { text: "Rotate", style: "destructive", onPress: () => rotateClient.mutate() },
+          {
+            text: "Rotate",
+            style: "destructive",
+            onPress: () => {
+              revokeClient.reset();
+              rotateClient.mutate();
+            },
+          },
         ])
       }
       rotatedSecret={rotatedSecret}
@@ -259,7 +273,7 @@ export default function DeveloperClientDetailScreen() {
 
   if (!clientId) {
     return (
-      <DeveloperClientDetailScreenView
+      <DeveloperClientDetailScreenContent
         actionError={null}
         detail={undefined}
         editError={null}

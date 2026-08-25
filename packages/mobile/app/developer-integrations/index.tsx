@@ -19,7 +19,7 @@ import { rootStackScreenOptions } from "../_layout-options";
 
 const externalApiDocsUrl = "https://github.com/Asherlc/dofek/blob/main/docs/external-api.md";
 
-export interface DeveloperIntegrationsScreenViewProps {
+export interface DeveloperIntegrationsScreenContentProps {
   clients: DeveloperClientSummary[] | undefined;
   createError: unknown;
   createdSecret: DeveloperClientSecret | null;
@@ -32,7 +32,7 @@ export interface DeveloperIntegrationsScreenViewProps {
   onOpenDocs: () => void;
 }
 
-export function DeveloperIntegrationsScreenView({
+export function DeveloperIntegrationsScreenContent({
   clients,
   createError,
   createdSecret,
@@ -43,7 +43,7 @@ export function DeveloperIntegrationsScreenView({
   onDismissSecret,
   onOpenDetail,
   onOpenDocs,
-}: DeveloperIntegrationsScreenViewProps) {
+}: DeveloperIntegrationsScreenContentProps) {
   return (
     <>
       <Stack.Screen options={{ ...rootStackScreenOptions, title: "Developer integrations" }} />
@@ -51,9 +51,9 @@ export function DeveloperIntegrationsScreenView({
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>How authorization works</Text>
           <Text style={styles.body}>
-            Your integration sends users through Dofek sign-in and consent. Keep the PKCE verifier
-            in your integration and send the bearer client credential only in the Authorization
-            header.
+            Your integration sends users through Dofek sign-in and consent. Keep the Proof Key for
+            Code Exchange (PKCE) verifier in your integration and send the bearer client credential
+            only in the Authorization header.
           </Text>
           <TouchableOpacity
             accessibilityLabel="External API contract"
@@ -133,7 +133,7 @@ codeChallenge: <S256-challenge>`}</Text>
             Register every callback URI exactly as your integration will send it.
           </Text>
           <DeveloperClientForm
-            error={getQueryErrorMessage(createError, "") || null}
+            error={createError ? getQueryErrorMessage(createError) : null}
             isSubmitting={isCreating}
             onSubmit={onCreate}
           />
@@ -171,7 +171,7 @@ export default function DeveloperIntegrationsScreen() {
   });
 
   return (
-    <DeveloperIntegrationsScreenView
+    <DeveloperIntegrationsScreenContent
       clients={clients.data}
       createError={createClient.error}
       createdSecret={createdSecret}

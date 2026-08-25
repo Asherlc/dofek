@@ -104,12 +104,14 @@ The authenticated developer API is mounted under `/api/developer/clients`:
 | `POST /:clientId/rotate` | Replace the secret atomically and return it once. |
 | `POST /:clientId/revoke` | Revoke the client and all of its active grants. |
 
-All owner-scoped lookups return `404` for a missing, revoked, or non-owned
-client, so callers cannot enumerate other developers' integrations. Validation
-rejects duplicate URIs, non-HTTPS URIs, URI fragments, credentials in a URI,
-and malformed names. Link-start validates the URI after client authentication
-and before creating a link transaction. It returns the existing structured
-problem envelope; no redirect occurs on an invalid request.
+Owner list and detail reads include the owner's revoked clients so the revoked
+detail screen remains available. Owner mutations (`PATCH`, rotate, and revoke)
+return the same `404` for a missing, revoked, or non-owned client, so callers
+cannot enumerate other developers' integrations. Validation rejects duplicate
+URIs, non-HTTPS URIs, URI fragments, credentials in a URI, and malformed names.
+Link-start validates the URI after client authentication and before creating a
+link transaction. It returns the existing structured problem envelope; no
+redirect occurs on an invalid request.
 
 ## Security and Operations
 

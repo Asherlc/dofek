@@ -20,12 +20,15 @@ Owners can update callback URIs, rotate the secret, or revoke the client;
 revocation immediately revokes all grants for that client. Clients send
 `Authorization: Bearer <clientId>.<clientSecret>`.
 
-The owner registers one or more complete HTTPS callback URIs. Dofek
-canonicalizes each URI during registration. `link/start` then requires the
-submitted `redirectUri` to be exactly equal to one stored canonical URI; it
-does not apply wildcard, prefix, or request-time normalization matching. Exact
-redirect URI matching prevents authorization-code leakage and open redirects
+The owner registers one or more complete HTTPS callback URIs without embedded
+credentials or URI fragments. Dofek canonicalizes each URI during registration.
+`link/start` then requires the submitted `redirectUri` to be exactly equal to
+one stored canonical URI; it does not apply wildcard, prefix, or request-time
+normalization matching. OAuth clients must register complete redirection URIs
 as described by
+[RFC 6749 section 3.1.2.1](https://www.rfc-editor.org/rfc/rfc6749.html#section-3.1.2.1),
+and exact redirect URI matching prevents authorization-code leakage and open
+redirects as described by
 [RFC 9700 section 4.1](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.1).
 
 `link/start` stores an S256 PKCE challenge and returns a short-lived

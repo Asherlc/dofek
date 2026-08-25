@@ -5,7 +5,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
 
-export interface DeveloperClientSecretPanelViewProps {
+export interface DeveloperClientSecretPanelContentProps {
   copyError: string | null;
   onCopyClientId: () => void;
   onCopyClientSecret: () => void;
@@ -13,13 +13,13 @@ export interface DeveloperClientSecretPanelViewProps {
   secret: DeveloperClientSecret;
 }
 
-export function DeveloperClientSecretPanelView({
+export function DeveloperClientSecretPanelContent({
   copyError,
   onCopyClientId,
   onCopyClientSecret,
   onDismiss,
   secret,
-}: DeveloperClientSecretPanelViewProps) {
+}: DeveloperClientSecretPanelContentProps) {
   return (
     <View accessibilityLabel="One-time developer credential" style={styles.panel}>
       <Text style={styles.title}>Save your developer credential</Text>
@@ -94,7 +94,7 @@ export function DeveloperClientSecretPanel({
   }
 
   return (
-    <DeveloperClientSecretPanelView
+    <DeveloperClientSecretPanelContent
       copyError={copyError}
       onCopyClientId={() => void copy(secret.client.clientId)}
       onCopyClientSecret={() => void copy(secret.clientSecret)}

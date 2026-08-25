@@ -76,6 +76,32 @@ describe("DeveloperClientSecretDialog", () => {
     expect(JSON.stringify(mocks.captureException.mock.calls)).not.toContain("raw-dialog-secret");
   });
 
+  it("does not carry a copy failure into a replacement credential", async () => {
+    mocks.writeText.mockRejectedValueOnce(new Error("Clipboard permission denied"));
+    const onDismiss = vi.fn();
+    const { rerender } = render(
+      <DeveloperClientSecretDialog secret={credential} onDismiss={onDismiss} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy client secret" }));
+    expect(
+      await screen.findByText("Copy failed. Select and copy the value manually."),
+    ).toBeTruthy();
+
+    rerender(
+      <DeveloperClientSecretDialog
+        secret={{
+          client: { ...credential.client, clientId: "ext_replacement" },
+          clientSecret: "raw-replacement-secret",
+        }}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    expect(screen.getByText("raw-replacement-secret")).toBeTruthy();
+    expect(screen.queryByText("Copy failed. Select and copy the value manually.")).toBeNull();
+  });
+
   it("clears the parent-held credential when dismissed", () => {
     render(<Harness />);
 

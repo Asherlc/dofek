@@ -165,6 +165,20 @@ const paginationInput = z.object({
 });
 
 const countSchema = z.object({ count: z.coerce.number() });
+const developerClientSupportSummarySchema = z
+  .object({
+    clientId: z.string(),
+    name: z.string(),
+    scopes: z.array(z.literal("nutrition:write")),
+    status: z.enum(["active", "revoked"]),
+    createdAt: timestampStringSchema,
+    lastRotatedAt: timestampStringSchema,
+    ownerName: z.string().nullable(),
+    ownerEmail: z.string().nullable(),
+  })
+  .strict();
+const developerClientSupportListSchema = z.array(developerClientSupportSummarySchema);
+const developerClientSupportRevokeSchema = z.object({ revoked: z.literal(true) }).strict();
 const developerClientNotFoundMessage =
   "The developer integration was not found or is already revoked.";
 
@@ -176,12 +190,13 @@ function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefine
 }
 
 export const adminRouter = router({
-  externalClients: adminProcedure.query(({ ctx }) =>
-    new DeveloperClientRepository(ctx.db).listForSupport(),
-  ),
+  externalClients: adminProcedure
+    .output(developerClientSupportListSchema)
+    .query(({ ctx }) => new DeveloperClientRepository(ctx.db).listForSupport()),
 
   revokeExternalClient: adminProcedure
     .input(z.object({ clientId: z.string().min(1) }))
+    .output(developerClientSupportRevokeSchema)
     .mutation(async ({ ctx, input }) => {
       const revoked = await new DeveloperClientRepository(ctx.db).revokeForSupport(
         ctx.userId,

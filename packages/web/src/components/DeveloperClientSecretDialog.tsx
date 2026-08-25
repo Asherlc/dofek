@@ -12,15 +12,21 @@ export function DeveloperClientSecretDialog({
   onDismiss,
   secret,
 }: DeveloperClientSecretDialogProps) {
-  const [copyError, setCopyError] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<{
+    credential: DeveloperClientSecret;
+    message: string;
+  } | null>(null);
 
-  async function copy(value: string): Promise<void> {
+  async function copy(value: string, credential: DeveloperClientSecret): Promise<void> {
     setCopyError(null);
     try {
       await navigator.clipboard.writeText(value);
     } catch (error: unknown) {
       captureException(error, { source: "developer-client-copy" });
-      setCopyError("Copy failed. Select and copy the value manually.");
+      setCopyError({
+        credential,
+        message: "Copy failed. Select and copy the value manually.",
+      });
     }
   }
 
@@ -47,7 +53,7 @@ export function DeveloperClientSecretDialog({
               </code>
               <button
                 type="button"
-                onClick={() => void copy(secret.client.clientId)}
+                onClick={() => void copy(secret.client.clientId, secret)}
                 aria-label="Copy client ID"
                 className="rounded border border-border px-3 py-2 text-sm text-foreground"
               >
@@ -65,7 +71,7 @@ export function DeveloperClientSecretDialog({
               </code>
               <button
                 type="button"
-                onClick={() => void copy(secret.clientSecret)}
+                onClick={() => void copy(secret.clientSecret, secret)}
                 aria-label="Copy client secret"
                 className="rounded border border-border px-3 py-2 text-sm text-foreground"
               >
@@ -73,9 +79,9 @@ export function DeveloperClientSecretDialog({
               </button>
             </div>
           </div>
-          {copyError ? (
+          {copyError?.credential === secret ? (
             <p role="alert" className="text-sm text-red-400">
-              {copyError}
+              {copyError.message}
             </p>
           ) : null}
           <div className="flex justify-end">

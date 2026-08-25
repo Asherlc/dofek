@@ -178,7 +178,7 @@ describe.sequential("developer client management API", () => {
       ip: "198.51.100.12",
     });
     expect(rotated.status).toBe(200);
-    const rotatedBody = await rotated.json();
+    const rotatedBody = DeveloperClientSecretSchema.parse(await rotated.json());
     expect(rotatedBody.clientSecret).not.toBe(created.clientSecret);
     expect(rotatedBody.client.clientId).toBe(clientId);
 

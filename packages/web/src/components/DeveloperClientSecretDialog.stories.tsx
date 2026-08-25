@@ -25,7 +25,11 @@ function ClipboardFailureDialog() {
       value: { writeText: () => Promise.reject(new Error("Example clipboard failure")) },
     });
     return () => {
-      if (previous) Object.defineProperty(navigator, "clipboard", previous);
+      if (previous) {
+        Object.defineProperty(navigator, "clipboard", previous);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
     };
   }, []);
   return <DeveloperClientSecretDialog secret={exampleCredential} onDismiss={() => {}} />;

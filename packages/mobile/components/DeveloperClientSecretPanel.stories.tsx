@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
 import {
   DeveloperClientSecretPanel,
-  DeveloperClientSecretPanelView,
+  DeveloperClientSecretPanelContent,
 } from "./DeveloperClientSecretPanel";
 
 const exampleCredential = {
@@ -39,7 +39,7 @@ export const VisibleOneTimeSecret: Story = {};
 
 export const ClipboardFailureGuidance: Story = {
   render: () => (
-    <DeveloperClientSecretPanelView
+    <DeveloperClientSecretPanelContent
       copyError="Copy failed. Select and copy the value manually."
       onCopyClientId={() => {}}
       onCopyClientSecret={() => {}}
