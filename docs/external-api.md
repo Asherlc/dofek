@@ -11,30 +11,50 @@ contract.
 
 ## Client credentials and browser authorization
 
-An administrator provisions an external client with
-`POST /api/external/v1/clients` using the existing Dofek `session` cookie. The
-response contains a client ID and client secret exactly once. Dofek stores only
-a SHA-256 hash of the secret; logs and database rows never contain the raw
-value. Clients send `Authorization: Bearer <clientId>.<clientSecret>`.
-Administrators can rotate or revoke credentials through the corresponding
-session-authenticated routes; revocation immediately revokes all grants for
-that client.
+An authenticated Dofek user registers and manages their own client from
+[Developer integrations](https://dofek.asherlc.com/developer-integrations).
+The creation response contains a client ID and client secret exactly once.
+Dofek stores only a SHA-256 hash of the secret; logs and database rows never
+contain the raw value.
+Owners can update callback URIs, rotate the secret, or revoke the client;
+revocation immediately revokes all grants for that client. Clients send
+`Authorization: Bearer <clientId>.<clientSecret>`.
+
+The owner registers one or more complete HTTPS callback URIs without embedded
+credentials or URI fragments. Dofek canonicalizes each URI during registration.
+`link/start` then requires the submitted `redirectUri` to be exactly equal to
+one stored canonical URI; it does not apply wildcard, prefix, or request-time
+normalization matching. OAuth clients must register complete redirection URIs
+as described by
+[RFC 6749 section 3.1.2.1](https://www.rfc-editor.org/rfc/rfc6749.html#section-3.1.2.1),
+and exact redirect URI matching prevents authorization-code leakage and open
+redirects as described by
+[RFC 9700 section 4.1](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.1).
 
 `link/start` stores an S256 PKCE challenge and returns a short-lived
 authorization URL. The URL requires an existing Dofek browser session and
 displays a consent form. Approval posts to `link/authorize`, which redirects
-to the exact URI registered at start with `code`, `link_id`, and optional
-`state`. The random code is hashed at rest, expires after 60 seconds, and is
-consumed once. Exchange requires the original client credential, link ID, code,
-verifier, and application-owned external subject.
+to that exact registered URI with `code`, `link_id`, and optional `state`. The
+random code is hashed at rest, expires after 60 seconds, and is consumed once.
+Exchange requires the original client credential, link ID, code, verifier, and
+application-owned external subject. PKCE binds the code to the initiating
+integration as specified by
+[RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html).
+
+The owner-management API under `/api/developer/clients` is an authenticated
+first-party surface, not part of the public integration protocol. Its
+executable request and response contract is the shared developer-client Zod
+module rather than this OpenAPI document.
 
 ## Ownership boundary
 
 External applications own their provider credentials, installations, pending
-drafts, dedupe state, parsing, and user-facing workflows. Dofek receives only
-an authenticated external grant and canonical write commands. Dofek must not
-receive Slack bot tokens or require access to another app's database, Redis, or
-tRPC internals.
+drafts, dedupe state, parsing, and user-facing workflows. A separately deployed
+Slack Food Bot is a normal registered developer client and owns its Slack
+tokens, PKCE verifier and state, Dofek grants, drafts, dedupe data, and specific
+user-facing errors. Dofek receives only an authenticated external grant and
+canonical write commands. Dofek must not receive Slack bot tokens or require
+access to another app's database, Redis, or tRPC internals.
 
 The external identity supplied during linking is an application namespace plus
 an application-owned subject, for example `(slack, team_id, user_id)`. Dofek
@@ -43,10 +63,10 @@ ID as an authority claim.
 
 ## Explicit relinking
 
-Existing Slack links in `fitness.auth_account` and
-`fitness.slack_team_membership` are not migrated automatically. After the
-Slack extraction, a user must complete the new linking flow explicitly. A
-subject already linked to another Dofek account returns
+The prior in-process Slack integration state was removed by
+[migration 0088](../drizzle/0088_remove_slack_storage.sql) and is not converted
+into developer-client grants. A user must complete the new linking flow
+explicitly. A subject already linked to another Dofek account returns
 `EXTERNAL_IDENTITY_ALREADY_LINKED`; it is never silently reassigned.
 
 The link flow is one-time and PKCE-bound:
@@ -195,15 +215,11 @@ rate limiting, and `503` for retryable infrastructure failures. These meanings
 follow the HTTP status semantics in
 [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html).
 
-## Existing implementation anchors
+## Implementation references
 
 - Food mutation: `foodRouter.create` in `packages/server/src/routers/food.ts`.
 - Food persistence and daily resolution: `FoodRepository.create` and
   `FoodRepository.nutritionByDate` in `packages/server/src/repositories/food-repository.ts`.
 - Canonical nutrients: `src/db/schema/nutrition.ts`.
 - Existing erasure fence errors and helpers: `src/db/account-erasure.ts`.
-- Existing erasure privacy tests: `packages/server/src/routes/auth/slack-oauth.test.ts`
-  and `src/db/account-erasure.integration.test.ts`.
-- Legacy Slack ownership that must be removed from Dofek: `handleSlackCallback`,
-  `SlackInstallationRepository`, `fitness.slack_installation`, and
-  `fitness.slack_team_membership`.
+- Erasure privacy coverage: `src/db/account-erasure.integration.test.ts`.

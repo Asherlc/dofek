@@ -26,7 +26,7 @@ function createMockClickHouseClient(query: Mock): ClickHouseClient {
   };
 }
 
-function createMockChildProcess(): SpawnedProcess {
+function createMockChildProcess() {
   return Object.assign(new EventEmitter(), {
     stdout: new PassThrough(),
     stderr: new PassThrough(),

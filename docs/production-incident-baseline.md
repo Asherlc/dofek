@@ -7,6 +7,16 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-22 — Rollout request gap and hidden dbt failure diagnostics
+
+- **Symptoms:** Sentry reported a mobile `processing.alerts` request receiving a Cloudflare `502`, unhandled `ECONNRESET` and `ENOTFOUND redis` errors in server tasks, and repeated `dbt build --select activity_source_records+` failures.
+- **User impact:** One mobile user received a failed API request during a production rollout. Activity analytics refresh jobs failed without a usable dbt diagnostic.
+- **Evidence:** Axiom logs show the mobile request gap at `2026-08-20T23:32:18Z` while Swarm web tasks were being replaced; server requests before and after the gap returned `200`. The worker restarted at `2026-08-20T23:31:41Z`. The dbt job failed five times between `2026-08-21T20:00:17Z` and `20:02:45Z`, but its logged error contained only the exit code. The runner had configured dbt stdout as `ignore`.
+- **Root cause:** The activity dbt runner discarded stdout, which is where dbt supplied the model failure details. The immediate cause of the rollout request gap is unconfirmed; the evidence establishes that it coincided with web-task replacement and that Traefik previously had no backend readiness check.
+- **Fix / mitigation:** Configured Traefik to health-check `/healthz` every five seconds before routing to a web task, addressing the identified rollout-readiness risk. The activity dbt runner now captures both stdout and stderr in its thrown error.
+- **Validation:** The new stdout-diagnostic regression test failed before the runner change and passed afterward. `docker stack config` rendered `deploy/stack.yml` successfully with non-secret placeholder environment values.
+- **Remaining risk:** The underlying dbt model failure must be re-run after deployment; the next failure will include its diagnostic in Sentry for direct remediation.
+
 ## 2026-08-14 — One IMU upload received a transient Cloudflare 502
 
 - **Status:** [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G)
@@ -24039,3 +24049,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completed an iOS bundle successfully.
 - **Remaining risk / follow-up:** Confirm the fresh hosted Mobile Bundle and iOS
   Native Build jobs pass before merging the PR and triggering TestFlight upload.
+
+## 2026-08-25 — Hang Ten workout imported as generic strength
+
+- **Status:** Fixed in source; deployment and a new HealthKit sync are pending.
+- **Symptoms / user impact:** The activity linked from the production dashboard
+  displayed as strength rather than hangboarding.
+- **Evidence / root cause:** The Apple Health record's HealthKit source was
+  `Hang Ten`, while its brand metadata key was absent. Classification required
+  both a generic functional-strength type and `HKMetadataKeyWorkoutBrandName`,
+  then declined to classify records without `HangTen.PlanName`.
+- **Fix / mitigation:** Classify `sourceName === "Hang Ten"` as hangboard. Plan
+  and segment metadata remain optional details and no longer gate activity type.
+- **Validation:** Focused Apple Health parser and HealthKit sync processor tests,
+  full lint, all repository typechecks, and the full local unit/mobile test tier
+  pass.
+- **Remaining risk / follow-up:** Deploy the change and resync the affected
+  HealthKit activity before confirming the production view.
+
+## 2026-08-25 — PR 2555 native mobile builds blocked by CocoaPods CDN rate limiting
+
+- **Status:** Unresolved external CI incident; no source change is warranted.
+- **Symptoms / impact:** The `Build Mobile / iOS Native Build` and `watchOS Build`
+  jobs failed, blocking PR #2555 despite lint, unit, integration, mobile, Swift,
+  and typecheck jobs passing.
+- **Evidence / root cause:** Both jobs failed at `cd packages/mobile/ios && pod
+  install`. Their first fatal line was `CDN: trunk URL couldn't be downloaded ...
+  Sentry.podspec.json Response: 429`, returned by GitHub while CocoaPods fetched
+  the Sentry podspec. See the [iOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867412)
+  and [watchOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867441).
+- **Fix / mitigation:** None in repository code. The rate limit is external to the
+  change; no retry, timeout, or failure suppression was added.
+- **Validation:** The independent hosted checks above passed, and the failed jobs
+  report the same upstream 429 response.
+- **Remaining risk / follow-up:** Rerun the native build jobs only after the
+  upstream rate limit has cleared, then confirm they pass without workflow changes.

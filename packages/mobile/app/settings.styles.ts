@@ -276,34 +276,15 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // ── Developer Tools ──
-  devToolRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  devToolRowLast: {
-    borderBottomWidth: 0,
-  },
-  devToolLabel: {
+  navigationLabel: {
     fontSize: 15,
     fontWeight: "500",
     color: colors.text,
   },
-  devToolChevron: {
+  navigationChevron: {
     fontSize: 18,
     color: colors.textTertiary,
   },
-  devToolDetail: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 2,
-    fontVariant: ["tabular-nums"],
-  },
-
   // ── Danger Zone ──
   dangerCard: {
     backgroundColor: colors.surface,

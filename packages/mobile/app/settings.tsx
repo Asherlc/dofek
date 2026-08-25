@@ -4,14 +4,13 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
-import { formatDateMedium, formatDateTime } from "@dofek/format/format";
+import { formatDateMedium } from "@dofek/format/format";
 import {
   type ClimbingGradePreference,
   resolveClimbingGradePreference,
 } from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as Updates from "expo-updates";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,7 +27,6 @@ import {
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
-import { HeartRateDeviceCard } from "../components/HeartRateDeviceCard";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
@@ -37,12 +35,6 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
-import {
-  connectBleHeartRateMonitor,
-  disconnectBleHeartRateMonitor,
-  getBleHeartRateSyncState,
-  subscribeBleHeartRateSyncState,
-} from "../lib/background-ble-heart-rate-sync";
 import {
   clearMobileBillingCheckoutOperation,
   getOrCreateMobileBillingCheckoutOperationId,
@@ -81,7 +73,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "data-sources",
     label: "Data Sources",
-    searchText: "data sources providers Zepp integrations",
+    searchText: "data sources providers Zepp integrations Bluetooth devices WHOOP heart rate",
   },
   {
     id: "goals-models",
@@ -107,7 +99,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText: "advanced dashboard layout developer tools diagnostics",
+    searchText: "advanced dashboard layout developer integrations OAuth callback API",
   },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
@@ -173,10 +165,6 @@ function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined
   return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
 }
 
-function formatLocalizedDateTime(date: Date | null | undefined): string {
-  if (!date) return "n/a";
-  return formatDateTime(date);
-}
 function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
   const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
@@ -220,24 +208,6 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
-  const heartRateMonitor = useSyncExternalStore(
-    subscribeBleHeartRateSyncState,
-    getBleHeartRateSyncState,
-    getBleHeartRateSyncState,
-  );
-
-  const handleConnectHeartRateMonitor = async (): Promise<void> => {
-    try {
-      await connectBleHeartRateMonitor();
-    } catch (error: unknown) {
-      captureException(error, { context: "settings-connect-heart-rate-monitor" });
-      Alert.alert(
-        "No heart-rate monitor found",
-        "Make sure your monitor is on, worn, and nearby, then try again.",
-      );
-    }
-  };
-
   // ── Data Sources ──
   const providers = trpc.sync.providers.useQuery();
 
@@ -448,50 +418,64 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Sources</Text>
           <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push("/providers")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Data Sources"
-            accessibilityState={{ busy: providers.isLoading }}
-          >
-            <View style={styles.dataSourcesRow}>
-              <View style={styles.dataSourcesInfo}>
-                {providers.isLoading ? (
-                  <ActivityIndicator color={colors.accent} size="small" />
-                ) : providers.error && providers.data === undefined ? (
-                  <QueryStatePanel
-                    variant="error"
-                    title="Could not load data sources"
-                    message={getQueryErrorMessage(providers.error)}
-                    minHeight={96}
-                  />
-                ) : (
-                  <>
-                    <View style={styles.providerLogos}>
-                      {(providers.data ?? [])
-                        .filter((provider) => provider.authorized)
-                        .slice(0, 5)
-                        .map((provider) => (
-                          <ProviderLogo
-                            key={provider.id}
-                            provider={provider.id}
-                            serverUrl={auth.serverUrl}
-                            size={20}
-                          />
-                        ))}
-                    </View>
-                    <Text style={styles.dataSourcesCount}>
-                      {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
-                      connected
-                    </Text>
-                  </>
-                )}
+          <View style={styles.healthTrackingCards}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/providers")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Data Sources"
+              accessibilityState={{ busy: providers.isLoading }}
+            >
+              <View style={styles.dataSourcesRow}>
+                <View style={styles.dataSourcesInfo}>
+                  {providers.isLoading ? (
+                    <ActivityIndicator color={colors.accent} size="small" />
+                  ) : providers.error && providers.data === undefined ? (
+                    <QueryStatePanel
+                      variant="error"
+                      title="Could not load data sources"
+                      message={getQueryErrorMessage(providers.error)}
+                      minHeight={96}
+                    />
+                  ) : (
+                    <>
+                      <View style={styles.providerLogos}>
+                        {(providers.data ?? [])
+                          .filter((provider) => provider.authorized)
+                          .slice(0, 5)
+                          .map((provider) => (
+                            <ProviderLogo
+                              key={provider.id}
+                              provider={provider.id}
+                              serverUrl={auth.serverUrl}
+                              size={20}
+                            />
+                          ))}
+                      </View>
+                      <Text style={styles.dataSourcesCount}>
+                        {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
+                        connected
+                      </Text>
+                    </>
+                  )}
+                </View>
+                <Text style={styles.navigationChevron}>›</Text>
               </View>
-              <Text style={styles.devToolChevron}>›</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/bluetooth-devices")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Bluetooth Devices"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.navigationLabel}>Bluetooth Devices</Text>
+                <Text style={styles.navigationChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
           {providers.error && providers.data !== undefined ? (
             <QueryStatePanel
               variant="error"
@@ -517,8 +501,8 @@ export default function SettingsScreen() {
               accessibilityLabel="Journal Trends"
             >
               <View style={styles.dataSourcesRow}>
-                <Text style={styles.devToolLabel}>Journal Trends</Text>
-                <Text style={styles.devToolChevron}>›</Text>
+                <Text style={styles.navigationLabel}>Journal Trends</Text>
+                <Text style={styles.navigationChevron}>›</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -549,8 +533,8 @@ export default function SettingsScreen() {
             accessibilityLabel="Health Reports"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Open Health Reports</Text>
-              <Text style={styles.devToolChevron}>›</Text>
+              <Text style={styles.navigationLabel}>Open Health Reports</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -635,23 +619,6 @@ export default function SettingsScreen() {
       ) : null}
 
       {activeCategory === "data-sources" ? <ZeppPairingCard /> : null}
-
-      {activeCategory === "data-sources" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bluetooth Heart Rate</Text>
-          <Text style={styles.sectionDescription}>
-            Capture heart rate and beat intervals from a standard Bluetooth monitor
-          </Text>
-          <HeartRateDeviceCard
-            bluetoothAvailable={heartRateMonitor.bluetoothAvailable}
-            connectionState={heartRateMonitor.connectionState}
-            deviceName={heartRateMonitor.device?.name}
-            liveBpm={heartRateMonitor.liveBpm}
-            onConnect={() => void handleConnectHeartRateMonitor()}
-            onDisconnect={disconnectBleHeartRateMonitor}
-          />
-        </View>
-      ) : null}
 
       {/* ── Primary Goal ── */}
       {activeCategory === "goals-models" ? (
@@ -851,76 +818,33 @@ export default function SettingsScreen() {
             accessibilityLabel="Contact Support"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Contact Support</Text>
-              <Text style={styles.devToolChevron}>›</Text>
+              <Text style={styles.navigationLabel}>Contact Support</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
         </View>
       ) : null}
 
-      {/* ── Developer Tools ── */}
       {activeCategory === "advanced" ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Developer Tools</Text>
-          <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/ble-probe");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Bluetooth Low Energy probe"
-            >
-              <Text style={styles.devToolLabel}>Bluetooth Low Energy probe</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/imu-visualization");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Inertial measurement unit visualization"
-            >
-              <Text style={styles.devToolLabel}>Inertial measurement unit visualization</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/heart-rate-visualization");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Heart Rate Visualization"
-            >
-              <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <View style={[styles.devToolRow, styles.devToolRowLast]}>
-              <View>
-                <Text style={styles.devToolLabel}>OTA Update</Text>
-                <Text style={styles.devToolDetail}>
-                  {Updates.updateId ?? "embedded bundle"}
-                  {"\n"}
-                  Channel: {Updates.channel ?? "none"}
-                  {"\n"}
-                  Runtime: {Updates.runtimeVersion ?? "unknown"}
-                  {"\n"}
-                  Created: {formatLocalizedDateTime(Updates.createdAt)}
-                </Text>
-              </View>
+          <Text style={styles.sectionTitle}>Developer integrations</Text>
+          <Text style={styles.sectionDescription}>
+            Register and manage clients that write data through the external API
+          </Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/developer-integrations")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Manage developer integrations"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.navigationLabel}>Manage developer integrations</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
       ) : null}
-
       {/* ── Danger Zone ── */}
       {activeCategory === "privacy-export" ? (
         <View style={styles.section}>

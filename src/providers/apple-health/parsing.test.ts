@@ -332,6 +332,7 @@ describe("Apple Health Provider -- parsing", () => {
           durationUnit: "min",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Hang Ten",
         },
         {
           HKMetadataKeyWorkoutBrandName: "Hang Ten",
@@ -358,7 +359,7 @@ describe("Apple Health Provider -- parsing", () => {
 
       expect(result.activityType).toEqual({
         canonicalType: "hangboard",
-        providerType: "Hang Ten",
+        providerType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
         modality: null,
       });
       expect(result.sourceName).toBe("Hang Ten");
@@ -429,6 +430,7 @@ describe("Apple Health Provider -- parsing", () => {
           durationUnit: "min",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Hang Ten",
         },
         {
           HKMetadataKeyWorkoutBrandName: "Hang Ten",
@@ -451,6 +453,7 @@ describe("Apple Health Provider -- parsing", () => {
           workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Hang Ten",
         },
         {
           HKMetadataKeyWorkoutBrandName: "Hang Ten",
@@ -470,6 +473,7 @@ describe("Apple Health Provider -- parsing", () => {
           workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Hang Ten",
         },
         {
           HKMetadataKeyWorkoutBrandName: "Hang Ten",
@@ -487,6 +491,7 @@ describe("Apple Health Provider -- parsing", () => {
           workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Hang Ten",
         },
         {
           HKMetadataKeyWorkoutBrandName: "Hang Ten",
@@ -508,6 +513,7 @@ describe("Apple Health Provider -- parsing", () => {
           workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Hang Ten",
         },
         {
           HKMetadataKeyWorkoutBrandName: "Hang Ten",
@@ -522,12 +528,13 @@ describe("Apple Health Provider -- parsing", () => {
       );
     });
 
-    it("requires the exact Hang Ten brand metadata value", () => {
+    it("uses the HealthKit source rather than Hang Ten brand metadata", () => {
       const result = parseWorkout(
         {
           workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Apple Watch",
         },
         {
           HKMetadataKeyWorkoutBrandName: " Hang Ten ",
@@ -545,6 +552,7 @@ describe("Apple Health Provider -- parsing", () => {
           workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
           startDate: "2026-08-07 07:00:00 -0700",
           endDate: "2026-08-07 07:10:00 -0700",
+          sourceName: "Hang Ten",
         },
         {
           HKMetadataKeyWorkoutBrandName: "Hang Ten",

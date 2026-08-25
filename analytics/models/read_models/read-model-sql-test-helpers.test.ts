@@ -43,7 +43,7 @@ SELECT * FROM block_commented
 
   it("matches materialized CTE headers", () => {
     const sql = `
-WITH reusable AS materialized (
+WITH reusable AS MATERIALIZED (
   SELECT 1 AS value
 )
 SELECT * FROM reusable

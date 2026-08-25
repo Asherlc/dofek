@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildProblem } from "./api-problem.ts";
 import {
-  buildProblem,
   createOpaqueSecret,
   hashSecret,
   pkceS256,

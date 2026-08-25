@@ -186,25 +186,20 @@ for (const providerId of getConfiguredProviderIds()) {
 
 logger.info(`[worker] Created ${providerWorkers.size} per-provider sync workers`);
 
-// ── Legacy sync worker (drains old "sync" queue) ──
+// ── Shared sync worker (CLI queue) ──
 
-const legacySyncWorker = new Worker<SyncJobData>(
+const sharedSyncWorker = new Worker<SyncJobData>(
   SYNC_QUEUE,
-  (job) => {
-    logger.warn(
-      `[worker] Processing job from legacy "sync" queue (provider=${job.data.providerId}). ` +
-        "New jobs should use per-provider queues.",
-    );
-    return jobContext.run(job, () =>
+  (job) =>
+    jobContext.run(job, () =>
       runQueuedUserWorkUnlessAccountErasing(
         accountErasureWorkLockPool,
         db,
         job.data.userId,
-        "legacy provider sync",
+        "CLI provider sync",
         () => processSyncJob(job, db),
       ),
-    );
-  },
+    ),
   { autorun: false, connection },
 );
 
@@ -451,7 +446,7 @@ function finishActiveJob(worker: Worker, job: { id?: string | number } | undefin
 
 const allWorkers: Worker[] = [
   ...providerWorkers.values(),
-  legacySyncWorker,
+  sharedSyncWorker,
   importWorker,
   exportWorker,
   fitFileImportWorker,
