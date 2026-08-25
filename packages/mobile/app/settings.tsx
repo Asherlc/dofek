@@ -99,7 +99,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText: "advanced dashboard layout",
+    searchText: "advanced dashboard layout developer integrations OAuth callback API",
   },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
@@ -825,6 +825,26 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
+      {activeCategory === "advanced" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Developer integrations</Text>
+          <Text style={styles.sectionDescription}>
+            Register and manage clients that write data through the external API
+          </Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/developer-integrations")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Manage developer integrations"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.navigationLabel}>Manage developer integrations</Text>
+              <Text style={styles.navigationChevron}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       {/* ── Danger Zone ── */}
       {activeCategory === "privacy-export" ? (
         <View style={styles.section}>

@@ -534,6 +534,19 @@ describe("SettingsScreen data sources", () => {
     expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
   });
 
+  it("navigates to developer integrations from Advanced settings", async () => {
+    mockSearchParams = { tab: "advanced" };
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");
+  });
+
   it("navigates to providers screen when tapped", async () => {
     const { default: SettingsScreen } = await import("../app/settings");
 

@@ -49,6 +49,11 @@ const mockCreateExternalWriteApiRouter = vi.fn(() => {
   router.get("/__test_external_mount", (_req, res) => res.sendStatus(204));
   return router;
 });
+const mockCreateDeveloperClientsRouter = vi.fn(() => {
+  const router = express.Router();
+  router.get("/__test_developer_mount", (_req, res) => res.sendStatus(204));
+  return router;
+});
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -163,6 +168,9 @@ vi.mock("../routes/auth/index.ts", () => ({ createAuthRouter: vi.fn(() => expres
 vi.mock("../routes/export.ts", () => ({ createExportRouter: vi.fn(() => express.Router()) }));
 vi.mock("./routes/external-write-api.ts", () => ({
   createExternalWriteApiRouter: mockCreateExternalWriteApiRouter,
+}));
+vi.mock("./routes/developer-clients.ts", () => ({
+  createDeveloperClientsRouter: mockCreateDeveloperClientsRouter,
 }));
 vi.mock("./routes/ingest-zos-health.ts", () => ({
   createIngestZosHealthRouter: vi.fn(() => express.Router()),
@@ -367,6 +375,23 @@ describe("createApp", () => {
 
     expect(createCompanionPairingRouter).toHaveBeenCalledWith({ db: fakeDb });
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("mounts the developer-client router with its required repository", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const { DeveloperClientRepository } = await import(
+      "./repositories/developer-client-repository.ts"
+    );
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    expect(mockCreateDeveloperClientsRouter).toHaveBeenCalledWith({
+      db: fakeDb,
+      repository: expect.any(DeveloperClientRepository),
+    });
+    expect(
+      (await request(app, "GET", "/api/developer/clients/__test_developer_mount")).status,
+    ).toBe(204);
   });
 
   it("does not apply the password-login rate limit to companion status checks", async () => {

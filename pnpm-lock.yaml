@@ -511,6 +511,9 @@ importers:
       expo-build-properties:
         specifier: 57.0.14
         version: 57.0.14(expo@57.0.16)
+      expo-clipboard:
+        specifier: 57.0.1
+        version: 57.0.1(expo@57.0.16)(react-native@0.86.2)(react@19.2.3)
       expo-crypto:
         specifier: 57.0.2
         version: 57.0.2(expo@57.0.16)
@@ -10698,6 +10701,13 @@ packages:
     resolution: {integrity: sha512-gIU7e37gHWDcozQPelPzGlIa+lg8s8/O/gSuU/M7isy46NMdrBZIu/1TCPuL6LwRUCErNvuzNs3t6ljtiGSOkw==}
     peerDependencies:
       expo: '*'
+
+  expo-clipboard@57.0.1:
+    resolution: {integrity: sha512-HWICri4+1ao7S6QEfcorxVumXDiDnx1guGGewjZgGJWLGxFYs0RgH8ujBs+lkTzBkMmlwADaWSlaesR+nDJt5Q==}
+    peerDependencies:
+      expo: '*'
+      react: 19.2.3
+      react-native: '*'
 
   expo-constants@57.0.13:
     resolution: {integrity: sha512-eB5AHp7kKxsVIBjTetUgj5WQSw8joI2ekzgTlcUv+Hc0x2t0jZU6IiL4DpyOT2yZQ71n0WJZCkmOKLgxlajIzg==}
@@ -27967,6 +27977,12 @@ snapshots:
       expo: 57.0.16(@babel/core@7.29.7)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@57.0.13)(expo-router@57.0.16)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)(supports-color@11.0.0)(typescript@6.0.3)
       resolve-from: 5.0.0
       semver: 7.8.5
+
+  expo-clipboard@57.0.1(expo@57.0.16)(react-native@0.86.2)(react@19.2.3):
+    dependencies:
+      expo: 57.0.16(@babel/core@7.29.7)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@57.0.13)(expo-router@57.0.16)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-worklets@0.10.1)(react-native@0.86.2)(react@19.2.3)(supports-color@11.0.0)(typescript@6.0.3)
+      react: 19.2.3
+      react-native: 0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(@types/react@19.2.18)(react@19.2.3)(supports-color@11.0.0)
 
   expo-constants@57.0.13(expo@57.0.16)(react-native@0.86.2)(supports-color@11.0.0):
     dependencies:
