@@ -10,6 +10,7 @@ describe("parseWorkout — Hang Ten validation", () => {
         durationUnit: "min",
         startDate: "2026-08-07 07:00:00 -0700",
         endDate: "2026-08-07 07:10:00 -0700",
+        sourceName: "Hang Ten",
       },
       {
         HKMetadataKeyWorkoutBrandName: "Hang Ten",
@@ -26,21 +27,33 @@ describe("parseWorkout — Hang Ten validation", () => {
     );
   });
 
-  it("requires the exact Hang Ten brand metadata value", () => {
+  it("classifies a Hang Ten source as hangboarding without workout metadata", () => {
+    const result = parseWorkout({
+      workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+      startDate: "2026-08-07 07:00:00 -0700",
+      endDate: "2026-08-07 07:10:00 -0700",
+      sourceName: "Hang Ten",
+    });
+
+    expect(result.activityType.canonicalType).toBe("hangboard");
+    expect(result.hangTen).toBeUndefined();
+  });
+
+  it("uses the HealthKit source rather than Hang Ten metadata for classification", () => {
     const result = parseWorkout(
       {
         workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
         startDate: "2026-08-07 07:00:00 -0700",
         endDate: "2026-08-07 07:10:00 -0700",
+        sourceName: "Apple Watch",
       },
       {
-        HKMetadataKeyWorkoutBrandName: " Hang Ten ",
+        HKMetadataKeyWorkoutBrandName: "Hang Ten",
         "HangTen.PlanName": "Max Hangs",
       },
     );
 
     expect(result.activityType.canonicalType).toBe("strength");
-    expect(result.hangTen).toBeUndefined();
   });
 
   it("reports structurally invalid Hang Ten activity segment JSON", () => {
@@ -49,6 +62,7 @@ describe("parseWorkout — Hang Ten validation", () => {
         workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
         startDate: "2026-08-07 07:00:00 -0700",
         endDate: "2026-08-07 07:10:00 -0700",
+        sourceName: "Hang Ten",
       },
       {
         HKMetadataKeyWorkoutBrandName: "Hang Ten",

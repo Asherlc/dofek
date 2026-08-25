@@ -32,7 +32,7 @@ export async function handleMobileProviderHandoff(req: Request, res: Response): 
   }
   const { getAllProviders } = await import("dofek/providers/registry");
   await (await import("../../routers/sync-helpers.ts")).ensureProvidersRegistered();
-  if (providerId !== "slack" && !getAllProviders().some((provider) => provider.id === providerId)) {
+  if (!getAllProviders().some((provider) => provider.id === providerId)) {
     res.status(404).json({ error: "Unknown provider" });
     return;
   }

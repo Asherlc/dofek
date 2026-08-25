@@ -2,6 +2,10 @@ import { medicationRemindersSchema } from "@dofek/format/medication-reminders";
 import { PRIMARY_GOAL_SETTINGS_KEY, primaryGoalIds } from "@dofek/onboarding/primary-goal";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { z } from "zod";
+import {
+  CLIMBING_GRADE_PREFERENCE_SETTINGS_KEY,
+  climbingGradePreferenceSchema,
+} from "../climbing-grade-preferences.ts";
 import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -20,6 +24,10 @@ const settingInputSchema = z.discriminatedUnion("key", [
   z.strictObject({
     key: z.literal("unitSystem"),
     value: z.enum(["metric", "imperial"]),
+  }),
+  z.strictObject({
+    key: z.literal(CLIMBING_GRADE_PREFERENCE_SETTINGS_KEY),
+    value: climbingGradePreferenceSchema,
   }),
   z.strictObject({
     key: z.literal("whoop.wearLocation"),
@@ -52,16 +60,17 @@ export const settingsRouter = router({
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     const result = await repo.set(input.key, input.value);
 
-    // Invalidate server-side cache for settings.get and settings.getAll
-    // so subsequent reads return the updated value, not stale cached data.
-    await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
+    if (input.key === CLIMBING_GRADE_PREFERENCE_SETTINGS_KEY) {
+      await Promise.all([
+        queryCache.invalidateByPrefix(`${ctx.userId}:settings.`),
+        queryCache.invalidateByPrefix(`${ctx.userId}:climbing.`),
+        queryCache.invalidateByPrefix(`${ctx.userId}:mobileDashboard.training`),
+      ]);
+    } else {
+      await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
+    }
 
     return result;
-  }),
-
-  slackStatus: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
-    const repo = new SettingsRepository(ctx.db, ctx.userId);
-    return repo.slackStatus();
   }),
 
   deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {

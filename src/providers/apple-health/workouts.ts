@@ -27,6 +27,8 @@ export interface HangTenWorkoutMetadata {
   activitySegmentsError?: string;
 }
 
+export type WorkoutMetadata = Record<string, string | number>;
+
 export interface HealthWorkout {
   activityType: ProviderActivityType;
   sourceName: string | null;
@@ -37,7 +39,7 @@ export interface HealthWorkout {
   startDate: Date;
   endDate: Date;
   routeLocations?: RouteLocation[];
-  metadata?: Record<string, string>;
+  metadata?: WorkoutMetadata;
   hangTen?: HangTenWorkoutMetadata;
 }
 
@@ -76,7 +78,7 @@ export function normalizeDistance(value: string, unit: string): number {
 
 export function parseWorkout(
   attrs: Record<string, string>,
-  metadata: Record<string, string> = {},
+  metadata: WorkoutMetadata = {},
 ): HealthWorkout {
   const rawType = attrs.workoutActivityType ?? "HKWorkoutActivityTypeOther";
   const activityType = resolveProviderActivityType(rawType, WORKOUT_TYPE_MAP[rawType] ?? "other");
@@ -101,8 +103,9 @@ export function parseWorkout(
   );
 }
 
-function trimmedMetadataValue(metadata: Record<string, string>, key: string): string | undefined {
-  const value = metadata[key]?.trim();
+function trimmedMetadataValue(metadata: WorkoutMetadata, key: string): string | undefined {
+  const rawValue = metadata[key];
+  const value = typeof rawValue === "string" ? rawValue.trim() : undefined;
   return value ? value : undefined;
 }
 
@@ -140,26 +143,27 @@ function parseHangTenActivitySegments(raw: string): {
 }
 
 function hangTenWorkoutOverrides(
-  activityType: ProviderActivityType,
-  metadata: Record<string, string>,
+  sourceName: string | null,
+  metadata: WorkoutMetadata,
 ): Partial<HealthWorkout> {
-  if (
-    activityType.canonicalType !== "strength" ||
-    activityType.modality !== "functional" ||
-    metadata.HKMetadataKeyWorkoutBrandName !== "Hang Ten"
-  ) {
+  if (sourceName?.trim() !== "Hang Ten") {
     return {};
   }
 
+  const activityType = resolveProviderActivityType("Hang Ten", "hangboard");
   const planName = trimmedMetadataValue(metadata, "HangTen.PlanName");
-  if (!planName) return {};
+  if (!planName) {
+    return { activityType, sourceName: "Hang Ten" };
+  }
 
-  const rawActivitySegments = metadata["HangTen.ActivitySegments"];
+  const activitySegmentsMetadata = metadata["HangTen.ActivitySegments"];
+  const rawActivitySegments =
+    typeof activitySegmentsMetadata === "string" ? activitySegmentsMetadata : undefined;
   const parsedActivitySegments =
     rawActivitySegments !== undefined ? parseHangTenActivitySegments(rawActivitySegments) : {};
 
   return {
-    activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+    activityType,
     sourceName: "Hang Ten",
     hangTen: {
       sessionId: trimmedMetadataValue(metadata, "HangTen.SessionID"),
@@ -175,12 +179,12 @@ function hangTenWorkoutOverrides(
 
 export function applyWorkoutMetadata(
   workout: HealthWorkout,
-  metadata: Record<string, string>,
+  metadata: WorkoutMetadata,
 ): HealthWorkout {
   return {
     ...workout,
     metadata,
-    ...hangTenWorkoutOverrides(workout.activityType, metadata),
+    ...hangTenWorkoutOverrides(workout.sourceName, metadata),
   };
 }
 

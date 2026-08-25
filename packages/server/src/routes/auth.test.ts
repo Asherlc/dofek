@@ -2,7 +2,6 @@ import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getMobileAuthExchangeStoreRef,
-  getOAuthStateStoreRef,
   getPendingEmailSignupStoreRef,
   oauthSuccessHtml,
 } from "./auth/shared.ts";
@@ -175,7 +174,7 @@ import {
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
 import { loadTokens } from "dofek/db/tokens";
-import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
@@ -259,7 +258,7 @@ async function request(
   body: string;
   headers: Record<string, string | string[] | undefined>;
 }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
       const fetchOptions: RequestInit = { method: method.toUpperCase(), redirect: "manual" };
@@ -282,9 +281,9 @@ async function request(
           resolve({ status: res.status, body, headers });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error", headers: {} });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
   });
@@ -506,78 +505,6 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain("oauth.example.com/authorize");
     });
-
-    it("rejects a session exchange code on Slack OAuth", async () => {
-      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
-      process.env.SLACK_CLIENT_ID = "slack-client-id";
-      try {
-        const { app } = createTestApp();
-        const code = await getMobileAuthExchangeStoreRef().issue({
-          kind: "session",
-          sessionId: "session-1",
-          isNewUser: false,
-        });
-
-        const res = await request(app, "get", `/auth/provider/slack?code=${code}`);
-
-        expect(res.status).toBe(401);
-        expect(res.body).toContain("Invalid Slack handoff code");
-      } finally {
-        if (originalSlackClientId === undefined) {
-          delete process.env.SLACK_CLIENT_ID;
-        } else {
-          process.env.SLACK_CLIENT_ID = originalSlackClientId;
-        }
-      }
-    });
-
-    it("accepts a Slack provider exchange code and stores its user ID", async () => {
-      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
-      process.env.SLACK_CLIENT_ID = "slack-client-id";
-      try {
-        const { app } = createTestApp();
-        const code = await getMobileAuthExchangeStoreRef().issue({
-          kind: "provider",
-          userId: "slack-user-1",
-          providerId: "slack",
-        });
-
-        const res = await request(app, "get", `/auth/provider/slack?code=${code}`);
-
-        expect(res.status).toBe(302);
-        const location = res.headers.location;
-        if (typeof location !== "string") throw new Error("Expected Slack OAuth location");
-        const state = new URL(location).searchParams.get("state");
-        if (!state) throw new Error("Expected Slack OAuth state");
-        await expect(getOAuthStateStoreRef().get(state)).resolves.toMatchObject({
-          providerId: "slack",
-          userId: "slack-user-1",
-        });
-      } finally {
-        if (originalSlackClientId === undefined) {
-          delete process.env.SLACK_CLIENT_ID;
-        } else {
-          process.env.SLACK_CLIENT_ID = originalSlackClientId;
-        }
-      }
-    });
-
-    it("uses the session when Slack handoff code is not a string", async () => {
-      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
-      process.env.SLACK_CLIENT_ID = "slack-client-id";
-      try {
-        const { app } = createTestApp();
-        const res = await request(app, "get", "/auth/provider/slack?code=one&code=two");
-
-        expect(res.status).toBe(302);
-      } finally {
-        if (originalSlackClientId === undefined) {
-          delete process.env.SLACK_CLIENT_ID;
-        } else {
-          process.env.SLACK_CLIENT_ID = originalSlackClientId;
-        }
-      }
-    });
   });
 
   describe("POST /auth/login/password", () => {
@@ -720,50 +647,6 @@ describe("createAuthRouter", () => {
       vi.mocked(fakeDb.execute).mockResolvedValue([]);
       const res = await request(app, "get", "/api/auth/me");
       expect(res.status).toBe(401);
-    });
-  });
-
-  describe("GET /auth/provider/slack", () => {
-    it("returns 400 when SLACK_CLIENT_ID is not set", async () => {
-      delete process.env.SLACK_CLIENT_ID;
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/auth/provider/slack");
-      expect(res.status).toBe(400);
-      expect(res.body).toContain("SLACK_CLIENT_ID");
-    });
-
-    it("redirects to Slack OAuth when configured", async () => {
-      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
-      process.env.SLACK_CLIENT_ID = "test-client-id";
-      try {
-        const { app } = createTestApp();
-        const res = await request(app, "get", "/auth/provider/slack");
-        expect(res.status).toBe(302);
-      } finally {
-        if (originalSlackClientId === undefined) {
-          delete process.env.SLACK_CLIENT_ID;
-        } else {
-          process.env.SLACK_CLIENT_ID = originalSlackClientId;
-        }
-      }
-    });
-
-    it("returns 401 when no session is available", async () => {
-      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
-      process.env.SLACK_CLIENT_ID = "test-client-id";
-      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      try {
-        const { app } = createTestApp();
-        const res = await request(app, "get", "/auth/provider/slack");
-        expect(res.status).toBe(401);
-        expect(res.body).toContain("You must be logged in to connect Slack");
-      } finally {
-        if (originalSlackClientId === undefined) {
-          delete process.env.SLACK_CLIENT_ID;
-        } else {
-          process.env.SLACK_CLIENT_ID = originalSlackClientId;
-        }
-      }
     });
   });
 
@@ -1239,85 +1122,6 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/provider/wahoo");
       expect(res.status).toBe(302);
-    });
-  });
-
-  describe("GET /callback (Slack OAuth)", () => {
-    it("returns 400 when SLACK_CLIENT_ID/SECRET not set for slack callback", async () => {
-      delete process.env.SLACK_CLIENT_ID;
-      delete process.env.SLACK_CLIENT_SECRET;
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/callback?code=abc&state=slack:fake-state");
-      expect(res.status).toBe(400);
-    });
-
-    it("creates auth_account linking installer Slack ID to logged-in user", async () => {
-      process.env.SLACK_CLIENT_ID = "test-client-id";
-      process.env.SLACK_CLIENT_SECRET = "test-client-secret";
-
-      // Simulate logged-in user
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({
-        userId: "real-user-id",
-        expiresAt: new Date("2027-01-01"),
-      });
-
-      const { app, fakeDb } = createTestApp();
-
-      // Step 1: Hit /auth/provider/slack to populate the state map
-      const slackRes = await request(app, "get", "/auth/provider/slack");
-      expect(slackRes.status).toBe(302);
-
-      // Extract state token from redirect Location header
-      const location = slackRes.headers.location;
-      expect(location).toBeDefined();
-      if (typeof location !== "string") throw new Error("Expected location header to be a string");
-      const redirectUrl = new URL(location);
-      const state = redirectUrl.searchParams.get("state");
-      expect(state).toBeTruthy();
-      expect(state).toMatch(/^slack:/);
-
-      // Step 2: Mock Slack API fetch for token exchange, while letting
-      // the test's own HTTP requests through
-      const realFetch = globalThis.fetch;
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.toString()
-              : input instanceof Request
-                ? input.url
-                : String(input);
-        if (url.includes("slack.com/api/oauth.v2.access")) {
-          return new Response(
-            JSON.stringify({
-              ok: true,
-              access_token: "xoxb-test-bot-token",
-              team: { id: "T_TEAM", name: "Test Workspace" },
-              bot_user_id: "U_BOT",
-              authed_user: { id: "U_INSTALLER" },
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          );
-        }
-        return realFetch(input, init);
-      });
-
-      // Step 3: Hit callback with the state
-      const callbackRes = await request(app, "get", `/callback?code=slack-code&state=${state}`);
-      expect(callbackRes.status).toBe(200);
-      expect(callbackRes.body).toContain("Authorized!");
-
-      // Step 4: Verify db.execute was called to store installation AND create auth_account
-      const executeCalls = vi.mocked(fakeDb.execute).mock.calls;
-      // Should have at least 2 calls: installation insert + auth_account insert
-      expect(executeCalls.length).toBeGreaterThanOrEqual(2);
-      expect(invalidateAllUserQueries).toHaveBeenCalledWith("real-user-id");
-
-      fetchSpy.mockRestore();
-      delete process.env.SLACK_CLIENT_ID;
-      delete process.env.SLACK_CLIENT_SECRET;
     });
   });
 
@@ -3857,29 +3661,6 @@ describe("createAuthRouter", () => {
     });
   });
 
-  describe("GET /callback (Slack OAuth with missing env vars)", () => {
-    it("returns 400 when only SLACK_CLIENT_ID is set but not SECRET", async () => {
-      process.env.SLACK_CLIENT_ID = "test-client-id";
-      delete process.env.SLACK_CLIENT_SECRET;
-
-      const { app } = createTestApp();
-      const slackRes = await request(app, "get", "/auth/provider/slack");
-      expect(slackRes.status).toBe(302);
-      const location = slackRes.headers.location;
-      if (typeof location !== "string") throw new Error("Expected location header");
-      const redirectUrl = new URL(location);
-      const state = redirectUrl.searchParams.get("state");
-      expect(state).toBeTruthy();
-
-      // Now clear the client ID so the validation fails
-      delete process.env.SLACK_CLIENT_ID;
-
-      const callbackRes = await request(app, "get", `/callback?code=slack-code&state=${state}`);
-      expect(callbackRes.status).toBe(400);
-      expect(callbackRes.body).toContain("SLACK_CLIENT_ID");
-    });
-  });
-
   describe("POST /auth/apple/native", () => {
     it("does not emit a fenced Apple identity when credential cleanup fails", async () => {
       const cleanupError = new Error("Apple cleanup unavailable");
@@ -5330,7 +5111,7 @@ describe("oauthSuccessHtml", () => {
   });
 
   it("falls back to simple message when no providerId", () => {
-    const html = oauthSuccessHtml("Slack");
+    const html = oauthSuccessHtml("Wahoo");
     expect(html).toContain('"type":"complete"');
     expect(html).toContain('"type":"oauth-complete"');
   });
