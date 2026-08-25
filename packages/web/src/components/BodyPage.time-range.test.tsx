@@ -16,6 +16,7 @@ describe("BodyPage time range", () => {
   it("passes finite and All ranges to selected chart queries", async () => {
     const { BodyPage } = await import("../pages/BodyPage.tsx");
     render(<BodyHarness BodyPage={BodyPage} />);
+    screen.getByRole("radio", { name: "All" });
 
     clearQueryCalls();
     fireEvent.click(screen.getByRole("radio", { name: "7d" }));

@@ -11,7 +11,7 @@ import {
 } from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,7 +28,6 @@ import {
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
-import { HeartRateDeviceCard } from "../components/HeartRateDeviceCard";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
@@ -37,12 +36,6 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
-import {
-  connectBleHeartRateMonitor,
-  disconnectBleHeartRateMonitor,
-  getBleHeartRateSyncState,
-  subscribeBleHeartRateSyncState,
-} from "../lib/background-ble-heart-rate-sync";
 import {
   clearMobileBillingCheckoutOperation,
   getOrCreateMobileBillingCheckoutOperationId,
@@ -81,7 +74,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "data-sources",
     label: "Data Sources",
-    searchText: "data sources providers Zepp integrations",
+    searchText: "data sources providers Zepp integrations Bluetooth devices WHOOP heart rate",
   },
   {
     id: "goals-models",
@@ -220,24 +213,6 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
-  const heartRateMonitor = useSyncExternalStore(
-    subscribeBleHeartRateSyncState,
-    getBleHeartRateSyncState,
-    getBleHeartRateSyncState,
-  );
-
-  const handleConnectHeartRateMonitor = async (): Promise<void> => {
-    try {
-      await connectBleHeartRateMonitor();
-    } catch (error: unknown) {
-      captureException(error, { context: "settings-connect-heart-rate-monitor" });
-      Alert.alert(
-        "No heart-rate monitor found",
-        "Make sure your monitor is on, worn, and nearby, then try again.",
-      );
-    }
-  };
-
   // ── Data Sources ──
   const providers = trpc.sync.providers.useQuery();
 
@@ -448,50 +423,64 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Sources</Text>
           <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push("/providers")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Data Sources"
-            accessibilityState={{ busy: providers.isLoading }}
-          >
-            <View style={styles.dataSourcesRow}>
-              <View style={styles.dataSourcesInfo}>
-                {providers.isLoading ? (
-                  <ActivityIndicator color={colors.accent} size="small" />
-                ) : providers.error && providers.data === undefined ? (
-                  <QueryStatePanel
-                    variant="error"
-                    title="Could not load data sources"
-                    message={getQueryErrorMessage(providers.error)}
-                    minHeight={96}
-                  />
-                ) : (
-                  <>
-                    <View style={styles.providerLogos}>
-                      {(providers.data ?? [])
-                        .filter((provider) => provider.authorized)
-                        .slice(0, 5)
-                        .map((provider) => (
-                          <ProviderLogo
-                            key={provider.id}
-                            provider={provider.id}
-                            serverUrl={auth.serverUrl}
-                            size={20}
-                          />
-                        ))}
-                    </View>
-                    <Text style={styles.dataSourcesCount}>
-                      {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
-                      connected
-                    </Text>
-                  </>
-                )}
+          <View style={styles.healthTrackingCards}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/providers")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Data Sources"
+              accessibilityState={{ busy: providers.isLoading }}
+            >
+              <View style={styles.dataSourcesRow}>
+                <View style={styles.dataSourcesInfo}>
+                  {providers.isLoading ? (
+                    <ActivityIndicator color={colors.accent} size="small" />
+                  ) : providers.error && providers.data === undefined ? (
+                    <QueryStatePanel
+                      variant="error"
+                      title="Could not load data sources"
+                      message={getQueryErrorMessage(providers.error)}
+                      minHeight={96}
+                    />
+                  ) : (
+                    <>
+                      <View style={styles.providerLogos}>
+                        {(providers.data ?? [])
+                          .filter((provider) => provider.authorized)
+                          .slice(0, 5)
+                          .map((provider) => (
+                            <ProviderLogo
+                              key={provider.id}
+                              provider={provider.id}
+                              serverUrl={auth.serverUrl}
+                              size={20}
+                            />
+                          ))}
+                      </View>
+                      <Text style={styles.dataSourcesCount}>
+                        {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
+                        connected
+                      </Text>
+                    </>
+                  )}
+                </View>
+                <Text style={styles.devToolChevron}>›</Text>
               </View>
-              <Text style={styles.devToolChevron}>›</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/bluetooth-devices")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Bluetooth Devices"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.devToolLabel}>Bluetooth Devices</Text>
+                <Text style={styles.devToolChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
           {providers.error && providers.data !== undefined ? (
             <QueryStatePanel
               variant="error"
@@ -635,23 +624,6 @@ export default function SettingsScreen() {
       ) : null}
 
       {activeCategory === "data-sources" ? <ZeppPairingCard /> : null}
-
-      {activeCategory === "data-sources" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bluetooth Heart Rate</Text>
-          <Text style={styles.sectionDescription}>
-            Capture heart rate and beat intervals from a standard Bluetooth monitor
-          </Text>
-          <HeartRateDeviceCard
-            bluetoothAvailable={heartRateMonitor.bluetoothAvailable}
-            connectionState={heartRateMonitor.connectionState}
-            deviceName={heartRateMonitor.device?.name}
-            liveBpm={heartRateMonitor.liveBpm}
-            onConnect={() => void handleConnectHeartRateMonitor()}
-            onDisconnect={disconnectBleHeartRateMonitor}
-          />
-        </View>
-      ) : null}
 
       {/* ── Primary Goal ── */}
       {activeCategory === "goals-models" ? (

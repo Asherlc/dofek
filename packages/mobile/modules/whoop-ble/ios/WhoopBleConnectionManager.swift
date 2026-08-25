@@ -184,7 +184,7 @@ final class WhoopBleConnectionManager {
 
     // MARK: - Disconnect
 
-    func disconnect() {
+    func disconnect(completion: (() -> Void)? = nil) {
         bleQueue.async {
             self.autoReconnect = false
             if let peripheral = self.connectedPeripheral {
@@ -192,6 +192,7 @@ final class WhoopBleConnectionManager {
             }
             self.cleanup()
             self.finishConnect(.failure(.disconnected(nil)))
+            completion?()
         }
     }
 
