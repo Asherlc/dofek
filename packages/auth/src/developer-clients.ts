@@ -34,9 +34,6 @@ export function canonicalizeDeveloperRedirectUri(value: string): string {
   if (redirectUri.username || redirectUri.password) {
     throw new Error("Redirect URIs must not contain credentials.");
   }
-  if (redirectUri.hash) {
-    throw new Error("Redirect URIs must not contain a fragment.");
-  }
   return redirectUri.href;
 }
 
@@ -168,20 +165,8 @@ export interface DeveloperClientsApi {
 const developerClientListSchema = z.array(DeveloperClientSummarySchema);
 const developerClientRevokedSchema = z.object({ revoked: z.literal(true) }).strict();
 
-async function parseJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    throw new DeveloperClientsApiError({
-      code: "INVALID_RESPONSE",
-      message: "The server returned an invalid response.",
-      status: response.status,
-    });
-  }
-}
-
 async function parseResponse<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
-  const body = await parseJson(response);
+  const body: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
     const problem = DeveloperApiProblemSchema.safeParse(body);
     if (!problem.success) {

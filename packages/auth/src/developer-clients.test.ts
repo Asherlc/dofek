@@ -7,6 +7,7 @@ import {
   DeveloperClientInputSchema,
   DeveloperClientSecretSchema,
   DeveloperClientSummarySchema,
+  DeveloperClientsApiError,
   DeveloperClientUpdateSchema,
 } from "./developer-clients";
 
@@ -27,7 +28,8 @@ const detail = {
 describe("developer client schemas", () => {
   it.each([
     "http://client.example/callback",
-    "https://user:password@client.example/callback",
+    "https://user@client.example/callback",
+    "https://:password@client.example/callback",
     "https://client.example/callback#fragment",
     "https://client.example/callback#",
     "not a uri",
@@ -39,13 +41,37 @@ describe("developer client schemas", () => {
     expect(canonicalizeDeveloperRedirectUri("https://client.example")).toBe(
       "https://client.example/",
     );
-    expect(
-      DeveloperClientInputSchema.safeParse({
-        name: "Meal importer",
-        redirectUris: ["https://client.example", "https://client.example/"],
-        scopes: ["nutrition:write"],
-      }).success,
-    ).toBe(false);
+    const result = DeveloperClientInputSchema.safeParse({
+      name: "Meal importer",
+      redirectUris: ["https://client.example", "https://client.example/"],
+      scopes: ["nutrition:write"],
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Expected duplicate redirect URIs to be rejected");
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({
+        message: "Redirect URIs must be unique.",
+        path: ["redirectUris", 1],
+      }),
+    );
+  });
+
+  it("reports redirect URI validation errors through the input schema", () => {
+    const result = DeveloperClientInputSchema.safeParse({
+      name: "Meal importer",
+      redirectUris: ["http://client.example/callback"],
+      scopes: ["nutrition:write"],
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Expected an insecure redirect URI to be rejected");
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({
+        message: "Redirect URIs must use HTTPS.",
+        path: ["redirectUris", 0],
+      }),
+    );
   });
 
   it("trims names and canonicalizes a non-empty redirect set", () => {
@@ -105,6 +131,32 @@ describe("developer client schemas", () => {
 });
 
 describe("developer clients API", () => {
+  it("preserves explicit and default problem metadata", () => {
+    expect(
+      new DeveloperClientsApiError({
+        code: "INVALID_CLIENT",
+        details: [{ field: "client_id" }],
+        message: "The client is invalid.",
+        requestId: "request-1",
+        status: 401,
+      }),
+    ).toMatchObject({
+      code: "INVALID_CLIENT",
+      details: [{ field: "client_id" }],
+      message: "The client is invalid.",
+      name: "DeveloperClientsApiError",
+      requestId: "request-1",
+      status: 401,
+    });
+    expect(
+      new DeveloperClientsApiError({
+        code: "INVALID_RESPONSE",
+        message: "The server returned an invalid response.",
+        status: 502,
+      }),
+    ).toMatchObject({ details: [], requestId: null });
+  });
+
   it("parses a safe problem and surfaces its server message", async () => {
     const api = createDeveloperClientsApi(
       async () =>
@@ -167,13 +219,43 @@ describe("developer clients API", () => {
     });
     await expect(api.revoke("ext_client")).resolves.toEqual({ revoked: true });
 
-    expect(request.mock.calls.map(([path, init]) => [path, init.method])).toEqual([
-      ["/api/developer/clients", "GET"],
-      ["/api/developer/clients", "POST"],
-      ["/api/developer/clients/ext_client", "GET"],
-      ["/api/developer/clients/ext_client", "PATCH"],
-      ["/api/developer/clients/ext_client/rotate", "POST"],
-      ["/api/developer/clients/ext_client/revoke", "POST"],
+    expect(request.mock.calls).toStrictEqual([
+      ["/api/developer/clients", { headers: { accept: "application/json" }, method: "GET" }],
+      [
+        "/api/developer/clients",
+        {
+          body: JSON.stringify({
+            name: "Meal importer",
+            redirectUris: ["https://client.example/callback"],
+            scopes: ["nutrition:write"],
+          }),
+          headers: { accept: "application/json", "content-type": "application/json" },
+          method: "POST",
+        },
+      ],
+      [
+        "/api/developer/clients/ext_client",
+        { headers: { accept: "application/json" }, method: "GET" },
+      ],
+      [
+        "/api/developer/clients/ext_client",
+        {
+          body: JSON.stringify({
+            name: "Updated importer",
+            redirectUris: ["https://client.example/callback"],
+          }),
+          headers: { accept: "application/json", "content-type": "application/json" },
+          method: "PATCH",
+        },
+      ],
+      [
+        "/api/developer/clients/ext_client/rotate",
+        { headers: { accept: "application/json" }, method: "POST" },
+      ],
+      [
+        "/api/developer/clients/ext_client/revoke",
+        { headers: { accept: "application/json" }, method: "POST" },
+      ],
     ]);
   });
 
@@ -208,6 +290,31 @@ describe("developer clients API", () => {
       code: "INVALID_RESPONSE",
       message: "The server returned an invalid response.",
       status: 503,
+    });
+  });
+
+  it("fails safely when an error response has JSON that is not a problem", async () => {
+    const api = createDeveloperClientsApi(
+      async () =>
+        new Response(JSON.stringify({ message: "database host leaked" }), { status: 503 }),
+    );
+
+    await expect(api.list()).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: "The server returned an invalid response.",
+      status: 503,
+    });
+  });
+
+  it("fails safely when a successful response violates its contract", async () => {
+    const api = createDeveloperClientsApi(
+      async () => new Response(JSON.stringify({ unexpected: true })),
+    );
+
+    await expect(api.list()).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: "The server returned an invalid response.",
+      status: 200,
     });
   });
 });
