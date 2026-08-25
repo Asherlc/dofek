@@ -24061,8 +24061,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then declined to classify records without `HangTen.PlanName`.
 - **Fix / mitigation:** Classify `sourceName === "Hang Ten"` as hangboard. Plan
   and segment metadata remain optional details and no longer gate activity type.
-- **Validation:** Focused Apple Health parser and HealthKit sync processor tests
-  pass, and the repository typecheck passes. The full lint suite reached its
-  ClickHouse SQL stage but could not connect to the local ClickHouse service.
+- **Validation:** Focused Apple Health parser and HealthKit sync processor tests,
+  full lint, all repository typechecks, and the full local unit/mobile test tier
+  pass.
 - **Remaining risk / follow-up:** Deploy the change and resync the affected
   HealthKit activity before confirming the production view.
+
+## 2026-08-25 — PR 2555 native mobile builds blocked by CocoaPods CDN rate limiting
+
+- **Status:** Unresolved external CI incident; no source change is warranted.
+- **Symptoms / impact:** The `Build Mobile / iOS Native Build` and `watchOS Build`
+  jobs failed, blocking PR #2555 despite lint, unit, integration, mobile, Swift,
+  and typecheck jobs passing.
+- **Evidence / root cause:** Both jobs failed at `cd packages/mobile/ios && pod
+  install`. Their first fatal line was `CDN: trunk URL couldn't be downloaded ...
+  Sentry.podspec.json Response: 429`, returned by GitHub while CocoaPods fetched
+  the Sentry podspec. See the [iOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867412)
+  and [watchOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867441).
+- **Fix / mitigation:** None in repository code. The rate limit is external to the
+  change; no retry, timeout, or failure suppression was added.
+- **Validation:** The independent hosted checks above passed, and the failed jobs
+  report the same upstream 429 response.
+- **Remaining risk / follow-up:** Rerun the native build jobs only after the
+  upstream rate limit has cleared, then confirm they pass without workflow changes.
