@@ -839,8 +839,8 @@ export default function SettingsScreen() {
             accessibilityLabel="Manage developer integrations"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Manage developer integrations</Text>
-              <Text style={styles.devToolChevron}>›</Text>
+              <Text style={styles.navigationLabel}>Manage developer integrations</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
         </View>
