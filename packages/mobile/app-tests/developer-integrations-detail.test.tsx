@@ -67,6 +67,14 @@ function latestAlertButtons() {
   return vi.mocked(Alert.alert).mock.calls.at(-1)?.[2];
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe("DeveloperClientDetailScreen", () => {
   afterEach(cleanup);
 
@@ -249,6 +257,54 @@ describe("DeveloperClientDetailScreen", () => {
       "disabled",
       true,
     );
+  });
+
+  it("disables revocation while secret rotation is pending", async () => {
+    const rotation = deferred<DeveloperClientSecret>();
+    mocks.get.mockResolvedValue(activeClient);
+    mocks.rotate.mockReturnValue(rotation.promise);
+    renderScreen();
+    await screen.findByText("Meal importer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotate client secret" }));
+    act(() =>
+      latestAlertButtons()
+        ?.find((button) => button.text === "Rotate")
+        ?.onPress?.(),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Revoke developer integration" })).toHaveProperty(
+        "disabled",
+        true,
+      ),
+    );
+
+    await act(async () => rotation.resolve(rotatedCredential));
+  });
+
+  it("disables secret rotation while revocation is pending", async () => {
+    const revocation = deferred<{ revoked: true }>();
+    mocks.get.mockResolvedValueOnce(activeClient).mockResolvedValue(revokedClient);
+    mocks.revoke.mockReturnValue(revocation.promise);
+    renderScreen();
+    await screen.findByText("Meal importer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke developer integration" }));
+    act(() =>
+      latestAlertButtons()
+        ?.find((button) => button.text === "Revoke")
+        ?.onPress?.(),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Rotate client secret" })).toHaveProperty(
+        "disabled",
+        true,
+      ),
+    );
+
+    await act(async () => revocation.resolve({ revoked: true }));
   });
 
   it("clears a failed rotation error before a successful revocation", async () => {

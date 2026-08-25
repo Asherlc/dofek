@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import type { DeveloperClientSecret } from "@dofek/auth/developer-clients";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeveloperClientSecretDialog } from "./DeveloperClientSecretDialog.tsx";
@@ -26,6 +26,14 @@ const credential = {
 function Harness() {
   const [secret, setSecret] = useState<DeveloperClientSecret | null>(credential);
   return <DeveloperClientSecretDialog secret={secret} onDismiss={() => setSecret(null)} />;
+}
+
+function deferred<T>() {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((_resolve, rejectPromise) => {
+    reject = rejectPromise;
+  });
+  return { promise, reject };
 }
 
 describe("DeveloperClientSecretDialog", () => {
@@ -99,6 +107,23 @@ describe("DeveloperClientSecretDialog", () => {
     );
 
     expect(screen.getByText("raw-replacement-secret")).toBeTruthy();
+    expect(screen.queryByText("Copy failed. Select and copy the value manually.")).toBeNull();
+  });
+
+  it("ignores a late copy failure after the credential is dismissed", async () => {
+    const clipboardWrite = deferred<void>();
+    mocks.writeText.mockReturnValueOnce(clipboardWrite.promise);
+    const onDismiss = vi.fn();
+    const { rerender } = render(
+      <DeveloperClientSecretDialog secret={credential} onDismiss={onDismiss} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy client secret" }));
+    fireEvent.click(screen.getByRole("button", { name: "I saved the secret" }));
+    rerender(<DeveloperClientSecretDialog secret={null} onDismiss={onDismiss} />);
+    await act(async () => clipboardWrite.reject(new Error("Late clipboard failure")));
+    rerender(<DeveloperClientSecretDialog secret={credential} onDismiss={onDismiss} />);
+
     expect(screen.queryByText("Copy failed. Select and copy the value manually.")).toBeNull();
   });
 

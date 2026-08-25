@@ -1,5 +1,5 @@
 import type { DeveloperClientSecret } from "@dofek/auth/developer-clients";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 import { ModalDialog, ModalDialogDescription, ModalDialogTitle } from "./ModalDialog.tsx";
 
@@ -12,28 +12,50 @@ export function DeveloperClientSecretDialog({
   onDismiss,
   secret,
 }: DeveloperClientSecretDialogProps) {
+  const credentialContext = secret
+    ? `${secret.client.clientId}:${secret.client.lastRotatedAt}`
+    : null;
+  const copyGeneration = useRef(0);
   const [copyError, setCopyError] = useState<{
-    credential: DeveloperClientSecret;
+    credentialContext: string | null;
+    generation: number;
     message: string;
   } | null>(null);
 
-  async function copy(value: string, credential: DeveloperClientSecret): Promise<void> {
+  useEffect(() => {
+    copyGeneration.current += 1;
+    setCopyError((currentError) =>
+      currentError?.credentialContext === credentialContext ? currentError : null,
+    );
+  }, [credentialContext]);
+
+  async function copy(value: string): Promise<void> {
+    const generation = copyGeneration.current + 1;
+    copyGeneration.current = generation;
     setCopyError(null);
     try {
       await navigator.clipboard.writeText(value);
     } catch (error: unknown) {
       captureException(error, { source: "developer-client-copy" });
+      if (generation !== copyGeneration.current) return;
       setCopyError({
-        credential,
+        credentialContext,
+        generation,
         message: "Copy failed. Select and copy the value manually.",
       });
     }
   }
 
+  function dismiss(): void {
+    copyGeneration.current += 1;
+    setCopyError(null);
+    onDismiss();
+  }
+
   return (
     <ModalDialog
       open={secret !== null}
-      onClose={onDismiss}
+      onClose={dismiss}
       contentClassName="w-[calc(100%-2rem)] max-w-lg rounded-xl border border-border bg-surface-solid p-6 shadow-2xl"
     >
       <ModalDialogTitle className="text-lg font-semibold text-foreground">
@@ -53,7 +75,7 @@ export function DeveloperClientSecretDialog({
               </code>
               <button
                 type="button"
-                onClick={() => void copy(secret.client.clientId, secret)}
+                onClick={() => void copy(secret.client.clientId)}
                 aria-label="Copy client ID"
                 className="rounded border border-border px-3 py-2 text-sm text-foreground"
               >
@@ -71,7 +93,7 @@ export function DeveloperClientSecretDialog({
               </code>
               <button
                 type="button"
-                onClick={() => void copy(secret.clientSecret, secret)}
+                onClick={() => void copy(secret.clientSecret)}
                 aria-label="Copy client secret"
                 className="rounded border border-border px-3 py-2 text-sm text-foreground"
               >
@@ -79,7 +101,8 @@ export function DeveloperClientSecretDialog({
               </button>
             </div>
           </div>
-          {copyError?.credential === secret ? (
+          {copyError?.generation === copyGeneration.current &&
+          copyError.credentialContext === credentialContext ? (
             <p role="alert" className="text-sm text-red-400">
               {copyError.message}
             </p>
@@ -87,7 +110,7 @@ export function DeveloperClientSecretDialog({
           <div className="flex justify-end">
             <button
               type="button"
-              onClick={onDismiss}
+              onClick={dismiss}
               className="rounded bg-accent px-4 py-2 text-sm font-medium text-on-accent"
             >
               I saved the secret

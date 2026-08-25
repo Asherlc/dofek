@@ -128,8 +128,8 @@ export function DeveloperClientDetailScreenContent({
           <TouchableOpacity
             accessibilityLabel="Rotate client secret"
             accessibilityRole="button"
-            accessibilityState={{ disabled: isRevoked || isRotating }}
-            disabled={isRevoked || isRotating}
+            accessibilityState={{ disabled: isRevoked || isRotating || isRevoking }}
+            disabled={isRevoked || isRotating || isRevoking}
             onPress={onRotate}
             style={styles.secondaryButton}
           >
@@ -138,8 +138,8 @@ export function DeveloperClientDetailScreenContent({
           <TouchableOpacity
             accessibilityLabel="Revoke developer integration"
             accessibilityRole="button"
-            accessibilityState={{ disabled: isRevoked || isRevoking }}
-            disabled={isRevoked || isRevoking}
+            accessibilityState={{ disabled: isRevoked || isRotating || isRevoking }}
+            disabled={isRevoked || isRotating || isRevoking}
             onPress={onRevoke}
             style={styles.dangerButton}
           >

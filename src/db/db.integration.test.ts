@@ -126,7 +126,7 @@ describe("developer client schema", () => {
     ).resolves.toBeDefined();
   });
 
-  it("requires HTTPS redirects and uniqueness within a client", async () => {
+  it("requires credential-free HTTPS redirects without fragments or whitespace", async () => {
     const clientId = `ext_${randomUUID()}`;
     await ctx.db.execute(sql`
       INSERT INTO fitness.external_client (
@@ -144,16 +144,29 @@ describe("developer client schema", () => {
       )
     `);
 
-    await expect(
-      ctx.db.execute(sql`
-        INSERT INTO fitness.external_client_redirect_uri (client_id, redirect_uri)
-        VALUES (${clientId}, 'http://client.example/callback')
-      `),
-    ).rejects.toThrow();
+    const invalidRedirectUris = [
+      "http://client.example/callback",
+      "https://user:password@client.example/callback",
+      "https://client.example/callback#fragment",
+      "https://client.example/call back",
+      "https:///callback",
+      "https://client.example:not-a-port/callback",
+    ];
+    for (const redirectUri of invalidRedirectUris) {
+      await expect(
+        ctx.db.execute(sql`
+          INSERT INTO fitness.external_client_redirect_uri (client_id, redirect_uri)
+          VALUES (${clientId}, ${redirectUri})
+        `),
+      ).rejects.toThrow();
+    }
 
     await ctx.db.execute(sql`
       INSERT INTO fitness.external_client_redirect_uri (client_id, redirect_uri)
-      VALUES (${clientId}, 'https://client.example/callback')
+      VALUES
+        (${clientId}, 'https://client.example/callback'),
+        (${clientId}, 'https://client.example:8443/callback?email=a@b.example'),
+        (${clientId}, 'https://[2001:db8::1]/callback')
     `);
     await expect(
       ctx.db.execute(sql`

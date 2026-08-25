@@ -312,7 +312,9 @@ Define externalClientRedirectUri with clientId plus redirectUri as its composite
 
 The migration must:
 
-1. add owner_user_id and last_rotated_at;
+1. add owner_user_id and last_rotated_at, backfilling legacy last_rotated_at values from
+   created_at because the initial credential was established when the client was created, then
+   requiring the field and defaulting new rows to the current time;
 2. add the owner and last-rotation indexes;
 3. create fitness.external_client_redirect_uri;
 4. create fitness.external_client_audit;

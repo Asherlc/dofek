@@ -1,6 +1,13 @@
 ALTER TABLE fitness.external_client
 ADD COLUMN owner_user_id uuid,
-ADD COLUMN last_rotated_at timestamptz NOT NULL DEFAULT now();
+ADD COLUMN last_rotated_at timestamptz;
+--> statement-breakpoint
+UPDATE fitness.external_client
+SET last_rotated_at = created_at;
+--> statement-breakpoint
+ALTER TABLE fitness.external_client
+ALTER COLUMN last_rotated_at SET DEFAULT now(),
+ALTER COLUMN last_rotated_at SET NOT NULL;
 --> statement-breakpoint
 ALTER TABLE fitness.external_client
 ADD CONSTRAINT external_client_owner_user_id_user_profile_id_fk
@@ -24,7 +31,9 @@ CREATE TABLE fitness.external_client_redirect_uri (
   redirect_uri text NOT NULL,
   PRIMARY KEY (client_id, redirect_uri),
   CONSTRAINT external_client_redirect_uri_https_check
-  CHECK (redirect_uri ~ '^https://[^[:space:]]+$')
+  CHECK (
+    redirect_uri ~ '^https://([^:/?#@[:space:]]+|\[[0-9A-Fa-f:.]+\])(:[0-9]+)?([/?][^#[:space:]]*)?$'
+  )
 );
 --> statement-breakpoint
 CREATE INDEX external_client_redirect_uri_client_idx
