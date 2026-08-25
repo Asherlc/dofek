@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import { formatDateTime } from "@dofek/format/format";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { Alert } from "react-native";
@@ -36,14 +35,6 @@ vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
 }));
 
-vi.mock("expo-updates", () => ({
-  updateId: null,
-  channel: null,
-  runtimeVersion: null,
-  createdAt: null,
-  isEmbeddedLaunch: true,
-}));
-
 vi.mock("../lib/medication-reminder-notifications", () => ({
   syncMedicationReminderNotifications: vi.fn().mockResolvedValue(undefined),
 }));
@@ -67,14 +58,6 @@ let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {}
 const mockLogout = vi.fn();
 const mockCheckoutSession = vi.fn();
 const mockPortalSession = vi.fn();
-const mockConnectBleHeartRateMonitor = vi.fn().mockResolvedValue(undefined);
-const mockDisconnectBleHeartRateMonitor = vi.fn();
-const mockBleHeartRateState = {
-  bluetoothAvailable: true,
-  connectionState: "disconnected" as const,
-  device: null,
-  liveBpm: null,
-};
 const checkoutOperationId = "10000000-0000-4000-8000-000000000001";
 let mockSessionToken: string | null = "test-token";
 const defaultBillingStatus = {
@@ -109,13 +92,6 @@ vi.mock("../lib/auth-context", () => ({
     serverUrl: "https://test.example.com",
     sessionToken: mockSessionToken,
   }),
-}));
-
-vi.mock("../lib/background-ble-heart-rate-sync", () => ({
-  connectBleHeartRateMonitor: (...args: unknown[]) => mockConnectBleHeartRateMonitor(...args),
-  disconnectBleHeartRateMonitor: (...args: unknown[]) => mockDisconnectBleHeartRateMonitor(...args),
-  getBleHeartRateSyncState: () => mockBleHeartRateState,
-  subscribeBleHeartRateSyncState: () => () => undefined,
 }));
 
 const mockLinkedAccountsRefetch = vi.fn();
@@ -495,13 +471,15 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByText("2 connected")).toBeTruthy();
   });
 
-  it("lets the user connect a standard Bluetooth heart-rate monitor", async () => {
+  it("keeps the Bluetooth Devices settings entry discoverable", async () => {
+    mockSearchParams = {};
     const { default: SettingsScreen } = await import("../app/settings");
-
     render(<SettingsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Connect heart-rate monitor" }));
 
-    await waitFor(() => expect(mockConnectBleHeartRateMonitor).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Data Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bluetooth Devices" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/bluetooth-devices");
   });
 
   it("renders provider logos for connected providers only", async () => {
@@ -556,7 +534,7 @@ describe("SettingsScreen data sources", () => {
     expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
   });
 
-  it("uses layman-readable names for Bluetooth and motion developer tools", async () => {
+  it("navigates to developer integrations from Advanced settings", async () => {
     mockSearchParams = { tab: "advanced" };
     const { default: SettingsScreen } = await import("../app/settings");
 
@@ -565,10 +543,8 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
-    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");
   });
 
   it("navigates to providers screen when tapped", async () => {
@@ -910,29 +886,6 @@ describe("SettingsScreen export UI rendering", () => {
     });
 
     vi.unstubAllGlobals();
-  });
-});
-
-describe("SettingsScreen OTA debug details", () => {
-  beforeEach(() => {
-    mockSearchParams = { tab: "advanced" };
-  });
-
-  it("renders OTA created time in the local timezone format", async () => {
-    const updatesModule = await import("expo-updates");
-    const otaCreatedAt = new Date("2026-03-31T18:22:00.000Z");
-    updatesModule.createdAt = otaCreatedAt;
-
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    const expectedLocalTimestamp = formatDateTime(otaCreatedAt);
-    expect(
-      screen.getByText((content) => content.includes(`Created: ${expectedLocalTimestamp}`)),
-    ).toBeTruthy();
-
-    updatesModule.createdAt = null;
   });
 });
 

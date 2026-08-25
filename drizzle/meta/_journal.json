@@ -673,6 +673,27 @@
       "when": 1786812000000,
       "tag": "0093_health_event_source_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1786812000001,
+      "tag": "0094_external_write_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1786812000002,
+      "tag": "0095_external_client_erasure_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1787612400000,
+      "tag": "0096_self_service_developer_clients",
+      "breakpoints": true
     }
   ]
 }

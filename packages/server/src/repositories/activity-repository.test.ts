@@ -845,6 +845,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],
@@ -877,6 +878,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: "Felt good",
+          perceived_exertion: 7,
           provider_id: "garmin",
           subsource: "Strong",
           source_providers: ["garmin"],
@@ -900,6 +902,7 @@ describe("ActivityRepository", () => {
       expect(result?.canonical_type).toBe("running");
       expect(result?.name).toBe("Easy Run");
       expect(result?.subsource).toBe("Strong");
+      expect(result?.perceived_exertion).toBe(7);
     });
 
     it("keeps member activity aliases internal", async () => {
@@ -911,6 +914,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: null,
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin", "strava"],
@@ -944,6 +948,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],

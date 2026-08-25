@@ -37,7 +37,6 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - `components/`: React Native UI components (SVG-based charts).
 - `modules/`: Native Swift modules:
   - `background-refresh`: iOS background task registration.
-  - `ble-probe`: Generic BLE explorer for reverse engineering.
   - `whoop-ble`: Specialized WHOOP IMU streaming.
   - `ble-heart-rate`: Standard Bluetooth heart-rate monitor (GATT Heart Rate Service).
   - `health-kit`: Apple Health integration.

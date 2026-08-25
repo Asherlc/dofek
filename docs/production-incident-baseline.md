@@ -7,6 +7,16 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-22 — Rollout request gap and hidden dbt failure diagnostics
+
+- **Symptoms:** Sentry reported a mobile `processing.alerts` request receiving a Cloudflare `502`, unhandled `ECONNRESET` and `ENOTFOUND redis` errors in server tasks, and repeated `dbt build --select activity_source_records+` failures.
+- **User impact:** One mobile user received a failed API request during a production rollout. Activity analytics refresh jobs failed without a usable dbt diagnostic.
+- **Evidence:** Axiom logs show the mobile request gap at `2026-08-20T23:32:18Z` while Swarm web tasks were being replaced; server requests before and after the gap returned `200`. The worker restarted at `2026-08-20T23:31:41Z`. The dbt job failed five times between `2026-08-21T20:00:17Z` and `20:02:45Z`, but its logged error contained only the exit code. The runner had configured dbt stdout as `ignore`.
+- **Root cause:** The activity dbt runner discarded stdout, which is where dbt supplied the model failure details. The immediate cause of the rollout request gap is unconfirmed; the evidence establishes that it coincided with web-task replacement and that Traefik previously had no backend readiness check.
+- **Fix / mitigation:** Configured Traefik to health-check `/healthz` every five seconds before routing to a web task, addressing the identified rollout-readiness risk. The activity dbt runner now captures both stdout and stderr in its thrown error.
+- **Validation:** The new stdout-diagnostic regression test failed before the runner change and passed afterward. `docker stack config` rendered `deploy/stack.yml` successfully with non-secret placeholder environment values.
+- **Remaining risk:** The underlying dbt model failure must be re-run after deployment; the next failure will include its diagnostic in Sentry for direct remediation.
+
 ## 2026-08-14 — One IMU upload received a transient Cloudflare 502
 
 - **Status:** [DOFEK-MOBILE-1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G)
@@ -23938,3 +23948,139 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   run](https://github.com/Asherlc/dofek/actions/runs/31894084167).
 - **Remaining risk / follow-up:** Keep the calendar, source-ordering, and
   persistence boundary cases when the provider-read model changes.
+
+## 2026-08-20 — PR 2542 migration SQLFluff failure
+
+- **Status:** Resolved; the follow-up migration formatting fix is pushed and CI
+  is rerunning.
+- **Symptoms / impact:** `Test / SQLFluff` failed on PR #2542, blocking the
+  external API change. No production environment was affected.
+- **Evidence / root cause:** The first fatal findings were `LT02` indentation
+  errors at lines 55, 71, and 72 of `drizzle/0094_external_write_api.sql`.
+  SQLFluff requires these migration continuation clauses to start at column 1;
+  the new index definitions used the repository-incompatible indentation.
+  See the [failed SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/32447325607/job/96669374264).
+- **Fix / mitigation:** Aligned the `ON` and partial-index `WHERE` clauses to
+  the repository SQLFluff style. No rule, ignore, retry, timeout, or failure
+  suppression was added.
+- **Validation:** Changed-file Biome, server TypeScript, OpenAPI lint, focused
+  repository/primitives tests, and the equivalent local SQL checks passed;
+  hosted CI rerun remains the final validation.
+- **Remaining risk / follow-up:** Keep migration SQLFluff parity in local
+  pre-push validation so new migration indentation failures are caught before
+  CI.
+
+## 2026-08-21 — PR 2542 mutation shard failure
+
+- **Status:** Resolved locally; the mutation-test fix is pushed and hosted CI
+  validation is pending.
+- **Symptoms / impact:** `Test / Stryker (5)` failed and blocked the aggregate
+  mutation gate for PR #2542. No production environment was affected.
+- **Evidence / root cause:** The exact CI command was `pnpm exec stryker run
+  stryker.ci.config.json --mutate "$MUTATE_FILES"`. Its first fatal findings
+  were four surviving logical-operator mutants in the shared `FoodRepository`
+  insert fragment: the `?? null` handling for `meal`, `foodDescription`,
+  `category`, and `numberOfUnits` was not distinguished by the existing query
+  assertions. The shard ended at a 20.00 mutation score, below the required
+  75.00 threshold. See the [failed Stryker job](https://github.com/Asherlc/dofek/actions/runs/32449403344/job/96675167474).
+- **Fix / mitigation:** Extended the existing create-path test to assert all
+  four provided optional values in the generated SQL query chunks, directly
+  killing the four mutants. No mutation exclusion, threshold change, retry,
+  timeout, or suppression was added.
+- **Validation:** The focused repository test, changed-file formatting and
+  lint, server typecheck, and diff check will run before the fix is pushed;
+  the fresh hosted Stryker shard is the final validation.
+- **Remaining risk / follow-up:** Keep these non-null optional-field assertions
+  when the food-entry insert construction changes.
+
+# 2026-08-19 — CDC health monitor was killed while reconciliation was still running
+
+- **Status:** Fixed by resource-isolating reconciliation from CDC health; deployment verification remains pending.
+- **Symptoms / impact:** The production `cdc-health` Swarm task was replaced while long-running processing reconciliation was still executing, which left no fresh successful CDC-health report even though the bounded CDC check had already completed.
+- **Evidence / root cause:** The exact failing step was the `cdc-health` Docker healthcheck command `node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/cdc-health-state.ts probe`; its first fatal line was `Error: CDC health monitor state is older than 360 seconds`. The monitor persisted `cdc-health-state.ts success` only after `scripts/check-clickhouse-cdc.ts` completed. That script also ran pending processing reconciliation, so the health-state write was blocked behind reconciliation rather than representing the bounded CDC check. The stale state then made the health probe unhealthy and Swarm replaced the task. Docker documents both healthcheck state transitions and Swarm task replacement: <https://docs.docker.com/reference/dockerfile/#healthcheck> and <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- **Fix / mitigation:** `cdc-health` now owns only the bounded check and immediate state write. Processing reconciliation runs synchronously in the separate `processing-reconciliation` Swarm service every 300 seconds, so one service cannot delay the other's cadence. The reconciliation script retains its Sentry reporting and its loop logs a nonzero exit before retrying; it does not alter CDC health state. No timeout, probe threshold, or failure suppression changed.
+- **Validation:** The earlier 88,444,928-byte result was invalid because its wrapper replaced `node` for the checker, reconciliation, and probe. Faithful same-container validation with the production image, real Node, real checker/probe, active local logical slots, PeerDB catalog rows, a fresh ClickHouse mirror, and an `ACCESS EXCLUSIVE` reconciliation lock peaked at 205,840,384 bytes under the 200M limit. It also produced one stale-state probe failure while the real check exceeded the interval-plus-60-second freshness budget, even though Docker retained overall `healthy` status. That evidence rejected the same-container design. Isolated-service resource validation and the required full checks are recorded with this follow-up.
+- **Remaining risk / follow-up:** Verify production's next independent CDC and reconciliation service intervals and their individual Swarm resource usage after deployment.
+
+## 2026-08-20 — iOS TestFlight uploads were rejected for a missing HealthKit purpose string
+
+- **Status:** Fixed in source; a fresh main-branch build must complete CI and upload
+  before the release is confirmed.
+- **Symptoms / user impact:** The iOS deployment archive and export completed, but
+  TestFlight rejected the upload. As a result, the last successfully uploaded
+  build remained eight days old despite later deployment attempts.
+- **Evidence / root cause:** The exact failing workflow step was `Export IPA & Upload
+  to TestFlight`; its first fatal line was `Upload failed. Missing purpose string in
+  Info.plist... NSHealthUpdateUsageDescription` (Apple response `90683`). The iOS
+  app requests HealthKit write access for dietary sample types, but
+  `packages/mobile/app.json` generated no `NSHealthUpdateUsageDescription` key.
+  Apple documents that this key explains why an app needs permission to save health
+  data: [NSHealthUpdateUsageDescription](https://developer.apple.com/documentation/bundleresources/information-property-list/nshealthupdateusagedescription).
+  See the [failed deployment upload job](https://github.com/Asherlc/dofek/actions/runs/31979200751/job/95243256525).
+- **Fix / mitigation:** Added a user-facing `NSHealthUpdateUsageDescription` that
+  accurately explains removal of Dofek-owned dietary entries during account erasure.
+  No retry, timeout, or upload-error suppression was added.
+- **Validation:** Regenerate the iOS project and inspect the generated app
+  `Info.plist` before merge; then verify the next main-branch TestFlight upload.
+- **Remaining risk / follow-up:** The current main CI run also encountered an
+  external `curl: (35) Recv failure: Connection reset by peer` while downloading
+  dotenv-linter. Its root cause is outside the repository and has not been masked
+  with a retry. Confirm a fresh CI run succeeds after this configuration fix.
+
+## 2026-08-20 — Expo SDK compatibility gate blocked the mobile bundle
+
+- **Status:** Fixed in source; fresh hosted CI is pending.
+- **Symptoms / user impact:** The `Build Mobile / Metro Bundle` job blocked the
+  release-fix PR before it could export the iOS JavaScript bundle.
+- **Evidence / root cause:** The exact failing command was `cd packages/mobile &&
+  pnpm expo install --check`; its first fatal line was `Found outdated
+  dependencies`. Expo's online compatibility map required twelve Expo SDK 57
+  packages to move to their supported patch versions, while the mobile manifest
+  still pinned earlier patches. The package check is Expo's documented mechanism
+  for validating SDK compatibility: [Expo CLI dependency
+  validation](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+  See the [failed Metro Bundle job](https://github.com/Asherlc/dofek/actions/runs/32424013441/job/96602295023).
+- **Fix / mitigation:** Updated the twelve affected Expo packages to the versions
+  selected by `expo install --fix`, regenerated `pnpm-lock.yaml`, and retained the
+  workspace release-age policy entries the verified package install requires. No
+  CI retry, timeout, ignore, or compatibility-check suppression was added.
+- **Validation:** The exact online `pnpm expo install --check` command now reports
+  `Dependencies are up to date`; `pnpm expo export --platform ios --clear`
+  completed an iOS bundle successfully.
+- **Remaining risk / follow-up:** Confirm the fresh hosted Mobile Bundle and iOS
+  Native Build jobs pass before merging the PR and triggering TestFlight upload.
+
+## 2026-08-25 — Hang Ten workout imported as generic strength
+
+- **Status:** Fixed in source; deployment and a new HealthKit sync are pending.
+- **Symptoms / user impact:** The activity linked from the production dashboard
+  displayed as strength rather than hangboarding.
+- **Evidence / root cause:** The Apple Health record's HealthKit source was
+  `Hang Ten`, while its brand metadata key was absent. Classification required
+  both a generic functional-strength type and `HKMetadataKeyWorkoutBrandName`,
+  then declined to classify records without `HangTen.PlanName`.
+- **Fix / mitigation:** Classify `sourceName === "Hang Ten"` as hangboard. Plan
+  and segment metadata remain optional details and no longer gate activity type.
+- **Validation:** Focused Apple Health parser and HealthKit sync processor tests,
+  full lint, all repository typechecks, and the full local unit/mobile test tier
+  pass.
+- **Remaining risk / follow-up:** Deploy the change and resync the affected
+  HealthKit activity before confirming the production view.
+
+## 2026-08-25 — PR 2555 native mobile builds blocked by CocoaPods CDN rate limiting
+
+- **Status:** Unresolved external CI incident; no source change is warranted.
+- **Symptoms / impact:** The `Build Mobile / iOS Native Build` and `watchOS Build`
+  jobs failed, blocking PR #2555 despite lint, unit, integration, mobile, Swift,
+  and typecheck jobs passing.
+- **Evidence / root cause:** Both jobs failed at `cd packages/mobile/ios && pod
+  install`. Their first fatal line was `CDN: trunk URL couldn't be downloaded ...
+  Sentry.podspec.json Response: 429`, returned by GitHub while CocoaPods fetched
+  the Sentry podspec. See the [iOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867412)
+  and [watchOS job](https://github.com/Asherlc/dofek/actions/runs/32879771943/job/97906867441).
+- **Fix / mitigation:** None in repository code. The rate limit is external to the
+  change; no retry, timeout, or failure suppression was added.
+- **Validation:** The independent hosted checks above passed, and the failed jobs
+  report the same upstream 429 response.
+- **Remaining risk / follow-up:** Rerun the native build jobs only after the
+  upstream rate limit has cleared, then confirm they pass without workflow changes.

@@ -152,7 +152,7 @@
     "lint:sandbox": "pnpm lint:exact-versions && biome check . --max-diagnostics=500 && pnpm lint:suppressions && pnpm lint:workflow-downloads && pnpm lint:analytics-policy && pnpm lint:mobile-telemetry && pnpm lint:web-stories && pnpm lint:review-scenarios && pnpm check:mobile-app-routes",
     "lint:fix": "biome check --write .",
     "lint:exact-versions": "tsx scripts/exact-versions.ts",
-    "lint:openapi": "redocly lint docs/whoop-api.openapi.yaml docs/kaya-api.openapi.yaml --extends minimal",
+    "lint:openapi": "redocly lint docs/whoop-api.openapi.yaml docs/kaya-api.openapi.yaml packages/server/openapi/external-v1.yaml --extends minimal",
     "lint:css": "stylelint \"**/*.css\"",
     "lint:suppressions": "tsx scripts/no-suppressions.ts",
     "lint:workflow-downloads": "tsx scripts/workflow-download-policy.ts .github/workflows .github/actions",

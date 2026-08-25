@@ -6,10 +6,6 @@ import {
   assertClickHouseCdcHealth,
   checkClickHouseCdcHealth,
 } from "../src/db/clickhouse-cdc-health.ts";
-import {
-  createProcessingReconciliationDatabaseFromEnv,
-  reconcilePendingProcessingOperations,
-} from "../src/processing/processing-reconciler.ts";
 import { main } from "./check-clickhouse-cdc.ts";
 
 const pgClientInstances = vi.hoisted<MockPgClient[]>(() => []);
@@ -39,11 +35,6 @@ vi.mock("../src/db/clickhouse-cdc-health.ts", () => ({
   checkClickHouseCdcHealth: vi.fn(),
 }));
 
-vi.mock("../src/processing/processing-reconciler.ts", () => ({
-  createProcessingReconciliationDatabaseFromEnv: vi.fn(),
-  reconcilePendingProcessingOperations: vi.fn(),
-}));
-
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
   close: vi.fn().mockResolvedValue(undefined),
@@ -52,12 +43,8 @@ vi.mock("@sentry/node", () => ({
 }));
 
 const mockedCreateClickHouseClientFromEnv = vi.mocked(createClickHouseClientFromEnv);
-const mockedCreateProcessingReconciliationDatabaseFromEnv = vi.mocked(
-  createProcessingReconciliationDatabaseFromEnv,
-);
 const mockedCheckClickHouseCdcHealth = vi.mocked(checkClickHouseCdcHealth);
 const mockedAssertClickHouseCdcHealth = vi.mocked(assertClickHouseCdcHealth);
-const mockedReconcilePendingProcessingOperations = vi.mocked(reconcilePendingProcessingOperations);
 const mockedSentryCaptureException = vi.mocked(Sentry.captureException);
 const mockedSentryClose = vi.mocked(Sentry.close);
 const mockedSentryInit = vi.mocked(Sentry.init);
@@ -77,7 +64,6 @@ const trackedEnvVars = [
 
 describe("check-clickhouse-cdc", () => {
   let clickHouseClient: ClickHouseClient;
-  let reconciliationDatabase: ReturnType<typeof createProcessingReconciliationDatabaseFromEnv>;
 
   const originalValues: Record<(typeof trackedEnvVars)[number], string | undefined> = {
     CLICKHOUSE_URL: undefined,
@@ -105,13 +91,6 @@ describe("check-clickhouse-cdc", () => {
       query: vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
     };
     mockedCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
-    reconciliationDatabase = { execute: vi.fn() };
-    mockedCreateProcessingReconciliationDatabaseFromEnv.mockReturnValue(reconciliationDatabase);
-    mockedReconcilePendingProcessingOperations.mockResolvedValue({
-      checked: 2,
-      completed: 1,
-      waiting: 1,
-    });
     mockedCheckClickHouseCdcHealth.mockResolvedValue({
       evidence: {
         peerDbMirrors: [
@@ -208,15 +187,8 @@ describe("check-clickhouse-cdc", () => {
       "postgres://peerdb:peerdb-dedicated-password@127.0.0.1:9900/peerdb",
     ]);
     expect(process.exit).toHaveBeenCalledWith(0);
-    expect(mockedReconcilePendingProcessingOperations).toHaveBeenCalledWith({
-      clickHouseClient,
-      database: reconciliationDatabase,
-    });
-    expect(mockedAssertClickHouseCdcHealth.mock.invocationCallOrder[0]).toBeLessThan(
-      mockedReconcilePendingProcessingOperations.mock.invocationCallOrder[0] ?? 0,
-    );
     expect(consoleLog).toHaveBeenCalledWith(
-      "[clickhouse-cdc-health] processing reconciliation: checked 2, completed 1, waiting 1",
+      "[clickhouse-cdc-health] ok: checked 0 slots and 1 mirror",
     );
   });
 });
