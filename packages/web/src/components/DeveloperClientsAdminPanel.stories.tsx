@@ -6,7 +6,7 @@ import {
 } from "./DeveloperClientsAdminPanel.tsx";
 
 const activeClient = {
-  clientId: "ext_bWVhbC1pbXBvcnRlcg",
+  clientId: "ext_active_client_fixture",
   name: "Meal importer",
   ownerName: "Ada Owner",
   ownerEmail: "ada@example.test",
@@ -18,7 +18,7 @@ const activeClient = {
 
 const revokedClient = {
   ...activeClient,
-  clientId: "ext_cmV0aXJlZC1jbGllbnQ",
+  clientId: "ext_revoked_client_fixture",
   name: "Retired importer",
   status: "revoked",
 } satisfies DeveloperClientSupportItem;

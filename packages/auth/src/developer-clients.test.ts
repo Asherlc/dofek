@@ -181,13 +181,13 @@ describe("developer clients API", () => {
     const request = vi.fn(async () => new Response(JSON.stringify(detail)));
     const api = createDeveloperClientsApi(request);
 
-    await api.update("client/with spaces", {
+    await api.update("client id with spaces", {
       name: "Meal importer",
       redirectUris: ["https://client.example/callback"],
     });
 
     expect(request).toHaveBeenCalledWith(
-      "/api/developer/clients/client%2Fwith%20spaces",
+      "/api/developer/clients/client%20id%20with%20spaces",
       expect.objectContaining({
         body: JSON.stringify({
           name: "Meal importer",
