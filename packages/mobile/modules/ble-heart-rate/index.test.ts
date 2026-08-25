@@ -29,6 +29,65 @@ describe("BleHeartRate native bridge", () => {
     expect(() => getDevices()).toThrow(/connectionState/);
   });
 
+  it("accepts a freshly paired monitor whose optional fields are undefined", () => {
+    nativeModule.getDevices.mockReturnValue([
+      {
+        id: "polar",
+        name: undefined,
+        connectionState: "connected",
+        lastMeasurementAt: undefined,
+        lastHeartRateBpm: undefined,
+        lastRrIntervalsMs: [],
+        bufferedSampleCount: 0,
+      },
+    ]);
+
+    expect(getDevices()).toEqual([
+      {
+        id: "polar",
+        name: null,
+        connectionState: "connected",
+        lastMeasurementAt: null,
+        lastHeartRateBpm: null,
+        lastRrIntervalsMs: [],
+        bufferedSampleCount: 0,
+      },
+    ]);
+  });
+
+  it("accepts a device-state event whose optional fields are undefined", () => {
+    const subscription = { remove: vi.fn() };
+    const deviceStateListener = vi.fn();
+    nativeModule.addListener.mockReturnValue(subscription);
+
+    addDeviceStateListener(deviceStateListener);
+
+    const onDeviceState = nativeModule.addListener.mock.calls[0][1];
+    if (typeof onDeviceState !== "function") {
+      throw new Error("Expected native bridge listener");
+    }
+
+    onDeviceState({
+      id: "polar",
+      name: undefined,
+      connectionState: "connected",
+      lastMeasurementAt: undefined,
+      lastHeartRateBpm: undefined,
+      lastRrIntervalsMs: [],
+      bufferedSampleCount: 0,
+    });
+
+    expect(deviceStateListener).toHaveBeenCalledWith({
+      id: "polar",
+      name: null,
+      connectionState: "connected",
+      lastMeasurementAt: null,
+      lastHeartRateBpm: null,
+      lastRrIntervalsMs: [],
+      bufferedSampleCount: 0,
+    });
+  });
+
   it("rejects buffered samples without a captured device ID", async () => {
     nativeModule.peekBufferedSamples.mockResolvedValue([
       { timestamp: "2026-08-24T19:00:00.000Z", heartRateBpm: 61, rrIntervalsMs: [] },
