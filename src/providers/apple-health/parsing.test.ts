@@ -359,7 +359,7 @@ describe("Apple Health Provider -- parsing", () => {
 
       expect(result.activityType).toEqual({
         canonicalType: "hangboard",
-        providerType: "Hang Ten",
+        providerType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
         modality: null,
       });
       expect(result.sourceName).toBe("Hang Ten");

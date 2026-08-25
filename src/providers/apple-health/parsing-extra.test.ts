@@ -36,6 +36,9 @@ describe("parseWorkout — Hang Ten validation", () => {
     });
 
     expect(result.activityType.canonicalType).toBe("hangboard");
+    expect(result.activityType.providerType).toBe(
+      "HKWorkoutActivityTypeFunctionalStrengthTraining",
+    );
     expect(result.hangTen).toBeUndefined();
   });
 

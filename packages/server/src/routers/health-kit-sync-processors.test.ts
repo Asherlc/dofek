@@ -163,11 +163,11 @@ describe("processWorkouts", () => {
 
     expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        activityType: expect.objectContaining({ canonicalType: "hangboard" }),
+        activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
         sourceName: "Hang Ten",
       }),
       expect.objectContaining({
-        activityType: expect.objectContaining({ canonicalType: "hangboard" }),
+        activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
         sourceName: "Hang Ten",
       }),
       expect.anything(),
