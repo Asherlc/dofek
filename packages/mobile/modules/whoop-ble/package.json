@@ -1,6 +1,6 @@
 {
   "name": "@dofek/whoop-ble",
-  "version": "0.1.8",
+  "version": "0.1.12",
   "description": "Reverse-engineered WHOOP strap BLE protocol and Expo iOS client",
   "type": "module",
   "license": "MIT",

@@ -5,7 +5,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   apple: "Apple",
   github: "GitHub",
-  slack: "Slack",
   strava: "Strava",
   wahoo: "Wahoo",
   fitbit: "Fitbit",
@@ -17,6 +16,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "fit-file": "FIT File",
   polar: "Polar",
   whoop: "WHOOP (Cloud)",
+  kaya: "Kaya",
   peloton: "Peloton",
   oura: "Oura",
   zwift: "Zwift",
@@ -34,6 +34,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   ultrahuman: "Ultrahuman",
   "amazfit-zepp": "Amazfit/Zepp",
   velohero: "VeloHero",
+  "mountain-project": "Mountain Project",
   wger: "Wger",
   xert: "Xert",
   "apple-health": "Apple Health",
@@ -173,9 +174,11 @@ export const PNG_LOGOS: ReadonlySet<string> = new Set([
 /** Brand colors used for the styled-letter fallback when no logo exists. */
 export const BRAND_COLORS: Readonly<Record<string, string>> = {
   velohero: "#FF6600",
+  "mountain-project": "#1F5A88",
   bodyspec: "#00B4D8",
   dofek: "#4A9D8E",
   "amazfit-zepp": "#00B588",
+  kaya: "#1F9D55",
   ble_heart_rate: "#E0245E",
 };
 

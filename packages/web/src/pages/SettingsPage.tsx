@@ -13,7 +13,6 @@ import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import {
   clearWebBillingCheckoutOperation,
@@ -22,7 +21,6 @@ import {
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-import { McpTokensPanel } from "./McpTokensPanel.tsx";
 import {
   normalizeSettingsCategory,
   SETTINGS_CATEGORIES,
@@ -359,8 +357,16 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "advanced" ? (
-          <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
-            <McpTokensPanel />
+          <PageSection
+            title="Developer integrations"
+            subtitle="Register and manage clients that write data through the external API"
+          >
+            <Link
+              to="/developer-integrations"
+              className="inline-flex rounded border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-hover"
+            >
+              Manage developer integrations
+            </Link>
           </PageSection>
         ) : null}
 
@@ -451,12 +457,6 @@ export function SettingsPage() {
             subtitle="Parameters are automatically learned from your data to improve accuracy"
           >
             <PersonalizationPanel />
-          </PageSection>
-        ) : null}
-
-        {activeCategory === "data-sources" ? (
-          <PageSection title="Integrations" subtitle="Connect external services">
-            <SlackIntegrationPanel />
           </PageSection>
         ) : null}
 

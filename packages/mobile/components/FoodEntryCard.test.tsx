@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { FoodEntryCard } from "./FoodEntryCard";
 
 describe("FoodEntryCard", () => {
@@ -19,8 +19,6 @@ describe("FoodEntryCard", () => {
           fat_g: 12,
           sodium_mg: 680,
         }}
-        onDelete={vi.fn()}
-        deleting={false}
       />,
     );
 
@@ -51,8 +49,6 @@ describe("FoodEntryCard", () => {
           carbs_g: null,
           fat_g: null,
         }}
-        onDelete={vi.fn()}
-        deleting={false}
       />,
     );
 
@@ -77,8 +73,6 @@ describe("FoodEntryCard", () => {
           fat_g: 12,
           sodium_mg: 680,
         }}
-        onDelete={vi.fn()}
-        deleting={false}
       />,
     );
 

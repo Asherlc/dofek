@@ -105,7 +105,9 @@ describe("CyclingAnalyticsRepository", () => {
       ]);
 
     const repository = new CyclingAnalyticsRepository(
-      { execute: vi.fn().mockResolvedValue([]) },
+      {
+        execute: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]),
+      },
       "11111111-1111-4111-8111-111111111111",
       "UTC",
       sensorStore,
@@ -195,7 +197,9 @@ describe("CyclingAnalyticsRepository", () => {
       ])
       .mockResolvedValueOnce([performanceActivityRow()]);
     const repository = new CyclingAnalyticsRepository(
-      { execute: vi.fn().mockResolvedValue([]) },
+      {
+        execute: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]),
+      },
       "11111111-1111-4111-8111-111111111111",
       "UTC",
       sensorStore,

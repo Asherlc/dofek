@@ -18,19 +18,12 @@ export async function eraseStripeForAcceptedAccountErasure(
       z.object({
         encrypted_remote_snapshot: z.string().min(1),
         status: z.string().min(1),
-        stripe_erased: z.boolean(),
         user_id: z.uuid(),
       }),
       sql`SELECT
             request.encrypted_remote_snapshot,
             request.status,
-            request.user_id,
-            EXISTS (
-              SELECT 1
-              FROM fitness.account_erasure_checkpoint AS checkpoint
-              WHERE checkpoint.request_id = request.id
-                AND checkpoint.phase = 'stripe_erasure'
-            ) AS stripe_erased
+            request.user_id
           FROM fitness.account_erasure_request AS request
           WHERE request.id = ${requestId}::uuid
           FOR UPDATE`,
@@ -39,7 +32,19 @@ export async function eraseStripeForAcceptedAccountErasure(
     if (!lockedRequest) {
       throw new Error("Accepted account erasure request disappeared before Stripe checkpointing");
     }
-    if (lockedRequest.status === "completed" || lockedRequest.stripe_erased) return;
+    if (lockedRequest.status === "completed") return;
+
+    const checkpointRows = await executeWithSchema(
+      transaction,
+      z.object({ stripe_erased: z.boolean() }),
+      sql`SELECT EXISTS (
+            SELECT 1
+            FROM fitness.account_erasure_checkpoint AS checkpoint
+            WHERE checkpoint.request_id = ${requestId}::uuid
+              AND checkpoint.phase = 'stripe_erasure'
+          ) AS stripe_erased`,
+    );
+    if (checkpointRows[0]?.stripe_erased) return;
 
     const snapshot = await decryptAccountErasureSnapshot(
       lockedRequest.encrypted_remote_snapshot,

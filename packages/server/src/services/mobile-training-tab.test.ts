@@ -14,6 +14,14 @@ vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn(async () => null),
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
 describe("loadMobileTrainingTab", () => {
   const defaultReadinessRows = [
     {
@@ -147,6 +155,63 @@ describe("loadMobileTrainingTab", () => {
     ]);
     return { gradeProgressionSpy, volumeByGradeSpy, sessionSummarySpy };
   }
+
+  it("caps how many repository reads run at the same time so the pool is never over-demanded", async () => {
+    let active = 0;
+    let peak = 0;
+    const release = deferred<void>();
+    function track<T>(value: T): () => Promise<T> {
+      return async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await release.promise;
+        active -= 1;
+        return value;
+      };
+    }
+
+    const { trainingSpy, cyclingSpy, strengthSpy, hangboardingSpy } = await mockTrainingRepos();
+    const { gradeProgressionSpy, volumeByGradeSpy, sessionSummarySpy } = await mockClimbingRepos();
+    trainingSpy.mockImplementation(track({ activities: [], weeklyVolume: [] }));
+    cyclingSpy.mockImplementation(
+      track({
+        activities: { items: [], totalCount: 0 },
+        variability: { rows: [], totalCount: 0, emptyReason: null },
+        verticalAscent: [],
+        aerobicEfficiency: { maxHr: null, activities: [] },
+      }),
+    );
+    strengthSpy.mockImplementation(track([]));
+    hangboardingSpy.mockImplementation(
+      track({
+        sessionCount: 0,
+        totalDurationSeconds: 0,
+        averageDurationSeconds: null,
+        totalWorkDurationSeconds: null,
+        totalRestDurationSeconds: null,
+        workIntervalCount: null,
+        averageHeartRate: null,
+        peakHeartRate: null,
+        latestSession: null,
+        daily: [],
+      }),
+    );
+    gradeProgressionSpy.mockImplementation(track([]));
+    volumeByGradeSpy.mockImplementation(track([]));
+    sessionSummarySpy.mockImplementation(track([]));
+
+    const resultPromise = loadMobileTrainingTab(makeCtx(makeQuery()), 30, "2026-03-28");
+    // Let every read that is allowed to start reach its running slot before any finish.
+    for (let microtaskTurn = 0; microtaskTurn < 20; microtaskTurn += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    expect(peak).toBeGreaterThan(0);
+    expect(peak).toBeLessThanOrEqual(4);
+
+    release.resolve();
+    await resultPromise;
+  });
 
   it("returns workload ratio, strain target, activities, weekly volume, and vertical ascent", async () => {
     const query = makeQuery(

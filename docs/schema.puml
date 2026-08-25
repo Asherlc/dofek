@@ -204,6 +204,7 @@ entity "climbing_entry" {
   grade : text
   sent : boolean
   attempt_count : integer
+  lead : boolean
   wall_angle_degrees : real
   hold_type : climbing_hold_type
   route_name : text
@@ -497,6 +498,8 @@ entity "health_event" {
   value_text : text
   unit : text
   source_name : text
+  source_bundle : text
+  metadata : jsonb
   start_date : timestamp
   end_date : timestamp
   created_at : timestamp
@@ -740,29 +743,6 @@ entity "session" {
   user_id : uuid <<FK>>
   expires_at : timestamp
   created_at : timestamp
-}
-
-entity "slack_installation" {
-  * id : uuid <<PK>>
-  --
-  team_id : text
-  team_name : text
-  bot_token : text
-  bot_id : text
-  bot_user_id : text
-  app_id : text
-  installer_slack_user_id : text
-  raw_installation : jsonb
-  installed_at : timestamp
-  updated_at : timestamp
-}
-
-entity "slack_team_membership" {
-  team_id : text <<FK>>
-  user_id : uuid <<FK>>
-  slack_user_id : text
-  created_at : timestamp
-  updated_at : timestamp
 }
 
 entity "stripe_webhook_event" {
@@ -1087,12 +1067,103 @@ entity "sync_log" {
   user_id : uuid <<FK>>
   data_type : text
   status : text
+  origin : text
   record_count : integer
   error_message : text
   auth_failure_reason : text
   degradation_kind : text
   duration_ms : integer
   synced_at : timestamp
+}
+
+entity "external_client" {
+  * client_id : text <<PK>>
+  --
+  owner_user_id : uuid <<FK>>
+  name : text
+  secret_hash : text
+  scopes : text_array
+  revoked_at : timestamp
+  created_at : timestamp
+  updated_at : timestamp
+  last_rotated_at : timestamp
+}
+
+entity "external_client_audit" {
+  * audit_id : uuid <<PK>>
+  --
+  client_id : text <<FK>>
+  actor_user_id : uuid <<FK>>
+  action : text
+  occurred_at : timestamp
+}
+
+entity "external_client_redirect_uri" {
+  client_id : text <<FK>>
+  redirect_uri : text
+}
+
+entity "external_erasure_ack" {
+  * event_id : text <<PK>>
+  --
+  grant_id : uuid <<FK>>
+  result : text
+  reason_code : text
+  acknowledged_at : timestamp
+}
+
+entity "external_grant" {
+  * grant_id : uuid <<PK>>
+  --
+  client_id : text <<FK>>
+  user_id : uuid <<FK>>
+  namespace : text
+  subject : text
+  opaque_subject : text
+  access_token_hash : text
+  scopes : text_array
+  expires_at : timestamp
+  revoked_at : timestamp
+  created_at : timestamp
+}
+
+entity "external_idempotency_receipt" {
+  grant_id : uuid <<FK>>
+  method : text
+  path : text
+  idempotency_key : text
+  request_hash : text
+  status : text
+  response_json : jsonb
+  completed_at : timestamp
+  created_at : timestamp
+}
+
+entity "external_identity_link" {
+  namespace : text
+  subject : text
+  user_id : uuid <<FK>>
+  opaque_subject : text
+  created_at : timestamp
+}
+
+entity "external_link" {
+  * link_id : uuid <<PK>>
+  --
+  client_id : text <<FK>>
+  redirect_uri : text
+  code_challenge : text
+  requested_scopes : text_array
+  state : text
+  expires_at : timestamp
+  user_id : uuid <<FK>>
+  code_hash : text
+  code_expires_at : timestamp
+  approved_at : timestamp
+  exchanged_at : timestamp
+  approval_csrf_hash : text
+  approval_session_hash : text
+  created_at : timestamp
 }
 
 entity "processing_alert_dismissal" {
@@ -1239,8 +1310,6 @@ user_profile ||--o{ mcp_oauth_refresh_token
 mcp_access_token ||--o{ mcp_oauth_refresh_token
 mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
-slack_installation ||--o{ slack_team_membership
-user_profile ||--o{ slack_team_membership
 user_profile ||--o{ user_billing
 user_profile ||--o{ user_external_effect
 user_profile ||--o{ user_password_credential
@@ -1271,6 +1340,17 @@ subjective_check_in ||--o{ subjective_symptom
 body_region ||--o{ subjective_symptom
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
+user_profile ||--o{ external_client
+external_client ||--o{ external_client_audit
+user_profile ||--o{ external_client_audit
+external_client ||--o{ external_client_redirect_uri
+external_grant ||--o{ external_erasure_ack
+external_client ||--o{ external_grant
+user_profile ||--o{ external_grant
+external_grant ||--o{ external_idempotency_receipt
+user_profile ||--o{ external_identity_link
+external_client ||--o{ external_link
+user_profile ||--o{ external_link
 user_profile ||--o{ processing_alert_dismissal
 processing_operation ||--o{ processing_alert_dismissal
 processing_operation ||--o{ processing_flow_marker
