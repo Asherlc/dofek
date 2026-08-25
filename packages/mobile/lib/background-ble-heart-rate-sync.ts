@@ -1,9 +1,5 @@
 import { AppState, type AppStateStatus } from "react-native";
-import type {
-  BleHeartRateDevice,
-  BleHeartRateSample,
-  ConnectionStateEvent,
-} from "../modules/ble-heart-rate";
+import type { BleHeartRateSample } from "../modules/ble-heart-rate";
 import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { DeviceSampleGroups } from "./device-sample-groups.ts";
 import { captureException, logger } from "./telemetry";
@@ -11,31 +7,12 @@ import { captureException, logger } from "./telemetry";
 const LOG_CATEGORY = "ble-heart-rate";
 const UPLOAD_BATCH_SIZE = 500;
 const PERIODIC_DRAIN_INTERVAL_MS = 30_000;
-const BLUETOOTH_AVAILABILITY_INTERVAL_MS = 2_000;
-const DEFAULT_DEVICE_ID = "Heart Rate Monitor";
-
-type HeartRateConnectionState = "disconnected" | "connecting" | "connected";
-
-export interface BleHeartRateSyncState {
-  bluetoothAvailable: boolean;
-  connectionState: HeartRateConnectionState;
-  device: BleHeartRateDevice | null;
-  liveBpm: number | null;
-}
+type BleHeartRateUploadSample = Omit<BleHeartRateSample, "deviceId">;
 
 export interface BleHeartRateSyncDeps {
-  isBluetoothAvailable(): boolean;
-  scanAndConnect(): Promise<BleHeartRateDevice>;
   peekBufferedSamples(maxCount?: number): Promise<BleHeartRateSample[]>;
   confirmSamplesDrain(count: number): void;
   disconnectAndClearBufferedSamples(): Promise<void>;
-  addConnectionStateListener(callback: (event: ConnectionStateEvent) => void): {
-    remove(): void;
-  };
-  addHeartRateListener(callback: (event: BleHeartRateSample) => void): {
-    remove(): void;
-  };
-  disconnect(): void;
 }
 
 export interface BleHeartRateUploadClient {
@@ -43,24 +20,14 @@ export interface BleHeartRateUploadClient {
     pushSamples: {
       mutate(input: {
         deviceId: string;
-        samples: BleHeartRateSample[];
+        samples: BleHeartRateUploadSample[];
       }): Promise<{ inserted: number }>;
     };
   };
 }
 
-const listeners = new Set<() => void>();
-let state: BleHeartRateSyncState = {
-  bluetoothAvailable: false,
-  connectionState: "disconnected",
-  device: null,
-  liveBpm: null,
-};
 let appStateSubscription: { remove(): void } | null = null;
-let connectionStateSubscription: { remove(): void } | null = null;
-let heartRateSubscription: { remove(): void } | null = null;
 let periodicDrainTimer: ReturnType<typeof setInterval> | null = null;
-let bluetoothAvailabilityTimer: ReturnType<typeof setInterval> | null = null;
 
 interface BleHeartRateSyncSession {
   uploadClient: BleHeartRateUploadClient;
@@ -72,21 +39,7 @@ let currentSession: BleHeartRateSyncSession | null = null;
 let lifecycleGeneration = 0;
 let pendingNativeTeardown: Promise<void> = Promise.resolve();
 
-function publishState(next: Partial<BleHeartRateSyncState>): void {
-  state = { ...state, ...next };
-  for (const listener of listeners) listener();
-}
-
-export function getBleHeartRateSyncState(): BleHeartRateSyncState {
-  return state;
-}
-
-export function subscribeBleHeartRateSyncState(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function toUploadSample(sample: BleHeartRateSample): BleHeartRateSample {
+function toUploadSample(sample: BleHeartRateSample): BleHeartRateUploadSample {
   return {
     timestamp: sample.timestamp,
     heartRateBpm: sample.heartRateBpm,
@@ -114,7 +67,7 @@ async function drainBuffer(session: BleHeartRateSyncSession): Promise<void> {
         : samples.filter((sample) =>
             isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
           );
-    const groups = new DeviceSampleGroups(state.device?.id ?? DEFAULT_DEVICE_ID, toUploadSample);
+    const groups = new DeviceSampleGroups(null, toUploadSample);
     for (const sample of uploadableSamples) groups.add(sample);
 
     for (const [deviceId, deviceSamples] of groups.entries()) {
@@ -143,37 +96,22 @@ function runSerializedDrain(session: BleHeartRateSyncSession): Promise<void> {
   return trackedDrain;
 }
 
-function updateBluetoothAvailability(deps: BleHeartRateSyncDeps): void {
-  publishState({ bluetoothAvailable: deps.isBluetoothAvailable() });
-}
-
 function stopForegroundTimers(): void {
   if (periodicDrainTimer) {
     clearInterval(periodicDrainTimer);
     periodicDrainTimer = null;
   }
-  if (bluetoothAvailabilityTimer) {
-    clearInterval(bluetoothAvailabilityTimer);
-    bluetoothAvailabilityTimer = null;
-  }
 }
 
 function startForegroundTimers(session: BleHeartRateSyncSession): void {
-  const { deps } = session;
   if (!isCurrentSession(session) || AppState.currentState !== "active") return;
 
-  updateBluetoothAvailability(deps);
   if (!periodicDrainTimer) {
     periodicDrainTimer = setInterval(() => {
       void runSerializedDrain(session).catch((error: unknown) => {
         captureException(error, { source: "ble-heart-rate-periodic-drain" });
       });
     }, PERIODIC_DRAIN_INTERVAL_MS);
-  }
-  if (!bluetoothAvailabilityTimer) {
-    bluetoothAvailabilityTimer = setInterval(() => {
-      updateBluetoothAvailability(deps);
-    }, BLUETOOTH_AVAILABILITY_INTERVAL_MS);
   }
 }
 
@@ -194,26 +132,6 @@ export async function initBackgroundBleHeartRateSync(
   const session: BleHeartRateSyncSession = { uploadClient, deps, activeDrain: null };
   currentSession = session;
 
-  connectionStateSubscription = deps.addConnectionStateListener((event) => {
-    if (!isCurrentSession(session)) return;
-    if (event.state === "connected") {
-      publishState({
-        connectionState: "connected",
-        device: {
-          id: event.peripheralId ?? state.device?.id ?? DEFAULT_DEVICE_ID,
-          name: event.name ?? state.device?.name ?? null,
-        },
-      });
-      return;
-    }
-    if (event.state === "disconnected") {
-      publishState({ connectionState: "disconnected", device: null, liveBpm: null });
-    }
-  });
-  heartRateSubscription = deps.addHeartRateListener((sample) => {
-    if (!isCurrentSession(session)) return;
-    publishState({ liveBpm: sample.heartRateBpm });
-  });
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
     if (!isCurrentSession(session)) return;
     if (nextState !== "active") {
@@ -237,32 +155,6 @@ export async function initBackgroundBleHeartRateSync(
   }
 }
 
-/** Connect the first advertising standard heart-rate monitor. */
-export async function connectBleHeartRateMonitor(): Promise<void> {
-  const session = currentSession;
-  if (!session) throw new Error("Bluetooth heart-rate sync is not initialized");
-
-  publishState({ connectionState: "connecting", liveBpm: null });
-  try {
-    const device = await session.deps.scanAndConnect();
-    if (!isCurrentSession(session)) {
-      session.deps.disconnect();
-      return;
-    }
-    publishState({ connectionState: "connected", device });
-  } catch (error: unknown) {
-    if (!isCurrentSession(session)) return;
-    publishState({ connectionState: "disconnected", device: null, liveBpm: null });
-    throw error;
-  }
-}
-
-/** Stop capture from the currently connected monitor. */
-export function disconnectBleHeartRateMonitor(): void {
-  currentSession?.deps.disconnect();
-  publishState({ connectionState: "disconnected", device: null, liveBpm: null });
-}
-
 /** Flush buffered samples during an iOS background-refresh wakeup. */
 export async function syncBleHeartRate(): Promise<void> {
   const session = currentSession;
@@ -280,17 +172,7 @@ function detachCurrentSession(): BleHeartRateSyncSession | null {
   currentSession = null;
   stopForegroundTimers();
   appStateSubscription?.remove();
-  connectionStateSubscription?.remove();
-  heartRateSubscription?.remove();
   appStateSubscription = null;
-  connectionStateSubscription = null;
-  heartRateSubscription = null;
-  publishState({
-    bluetoothAvailable: false,
-    connectionState: "disconnected",
-    device: null,
-    liveBpm: null,
-  });
   return endingSession;
 }
 
