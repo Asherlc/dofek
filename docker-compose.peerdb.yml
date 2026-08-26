@@ -114,7 +114,7 @@ services:
       "
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.3
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.4
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
