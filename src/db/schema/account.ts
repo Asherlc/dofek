@@ -42,54 +42,6 @@ export const authAccount = fitness.table(
 );
 
 // ============================================================
-// Slack installations — multi-workspace bot token storage
-// ============================================================
-
-export const slackInstallation = fitness.table(
-  "slack_installation",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    teamId: text("team_id").notNull().unique(),
-    teamName: text("team_name"),
-    botToken: text("bot_token").notNull(),
-    botId: text("bot_id"),
-    botUserId: text("bot_user_id"),
-    appId: text("app_id"),
-    installerSlackUserId: text("installer_slack_user_id"),
-    rawInstallation: jsonb("raw_installation").notNull(),
-    installedAt: timestamp("installed_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [index("slack_installation_team_idx").on(table.teamId)],
-);
-
-/**
- * Canonical Dofek-user membership in a shared Slack workspace.
- *
- * The installation owns shared bot credentials; this join records which
- * Dofek users depend on them and the Slack identity for each member.
- */
-export const slackTeamMembership = fitness.table(
-  "slack_team_membership",
-  {
-    teamId: text("team_id")
-      .notNull()
-      .references(() => slackInstallation.teamId, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => userProfile.id, { onDelete: "cascade" }),
-    slackUserId: text("slack_user_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.teamId, table.userId] }),
-    uniqueIndex("slack_team_membership_identity_idx").on(table.teamId, table.slackUserId),
-    index("slack_team_membership_user_idx").on(table.userId),
-  ],
-);
-
-// ============================================================
 // Password credentials — email/password login for Dofek accounts
 // ============================================================
 

@@ -34,7 +34,7 @@ existing_provider_state AS (
 ),
 {% endif %}
 
-source_dirty_providers AS materialized (
+source_dirty_providers AS MATERIALIZED (
     SELECT
         current_provider_state.user_id AS user_id,
         current_provider_state.provider_id AS provider_id,
@@ -112,7 +112,7 @@ candidate_dirty_providers AS (
     )
 ),
 
-providers AS materialized (
+providers AS MATERIALIZED (
     SELECT
         candidate_dirty_providers.user_id AS user_id,
         candidate_dirty_providers.provider_id AS provider_id

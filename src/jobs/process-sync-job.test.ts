@@ -22,6 +22,7 @@ type MockCooldownRecord = {
 };
 
 const MockJobDataSchema = z.object({
+  origin: z.enum(["manual", "scheduled"]).optional(),
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
   sinceIso: z.string().optional(),
@@ -301,6 +302,7 @@ const mockDb: SyncDatabase & { transaction: ReturnType<typeof vi.fn> } = {
 interface MockJob {
   id?: string;
   data: {
+    origin?: "manual" | "scheduled";
     providerId?: string;
     sinceDays?: number;
     sinceIso?: string;
@@ -316,6 +318,7 @@ interface MockJob {
 
 function createMockJob(
   data: {
+    origin?: "manual" | "scheduled";
     providerId?: string;
     sinceDays?: number;
     sinceIso?: string;
@@ -947,6 +950,7 @@ describe("processSyncJob", () => {
       errorMessage: "Garmin API rate limit exceeded (429): limited",
       durationMs: 0,
       userId: "user-1",
+      origin: "unknown",
     });
 
     // Metrics are tagged with the provider, not an empty options object.
@@ -1188,11 +1192,11 @@ describe("processSyncJob", () => {
     });
   });
 
-  it("logs success to sync log with userId", async () => {
+  it("logs a scheduled sync with its scheduled origin", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob({ userId: "user-1" }), mockDb);
+    await runSyncJob(createMockJob({ userId: "user-1", origin: "scheduled" }), mockDb);
 
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
@@ -1203,6 +1207,7 @@ describe("processSyncJob", () => {
         recordCount: 5,
         errorMessage: undefined,
         userId: "user-1",
+        origin: "scheduled",
       }),
     );
   });
@@ -1230,7 +1235,7 @@ describe("processSyncJob", () => {
       stage: "ingest",
       status: "failed",
       errorCode: "provider_sync_failed",
-      errorMessage: "The data source could not be synced. Reconnect it and try again.",
+      errorMessage: "Broken could not be synced. Try the sync again later.",
       idempotencyKey: "worker-failed",
     });
 
@@ -1243,6 +1248,7 @@ describe("processSyncJob", () => {
         errorMessage: "API timeout",
         durationMs: expect.any(Number),
         userId: "user-1",
+        origin: "unknown",
       }),
     );
 
@@ -1296,6 +1302,13 @@ describe("processSyncJob", () => {
     // Verify each error is logged individually via Winston
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_sync_failed",
+        errorMessage: "Partial could not be synced. Try the sync again later.",
+      }),
+    );
   });
 
   it("reports thrown sync errors to Sentry", async () => {
@@ -1333,6 +1346,13 @@ describe("processSyncJob", () => {
         status: "error",
         errorMessage: expiredTokenError.message,
         authFailureReason: "access_token_expired",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Wahoo authorization needs attention. Reconnect Wahoo, then try again.",
       }),
     );
   });
@@ -1419,6 +1439,116 @@ describe("processSyncJob", () => {
     expect(mockLogSync).not.toHaveBeenCalled();
   });
 
+  it("rethrows provider service-unavailable errors so BullMQ retries without Sentry capture", async () => {
+    const serviceUnavailableError = new ProviderServiceUnavailableError({
+      message: "Zepp API service unavailable (500): upstream outage",
+      providerId: "amazfit-zepp",
+      statusCode: 500,
+      responseBody: "upstream outage",
+    });
+    const provider = createMockProvider({
+      id: "amazfit-zepp",
+      name: "Amazfit/Zepp",
+      sync: vi.fn().mockRejectedValue(serviceUnavailableError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "amazfit-zepp" });
+
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(serviceUnavailableError);
+
+    expect(job.updateProgress).toHaveBeenLastCalledWith({
+      providers: {
+        "amazfit-zepp": { status: "running", message: "Service unavailable; retrying" },
+      },
+      percentage: 0,
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("records a non-Zepp HTTP 500 service outage without retrying or reporting it to Sentry", async () => {
+    const serviceUnavailableError = new ProviderServiceUnavailableError({
+      message: "Zwift API service unavailable (500): upstream outage",
+      providerId: "zwift",
+      statusCode: 500,
+      responseBody: "upstream outage",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(serviceUnavailableError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "zwift" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
+  });
+
+  it("records a Zepp HTTP 503 service outage without retrying or reporting it to Sentry", async () => {
+    const serviceUnavailableError = new ProviderServiceUnavailableError({
+      message: "Zepp API service unavailable (503): upstream outage",
+      providerId: "amazfit-zepp",
+      statusCode: 503,
+      responseBody: "upstream outage",
+    });
+    const provider = createMockProvider({
+      id: "amazfit-zepp",
+      name: "Amazfit/Zepp",
+      sync: vi.fn().mockRejectedValue(serviceUnavailableError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "amazfit-zepp" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+    });
+  });
+
+  it("reports an untyped Zepp HTTP 500 error instead of retrying it", async () => {
+    const lookalikeError = Object.assign(new Error("Zepp API returned 500"), {
+      providerId: "amazfit-zepp",
+      statusCode: 500,
+    });
+    const provider = createMockProvider({
+      id: "amazfit-zepp",
+      name: "Amazfit/Zepp",
+      sync: vi.fn().mockRejectedValue(lookalikeError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "amazfit-zepp" }), mockDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(lookalikeError, {
+      tags: { provider: "amazfit-zepp" },
+    });
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+      status: "error",
+    });
+  });
+
   it("reports returned sync errors to Sentry", async () => {
     const cause = new Error("original cause");
     const context = { activityId: 456, activitySport: "CYCLING" };
@@ -1471,6 +1601,13 @@ describe("processSyncJob", () => {
         status: "error",
         errorMessage: cause.message,
         authFailureReason: "refresh_token_revoked",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_auth_failed",
+        errorMessage: "Withings authorization needs attention. Reconnect Withings, then try again.",
       }),
     );
   });

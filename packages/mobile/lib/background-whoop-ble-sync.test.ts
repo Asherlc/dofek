@@ -1,13 +1,13 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type InertialMeasurementUnitUploadClient,
   initBackgroundWhoopBleSync,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
   type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service.ts";
 
 const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
   mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),

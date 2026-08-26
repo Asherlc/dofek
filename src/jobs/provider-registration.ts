@@ -20,6 +20,7 @@ async function doRegisterProviders() {
       () => import("../providers/fatsecret/provider.ts").then((m) => new m.FatSecretProvider()),
     ],
     ["whoop", () => import("../providers/whoop/provider.ts").then((m) => new m.WhoopProvider())],
+    ["kaya", () => import("../providers/kaya-sync.ts").then((m) => new m.KayaSyncProvider())],
     [
       "ride-with-gps",
       () => import("../providers/ride-with-gps.ts").then((m) => new m.RideWithGpsProvider()),
@@ -64,6 +65,10 @@ async function doRegisterProviders() {
     ],
     ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
     ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
+    [
+      "mountain-project",
+      () => import("../providers/mountain-project.ts").then((m) => new m.MountainProjectProvider()),
+    ],
     [
       "auto-supplements",
       () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),

@@ -45,7 +45,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   processorEmails: ["erase@example.test"],
   posthogDistinctId: "10000000-0000-4000-8000-000000001994",
   providerConnections: [],
-  slackInstallations: [],
   stripe: {
     customerId: "cus_erase",
     subscriptionId: "sub_erase",
@@ -284,86 +283,6 @@ describe("remote account revocation (integration)", () => {
 
     await expect(revokeRemoteAccounts(snapshot, [])).rejects.toThrow(
       "Apple credential revocation failed (400)",
-    );
-  });
-
-  it("revokes only sole-member Slack installations", async () => {
-    const revokedTokens: string[] = [];
-    server.use(
-      http.post("https://slack.com/api/auth.revoke", ({ request }) => {
-        revokedTokens.push(request.headers.get("authorization") ?? "");
-        return HttpResponse.json({ ok: true, revoked: true });
-      }),
-    );
-    const slackSnapshot: AccountErasureRemoteSnapshot = {
-      ...snapshot,
-      appleCredentials: [],
-      slackInstallations: [
-        {
-          botToken: "xoxb-sole-member",
-          memberCount: 1,
-          slackUserId: "U-SOLE",
-          teamId: "T-SOLE",
-        },
-        {
-          botToken: "xoxb-shared",
-          memberCount: 2,
-          slackUserId: "U-SHARED",
-          teamId: "T-SHARED",
-        },
-      ],
-      stripe: null,
-    };
-
-    await expect(revokeRemoteAccounts(slackSnapshot, [])).resolves.toEqual([]);
-    expect(revokedTokens).toEqual(["Bearer xoxb-sole-member"]);
-  });
-
-  it("treats an already-revoked Slack installation as idempotent", async () => {
-    server.use(
-      http.post("https://slack.com/api/auth.revoke", () =>
-        HttpResponse.json({ error: "token_revoked", ok: false }),
-      ),
-    );
-    const slackSnapshot: AccountErasureRemoteSnapshot = {
-      ...snapshot,
-      appleCredentials: [],
-      slackInstallations: [
-        {
-          botToken: "xoxb-already-revoked",
-          memberCount: 1,
-          slackUserId: "U-REVOKED",
-          teamId: "T-REVOKED",
-        },
-      ],
-      stripe: null,
-    };
-
-    await expect(revokeRemoteAccounts(slackSnapshot, [])).resolves.toEqual([]);
-  });
-
-  it("fails closed when Slack does not acknowledge revocation", async () => {
-    server.use(
-      http.post("https://slack.com/api/auth.revoke", () =>
-        HttpResponse.json({ ok: true, revoked: false }),
-      ),
-    );
-    const slackSnapshot: AccountErasureRemoteSnapshot = {
-      ...snapshot,
-      appleCredentials: [],
-      slackInstallations: [
-        {
-          botToken: "xoxb-not-revoked",
-          memberCount: 1,
-          slackUserId: "U-NOT-REVOKED",
-          teamId: "T-NOT-REVOKED",
-        },
-      ],
-      stripe: null,
-    };
-
-    await expect(revokeRemoteAccounts(slackSnapshot, [])).rejects.toThrow(
-      "Slack installation revocation failed",
     );
   });
 

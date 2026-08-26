@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import type { z } from "zod";
+import { ConcurrencyLimiter, type LimitedOperation } from "../lib/concurrency-limiter.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type {
@@ -12,41 +13,34 @@ import type {
 const WEB_CLICKHOUSE_CONCURRENCY = 2;
 const DASHBOARD_CLICKHOUSE_CONCURRENCY = 2;
 
-type LimitedOperation<T> = () => Promise<T>;
-
 const tracer = trace.getTracer("dofek-server");
 
+/**
+ * Bounds ClickHouse query concurrency and records how long each query waits for
+ * a running slot as a trace span and log line. The gating itself is delegated
+ * to the shared {@link ConcurrencyLimiter}.
+ */
 class ClickHouseQueueLimiter {
   readonly #name: string;
   readonly #concurrency: number;
-  #active = 0;
-  readonly #queue: Array<() => void> = [];
+  readonly #limiter: ConcurrencyLimiter;
 
   constructor(name: string, concurrency: number) {
     this.#name = name;
     this.#concurrency = concurrency;
+    this.#limiter = new ConcurrencyLimiter(concurrency);
   }
 
   async run<T>(operation: LimitedOperation<T>): Promise<T> {
-    await this.#waitForSlot();
-    try {
-      return await operation();
-    } finally {
-      this.#release();
-    }
-  }
-
-  async #waitForSlot(): Promise<void> {
-    const queuedBeforeAcquire = this.#queue.length;
-    const activeBeforeAcquire = this.#active;
+    const activeBeforeAcquire = this.#limiter.active;
+    const queuedBeforeAcquire = this.#limiter.queueDepth;
     const waitStartedAt = performance.now();
-    await tracer.startActiveSpan("clickhouse.queue_wait", async (span) => {
-      try {
-        span.setAttribute("clickhouse.queue.name", this.#name);
-        span.setAttribute("clickhouse.queue.concurrency", this.#concurrency);
-        span.setAttribute("clickhouse.queue.active", activeBeforeAcquire);
-        span.setAttribute("clickhouse.queue.depth", queuedBeforeAcquire);
-        await this.#acquire();
+    return tracer.startActiveSpan("clickhouse.queue_wait", (span) => {
+      span.setAttribute("clickhouse.queue.name", this.#name);
+      span.setAttribute("clickhouse.queue.concurrency", this.#concurrency);
+      span.setAttribute("clickhouse.queue.active", activeBeforeAcquire);
+      span.setAttribute("clickhouse.queue.depth", queuedBeforeAcquire);
+      return this.#limiter.run(() => {
         const waitMs = performance.now() - waitStartedAt;
         span.setAttribute("clickhouse.queue.wait_ms", waitMs);
         logger.info("clickhouse.queue_wait", {
@@ -56,30 +50,10 @@ class ClickHouseQueueLimiter {
           queue: this.#name,
           waitMs,
         });
-      } finally {
         span.end();
-      }
+        return operation();
+      });
     });
-  }
-
-  async #acquire(): Promise<void> {
-    if (this.#active < this.#concurrency) {
-      this.#active += 1;
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      this.#queue.push(resolve);
-    });
-  }
-
-  #release(): void {
-    const next = this.#queue.shift();
-    if (next) {
-      next();
-      return;
-    }
-    this.#active -= 1;
   }
 }
 

@@ -381,6 +381,7 @@ vi.mock("../../modules/health-kit", async () => {
     isAvailable: () => true,
     queryAnchoredSamples: vi.fn().mockResolvedValue(createEmptyAnchoredQueryResult()),
     queryDailyStatistics: vi.fn(),
+    queryCategorySamples: vi.fn(),
     queryQuantitySamples: vi.fn(),
     querySleepSamples: vi.fn(),
     queryWorkoutRoutes: vi.fn(),
