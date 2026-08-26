@@ -18,7 +18,7 @@ export function SupportPage() {
               health information and lets our team reply with the relevant account context.
             </p>
             <a
-              href="/login?returnTo=%2Fsupport"
+              href="/login?returnTo=/support"
               className="inline-flex rounded bg-accent px-4 py-2 font-medium text-on-accent transition-colors hover:bg-accent/90"
             >
               Sign in to contact support

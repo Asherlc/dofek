@@ -22,7 +22,6 @@ import {
 } from "../lib/activity-recording";
 import { createHeartRateRecordingService } from "../lib/heart-rate-recording-service";
 import { createInertialMeasurementUnitService } from "../lib/inertial-measurement-unit-service";
-import { createLocationAdapter } from "../lib/location-service";
 import { combineRecordingSensorServices } from "../lib/recording-sensor-service";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -55,7 +54,7 @@ import {
 } from "../modules/whoop-ble";
 import { colors, fontSize, fonts, fontWeight, radius } from "../theme";
 
-/** Activity types available for recording (GPS-based outdoor activities) */
+/** Activity types available for sensor recording. */
 const RECORDABLE_TYPES = [
   { type: "running", emoji: "\u{1F3C3}" },
   { type: "cycling", emoji: "\u{1F6B4}" },
@@ -75,24 +74,6 @@ function formatElapsed(ms: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   if (hours > 0) return `${hours}:${pad(minutes)}:${pad(seconds)}`;
   return `${pad(minutes)}:${pad(seconds)}`;
-}
-
-function formatDistanceKm(meters: number): string {
-  return (meters / 1000).toFixed(2);
-}
-
-function formatSpeed(metersPerSecond: number | null): string {
-  if (metersPerSecond === null || metersPerSecond <= 0) return "--";
-  const kmPerHour = metersPerSecond * 3.6;
-  return kmPerHour.toFixed(1);
-}
-
-function formatPaceMinPerKm(metersPerSecond: number | null): string {
-  if (metersPerSecond === null || metersPerSecond <= 0) return "--";
-  const secondsPerKm = 1000 / metersPerSecond;
-  const mins = Math.floor(secondsPerKm / 60);
-  const secs = Math.round(secondsPerKm % 60);
-  return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
 export default function RecordScreen() {
@@ -156,7 +137,6 @@ export default function RecordScreen() {
       });
 
       recorderRef.current = createActivityRecorder(
-        createLocationAdapter(),
         trpcClient,
         "Dofek iOS",
         combineRecordingSensorServices([imuService, heartRateService]),
@@ -337,11 +317,6 @@ export default function RecordScreen() {
 
         <View style={styles.summaryCard}>
           <MetricRow label="Duration" value={formatElapsed(snapshot?.elapsedMs ?? 0)} />
-          <MetricRow
-            label="Distance"
-            value={`${formatDistanceKm(snapshot?.distanceMeters ?? 0)} km`}
-          />
-          <MetricRow label="Samples" value={String(snapshot?.samples.length ?? 0)} />
         </View>
 
         <Text style={styles.fieldLabel}>Name (optional)</Text>
@@ -423,31 +398,6 @@ export default function RecordScreen() {
           <Text style={styles.metricLabel}>Duration</Text>
         </View>
 
-        <View style={styles.metricsRow}>
-          <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>
-              {formatDistanceKm(snapshot?.distanceMeters ?? 0)}
-            </Text>
-            <Text style={styles.metricLabel}>Distance (km)</Text>
-          </View>
-          <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>
-              {formatPaceMinPerKm(snapshot?.currentSpeedMs ?? null)}
-            </Text>
-            <Text style={styles.metricLabel}>Pace (min/km)</Text>
-          </View>
-          <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>{formatSpeed(snapshot?.currentSpeedMs ?? null)}</Text>
-            <Text style={styles.metricLabel}>Speed (km/h)</Text>
-          </View>
-        </View>
-
-        <View style={styles.metricsRow}>
-          <View style={styles.metricCell}>
-            <Text style={styles.metricValue}>{snapshot?.samples.length ?? 0}</Text>
-            <Text style={styles.metricLabel}>GPS Points</Text>
-          </View>
-        </View>
       </View>
 
       {heartRateCard}
@@ -583,27 +533,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     letterSpacing: 2,
   },
-  metricsRow: {
-    flexDirection: "row",
-    gap: 16,
-  },
-  metricCell: {
-    alignItems: "center",
-    flex: 1,
-  },
-  metricValue: {
-    fontFamily: fonts.mono,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-  },
-  metricLabel: {
-    fontFamily: fonts.body,
-    fontSize: fontSize.xs,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-
   // Controls
   controls: {
     flexDirection: "row",

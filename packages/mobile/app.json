@@ -35,7 +35,7 @@
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
         "NSBluetoothAlwaysUsageDescription": "Dofek connects to Bluetooth heart-rate monitors to record your heart rate during workouts.",
         "NSUserNotificationsUsageDescription": "Dofek sends optional local medication reminders you enable in Settings.",
-        "UIBackgroundModes": ["bluetooth-central", "fetch", "location"],
+        "UIBackgroundModes": ["bluetooth-central", "fetch"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
         "LSSupportsOpeningDocumentsInPlace": false,
         "CADisableMinimumFrameDurationOnPhone": true,
@@ -75,14 +75,6 @@
         "expo-camera",
         {
           "cameraPermission": "Dofek uses the camera to scan food barcodes."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance.",
-          "locationAlwaysAndWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance, even when the app is in the background.",
-          "isIosBackgroundLocationEnabled": true
         }
       ],
       [

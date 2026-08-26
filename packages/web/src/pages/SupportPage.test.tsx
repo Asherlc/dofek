@@ -36,7 +36,7 @@ describe("SupportPage", () => {
 
     expect(screen.getByRole("link", { name: "Sign in to contact support" })).toHaveAttribute(
       "href",
-      "/login?returnTo=%2Fsupport",
+      "/login?returnTo=/support",
     );
     expect(screen.queryByText("secure support form")).toBeNull();
   });
