@@ -24084,3 +24084,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   report the same upstream 429 response.
 - **Remaining risk / follow-up:** Rerun the native build jobs only after the
   upstream rate limit has cleared, then confirm they pass without workflow changes.
+
+## 2026-08-26 — Hang Ten activity priority migration was skipped in production
+
+- **Status:** Fixed in source; deployment is pending.
+- **Symptoms / user impact:** An overlapping Apple Health Hang Ten workout was
+  displayed as a WHOOP functional-fitness activity instead of the Hang Ten
+  activity.
+- **Evidence / root cause:** The production activity group contained the Hang
+  Ten source at effective priority 90 and WHOOP at priority 30. Production's
+  Drizzle ledger had no record of `0075_hang_ten_activity_priority`, so the
+  `fitness.device_priority` row for `apple_health` / `Hang Ten` did not exist.
+  The older migration was introduced after the migration checkpoint had already
+  advanced beyond its timestamp, so Drizzle did not replay it.
+- **Fix / mitigation:** Added forward migration `0097` to idempotently upsert
+  the exact Hang Ten activity priority at 10. No retry, timeout, or priority
+  fallback was added.
+- **Validation:** The focused Postgres integration test reproduces the missing
+  priority row, verifies WHOOP is selected before the repair, executes the
+  migration, and verifies Hang Ten is selected afterwards; migration policy
+  validation passes.
+- **Remaining risk / follow-up:** Deploy the migration, then verify the
+  production activity group resolves to Hang Ten.

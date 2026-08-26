@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -59,5 +61,44 @@ describe("Hang Ten activity priority", () => {
     );
 
     expect(rows).toEqual([{ provider_id: "apple_health", source_name: "Hang Ten" }]);
+  });
+
+  it("restores Hang Ten priority when an older migration was skipped", async () => {
+    await testCtx.db.execute(
+      sql`DELETE FROM fitness.device_priority
+          WHERE provider_id = 'apple_health'
+            AND source_name_pattern = 'Hang Ten'`,
+    );
+
+    const beforeRepair = await executeWithSchema(
+      testCtx.db,
+      activityPriorityRowSchema,
+      sql`SELECT provider_id, source_name
+          FROM fitness.v_activity
+          WHERE user_id = ${TEST_USER_ID}
+            AND member_activity_ids @> ARRAY[
+              (SELECT id FROM fitness.activity WHERE external_id = 'hang-ten-priority')
+            ]`,
+    );
+    expect(beforeRepair).toEqual([{ provider_id: "whoop", source_name: "WHOOP" }]);
+
+    const migration = readFileSync(
+      resolve(import.meta.dirname, "../../drizzle/0097_restore_hang_ten_activity_priority.sql"),
+      "utf8",
+    );
+    await testCtx.db.execute(sql.raw(migration));
+
+    const repaired = await executeWithSchema(
+      testCtx.db,
+      activityPriorityRowSchema,
+      sql`SELECT provider_id, source_name
+          FROM fitness.v_activity
+          WHERE user_id = ${TEST_USER_ID}
+            AND member_activity_ids @> ARRAY[
+              (SELECT id FROM fitness.activity WHERE external_id = 'hang-ten-priority')
+            ]`,
+    );
+
+    expect(repaired).toEqual([{ provider_id: "apple_health", source_name: "Hang Ten" }]);
   });
 });
