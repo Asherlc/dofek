@@ -240,11 +240,6 @@ describe("KayaSyncProvider", () => {
       start_time: "2026-08-01T10:00:00.000Z",
       end_time: "2026-08-01T11:00:00",
     },
-    {
-      name: "the offset-bearing end timestamp is invalid",
-      start_time: "2026-08-01T10:00:00.000Z",
-      end_time: "not-a-dateZ",
-    },
   ])("keeps local time unknown when $name", async ({ start_time, end_time }) => {
     const db = database();
     mocks.loadTokens.mockResolvedValue({
@@ -255,7 +250,15 @@ describe("KayaSyncProvider", () => {
     mocks.ascents.mockResolvedValue([]);
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
 
-    await new KayaSyncProvider().sync(run(db));
+    await new KayaSyncProvider().sync(
+      run(
+        db,
+        SyncWindow.fromIsoRange({
+          sinceIso: "2026-07-31T00:00:00.000Z",
+          untilIso: "2026-08-03T00:00:00.000Z",
+        }),
+      ),
+    );
 
     expect(mocks.upsertActivity).toHaveBeenCalledWith(
       db,
@@ -269,6 +272,40 @@ describe("KayaSyncProvider", () => {
         startUtcOffsetMinutes: null,
         endUtcOffsetMinutes: null,
       }),
+    );
+  });
+
+  it("does not persist an invalid Kaya end timestamp and continues syncing sessions", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      { ...session("invalid-end"), end_time: "not-a-dateZ" },
+      session("following-session"),
+    ]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertActivity).toHaveBeenNthCalledWith(
+      1,
+      db,
+      expect.objectContaining({
+        externalId: "invalid-end",
+        endedAt: null,
+        localTimeSource: "unknown",
+      }),
+      expect.objectContaining({ endedAt: null, localTimeSource: "unknown" }),
+    );
+    expect(mocks.upsertActivity).toHaveBeenNthCalledWith(
+      2,
+      db,
+      expect.objectContaining({ externalId: "following-session" }),
+      expect.anything(),
     );
   });
 
@@ -465,14 +502,18 @@ describe("KayaSyncProvider", () => {
   });
 });
 
-function run(db: ReturnType<typeof database>): SyncRun {
+function run(db: ReturnType<typeof database>, window = defaultWindow()): SyncRun {
   return new SyncRun({
     db,
     userId,
-    window: SyncWindow.fromIsoRange({
-      sinceIso: "2026-08-01T00:00:00.000Z",
-      untilIso: "2026-08-02T00:00:00.000Z",
-    }),
+    window,
+  });
+}
+
+function defaultWindow(): SyncWindow {
+  return SyncWindow.fromIsoRange({
+    sinceIso: "2026-08-01T00:00:00.000Z",
+    untilIso: "2026-08-02T00:00:00.000Z",
   });
 }
 

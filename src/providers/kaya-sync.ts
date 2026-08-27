@@ -150,8 +150,9 @@ export class KayaSyncProvider implements SyncProvider {
       for (const session of sessions) {
         const started = new Date(session.start_time);
         if (Number.isNaN(started.valueOf()) || started < run.window.since) continue;
-        const ended = session.end_time ? new Date(session.end_time) : null;
-        const localTimeContext = kayaSessionLocalTimeContext(session, started, ended);
+        const parsedEnd = session.end_time ? new Date(session.end_time) : null;
+        const ended = parsedEnd && !Number.isNaN(parsedEnd.valueOf()) ? parsedEnd : null;
+        const localTimeContext = kayaSessionLocalTimeContext(session, started, parsedEnd);
         const row = await upsertProviderActivity(
           run.db,
           {
