@@ -9,6 +9,7 @@ import {
   registerPasswordUser,
   setPasswordForUser,
 } from "./password-credential.ts";
+import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 import { createSession, validateSession } from "./session.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -112,6 +113,27 @@ describe("password credential auth (integration)", () => {
   });
 
   describe("authenticated password management", () => {
+    it("revokes sessions and consumes outstanding reset tokens", async () => {
+      const registered = await registerPasswordUser(ctx.db, {
+        email: "revoke@example.com",
+        password: "password123",
+      });
+      const session = await createSession(ctx.db, registered.userId);
+      await ctx.db.execute(
+        sql`INSERT INTO fitness.password_reset_token (user_id, token_hash, expires_at)
+            VALUES (${registered.userId}, ${"outstanding-reset-token"}, NOW() + INTERVAL '1 hour')`,
+      );
+
+      await revokePasswordChangeAuthenticationMaterial(ctx.db, registered.userId);
+
+      await expect(validateSession(ctx.db, session.sessionId)).resolves.toBeNull();
+      const tokens = await ctx.db.execute<{ consumed_at: Date | null }>(
+        sql`SELECT consumed_at FROM fitness.password_reset_token WHERE user_id = ${registered.userId}`,
+      );
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0]?.consumed_at).not.toBeNull();
+    });
+
     it("creates a password credential for an OAuth-only user with a profile email", async () => {
       await ctx.db.execute(
         sql`UPDATE fitness.user_profile SET email = 'oauth@example.com', name = 'OAuth User' WHERE id = ${TEST_USER_ID}`,
