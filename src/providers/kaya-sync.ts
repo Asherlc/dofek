@@ -1,4 +1,9 @@
 import {
+  localTimeContextUnknown,
+  offsetMinutesFromTimestamp,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
+import {
   KayaApiError,
   type KayaAscent,
   KayaClient,
@@ -145,6 +150,8 @@ export class KayaSyncProvider implements SyncProvider {
       for (const session of sessions) {
         const started = new Date(session.start_time);
         if (Number.isNaN(started.valueOf()) || started < run.window.since) continue;
+        const ended = session.end_time ? new Date(session.end_time) : null;
+        const localTimeContext = kayaSessionLocalTimeContext(session, started, ended);
         const row = await upsertProviderActivity(
           run.db,
           {
@@ -153,17 +160,27 @@ export class KayaSyncProvider implements SyncProvider {
             externalId: session.id,
             activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
             startedAt: started,
-            endedAt: session.end_time ? new Date(session.end_time) : null,
+            endedAt: ended,
             name: session.gym ? `Kaya climbing at ${session.gym.name}` : "Kaya climbing",
+            notes: session.notes ?? null,
             sourceName: this.name,
+            timezone: localTimeContext.timezone,
+            startUtcOffsetMinutes: localTimeContext.startUtcOffsetMinutes,
+            endUtcOffsetMinutes: localTimeContext.endUtcOffsetMinutes,
+            localTimeSource: localTimeContext.source,
             raw: session,
           },
           {
             activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
             startedAt: started,
-            endedAt: session.end_time ? new Date(session.end_time) : null,
+            endedAt: ended,
             name: session.gym ? `Kaya climbing at ${session.gym.name}` : "Kaya climbing",
+            notes: session.notes ?? null,
             sourceName: this.name,
+            timezone: localTimeContext.timezone,
+            startUtcOffsetMinutes: localTimeContext.startUtcOffsetMinutes,
+            endUtcOffsetMinutes: localTimeContext.endUtcOffsetMinutes,
+            localTimeSource: localTimeContext.source,
             raw: session,
           },
         );
@@ -190,7 +207,8 @@ export class KayaSyncProvider implements SyncProvider {
                   attemptCount: ascent.attempts ?? 1,
                   lead: boulder ? null : ascent.climb.lead,
                   routeName: ascent.climb.name,
-                  locationName: ascent.climb.gym?.name ?? session.gym?.name ?? null,
+                  locationName:
+                    ascent.climb.gym?.name ?? ascent.gym?.name ?? session.gym?.name ?? null,
                   sourceName: this.name,
                   raw: ascent,
                 },
@@ -229,4 +247,25 @@ export class KayaSyncProvider implements SyncProvider {
       duration: Date.now() - startedAt,
     };
   }
+}
+
+function kayaSessionLocalTimeContext(session: KayaSession, startedAt: Date, endedAt: Date | null) {
+  const startUtcOffsetMinutes = offsetMinutesFromTimestamp(session.start_time);
+  const endUtcOffsetMinutes = session.end_time
+    ? offsetMinutesFromTimestamp(session.end_time)
+    : null;
+  if (
+    startUtcOffsetMinutes == null ||
+    (session.end_time !== null && endUtcOffsetMinutes == null) ||
+    (endedAt !== null && Number.isNaN(endedAt.valueOf()))
+  ) {
+    return localTimeContextUnknown();
+  }
+  return resolveRecordLocalTimeContext({
+    startedAt,
+    endedAt,
+    startUtcOffsetMinutes,
+    endUtcOffsetMinutes,
+    source: "provider_offset",
+  });
 }

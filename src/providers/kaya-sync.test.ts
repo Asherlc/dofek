@@ -150,6 +150,63 @@ describe("KayaSyncProvider", () => {
     );
   });
 
+  it("stores Kaya's supplied time offset, session context, and ascent feedback", async () => {
+    const db = database();
+    const kayaSession = {
+      ...session("session-1"),
+      notes: "Worked the steep wall.",
+      board: { id: "board-1", name: "Training Board", latitude: 40.01, longitude: -105.27 },
+      destination: { id: "destination-1", name: "Boulder Canyon", latitude: 40, longitude: -105.3 },
+    };
+    const ascentBase = ascent("ascent-1", { lead: true, climbType: "Routes", grade: "5.11a" });
+    const kayaAscent = {
+      ...ascentBase,
+      comment: "Felt smooth.",
+      rating: 4,
+      stiffness: 3,
+      gym: { id: "gym-2", name: "Session Gym" },
+      climb: {
+        ...ascentBase.climb,
+        gym: null,
+      },
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([kayaSession]);
+    mocks.ascents.mockResolvedValue([kayaAscent]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        notes: "Worked the steep wall.",
+        localTimeSource: "provider_offset",
+        startUtcOffsetMinutes: 0,
+        endUtcOffsetMinutes: 0,
+        raw: expect.objectContaining({
+          board: expect.objectContaining({ name: "Training Board" }),
+          destination: expect.objectContaining({ name: "Boulder Canyon" }),
+        }),
+      }),
+      expect.objectContaining({
+        notes: "Worked the steep wall.",
+        localTimeSource: "provider_offset",
+        startUtcOffsetMinutes: 0,
+        endUtcOffsetMinutes: 0,
+      }),
+    );
+    expect(db.insertValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        locationName: "Session Gym",
+        raw: expect.objectContaining({ comment: "Felt smooth.", rating: 4, stiffness: 3 }),
+      }),
+    ]);
+  });
+
   it("requires a user ID before accessing Kaya", async () => {
     const db = database();
 
