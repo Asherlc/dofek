@@ -34,20 +34,17 @@ const toolTestMocks = vi.hoisted(() => {
   };
   return {
     ...mocks,
-    activityRepository: vi.fn(function vitestConstructor() {
-      return {
+    activityRepository: vi.fn(() => ({
         findById: mocks.activityFindById,
         list: mocks.activityList,
         listRange: mocks.activityListRange,
         search: mocks.activitySearch,
-      };
-    }),
-    dailyMetricsRepository: vi.fn(function vitestConstructor() {
-      return { list: mocks.dailyMetricsList, listRange: mocks.dailyMetricsListRange };
-    }),
-    subjectiveRepository: vi.fn(function vitestConstructor() {
-      return { timeline: mocks.subjectiveTimeline };
-    }),
+    })),
+    dailyMetricsRepository: vi.fn(() => ({
+      list: mocks.dailyMetricsList,
+      listRange: mocks.dailyMetricsListRange,
+    })),
+    subjectiveRepository: vi.fn(() => ({ timeline: mocks.subjectiveTimeline })),
   };
 });
 
@@ -72,21 +69,17 @@ vi.mock("../repositories/daily-metrics-repository.ts", () => ({
 }));
 
 vi.mock("../repositories/food-repository.ts", () => ({
-  FoodRepository: vi.fn(function vitestConstructor() {
-    return { dailyTotalsRange: toolTestMocks.foodDailyTotalsRange };
-  }),
+  FoodRepository: vi.fn(() => ({
+    dailyTotalsRange: toolTestMocks.foodDailyTotalsRange,
+  })),
 }));
 
 vi.mock("../repositories/sleep-repository.ts", () => ({
-  SleepRepository: vi.fn(function vitestConstructor() {
-    return { listRange: toolTestMocks.sleepListRange };
-  }),
+  SleepRepository: vi.fn(() => ({ listRange: toolTestMocks.sleepListRange })),
 }));
 
 vi.mock("../repositories/body-repository.ts", () => ({
-  BodyRepository: vi.fn(function vitestConstructor() {
-    return { listRange: toolTestMocks.bodyListRange };
-  }),
+  BodyRepository: vi.fn(() => ({ listRange: toolTestMocks.bodyListRange })),
 }));
 
 vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
@@ -99,13 +92,11 @@ vi.mock("../repositories/strength-repository.ts", () => ({
 }));
 
 vi.mock("../repositories/sync-repository.ts", () => ({
-  SyncRepository: vi.fn(function vitestConstructor() {
-    return {
-      getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
-      getLastSyncTimes: toolTestMocks.getLastSyncTimes,
-      getLatestErrors: toolTestMocks.getLatestErrors,
-    };
-  }),
+  SyncRepository: vi.fn(() => ({
+    getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
+    getLastSyncTimes: toolTestMocks.getLastSyncTimes,
+    getLatestErrors: toolTestMocks.getLatestErrors,
+  })),
 }));
 
 vi.mock("../repositories/subjective-repository.ts", () => ({
