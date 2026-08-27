@@ -215,16 +215,20 @@ describe("SyncProviderCard", () => {
     renderProvider({
       recentLogs: [
         {
+          id: "strava-sync-1",
           syncedAt: "2026-05-12T10:00:00.000Z",
           status: "success",
+          dataType: "activities",
           recordCount: 12,
           durationMs: 100,
           errorMessage: null,
           authFailureReason: null,
         },
         {
+          id: "strava-sync-2",
           syncedAt: "2026-05-12T11:00:00.000Z",
           status: "failed",
+          dataType: "activities",
           recordCount: 0,
           durationMs: 50,
           errorMessage: "Provider unavailable",
