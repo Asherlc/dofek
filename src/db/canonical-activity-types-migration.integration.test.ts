@@ -8,7 +8,7 @@ import {
 import { sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { Client } from "pg";
-import { GenericContainer } from "testcontainers";
+import { GenericContainer, Wait } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
@@ -463,6 +463,7 @@ describe("canonical activity types Postgres migration", () => {
         POSTGRES_USER: "test",
       })
       .withExposedPorts(5432)
+      .withWaitStrategy(Wait.forLogMessage("database system is ready to accept connections"))
       .start();
 
     connectionString = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
