@@ -267,6 +267,18 @@ describe("formatRecordLocalTime", () => {
     ).toBe("--");
   });
 
+  it("formats an unknown activity-local context in the viewer timezone when supplied", () => {
+    expect(
+      formatRecordLocalTime(
+        "2026-08-27T14:51:43.000Z",
+        localTimeContextUnknown(),
+        "start",
+        "en-US",
+        "America/Los_Angeles",
+      ),
+    ).toBe("7:51 AM");
+  });
+
   it("returns a placeholder for invalid timestamps and timezones", () => {
     expect(formatRecordLocalTime("invalid", dstContext, "start", "en-US")).toBe("--");
     expect(
