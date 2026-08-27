@@ -400,12 +400,10 @@ export function DataSourcesPanel() {
     }
   }
   const providerGroups = groupProviderEntries(
-    unifiedProviders
-      .filter((entry) => entry.kind === "import" || !hiddenProviderIds.has(entry.provider.id))
-      .map((entry) => ({
-        ...entry,
-        id: entry.kind === "import" ? entry.id : entry.provider.id,
-      })),
+    unifiedProviders.map((entry) => ({
+      ...entry,
+      id: entry.kind === "import" ? entry.id : entry.provider.id,
+    })),
   );
 
   const renderProviderEntry = (entry: (typeof unifiedProviders)[number]) => {
