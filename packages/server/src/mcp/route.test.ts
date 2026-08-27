@@ -35,11 +35,11 @@ const toolTestMocks = vi.hoisted(() => {
   return {
     ...mocks,
     activityRepository: vi.fn(() => ({
-        findById: mocks.activityFindById,
-        list: mocks.activityList,
-        listRange: mocks.activityListRange,
-        search: mocks.activitySearch,
-      })),
+      findById: mocks.activityFindById,
+      list: mocks.activityList,
+      listRange: mocks.activityListRange,
+      search: mocks.activitySearch,
+    })),
     dailyMetricsRepository: vi.fn(() => ({
       list: mocks.dailyMetricsList,
       listRange: mocks.dailyMetricsListRange,
