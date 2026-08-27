@@ -15,17 +15,17 @@ const zeppModules = [
   "@zos/app",
   "@zos/ble",
   "@zos/app-service",
-  "@zeppos/zml",
   "@zeppos/zml/base-page",
   "@zeppos/zml/base-side",
   "@zeppos/zml/base-app",
   "@zeppos/zml/3.0/module/messaging/plugin/page",
   "@zeppos/zml/3.0/module/messaging/plugin/side",
   "@zeppos/zml/3.0/module/messaging/plugin/app",
+  "@zeppos/zml",
 ];
 const zeppAliases: Record<string, string> = {};
 for (const moduleName of zeppModules) {
-  zeppAliases[moduleName] = zeppStubPath;
+  zeppAliases[moduleName] = `${zeppStubPath}?zepp-module=${encodeURIComponent(moduleName)}`;
 }
 
 const sharedTestConfig = {
