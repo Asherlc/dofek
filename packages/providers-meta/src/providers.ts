@@ -83,11 +83,12 @@ export const PNG_LOGOS: ReadonlySet<string> = new Set(
     .map(([id, entry]) => entry.logo?.id ?? id),
 );
 
-export const BRAND_COLORS: Readonly<Record<string, string>> = Object.fromEntries(
-  Object.entries(PROVIDER_CATALOG)
-    .filter(([, entry]) => entry.brandColor)
-    .map(([id, entry]) => [id, entry.brandColor]),
-);
+export const BRAND_COLORS: Readonly<Record<string, string>> = Object.entries(
+  PROVIDER_CATALOG,
+).reduce<Record<string, string>>((colors, [id, entry]) => {
+  if (entry.brandColor) colors[id] = entry.brandColor;
+  return colors;
+}, {});
 
 export function providerLogoType(id: string): "svg" | "png" | null {
   return providerCatalogEntry(id)?.logo?.type ?? null;
