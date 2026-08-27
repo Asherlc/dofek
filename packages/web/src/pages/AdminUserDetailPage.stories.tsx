@@ -51,14 +51,6 @@ const subscribedUserDetail: AdminUserDetail = {
       name: "Alex Rivera",
       created_at: "2026-01-15T17:20:00.000Z",
     },
-    {
-      id: "account-slack",
-      auth_provider: "slack",
-      provider_account_id: "U123456",
-      email: "alex@example.com",
-      name: "Alex R.",
-      created_at: "2026-03-05T14:10:00.000Z",
-    },
   ],
   providers: [
     { id: "whoop", name: "WHOOP", created_at: "2026-01-16T08:10:00.000Z" },

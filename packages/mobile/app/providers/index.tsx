@@ -1,11 +1,12 @@
-import { formatDateYmd } from "@dofek/format/format";
+import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
+import { randomUUID } from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { File as ExpoFile } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,11 +22,12 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
+import { createExpoUploadableMobileFile } from "../../lib/expo-uploadable-file";
 import {
   HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
   isHealthKitDatabaseInaccessible,
 } from "../../lib/health-kit-errors";
-import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
+import type { FileUploadApi } from "../../lib/resumable-file-upload";
 import {
   type ImportProviderId,
   importSharedFile,
@@ -35,7 +37,6 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
-import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import {
   CredentialAuthModal,
@@ -56,32 +57,11 @@ import { styles } from "./styles.ts";
 import { SyncAllControls } from "./sync-all-controls.tsx";
 
 const hiddenProviderIds = new Set(["auto-supplements"]);
-const whoopProviderIds = new Set(["whoop", "whoop_ble"]);
-
-async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
-  const file = new ExpoFile(fileUri);
-  if (!file.exists) {
-    const error = new Error(`Shared file does not exist: ${fileUri} (resolved: ${file.uri})`);
-    throw error;
-  }
-  return file;
-}
-
 function deleteSharedFile(fileUri: string): void {
   const file = new ExpoFile(fileUri);
   if (file.exists) {
     file.delete();
   }
-}
-
-function ymdDaysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return formatDateYmd(date);
-}
-
-function todayYmd(): string {
-  return formatDateYmd();
 }
 
 export default function ProvidersScreen() {
@@ -93,7 +73,19 @@ export default function ProvidersScreen() {
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
   const processingStatus = useProcessingStatus({});
   const syncMutation = trpc.sync.triggerSync.useMutation();
+  const { mutateAsync: initiateFileUpload } = trpc.fileUpload.initiate.useMutation();
+  const { mutateAsync: authorizeFileUploadParts } = trpc.fileUpload.authorizeParts.useMutation();
+  const { mutateAsync: completeFileUpload } = trpc.fileUpload.complete.useMutation();
   const trpcUtils = trpc.useUtils();
+  const fileUploadApi = useMemo<FileUploadApi>(
+    () => ({
+      initiate: initiateFileUpload,
+      authorizeParts: authorizeFileUploadParts,
+      complete: completeFileUpload,
+      resume: (input) => trpcUtils.client.fileUpload.resume.query(input),
+    }),
+    [authorizeFileUploadParts, completeFileUpload, initiateFileUpload, trpcUtils],
+  );
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
   const activeImports = trpc.sync.activeImports.useQuery(undefined, {
     staleTime: 0,
@@ -121,6 +113,7 @@ export default function ProvidersScreen() {
   >({});
   const [anySyncing, setAnySyncing] = useState(false);
   const [syncAllError, setSyncAllError] = useState<string>();
+  const [selectedFamilyMethods, setSelectedFamilyMethods] = useState<Record<string, string>>({});
   const [sharedImportState, setSharedImportState] = useState<ShareImportProgress | null>(null);
   const resumedJobIds = useRef(new Set<string>());
   const pollingJobIds = useRef(new Set<string>());
@@ -178,21 +171,7 @@ export default function ProvidersScreen() {
         syncRangeDays: 7,
         onProgress: setHealthKitProgress,
       });
-      setHealthKitProgress("Writing Dofek food to Apple Health...");
-      const foodWriteBack = await syncDofekFoodToHealthKit({
-        trpcClient,
-        healthKit: {
-          writeDietarySamples,
-          deleteDietarySamples,
-        },
-        startDate: ymdDaysAgo(7),
-        endDate: todayYmd(),
-      });
-      const foodSummary =
-        foodWriteBack.errors.length > 0
-          ? `${foodWriteBack.written} foods written, ${foodWriteBack.errors.length} food errors`
-          : `${foodWriteBack.written} foods written`;
-      setHealthKitProgress(`Done — ${result.inserted} records synced, ${foodSummary}`);
+      setHealthKitProgress(`Done — ${result.inserted} records synced`);
       trpcUtils.invalidate();
     } catch (error: unknown) {
       if (!isHealthKitDatabaseInaccessible(error)) {
@@ -205,7 +184,7 @@ export default function ProvidersScreen() {
       setHealthKitSyncing(false);
       setAnySyncing(false);
     }
-  }, [appleHealth, trpcClient, trpcUtils]);
+  }, [appleHealth, trpcUtils]);
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -374,11 +353,13 @@ export default function ProvidersScreen() {
           {
             fileUri,
             providerId,
-            serverUrl,
-            sessionToken,
             onProgress: setSharedImportState,
           },
-          { readBlob: readBlobFromFileUri },
+          {
+            createUploadId: randomUUID,
+            file: createExpoUploadableMobileFile(fileUri),
+            fileUploadApi,
+          },
         );
         trpcUtils.invalidate();
       } catch (error: unknown) {
@@ -397,7 +378,7 @@ export default function ProvidersScreen() {
         }
       }
     },
-    [serverUrl, sessionToken, trpcUtils],
+    [fileUploadApi, sessionToken, trpcUtils],
   );
 
   useEffect(() => {
@@ -645,8 +626,11 @@ export default function ProvidersScreen() {
     authType: provider.authType,
     tokenAuth: provider.tokenAuth,
     lastSyncAt: provider.lastSyncedAt,
+    lastSuccessfulSyncAt: provider.lastSuccessfulSyncAt,
+    syncFreshness: provider.syncFreshness,
     importOnly: provider.importOnly,
     pushOnly: provider.pushOnly,
+    recentLogs: provider.recentLogs ?? [],
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.data ?? []) {
@@ -671,12 +655,6 @@ export default function ProvidersScreen() {
     (provider) => !hiddenProviderIds.has(provider.id),
   );
   const enabledProviders = visibleProviderList.filter((p) => p.enabled);
-  const whoopProviders = visibleProviderList.filter((provider) =>
-    whoopProviderIds.has(provider.id),
-  );
-  const otherProviders = visibleProviderList.filter(
-    (provider) => !whoopProviderIds.has(provider.id),
-  );
   const appleHealthProvider = appleHealth.model.toProviderCard();
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
@@ -703,6 +681,7 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
+  const providerGroups = groupProviderEntries(visibleProviderList);
 
   const renderProviderCard = (provider: Provider) => {
     const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
@@ -716,16 +695,12 @@ export default function ProvidersScreen() {
       : undefined;
     const localImportProgress =
       localImportIsActive && sharedImportState.providerId === provider.id
-        ? {
-            percentage: sharedImportState.progress,
-            message: sharedImportState.message,
-          }
+        ? { percentage: sharedImportState.progress, message: sharedImportState.message }
         : undefined;
     const importProgress = localImportProgress ?? activeImportProgress;
 
     return fileImportProviderConfig ? (
       <FileImportProviderCard
-        key={provider.id}
         provider={provider}
         stats={statsMap[provider.id]}
         syncing={syncingProviders.has(provider.id)}
@@ -738,7 +713,6 @@ export default function ProvidersScreen() {
       />
     ) : (
       <ProviderCard
-        key={provider.id}
         provider={provider}
         stats={statsMap[provider.id]}
         syncing={syncingProviders.has(provider.id)}
@@ -873,13 +847,49 @@ export default function ProvidersScreen() {
       {isLoading && !providers.error ? (
         <QueryStatePanel variant="loading" style={styles.card} />
       ) : null}
-      {otherProviders.map(renderProviderCard)}
-      {whoopProviders.length > 0 && (
-        <View testID="provider-group-whoop">
-          <Text style={styles.sectionTitle}>WHOOP</Text>
-          {whoopProviders.map(renderProviderCard)}
-        </View>
-      )}
+      {providerGroups.map((group) => {
+        if (group.kind === "provider") {
+          return <View key={group.provider.id}>{renderProviderCard(group.provider)}</View>;
+        }
+        const selectedProviderId = selectedFamilyMethods[group.family.id] ?? group.providers[0].id;
+        const selectedProvider =
+          group.providers.find((provider) => provider.id === selectedProviderId) ??
+          group.providers[0];
+        return (
+          <View key={group.family.id} testID={`provider-family-${group.family.id}`}>
+            <View style={styles.providerFamilyHeader}>
+              <Text style={styles.providerFamilyTitle}>{group.family.label}</Text>
+              <View style={styles.providerFamilyMethods}>
+                {group.providers.map((provider) => {
+                  const methodLabel = providerFamily(provider.id)?.methodLabel ?? provider.label;
+                  const selected = provider.id === selectedProvider.id;
+                  return (
+                    <TouchableOpacity
+                      key={provider.id}
+                      style={[
+                        styles.providerFamilyMethod,
+                        selected && styles.providerFamilyMethodSelected,
+                      ]}
+                      onPress={() =>
+                        setSelectedFamilyMethods((current) => ({
+                          ...current,
+                          [group.family.id]: provider.id,
+                        }))
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select ${group.family.label} ${methodLabel}`}
+                      accessibilityState={{ selected }}
+                    >
+                      <Text style={styles.providerFamilyMethodText}>{methodLabel}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+            {renderProviderCard(selectedProvider)}
+          </View>
+        );
+      })}
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>

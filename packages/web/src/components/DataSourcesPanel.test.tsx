@@ -162,15 +162,18 @@ vi.mock("./SyncProviderCard.tsx", () => ({
   SyncProviderCard: ({
     provider,
     state,
+    recentLogs,
     onSync,
   }: {
     provider: { id: string; name: string };
     state: { status: string; message?: string };
+    recentLogs: Array<{ status: string }>;
     onSync: () => void;
   }) => (
     <section data-testid={`provider-card-${provider.id}`}>
       <h4>{provider.name}</h4>
       <p>{state.status}</p>
+      {recentLogs[0] ? <p>Latest sync: {recentLogs[0].status}</p> : null}
       {state.message ? <p>{state.message}</p> : null}
       <button type="button" onClick={onSync}>
         Sync
@@ -256,6 +259,44 @@ describe("DataSourcesPanel", () => {
 
     expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(2);
     expect(screen.getByRole("region", { name: "Available data sources" })).toBeTruthy();
+  });
+
+  it("groups Garmin connection methods behind a single provider card", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authorized: false,
+          authType: "file-import",
+          importOnly: true,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByRole("region", { name: "Garmin connection methods" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Garmin Connect" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Data export" }));
+    expect(screen.getByTestId("file-import-garmin-dump")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
   });
 
   it("reserves stable action and provider regions while inventory loads", () => {
@@ -433,9 +474,11 @@ describe("DataSourcesPanel", () => {
 
     render(<DataSourcesPanel />);
 
-    const whoopGroup = screen.getByRole("group", { name: "WHOOP" });
-    expect(within(whoopGroup).getByTestId("provider-card-whoop")).toBeTruthy();
-    expect(within(whoopGroup).getByTestId("provider-card-whoop_ble")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "WHOOP connection methods" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cloud" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Bluetooth" }));
+    expect(screen.getByTestId("provider-card-whoop_ble")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-whoop")).toBeNull();
     expect(screen.queryByTestId("provider-card-auto-supplements")).toBeNull();
   });
 
@@ -544,6 +587,43 @@ describe("DataSourcesPanel", () => {
 
     expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
     expect(screen.getByText(logsError.message)).toBeTruthy();
+  });
+
+  it("uses provider-scoped history when the global history request is empty", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+          recentLogs: [
+            {
+              id: "garmin-log-1",
+              status: "success",
+              syncedAt: "2026-07-24T12:00:00.000Z",
+              durationMs: 100,
+              recordCount: 12,
+              dataType: "activities",
+              errorMessage: null,
+              authFailureReason: null,
+            },
+          ],
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+
+    render(<DataSourcesPanel />);
+
+    expect(
+      within(screen.getByTestId("provider-card-garmin")).getByText("Latest sync: success"),
+    ).toBeTruthy();
   });
 
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {

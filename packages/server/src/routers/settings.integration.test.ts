@@ -1,11 +1,14 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 const SETTINGS_TEST_USER_ID = "00000000-0000-0000-0000-0000000000f1";
+const countRowSchema = z.object({ count: z.coerce.number() });
 
 describe("Settings router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -254,9 +257,27 @@ describe("Settings router", () => {
               VALUES (${SETTINGS_TEST_USER_ID}, 'Delete event', '2024-01-15')`,
         ),
         testCtx.db.execute(
-          sql`INSERT INTO fitness.menstrual_period (user_id, start_date, notes)
-              VALUES (${SETTINGS_TEST_USER_ID}, '2024-01-15', 'Delete cycle note')
-              ON CONFLICT DO NOTHING`,
+          sql`INSERT INTO fitness.breathwork_session (
+                id, user_id, technique_id, rounds, duration_seconds, started_at
+              ) VALUES (
+                '33333333-3333-3333-3333-333333333333',
+                ${SETTINGS_TEST_USER_ID},
+                'box-breathing',
+                4,
+                240,
+                '2024-01-15T10:00:00Z'
+              )
+              ON CONFLICT (id) DO NOTHING`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.menstrual_period (id, user_id, start_date, notes)
+              VALUES (
+                '44444444-4444-4444-4444-444444444444',
+                ${SETTINGS_TEST_USER_ID},
+                '2024-01-15',
+                'Delete period'
+              )
+              ON CONFLICT (id) DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.sport_settings (user_id, sport, effective_from, ftp)
@@ -288,33 +309,55 @@ describe("Settings router", () => {
         logsAfter,
         tokensAfter,
         eventsAfter,
+        breathworkSessionsAfter,
         menstrualPeriodsAfter,
         sportSettingsAfter,
         supplementsAfter,
         userSettingsAfter,
       ] = await Promise.all([
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.sync_log WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.oauth_token WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
+          sql`SELECT count(*)::int AS count FROM fitness.breathwork_session WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.menstrual_period WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
       ]);
@@ -323,6 +366,7 @@ describe("Settings router", () => {
       expect(logsAfter[0]?.count).toBe(0);
       expect(tokensAfter[0]?.count).toBe(0);
       expect(eventsAfter[0]?.count).toBe(0);
+      expect(breathworkSessionsAfter[0]?.count).toBe(0);
       expect(menstrualPeriodsAfter[0]?.count).toBe(0);
       expect(sportSettingsAfter[0]?.count).toBe(0);
       expect(supplementsAfter[0]?.count).toBe(0);

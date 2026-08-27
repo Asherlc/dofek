@@ -1,26 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupplementDoseEventsPanel } from "./SupplementDoseEventsPanel.tsx";
 
-interface MutationOptions {
-  onError?: (error: Error) => void;
-  onSuccess?: (recorded: { scheduledDate: string }) => Promise<unknown>;
-}
-
 interface MockState {
-  captureException: ReturnType<typeof vi.fn>;
-  invalidate: ReturnType<typeof vi.fn>;
-  invalidateFood: ReturnType<typeof vi.fn>;
-  invalidateNutrition: ReturnType<typeof vi.fn>;
-  invalidateOccurrences: ReturnType<typeof vi.fn>;
-  mutate: ReturnType<typeof vi.fn>;
-  mutationOptions?: MutationOptions;
   query: {
     data: {
       occurrences: Array<{
-        currentEventId: string;
         scheduleId: string;
         supplementId: string;
         supplementName: string;
@@ -42,18 +29,10 @@ interface MockState {
 }
 
 const mocks = vi.hoisted<MockState>(() => ({
-  captureException: vi.fn(),
-  invalidate: vi.fn(),
-  invalidateFood: vi.fn(),
-  invalidateNutrition: vi.fn(),
-  invalidateOccurrences: vi.fn(),
-  mutate: vi.fn(),
-  mutationOptions: undefined,
   query: {
     data: {
       occurrences: [
         {
-          currentEventId: "event-current",
           scheduleId: "schedule-1",
           supplementId: "supplement-1",
           supplementName: "Vitamin D",
@@ -77,23 +56,10 @@ const mocks = vi.hoisted<MockState>(() => ({
   },
 }));
 
-vi.mock("../lib/telemetry.ts", () => ({ captureException: mocks.captureException }));
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
-    useUtils: () => ({
-      invalidate: mocks.invalidate,
-      food: { byDateV2: { invalidate: mocks.invalidateFood } },
-      nutritionAnalytics: { invalidate: mocks.invalidateNutrition },
-      supplements: { occurrences: { invalidate: mocks.invalidateOccurrences } },
-    }),
     supplements: {
       occurrences: { useQuery: () => mocks.query },
-      recordDose: {
-        useMutation: (options: typeof mocks.mutationOptions) => {
-          mocks.mutationOptions = options;
-          return { error: null, isError: false, isPending: false, mutate: mocks.mutate };
-        },
-      },
     },
   },
 }));
@@ -110,7 +76,6 @@ describe("SupplementDoseEventsPanel", () => {
     history.status = "unknown";
     mocks.query.error = null;
     mocks.query.isLoading = false;
-    mocks.mutationOptions = undefined;
     vi.clearAllMocks();
   });
 
@@ -122,17 +87,6 @@ describe("SupplementDoseEventsPanel", () => {
     expect(screen.getByText(/Unknown · Auto-Supplements/)).toBeDefined();
     expect(screen.getByText(/Taken 0 · Skipped 0 · Unknown 1 · Planned 0/)).toBeDefined();
     expect(screen.queryByText(/%/)).toBeNull();
-  });
-
-  it("records against the expected current leaf", () => {
-    render(<SupplementDoseEventsPanel />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Taken" }));
-
-    expect(mocks.mutate).toHaveBeenCalledWith({
-      expectedCurrentEventId: "event-current",
-      status: "taken",
-    });
   });
 
   it("preserves cached occurrences during a background refresh failure", () => {
@@ -157,27 +111,5 @@ describe("SupplementDoseEventsPanel", () => {
     render(<SupplementDoseEventsPanel />);
 
     expect(screen.getByText(labelPattern)).toBeDefined();
-  });
-
-  it("reports an actionable record conflict", () => {
-    render(<SupplementDoseEventsPanel />);
-    const error = new Error("Supplement status changed. Reload and try again.");
-
-    mocks.mutationOptions?.onError?.(error);
-
-    expect(mocks.captureException).toHaveBeenCalledWith(error, {
-      operation: "supplements.recordDose",
-    });
-  });
-
-  it("invalidates only supplement and nutrition query families after recording", async () => {
-    render(<SupplementDoseEventsPanel />);
-
-    await mocks.mutationOptions?.onSuccess?.({ scheduledDate: "2026-07-27" });
-
-    expect(mocks.invalidateOccurrences).toHaveBeenCalledOnce();
-    expect(mocks.invalidateFood).toHaveBeenCalledWith({ date: "2026-07-27" });
-    expect(mocks.invalidateNutrition).toHaveBeenCalledOnce();
-    expect(mocks.invalidate).not.toHaveBeenCalled();
   });
 });

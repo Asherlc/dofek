@@ -6,10 +6,6 @@ import {
   checkClickHouseCdcHealth,
 } from "../src/db/clickhouse-cdc-health.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
-import {
-  createProcessingReconciliationDatabaseFromEnv,
-  reconcilePendingProcessingOperations,
-} from "../src/processing/processing-reconciler.ts";
 
 function requireEnvironmentVariable(environmentVariableName: string): string {
   const value = process.env[environmentVariableName];
@@ -116,24 +112,16 @@ export async function main(): Promise<void> {
     }
 
     assertClickHouseCdcHealth(report);
-    const reconciliation = await reconcilePendingProcessingOperations({
-      database: createProcessingReconciliationDatabaseFromEnv(),
-      clickHouseClient,
-    });
     const mirrorLabel = report.mirrorCount === 1 ? "mirror" : "mirrors";
     console.log(
       `[clickhouse-cdc-health] ok: checked ${report.slotCount} slots and ${report.mirrorCount} ${mirrorLabel}`,
     );
-    console.log(
-      `[clickhouse-cdc-health] processing reconciliation: checked ${reconciliation.checked}, completed ${reconciliation.completed}, waiting ${reconciliation.waiting}`,
-    );
-    await Sentry.close(2_000);
   } catch (error: unknown) {
     exitCode = 1;
     captureException(error);
     console.error(`[clickhouse-cdc-health] ${error}`);
-    await Sentry.close(2_000);
   } finally {
+    await Sentry.close(2_000);
     await Promise.all([postgresClient?.end(), peerDbClient?.end(), clickHouseClient?.close?.()]);
   }
 
