@@ -259,11 +259,11 @@ vi.mock("../../modules/health-kit", () => ({
     deletedUUIDs: [],
   }),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
-  writeDietarySamples: vi.fn().mockResolvedValue(true),
   deleteDietarySamples: vi.fn().mockResolvedValue(0),
 }));
 
@@ -271,16 +271,6 @@ const mockSyncHealthKit = vi.fn().mockResolvedValue({ inserted: 0, errors: [] })
 
 vi.mock("../../lib/health-kit-sync", () => ({
   syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKit(...args),
-}));
-
-const mockSyncDofekFoodToHealthKit = vi.fn().mockResolvedValue({
-  written: 0,
-  skipped: 0,
-  errors: [],
-});
-
-vi.mock("../../lib/health-kit-food-writeback", () => ({
-  syncDofekFoodToHealthKit: (...args: unknown[]) => mockSyncDofekFoodToHealthKit(...args),
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -455,6 +445,12 @@ function makeProvider(
     authStatus: "connected" | "not_connected" | "expired";
     authType: string;
     lastSyncAt: string | null;
+    lastSuccessfulSyncAt: string | null;
+    syncFreshness: {
+      status: "unknown" | "current" | "overdue";
+      label: string;
+      description: string;
+    } | null;
     importOnly: boolean;
     pushOnly: boolean;
   }> = {},
@@ -466,6 +462,8 @@ function makeProvider(
     authStatus: overrides.authStatus ?? "connected",
     authType: overrides.authType ?? "oauth",
     lastSyncAt: overrides.lastSyncAt ?? null,
+    lastSuccessfulSyncAt: overrides.lastSuccessfulSyncAt ?? null,
+    syncFreshness: overrides.syncFreshness ?? null,
     importOnly: overrides.importOnly ?? false,
     pushOnly: overrides.pushOnly ?? false,
     ...overrides,
@@ -959,11 +957,6 @@ describe("ProvidersScreen", () => {
     mockHasEverAuthorized.mockReset().mockReturnValue(true);
     mockRequestPermissions.mockReset().mockResolvedValue(true);
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
-    mockSyncDofekFoodToHealthKit.mockReset().mockResolvedValue({
-      written: 0,
-      skipped: 0,
-      errors: [],
-    });
     setupDefaultMocks();
   });
 
@@ -1009,6 +1002,68 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
     });
+  });
+
+  it("renders server-authored overdue and current freshness without evaluating timestamps", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "polar",
+          name: "Polar",
+          description: null,
+          authType: "oauth",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+          syncFreshness: {
+            status: "overdue",
+            label: "Sync overdue",
+            description: "The last successful sync is overdue.",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: true,
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          description: null,
+          authType: "oauth",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-12T11:45:00.000Z",
+          syncFreshness: {
+            status: "current",
+            label: "Sync current",
+            description: "The last successful sync completed within the expected cadence.",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const polarCard = within(screen.getByTestId("provider-card-polar"));
+    expect(polarCard.getByText("Expired")).toBeTruthy();
+    expect(polarCard.getByText("Reconnect")).toBeTruthy();
+    expect(polarCard.getByText("Sync overdue")).toBeTruthy();
+    expect(polarCard.getByText("The last successful sync is overdue.")).toBeTruthy();
+    expect(polarCard.getByText(/Last successful sync:/)).toBeTruthy();
+
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    expect(wahooCard.getByText("Connected")).toBeTruthy();
+    expect(wahooCard.getByText("Sync current")).toBeTruthy();
+    expect(wahooCard.getByText(/Last successful sync:/)).toBeTruthy();
+    expect(
+      wahooCard.getByText("The last successful sync completed within the expected cadence."),
+    ).toBeTruthy();
   });
 
   it("does not render Sync link for disconnected providers", async () => {
@@ -2671,27 +2726,6 @@ describe("ProvidersScreen", () => {
       expect(appleCard.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
-  });
-
-  it("writes direct Dofek food entries back to Apple Health when Sync is clicked", async () => {
-    await renderProvidersScreen();
-
-    await waitFor(() => {
-      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-      expect(appleCard.getByText("Sync")).toBeTruthy();
-    });
-
-    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-    fireEvent.click(appleCard.getByText("Sync"));
-
-    await waitFor(() => {
-      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        }),
-      );
-    });
   });
 
   it("shows Connect button when HealthKit was never authorized", async () => {

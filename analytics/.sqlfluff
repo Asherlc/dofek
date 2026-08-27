@@ -1,10 +1,15 @@
 [sqlfluff]
 dialect = clickhouse
 templater = dbt
-exclude_rules = AL09,AL10,CP03,LT02,LT05,RF02,RF04,ST06,ST09
+exclude_rules = AL09,AL10,CP03,LT02,LT05,LT08,RF02,RF04,ST06,ST09
 
 [sqlfluff:templater:dbt]
 project_dir = .
 profiles_dir = .
 profile = dofek
 target = lint
+
+[sqlfluff:rules:capitalisation.identifiers]
+# ClickHouse 26.3's MATERIALIZED CTE modifier is not yet classified as a keyword
+# by SQLFluff's ClickHouse dialect.
+ignore_words = MATERIALIZED

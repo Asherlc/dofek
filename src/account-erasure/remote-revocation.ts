@@ -19,16 +19,6 @@ const stripeCustomerPageSchema = z.object({
   ),
   has_more: z.boolean(),
 });
-const slackRevocationResponseSchema = z.object({
-  error: z.string().optional(),
-  ok: z.boolean(),
-  revoked: z.boolean().optional(),
-});
-const IDEMPOTENT_SLACK_REVOCATION_ERRORS = new Set([
-  "account_inactive",
-  "already_revoked",
-  "token_revoked",
-]);
 const STRIPE_CUSTOMER_PAGE_SIZE = 100;
 const STRIPE_CUSTOMER_PAGE_LIMIT = 1_000;
 function requiredEnvironmentValue(name: string): string {
@@ -43,27 +33,6 @@ async function revokeAppleCredentials(
 ): Promise<void> {
   for (const credential of credentials) {
     await revokeAppleCredential(credential, fetchFn);
-  }
-}
-
-async function revokeSoleMemberSlackInstallations(
-  installations: AccountErasureRemoteSnapshot["slackInstallations"],
-  fetchFn: typeof globalThis.fetch,
-): Promise<void> {
-  for (const installation of installations) {
-    if (installation.memberCount !== 1) continue;
-    const response = await fetchFn("https://slack.com/api/auth.revoke", {
-      headers: {
-        Authorization: `Bearer ${installation.botToken}`,
-      },
-      method: "POST",
-    });
-    const result = slackRevocationResponseSchema.parse(await response.json());
-    if (response.ok && result.ok && result.revoked === true) continue;
-    if (result.error && IDEMPOTENT_SLACK_REVOCATION_ERRORS.has(result.error)) {
-      continue;
-    }
-    throw new Error(`Slack installation revocation failed: ${result.error ?? response.status}`);
   }
 }
 
@@ -293,7 +262,6 @@ export async function revokeRemoteAccounts(
   return withAccountErasureTracingSuppressed(async () => {
     await unregisterUserWebhooks(snapshot, providers);
     await revokeAppleCredentials(snapshot.appleCredentials, fetchFn);
-    await revokeSoleMemberSlackInstallations(snapshot.slackInstallations, fetchFn);
     return revokeProviderConnections(snapshot, providers, fetchFn);
   });
 }

@@ -770,6 +770,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           {
             providerId,
             userId: context.userId,
+            origin: "manual",
             ...syncWindowToJobData(syncWindow, sinceDays),
           },
           { skipWhenRateLimited: true },

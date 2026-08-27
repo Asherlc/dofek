@@ -2,19 +2,25 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ProcessingStatusSnapshot, ProcessingStatusWidget } from "./ProcessingStatusWidget";
 
-const { mockDismissOperation, mockDismissState, mockInvalidateAlerts, mockInvalidateStatus } =
-  vi.hoisted(() => {
-    const mockDismissState: { error: Error | null; isPending: boolean } = {
-      error: null,
-      isPending: false,
-    };
-    return {
-      mockDismissOperation: vi.fn(),
-      mockDismissState,
-      mockInvalidateAlerts: vi.fn(),
-      mockInvalidateStatus: vi.fn(),
-    };
-  });
+const {
+  mockDismissOperation,
+  mockDismissState,
+  mockInvalidateAlerts,
+  mockInvalidateStatus,
+  mockPush,
+} = vi.hoisted(() => {
+  const mockDismissState: { error: Error | null; isPending: boolean } = {
+    error: null,
+    isPending: false,
+  };
+  return {
+    mockDismissOperation: vi.fn(),
+    mockDismissState,
+    mockInvalidateAlerts: vi.fn(),
+    mockInvalidateStatus: vi.fn(),
+    mockPush: vi.fn(),
+  };
+});
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -43,6 +49,10 @@ vi.mock("../lib/trpc", () => ({
       },
     }),
   },
+}));
+
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush }),
 }));
 
 const snapshot: ProcessingStatusSnapshot = {
@@ -127,7 +137,8 @@ function failedWahooSnapshot(overrides: Partial<ProcessingStatusSnapshot> = {}) 
         status: "failed" as const,
         datasets: failedDatasets.map((dataset) => dataset.key),
         dismissed: false,
-        errorMessage: "Wahoo returned a server error. Reconnect Wahoo, then try again.",
+        errorCode: "provider_sync_failed",
+        errorMessage: "Wahoo could not be synced. Try the sync again later.",
         timeline: [],
       },
     ],
@@ -248,6 +259,7 @@ describe("ProcessingStatusWidget", () => {
               status,
               dismissed: false,
               errorMessage: "Reconnect Garmin, then start the sync again.",
+              errorCode: "provider_auth_failed",
               timeline: [
                 {
                   ...timelineEvent,
@@ -266,6 +278,8 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`)).toBeTruthy();
     expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
     expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+    expect(mockPush).toHaveBeenCalledWith("/providers/garmin");
   });
 
   it("groups current failed datasets by operation and offers dismissal", () => {
@@ -283,9 +297,8 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.getByText("Provider summaries")).toBeTruthy();
     expect(screen.getByText("Failed: 16d ago")).toBeTruthy();
     expect(screen.getByText("Last successful update: 16d ago")).toBeTruthy();
-    expect(
-      screen.getByText("Wahoo returned a server error. Reconnect Wahoo, then try again."),
-    ).toBeTruthy();
+    expect(screen.getByText("Wahoo could not be synced. Try the sync again later.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Wahoo" })).toBeNull();
     expect(
       screen.queryByText("Try the update again. If it still fails, reconnect the data source."),
     ).toBeNull();

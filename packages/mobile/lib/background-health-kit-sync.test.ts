@@ -34,6 +34,7 @@ vi.mock("../modules/health-kit", () => ({
   setObserverSyncInProgress: (...args: unknown[]) => mockSetObserverSyncInProgress(...args),
   teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),

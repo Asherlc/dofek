@@ -128,7 +128,23 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
           interpolated: false,
         },
       ],
-      bodyFat: [{ date: "2026-03-20", bodyFatPct: 20.9 }],
+      bodyFatTrend: [
+        {
+          date: "2026-03-20",
+          rawBodyFatPct: 20.9,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 20.8,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: -0.2,
+          interpolated: false,
+        },
+      ],
+      bodyFatPrediction: {
+        ratePerWeek: -0.2,
+        rateConfidence: 0.9,
+        periodDeltas: { days7: -0.2, days14: null, days30: null },
+        projectionLine: [{ date: "2026-03-21", projectedBodyFatPct: 20.8 }],
+      },
       decisionContext: {
         latestMeasurement: {
           date: input.endDate,
@@ -353,10 +369,17 @@ describe("mobileRecoveryFixtureSchema", () => {
     expect(mobileRecoveryFixtureSchema.parse(validRecoveryFixture())).toBeTruthy();
   });
 
-  it("parses bodyFat history", () => {
-    const parsed = mobileRecoveryTabOutputSchema.parse(validRecoveryFixture().data);
+  it("parses the server-authored body-fat trend and prediction", () => {
+    const data = {
+      ...validRecoveryFixture().data,
+    };
 
-    expect(parsed.bodyFat).toEqual([{ date: "2026-03-20", bodyFatPct: 20.9 }]);
+    const parsed = mobileRecoveryTabOutputSchema.parse(data);
+
+    expect(parsed).toMatchObject({
+      bodyFatTrend: [expect.objectContaining({ smoothedBodyFatPct: 20.8 })],
+      bodyFatPrediction: expect.objectContaining({ ratePerWeek: -0.2 }),
+    });
   });
 
   it("rejects stress values outside the server-owned 0-3 range", () => {
@@ -951,6 +974,26 @@ describe("mobileTrainingFixtureSchema", () => {
       mobileTrainingFixtureSchema.safeParse(fixture),
       [],
       "Fixture date 2026-06-27 is outside 2026-06-28..2026-07-27",
+    );
+  });
+
+  it.each([
+    ["grade progression", "gradeProgression", "boulder", "yds", "5.10a", 63.5],
+    ["volume by grade", "volumeByGrade", "route", "font", "6a", 65],
+  ] as const)("rejects %s systems from the wrong discipline", (_label, target, climbType, gradeSystem, grade, gradeSortValue) => {
+    const fixture = validTrainingFixture();
+    fixture.data.climbing[target].push({
+      climbType,
+      gradeSystem,
+      grade,
+      gradeSortValue,
+      ...(target === "gradeProgression" ? { date: input.endDate } : { attempts: 1, sends: 1 }),
+    });
+
+    expectIssue(
+      mobileTrainingFixtureSchema.safeParse(fixture),
+      ["data", "climbing", target, 0, "gradeSystem"],
+      "Grade system must match the climb type",
     );
   });
 

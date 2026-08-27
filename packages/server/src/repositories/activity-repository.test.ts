@@ -845,6 +845,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],
@@ -877,6 +878,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: "Felt good",
+          perceived_exertion: 7,
           provider_id: "garmin",
           subsource: "Strong",
           source_providers: ["garmin"],
@@ -900,6 +902,7 @@ describe("ActivityRepository", () => {
       expect(result?.canonical_type).toBe("running");
       expect(result?.name).toBe("Easy Run");
       expect(result?.subsource).toBe("Strong");
+      expect(result?.perceived_exertion).toBe(7);
     });
 
     it("keeps member activity aliases internal", async () => {
@@ -911,6 +914,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: null,
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin", "strava"],
@@ -944,6 +948,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],
@@ -975,34 +980,6 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("= ANY(a.member_activity_ids)");
       expect(compiledQuery.sql).not.toContain("JOIN fitness.v_activity_members am");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["member-id"]));
-    });
-  });
-
-  describe("setPerceivedExertion", () => {
-    it("updates the raw member rows for a visible canonical activity", async () => {
-      const { repo, execute } = makeRepository([{ perceived_exertion: 7 }]);
-
-      await expect(repo.setPerceivedExertion("activity-1", 7)).resolves.toEqual({
-        found: true,
-        perceivedExertion: 7,
-      });
-
-      const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-      expect(query.sql).toContain("UPDATE fitness.activity");
-      expect(query.sql).toContain("FROM fitness.v_activity");
-      expect(query.sql).toContain("member_activity_ids");
-      expect(query.params).toContain("activity-1");
-      expect(query.params).toContain("user-1");
-      expect(query.params).toContain(7);
-      expect(query.sql).toContain("activity_id IN");
-    });
-
-    it("reports an activity not found when no visible member row was updated", async () => {
-      const { repo } = makeRepository([]);
-      await expect(repo.setPerceivedExertion("missing", null)).resolves.toEqual({
-        found: false,
-        perceivedExertion: null,
-      });
     });
   });
 

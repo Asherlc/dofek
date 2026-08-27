@@ -209,6 +209,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
       climbType: "route",
       gradeSystem: "yds",
       grade: "5.10a",
+      lead: null,
       routeName: "Lead Route",
       locationName: "Touchstone Pacific Pipe",
       raw: {

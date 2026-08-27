@@ -1,6 +1,5 @@
-import { formatDateYmd, formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
-import { autoMealType } from "@dofek/nutrition/meal";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
@@ -24,7 +23,6 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { SkeletonCircle } from "../../components/Skeleton";
 import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
-import { useAutoSync } from "../../lib/useAutoSync";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
@@ -67,9 +65,6 @@ export default function TodayScreen() {
   const strainResult = dashboardData?.strain;
   const dailyStrain = strainResult?.dailyStrain ?? 0;
 
-  // Auto-sync when data is stale
-  useAutoSync(dashboardData?.latestDate ?? undefined);
-
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
   const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
@@ -94,10 +89,6 @@ export default function TodayScreen() {
     },
     invalidate: null,
   });
-
-  function handleLogFood() {
-    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}&mode=quickadd`);
-  }
 
   if (isError) {
     return (
@@ -172,18 +163,6 @@ export default function TodayScreen() {
           {formatSummaryDateContext(dashboardData.summaryDateContext)}
         </Text>
       ) : null}
-
-      {/* Log food */}
-      <TouchableOpacity
-        style={styles.quickAddButton}
-        onPress={handleLogFood}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Log Food"
-      >
-        <Text style={styles.quickAddPlus}>+</Text>
-        <Text style={styles.quickAddLabel}>Log Food</Text>
-      </TouchableOpacity>
 
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>

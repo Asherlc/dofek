@@ -121,6 +121,25 @@ function RecoveryBreakdown({
   );
 }
 
+function TrendMetricGridItem({
+  label,
+  value,
+  subtle = false,
+}: {
+  label: string;
+  value: string | null;
+  subtle?: boolean;
+}) {
+  return (
+    <View style={styles.trendMetricGridItem}>
+      <Text style={styles.trendMetricGridLabel}>{label}</Text>
+      <Text style={[styles.trendMetricGridValue, subtle && styles.trendMetricGridValueSubtle]}>
+        {value ?? "—"}
+      </Text>
+    </View>
+  );
+}
+
 const breakdownStyles = StyleSheet.create({
   container: {
     gap: 10,
@@ -237,9 +256,10 @@ export default function RecoveryScreen() {
 
   const weightData = recoveryData?.weight ?? [];
   const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
-  const bodyFatData = recoveryData?.bodyFat ?? [];
-  const latestBodyFat = bodyFatData.at(-1)?.bodyFatPct ?? null;
+  const bodyFatData = recoveryData?.bodyFatTrend ?? [];
+  const latestBodyFat = bodyFatData.at(-1) ?? null;
   const weightPrediction = recoveryData?.weightPrediction;
+  const bodyFatPrediction = recoveryData?.bodyFatPrediction;
 
   const healthspan = recoveryData?.healthspan;
 
@@ -254,6 +274,18 @@ export default function RecoveryScreen() {
       : null;
 
   const [recoveryExpanded, setRecoveryExpanded] = useState(false);
+  const [bodyTrendMetric, setBodyTrendMetric] = useState<"weight" | "bodyFat">("weight");
+  const displayedBodyTrendMetric =
+    bodyTrendMetric === "weight"
+      ? latestWeight != null || latestBodyFat == null
+        ? "weight"
+        : "bodyFat"
+      : latestBodyFat != null || latestWeight == null
+        ? "bodyFat"
+        : "weight";
+  const displaysWeightTrend = displayedBodyTrendMetric === "weight";
+  const displayedPrediction = displaysWeightTrend ? weightPrediction : bodyFatPrediction;
+  const displayedTrendRate = displayedPrediction?.ratePerWeek ?? null;
 
   const isLoading = shouldShowBlockingLoading({
     data: recoveryData,
@@ -626,29 +658,87 @@ export default function RecoveryScreen() {
             </Card>
           ) : null}
 
-          {/* Trend Weight */}
-          {latestWeight != null && (
-            <Card title="Trend Weight">
+          {(latestWeight != null || latestBodyFat != null) && (
+            <Card>
+              <View style={styles.trendHeader}>
+                <Text style={styles.trendTitle}>
+                  {displaysWeightTrend ? "TREND WEIGHT" : "TREND BODY FAT"}
+                </Text>
+                <View style={styles.trendMetricSelector} accessibilityRole="tablist">
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Weight"
+                    accessibilityState={{ selected: displaysWeightTrend }}
+                    onPress={() => setBodyTrendMetric("weight")}
+                    style={[
+                      styles.trendMetricSelectorButton,
+                      displaysWeightTrend && styles.trendMetricSelectorButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.trendMetricSelectorText,
+                        displaysWeightTrend && styles.trendMetricSelectorTextSelected,
+                      ]}
+                    >
+                      Weight
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Body Fat"
+                    accessibilityState={{ selected: !displaysWeightTrend }}
+                    onPress={() => setBodyTrendMetric("bodyFat")}
+                    style={[
+                      styles.trendMetricSelectorButton,
+                      !displaysWeightTrend && styles.trendMetricSelectorButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.trendMetricSelectorText,
+                        !displaysWeightTrend && styles.trendMetricSelectorTextSelected,
+                      ]}
+                    >
+                      Body Fat
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
+                    {displaysWeightTrend
+                      ? formatMeasurementText(units.formatWeight(latestWeight?.smoothedWeight ?? 0))
+                      : `${formatBodyCompositionNumber(latestBodyFat?.smoothedBodyFatPct ?? 0)}%`}
                   </Text>
-                  <Text style={styles.weightScale}>{latestWeight.smoothedWeightStatus?.label}</Text>
-                  {latestWeight.rawWeight != null && latestWeight.rawWeightStatus != null && (
-                    <Text style={styles.weightScale}>
-                      {latestWeight.rawWeightStatus.label}:{" "}
-                      {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
-                    </Text>
+                  {displaysWeightTrend ? (
+                    <>
+                      <Text style={styles.weightScale}>
+                        {latestWeight?.smoothedWeightStatus?.label}
+                      </Text>
+                      {latestWeight?.rawWeight != null && latestWeight.rawWeightStatus != null && (
+                        <Text style={styles.weightScale}>
+                          {latestWeight.rawWeightStatus.label}:{" "}
+                          {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
+                        </Text>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.weightScale}>
+                        {latestBodyFat?.smoothedBodyFatStatus?.label}
+                      </Text>
+                      {latestBodyFat?.rawBodyFatPct != null &&
+                        latestBodyFat.rawBodyFatStatus != null && (
+                          <Text style={styles.weightScale}>
+                            {latestBodyFat.rawBodyFatStatus.label}:{" "}
+                            {formatBodyCompositionNumber(latestBodyFat.rawBodyFatPct)}%
+                          </Text>
+                        )}
+                    </>
                   )}
-                  {weightPrediction?.ratePerWeek != null && (
-                    <Text style={[styles.weightRate, { color: colors.textSecondary }]}>
-                      {weightPrediction.ratePerWeek > 0 ? "+" : ""}
-                      {formatMeasurementText(units.formatWeight(weightPrediction.ratePerWeek))}
-                      /wk
-                    </Text>
-                  )}
-                  {weightPrediction?.goal?.estimatedDate != null && (
+                  {displaysWeightTrend && weightPrediction?.goal?.estimatedDate != null && (
                     <Text style={styles.weightGoal}>
                       Goal:{" "}
                       {formatMeasurementText(
@@ -658,40 +748,25 @@ export default function RecoveryScreen() {
                     </Text>
                   )}
                 </View>
-                {weightData.length >= 2 && (
-                  <View style={styles.sparkContainer}>
-                    <SparkLine
-                      data={weightData.map((d) => d.smoothedWeight)}
-                      height={50}
-                      color={colors.blue}
-                      showYAxis
-                      formatYLabel={(value) =>
-                        formatBodyCompositionNumber(units.convertWeight(value))
-                      }
-                    />
-                  </View>
-                )}
-              </View>
-              <BodyDecisionContext context={recoveryData?.decisionContext ?? null} />
-            </Card>
-          )}
-
-          {latestBodyFat != null && (
-            <Card title="Body Fat %">
-              <View style={styles.weightRow}>
-                <Text style={styles.weightValue}>
-                  {formatBodyCompositionNumber(latestBodyFat)}%
-                </Text>
-                {bodyFatData.length >= 2 && (
+                {(displaysWeightTrend ? weightData.length : bodyFatData.length) >= 2 && (
                   <View
                     accessible
                     accessibilityRole="image"
-                    accessibilityLabel={`Body fat trend: ${bodyFatData
-                      .map(
-                        ({ date, bodyFatPct }) =>
-                          `${date} ${formatBodyCompositionNumber(bodyFatPct)}%`,
-                      )
-                      .join("; ")}.`}
+                    accessibilityLabel={
+                      displaysWeightTrend
+                        ? `Weight trend: ${weightData
+                            .map(
+                              (row) =>
+                                `${row.date} ${formatMeasurementText(units.formatWeight(row.smoothedWeight))}`,
+                            )
+                            .join("; ")}.`
+                        : `Body fat trend: ${bodyFatData
+                            .map(
+                              (row) =>
+                                `${row.date} ${formatBodyCompositionNumber(row.smoothedBodyFatPct)}%`,
+                            )
+                            .join("; ")}.`
+                    }
                     style={styles.sparkContainer}
                   >
                     <View
@@ -699,16 +774,70 @@ export default function RecoveryScreen() {
                       importantForAccessibility="no-hide-descendants"
                     >
                       <SparkLine
-                        data={bodyFatData.map((row) => row.bodyFatPct)}
+                        data={
+                          displaysWeightTrend
+                            ? weightData.map((row) => row.smoothedWeight)
+                            : bodyFatData.map((row) => row.smoothedBodyFatPct)
+                        }
                         height={50}
-                        color={colors.purple}
+                        color={displaysWeightTrend ? colors.blue : colors.purple}
                         showYAxis
-                        formatYLabel={(value) => `${formatBodyCompositionNumber(value)}%`}
+                        formatYLabel={(value) =>
+                          displaysWeightTrend
+                            ? formatBodyCompositionNumber(units.convertWeight(value))
+                            : `${formatBodyCompositionNumber(value)}%`
+                        }
                       />
                     </View>
                   </View>
                 )}
               </View>
+              <View style={styles.trendMetricGrid}>
+                <TrendMetricGridItem
+                  label="RATE"
+                  subtle
+                  value={
+                    displayedTrendRate == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedTrendRate > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedTrendRate))}/wk`
+                        : `${displayedTrendRate > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedTrendRate)}%/wk`
+                  }
+                />
+                <TrendMetricGridItem
+                  label="7D"
+                  value={
+                    displayedPrediction?.periodDeltas.days7 == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedPrediction.periodDeltas.days7 > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedPrediction.periodDeltas.days7))}`
+                        : `${displayedPrediction.periodDeltas.days7 > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedPrediction.periodDeltas.days7)}%`
+                  }
+                />
+                <TrendMetricGridItem
+                  label="14D"
+                  value={
+                    displayedPrediction?.periodDeltas.days14 == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedPrediction.periodDeltas.days14 > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedPrediction.periodDeltas.days14))}`
+                        : `${displayedPrediction.periodDeltas.days14 > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedPrediction.periodDeltas.days14)}%`
+                  }
+                />
+                <TrendMetricGridItem
+                  label="30D"
+                  value={
+                    displayedPrediction?.periodDeltas.days30 == null
+                      ? null
+                      : displaysWeightTrend
+                        ? `${displayedPrediction.periodDeltas.days30 > 0 ? "+" : ""}${formatMeasurementText(units.formatWeight(displayedPrediction.periodDeltas.days30))}`
+                        : `${displayedPrediction.periodDeltas.days30 > 0 ? "+" : ""}${formatBodyCompositionNumber(displayedPrediction.periodDeltas.days30)}%`
+                  }
+                />
+              </View>
+              {displaysWeightTrend && (
+                <BodyDecisionContext context={recoveryData.decisionContext} />
+              )}
             </Card>
           )}
 
@@ -725,16 +854,6 @@ export default function RecoveryScreen() {
           )}
 
           {/* Navigation links */}
-          <TouchableOpacity
-            style={styles.navLink}
-            onPress={() => router.push("/breathwork")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Breathwork"
-          >
-            <Text style={styles.navLinkText}>Breathwork</Text>
-            <Text style={styles.navChevron}>{"\u203A"}</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.navLink}
             onPress={() => router.push("/sleep")}
@@ -886,6 +1005,65 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  trendHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  trendTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
+  },
+  trendMetricSelector: {
+    flexDirection: "row",
+    padding: 2,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+  },
+  trendMetricSelectorButton: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  trendMetricSelectorButtonSelected: {
+    backgroundColor: colors.accent,
+  },
+  trendMetricSelectorText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  trendMetricSelectorTextSelected: {
+    color: colors.background,
+  },
+  trendMetricGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceSecondary,
+    paddingTop: 12,
+  },
+  trendMetricGridItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 3,
+  },
+  trendMetricGridLabel: {
+    fontSize: 10,
+    color: colors.textTertiary,
+  },
+  trendMetricGridValue: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  trendMetricGridValueSubtle: {
+    color: colors.textSecondary,
   },
   weightValue: {
     fontSize: 32,

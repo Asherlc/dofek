@@ -53,6 +53,14 @@ const config: StorybookConfig = {
         find: resolve(currentDir, "../lib/auth-context.tsx"),
         replacement: resolve(currentDir, "./mocks/auth-context"),
       },
+      {
+        find: resolve(currentDir, "../lib/account-erasure-storage"),
+        replacement: resolve(currentDir, "./mocks/account-erasure-storage"),
+      },
+      {
+        find: resolve(currentDir, "../lib/mobile-account-purge"),
+        replacement: resolve(currentDir, "./mocks/mobile-account-purge"),
+      },
     ];
     viteConfig.plugins.push({
       name: "storybook-health-kit-module-mock",

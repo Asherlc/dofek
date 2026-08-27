@@ -1336,7 +1336,6 @@ describe("createMcpRouter", () => {
     });
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
   });
-
   it("lists configured providers with connection and reauth state", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
@@ -1509,6 +1508,7 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.queueAdd).toHaveBeenCalledWith(
       "sync",
       {
+        origin: "manual",
         providerId: "wahoo",
         sinceDays: 7,
         sinceIso: expect.any(String),

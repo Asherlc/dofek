@@ -2,6 +2,7 @@ import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
 import { Link } from "@tanstack/react-router";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
+import { DeveloperClientsAdminPanel } from "../components/DeveloperClientsAdminPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -18,6 +19,7 @@ type Tab =
   | "food"
   | "body"
   | "dailyMetrics"
+  | "developerClients"
   | "tokens";
 
 const TABS: { id: Tab; label: string }[] = [
@@ -33,6 +35,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dailyMetrics", label: "Daily Metrics" },
   { id: "sessions", label: "Sessions" },
   { id: "tokens", label: "OAuth Tokens" },
+  { id: "developerClients", label: "Developer Clients" },
 ];
 
 export function AdminPage() {
@@ -80,6 +83,7 @@ export function AdminPage() {
       {activeTab === "dailyMetrics" && <DailyMetricsTab />}
       {activeTab === "sessions" && <SessionsTab />}
       {activeTab === "tokens" && <TokensTab />}
+      {activeTab === "developerClients" ? <DeveloperClientsAdminPanel /> : null}
     </PageLayout>
   );
 }

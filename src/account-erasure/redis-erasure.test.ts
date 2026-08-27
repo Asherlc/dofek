@@ -253,25 +253,6 @@ function seedManagedState(redis: FakeRedis): void {
     }),
   );
   redis.strings.set(
-    "slack:pending-entry:entry-erased",
-    JSON.stringify({
-      id: "30000000-0000-4000-8000-000000001994",
-      userId,
-      date: "2026-07-26",
-      item: { name: "private meal" },
-      channelId: "C1",
-      confirmationMessageTs: "123.456",
-      threadTs: "123.000",
-      sourceMessageTs: "123.000",
-      slackUserId: "U-ERASE",
-    }),
-  );
-  redis.strings.set(
-    "slack:pending-message:C1:123.456",
-    JSON.stringify(["30000000-0000-4000-8000-000000001994"]),
-  );
-  redis.strings.set("slack:dedupe:action:confirm:T1:C1:123:a:U-ERASE", "1");
-  redis.strings.set(
     "bull:post-sync:de:post-sync:user-refit:10000000-0000-4000-8000-000000001994",
     "job-erased",
   );
