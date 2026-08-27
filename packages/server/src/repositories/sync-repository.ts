@@ -108,6 +108,7 @@ export interface SyncLogRow {
 
 export interface ProviderRecentSyncLog {
   id: string;
+  providerId: string;
   status: string;
   syncedAt: string;
   durationMs: number | null;
@@ -276,6 +277,7 @@ export class SyncRepository {
       const logs = logsByProvider.get(row.provider_id) ?? [];
       logs.push({
         id: row.id,
+        providerId: row.provider_id,
         status: row.status,
         syncedAt: row.synced_at.toISOString(),
         durationMs: row.duration_ms,

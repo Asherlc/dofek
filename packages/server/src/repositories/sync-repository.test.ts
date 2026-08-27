@@ -227,6 +227,7 @@ describe("SyncRepository", () => {
             [
               {
                 id: "log-1",
+                providerId: "strava",
                 status: "success",
                 syncedAt: "2026-08-27T18:28:22.481Z",
                 durationMs: 1234,

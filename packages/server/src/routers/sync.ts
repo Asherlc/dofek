@@ -66,6 +66,7 @@ const syncProviderRowOutputSchema = z.object({
   recentLogs: z.array(
     z.object({
       id: z.string(),
+      providerId: z.string(),
       status: z.string(),
       syncedAt: z.string(),
       durationMs: z.number().nullable(),
