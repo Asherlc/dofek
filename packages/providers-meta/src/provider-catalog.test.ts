@@ -24,7 +24,7 @@ describe("providerFamily", () => {
     expect(providerFamily("zos-app")).toEqual({
       id: "zepp",
       label: "Zepp",
-      methodLabel: "Zepp OS app",
+      methodLabel: "Zepp app (Zepp OS)",
     });
     expect(providerFamily("kaya")).toEqual({ id: "kaya", label: "Kaya", methodLabel: "Web" });
     expect(providerFamily("kaya-export")).toEqual({

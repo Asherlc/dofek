@@ -32,7 +32,7 @@ const zeppCloud: ProviderFamily = {
 const zeppApp: ProviderFamily = {
   id: "zepp",
   label: "Zepp",
-  methodLabel: "Zepp OS app",
+  methodLabel: "Zepp app (Zepp OS)",
 };
 
 const kayaWeb: ProviderFamily = { id: "kaya", label: "Kaya", methodLabel: "Web" };
