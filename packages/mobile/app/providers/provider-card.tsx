@@ -21,6 +21,7 @@ export interface Provider {
   lastSyncAt: string | null;
   importOnly: boolean;
   pushOnly: boolean;
+  recentLogs: SyncLog[];
 }
 
 export interface SyncLog {
@@ -105,6 +106,7 @@ export function ProviderCard({
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
+  const latestSyncFailed = provider.recentLogs[0]?.status !== "success";
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
   const canImport = onImport !== undefined;
   const showingProgress = (syncing || importing) && syncProgress !== undefined;
@@ -189,6 +191,11 @@ export function ProviderCard({
             ) : (
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
+          {provider.recentLogs[0] ? (
+            <Text style={styles.cardMetaText}>
+              {latestSyncFailed ? "Latest sync failed" : "Sync current"}
+            </Text>
+          ) : null}
           {canRunManualSync &&
             provider.authStatus === "connected" &&
             onFullSync !== undefined &&

@@ -160,8 +160,11 @@ vi.mock("dofek/lib/cache", () => ({
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
   executeWithSchema: vi.fn(
-    async (db: { execute: (q: unknown) => Promise<unknown[]> }, _schema: unknown, query: unknown) =>
-      db.execute(query),
+    async (
+      db: { execute: (q: unknown) => Promise<unknown[] | undefined> },
+      _schema: unknown,
+      query: unknown,
+    ) => (await db.execute(query)) ?? [],
   ),
 }));
 
@@ -422,7 +425,21 @@ describe("syncRouter", () => {
             // Second call: last syncs
             .mockResolvedValueOnce([{ provider_id: "wahoo", last_synced: "2024-01-01" }])
             // Third call: latest errors (none)
-            .mockResolvedValueOnce([]),
+            .mockResolvedValueOnce([])
+            // Fourth call: bounded recent history per provider
+            .mockResolvedValueOnce([
+              {
+                id: "sync-log-1",
+                provider_id: "wahoo",
+                status: "success",
+                synced_at: new Date("2024-01-01T01:00:00Z"),
+                duration_ms: 400,
+                record_count: 4,
+                data_type: "activities",
+                error_message: null,
+                auth_failure_reason: null,
+              },
+            ]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -458,6 +475,9 @@ describe("syncRouter", () => {
       expect(wahoo?.importOnly).toBe(false);
       expect(wahoo?.pushOnly).toBe(false);
       expect(wahoo?.needsReauth).toBe(false);
+      expect(wahoo?.recentLogs).toEqual([
+        expect.objectContaining({ id: "sync-log-1", status: "success" }),
+      ]);
 
       // WHOOP: custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");

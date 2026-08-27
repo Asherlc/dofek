@@ -53,6 +53,18 @@ const syncProviderRowOutputSchema = z.object({
   importOnly: z.boolean(),
   pushOnly: z.boolean(),
   needsReauth: z.boolean(),
+  recentLogs: z.array(
+    z.object({
+      id: z.string(),
+      status: z.string(),
+      syncedAt: z.string(),
+      durationMs: z.number().nullable(),
+      recordCount: z.number().nullable(),
+      dataType: z.string(),
+      errorMessage: z.string().nullable(),
+      authFailureReason: z.string().nullable(),
+    }),
+  ),
 });
 
 const syncDateSchema = z
@@ -244,10 +256,11 @@ const syncRouterProcedures = {
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
       // Batch: load connections, last sync times, recent auth errors, and stats.
-      const [allConnections, lastSyncs, latestErrors] = await Promise.all([
+      const [allConnections, lastSyncs, latestErrors, recentLogsByProvider] = await Promise.all([
         repo.getConnectedProviderIds(),
         repo.getLastSyncTimes(),
         repo.getLatestErrors(),
+        repo.getRecentLogsByProvider(3),
       ]);
 
       const connectionSet = new Set(allConnections.map((row) => row.providerId));
@@ -281,6 +294,7 @@ const syncRouterProcedures = {
             importOnly: model.importOnly,
             pushOnly: false,
             needsReauth: authErrorProviders.has(model.id),
+            recentLogs: recentLogsByProvider.get(model.id) ?? [],
           };
         });
 
@@ -296,6 +310,7 @@ const syncRouterProcedures = {
           importOnly: false,
           pushOnly: true,
           needsReauth: false,
+          recentLogs: recentLogsByProvider.get(provider.id) ?? [],
         };
       });
 

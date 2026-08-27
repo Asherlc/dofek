@@ -455,6 +455,7 @@ function makeProvider(
     authStatus: "connected" | "not_connected" | "expired";
     authType: string;
     lastSyncAt: string | null;
+    recentLogs: Array<{ status: string }>;
     importOnly: boolean;
     pushOnly: boolean;
   }> = {},
@@ -466,6 +467,7 @@ function makeProvider(
     authStatus: overrides.authStatus ?? "connected",
     authType: overrides.authType ?? "oauth",
     lastSyncAt: overrides.lastSyncAt ?? null,
+    recentLogs: overrides.recentLogs ?? [],
     importOnly: overrides.importOnly ?? false,
     pushOnly: overrides.pushOnly ?? false,
     ...overrides,
@@ -502,6 +504,23 @@ describe("providerActionLabel", () => {
 });
 
 describe("ProviderCard", () => {
+  it("shows a failed latest sync independently of connection state", async () => {
+    const { ProviderCard } = await import("../../app/providers/provider-card");
+    render(
+      <ProviderCard
+        provider={makeProvider({ recentLogs: [{ status: "error" }] })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Latest sync failed")).toBeTruthy();
+  });
+
   it("exposes one primary action and one details control", async () => {
     const { ProviderCard } = await import("../../app/providers/provider-card");
     render(

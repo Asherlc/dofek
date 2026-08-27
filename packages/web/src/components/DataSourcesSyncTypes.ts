@@ -7,10 +7,12 @@ export interface ProviderState {
 }
 
 export interface SyncLogEntry {
+  id: string;
   status: string;
   syncedAt: string;
   recordCount: number | null;
   durationMs: number | null;
+  dataType: string;
   errorMessage: string | null;
   authFailureReason: string | null;
 }
@@ -27,4 +29,5 @@ export interface SyncProviderSummary {
   importOnly: boolean;
   pushOnly: boolean;
   needsReauth: boolean;
+  recentLogs: SyncLogEntry[];
 }
