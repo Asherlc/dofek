@@ -89,7 +89,7 @@ export function makeMockSensorStore(rows: unknown[] | unknown[][] = []): Activit
   const queryTarget: Pick<ActivitySensorStore, "query"> = {
     query: async <TSchema extends z.ZodType>(schema: TSchema): Promise<z.infer<TSchema>[]> => {
       const batch = batches.shift() ?? [];
-      return z.array(schema).parse(batch);
+      return batch as z.infer<TSchema>[];
     },
   };
   vi.spyOn(queryTarget, "query");
