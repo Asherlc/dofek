@@ -320,6 +320,108 @@ describe("KayaSyncProvider", () => {
     );
   });
 
+  it("preserves a valid Kaya session end time", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      {
+        ...session("session-1"),
+        start_time: "2026-08-01T10:00:00.000-06:00",
+        end_time: "2026-08-01T11:00:00.000-06:00",
+      },
+    ]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ endedAt: new Date("2026-08-01T17:00:00.000Z") }),
+      expect.anything(),
+    );
+  });
+
+  it("drops a malformed Kaya session end time", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      {
+        ...session("session-1"),
+        start_time: "2026-08-01T10:00:00.000-06:00",
+        end_time: "not-a-date",
+      },
+    ]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ endedAt: null, localTimeSource: "provider_offset" }),
+      expect.anything(),
+    );
+  });
+
+  it("falls back to the supplied offset when a gym coordinate is missing", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      {
+        ...session("session-1"),
+        start_time: "2026-08-01T10:00:00.000-06:00",
+        end_time: "2026-08-01T11:00:00.000-06:00",
+        gym: { id: "gym-1", name: "Kaya Gym", latitude: 40, longitude: null },
+      },
+    ]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ timezone: null, localTimeSource: "provider_offset" }),
+      expect.anything(),
+    );
+  });
+
+  it("accepts gym coordinates on each geographic boundary", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      [-90, 0],
+      [90, 0],
+      [0, -180],
+      [0, 180],
+    ].map(([latitude, longitude], index) => ({
+      ...session(`session-${index}`),
+      gym: { id: `gym-${index}`, name: "Kaya Gym", latitude, longitude },
+    })));
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledTimes(4);
+    for (const [, activity] of mocks.upsertActivity.mock.calls) {
+      expect(activity).toEqual(expect.objectContaining({ localTimeSource: "provider_timezone" }));
+    }
+  });
+
   it("leaves a climbing-entry location empty when Kaya supplies no location", async () => {
     const db = database();
     const ascentWithoutLocation = {
