@@ -463,7 +463,12 @@ describe("canonical activity types Postgres migration", () => {
         POSTGRES_USER: "test",
       })
       .withExposedPorts(5432)
-      .withWaitStrategy(Wait.forLogMessage(/database system is ready to accept connections/))
+      .withWaitStrategy(
+        Wait.forAll([
+          Wait.forListeningPorts(),
+          Wait.forSuccessfulCommand("pg_isready --username=test --dbname=test"),
+        ]),
+      )
       .start();
 
     connectionString = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
