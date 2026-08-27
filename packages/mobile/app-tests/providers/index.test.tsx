@@ -11,6 +11,7 @@ const mockReplace = vi.fn();
 const mockUseLocalSearchParams = vi.fn().mockReturnValue({});
 const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
+const mockCreateExpoUploadableMobileFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
 const mockAlert = vi.hoisted(() => vi.fn());
 const mockSendAccessibilityEvent = vi.hoisted(() => vi.fn());
@@ -238,6 +239,11 @@ vi.mock("../../lib/share-import", () => ({
   importSharedFile: (...args: unknown[]) => mockImportSharedFile(...args),
 }));
 
+vi.mock("../../lib/expo-uploadable-file", () => ({
+  createExpoUploadableMobileFile: (...args: unknown[]) =>
+    mockCreateExpoUploadableMobileFile(...args),
+}));
+
 vi.mock("../../lib/telemetry", () => ({
   captureException: vi.fn(),
 }));
@@ -308,6 +314,9 @@ const mockGarminSignIn = vi.fn();
 const mockWhoopSignIn = vi.fn();
 const mockWhoopVerifyCode = vi.fn();
 const mockWhoopSaveTokens = vi.fn();
+const mockInitiateFileUpload = vi.fn();
+const mockAuthorizeFileUploadParts = vi.fn();
+const mockCompleteFileUpload = vi.fn();
 const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -332,6 +341,11 @@ vi.mock("../../lib/trpc", () => ({
       activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
       activeImports: { useQuery: (...args: unknown[]) => mockActiveImportsQuery(...args) },
     },
+    fileUpload: {
+      initiate: { useMutation: () => ({ mutateAsync: mockInitiateFileUpload }) },
+      authorizeParts: { useMutation: () => ({ mutateAsync: mockAuthorizeFileUploadParts }) },
+      complete: { useMutation: () => ({ mutateAsync: mockCompleteFileUpload }) },
+    },
     credentialAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
     },
@@ -355,6 +369,9 @@ vi.mock("../../lib/trpc", () => ({
           pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushWorkoutRoutes: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+        },
+        fileUpload: {
+          resume: { query: vi.fn() },
         },
         food: {
           healthKitWriteBackEntries: { query: vi.fn().mockResolvedValue([]) },
@@ -927,6 +944,15 @@ describe("ProvidersScreen", () => {
     mockUseLocalSearchParams.mockReturnValue({});
     mockSyncMutateAsync.mockReset();
     mockImportSharedFile.mockReset();
+    mockCreateExpoUploadableMobileFile.mockReset().mockImplementation((fileUri: string) => ({
+      uri: fileUri,
+      name: "Strong Export.csv",
+      type: "text/csv",
+      size: 78,
+      text: async () => "Date,Workout Name,Duration,Exercise Name",
+      sha256: async () => "a".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    }));
     mockGetDocumentAsync.mockReset();
     mockAlert.mockReset();
     mockSendAccessibilityEvent.mockReset();
@@ -951,6 +977,9 @@ describe("ProvidersScreen", () => {
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
+    mockInitiateFileUpload.mockReset();
+    mockAuthorizeFileUploadParts.mockReset();
+    mockCompleteFileUpload.mockReset();
     mockFileDelete.mockReset();
     mockAuthState.sessionToken = "test-token";
     mockFileBytes.mockClear();
@@ -1902,11 +1931,14 @@ describe("ProvidersScreen", () => {
       expect(mockImportSharedFile).toHaveBeenCalledWith(
         expect.objectContaining({
           fileUri: "file:///tmp/Strong%20Export.csv",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
         expect.objectContaining({
-          readBlob: expect.any(Function),
+          fileUploadApi: expect.objectContaining({
+            initiate: expect.any(Function),
+            authorizeParts: expect.any(Function),
+            complete: expect.any(Function),
+            resume: expect.any(Function),
+          }),
         }),
       );
     });
@@ -1969,10 +2001,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/garmin-export.zip",
           providerId: "garmin-dump",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2010,10 +2040,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/strong-export.csv",
           providerId: "strong-csv",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2060,10 +2088,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/cronometer-export.csv",
           providerId: "cronometer-csv",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2110,10 +2136,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/kaya-export.csv",
           providerId: "kaya-export",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2272,50 +2296,6 @@ describe("ProvidersScreen", () => {
 
     expect(screen.queryByText("Sync recent data")).toBeNull();
     expect(screen.queryByText("Sync full history…")).toBeNull();
-  });
-
-  it("passes readBlob that uses Expo file blobs without wrapping bytes", async () => {
-    mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-share" });
-    mockUseLocalSearchParams.mockReturnValue({
-      sharedFile: "file:///tmp/strong.csv",
-    });
-
-    await renderProvidersScreen();
-
-    await waitFor(() => {
-      expect(mockImportSharedFile).toHaveBeenCalled();
-    });
-
-    const callArgs = mockImportSharedFile.mock.calls[0];
-    expect(callArgs).toBeDefined();
-    expect(callArgs?.[1]).toHaveProperty("readBlob");
-    const readBlob: (uri: string) => Promise<Blob> = callArgs[1].readBlob;
-    const originalBlob = globalThis.Blob;
-    vi.stubGlobal(
-      "Blob",
-      class RejectingArrayBufferBlob extends originalBlob {
-        constructor(parts?: BlobPart[], options?: BlobPropertyBag) {
-          if (parts?.some((part) => part instanceof ArrayBuffer || ArrayBuffer.isView(part))) {
-            throw new Error(
-              "Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported",
-            );
-          }
-          super(parts, options);
-        }
-      },
-    );
-
-    try {
-      const blob = await readBlob("file:///tmp/strong.csv");
-
-      expect(mockFileBytes).not.toHaveBeenCalled();
-      expect(blob.size).toBeGreaterThan(0);
-      const text = await blob.text();
-      expect(text).toContain("Workout Name");
-      expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/strong.csv");
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 
   it("shows Expired status when provider needsReauth", async () => {
@@ -2623,10 +2603,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/apple-health-export.zip",
           providerId: "apple-health",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });

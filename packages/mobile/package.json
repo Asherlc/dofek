@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-crypto/sha256-browser": "5.2.0",
     "@bacons/apple-targets": "4.0.7",
     "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
