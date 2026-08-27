@@ -227,36 +227,20 @@ export function DataSourcesPanel() {
     [providers.data, syncMutation, updateState, doPollSyncJob],
   );
 
-  // Pre-compute stats and logs maps
+  // Pre-compute provider stats.
   const statsByProvider = useMemo(
     () => new Map((stats.data ?? []).map((s) => [s.providerId, s])),
     [stats.data],
   );
-
-  const syncRows: Array<{
-    id: string;
-    providerId: string;
-    dataType: string;
-    status: string;
-    recordCount: number | null;
-    errorMessage: string | null;
-    authFailureReason: string | null;
-    durationMs: number | null;
-    syncedAt: string;
-  }> = logs.data ?? [];
-
-  const logsByProvider = useMemo(() => {
-    const map = new Map<string, typeof syncRows>();
-    for (const row of syncRows) {
-      let arr = map.get(row.providerId);
-      if (!arr) {
-        arr = [];
-        map.set(row.providerId, arr);
-      }
-      arr.push(row);
+  const importLogsByProvider = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof logs.data>>();
+    for (const row of logs.data ?? []) {
+      const providerLogs = map.get(row.providerId) ?? [];
+      providerLogs.push(row);
+      map.set(row.providerId, providerLogs);
     }
     return map;
-  }, [syncRows]);
+  }, [logs.data]);
 
   const allProviders = providers.data ?? [];
   const activeImportByProvider = new Map(
@@ -421,7 +405,7 @@ export function DataSourcesPanel() {
   const renderProviderEntry = (entry: (typeof unifiedProviders)[number]) => {
     if (entry.kind === "import") {
       const providerStats = statsByProvider.get(entry.id);
-      const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
+      const recentLogs = (importLogsByProvider.get(entry.id) ?? []).slice(0, 5);
       return (
         <FileImportProviderCard
           providerId={entry.id}
@@ -442,7 +426,6 @@ export function DataSourcesPanel() {
       !provider.authorized;
     const needsReauth = provider.needsReauth === true;
     const providerStats = statsByProvider.get(provider.id);
-    const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
 
     return (
       <SyncProviderCard
@@ -452,7 +435,7 @@ export function DataSourcesPanel() {
         needsReauth={needsReauth}
         pushOnly={provider.pushOnly === true}
         stats={providerStats}
-        recentLogs={recentLogs}
+        recentLogs={provider.recentLogs ?? []}
         onSync={() => handleProviderClick(provider)}
       />
     );

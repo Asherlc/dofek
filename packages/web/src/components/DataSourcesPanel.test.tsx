@@ -162,15 +162,18 @@ vi.mock("./SyncProviderCard.tsx", () => ({
   SyncProviderCard: ({
     provider,
     state,
+    recentLogs,
     onSync,
   }: {
     provider: { id: string; name: string };
     state: { status: string; message?: string };
+    recentLogs: Array<{ status: string }>;
     onSync: () => void;
   }) => (
     <section data-testid={`provider-card-${provider.id}`}>
       <h4>{provider.name}</h4>
       <p>{state.status}</p>
+      {recentLogs[0] ? <p>Latest sync: {recentLogs[0].status}</p> : null}
       {state.message ? <p>{state.message}</p> : null}
       <button type="button" onClick={onSync}>
         Sync
@@ -539,6 +542,43 @@ describe("DataSourcesPanel", () => {
 
     expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
     expect(screen.getByText(logsError.message)).toBeTruthy();
+  });
+
+  it("uses provider-scoped history when the global history request is empty", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+          recentLogs: [
+            {
+              id: "garmin-log-1",
+              status: "success",
+              syncedAt: "2026-07-24T12:00:00.000Z",
+              durationMs: 100,
+              recordCount: 12,
+              dataType: "activities",
+              errorMessage: null,
+              authFailureReason: null,
+            },
+          ],
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+
+    render(<DataSourcesPanel />);
+
+    expect(
+      within(screen.getByTestId("provider-card-garmin")).getByText("Latest sync: success"),
+    ).toBeTruthy();
   });
 
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {

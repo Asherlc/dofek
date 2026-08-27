@@ -2,11 +2,12 @@ import { formatDateYmd } from "@dofek/format/format";
 import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
+import { randomUUID } from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { File as ExpoFile } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,10 +23,12 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
+import { createExpoUploadableMobileFile } from "../../lib/expo-uploadable-file";
 import {
   HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
   isHealthKitDatabaseInaccessible,
 } from "../../lib/health-kit-errors";
+import type { FileUploadApi } from "../../lib/resumable-file-upload";
 import {
   type ImportProviderId,
   importSharedFile,
@@ -54,15 +57,6 @@ import {
 import { styles } from "./styles.ts";
 import { SyncAllControls } from "./sync-all-controls.tsx";
 
-async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
-  const file = new ExpoFile(fileUri);
-  if (!file.exists) {
-    const error = new Error(`Shared file does not exist: ${fileUri} (resolved: ${file.uri})`);
-    throw error;
-  }
-  return file;
-}
-
 function deleteSharedFile(fileUri: string): void {
   const file = new ExpoFile(fileUri);
   if (file.exists) {
@@ -79,7 +73,19 @@ export default function ProvidersScreen() {
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
   const processingStatus = useProcessingStatus({});
   const syncMutation = trpc.sync.triggerSync.useMutation();
+  const { mutateAsync: initiateFileUpload } = trpc.fileUpload.initiate.useMutation();
+  const { mutateAsync: authorizeFileUploadParts } = trpc.fileUpload.authorizeParts.useMutation();
+  const { mutateAsync: completeFileUpload } = trpc.fileUpload.complete.useMutation();
   const trpcUtils = trpc.useUtils();
+  const fileUploadApi = useMemo<FileUploadApi>(
+    () => ({
+      initiate: initiateFileUpload,
+      authorizeParts: authorizeFileUploadParts,
+      complete: completeFileUpload,
+      resume: (input) => trpcUtils.client.fileUpload.resume.query(input),
+    }),
+    [authorizeFileUploadParts, completeFileUpload, initiateFileUpload, trpcUtils],
+  );
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
   const activeImports = trpc.sync.activeImports.useQuery(undefined, {
     staleTime: 0,
@@ -347,11 +353,13 @@ export default function ProvidersScreen() {
           {
             fileUri,
             providerId,
-            serverUrl,
-            sessionToken,
             onProgress: setSharedImportState,
           },
-          { readBlob: readBlobFromFileUri },
+          {
+            createUploadId: randomUUID,
+            file: createExpoUploadableMobileFile(fileUri),
+            fileUploadApi,
+          },
         );
         trpcUtils.invalidate();
       } catch (error: unknown) {
@@ -370,7 +378,7 @@ export default function ProvidersScreen() {
         }
       }
     },
-    [serverUrl, sessionToken, trpcUtils],
+    [fileUploadApi, sessionToken, trpcUtils],
   );
 
   useEffect(() => {
@@ -622,6 +630,7 @@ export default function ProvidersScreen() {
     syncFreshness: provider.syncFreshness,
     importOnly: provider.importOnly,
     pushOnly: provider.pushOnly,
+    recentLogs: provider.recentLogs ?? [],
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.data ?? []) {

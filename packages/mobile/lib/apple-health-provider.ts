@@ -49,6 +49,7 @@ export interface AppleHealthProviderCard {
   syncFreshness: null;
   importOnly: false;
   pushOnly: false;
+  recentLogs: [];
 }
 
 export interface AppleHealthDisplayProvider {
@@ -214,6 +215,7 @@ export class AppleHealthProviderModel {
       syncFreshness: null,
       importOnly: false,
       pushOnly: false,
+      recentLogs: [],
     };
   }
 
