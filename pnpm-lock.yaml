@@ -278,9 +278,9 @@ importers:
       '@types/yauzl':
         specifier: 2.10.3
         version: 2.10.3
-      '@vitest/coverage-istanbul':
+      '@vitest/coverage-v8':
         specifier: 4.1.11
-        version: 4.1.11(supports-color@11.0.0)(vitest@4.1.11)
+        version: 4.1.11(vitest@4.1.11)
       cspell:
         specifier: 10.0.1
         version: 10.0.1
@@ -17921,8 +17921,7 @@ snapshots:
 
   '@balena/dockerignore@1.0.2': {}
 
-  '@bcoe/v8-coverage@1.0.2':
-    optional: true
+  '@bcoe/v8-coverage@1.0.2': {}
 
   '@biomejs/biome@2.5.9':
     optionalDependencies:
@@ -25448,6 +25447,7 @@ snapshots:
       vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-istanbul@4.1.11)(@vitest/coverage-v8@4.1.11)(jsdom@29.0.0)(msw@2.12.11)(vite@8.0.16)
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@vitest/coverage-v8@4.1.11(vitest@4.1.11)':
     dependencies:
@@ -25462,7 +25462,6 @@ snapshots:
       std-env: 4.2.0
       tinyrainbow: 3.1.1
       vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-istanbul@4.1.11)(@vitest/coverage-v8@4.1.11)(jsdom@29.0.0)(msw@2.12.11)(vite@8.0.16)
-    optional: true
 
   '@vitest/expect@3.2.4':
     dependencies:
@@ -25892,7 +25891,6 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
       js-tokens: 10.0.0
-    optional: true
 
   astral-regex@1.0.0: {}
 
@@ -29602,8 +29600,7 @@ snapshots:
 
   js-md4@0.3.2: {}
 
-  js-tokens@10.0.0:
-    optional: true
+  js-tokens@10.0.0: {}
 
   js-tokens@4.0.0: {}
 

@@ -123,13 +123,11 @@ export default defineConfig({
       },
     ],
     coverage: {
-      provider: "istanbul",
+      provider: "v8",
       reporter: ["text", "json-summary", "json", "lcov"],
       include: ["src/**/*.ts", "packages/*/src/**/*.ts"],
       exclude: [
         "**/*.test.ts",
-        "**/*.test-helper.{ts,tsx}",
-        "**/test-helpers/**",
         "**/test-helpers.ts",
         "**/fixtures/**",
         "**/node_modules/**",
