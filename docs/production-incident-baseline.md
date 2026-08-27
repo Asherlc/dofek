@@ -24185,3 +24185,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Restore Axiom access, deploy the diagnostic
   commit, reproduce the refresh, and correlate the reported operation with
   server request duration and error traces before selecting a behavior change.
+
+## 2026-08-27 — PR 2584 provider grouping CI typecheck and Knip failures
+
+- **Status:** Fixed in source; the fresh hosted CI workflow is queued.
+- **Symptoms / impact:** PR #2584 could not merge because typechecks for the
+  providers, server, web, and mobile packages failed, along with Knip.
+- **Evidence / root cause:** The first fatal typecheck line was
+  `Type '{ [k: string]: string | undefined; }' is not assignable to type
+  'Readonly<Record<string, string>>'` in the catalog-derived `BRAND_COLORS`
+  map. Knip independently reported an unlisted `@storybook/react` import in
+  the new provider-family story. See the [providers typecheck job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638133825)
+  and [Knip job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638070205).
+- **Fix / mitigation:** Replaced the nullable color-map pipeline with an
+  explicitly typed accumulator that only writes defined colors, and imported
+  Storybook types from the package already declared by the web workspace
+  (`@storybook/react-vite`). No retry, timeout, or workflow suppression was
+  added.
+- **Validation:** Full local `pnpm typecheck` and `pnpm knip` pass. The fresh
+  CI workflow for commit `2e815f3` is queued.
+- **Remaining risk / follow-up:** Confirm the queued hosted CI workflow passes
+  before merging the PR.
