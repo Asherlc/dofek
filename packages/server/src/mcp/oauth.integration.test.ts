@@ -318,7 +318,7 @@ describe("MCP OAuth", () => {
         grant_type: "refresh_token",
         refresh_token: tokens.refresh_token,
         resource,
-        scope: "health:read activity:read nutrition:write",
+        scope: "health:read activity:read nutrition:read",
       }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
