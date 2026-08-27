@@ -655,6 +655,13 @@ export default function ActivityDetailScreen() {
   }
 
   const activity = detail.data;
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   const zones = hrZones.data ?? [];
 
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
@@ -812,9 +819,7 @@ export default function ActivityDetailScreen() {
         <Text style={styles.dateTime}>
           {formatDateLong(activity.startedAt)}
           {" at "}
-          {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
-            ? "Local time unavailable"
-            : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
+          {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
           <View style={styles.sourceRow}>

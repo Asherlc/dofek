@@ -7,6 +7,56 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-27 — Kaya activities displayed UTC as their local clock time
+
+- **Status:** Fix implemented; deployment verification is pending.
+- **Symptoms / user impact:** The latest Kaya session was shown seven hours late
+  on the web activity page and showed a duration of `0 mins`.
+- **Evidence / root cause:** The raw Kaya session supplied
+  `start_time = end_time = 2026-08-27T14:51:43.000Z`. The sync adapter treated
+  the transport `Z` suffix as the activity's local UTC offset and persisted
+  `provider_offset = 0`, even though the gym coordinates resolve to
+  `America/Los_Angeles`. `Z` denotes a UTC offset, not an activity's physical
+  time zone ([RFC 3339](https://www.rfc-editor.org/rfc/rfc3339)). The equal end
+  timestamp represents an incomplete Kaya session, not a completed
+  zero-duration activity.
+- **Fix / mitigation:** Kaya now resolves its gym coordinates to an IANA zone,
+  persists that zone as provider time context, and stores an end time as absent
+  when it is equal to or earlier than the start time. Shared web/mobile activity
+  rendering falls back to the viewer's zone only when a source has no local-time
+  context. No converted timestamp is stored; UTC remains the canonical instant.
+- **Validation:** Regression tests first failed with the prior UTC-local offset
+  and zero-duration behavior, then passed after the fix. Focused formatter,
+  Kaya provider, web, and mobile activity suites passed; the Docker-free
+  repository test tier and typecheck passed. Code lint stages passed, while
+  database-dependent SQL lint was blocked because Docker's filesystem reported
+  zero available bytes when ClickHouse started.
+- **Remaining risk / follow-up:** Deploy and run a Kaya sync. The normal
+  30-day sync window will update the affected sessions; confirm the latest one
+  displays its gym-local start time and no false duration.
+
+## 2026-08-27 — Kaya web sync rejected string-valued gym coordinates
+
+- **Status:** Fix implemented; deployment verification is pending.
+- **Symptoms / user impact:** Kaya showed “couldn’t sync” and did not ingest
+  the user’s latest climbing data.
+- **Evidence / root cause:** At `2026-08-27T13:17:51Z`, the production worker
+  logged `Invalid input: expected number, received string` for
+  `data.ascentsForUser[*].climb.gym.latitude` and `.longitude`. The deployed
+  Kaya client required numeric coordinates at that response boundary
+  ([client schema](../packages/kaya-client/src/client.ts)). Kaya returned
+  decimal coordinates as strings for the affected ascents.
+- **Fix / mitigation:** The client now accepts non-empty finite numeric
+  coordinate strings and normalizes them to numbers before the sync provider
+  processes the response. Invalid and non-finite coordinates still fail
+  validation; no retry, timeout, or error suppression was added.
+- **Validation:** A focused regression test first reproduced the production
+  Zod failure, then passed after the schema change; the Kaya client and sync
+  provider suites passed 28 unit tests.
+- **Remaining risk / follow-up:** Deploy the fix and trigger a Kaya sync;
+  confirm the provider records a successful result and no coordinate-validation
+  errors recur.
+
 ## 2026-08-22 — Rollout request gap and hidden dbt failure diagnostics
 
 - **Symptoms:** Sentry reported a mobile `processing.alerts` request receiving a Cloudflare `502`, unhandled `ECONNRESET` and `ENOTFOUND redis` errors in server tasks, and repeated `dbt build --select activity_source_records+` failures.
@@ -24106,3 +24156,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation passes.
 - **Remaining risk / follow-up:** Deploy the migration, then verify the
   production activity group resolves to Hang Ten.
+
+## 2026-08-27 — Mobile settings data-source refresh timed out without operation telemetry
+
+- **Status:** Unresolved; diagnostic instrumentation is prepared in this PR and
+  has not yet been deployed.
+- **Symptoms / impact:** The iOS Settings > Data Sources screen retained its
+  cached provider count but displayed `Could not refresh data sources`; the
+  Zepp App Pairing connection query failed with the same
+  `fetch failed: UnexpectedException: The request timed out.` message. This
+  prevented users from refreshing provider and Zepp connection state.
+- **Evidence / root cause:** The screenshot captured the first fatal client
+  message. Production Swarm service state was healthy (`dofek_web` 2/2), but
+  Axiom access was unavailable because its user token had expired and the
+  eight-hour `dofek_web` service-log window contained no request evidence.
+  Mobile React Query intentionally excluded transient network failures from
+  `captureException`, so the client did not preserve the failing tRPC operation
+  for correlation. The request timeout's underlying server or transport cause
+  is therefore not yet established.
+- **Fix / mitigation:** Removed the transient-error exclusion so every handled
+  mobile query error reports its query hash through the existing telemetry
+  path. This records whether the next failure is `sync.providers`,
+  `companionToken.list`, or another batched operation; no retry or timeout
+  change was added.
+- **Validation:** The focused mobile query-client test passes and Biome
+  validates the changed files. A deployment and an Axiom-authenticated trace
+  query are still required to identify and correct the underlying timeout.
+- **Remaining risk / follow-up:** Restore Axiom access, deploy the diagnostic
+  commit, reproduce the refresh, and correlate the reported operation with
+  server request duration and error traces before selecting a behavior change.

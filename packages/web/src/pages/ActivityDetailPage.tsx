@@ -367,6 +367,13 @@ export function ActivityHeader({
           (new Date(activity.endedAt).getTime() - new Date(activity.startedAt).getTime()) / 60000,
         )
       : null;
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
 
   const formatDuration = (mins: number) => {
     const hours = Math.floor(mins / 60);
@@ -442,9 +449,7 @@ export function ActivityHeader({
       </div>
       <p className="text-sm text-subtle">
         {formatDateLong(activity.startedAt)} at{" "}
-        {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
-          ? "Local time unavailable"
-          : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
+        {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
         <p className="text-xs text-subtle mb-4">

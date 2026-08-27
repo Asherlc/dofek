@@ -14,6 +14,7 @@ import {
 } from "@dofek/kaya-client";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
+import timezoneAt from "tz-lookup";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
@@ -151,8 +152,9 @@ export class KayaSyncProvider implements SyncProvider {
         const started = new Date(session.start_time);
         if (Number.isNaN(started.valueOf()) || started < run.window.since) continue;
         const parsedEnd = session.end_time ? new Date(session.end_time) : null;
-        const ended = parsedEnd && !Number.isNaN(parsedEnd.valueOf()) ? parsedEnd : null;
-        const localTimeContext = kayaSessionLocalTimeContext(session, started, parsedEnd);
+        const ended =
+          parsedEnd && !Number.isNaN(parsedEnd.valueOf()) && parsedEnd > started ? parsedEnd : null;
+        const localTimeContext = kayaSessionLocalTimeContext(session, started, ended);
         const row = await upsertProviderActivity(
           run.db,
           {
@@ -251,14 +253,31 @@ export class KayaSyncProvider implements SyncProvider {
 }
 
 function kayaSessionLocalTimeContext(session: KayaSession, startedAt: Date, endedAt: Date | null) {
+  const latitude = session.gym?.latitude;
+  const longitude = session.gym?.longitude;
+  if (
+    latitude != null &&
+    longitude != null &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180
+  ) {
+    return resolveRecordLocalTimeContext({
+      startedAt,
+      endedAt,
+      timezone: timezoneAt(latitude, longitude),
+      source: "provider_timezone",
+    });
+  }
+
   const startUtcOffsetMinutes = offsetMinutesFromTimestamp(session.start_time);
-  const endUtcOffsetMinutes = session.end_time
-    ? offsetMinutesFromTimestamp(session.end_time)
-    : null;
+  const endUtcOffsetMinutes =
+    endedAt !== null && session.end_time ? offsetMinutesFromTimestamp(session.end_time) : null;
   if (
     startUtcOffsetMinutes == null ||
-    (session.end_time !== null && endUtcOffsetMinutes == null) ||
-    (endedAt !== null && Number.isNaN(endedAt.valueOf()))
+    startUtcOffsetMinutes === 0 ||
+    (endedAt !== null && endUtcOffsetMinutes == null)
   ) {
     return localTimeContextUnknown();
   }
@@ -266,7 +285,7 @@ function kayaSessionLocalTimeContext(session: KayaSession, startedAt: Date, ende
     startedAt,
     endedAt,
     startUtcOffsetMinutes,
-    endUtcOffsetMinutes,
+    endUtcOffsetMinutes: endUtcOffsetMinutes === 0 ? null : endUtcOffsetMinutes,
     source: "provider_offset",
   });
 }
