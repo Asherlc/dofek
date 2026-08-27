@@ -85,10 +85,10 @@ function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
 }
 
 export function makeMockSensorStore(rows: unknown[] | unknown[][] = []): ActivitySensorStore {
-  const batches = isMatrix(rows) ? [...rows] : [rows];
+  const rowBatches = isMatrix(rows) ? [...rows] : undefined;
   const queryTarget: Pick<ActivitySensorStore, "query"> = {
     query: async <TSchema extends z.ZodType>(schema: TSchema): Promise<z.infer<TSchema>[]> => {
-      const batch = batches.shift() ?? [];
+      const batch = rowBatches ? (rowBatches.shift() ?? []) : rows;
       return batch as z.infer<TSchema>[];
     },
   };
