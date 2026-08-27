@@ -5,11 +5,14 @@ const KAYA_APP_URL = "https://kaya-app.kayaclimb.com";
 const PAGE_SIZE = 100;
 
 const idSchema = z.union([z.string(), z.number()]).transform(String);
+const coordinateSchema = z
+  .union([z.number(), z.string().trim().min(1).transform(Number)])
+  .pipe(z.number().finite());
 const locationSchema = z.object({
   id: idSchema,
   name: z.string(),
-  latitude: z.number().nullable().optional(),
-  longitude: z.number().nullable().optional(),
+  latitude: coordinateSchema.nullable().optional(),
+  longitude: coordinateSchema.nullable().optional(),
 });
 const gymSchema = locationSchema.extend({
   address: z.string().nullable().optional(),

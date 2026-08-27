@@ -168,6 +168,45 @@ describe("KayaClient", () => {
     await expect(new KayaClient("token", fetchFn).listAscents("42")).rejects.toThrow();
   });
 
+  it("normalizes numeric-string gym coordinates from ascent responses", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          ascentsForUser: [
+            {
+              id: "ascent-1",
+              session_id: "session-1",
+              date: "2026-08-01T10:30:00.000Z",
+              attempts: 1,
+              ascent_type: { id: "flash", name: "Flash" },
+              climb: {
+                id: "climb-1",
+                name: "Route",
+                lead: true,
+                climb_type: { id: "routes", name: "Routes" },
+                grade: { id: "grade-1", name: "5.10a", climb_type_group: "route" },
+                gym: {
+                  id: "gym-1",
+                  name: "Kaya Gym",
+                  latitude: "37.7749",
+                  longitude: "-122.4194",
+                },
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(new KayaClient("token", fetchFn).listAscents("42")).resolves.toEqual([
+      expect.objectContaining({
+        climb: expect.objectContaining({
+          gym: expect.objectContaining({ latitude: 37.7749, longitude: -122.4194 }),
+        }),
+      }),
+    ]);
+  });
+
   it("reports invalid credentials for rejected or malformed login responses", async () => {
     await expect(
       signInToKaya(
