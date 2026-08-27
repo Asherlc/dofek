@@ -207,6 +207,71 @@ describe("KayaSyncProvider", () => {
     ]);
   });
 
+  it("leaves a climbing-entry location empty when Kaya supplies no location", async () => {
+    const db = database();
+    const locationlessAscent = {
+      ...ascent("ascent-1", { lead: true, climbType: "Routes", grade: "5.11a" }),
+      climb: {
+        ...ascent("ascent-1", { lead: true, climbType: "Routes", grade: "5.11a" }).climb,
+        gym: null,
+      },
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([{ ...session("session-1"), gym: null }]);
+    mocks.ascents.mockResolvedValue([locationlessAscent]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(db.insertValues).toHaveBeenCalledWith([expect.objectContaining({ locationName: null })]);
+  });
+
+  it.each([
+    {
+      name: "the start timestamp has no UTC offset",
+      start_time: "2026-08-01T10:00:00",
+      end_time: "2026-08-01T11:00:00.000Z",
+    },
+    {
+      name: "the end timestamp has no UTC offset",
+      start_time: "2026-08-01T10:00:00.000Z",
+      end_time: "2026-08-01T11:00:00",
+    },
+    {
+      name: "the offset-bearing end timestamp is invalid",
+      start_time: "2026-08-01T10:00:00.000Z",
+      end_time: "not-a-dateZ",
+    },
+  ])("keeps local time unknown when $name", async ({ start_time, end_time }) => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([{ ...session("session-1"), start_time, end_time }]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        localTimeSource: "unknown",
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+      }),
+      expect.objectContaining({
+        localTimeSource: "unknown",
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+      }),
+    );
+  });
+
   it("requires a user ID before accessing Kaya", async () => {
     const db = database();
 
