@@ -410,12 +410,16 @@ describe("createGarminImportProgressCoordinator", () => {
     const firstImportSnapshot = createImportJob();
     const secondImportSnapshot = createImportJob();
     const progressUpdates: number[] = [];
-    firstImportSnapshot.updateProgress.mockImplementation(async ({ percentage }) => {
-      progressUpdates.push(percentage);
-    });
-    secondImportSnapshot.updateProgress.mockImplementation(async ({ percentage }) => {
-      progressUpdates.push(percentage);
-    });
+    firstImportSnapshot.updateProgress.mockImplementation(
+      async ({ percentage }: { percentage: number }) => {
+        progressUpdates.push(percentage);
+      },
+    );
+    secondImportSnapshot.updateProgress.mockImplementation(
+      async ({ percentage }: { percentage: number }) => {
+        progressUpdates.push(percentage);
+      },
+    );
     const batchJob = createBatchJob();
     batchJob.getDependenciesCount
       .mockImplementationOnce(() => firstCounts.promise)

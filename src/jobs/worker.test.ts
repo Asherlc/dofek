@@ -687,7 +687,7 @@ describe("worker module", () => {
   ): (...args: unknown[]) => unknown {
     const on = workerOnMocks[queueName];
     if (!on) throw new Error(`${queueName} worker on mock was not registered`);
-    const call = on.mock.calls.find((mockCall) => mockCall[0] === eventName);
+    const call = on.mock.calls.find((mockCall: [string, unknown]) => mockCall[0] === eventName);
     expect(call).toBeDefined();
     const handler = call?.[1];
     if (typeof handler !== "function") {
@@ -927,7 +927,7 @@ describe("worker module", () => {
   function getWorkerFailedHandler(queueName: string): (...args: unknown[]) => unknown {
     const on = workerOnMocks[queueName];
     if (!on) throw new Error(`${queueName} worker on mock was not registered`);
-    const failedCall = on.mock.calls.find((call) => call[0] === "failed");
+    const failedCall = on.mock.calls.find((call: [string, unknown]) => call[0] === "failed");
     if (!failedCall || typeof failedCall[1] !== "function") {
       throw new Error(`${queueName} worker failed handler was not registered`);
     }
@@ -941,7 +941,7 @@ describe("worker module", () => {
   function getProviderDataDeletionRedriveHandler(): (...args: unknown[]) => unknown {
     const on = workerOnMocks["provider-data-deletion-queue"];
     if (!on) throw new Error("provider deletion worker on mock was not registered");
-    const failedCall = on.mock.calls.find((call) => call[0] === "failed");
+    const failedCall = on.mock.calls.find((call: [string, unknown]) => call[0] === "failed");
     if (!failedCall || typeof failedCall[1] !== "function") {
       throw new Error("provider deletion redrive handler was not registered");
     }
