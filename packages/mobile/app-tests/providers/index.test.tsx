@@ -1011,6 +1011,30 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("groups Garmin connection methods and shows the selected method", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        { ...connectedProvider, id: "garmin", name: "Garmin", authType: "custom:garmin" },
+        {
+          ...importOnlyProvider,
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authType: "file-import",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByTestId("provider-family-garmin")).toBeTruthy();
+    expect(screen.getByLabelText("Select Garmin Data export")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Select Garmin Data export"));
+    expect(screen.getByTestId("provider-card-garmin-dump")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
+  });
+
   it("does not render Sync link for disconnected providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [disconnectedProvider],

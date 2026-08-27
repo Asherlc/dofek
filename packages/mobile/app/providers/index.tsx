@@ -1,4 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
+import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import * as DocumentPicker from "expo-document-picker";
@@ -118,6 +119,7 @@ export default function ProvidersScreen() {
   >({});
   const [anySyncing, setAnySyncing] = useState(false);
   const [syncAllError, setSyncAllError] = useState<string>();
+  const [selectedFamilyMethods, setSelectedFamilyMethods] = useState<Record<string, string>>({});
   const [sharedImportState, setSharedImportState] = useState<ShareImportProgress | null>(null);
   const resumedJobIds = useRef(new Set<string>());
   const pollingJobIds = useRef(new Set<string>());
@@ -691,6 +693,49 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
+  const providerGroups = groupProviderEntries(providerList);
+
+  const renderProviderCard = (provider: Provider) => {
+    const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
+    const activeImport = activeImportByProvider.get(provider.id);
+    const activeImportProgress = activeImport
+      ? {
+          percentage: activeImport.percentage,
+          message: activeImport.message,
+          failedCount: activeImport.failedCount,
+        }
+      : undefined;
+    const localImportProgress =
+      localImportIsActive && sharedImportState.providerId === provider.id
+        ? { percentage: sharedImportState.progress, message: sharedImportState.message }
+        : undefined;
+    const importProgress = localImportProgress ?? activeImportProgress;
+
+    return fileImportProviderConfig ? (
+      <FileImportProviderCard
+        provider={provider}
+        stats={statsMap[provider.id]}
+        syncing={syncingProviders.has(provider.id)}
+        importing={importProgress !== undefined}
+        syncProgress={importProgress ?? syncProgress[provider.id]}
+        onSync={() => handleSyncProvider(provider.id)}
+        onConnect={() => handleConnect(provider)}
+        onImportProvider={handleFileImportProvider}
+        onPress={() => router.push(`/providers/${provider.id}`)}
+      />
+    ) : (
+      <ProviderCard
+        provider={provider}
+        stats={statsMap[provider.id]}
+        syncing={syncingProviders.has(provider.id)}
+        syncProgress={syncProgress[provider.id]}
+        onSync={() => handleSyncProvider(provider.id)}
+        onFullSync={() => handleSyncProvider(provider.id, true)}
+        onConnect={() => handleConnect(provider)}
+        onPress={() => router.push(`/providers/${provider.id}`)}
+      />
+    );
+  };
 
   return (
     <ScrollView
@@ -814,49 +859,47 @@ export default function ProvidersScreen() {
       {isLoading && !providers.error ? (
         <QueryStatePanel variant="loading" style={styles.card} />
       ) : null}
-      {providerList.map((provider) => {
-        const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
-        const activeImport = activeImportByProvider.get(provider.id);
-        const activeImportProgress = activeImport
-          ? {
-              percentage: activeImport.percentage,
-              message: activeImport.message,
-              failedCount: activeImport.failedCount,
-            }
-          : undefined;
-        const localImportProgress =
-          localImportIsActive && sharedImportState.providerId === provider.id
-            ? {
-                percentage: sharedImportState.progress,
-                message: sharedImportState.message,
-              }
-            : undefined;
-        const importProgress = localImportProgress ?? activeImportProgress;
-        return fileImportProviderConfig ? (
-          <FileImportProviderCard
-            key={provider.id}
-            provider={provider}
-            stats={statsMap[provider.id]}
-            syncing={syncingProviders.has(provider.id)}
-            importing={importProgress !== undefined}
-            syncProgress={importProgress ?? syncProgress[provider.id]}
-            onSync={() => handleSyncProvider(provider.id)}
-            onConnect={() => handleConnect(provider)}
-            onImportProvider={handleFileImportProvider}
-            onPress={() => router.push(`/providers/${provider.id}`)}
-          />
-        ) : (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            stats={statsMap[provider.id]}
-            syncing={syncingProviders.has(provider.id)}
-            syncProgress={syncProgress[provider.id]}
-            onSync={() => handleSyncProvider(provider.id)}
-            onFullSync={() => handleSyncProvider(provider.id, true)}
-            onConnect={() => handleConnect(provider)}
-            onPress={() => router.push(`/providers/${provider.id}`)}
-          />
+      {providerGroups.map((group) => {
+        if (group.kind === "provider") {
+          return <View key={group.provider.id}>{renderProviderCard(group.provider)}</View>;
+        }
+        const selectedProviderId = selectedFamilyMethods[group.family.id] ?? group.providers[0].id;
+        const selectedProvider =
+          group.providers.find((provider) => provider.id === selectedProviderId) ??
+          group.providers[0];
+        return (
+          <View key={group.family.id} testID={`provider-family-${group.family.id}`}>
+            <View style={styles.providerFamilyHeader}>
+              <Text style={styles.providerFamilyTitle}>{group.family.label}</Text>
+              <View style={styles.providerFamilyMethods}>
+                {group.providers.map((provider) => {
+                  const methodLabel = providerFamily(provider.id)?.methodLabel ?? provider.label;
+                  const selected = provider.id === selectedProvider.id;
+                  return (
+                    <TouchableOpacity
+                      key={provider.id}
+                      style={[
+                        styles.providerFamilyMethod,
+                        selected && styles.providerFamilyMethodSelected,
+                      ]}
+                      onPress={() =>
+                        setSelectedFamilyMethods((current) => ({
+                          ...current,
+                          [group.family.id]: provider.id,
+                        }))
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select ${group.family.label} ${methodLabel}`}
+                      accessibilityState={{ selected }}
+                    >
+                      <Text style={styles.providerFamilyMethodText}>{methodLabel}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+            {renderProviderCard(selectedProvider)}
+          </View>
         );
       })}
 

@@ -258,6 +258,41 @@ describe("DataSourcesPanel", () => {
     expect(screen.getByRole("region", { name: "Available data sources" })).toBeTruthy();
   });
 
+  it("groups Garmin connection methods behind a single provider card", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authorized: false,
+          authType: "file-import",
+          importOnly: true,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByRole("region", { name: "Garmin connection methods" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Garmin Connect" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Data export" }));
+    expect(screen.getByTestId("file-import-garmin-dump")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
+  });
+
   it("reserves stable action and provider regions while inventory loads", () => {
     mockProvidersQuery.mockReturnValue({
       data: undefined,
