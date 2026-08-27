@@ -113,7 +113,11 @@ export function providerFamily(providerId: string): ProviderFamily | null {
 
 export type ProviderEntryGroup<T extends { id: string }> =
   | { kind: "provider"; provider: T }
-  | { kind: "family"; family: Pick<ProviderFamily, "id" | "label">; providers: T[] };
+  | {
+      kind: "family";
+      family: Pick<ProviderFamily, "id" | "label">;
+      providers: readonly [T, T, ...T[]];
+    };
 
 /**
  * Groups only the provider IDs explicitly assigned to the same family.
@@ -146,7 +150,7 @@ export function groupProviderEntries<T extends { id: string }>(
     groups.push({
       kind: "family",
       family: { id: family.id, label: family.label },
-      providers: members,
+      providers: [members[0]!, members[1]!, ...members.slice(2)],
     });
   }
   return groups;
