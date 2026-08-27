@@ -227,7 +227,7 @@ describe("SyncProviderCard", () => {
         {
           id: "strava-sync-2",
           syncedAt: "2026-05-12T11:00:00.000Z",
-          status: "failed",
+          status: "error",
           dataType: "activities",
           recordCount: 0,
           durationMs: 50,
@@ -242,6 +242,28 @@ describe("SyncProviderCard", () => {
     );
     expect(screen.queryByText("✓")).toBeNull();
     expect(screen.queryByText("!")).toBeNull();
+  });
+
+  it("distinguishes a degraded sync from a failed sync", () => {
+    renderProvider({
+      recentLogs: [
+        {
+          id: "strava-sync-3",
+          syncedAt: "2026-05-12T11:00:00.000Z",
+          status: "degraded",
+          dataType: "activities",
+          recordCount: 8,
+          durationMs: 50,
+          errorMessage: "One source was unavailable",
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("status", { name: "Sync completed with issues" })).toHaveTextContent(
+      "Latest sync completed with issues",
+    );
+    expect(screen.queryByText("Latest sync failed")).toBeNull();
   });
 
   it("uses neutral push-only copy and server-provided description", () => {

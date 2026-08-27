@@ -519,6 +519,24 @@ describe("ProviderCard", () => {
     expect(screen.getByText("Latest sync failed")).toBeTruthy();
   });
 
+  it("shows a degraded latest sync as completed with issues", async () => {
+    const { ProviderCard } = await import("../../app/providers/provider-card");
+    render(
+      <ProviderCard
+        provider={makeProvider({ recentLogs: [{ status: "degraded" }] })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Latest sync completed with issues")).toBeTruthy();
+    expect(screen.queryByText("Latest sync failed")).toBeNull();
+  });
+
   it("exposes one primary action and one details control", async () => {
     const { ProviderCard } = await import("../../app/providers/provider-card");
     render(

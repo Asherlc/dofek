@@ -52,7 +52,25 @@ export function SyncProviderCard({
     if (!latest || entry.syncedAt > latest.syncedAt) return entry;
     return latest;
   }, undefined);
-  const latestSyncFailed = latestLog?.status !== "success";
+  const latestSync = latestLog
+    ? latestLog.status === "error"
+      ? {
+          label: "Latest sync failed",
+          accessibilityLabel: "Sync needs attention",
+          colors: operationalStatusColors.danger,
+        }
+      : latestLog.status === "degraded"
+        ? {
+            label: "Latest sync completed with issues",
+            accessibilityLabel: "Sync completed with issues",
+            colors: operationalStatusColors.warning,
+          }
+        : {
+            label: "Sync current",
+            accessibilityLabel: "Sync current",
+            colors: operationalStatusColors.success,
+          }
+    : null;
   const syncFreshness = !pushOnly && !needsAuth ? provider.syncFreshness : null;
   const syncFreshnessColors =
     syncFreshness?.status === "overdue"
@@ -136,26 +154,22 @@ export function SyncProviderCard({
             <span className="text-xs text-dim">
               {provider.authorized ? "Synced via iOS app" : "Waiting for mobile sync"}
             </span>
-          ) : latestLog ? (
+          ) : latestSync ? (
             <output
-              aria-label={latestSyncFailed ? "Sync needs attention" : "Sync current"}
+              aria-label={latestSync.accessibilityLabel}
               className="inline-flex items-center gap-1.5 text-xs"
               style={{
-                color: latestSyncFailed
-                  ? operationalStatusColors.danger.foreground
-                  : operationalStatusColors.success.foreground,
+                color: latestSync.colors.foreground,
               }}
             >
               <span
                 aria-hidden="true"
                 className="h-2 w-2 rounded-full"
                 style={{
-                  backgroundColor: latestSyncFailed
-                    ? operationalStatusColors.danger.indicator
-                    : operationalStatusColors.success.indicator,
+                  backgroundColor: latestSync.colors.indicator,
                 }}
               />
-              {latestSyncFailed ? "Latest sync failed" : "Sync current"}
+              {latestSync.label}
             </output>
           ) : (
             <span className="text-xs text-dim">No sync history</span>

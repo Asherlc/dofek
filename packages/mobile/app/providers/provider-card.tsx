@@ -114,7 +114,12 @@ export function ProviderCard({
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
-  const latestSyncFailed = provider.recentLogs[0]?.status !== "success";
+  const latestSyncLabel =
+    provider.recentLogs[0]?.status === "error"
+      ? "Latest sync failed"
+      : provider.recentLogs[0]?.status === "degraded"
+        ? "Latest sync completed with issues"
+        : "Sync current";
   const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
     ? formatRelativeTime(provider.lastSuccessfulSyncAt)
     : null;
@@ -205,9 +210,7 @@ export function ProviderCard({
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
           {provider.recentLogs[0] ? (
-            <Text style={styles.cardMetaText}>
-              {latestSyncFailed ? "Latest sync failed" : "Sync current"}
-            </Text>
+            <Text style={styles.cardMetaText}>{latestSyncLabel}</Text>
           ) : null}
           {canRunManualSync && lastSuccessfulSyncRelative ? (
             <Text style={styles.cardMetaText}>
