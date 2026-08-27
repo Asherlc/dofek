@@ -16,13 +16,9 @@ const mockShutdown = vi.fn().mockResolvedValue(undefined);
 const mockAutoInstrumentations = { bundle: "auto" };
 const aiTelemetryMocks = vi.hoisted(() => ({
   registerTelemetry: vi.fn(),
-  OpenTelemetry: vi.fn(
-    class {
-      constructor() {
-        return {};
-      }
-    },
-  ),
+  OpenTelemetry: vi.fn(function vitestConstructor() {
+    return {};
+  }),
 }));
 
 vi.mock("ai", () => ({
@@ -34,13 +30,9 @@ vi.mock("@ai-sdk/otel", () => ({
 }));
 
 vi.mock("@opentelemetry/sdk-node", () => ({
-  NodeSDK: vi.fn(
-    class {
-      constructor() {
-        return { start: mockStart, shutdown: mockShutdown };
-      }
-    },
-  ),
+  NodeSDK: vi.fn(function vitestConstructor() {
+    return { start: mockStart, shutdown: mockShutdown };
+  }),
 }));
 
 vi.mock("@opentelemetry/exporter-trace-otlp-proto", () => ({
@@ -68,18 +60,14 @@ vi.mock("@opentelemetry/sdk-trace-node", () => ({
 }));
 
 vi.mock("@posthog/ai/otel", () => ({
-  PostHogSpanProcessor: vi.fn(
-    class {
-      constructor() {
-        return {
-          forceFlush: vi.fn().mockResolvedValue(undefined),
-          onEnd: vi.fn(),
-          onStart: vi.fn(),
-          shutdown: vi.fn().mockResolvedValue(undefined),
-        };
-      }
-    },
-  ),
+  PostHogSpanProcessor: vi.fn(function vitestConstructor() {
+    return {
+      forceFlush: vi.fn().mockResolvedValue(undefined),
+      onEnd: vi.fn(),
+      onStart: vi.fn(),
+      shutdown: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({

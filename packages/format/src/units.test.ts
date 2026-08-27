@@ -196,16 +196,12 @@ describe("format functions", () => {
   it("falls back to numeric label formatting when Intl unit formatting is unsupported", async () => {
     vi.resetModules();
     const OriginalNumberFormat = Intl.NumberFormat;
-    vi.spyOn(Intl, "NumberFormat").mockImplementation(
-      class {
-        constructor(locale, options) {
-          if (options?.style === "unit") {
-            throw new RangeError("unit formatting unsupported");
-          }
-          return new OriginalNumberFormat(locale, options);
-        }
-      },
-    );
+    vi.spyOn(Intl, "NumberFormat").mockImplementation(function vitestConstructor(locale, options) {
+      if (options?.style === "unit") {
+        throw new RangeError("unit formatting unsupported");
+      }
+      return new OriginalNumberFormat(locale, options);
+    });
     const { formatMeasurementText: freshFormatMeasurementText, UnitConverter: FreshUnitConverter } =
       await import("./units.ts");
 

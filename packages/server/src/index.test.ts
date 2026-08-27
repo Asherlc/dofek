@@ -56,13 +56,9 @@ const mockCreateDeveloperClientsRouter = vi.fn(() => {
 });
 
 vi.mock("@bull-board/express", () => ({
-  ExpressAdapter: vi.fn(
-    class {
-      constructor() {
-        return { setBasePath: vi.fn(), getRouter: vi.fn(() => express.Router()) };
-      }
-    },
-  ),
+  ExpressAdapter: vi.fn(function vitestConstructor() {
+    return { setBasePath: vi.fn(), getRouter: vi.fn(() => express.Router()) };
+  }),
 }));
 
 vi.mock("@bull-board/api", () => ({
@@ -74,13 +70,9 @@ vi.mock("@trpc/server/adapters/express", () => ({
 }));
 
 vi.mock("@bull-board/api/bullMQAdapter", () => ({
-  BullMQAdapter: vi.fn(
-    class {
-      constructor() {
-        return {};
-      }
-    },
-  ),
+  BullMQAdapter: vi.fn(function vitestConstructor() {
+    return {};
+  }),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {

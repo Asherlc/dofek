@@ -82,15 +82,11 @@ const sharedRedisMocks = vi.hoisted(() => ({
       _count: string,
     ) => Promise<[string, string[]]>
   >(),
-  RedisConnection: vi.fn(
-    class {
-      constructor() {
-        return {
-          client: Promise.resolve({ get: sharedRedisMocks.get, scan: sharedRedisMocks.scan }),
-        };
-      }
-    },
-  ),
+  RedisConnection: vi.fn(function vitestConstructor() {
+    return {
+      client: Promise.resolve({ get: sharedRedisMocks.get, scan: sharedRedisMocks.scan }),
+    };
+  }),
 }));
 
 vi.mock("bullmq", () => ({
@@ -401,18 +397,14 @@ describe("getProviderRateLimitStatusFromRedis", () => {
   beforeEach(() => {
     sharedRedisMocks.get.mockResolvedValue(null);
     sharedRedisMocks.scan.mockResolvedValue(["0", []]);
-    sharedRedisMocks.RedisConnection.mockImplementation(
-      class {
-        constructor() {
-          return {
-            client: Promise.resolve({
-              get: sharedRedisMocks.get,
-              scan: sharedRedisMocks.scan,
-            }),
-          };
-        }
-      },
-    );
+    sharedRedisMocks.RedisConnection.mockImplementation(function vitestConstructor() {
+      return {
+        client: Promise.resolve({
+          get: sharedRedisMocks.get,
+          scan: sharedRedisMocks.scan,
+        }),
+      };
+    });
   });
 
   afterEach(() => {

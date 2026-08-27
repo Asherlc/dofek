@@ -24,13 +24,9 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  redisConnectionConstructor.mockImplementation(
-    class {
-      constructor() {
-        return { client: Promise.resolve(redisClient) };
-      }
-    },
-  );
+  redisConnectionConstructor.mockImplementation(function vitestConstructor() {
+    return { client: Promise.resolve(redisClient) };
+  });
   redisClient.set.mockResolvedValue("OK");
 });
 
@@ -106,13 +102,9 @@ describe("RedisMobileAuthExchangeStore", () => {
   ])("rejects a Redis client that is %s", async (_description, invalidRedisClient) => {
     vi.resetModules();
     vi.doMock("bullmq", () => ({
-      RedisConnection: vi.fn(
-        class {
-          constructor() {
-            return { client: Promise.resolve(invalidRedisClient) };
-          }
-        },
-      ),
+      RedisConnection: vi.fn(function vitestConstructor() {
+        return { client: Promise.resolve(invalidRedisClient) };
+      }),
     }));
     vi.doMock("dofek/jobs/queues", () => ({ getRedisConnection: vi.fn() }));
 

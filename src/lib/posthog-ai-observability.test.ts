@@ -14,12 +14,9 @@ const posthogMocks = vi.hoisted(() => ({
   PostHogSpanProcessor: vi.fn(),
 }));
 
-posthogMocks.PostHogSpanProcessor.mockImplementation(
-  // biome-ignore lint/complexity/useArrowFunction: Vitest invokes this mock with new.
-  function postHogSpanProcessorConstructor() {
-    return posthogMocks.delegate;
-  },
-);
+posthogMocks.PostHogSpanProcessor.mockImplementation(function postHogSpanProcessorConstructor() {
+  return posthogMocks.delegate;
+});
 
 vi.mock("@posthog/ai/otel", () => ({
   PostHogSpanProcessor: posthogMocks.PostHogSpanProcessor,

@@ -23,10 +23,7 @@ const mocks = vi.hoisted(() => ({
   micronutrientsRefetch: vi.fn(),
 }));
 
-function queryResult(
-  refetch: CallableVitestMock,
-  overrides: Partial<MockQuery> = {},
-): MockQuery {
+function queryResult(refetch: CallableVitestMock, overrides: Partial<MockQuery> = {}): MockQuery {
   return {
     data: undefined,
     error: null,

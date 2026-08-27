@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockS3Client = vi.hoisted(() =>
-  vi.fn(
-    class {
-      constructor() {
-        return {};
-      }
-    },
-  ),
+  vi.fn(function vitestConstructor() {
+    return {};
+  }),
 );
 
 vi.mock("@aws-sdk/client-s3", () => ({

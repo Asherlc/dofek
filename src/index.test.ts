@@ -45,21 +45,16 @@ const mockCreateSyncQueue = vi.fn(() => ({
   close: mockQueueClose,
 }));
 const capturedWorkerCallbacks = new Map<string, (job: unknown) => Promise<unknown>>();
-const MockWorker = vi.fn(
-  class {
-    constructor(name: string, callback: (job: unknown) => Promise<unknown>) {
-      capturedWorkerCallbacks.set(name, callback);
-      return { close: mockWorkerClose };
-    }
-  },
-);
-const MockQueueEvents = vi.fn(
-  class {
-    constructor() {
-      return { close: mockQueueEventsClose };
-    }
-  },
-);
+const MockWorker = vi.fn(function vitestConstructor(
+  name: string,
+  callback: (job: unknown) => Promise<unknown>,
+) {
+  capturedWorkerCallbacks.set(name, callback);
+  return { close: mockWorkerClose };
+});
+const MockQueueEvents = vi.fn(function vitestConstructor() {
+  return { close: mockQueueEventsClose };
+});
 
 vi.mock("bullmq", () => ({
   Worker: MockWorker,

@@ -9,13 +9,9 @@ const mockArchive = {
   on: vi.fn(),
 };
 vi.mock("archiver", () => ({
-  ZipArchive: vi.fn(
-    class {
-      constructor() {
-        return mockArchive;
-      }
-    },
-  ),
+  ZipArchive: vi.fn(function vitestConstructor() {
+    return mockArchive;
+  }),
 }));
 
 // Mock fs

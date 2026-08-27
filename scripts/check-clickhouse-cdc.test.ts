@@ -23,13 +23,9 @@ class MockPgClient {
 }
 
 vi.mock("pg", () => ({
-  Client: vi.fn(
-    class {
-      constructor(options: { connectionString: string }) {
-        return new MockPgClient(options);
-      }
-    },
-  ),
+  Client: vi.fn(function vitestConstructor(options: { connectionString: string }) {
+    return new MockPgClient(options);
+  }),
 }));
 
 vi.mock("../src/db/clickhouse.ts", () => ({

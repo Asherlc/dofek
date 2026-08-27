@@ -2,27 +2,15 @@ import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSend = vi.fn();
-const mockS3Client = vi.fn(
-  class {
-    constructor() {
-      return { send: mockSend };
-    }
-  },
-);
-const mockPutObjectCommand = vi.fn(
-  class {
-    constructor(input: unknown) {
-      return { command: "put", input };
-    }
-  },
-);
-const mockGetObjectCommand = vi.fn(
-  class {
-    constructor(input: unknown) {
-      return { command: "get", input };
-    }
-  },
-);
+const mockS3Client = vi.fn(function vitestConstructor() {
+  return { send: mockSend };
+});
+const mockPutObjectCommand = vi.fn(function vitestConstructor(input: unknown) {
+  return { command: "put", input };
+});
+const mockGetObjectCommand = vi.fn(function vitestConstructor(input: unknown) {
+  return { command: "get", input };
+});
 const mockGetSignedUrl = vi.fn().mockResolvedValue("https://r2.example.test/signed");
 
 vi.mock("@aws-sdk/client-s3", () => ({

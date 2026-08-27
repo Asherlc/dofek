@@ -41,13 +41,9 @@ const mockProviders = {
 };
 
 function mockProviderConstructor(provider: { id: string }) {
-  return vi.fn(
-    class {
-      constructor() {
-        return provider;
-      }
-    },
-  );
+  return vi.fn(function vitestConstructor() {
+    return provider;
+  });
 }
 
 vi.mock("../providers/wahoo/provider.ts", () => ({

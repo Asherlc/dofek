@@ -3,13 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mockRegisterProvider = vi.fn();
 const mockProviderConstructor = vi.hoisted(
   () => (id: string) =>
-    vi.fn(
-      class {
-        constructor() {
-          return { id };
-        }
-      },
-    ),
+    vi.fn(function vitestConstructor() {
+      return { id };
+    }),
 );
 
 vi.mock("dofek/providers/registry", () => ({
