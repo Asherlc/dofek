@@ -265,12 +265,7 @@ function parseJsonRpcEvent(text: string): unknown {
 
 function parseToolCallText(responseText: string): unknown {
   const response = toolCallResponseSchema.parse(parseJsonRpcEvent(responseText));
-  const content = response.result.content[0]?.text ?? "null";
-  try {
-    return JSON.parse(content);
-  } catch (error) {
-    throw new Error(`MCP tool response was not JSON: ${content}`, { cause: error });
-  }
+  return JSON.parse(response.result.content[0]?.text ?? "null");
 }
 
 function authorizeMcpToken(scopes: readonly (typeof mcpScopes)[number][] = mcpScopes): void {
