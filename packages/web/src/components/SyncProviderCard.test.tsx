@@ -126,7 +126,7 @@ describe("SyncProviderCard", () => {
     expect(screen.getByText("No sync history")).not.toBeNull();
   });
 
-  it("identifies recent sync outcomes without relying on color", () => {
+  it("summarizes the latest sync outcome in readable text", () => {
     renderProvider({
       recentLogs: [
         {
@@ -148,8 +148,11 @@ describe("SyncProviderCard", () => {
       ],
     });
 
-    expect(screen.getByRole("status", { name: "Sync succeeded" }).textContent).toBe("✓");
-    expect(screen.getByRole("status", { name: "Sync failed" }).textContent).toBe("!");
+    expect(screen.getByRole("status", { name: "Sync needs attention" })).toHaveTextContent(
+      "Latest sync failed",
+    );
+    expect(screen.queryByText("✓")).toBeNull();
+    expect(screen.queryByText("!")).toBeNull();
   });
 
   it("uses neutral push-only copy and server-provided description", () => {
