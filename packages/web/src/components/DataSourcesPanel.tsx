@@ -39,6 +39,7 @@ const oauthPostMessage = z.object({
 const providerRegionClassName =
   "h-80 space-y-3 overflow-y-auto overscroll-contain rounded-lg pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-96 lg:h-[28rem]";
 const providerGridClassName = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3";
+const hiddenProviderIds = new Set(["auto-supplements"]);
 
 export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
@@ -246,7 +247,9 @@ export function DataSourcesPanel() {
   const activeImportByProvider = new Map(
     (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
   );
-  const enabledSyncable = allProviders.filter((p) => !p.importOnly && !p.pushOnly);
+  const enabledSyncable = allProviders.filter(
+    (p) => !hiddenProviderIds.has(p.id) && !p.importOnly && !p.pushOnly,
+  );
   const syncAllBusy =
     syncMutation.isPending ||
     syncAllMode !== null ||
@@ -388,6 +391,7 @@ export function DataSourcesPanel() {
   });
 
   for (const p of allProviders) {
+    if (hiddenProviderIds.has(p.id)) continue;
     const importConfig = getFileImportConfig(p.id);
     if (importConfig) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
