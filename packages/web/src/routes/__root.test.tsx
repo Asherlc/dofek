@@ -206,6 +206,7 @@ describe("AuthGate", () => {
 
   it.each([
     "/privacy",
+    "/support",
     "/terms",
   ])("allows an unauthenticated user to read the legal route %s", (pathname) => {
     mockUseAuth.mockReturnValue({

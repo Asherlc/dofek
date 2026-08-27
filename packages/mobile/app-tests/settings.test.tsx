@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import { formatDateTime } from "@dofek/format/format";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { Alert } from "react-native";
@@ -36,14 +35,6 @@ vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
 }));
 
-vi.mock("expo-updates", () => ({
-  updateId: null,
-  channel: null,
-  runtimeVersion: null,
-  createdAt: null,
-  isEmbeddedLaunch: true,
-}));
-
 vi.mock("../lib/medication-reminder-notifications", () => ({
   syncMedicationReminderNotifications: vi.fn().mockResolvedValue(undefined),
 }));
@@ -54,10 +45,6 @@ vi.mock("../components/PersonalizationPanel", () => ({
 
 vi.mock("../components/AccountErasurePanel", () => ({
   AccountErasurePanel: () => React.createElement("div", null, "AccountErasurePanel"),
-}));
-
-vi.mock("../components/SlackIntegrationPanel", () => ({
-  SlackIntegrationPanel: () => React.createElement("div", null, "SlackIntegrationPanel"),
 }));
 
 vi.mock("../components/ProviderLogo", () => ({
@@ -484,6 +471,17 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByText("2 connected")).toBeTruthy();
   });
 
+  it("keeps the Bluetooth Devices settings entry discoverable", async () => {
+    mockSearchParams = {};
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Data Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bluetooth Devices" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/bluetooth-devices");
+  });
+
   it("renders provider logos for connected providers only", async () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
@@ -536,7 +534,7 @@ describe("SettingsScreen data sources", () => {
     expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
   });
 
-  it("uses layman-readable names for Bluetooth and motion developer tools", async () => {
+  it("navigates to developer integrations from Advanced settings", async () => {
     mockSearchParams = { tab: "advanced" };
     const { default: SettingsScreen } = await import("../app/settings");
 
@@ -545,10 +543,8 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
-    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");
   });
 
   it("navigates to providers screen when tapped", async () => {
@@ -559,17 +555,6 @@ describe("SettingsScreen data sources", () => {
     fireEvent.click(screen.getByText("2 connected"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
-  });
-
-  it("navigates to cycle tracking from the health tracking section", async () => {
-    mockSearchParams = { tab: "goals-models" };
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Cycle Tracking" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/cycle");
   });
 
   it("navigates to journal trends from the health tracking section", async () => {
@@ -901,29 +886,6 @@ describe("SettingsScreen export UI rendering", () => {
     });
 
     vi.unstubAllGlobals();
-  });
-});
-
-describe("SettingsScreen OTA debug details", () => {
-  beforeEach(() => {
-    mockSearchParams = { tab: "advanced" };
-  });
-
-  it("renders OTA created time in the local timezone format", async () => {
-    const updatesModule = await import("expo-updates");
-    const otaCreatedAt = new Date("2026-03-31T18:22:00.000Z");
-    updatesModule.createdAt = otaCreatedAt;
-
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    const expectedLocalTimestamp = formatDateTime(otaCreatedAt);
-    expect(
-      screen.getByText((content) => content.includes(`Created: ${expectedLocalTimestamp}`)),
-    ).toBeTruthy();
-
-    updatesModule.createdAt = null;
   });
 });
 

@@ -81,6 +81,11 @@ export const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginBottom: 10,
   },
+  label: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 6,
+  },
 
   // ── Billing ──
   billingStatusText: {
@@ -181,12 +186,24 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  gradeSystemList: {
+    gap: 10,
+  },
   unitButton: {
     flex: 1,
     backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: colors.surfaceSecondary,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  gradeSystemButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.surfaceSecondary,
+    minHeight: 48,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
@@ -259,34 +276,15 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // ── Developer Tools ──
-  devToolRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  devToolRowLast: {
-    borderBottomWidth: 0,
-  },
-  devToolLabel: {
+  navigationLabel: {
     fontSize: 15,
     fontWeight: "500",
     color: colors.text,
   },
-  devToolChevron: {
+  navigationChevron: {
     fontSize: 18,
     color: colors.textTertiary,
   },
-  devToolDetail: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 2,
-    fontVariant: ["tabular-nums"],
-  },
-
   // ── Danger Zone ──
   dangerCard: {
     backgroundColor: colors.surface,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/selected-date-summary";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -12,10 +12,6 @@ import {
 } from "./NutritionPage";
 
 const foodRefetchMock = vi.fn();
-const analyzeItemsMutateAsyncMock = vi.fn();
-const createFoodMutateMock = vi.fn();
-const createAiEntryMutateAsyncMock = vi.fn();
-const deleteMutateMock = vi.fn();
 let foodByDateQuery: {
   data: unknown;
   error: Error | null;
@@ -51,40 +47,13 @@ const defaultIntakeContext = {
     "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
 } satisfies SelectedDateNutritionIntakeContext;
 
-vi.mock("../lib/telemetry.ts", () => ({
-  captureException: vi.fn(),
-}));
-
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     food: {
       byDateV2: {
         useQuery: () => ({ ...foodByDateQuery, refetch: foodRefetchMock }),
       },
-      create: {
-        useMutation: () => ({
-          mutate: createFoodMutateMock,
-          mutateAsync: createAiEntryMutateAsyncMock,
-          isPending: false,
-        }),
-      },
-      delete: {
-        useMutation: () => ({ mutate: deleteMutateMock, isPending: false }),
-      },
-      analyzeItemsWithAi: {
-        useMutation: () => ({ mutateAsync: analyzeItemsMutateAsyncMock, isPending: false }),
-      },
-      analyzeWithAi: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
-      },
     },
-    useUtils: () => ({
-      food: {
-        search: {
-          fetch: vi.fn().mockResolvedValue([]),
-        },
-      },
-    }),
   },
 }));
 
@@ -110,78 +79,6 @@ describe("NutritionPage", () => {
       error: null,
       isLoading: false,
     };
-    analyzeItemsMutateAsyncMock.mockResolvedValue({
-      items: [
-        {
-          meal: "breakfast",
-          foodName: "Eggs",
-          foodDescription: "2 large eggs",
-          category: "eggs",
-          calories: 140,
-          proteinG: 12,
-          carbsG: 1,
-          fatG: 10,
-          fiberG: 0,
-          saturatedFatG: 3,
-          sugarG: 0,
-          sodiumMg: 140,
-        },
-      ],
-    });
-  });
-
-  it("waits for confirmation before creating AI parsed food entries", async () => {
-    const { NutritionPage } = await import("./NutritionPage");
-
-    render(<NutritionPage />);
-
-    fireEvent.change(screen.getByPlaceholderText(/two eggs/i), {
-      target: { value: "two eggs" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Log with AI" }));
-
-    await screen.findByText("Review AI meal");
-
-    expect(screen.getByText("Eggs")).toBeTruthy();
-    expect(createAiEntryMutateAsyncMock).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Confirm and log" }));
-
-    await waitFor(() => {
-      expect(createAiEntryMutateAsyncMock).toHaveBeenCalledWith({
-        date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        nutrients: {},
-        meal: "breakfast",
-        foodName: "Eggs",
-        foodDescription: "2 large eggs",
-        category: "eggs",
-        calories: 140,
-        proteinG: 12,
-        carbsG: 1,
-        fatG: 10,
-        fiberG: 0,
-        saturatedFatG: 3,
-        sugarG: 0,
-        sodiumMg: 140,
-      });
-    });
-  });
-
-  it("puts the server-authored daily nutrition decision context before AI meal input", async () => {
-    const { NutritionPage } = await import("./NutritionPage");
-
-    render(<NutritionPage />);
-
-    const intakeMessage = screen.getByText(defaultIntakeContext.comparison.message);
-    const resolutionMessage = screen.getByText(availableResolution.message);
-    const aiInputHeading = screen.getByRole("heading", { name: "AI meal input" });
-
-    expect(
-      intakeMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      resolutionMessage.compareDocumentPosition(aiInputHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
   it("shows fatsecret attribution on the nutrition screen", async () => {

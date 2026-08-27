@@ -42,6 +42,17 @@ const unavailableTrainingStressActivity: ActivityCardData = {
   ],
 };
 
+const unknownLocalTimeActivity: ActivityCardData = {
+  ...strengthActivity,
+  id: "strength-unknown-local-time",
+  localTimeContext: {
+    timezone: null,
+    startUtcOffsetMinutes: null,
+    endUtcOffsetMinutes: null,
+    source: "unknown",
+  },
+};
+
 const mappedActivity: ActivityCardData = {
   id: "run-1",
   name: "Morning Run",
@@ -156,6 +167,17 @@ export const MappedActivity: Story = {
 
 export const UnavailableTrainingStress: Story = {
   args: { activity: unavailableTrainingStressActivity },
+  decorators: [
+    (Story) => (
+      <div className="card overflow-hidden">
+        <Story />
+      </div>
+    ),
+  ],
+};
+
+export const UnknownLocalTime: Story = {
+  args: { activity: unknownLocalTimeActivity },
   decorators: [
     (Story) => (
       <div className="card overflow-hidden">

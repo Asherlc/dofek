@@ -1,6 +1,6 @@
 {
   "name": "@dofek/garmin-connect",
-  "version": "0.1.5",
+  "version": "0.1.13",
   "description": "Unofficial Garmin Connect API client using the internal SSO + OAuth authentication flow",
   "type": "module",
   "license": "MIT",
@@ -57,7 +57,7 @@
     "@dofek/training": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "22.19.15",
+    "@types/node": "26.1.2",
     "typescript": "6.0.3",
     "vitest": "3.2.6"
   }

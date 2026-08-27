@@ -106,9 +106,11 @@ As of migration `0037`, the `apple_health_kit` provider ID (iOS HealthKit live s
 
 ## Mobile Nutrition Write-Back
 
-The iOS app writes direct Dofek food entries back to Apple Health as dietary energy, protein, carbohydrates, and total fat. The server endpoint filters this export to confirmed `provider_id = 'dofek'` rows, so nutrition imported or synced from Apple Health, Cronometer, Slack, and other providers is never written back to Apple Health.
+Provider synchronization no longer writes food entries back to Apple Health. The iOS app can write direct Dofek food entries back to Apple Health as dietary energy, protein, carbohydrates, and total fat. The server endpoint filters this export to confirmed `provider_id = 'dofek'` rows, so nutrition imported or synced from Apple Health, Cronometer, and other providers is never written back to Apple Health.
 
 Mobile stores a local fingerprint ledger for each written food entry. If a direct Dofek entry changes, the app deletes prior Dofek-written HealthKit samples by their HealthKit sync identifiers before writing the replacement samples.
+
+The mobile account-erasure cleanup retains the ability to remove legacy Dofek-written dietary samples by their HealthKit sync identifiers.
 
 Apple Health nutrition imports store each dietary quantity sample as an unnamed
 `daily_aggregate` `fitness.food_entry` with source/timestamp metadata plus one
