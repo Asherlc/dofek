@@ -627,6 +627,7 @@ export default function ProvidersScreen() {
     syncFreshness: provider.syncFreshness,
     importOnly: provider.importOnly,
     pushOnly: provider.pushOnly,
+    recentLogs: provider.recentLogs ?? [],
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.data ?? []) {
