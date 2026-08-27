@@ -296,7 +296,7 @@
     "@types/sax": "1.2.7",
     "@types/tz-lookup": "6.1.2",
     "@types/yauzl": "2.10.3",
-    "@vitest/coverage-v8": "3.2.4",
+    "@vitest/coverage-v8": "4.1.11",
     "cspell": "10.0.1",
     "cypress": "15.20.0",
     "dependency-cruiser": "17.3.10",
