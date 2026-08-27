@@ -13,13 +13,31 @@ const {
   const mockQueueAdd = vi.fn();
   const mockQueueClose = vi.fn().mockResolvedValue(undefined);
   const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
-  const MockQueue = vi.fn(() => mockQueueInstance);
+  const MockQueue = vi.fn(
+    class {
+      constructor() {
+        return mockQueueInstance;
+      }
+    },
+  );
   const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
   const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
-  const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
+  const MockFlowProducer = vi.fn(
+    class {
+      constructor() {
+        return mockFlowProducerInstance;
+      }
+    },
+  );
   const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
   const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
-  const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
+  const MockQueueEvents = vi.fn(
+    class {
+      constructor() {
+        return mockQueueEventsInstance;
+      }
+    },
+  );
   return {
     mockQueueAdd,
     mockQueueClose,

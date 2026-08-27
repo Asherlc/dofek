@@ -12,11 +12,7 @@ const sharedTestConfig = {
   hookTimeout: 120_000,
   fileParallelism: true,
   pool: "forks" as const,
-  poolOptions: {
-    forks: {
-      execArgv: ["--no-experimental-webstorage"],
-    },
-  },
+  execArgv: ["--no-experimental-webstorage"],
   env: {
     ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: JSON.stringify({
       activeKeyId: "test-v1",

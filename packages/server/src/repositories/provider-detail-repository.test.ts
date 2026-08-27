@@ -31,12 +31,15 @@ describe("tableInfo", () => {
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
     ["journalEntries", "fitness.journal_entry", "date", "id"],
-  ] as const)("returns correct mapping for %s", (dataType, expectedTable, expectedOrder, expectedId) => {
-    const result = tableInfo(dataType);
-    expect(result.table).toBe(expectedTable);
-    expect(result.orderColumn).toBe(expectedOrder);
-    expect(result.idColumn).toBe(expectedId);
-  });
+  ] as const)(
+    "returns correct mapping for %s",
+    (dataType, expectedTable, expectedOrder, expectedId) => {
+      const result = tableInfo(dataType);
+      expect(result.table).toBe(expectedTable);
+      expect(result.orderColumn).toBe(expectedOrder);
+      expect(result.idColumn).toBe(expectedId);
+    },
+  );
 
   it("covers every value in dataTypeEnum", () => {
     for (const dataType of dataTypeEnum.options) {

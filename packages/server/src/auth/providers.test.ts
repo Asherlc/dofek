@@ -4,14 +4,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("arctic", () => {
   const mockTokens = { idToken: () => "mock-id-token" };
   return {
-    Google: vi.fn().mockImplementation(() => ({
-      createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://accounts.google.com/auth")),
-      validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
-    })),
-    Apple: vi.fn().mockImplementation(() => ({
-      createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://appleid.apple.com/auth")),
-      validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
-    })),
+    Google: vi.fn(
+      class {
+        constructor() {
+          return {
+            createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://accounts.google.com/auth")),
+            validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
+          };
+        }
+      },
+    ),
+    Apple: vi.fn(
+      class {
+        constructor() {
+          return {
+            createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://appleid.apple.com/auth")),
+            validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
+          };
+        }
+      },
+    ),
     decodeIdToken: vi.fn().mockReturnValue({
       sub: "user-123",
       email: "test@example.com",

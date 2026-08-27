@@ -30,16 +30,31 @@ const toolTestMocks = vi.hoisted(() => {
   };
   return {
     ...mocks,
-    activityRepository: vi.fn(() => ({
-      list: mocks.activityList,
-      listRange: mocks.activityListRange,
-      search: mocks.activitySearch,
-    })),
-    dailyMetricsRepository: vi.fn(() => ({
-      list: mocks.dailyMetricsList,
-      listRange: mocks.dailyMetricsListRange,
-    })),
-    subjectiveRepository: vi.fn(() => ({ timeline: mocks.subjectiveTimeline })),
+    activityRepository: vi.fn(
+      class {
+        constructor() {
+          return {
+            list: mocks.activityList,
+            listRange: mocks.activityListRange,
+            search: mocks.activitySearch,
+          };
+        }
+      },
+    ),
+    dailyMetricsRepository: vi.fn(
+      class {
+        constructor() {
+          return { list: mocks.dailyMetricsList, listRange: mocks.dailyMetricsListRange };
+        }
+      },
+    ),
+    subjectiveRepository: vi.fn(
+      class {
+        constructor() {
+          return { timeline: mocks.subjectiveTimeline };
+        }
+      },
+    ),
   };
 });
 
@@ -60,17 +75,33 @@ vi.mock("../repositories/daily-metrics-repository.ts", () => ({
 }));
 
 vi.mock("../repositories/food-repository.ts", () => ({
-  FoodRepository: vi.fn(() => ({
-    dailyTotalsRange: toolTestMocks.foodDailyTotalsRange,
-  })),
+  FoodRepository: vi.fn(
+    class {
+      constructor() {
+        return { dailyTotalsRange: toolTestMocks.foodDailyTotalsRange };
+      }
+    },
+  ),
 }));
 
 vi.mock("../repositories/sleep-repository.ts", () => ({
-  SleepRepository: vi.fn(() => ({ listRange: toolTestMocks.sleepListRange })),
+  SleepRepository: vi.fn(
+    class {
+      constructor() {
+        return { listRange: toolTestMocks.sleepListRange };
+      }
+    },
+  ),
 }));
 
 vi.mock("../repositories/body-repository.ts", () => ({
-  BodyRepository: vi.fn(() => ({ listRange: toolTestMocks.bodyListRange })),
+  BodyRepository: vi.fn(
+    class {
+      constructor() {
+        return { listRange: toolTestMocks.bodyListRange };
+      }
+    },
+  ),
 }));
 
 vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
@@ -78,11 +109,17 @@ vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
 }));
 
 vi.mock("../repositories/sync-repository.ts", () => ({
-  SyncRepository: vi.fn(() => ({
-    getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
-    getLastSyncTimes: toolTestMocks.getLastSyncTimes,
-    getLatestErrors: toolTestMocks.getLatestErrors,
-  })),
+  SyncRepository: vi.fn(
+    class {
+      constructor() {
+        return {
+          getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
+          getLastSyncTimes: toolTestMocks.getLastSyncTimes,
+          getLatestErrors: toolTestMocks.getLatestErrors,
+        };
+      }
+    },
+  ),
 }));
 
 vi.mock("../repositories/subjective-repository.ts", () => ({

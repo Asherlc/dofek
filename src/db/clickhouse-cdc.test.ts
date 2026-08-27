@@ -239,7 +239,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
   const originalTemplatePath = process.env.PEERDB_CDC_SQL_TEMPLATE_PATH;
 
   beforeEach(() => {
-    peerDbClientMocks.Client.mockReset().mockImplementation(() => peerDbClientMocks);
+    peerDbClientMocks.Client.mockReset().mockImplementation(
+      class {
+        constructor() {
+          return peerDbClientMocks;
+        }
+      },
+    );
     peerDbClientMocks.connect.mockReset().mockResolvedValue(undefined);
     peerDbClientMocks.end.mockReset().mockResolvedValue(undefined);
     peerDbClientMocks.query.mockReset().mockImplementation(async (queryText) => {

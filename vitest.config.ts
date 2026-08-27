@@ -35,11 +35,7 @@ const sharedTestConfig = {
   teardownTimeout: 60_000,
   fileParallelism: true,
   pool: "forks" as const,
-  poolOptions: {
-    forks: {
-      execArgv: ["--no-experimental-webstorage"],
-    },
-  },
+  execArgv: ["--no-experimental-webstorage"],
   retry: 2,
 };
 
@@ -110,12 +106,8 @@ export default defineConfig({
           ...sharedTestConfig,
           name: "integration",
           fileParallelism: false,
-          poolOptions: {
-            forks: {
-              ...sharedTestConfig.poolOptions.forks,
-              singleFork: true,
-            },
-          },
+          maxWorkers: 1,
+          isolate: false,
           include: [
             "src/**/*.integration.test.ts",
             "packages/*/src/**/*.integration.test.ts",

@@ -396,18 +396,21 @@ describe("SettingsScreen categories", () => {
     ["general", "Goals & Models", "Units"],
     ["health", "Goals & Models", "Units"],
     ["account", "Account", "Password"],
-  ] as const)("normalizes the legacy %s deep link to %s", async (legacyTab, currentCategory, sectionText) => {
-    mockSearchParams = { tab: legacyTab };
-    const { default: SettingsScreen } = await import("../app/settings");
+  ] as const)(
+    "normalizes the legacy %s deep link to %s",
+    async (legacyTab, currentCategory, sectionText) => {
+      mockSearchParams = { tab: legacyTab };
+      const { default: SettingsScreen } = await import("../app/settings");
 
-    render(<SettingsScreen />);
+      render(<SettingsScreen />);
 
-    const selectedCategoryButton = screen
-      .getAllByRole("button", { name: currentCategory })
-      .find((button) => button.getAttribute("aria-selected") === "true");
-    expect(selectedCategoryButton).toBeTruthy();
-    expect(screen.getByText(sectionText)).toBeTruthy();
-  });
+      const selectedCategoryButton = screen
+        .getAllByRole("button", { name: currentCategory })
+        .find((button) => button.getAttribute("aria-selected") === "true");
+      expect(selectedCategoryButton).toBeTruthy();
+      expect(screen.getByText(sectionText)).toBeTruthy();
+    },
+  );
 });
 
 describe("SettingsScreen unit system", () => {

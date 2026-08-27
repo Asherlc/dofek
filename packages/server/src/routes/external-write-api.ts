@@ -421,8 +421,7 @@ export function createExternalWriteApiRouter(deps: { db: Database }): Router {
     );
     const link = rows[0];
     if (
-      !link ||
-      !link.user_id ||
+      !link?.user_id ||
       link.exchanged_at ||
       !link.code_hash ||
       !link.code_expires_at ||

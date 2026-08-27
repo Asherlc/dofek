@@ -16,7 +16,13 @@ const mockShutdown = vi.fn().mockResolvedValue(undefined);
 const mockAutoInstrumentations = { bundle: "auto" };
 const aiTelemetryMocks = vi.hoisted(() => ({
   registerTelemetry: vi.fn(),
-  OpenTelemetry: vi.fn().mockImplementation(() => ({})),
+  OpenTelemetry: vi.fn(
+    class {
+      constructor() {
+        return {};
+      }
+    },
+  ),
 }));
 
 vi.mock("ai", () => ({
@@ -28,10 +34,13 @@ vi.mock("@ai-sdk/otel", () => ({
 }));
 
 vi.mock("@opentelemetry/sdk-node", () => ({
-  NodeSDK: vi.fn().mockImplementation(() => ({
-    start: mockStart,
-    shutdown: mockShutdown,
-  })),
+  NodeSDK: vi.fn(
+    class {
+      constructor() {
+        return { start: mockStart, shutdown: mockShutdown };
+      }
+    },
+  ),
 }));
 
 vi.mock("@opentelemetry/exporter-trace-otlp-proto", () => ({
@@ -59,12 +68,18 @@ vi.mock("@opentelemetry/sdk-trace-node", () => ({
 }));
 
 vi.mock("@posthog/ai/otel", () => ({
-  PostHogSpanProcessor: vi.fn().mockImplementation(() => ({
-    forceFlush: vi.fn().mockResolvedValue(undefined),
-    onEnd: vi.fn(),
-    onStart: vi.fn(),
-    shutdown: vi.fn().mockResolvedValue(undefined),
-  })),
+  PostHogSpanProcessor: vi.fn(
+    class {
+      constructor() {
+        return {
+          forceFlush: vi.fn().mockResolvedValue(undefined),
+          onEnd: vi.fn(),
+          onStart: vi.fn(),
+          shutdown: vi.fn().mockResolvedValue(undefined),
+        };
+      }
+    },
+  ),
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
@@ -271,29 +286,29 @@ describe("instrumentation", () => {
     );
   });
 
-  it.each([
-    "prod",
-    "production",
-  ])("adds a PostHog trace exporter in production even without Axiom endpoints (DEPLOY_ENVIRONMENT=%s)", async (deploymentEnvironment) => {
-    const { startInstrumentation } = await import("./instrumentation.ts");
+  it.each(["prod", "production"])(
+    "adds a PostHog trace exporter in production even without Axiom endpoints (DEPLOY_ENVIRONMENT=%s)",
+    async (deploymentEnvironment) => {
+      const { startInstrumentation } = await import("./instrumentation.ts");
 
-    startInstrumentation({
-      DEPLOY_ENVIRONMENT: deploymentEnvironment,
-    });
+      startInstrumentation({
+        DEPLOY_ENVIRONMENT: deploymentEnvironment,
+      });
 
-    const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
-    expect(config?.spanProcessors).toHaveLength(3);
-    expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
-    expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
-    expect(OTLPTraceExporter).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: POSTHOG_TRACES_URL,
-        headers: expect.objectContaining({
-          Authorization: `Bearer ${POSTHOG_API_KEY}`,
+      const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
+      expect(config?.spanProcessors).toHaveLength(3);
+      expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
+      expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
+      expect(OTLPTraceExporter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: POSTHOG_TRACES_URL,
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${POSTHOG_API_KEY}`,
+          }),
         }),
-      }),
-    );
-  });
+      );
+    },
+  );
 
   it("keeps Axiom and PostHog trace exporters alongside each other in production with an Axiom endpoint", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");

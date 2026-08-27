@@ -28,10 +28,13 @@ const createCaller = createTestCallerFactory(menstrualCycleRouter);
 describe("menstrualCycleRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRepository.mockImplementation(() => ({
-      getCurrentPhase: mockCurrentPhase,
-      getHistory: mockHistory,
-    }));
+    mockRepository.mockImplementation(
+      class {
+        constructor() {
+          return { getCurrentPhase: mockCurrentPhase, getHistory: mockHistory };
+        }
+      },
+    );
   });
 
   it("returns the server-authored current phase result", async () => {

@@ -269,18 +269,23 @@ describe("WHOOP workout sync helpers", () => {
         localTimeSource: "unknown",
       },
     ],
-  ])("persists WHOOP local-time context from timezone offset %s", async (timezoneOffset, expected) => {
-    const context = makeContext({
-      cycles: [{ workouts: [makeWorkoutRecord({ timezone_offset: timezoneOffset })] }],
-    });
+  ])(
+    "persists WHOOP local-time context from timezone offset %s",
+    async (timezoneOffset, expected) => {
+      const context = makeContext({
+        cycles: [{ workouts: [makeWorkoutRecord({ timezone_offset: timezoneOffset })] }],
+      });
 
-    await expect(persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]))).resolves.toBe(1);
-    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
-      context.db,
-      expect.objectContaining(expected),
-      expect.objectContaining(expected),
-    );
-  });
+      await expect(persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]))).resolves.toBe(
+        1,
+      );
+      expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+        context.db,
+        expect.objectContaining(expected),
+        expect.objectContaining(expected),
+      );
+    },
+  );
 
   it("records parse failures while persisting provider activities", async () => {
     const context = makeContext({

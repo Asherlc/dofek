@@ -138,12 +138,16 @@ const hoisted = vi.hoisted(() => {
 vi.mock("bullmq", () => ({
   Job: { addJobLog: hoisted.mockAddJobLog },
   UnrecoverableError: hoisted.MockUnrecoverableError,
-  Worker: vi.fn((name: string, processor: (job: unknown) => unknown) => {
-    const on = vi.fn((...args: unknown[]) => hoisted.mockOn(...args));
-    hoisted.workerOnMocks[name] = on;
-    hoisted.workerProcessors[name] = processor;
-    return { name, on, close: hoisted.mockClose, run: hoisted.mockRun };
-  }),
+  Worker: vi.fn(
+    class {
+      constructor(name: string, processor: (job: unknown) => unknown) {
+        const on = vi.fn((...args: unknown[]) => hoisted.mockOn(...args));
+        hoisted.workerOnMocks[name] = on;
+        hoisted.workerProcessors[name] = processor;
+        return { name, on, close: hoisted.mockClose, run: hoisted.mockRun };
+      }
+    },
+  ),
 }));
 
 vi.mock("../db/index.ts", () => ({

@@ -91,6 +91,7 @@ describe("check-clickhouse-cdc", () => {
       query: vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
     };
     mockedCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
+    mockedAssertClickHouseCdcHealth.mockReset();
     mockedCheckClickHouseCdcHealth.mockResolvedValue({
       evidence: {
         peerDbMirrors: [

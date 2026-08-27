@@ -165,7 +165,7 @@ export class HangboardingRepository {
     );
 
     const firstRow = rows[0];
-    if (!firstRow || firstRow.canonical_type !== "hangboard") return null;
+    if (firstRow?.canonical_type !== "hangboard") return null;
 
     return {
       planName: firstRow.plan_name,

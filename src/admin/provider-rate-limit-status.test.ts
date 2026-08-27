@@ -82,7 +82,9 @@ const sharedRedisMocks = vi.hoisted(() => ({
       _count: string,
     ) => Promise<[string, string[]]>
   >(),
-  RedisConnection: vi.fn(),
+  RedisConnection: vi.fn(() => ({
+    client: Promise.resolve({ get: sharedRedisMocks.get, scan: sharedRedisMocks.scan }),
+  })),
 }));
 
 vi.mock("bullmq", () => ({

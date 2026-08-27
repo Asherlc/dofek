@@ -19,7 +19,8 @@ beforeEach(() => {
   observerInstances = [];
 
   const MockIntersectionObserver = vi.fn(
-    (callback: IntersectionCallback, options?: IntersectionObserverInit) => {
+    class {
+      constructor(callback: IntersectionCallback, options?: IntersectionObserverInit) {
       const instance = {
         callback,
         options,
@@ -32,7 +33,8 @@ beforeEach(() => {
         takeRecords: () => [],
       };
       observerInstances.push(instance);
-      return instance;
+        return instance;
+      }
     },
   );
 

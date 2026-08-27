@@ -2010,30 +2010,29 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it.each([
-    "deep",
-    "rem",
-    "core",
-  ] as const)("marks staging available when Apple Health reports a %s stage", async (stage) => {
-    const { db, capture } = createMockDb();
-    const bedStart = new Date("2024-03-01T23:00:00Z");
-    const bedEnd = new Date("2024-03-02T07:00:00Z");
+  it.each(["deep", "rem", "core"] as const)(
+    "marks staging available when Apple Health reports a %s stage",
+    async (stage) => {
+      const { db, capture } = createMockDb();
+      const bedStart = new Date("2024-03-01T23:00:00Z");
+      const bedEnd = new Date("2024-03-02T07:00:00Z");
 
-    await upsertSleepBatch(db, "p1", [
-      makeSleep({ startDate: bedStart, endDate: bedEnd }),
-      makeSleep({
-        stage,
-        startDate: new Date("2024-03-02T00:00:00Z"),
-        endDate: new Date("2024-03-02T01:00:00Z"),
-        durationMinutes: 60,
-      }),
-    ]);
+      await upsertSleepBatch(db, "p1", [
+        makeSleep({ startDate: bedStart, endDate: bedEnd }),
+        makeSleep({
+          stage,
+          startDate: new Date("2024-03-02T00:00:00Z"),
+          endDate: new Date("2024-03-02T01:00:00Z"),
+          durationMinutes: 60,
+        }),
+      ]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({
-      awakeMinutes: 0,
-      stagingAvailable: true,
-    });
-  });
+      expect(capture.values[0]?.[0]).toMatchObject({
+        awakeMinutes: 0,
+        stagingAvailable: true,
+      });
+    },
+  );
 
   it("preserves an awake-only measurement without claiming a stage bundle", async () => {
     const { db, capture } = createMockDb();

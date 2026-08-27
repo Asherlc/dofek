@@ -19,9 +19,13 @@ const kafkaProducerFactory = vi.hoisted(() =>
   })),
 );
 const kafkaConstructor = vi.hoisted(() =>
-  vi.fn(() => ({
-    producer: kafkaProducerFactory,
-  })),
+  vi.fn(
+    class {
+      constructor() {
+        return { producer: kafkaProducerFactory };
+      }
+    },
+  ),
 );
 
 vi.mock("kafkajs", () => ({
