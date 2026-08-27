@@ -24188,7 +24188,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-08-27 — PR 2584 provider grouping CI typecheck and Knip failures
 
-- **Status:** Fixed in source; the fresh hosted CI workflow is queued.
+- **Status:** Fixed in source; a fresh hosted CI workflow is queued.
 - **Symptoms / impact:** PR #2584 could not merge because typechecks for the
   providers, server, web, and mobile packages failed, along with Knip.
 - **Evidence / root cause:** The first fatal typecheck line was
@@ -24197,12 +24197,21 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   map. Knip independently reported an unlisted `@storybook/react` import in
   the new provider-family story. See the [providers typecheck job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638133825)
   and [Knip job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638070205).
+- **Subsequent evidence:** The next CI run exposed the provider-family return
+  type as a possibly-empty array to the mobile typechecker, despite its runtime
+  family-size guard. Its integration shard also started its dedicated Timescale
+  container before Postgres logged readiness, producing `the database system is
+  starting up` in the migration test.
 - **Fix / mitigation:** Replaced the nullable color-map pipeline with an
   explicitly typed accumulator that only writes defined colors, and imported
   Storybook types from the package already declared by the web workspace
-  (`@storybook/react-vite`). No retry, timeout, or workflow suppression was
+  (`@storybook/react-vite`). Encoded the two-member family invariant in the
+  shared return type and waited for Postgres's ready log in the dedicated
+  migration test container. No retry, timeout, or workflow suppression was
   added.
-- **Validation:** Full local `pnpm typecheck` and `pnpm knip` pass. The fresh
-  CI workflow for commit `2e815f3` is queued.
+- **Validation:** Full local `pnpm typecheck` and `pnpm knip` pass. Focused
+  provider catalog and mobile tests pass (99 tests), exact mobile and provider
+  typechecks pass, and the dedicated Timescale migration integration test
+  completed successfully. The fresh CI workflow for commit `d73f6ae` is queued.
 - **Remaining risk / follow-up:** Confirm the queued hosted CI workflow passes
   before merging the PR.

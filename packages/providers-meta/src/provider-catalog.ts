@@ -119,6 +119,10 @@ export type ProviderEntryGroup<T extends { id: string }> =
       providers: readonly [T, T, ...T[]];
     };
 
+function hasAtLeastTwo<T>(entries: readonly T[]): entries is readonly [T, T, ...T[]] {
+  return entries.length >= 2;
+}
+
 /**
  * Groups only the provider IDs explicitly assigned to the same family.
  * A family with one available connection method remains a regular provider
@@ -141,7 +145,7 @@ export function groupProviderEntries<T extends { id: string }>(
   for (const provider of providers) {
     const family = providerFamily(provider.id);
     const members = family ? membersByFamily.get(family.id) : undefined;
-    if (!family || !members || members.length < 2) {
+    if (!family || !members || !hasAtLeastTwo(members)) {
       groups.push({ kind: "provider", provider });
       continue;
     }
@@ -150,7 +154,7 @@ export function groupProviderEntries<T extends { id: string }>(
     groups.push({
       kind: "family",
       family: { id: family.id, label: family.label },
-      providers: [members[0]!, members[1]!, ...members.slice(2)],
+      providers: members,
     });
   }
   return groups;
