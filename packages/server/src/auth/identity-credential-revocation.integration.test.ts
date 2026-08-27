@@ -65,6 +65,19 @@ describe("identity credential revocation", () => {
     );
   });
 
+  it("requires the Apple client ID before attempting credential revocation", async () => {
+    const tokens = new OAuth2Tokens({
+      access_token: "apple-access",
+      token_type: "Bearer",
+      expires_in: 3600,
+      id_token: "apple-id-token",
+    });
+
+    await expect(revokeIdentityCredentials("apple", tokens)).rejects.toThrow(
+      "APPLE_CLIENT_ID is required for Apple credential revocation",
+    );
+  });
+
   it("surfaces a malformed Google revocation response", async () => {
     server.use(
       http.post(
