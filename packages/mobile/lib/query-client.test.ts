@@ -62,7 +62,7 @@ describe("createAppQueryClient", () => {
     });
   });
 
-  it("does not report transient network transport errors to Sentry", async () => {
+  it("reports transient network transport errors to Sentry with the failed operation", async () => {
     const queryClient = createAppQueryClient();
     const queryError = new Error(
       "fetch failed: UnexpectedException: The network connection was lost.",
@@ -78,6 +78,10 @@ describe("createAppQueryClient", () => {
       }),
     ).rejects.toThrow(queryError);
 
-    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(queryError, {
+      source: "react-query",
+      queryHash: '["offline-query"]',
+      failureCount: 1,
+    });
   });
 });

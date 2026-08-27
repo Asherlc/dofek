@@ -2,20 +2,10 @@ import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { captureException } from "./telemetry";
 
-function isTransientNetworkError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /network connection was lost|request timed out|network request failed|fetch failed:.*(?:network connection|timed out|cancelled)/i.test(
-    message,
-  );
-}
-
 export function createAppQueryClient() {
   return new QueryClient({
     queryCache: new QueryCache({
       onError(error, query) {
-        if (isTransientNetworkError(error)) {
-          return;
-        }
         captureException(error, {
           source: "react-query",
           queryHash: query.queryHash,
