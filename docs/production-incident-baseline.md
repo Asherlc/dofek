@@ -23366,3 +23366,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-08-27 — Mobile settings data-source refresh timed out without operation telemetry
+
+- **Status:** Unresolved; diagnostic instrumentation is prepared in commit
+  `a7c21fd` and has not yet been deployed.
+- **Symptoms / impact:** The iOS Settings > Data Sources screen retained its
+  cached provider count but displayed `Could not refresh data sources`; the
+  Zepp App Pairing connection query failed with the same
+  `fetch failed: UnexpectedException: The request timed out.` message. This
+  prevented users from refreshing provider and Zepp connection state.
+- **Evidence / root cause:** The screenshot captured the first fatal client
+  message. Production Swarm service state was healthy (`dofek_web` 2/2), but
+  Axiom access was unavailable because its user token had expired and the
+  eight-hour `dofek_web` service-log window contained no request evidence.
+  Mobile React Query intentionally excluded transient network failures from
+  `captureException`, so the client did not preserve the failing tRPC operation
+  for correlation. The request timeout's underlying server or transport cause
+  is therefore not yet established.
+- **Fix / mitigation:** Removed the transient-error exclusion so every handled
+  mobile query error reports its query hash through the existing telemetry
+  path. This records whether the next failure is `sync.providers`,
+  `companionToken.list`, or another batched operation; no retry or timeout
+  change was added.
+- **Validation:** The focused mobile query-client test passes 3/3 and Biome
+  validates the changed files. A deployment and an Axiom-authenticated trace
+  query are still required to identify and correct the underlying timeout.
+- **Remaining risk / follow-up:** Restore Axiom access, deploy the diagnostic
+  commit, reproduce the refresh, and correlate the reported operation with
+  server request duration and error traces before selecting a behavior change.
