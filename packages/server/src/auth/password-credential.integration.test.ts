@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 import {
   authenticatePasswordUser,
   DuplicateEmailError,
@@ -9,7 +10,6 @@ import {
   registerPasswordUser,
   setPasswordForUser,
 } from "./password-credential.ts";
-import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 import { createSession, validateSession } from "./session.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
