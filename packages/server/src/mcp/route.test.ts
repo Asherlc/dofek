@@ -34,20 +34,17 @@ const toolTestMocks = vi.hoisted(() => {
   };
   return {
     ...mocks,
-    activityRepository: vi.fn(function vitestConstructor() {
-      return {
+    activityRepository: vi.fn(() => ({
         findById: mocks.activityFindById,
         list: mocks.activityList,
         listRange: mocks.activityListRange,
         search: mocks.activitySearch,
-      };
-    }),
-    dailyMetricsRepository: vi.fn(function vitestConstructor() {
-      return { list: mocks.dailyMetricsList, listRange: mocks.dailyMetricsListRange };
-    }),
-    subjectiveRepository: vi.fn(function vitestConstructor() {
-      return { timeline: mocks.subjectiveTimeline };
-    }),
+      })),
+    dailyMetricsRepository: vi.fn(() => ({
+      list: mocks.dailyMetricsList,
+      listRange: mocks.dailyMetricsListRange,
+    })),
+    subjectiveRepository: vi.fn(() => ({ timeline: mocks.subjectiveTimeline })),
   };
 });
 
