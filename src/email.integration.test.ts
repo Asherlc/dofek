@@ -32,6 +32,7 @@ describe("shared email", () => {
   });
 
   it("fails loudly when the Brevo API key is missing", async () => {
+    delete process.env.BREVO_API_KEY;
     process.env.EXPORT_EMAIL_FROM = "dofek@dofek.fit";
 
     await expect(
