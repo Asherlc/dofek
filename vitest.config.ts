@@ -123,7 +123,7 @@ export default defineConfig({
       },
     ],
     coverage: {
-      provider: "v8",
+      provider: "istanbul",
       reporter: ["text", "json-summary", "json", "lcov"],
       include: ["src/**/*.ts", "packages/*/src/**/*.ts"],
       exclude: [
