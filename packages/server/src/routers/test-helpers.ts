@@ -2,6 +2,7 @@ import type { AnyRouter } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { vi } from "vitest";
+import { z } from "zod";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
@@ -84,17 +85,16 @@ function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
 }
 
 export function makeMockSensorStore(rows: unknown[] | unknown[][] = []): ActivitySensorStore {
-  let queryMock: ReturnType<typeof vi.fn>;
-  if (isMatrix(rows)) {
-    queryMock = vi.fn();
-    for (const batch of rows) {
-      queryMock.mockResolvedValueOnce(batch);
-    }
-  } else {
-    queryMock = vi.fn().mockResolvedValue(rows);
-  }
+  const batches = isMatrix(rows) ? [...rows] : [rows];
+  const queryTarget: Pick<ActivitySensorStore, "query"> = {
+    query: async <TSchema extends z.ZodType>(schema: TSchema): Promise<z.infer<TSchema>[]> => {
+      const batch = batches.shift() ?? [];
+      return z.array(schema).parse(batch);
+    },
+  };
+  vi.spyOn(queryTarget, "query");
   return {
-    query: queryMock,
+    query: queryTarget.query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
