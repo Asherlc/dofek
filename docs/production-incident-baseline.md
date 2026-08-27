@@ -7,6 +7,28 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-27 — Kaya web sync rejected string-valued gym coordinates
+
+- **Status:** Fix implemented; deployment verification is pending.
+- **Symptoms / user impact:** Kaya showed “couldn’t sync” and did not ingest
+  the user’s latest climbing data.
+- **Evidence / root cause:** At `2026-08-27T13:17:51Z`, the production worker
+  logged `Invalid input: expected number, received string` for
+  `data.ascentsForUser[*].climb.gym.latitude` and `.longitude`. The deployed
+  Kaya client required numeric coordinates at that response boundary
+  ([client schema](../packages/kaya-client/src/client.ts)). Kaya returned
+  decimal coordinates as strings for the affected ascents.
+- **Fix / mitigation:** The client now accepts non-empty finite numeric
+  coordinate strings and normalizes them to numbers before the sync provider
+  processes the response. Invalid and non-finite coordinates still fail
+  validation; no retry, timeout, or error suppression was added.
+- **Validation:** A focused regression test first reproduced the production
+  Zod failure, then passed after the schema change; the Kaya client and sync
+  provider suites passed 28 unit tests.
+- **Remaining risk / follow-up:** Deploy the fix and trigger a Kaya sync;
+  confirm the provider records a successful result and no coordinate-validation
+  errors recur.
+
 ## 2026-08-22 — Rollout request gap and hidden dbt failure diagnostics
 
 - **Symptoms:** Sentry reported a mobile `processing.alerts` request receiving a Cloudflare `502`, unhandled `ECONNRESET` and `ENOTFOUND redis` errors in server tasks, and repeated `dbt build --select activity_source_records+` failures.
