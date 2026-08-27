@@ -115,8 +115,7 @@ async function insertVerificationPrerequisites(): Promise<void> {
     VALUES (${USER_ID}, 'Review verification fixture')
     ON CONFLICT (id) DO UPDATE
       SET name = EXCLUDED.name
-  `;
-
+    `;
   await sql`
     INSERT INTO fitness.provider (id, name, user_id)
     VALUES
@@ -233,30 +232,5 @@ async function insertVerificationPrerequisites(): Promise<void> {
       'verification-question',
       'yes'
     FROM generate_series(1, 30) AS generated_index
-  `;
-
-  await sql`
-    INSERT INTO fitness.breathwork_session (
-      user_id,
-      technique_id,
-      rounds,
-      duration_seconds,
-      started_at
-    )
-    SELECT
-      ${USER_ID},
-      'verification',
-      1,
-      60,
-      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
-    FROM generate_series(1, 10) AS generated_index
-  `;
-
-  await sql`
-    INSERT INTO fitness.menstrual_period (user_id, start_date)
-    SELECT
-      ${USER_ID},
-      DATE '2026-01-01' + generated_index * 28
-    FROM generate_series(1, 4) AS generated_index
   `;
 }

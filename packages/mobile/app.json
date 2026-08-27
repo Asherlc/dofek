@@ -4,7 +4,7 @@
     "slug": "dofek",
     "scheme": "dofek",
     "version": "1.0.0",
-    "runtimeVersion": "1.0",
+    "runtimeVersion": "1.1",
     "updates": {
       "url": "https://ota.dofek.asherlc.com/manifest",
       "enabled": true,
@@ -30,12 +30,12 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "Dofek reads your health data to sync workouts, heart rate, sleep, and body metrics to your personal dashboard.",
-        "NSHealthUpdateUsageDescription": "Dofek writes dietary data back to Apple Health so your nutrition is tracked alongside activity data.",
+        "NSHealthUpdateUsageDescription": "Dofek removes dietary nutrition entries it previously created in Apple Health when you erase your Dofek account.",
         "NSHealthClinicalHealthRecordsShareUsageDescription": "Dofek reads your clinical health records (like lab results) to provide a complete picture of your health.",
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
         "NSBluetoothAlwaysUsageDescription": "Dofek connects to Bluetooth heart-rate monitors to record your heart rate during workouts.",
         "NSUserNotificationsUsageDescription": "Dofek sends optional local medication reminders you enable in Settings.",
-        "UIBackgroundModes": ["bluetooth-central", "fetch", "location"],
+        "UIBackgroundModes": ["bluetooth-central", "fetch"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
         "LSSupportsOpeningDocumentsInPlace": false,
         "CADisableMinimumFrameDurationOnPhone": true,
@@ -69,20 +69,6 @@
           "ios": {
             "enableFullScreenImage_legacy": true
           }
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Dofek uses the camera to scan food barcodes."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance.",
-          "locationAlwaysAndWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance, even when the app is in the background.",
-          "isIosBackgroundLocationEnabled": true
         }
       ],
       [

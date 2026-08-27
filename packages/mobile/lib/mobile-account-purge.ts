@@ -12,6 +12,7 @@ import { clearMobileAccountErasurePreparation } from "./account-erasure-storage"
 import { clearSessionToken } from "./auth";
 import type { AccountErasureCleanupLease } from "./auth-context";
 import { teardownBackgroundAccelerometerSync } from "./background-accelerometer-sync";
+import { teardownBackgroundBleHeartRateSync } from "./background-ble-heart-rate-sync";
 import { teardownBackgroundHealthKitSync } from "./background-health-kit-sync";
 import { teardownBackgroundWatchInertialMeasurementUnitSync } from "./background-watch-inertial-measurement-unit-sync";
 import { teardownBackgroundWhoopBleSync } from "./background-whoop-ble-sync";
@@ -39,6 +40,7 @@ interface MobileAccountPurgeDependencies {
   purgeWhoopBle(cutoff: string): Promise<unknown>;
   teardownAccelerometer(): void;
   teardownHealthKit(): void;
+  teardownHeartRate(): void;
   teardownWatchMotion(): void;
   teardownWhoopBle(): void;
 }
@@ -62,6 +64,7 @@ const defaultDependencies: MobileAccountPurgeDependencies = {
   purgeWhoopBle: purgeWhoopBleAccountState,
   teardownAccelerometer: teardownBackgroundAccelerometerSync,
   teardownHealthKit: teardownBackgroundHealthKitSync,
+  teardownHeartRate: teardownBackgroundBleHeartRateSync,
   teardownWatchMotion: teardownBackgroundWatchInertialMeasurementUnitSync,
   teardownWhoopBle: teardownBackgroundWhoopBleSync,
 };
@@ -125,6 +128,7 @@ export async function purgeMobileAccountState({
   await attempt("account-erasure-stop-core-motion", dependencies.teardownAccelerometer);
   await attempt("account-erasure-stop-watch-motion", dependencies.teardownWatchMotion);
   await attempt("account-erasure-stop-whoop-ble", dependencies.teardownWhoopBle);
+  await attempt("account-erasure-stop-heart-rate", dependencies.teardownHeartRate);
 
   await attempt("account-erasure-healthkit-food-purge", dependencies.purgeFoodWriteBack);
   await attempt("account-erasure-healthkit-state-purge", () =>

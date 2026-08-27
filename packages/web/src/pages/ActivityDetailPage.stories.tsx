@@ -107,6 +107,15 @@ export const Running: HeaderStory = {
   },
 };
 
+export const WithSessionEffort: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      perceivedExertion: 7,
+    },
+  },
+};
+
 export const Minimal: HeaderStory = {
   args: {
     activity: {

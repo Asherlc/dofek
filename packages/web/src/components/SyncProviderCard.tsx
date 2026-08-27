@@ -20,7 +20,13 @@ export function SyncProviderCard({
 }: {
   provider: Pick<
     SyncProviderSummary,
-    "id" | "name" | "lastSyncedAt" | "authorized" | "description"
+    | "id"
+    | "name"
+    | "lastSyncedAt"
+    | "lastSuccessfulSyncAt"
+    | "syncFreshness"
+    | "authorized"
+    | "description"
   >;
   state: ProviderState;
   needsAuth: boolean;
@@ -33,6 +39,9 @@ export function SyncProviderCard({
   const lastSyncedRelative = provider.lastSyncedAt
     ? formatRelativeTime(provider.lastSyncedAt)
     : null;
+  const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
+    ? formatRelativeTime(provider.lastSuccessfulSyncAt)
+    : null;
   const primaryActionLabel = needsReauth ? "Reconnect" : needsAuth ? "Connect" : "Sync";
   const primaryActionTitle = needsReauth
     ? `Reconnect ${provider.name}`
@@ -44,6 +53,13 @@ export function SyncProviderCard({
     return latest;
   }, undefined);
   const latestSyncFailed = latestLog?.status !== "success";
+  const syncFreshness = !pushOnly && !needsAuth ? provider.syncFreshness : null;
+  const syncFreshnessColors =
+    syncFreshness?.status === "overdue"
+      ? operationalStatusColors.warning
+      : syncFreshness?.status === "current"
+        ? operationalStatusColors.success
+        : operationalStatusColors.neutral;
 
   return (
     <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
@@ -104,6 +120,11 @@ export function SyncProviderCard({
           {pushOnly ? "Last received" : "Last sync"}: {lastSyncedRelative}
         </span>
       )}
+      {!pushOnly && state.status !== "syncing" && lastSuccessfulSyncRelative && (
+        <span className="text-xs text-dim mt-1">
+          Last successful sync: {lastSuccessfulSyncRelative}
+        </span>
+      )}
 
       {/* Stats summary */}
       {stats && <ProviderStatsBreakdown stats={stats} />}
@@ -141,6 +162,20 @@ export function SyncProviderCard({
           )}
         </div>
         <div className="flex items-center gap-3">
+          {syncFreshness && (
+            <div
+              role={syncFreshness.status === "overdue" ? "alert" : undefined}
+              className="max-w-56 rounded border px-2 py-1 text-xs"
+              style={{
+                backgroundColor: syncFreshnessColors.surface,
+                borderColor: syncFreshnessColors.border,
+                color: syncFreshnessColors.foreground,
+              }}
+            >
+              <span className="font-medium">{syncFreshness.label}</span>
+              <span className="block">{syncFreshness.description}</span>
+            </div>
+          )}
           {!pushOnly && state.status !== "syncing" && (
             <button
               type="button"

@@ -18,6 +18,7 @@ describe("logSync", () => {
       recordCount: 42,
       durationMs: 1500,
       userId: "user-123",
+      origin: "manual",
     };
 
     await logSync(db.db, entry);
@@ -33,6 +34,7 @@ describe("logSync", () => {
       degradationKind: undefined,
       durationMs: 1500,
       userId: "user-123",
+      origin: "manual",
     });
   });
 
@@ -58,6 +60,7 @@ describe("logSync", () => {
       degradationKind: undefined,
       durationMs: 5000,
       userId: "user-456",
+      origin: "unknown",
     });
   });
 
@@ -103,6 +106,7 @@ describe("logSync", () => {
       degradationKind: "pagination_stalled",
       durationMs: undefined,
       userId: "user-123",
+      origin: "unknown",
     });
   });
 

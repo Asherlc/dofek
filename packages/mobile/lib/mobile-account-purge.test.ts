@@ -57,6 +57,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(async (cutoff) => calls.push(`whoop:${cutoff}`)),
         teardownAccelerometer: stop("stop-accelerometer"),
         teardownHealthKit: stop("stop-health-kit"),
+        teardownHeartRate: stop("stop-heart-rate"),
         teardownWatchMotion: stop("stop-watch"),
         teardownWhoopBle: stop("stop-whoop"),
       },
@@ -65,11 +66,12 @@ describe("purgeMobileAccountState", () => {
     });
 
     expect(result.errors).toEqual([]);
-    expect(calls.slice(0, 4)).toEqual([
+    expect(calls.slice(0, 5)).toEqual([
       "stop-health-kit",
       "stop-accelerometer",
       "stop-watch",
       "stop-whoop",
+      "stop-heart-rate",
     ]);
     expect(calls).toEqual(
       expect.arrayContaining([
@@ -88,6 +90,51 @@ describe("purgeMobileAccountState", () => {
         "query",
       ]),
     );
+  });
+
+  it("does not clear the account session until the serialized heart-rate purge resolves", async () => {
+    let finishHeartRatePurge: (() => void) | undefined;
+    const purgeHeartRate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHeartRatePurge = resolve;
+        }),
+    );
+    const clearSession = vi.fn();
+    const later = vi.fn();
+
+    const purge = purgeMobileAccountState({
+      cleanupLease,
+      dependencies: {
+        advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearBillingCheckoutOperation: later,
+        clearPreparation: later,
+        clearSession,
+        purgeCoreMotion: later,
+        purgeFoodWriteBack: later,
+        purgeExportCache: later,
+        purgeHealthKitState: later,
+        purgeHeartRate,
+        purgeMedicationReminders: later,
+        purgeQueryCaches: later,
+        purgeWatchMotion: later,
+        purgeWhoopBle: later,
+        teardownAccelerometer: vi.fn(),
+        teardownHealthKit: vi.fn(),
+        teardownWatchMotion: vi.fn(),
+        teardownWhoopBle: vi.fn(),
+      },
+      isCleanupLeaseCurrent: () => true,
+      queryClient: { clear: vi.fn() },
+    });
+
+    await vi.waitFor(() => expect(purgeHeartRate).toHaveBeenCalledOnce());
+    expect(clearSession).not.toHaveBeenCalled();
+
+    finishHeartRatePurge?.();
+    await purge;
+
+    expect(clearSession).toHaveBeenCalledOnce();
   });
 
   it("continues all cleanup attempts and reports each failure", async () => {
@@ -112,6 +159,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: laterCleanup,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -152,6 +200,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -191,6 +240,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -223,6 +273,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -256,6 +307,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: operation,
         teardownAccelerometer: operation,
         teardownHealthKit: operation,
+        teardownHeartRate: operation,
         teardownWatchMotion: operation,
         teardownWhoopBle: operation,
       },
@@ -298,6 +350,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },

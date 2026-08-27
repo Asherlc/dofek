@@ -14,7 +14,11 @@ vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { SCHEDULER_KEY, setupScheduledSync } from "./scheduled-sync.ts";
+import {
+  DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
+  SCHEDULER_KEY,
+  setupScheduledSync,
+} from "./scheduled-sync.ts";
 
 describe("setupScheduledSync", () => {
   beforeEach(() => {
@@ -34,11 +38,13 @@ describe("setupScheduledSync", () => {
     );
   });
 
-  it("defaults to 30-minute interval", async () => {
+  it("uses the exported 30-minute default interval", async () => {
+    expect(DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES).toBe(30);
+
     await setupScheduledSync();
 
     const schedulerCall = mockUpsertJobScheduler.mock.calls[0];
-    expect(schedulerCall?.[1].every).toBe(30 * 60 * 1000);
+    expect(schedulerCall?.[1].every).toBe(DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES * 60 * 1000);
   });
 
   it("accepts a custom interval in minutes", async () => {

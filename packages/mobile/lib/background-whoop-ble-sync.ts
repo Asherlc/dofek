@@ -3,7 +3,6 @@ import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
 import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { DeviceSampleGroups, type DeviceScopedSample } from "./device-sample-groups.ts";
-import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import { captureException, logger } from "./telemetry";
 
 const PERIODIC_DRAIN_INTERVAL_MS = 30_000; // Upload buffered samples every 30s
@@ -11,6 +10,19 @@ const LOG_CATEGORY = "whoop-ble";
 const IMU_UPLOAD_BATCH_SIZE = 500;
 const REALTIME_UPLOAD_BATCH_SIZE = 500;
 const DEFAULT_WHOOP_DEVICE_ID = "WHOOP Strap";
+
+/** tRPC client interface for passive WHOOP IMU sample upload. */
+export interface InertialMeasurementUnitUploadClient {
+  inertialMeasurementUnitSync: {
+    pushSamples: {
+      mutate(input: {
+        deviceId: string;
+        deviceType: string;
+        samples: InertialMeasurementUnitSample[];
+      }): Promise<{ inserted: number }>;
+    };
+  };
+}
 
 type BufferedInertialMeasurementUnitSample = InertialMeasurementUnitSample & DeviceScopedSample;
 type ShouldContinueUploading = () => boolean;

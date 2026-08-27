@@ -25,7 +25,6 @@ or `sensor_fusion`.
 | Source | Ingest path | What we store | What provenance we can know |
 |---|---|---|---|
 | Apple Health workout routes | Health export `Location` elements and mobile HealthKit route sync | Location as `channel = 'location'`; altitude and speed as separate metric rows; `horizontalAccuracy` as location metadata `horizontal_accuracy_m` | Unknown. Apple/Core Location models a location as coordinate plus altitude and accuracy values, but our route payload does not include `CLLocationSourceInformation` or a source-specific altitude origin. Treat as Apple-provided location altitude, not necessarily GNSS. |
-| In-app mobile recording | `expo-location` watch updates | Location as `channel = 'location'`; altitude and speed as separate metric rows; `coords.accuracy` as location metadata `horizontal_accuracy_m` | Unknown. Expo exposes altitude and altitude accuracy but not whether altitude came from GNSS, barometer, network location, or platform fusion. |
 | FIT files: Wahoo, COROS, Suunto | Download provider FIT file, parse `enhanced_altitude ?? altitude`; parse `gps_accuracy` when present | FIT record altitude in meters, preferring `enhanced_altitude`; FIT GPS accuracy as location metadata `gps_accuracy_m` | File-level altitude source unknown. FIT is a transport format for device data; `enhanced_altitude` is a higher-resolution altitude field, not a provenance field. FIT `gps_accuracy` is explicitly a meter-valued `uint8` field in the official profile, but the profile does not define whether it is a horizontal radius, CEP, one-sigma error, or another vendor-specific confidence metric. Device/vendor docs may tell us likely behavior for a given device family, but the record itself does not prove source. |
 | Wahoo ELEMNT FIT files | Same FIT path | Altitude from FIT record | Likely GPS-adjusted barometric for ELEMNT/BOLT/ROAM recordings. Wahoo documents those devices as primarily using a barometric altimeter and using GPS to adjust drift. Still store as unknown unless we add device-aware provenance. |
 | COROS FIT files | Same FIT path | Altitude from FIT record | Likely barometer plus GPS calibration/fusion for COROS devices that support elevation. COROS documents barometer readings with periodic GPS calibration and possible GPS override. The FIT record we ingest does not expose the per-sample decision. |
@@ -43,9 +42,6 @@ or `sensor_fusion`.
   location, altitude, accuracy, timestamp, and source information, but our route
   sync does not persist source information:
   <https://developer.apple.com/documentation/CoreLocation/CLLocation>
-- Expo Location: `LocationObjectCoords` exposes `altitude`, `altitudeAccuracy`,
-  `accuracy`, and `speed`, but not altitude-source provenance:
-  <https://docs.expo.dev/versions/latest/sdk/location/>
 - Garmin FIT SDK overview: FIT stores and transfers sport/fitness/health device
   data, and `Profile.xlsx` is the most up-to-date reference for predefined FIT
   messages:
