@@ -6,7 +6,6 @@ const meta = {
   component: MealSection,
   args: {
     mealName: "Breakfast",
-    mealKey: "breakfast",
     entries: [
       {
         id: "1",
@@ -30,9 +29,6 @@ const meta = {
       },
     ],
     totalCalories: 470,
-    onAddFood: (mealKey: string) => void mealKey,
-    onDeleteFood: (id: string) => void id,
-    deleting: false,
   },
 } satisfies Meta<typeof MealSection>;
 
@@ -46,11 +42,5 @@ export const Empty: Story = {
   args: {
     entries: [],
     totalCalories: 0,
-  },
-};
-
-export const Deleting: Story = {
-  args: {
-    deleting: true,
   },
 };

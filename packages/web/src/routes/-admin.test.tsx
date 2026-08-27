@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeTree } from "../routeTree.gen.ts";
@@ -29,8 +29,12 @@ vi.mock("../components/DashboardLayoutProvider.tsx", () => ({
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     admin: {
+      externalClients: { useQuery: () => ({ data: [], isLoading: false, error: null }) },
       overview: { useQuery: () => ({ data: [], isLoading: false, error: null }) },
       refreshViews: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      revokeExternalClient: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+      },
       users: { useQuery: () => ({ data: [], isLoading: false, error: null }) },
       userDetail: {
         useQuery: () => ({
@@ -68,6 +72,7 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     useUtils: () => ({
       admin: {
+        externalClients: { invalidate: vi.fn() },
         users: { invalidate: vi.fn() },
         userDetail: { invalidate: vi.fn() },
       },
@@ -104,5 +109,22 @@ describe("admin routes", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/users/user-1"));
     expect(await screen.findByText("Billing")).toBeTruthy();
     expect(screen.getByText("alice@example.com")).toBeTruthy();
+  });
+
+  it("renders the developer clients support tab", async () => {
+    const queryClient = new QueryClient();
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ["/admin"] }),
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Developer Clients" }));
+    expect(screen.getByText("No developer integrations are registered.")).toBeTruthy();
   });
 });

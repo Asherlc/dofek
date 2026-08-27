@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { normalizeSettingsCategory, type SettingsCategory } from "../pages/settingsCategories.ts";
+import {
+  normalizeSettingsCategory,
+  SETTINGS_CATEGORIES,
+  type SettingsCategory,
+} from "../pages/settingsCategories.ts";
 
 const captured: {
   validateSearch:
@@ -53,6 +57,13 @@ describe("settings search validation", () => {
   it("keeps the Advanced tab deep-link value", () => {
     expect(normalizeSettingsCategory("advanced")).toBe("advanced");
     expect(captured.validateSearch?.({ tab: "advanced" })).toEqual({ tab: "advanced" });
+  });
+
+  it("makes developer integrations discoverable in Advanced settings search", () => {
+    const advanced = SETTINGS_CATEGORIES.find((category) => category.id === "advanced");
+
+    expect(advanced?.searchText).toContain("developer integrations");
+    expect(advanced?.searchText).toContain("OAuth");
   });
 
   it("drops invalid or empty settings search values", () => {

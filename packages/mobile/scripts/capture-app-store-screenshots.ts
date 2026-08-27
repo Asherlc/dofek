@@ -51,11 +51,6 @@ const SCREENSHOTS: ScreenshotConfig[] = [
     caption: "Review every workout with route previews",
   },
   {
-    id: "pages-nutrition--default",
-    filename: "05-nutrition-logging.png",
-    caption: "Log meals and track macros in one place",
-  },
-  {
     id: "pages-settings--default",
     filename: "06-connected-providers.png",
     caption: "Connect Strava, WHOOP, Apple Health, and more",

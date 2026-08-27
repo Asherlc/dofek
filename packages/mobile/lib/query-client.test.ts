@@ -62,15 +62,21 @@ describe("createAppQueryClient", () => {
     });
   });
 
-  it("reports transient network transport errors to Sentry with the failed operation", async () => {
+  it.each([
+    "fetch failed: UnexpectedException: The network connection was lost.",
+    "fetch failed: UnexpectedException: The request timed out.",
+    "Network request failed",
+    "User canceled",
+    "User cancelled",
+    "fetch failed: canceled",
+    "fetch failed: cancelled",
+  ])("reports transient query error %j to Sentry", async (message) => {
     const queryClient = createAppQueryClient();
-    const queryError = new Error(
-      "fetch failed: UnexpectedException: The network connection was lost.",
-    );
+    const queryError = new Error(message);
 
     await expect(
       queryClient.fetchQuery({
-        queryKey: ["offline-query"],
+        queryKey: ["offline-query", message],
         retry: false,
         queryFn: async () => {
           throw queryError;
@@ -80,8 +86,24 @@ describe("createAppQueryClient", () => {
 
     expect(mockCaptureException).toHaveBeenCalledWith(queryError, {
       source: "react-query",
-      queryHash: '["offline-query"]',
+      queryHash: `["offline-query","${message}"]`,
       failureCount: 1,
     });
+  });
+  it("reports a non-transient query error to Sentry", async () => {
+    const queryClient = createAppQueryClient();
+    const queryError = new Error("Unexpected end of JSON input");
+
+    await expect(
+      queryClient.fetchQuery({
+        queryKey: ["unexpected-query"],
+        retry: false,
+        queryFn: async () => {
+          throw queryError;
+        },
+      }),
+    ).rejects.toThrow(queryError);
+
+    expect(mockCaptureException).toHaveBeenCalledOnce();
   });
 });

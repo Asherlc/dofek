@@ -25,11 +25,17 @@ export interface MetricStreamEachBatchPayload {
 
 export interface MetricStreamConsumerLike {
   connect(): Promise<void>;
+  observeGroupLifecycle?(listener: MetricStreamConsumerGroupLifecycleListener): void;
   subscribe(options: { topic: string; fromBeginning: boolean }): Promise<void>;
   run(options: {
     eachBatchAutoResolve: false;
     eachBatch(payload: MetricStreamEachBatchPayload): Promise<void>;
   }): Promise<void>;
+}
+
+export interface MetricStreamConsumerGroupLifecycleListener {
+  markGroupJoined(): void;
+  markUnavailable(): void;
 }
 
 export interface RunMetricStreamEventConsumerOptions {
@@ -39,6 +45,7 @@ export interface RunMetricStreamEventConsumerOptions {
     context: MetricStreamConsumerBatchContext,
   ): Promise<void>;
   quarantine: MetricStreamQuarantineWriter;
+  lifecycleListener?: MetricStreamConsumerGroupLifecycleListener;
   topic: string;
 }
 
@@ -46,6 +53,7 @@ export interface MetricStreamConsumerBatchContext {
   topic: string;
   partition: number;
   eventOffsets: readonly string[];
+  heartbeat(): Promise<void>;
 }
 
 function parseMetricStreamMessage(
@@ -78,6 +86,9 @@ export async function runMetricStreamEventConsumer(
   await options.quarantine.connect();
   await options.consumer.connect();
   await options.consumer.subscribe({ topic: options.topic, fromBeginning: false });
+  if (options.lifecycleListener && options.consumer.observeGroupLifecycle) {
+    options.consumer.observeGroupLifecycle(options.lifecycleListener);
+  }
   await options.consumer.run({
     eachBatchAutoResolve: false,
     eachBatch: async (payload) => {
@@ -131,6 +142,7 @@ export async function runMetricStreamEventConsumer(
           topic: payload.batch.topic,
           partition: payload.batch.partition,
           eventOffsets,
+          heartbeat: payload.heartbeat,
         });
       }
 
@@ -180,6 +192,13 @@ export function createKafkaMetricStreamConsumerFromEnv(
   return {
     consumer: {
       connect: () => kafkaConsumer.connect(),
+      observeGroupLifecycle: (listener) => {
+        kafkaConsumer.on(kafkaConsumer.events.GROUP_JOIN, () => listener.markGroupJoined());
+        kafkaConsumer.on(kafkaConsumer.events.REBALANCING, () => listener.markUnavailable());
+        kafkaConsumer.on(kafkaConsumer.events.DISCONNECT, () => listener.markUnavailable());
+        kafkaConsumer.on(kafkaConsumer.events.STOP, () => listener.markUnavailable());
+        kafkaConsumer.on(kafkaConsumer.events.CRASH, () => listener.markUnavailable());
+      },
       subscribe: (options) => kafkaConsumer.subscribe(options),
       run: (options) => kafkaConsumer.run(options),
     },

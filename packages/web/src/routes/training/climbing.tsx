@@ -3,20 +3,11 @@ import type { ClimbingSessionSummaryRow } from "dofek-server/types";
 import type { Activity } from "../../components/ActivityList.tsx";
 import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
-import {
-  ClimbingAttemptLog,
-  type ClimbingSessionSubmission,
-} from "../../components/ClimbingAttemptLog.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
-import {
-  FingerLoadingLog,
-  type FingerLoadingSubmission,
-} from "../../components/FingerLoadingLog.tsx";
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
-import { captureException } from "../../lib/telemetry.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -96,31 +87,6 @@ export function ClimbingTab() {
     rangeInput,
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const fingerLoadingHistory = trpc.climbing.fingerLoadingHistory.useQuery({ days: 90 });
-  const utils = trpc.useUtils();
-  const fingerLoadingMutation = trpc.climbing.logFingerLoading.useMutation({
-    meta: { errorReportedLocally: true },
-    onError: (error) => captureException(error, { context: "climbing-finger-loading-log" }),
-    onSuccess: async () => {
-      await Promise.all([
-        utils.climbing.fingerLoadingHistory.invalidate(),
-        utils.climbing.sessionSummary.invalidate(),
-        utils.activity.invalidate(),
-      ]);
-    },
-  });
-  const climbingSessionMutation = trpc.climbing.logClimbingSession.useMutation({
-    meta: { errorReportedLocally: true },
-    onError: (error) => captureException(error, { context: "climbing-attempt-log" }),
-    onSuccess: async () => {
-      await Promise.all([
-        utils.climbing.invalidate(),
-        utils.climbing.hangboardingSummary.invalidate(),
-        utils.activity.invalidate(),
-        utils.mobileDashboard.training.invalidate(),
-      ]);
-    },
-  });
 
   return (
     <>
@@ -145,35 +111,6 @@ export function ClimbingTab() {
               loading={volumeByGrade.isLoading}
             />
           )}
-        </Section>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Section
-          title="Finger Loading"
-          subtitle="Record edge, grip, bodyweight, external load, timing, and effort"
-        >
-          {fingerLoadingHistory.error && !fingerLoadingHistory.data ? (
-            <QueryStatePanel error={fingerLoadingHistory.error} height={160} />
-          ) : (
-            <FingerLoadingLog
-              errorMessage={fingerLoadingMutation.error?.message ?? null}
-              latest={fingerLoadingHistory.data?.[0] ?? null}
-              loading={fingerLoadingHistory.isLoading}
-              onSubmit={(input: FingerLoadingSubmission) => fingerLoadingMutation.mutate(input)}
-              submitting={fingerLoadingMutation.isPending}
-            />
-          )}
-        </Section>
-        <Section
-          title="Climbing Attempts"
-          subtitle="Record the wall, holds, and outcome of each attempt"
-        >
-          <ClimbingAttemptLog
-            errorMessage={climbingSessionMutation.error?.message ?? null}
-            onSubmit={(input: ClimbingSessionSubmission) => climbingSessionMutation.mutate(input)}
-            submitting={climbingSessionMutation.isPending}
-          />
         </Section>
       </div>
 

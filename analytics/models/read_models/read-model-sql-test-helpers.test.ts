@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compactWhitespace,
   extractCteSql,
+  readModelSql,
   renderDbtModelSql,
 } from "./read-model-sql-test-helpers.ts";
 
@@ -42,7 +43,7 @@ SELECT * FROM block_commented
 
   it("matches materialized CTE headers", () => {
     const sql = `
-WITH reusable AS materialized (
+WITH reusable AS MATERIALIZED (
   SELECT 1 AS value
 )
 SELECT * FROM reusable
@@ -127,5 +128,15 @@ SELECT * FROM state
     expect(renderDbtModelSql(modelSql, { isIncremental: false })).toContain(
       "WHERE active = 0",
     );
+  });
+
+  it("removes every incremental-only branch from cycling_activity initial SQL", () => {
+    const renderedSql = renderDbtModelSql(readModelSql("cycling_activity.sql"), {
+      isIncremental: false,
+    });
+
+    expect(renderedSql).not.toContain("{{ this }}");
+    expect(renderedSql).not.toContain("existing_rows AS");
+    expect(renderedSql).not.toContain("tombstone_rows");
   });
 });

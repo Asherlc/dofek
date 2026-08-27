@@ -103,10 +103,10 @@ export function AccountErasurePanel() {
       );
       setLocalError(
         accepted
-          ? `${error instanceof Error ? error.message : String(error)} Account deletion was accepted and your session was closed. Use the saved preparation on the public deletion-status screen to recover.`
+          ? "Account deletion was accepted and your session was closed. Check the account deletion status page for updates."
           : confirmationAttempted
-            ? `${error instanceof Error ? error.message : String(error)} The confirmation response could not be verified. Recover it from the public deletion-status screen; the saved recovery capability contains no account identifier.`
-            : `${error instanceof Error ? error.message : String(error)} No confirmation request was sent. Your account-specific preparation remains saved; sign in to the same account and retry from Settings.`,
+            ? `${error instanceof Error ? error.message : String(error)} We could not confirm the outcome. Check the account deletion status page for updates.`
+            : `${error instanceof Error ? error.message : String(error)} Account deletion was not started. Sign in and try again from Settings.`,
       );
       if (accepted || confirmationAttempted) {
         router.replace("/account-deletion");
