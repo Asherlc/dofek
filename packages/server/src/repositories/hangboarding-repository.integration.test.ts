@@ -172,18 +172,19 @@ describe("HangboardingRepository integration", () => {
     await testContext?.cleanup();
   });
 
-  it("reads detail metadata and ordered intervals from real Postgres rows", async () => {
+  it("reads a compact finger-loading summary from real Postgres rows", async () => {
     const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
 
     await expect(repository.getDetail(firstActivityId)).resolves.toMatchObject({
       planName: "Repeaters",
-      sessionId: "session-1",
-      boardId: "board-1",
       boardName: "Tension Board",
-      intervals: [
-        expect.objectContaining({ intervalIndex: 0, intervalType: "work", durationSeconds: 7 }),
-        expect.objectContaining({ intervalIndex: 1, intervalType: "rest", durationSeconds: 53 }),
-      ],
+      summary: {
+        durationSeconds: 600,
+        workIntervalCount: 1,
+        totalWorkDurationSeconds: 7,
+        totalRestDurationSeconds: 53,
+        exercises: [{ label: "19 mm edge", workIntervalCount: 1, workDurationSeconds: 7 }],
+      },
     });
   });
 
@@ -217,11 +218,15 @@ describe("HangboardingRepository integration", () => {
 
     await expect(repository.getDetail(noHangTenActivityId)).resolves.toEqual({
       planName: null,
-      sessionId: null,
-      boardId: null,
       boardName: null,
       segmentsError: null,
-      intervals: [],
+      summary: {
+        durationSeconds: 300,
+        workIntervalCount: 0,
+        totalWorkDurationSeconds: null,
+        totalRestDurationSeconds: null,
+        exercises: [],
+      },
     });
   });
 
@@ -260,13 +265,16 @@ describe("HangboardingRepository integration", () => {
     });
   });
 
-  it("uses Hang Ten metadata and intervals when another member is canonical", async () => {
+  it("uses Hang Ten metadata and finger-loading data when another member is canonical", async () => {
     const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
 
     await expect(repository.getDetail(groupedOtherActivityId)).resolves.toMatchObject({
       planName: "Grouped Hang Ten",
       boardName: "Tension Board",
-      intervals: [expect.objectContaining({ label: "Hang Ten Work", durationSeconds: 7 })],
+      summary: expect.objectContaining({
+        workIntervalCount: 1,
+        exercises: [expect.objectContaining({ label: "Hang Ten Work", workDurationSeconds: 7 })],
+      }),
     });
   });
 

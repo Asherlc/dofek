@@ -18,6 +18,7 @@ function makeDetailRow(overrides: Record<string, unknown> = {}) {
     board_id: "board-1",
     board_name: "Tension Board",
     segments_error: null,
+    activity_duration_seconds: 300,
     interval_id: "interval-1",
     interval_index: 0,
     label: "Step 1: 19 mm edge",
@@ -35,7 +36,7 @@ function queryText(db: ReturnType<typeof makeDb>, callIndex = 0) {
 }
 
 describe("HangboardingRepository", () => {
-  it("maps Hang Ten detail metadata and orders intervals by interval index", async () => {
+  it("returns a user-facing Hang Ten session summary", async () => {
     const db = makeDb([
       [
         {
@@ -46,6 +47,7 @@ describe("HangboardingRepository", () => {
           board_id: "board-1",
           board_name: "Tension Board",
           segments_error: null,
+          activity_duration_seconds: 300,
           interval_id: "interval-2",
           interval_index: 1,
           label: "Step 1: Rest",
@@ -62,6 +64,7 @@ describe("HangboardingRepository", () => {
           board_id: "board-1",
           board_name: "Tension Board",
           segments_error: null,
+          activity_duration_seconds: 300,
           interval_id: "interval-1",
           interval_index: 0,
           label: "Step 1: 19 mm edge",
@@ -77,30 +80,15 @@ describe("HangboardingRepository", () => {
       new HangboardingRepository(db, "user-1", "UTC").getDetail("activity-1"),
     ).resolves.toEqual({
       planName: "7/3 Repeaters",
-      sessionId: "session-1",
-      boardId: "board-1",
       boardName: "Tension Board",
       segmentsError: null,
-      intervals: [
-        {
-          id: "interval-1",
-          intervalIndex: 0,
-          label: "Step 1: 19 mm edge",
-          intervalType: "work",
-          startedAt: "2026-08-07T14:00:00.000Z",
-          endedAt: "2026-08-07T14:00:07.000Z",
-          durationSeconds: 7,
-        },
-        {
-          id: "interval-2",
-          intervalIndex: 1,
-          label: "Step 1: Rest",
-          intervalType: "rest",
-          startedAt: "2026-08-07T14:00:07.000Z",
-          endedAt: "2026-08-07T14:01:00.000Z",
-          durationSeconds: 53,
-        },
-      ],
+      summary: {
+        durationSeconds: 300,
+        workIntervalCount: 1,
+        totalWorkDurationSeconds: 7,
+        totalRestDurationSeconds: 53,
+        exercises: [{ label: "19 mm edge", workIntervalCount: 1, workDurationSeconds: 7 }],
+      },
     });
   });
 
@@ -141,7 +129,7 @@ describe("HangboardingRepository", () => {
     ).resolves.toBeNull();
   });
 
-  it("skips detail rows without complete interval identity or timestamps", async () => {
+  it("ignores incomplete intervals when calculating a session summary", async () => {
     const db = makeDb([
       [
         makeDetailRow({ interval_id: null }),
@@ -154,7 +142,7 @@ describe("HangboardingRepository", () => {
     await expect(
       new HangboardingRepository(db, "user-1", "UTC").getDetail("activity-1"),
     ).resolves.toMatchObject({
-      intervals: [expect.objectContaining({ id: "interval-valid", intervalIndex: 3 })],
+      summary: { workIntervalCount: 1, totalWorkDurationSeconds: 7 },
     });
   });
 

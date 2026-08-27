@@ -389,9 +389,12 @@ describe("Hangboarding activity router integration", () => {
     });
     await expect(caller.hangboardDetails({ id: activityId })).resolves.toMatchObject({
       planName: "Repeaters",
-      sessionId: "router-session",
       boardName: "Tension Board",
-      intervals: [expect.objectContaining({ intervalType: "work", durationSeconds: 7 })],
+      summary: expect.objectContaining({
+        workIntervalCount: 1,
+        totalWorkDurationSeconds: 7,
+        exercises: [expect.objectContaining({ label: "19 mm edge" })],
+      }),
     });
     await expect(
       caller.hangboardDetails({ id: "00000000-0000-0000-0000-000000000099" }),

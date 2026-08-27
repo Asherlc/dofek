@@ -4,30 +4,15 @@ import { HangboardingDetail } from "./HangboardingDetail.tsx";
 
 const data: HangboardingDetailData = {
   planName: "7/3 Repeaters",
-  sessionId: "session-1",
-  boardId: "board-1",
   boardName: "Tension Board",
   segmentsError: null,
-  intervals: [
-    {
-      id: "interval-1",
-      intervalIndex: 0,
-      label: "Step 1: 19 mm edge",
-      intervalType: "work",
-      startedAt: "2026-08-07T14:00:00.000Z",
-      endedAt: "2026-08-07T14:00:07.000Z",
-      durationSeconds: 7,
-    },
-    {
-      id: "interval-2",
-      intervalIndex: 1,
-      label: "Rest",
-      intervalType: "rest",
-      startedAt: "2026-08-07T14:00:07.000Z",
-      endedAt: "2026-08-07T14:00:53.000Z",
-      durationSeconds: 46,
-    },
-  ],
+  summary: {
+    durationSeconds: 300,
+    workIntervalCount: 3,
+    totalWorkDurationSeconds: 21,
+    totalRestDurationSeconds: 106,
+    exercises: [{ label: "19 mm edge", workIntervalCount: 3, workDurationSeconds: 21 }],
+  },
 };
 
 const meta = {
