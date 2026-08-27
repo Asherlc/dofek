@@ -12,12 +12,15 @@ const toolTestMocks = vi.hoisted(() => {
     activityList: vi.fn(),
     activityListRange: vi.fn(),
     activitySearch: vi.fn(),
+    activityFindById: vi.fn(),
     bodyListRange: vi.fn(),
+    climbingActivityEntries: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
     fingerLoadingRange: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
+    fingerLoadingActivity: vi.fn(),
     getAllProviders: vi.fn(),
     getConnectedProviderIds: vi.fn(),
     getLastSyncTimes: vi.fn(),
@@ -25,12 +28,14 @@ const toolTestMocks = vi.hoisted(() => {
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
+    strengthExercises: vi.fn(),
     subjectiveTimeline: vi.fn(),
     withUserWriteFence: vi.fn(),
   };
   return {
     ...mocks,
     activityRepository: vi.fn(() => ({
+      findById: mocks.activityFindById,
       list: mocks.activityList,
       listRange: mocks.activityListRange,
       search: mocks.activitySearch,
@@ -55,6 +60,10 @@ vi.mock("../repositories/activity-repository.ts", () => ({
   ActivityRepository: toolTestMocks.activityRepository,
 }));
 
+vi.mock("../repositories/climbing-repository.ts", () => ({
+  ClimbingRepository: vi.fn(() => ({ getActivityEntries: toolTestMocks.climbingActivityEntries })),
+}));
+
 vi.mock("../repositories/daily-metrics-repository.ts", () => ({
   DailyMetricsRepository: toolTestMocks.dailyMetricsRepository,
 }));
@@ -74,7 +83,12 @@ vi.mock("../repositories/body-repository.ts", () => ({
 }));
 
 vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
+  readFingerLoadingActivity: toolTestMocks.fingerLoadingActivity,
   readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
+}));
+
+vi.mock("../repositories/strength-repository.ts", () => ({
+  StrengthRepository: vi.fn(() => ({ getExercisesForActivity: toolTestMocks.strengthExercises })),
 }));
 
 vi.mock("../repositories/sync-repository.ts", () => ({
@@ -293,11 +307,14 @@ describe("createMcpRouter", () => {
     toolTestMocks.activityList.mockResolvedValue({ items: [], totalCount: 0 });
     toolTestMocks.activityListRange.mockResolvedValue([]);
     toolTestMocks.activitySearch.mockResolvedValue({ items: [], totalCount: 0 });
+    toolTestMocks.activityFindById.mockResolvedValue(null);
     toolTestMocks.bodyListRange.mockResolvedValue([]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([]);
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
+    toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
     toolTestMocks.fingerLoadingRange.mockResolvedValue([]);
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
@@ -309,6 +326,7 @@ describe("createMcpRouter", () => {
     });
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
+    toolTestMocks.strengthExercises.mockResolvedValue([]);
     toolTestMocks.subjectiveTimeline.mockResolvedValue({ checkIns: [], injuries: [] });
     toolTestMocks.withUserWriteFence.mockImplementation(
       async (
@@ -525,6 +543,11 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "get_body_metrics").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_activity_details").inputSchema).toMatchObject({
+      properties: { activity_id: { format: "uuid", type: "string" } },
+      required: ["activity_id"],
       type: "object",
     });
     expect(findListedTool(tools, "list_providers").inputSchema).toMatchObject({
@@ -1286,6 +1309,33 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it("returns an activity with its strength, climbing, and finger-loading details", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000001";
+    toolTestMocks.activityFindById.mockResolvedValue({ id: activityId, name: "Training" });
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      { toDetail: () => ({ exerciseName: "Pull-up", muscleGroups: ["back"] }) },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      { toDetail: () => ({ grade: "V5", routeName: "Blue Circuit" }) },
+    ]);
+    toolTestMocks.fingerLoadingActivity.mockResolvedValue([
+      { exercise: "max_hang", effectiveLoadKg: 95 },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_details", { activity_id: activityId }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      activity: { id: activityId, name: "Training" },
+      climbing_entries: [{ grade: "V5", routeName: "Blue Circuit" }],
+      finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
+      strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
+    });
+    expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
+  });
   it("lists configured providers with connection and reauth state", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
