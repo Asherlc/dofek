@@ -320,6 +320,36 @@ describe("KayaSyncProvider", () => {
     );
   });
 
+  it("clears the end offset when Kaya reports an unfinished offset session", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      {
+        ...session("session-1"),
+        start_time: "2026-08-01T10:00:00.000-06:00",
+        end_time: "2026-08-01T10:00:00.000-06:00",
+      },
+    ]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await new KayaSyncProvider().sync(run(db));
+
+    expect(mocks.upsertActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        endedAt: null,
+        startUtcOffsetMinutes: -360,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "provider_offset",
+      }),
+      expect.anything(),
+    );
+  });
+
   it("preserves a valid Kaya session end time", async () => {
     const db = database();
     mocks.loadTokens.mockResolvedValue({

@@ -21,10 +21,10 @@ them, and the durability work they suggest.
   timestamp represents an incomplete Kaya session, not a completed
   zero-duration activity.
 - **Fix / mitigation:** Kaya now resolves its gym coordinates to an IANA zone,
-  persists that zone as provider time context, and stores a non-positive session
-  end as absent. Shared web/mobile activity rendering falls back to the viewer's
-  zone only when a source has no local-time context. No converted timestamp is
-  stored; UTC remains the canonical instant.
+  persists that zone as provider time context, and stores an end time as absent
+  when it is equal to or earlier than the start time. Shared web/mobile activity
+  rendering falls back to the viewer's zone only when a source has no local-time
+  context. No converted timestamp is stored; UTC remains the canonical instant.
 - **Validation:** Regression tests first failed with the prior UTC-local offset
   and zero-duration behavior, then passed after the fix. Focused formatter,
   Kaya provider, web, and mobile activity suites passed; the Docker-free
