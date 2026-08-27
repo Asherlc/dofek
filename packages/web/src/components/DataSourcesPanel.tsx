@@ -37,6 +37,8 @@ const oauthPostMessage = z.object({
 const providerRegionClassName =
   "h-80 space-y-3 overflow-y-auto overscroll-contain rounded-lg pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-96 lg:h-[28rem]";
 const providerGridClassName = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3";
+const hiddenProviderIds = new Set(["auto-supplements"]);
+const whoopProviderIds = new Set(["whoop", "whoop_ble"]);
 
 export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
@@ -260,7 +262,9 @@ export function DataSourcesPanel() {
   const activeImportByProvider = new Map(
     (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
   );
-  const enabledSyncable = allProviders.filter((p) => !p.importOnly && !p.pushOnly);
+  const enabledSyncable = allProviders.filter(
+    (p) => !hiddenProviderIds.has(p.id) && !p.importOnly && !p.pushOnly,
+  );
   const syncAllBusy =
     syncMutation.isPending ||
     syncAllMode !== null ||
@@ -402,6 +406,7 @@ export function DataSourcesPanel() {
   });
 
   for (const p of allProviders) {
+    if (hiddenProviderIds.has(p.id)) continue;
     const importConfig = getFileImportConfig(p.id);
     if (importConfig) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
@@ -409,6 +414,55 @@ export function DataSourcesPanel() {
       unifiedProviders.push({ kind: "sync", provider: p });
     }
   }
+
+  const whoopEntries = unifiedProviders.filter(
+    (entry) => entry.kind === "sync" && whoopProviderIds.has(entry.provider.id),
+  );
+  const otherEntries = unifiedProviders.filter(
+    (entry) => entry.kind !== "sync" || !whoopProviderIds.has(entry.provider.id),
+  );
+
+  const renderProviderEntry = (entry: (typeof unifiedProviders)[number]) => {
+    if (entry.kind === "import") {
+      const providerStats = statsByProvider.get(entry.id);
+      const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
+      return (
+        <FileImportProviderCard
+          key={entry.id}
+          providerId={entry.id}
+          {...entry.config}
+          stats={providerStats}
+          recentLogs={recentLogs}
+          activeImport={activeImportByProvider.get(entry.id)}
+        />
+      );
+    }
+
+    const provider = entry.provider;
+    const state = providerStates[provider.id] ?? { status: "idle" };
+    const needsAuth =
+      !provider.pushOnly &&
+      provider.authType !== "none" &&
+      provider.authType !== "file-import" &&
+      !provider.authorized;
+    const needsReauth = provider.needsReauth === true;
+    const providerStats = statsByProvider.get(provider.id);
+    const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
+
+    return (
+      <SyncProviderCard
+        key={provider.id}
+        provider={provider}
+        state={state}
+        needsAuth={needsAuth}
+        needsReauth={needsReauth}
+        pushOnly={provider.pushOnly === true}
+        stats={providerStats}
+        recentLogs={recentLogs}
+        onSync={() => handleProviderClick(provider)}
+      />
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -450,47 +504,20 @@ export function DataSourcesPanel() {
             ? ["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
                 <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
               ))
-            : unifiedProviders.map((entry) => {
-                if (entry.kind === "import") {
-                  const providerStats = statsByProvider.get(entry.id);
-                  const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
-                  return (
-                    <FileImportProviderCard
-                      key={entry.id}
-                      providerId={entry.id}
-                      {...entry.config}
-                      stats={providerStats}
-                      recentLogs={recentLogs}
-                      activeImport={activeImportByProvider.get(entry.id)}
-                    />
-                  );
-                }
-
-                const provider = entry.provider;
-                const state = providerStates[provider.id] ?? { status: "idle" };
-                const needsAuth =
-                  !provider.pushOnly &&
-                  provider.authType !== "none" &&
-                  provider.authType !== "file-import" &&
-                  !provider.authorized;
-                const needsReauth = provider.needsReauth === true;
-                const providerStats = statsByProvider.get(provider.id);
-                const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
-
-                return (
-                  <SyncProviderCard
-                    key={provider.id}
-                    provider={provider}
-                    state={state}
-                    needsAuth={needsAuth}
-                    needsReauth={needsReauth}
-                    pushOnly={provider.pushOnly === true}
-                    stats={providerStats}
-                    recentLogs={recentLogs}
-                    onSync={() => handleProviderClick(provider)}
-                  />
-                );
-              })}
+            : [
+                ...otherEntries.map(renderProviderEntry),
+                ...(whoopEntries.length > 0
+                  ? [
+                      <fieldset
+                        key="whoop"
+                        className="space-y-3 rounded-lg border border-border bg-surface p-3"
+                      >
+                        <legend className="text-sm font-medium text-foreground">WHOOP</legend>
+                        <div className="space-y-3">{whoopEntries.map(renderProviderEntry)}</div>
+                      </fieldset>,
+                    ]
+                  : []),
+              ]}
         </div>
       </section>
 

@@ -1011,6 +1011,47 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("groups WHOOP Cloud and Bluetooth in one provider section and hides Auto-Supplements", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "whoop",
+          name: "WHOOP (Cloud)",
+          authType: "custom:whoop",
+          authorized: true,
+          importOnly: false,
+          lastSyncedAt: null,
+        },
+        {
+          id: "whoop_ble",
+          name: "WHOOP (Bluetooth)",
+          authType: "none",
+          authorized: true,
+          importOnly: false,
+          pushOnly: true,
+          lastSyncedAt: null,
+        },
+        {
+          id: "auto-supplements",
+          name: "Auto-Supplements",
+          authType: "none",
+          authorized: true,
+          importOnly: false,
+          lastSyncedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const whoopGroup = screen.getByTestId("provider-group-whoop");
+    expect(within(whoopGroup).getByTestId("provider-card-whoop")).toBeTruthy();
+    expect(within(whoopGroup).getByTestId("provider-card-whoop_ble")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-auto-supplements")).toBeNull();
+  });
+
   it("does not render Sync link for disconnected providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [disconnectedProvider],

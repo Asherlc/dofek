@@ -55,6 +55,9 @@ import {
 import { styles } from "./styles.ts";
 import { SyncAllControls } from "./sync-all-controls.tsx";
 
+const hiddenProviderIds = new Set(["auto-supplements"]);
+const whoopProviderIds = new Set(["whoop", "whoop_ble"]);
+
 async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
   const file = new ExpoFile(fileUri);
   if (!file.exists) {
@@ -664,7 +667,16 @@ export default function ProvidersScreen() {
   });
 
   const isLoading = providers.isLoading;
-  const enabledProviders = providerList.filter((p) => p.enabled);
+  const visibleProviderList = providerList.filter(
+    (provider) => !hiddenProviderIds.has(provider.id),
+  );
+  const enabledProviders = visibleProviderList.filter((p) => p.enabled);
+  const whoopProviders = visibleProviderList.filter((provider) =>
+    whoopProviderIds.has(provider.id),
+  );
+  const otherProviders = visibleProviderList.filter(
+    (provider) => !whoopProviderIds.has(provider.id),
+  );
   const appleHealthProvider = appleHealth.model.toProviderCard();
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
@@ -691,6 +703,53 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
+
+  const renderProviderCard = (provider: Provider) => {
+    const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
+    const activeImport = activeImportByProvider.get(provider.id);
+    const activeImportProgress = activeImport
+      ? {
+          percentage: activeImport.percentage,
+          message: activeImport.message,
+          failedCount: activeImport.failedCount,
+        }
+      : undefined;
+    const localImportProgress =
+      localImportIsActive && sharedImportState.providerId === provider.id
+        ? {
+            percentage: sharedImportState.progress,
+            message: sharedImportState.message,
+          }
+        : undefined;
+    const importProgress = localImportProgress ?? activeImportProgress;
+
+    return fileImportProviderConfig ? (
+      <FileImportProviderCard
+        key={provider.id}
+        provider={provider}
+        stats={statsMap[provider.id]}
+        syncing={syncingProviders.has(provider.id)}
+        importing={importProgress !== undefined}
+        syncProgress={importProgress ?? syncProgress[provider.id]}
+        onSync={() => handleSyncProvider(provider.id)}
+        onConnect={() => handleConnect(provider)}
+        onImportProvider={handleFileImportProvider}
+        onPress={() => router.push(`/providers/${provider.id}`)}
+      />
+    ) : (
+      <ProviderCard
+        key={provider.id}
+        provider={provider}
+        stats={statsMap[provider.id]}
+        syncing={syncingProviders.has(provider.id)}
+        syncProgress={syncProgress[provider.id]}
+        onSync={() => handleSyncProvider(provider.id)}
+        onFullSync={() => handleSyncProvider(provider.id, true)}
+        onConnect={() => handleConnect(provider)}
+        onPress={() => router.push(`/providers/${provider.id}`)}
+      />
+    );
+  };
 
   return (
     <ScrollView
@@ -814,51 +873,13 @@ export default function ProvidersScreen() {
       {isLoading && !providers.error ? (
         <QueryStatePanel variant="loading" style={styles.card} />
       ) : null}
-      {providerList.map((provider) => {
-        const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
-        const activeImport = activeImportByProvider.get(provider.id);
-        const activeImportProgress = activeImport
-          ? {
-              percentage: activeImport.percentage,
-              message: activeImport.message,
-              failedCount: activeImport.failedCount,
-            }
-          : undefined;
-        const localImportProgress =
-          localImportIsActive && sharedImportState.providerId === provider.id
-            ? {
-                percentage: sharedImportState.progress,
-                message: sharedImportState.message,
-              }
-            : undefined;
-        const importProgress = localImportProgress ?? activeImportProgress;
-        return fileImportProviderConfig ? (
-          <FileImportProviderCard
-            key={provider.id}
-            provider={provider}
-            stats={statsMap[provider.id]}
-            syncing={syncingProviders.has(provider.id)}
-            importing={importProgress !== undefined}
-            syncProgress={importProgress ?? syncProgress[provider.id]}
-            onSync={() => handleSyncProvider(provider.id)}
-            onConnect={() => handleConnect(provider)}
-            onImportProvider={handleFileImportProvider}
-            onPress={() => router.push(`/providers/${provider.id}`)}
-          />
-        ) : (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            stats={statsMap[provider.id]}
-            syncing={syncingProviders.has(provider.id)}
-            syncProgress={syncProgress[provider.id]}
-            onSync={() => handleSyncProvider(provider.id)}
-            onFullSync={() => handleSyncProvider(provider.id, true)}
-            onConnect={() => handleConnect(provider)}
-            onPress={() => router.push(`/providers/${provider.id}`)}
-          />
-        );
-      })}
+      {otherProviders.map(renderProviderCard)}
+      {whoopProviders.length > 0 && (
+        <View testID="provider-group-whoop">
+          <Text style={styles.sectionTitle}>WHOOP</Text>
+          {whoopProviders.map(renderProviderCard)}
+        </View>
+      )}
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
