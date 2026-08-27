@@ -1,11 +1,10 @@
-import { daysBefore, type SeedRandom, type Sql, timestampAt, USER_ID } from "./helpers.ts";
+import { daysBefore, type SeedRandom, type Sql, USER_ID } from "./helpers.ts";
 
 export async function seedReviewSurfaces(sql: Sql, random: SeedRandom): Promise<void> {
   const today = new Date();
   await seedJournalEntries(sql, random, today);
   await seedLifeEvents(sql, today);
-  await seedBreathwork(sql, today);
-  console.log("Seeded: journal entries, life events, and breathwork sessions");
+  console.log("Seeded: journal entries and life events");
 }
 
 async function seedJournalEntries(sql: Sql, random: SeedRandom, today: Date): Promise<void> {
@@ -73,22 +72,6 @@ async function seedLifeEvents(sql: Sql, today: Date): Promise<void> {
         ${label}, ${USER_ID}, ${daysBefore(today, startDaysAgo)},
         ${endDaysAgo == null ? null : daysBefore(today, endDaysAgo)}, ${category},
         ${endDaysAgo == null}, ${notes}
-      )
-    `;
-  }
-}
-
-async function seedBreathwork(sql: Sql, today: Date): Promise<void> {
-  const techniques = ["box-breathing", "resonance", "physiological-sigh"] as const;
-  for (let daysAgo = 0; daysAgo < 22; daysAgo += 2) {
-    const date = daysBefore(today, daysAgo);
-    const techniqueId = techniques[daysAgo % techniques.length];
-    await sql`
-      INSERT INTO fitness.breathwork_session (
-        user_id, technique_id, rounds, duration_seconds, started_at, notes
-      ) VALUES (
-        ${USER_ID}, ${techniqueId}, ${4 + (daysAgo % 3)}, ${300 + daysAgo * 8},
-        ${timestampAt(date, 21, 15)}, 'Review seed breathwork session'
       )
     `;
   }

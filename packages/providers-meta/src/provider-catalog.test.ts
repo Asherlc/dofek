@@ -15,8 +15,49 @@ describe("providerFamily", () => {
     });
   });
 
+  it("groups Zepp and Kaya connection methods under their user-facing providers", () => {
+    expect(providerFamily("amazfit-zepp")).toEqual({
+      id: "zepp",
+      label: "Zepp",
+      methodLabel: "Zepp cloud",
+    });
+    expect(providerFamily("zos-app")).toEqual({
+      id: "zepp",
+      label: "Zepp",
+      methodLabel: "Zepp OS app",
+    });
+    expect(providerFamily("kaya")).toEqual({ id: "kaya", label: "Kaya", methodLabel: "Web" });
+    expect(providerFamily("kaya-export")).toEqual({
+      id: "kaya",
+      label: "Kaya",
+      methodLabel: "Data export (CSV file)",
+    });
+  });
+
   it("does not group providers without an explicit family", () => {
     expect(providerFamily("fit-file")).toBeNull();
+  });
+
+  it("creates Zepp and Kaya families when both connection methods are available", () => {
+    expect(
+      groupProviderEntries([
+        { id: "amazfit-zepp" },
+        { id: "zos-app" },
+        { id: "kaya" },
+        { id: "kaya-export" },
+      ]),
+    ).toEqual([
+      {
+        kind: "family",
+        family: { id: "zepp", label: "Zepp" },
+        providers: [{ id: "amazfit-zepp" }, { id: "zos-app" }],
+      },
+      {
+        kind: "family",
+        family: { id: "kaya", label: "Kaya" },
+        providers: [{ id: "kaya" }, { id: "kaya-export" }],
+      },
+    ]);
   });
 });
 

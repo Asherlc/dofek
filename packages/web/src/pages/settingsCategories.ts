@@ -26,7 +26,7 @@ export const SETTINGS_CATEGORIES: readonly {
     id: "goals-models",
     label: "Goals & Models",
     searchText:
-      "goals models primary goal units cycle tracking journal trends health reports goal weight algorithm personalization",
+      "goals models primary goal units journal trends health reports goal weight algorithm personalization",
   },
   {
     id: "privacy-export",
@@ -46,7 +46,7 @@ export const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText: "advanced dashboard layout MCP developer tools diagnostics",
+    searchText: "advanced dashboard layout developer integrations OAuth callback API",
   },
 ];
 

@@ -36,7 +36,11 @@ const zeppApp: ProviderFamily = {
 };
 
 const kayaWeb: ProviderFamily = { id: "kaya", label: "Kaya", methodLabel: "Web" };
-const kayaExport: ProviderFamily = { id: "kaya", label: "Kaya", methodLabel: "CSV export" };
+const kayaExport: ProviderFamily = {
+  id: "kaya",
+  label: "Kaya",
+  methodLabel: "Data export (CSV file)",
+};
 
 /**
  * Canonical user-facing presentation for technical provider IDs.
@@ -83,13 +87,14 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   "amazfit-zepp": { label: "Amazfit/Zepp", family: zeppCloud, brandColor: "#00B588" },
   "zos-app": { label: "Zepp OS App", family: zeppApp },
   velohero: { label: "VeloHero", brandColor: "#FF6600" },
+  "mountain-project": { label: "Mountain Project", brandColor: "#1F5A88" },
   wger: { label: "Wger", logo: { type: "png" } },
   xert: { label: "Xert", logo: { type: "png" } },
   "apple-health": { label: "Apple Health" },
   apple_health: { label: "Apple Health", logo: { type: "png" } },
   "strong-csv": { label: "Strong", logo: { type: "png" } },
   "cronometer-csv": { label: "Cronometer", logo: { type: "png" } },
-  kaya: { label: "Kaya", family: kayaWeb },
+  kaya: { label: "Kaya", family: kayaWeb, brandColor: "#1F9D55" },
   "kaya-export": { label: "Kaya", family: kayaExport },
   bodyspec: { label: "BodySpec", brandColor: "#00B4D8" },
   dofek: { label: "Dofek", brandColor: "#4A9D8E" },

@@ -192,15 +192,6 @@ export function getSinglePathParam(value: string | string[] | undefined): string
   return typeof value === "string" ? value : null;
 }
 
-export const SLACK_SCOPES = [
-  "chat:write",
-  "im:history",
-  "im:read",
-  "im:write",
-  "users:read",
-  "users:read.email",
-];
-
 // Rate limiter for auth endpoints (login, callback, native sign-in)
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

@@ -18,3 +18,10 @@ export const Garmin: Story = {
     ],
   },
 };
+
+export const GarminExport: Story = {
+  args: {
+    ...Garmin.args,
+    initialMethodId: "garmin-dump",
+  },
+};

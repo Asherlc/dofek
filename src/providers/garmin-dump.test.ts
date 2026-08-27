@@ -32,7 +32,7 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-type FileStats = Awaited<ReturnType<typeof stat>>;
+type FileStats = Exclude<Awaited<ReturnType<typeof stat>>, undefined>;
 
 interface FsPromisesMock {
   statOverride: ((filePath: string) => Promise<FileStats>) | null;
@@ -450,6 +450,9 @@ describe("Garmin dump provider", () => {
     const filePath = join(directory, "too-large.zip");
     await writeFile(filePath, "");
     const actualStats = await stat(filePath);
+    if (!actualStats) {
+      throw new Error("Expected the written Garmin dump fixture to have file stats");
+    }
     fsPromisesMock.statOverride = async () =>
       new Proxy<FileStats>(actualStats, {
         get(target, property, receiver) {

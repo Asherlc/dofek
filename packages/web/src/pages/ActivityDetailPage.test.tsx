@@ -232,13 +232,6 @@ vi.mock("../lib/trpc.ts", () => ({
       stream: { useQuery: mockStreamUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
-      setPerceivedExertion: {
-        useMutation: () => ({
-          mutate: vi.fn(),
-          isPending: false,
-          error: null,
-        }),
-      },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       hangboardDetails: { useQuery: mockHangboardDetailsUseQuery },
       recompute: {
@@ -512,7 +505,7 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("Activity not found")).toBeDefined();
   });
 
-  it("renders detail metric state and preserves a measured zero", async () => {
+  it("hides an unrecorded detail metric and preserves a measured zero", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: {
         ...mockActivity,
@@ -527,9 +520,8 @@ describe("ActivityDetailPage", () => {
 
     const { rerender } = renderWithUnits(<ActivityDetailPage />);
 
-    expect(screen.getByText("Distance unavailable")).toBeDefined();
-    expect(screen.getByText("Distance not recorded")).toBeDefined();
-    expect(screen.getByLabelText("Distance unavailable: Distance not recorded")).toBeDefined();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
 
     mockActivityByIdUseQuery.mockReturnValue({
       data: { ...mockActivity, totalDistance: 0, totalDistanceState: { status: "available" } },
@@ -540,7 +532,7 @@ describe("ActivityDetailPage", () => {
     rerender(<ActivityDetailPage />);
 
     expect(screen.getByText("0.0 km")).toBeDefined();
-    expect(screen.queryByText("Distance unavailable")).toBeNull();
+    expect(screen.getByText("0.0 km")).toBeDefined();
   });
 
   it("shows a sensor section error when the stream query fails without data", async () => {

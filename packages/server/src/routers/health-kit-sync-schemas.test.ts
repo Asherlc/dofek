@@ -1,5 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { getDailyMetricAccumulatorKey, workoutActivityTypeMap } from "./health-kit-sync-schemas.ts";
+import {
+  getDailyMetricAccumulatorKey,
+  healthKitSampleSchema,
+  workoutActivityTypeMap,
+} from "./health-kit-sync-schemas.ts";
+
+describe("healthKitSampleSchema", () => {
+  const sample = {
+    type: "HKCategoryTypeIdentifierMenstrualFlow",
+    value: 2,
+    unit: "category",
+    startDate: "2026-08-01T08:00:00-07:00",
+    endDate: "2026-08-01T08:05:00-07:00",
+    sourceName: "Cycle Source",
+    sourceBundle: "com.example.cycle-source",
+    uuid: "91C7A825-3DA3-4F24-9085-15A9E2D1D2A1",
+  };
+
+  it("accepts flat string, number, and boolean metadata", () => {
+    expect(
+      healthKitSampleSchema.parse({
+        ...sample,
+        metadata: {
+          HKMetadataKeyMenstrualCycleStart: true,
+          upstreamVersion: 3,
+          upstreamLabel: "confirmed",
+        },
+      }).metadata,
+    ).toEqual({
+      HKMetadataKeyMenstrualCycleStart: true,
+      upstreamVersion: 3,
+      upstreamLabel: "confirmed",
+    });
+  });
+
+  it.each([
+    { nested: { value: true } },
+    { nested: ["value"] },
+  ])("rejects non-scalar metadata values", (metadata) => {
+    expect(() => healthKitSampleSchema.parse({ ...sample, metadata })).toThrow();
+  });
+});
 
 describe("workoutActivityTypeMap", () => {
   // HKWorkoutActivityType rawValues from Apple documentation.

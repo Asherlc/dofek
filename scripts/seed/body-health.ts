@@ -9,8 +9,7 @@ export async function seedBodyHealth(sql: Sql): Promise<void> {
   await seedDexaScans(sql, today);
   await seedLabs(sql, today);
   await seedClinicalRecords(sql, today);
-  await seedMenstrualPeriods(sql, today);
-  console.log("Seeded: body composition, labs, clinical records, and cycle data");
+  console.log("Seeded: body composition, labs, and clinical records");
 }
 
 async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
@@ -153,21 +152,6 @@ async function seedClinicalRecords(sql: Sql, today: Date): Promise<void> {
         'apple_health', ${USER_ID}, ${`seed-dose-${daysAgo}`}, 'Vitamin D3', 'taken',
         ${timestampAt(date, 8, 0)}, 'Apple Health Review Seed'
       )
-    `;
-  }
-}
-
-async function seedMenstrualPeriods(sql: Sql, today: Date): Promise<void> {
-  for (let periodIndex = 0; periodIndex < 6; periodIndex++) {
-    const startDaysAgo = 12 + periodIndex * 29;
-    const startDate = daysBefore(today, startDaysAgo);
-    const endDate = daysBefore(today, startDaysAgo - 4);
-    await sql`
-      INSERT INTO fitness.menstrual_period (user_id, start_date, end_date, notes)
-      VALUES (${USER_ID}, ${startDate}, ${endDate}, 'Review seed cycle data')
-      ON CONFLICT (user_id, start_date) DO UPDATE
-        SET end_date = EXCLUDED.end_date,
-            notes = EXCLUDED.notes
     `;
   }
 }

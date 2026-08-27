@@ -283,6 +283,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
                 providerId: provider_id,
                 sinceDays: 1,
                 userId: user_id,
+                origin: "manual",
               });
               return "enqueued";
             },

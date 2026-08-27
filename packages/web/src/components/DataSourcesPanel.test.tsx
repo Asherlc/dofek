@@ -287,8 +287,11 @@ describe("DataSourcesPanel", () => {
     render(<DataSourcesPanel />);
 
     expect(screen.getByRole("region", { name: "Garmin connection methods" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Garmin Connect" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "Data export" }));
+    expect(screen.getByRole("button", { name: "Garmin Connect" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Data export" }));
     expect(screen.getByTestId("file-import-garmin-dump")).toBeTruthy();
     expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
   });
