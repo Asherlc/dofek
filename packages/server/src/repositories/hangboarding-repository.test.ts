@@ -136,6 +136,12 @@ describe("HangboardingRepository", () => {
         makeDetailRow({ interval_index: null }),
         makeDetailRow({ interval_started_at: null }),
         makeDetailRow({ interval_id: "interval-valid", interval_index: 3 }),
+        makeDetailRow({
+          interval_id: "interval-incomplete",
+          interval_index: 4,
+          interval_ended_at: null,
+          duration_seconds: null,
+        }),
       ],
     ]);
 

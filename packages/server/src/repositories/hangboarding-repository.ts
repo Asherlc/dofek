@@ -119,7 +119,9 @@ function exerciseLabel(label: string | null): string {
 }
 
 function summarizeDetailIntervals(intervals: DetailInterval[]) {
-  const workIntervals = intervals.filter((interval) => interval.intervalType === "work");
+  const workIntervals = intervals.filter(
+    (interval) => interval.intervalType === "work" && interval.durationSeconds !== null,
+  );
   const exercises = new Map<string, DetailInterval[]>();
   for (const interval of workIntervals) {
     const label = exerciseLabel(interval.label);
@@ -128,7 +130,7 @@ function summarizeDetailIntervals(intervals: DetailInterval[]) {
 
   return {
     workIntervalCount: workIntervals.length,
-    totalWorkDurationSeconds: totalDuration(intervals, "work"),
+    totalWorkDurationSeconds: totalDuration(workIntervals, "work"),
     totalRestDurationSeconds: totalDuration(intervals, "rest"),
     exercises: [...exercises].map(([label, exerciseIntervals]) => ({
       label,
@@ -190,7 +192,10 @@ export class HangboardingRepository {
               ELSE NULL
             END AS duration_seconds,
             CASE
-              WHEN a.ended_at IS NOT NULL THEN EXTRACT(EPOCH FROM (a.ended_at - a.started_at))
+              WHEN member.hang_ten_activity_id IS NULL AND a.ended_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM (a.ended_at - a.started_at))
+              WHEN member.ended_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM (member.ended_at - member.started_at))
               ELSE NULL
             END AS activity_duration_seconds
           FROM fitness.v_activity AS a

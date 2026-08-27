@@ -140,7 +140,7 @@ describe("HangboardingRepository integration", () => {
           (
             'hangboarding-repository-other', ${TEST_USER_ID}, 'hangboard-repository-grouped-other',
             'hangboard', 'Other Hangboard', CURRENT_TIMESTAMP - INTERVAL '40 days',
-            CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '10 minutes', 'Grouped Other',
+            CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '20 minutes', 'Grouped Other',
             '{"avgHeartRate":200,"maxHeartRate":210}'::jsonb
           )
           RETURNING id::text AS id, external_id`,
@@ -272,6 +272,7 @@ describe("HangboardingRepository integration", () => {
       planName: "Grouped Hang Ten",
       boardName: "Tension Board",
       summary: expect.objectContaining({
+        durationSeconds: 600,
         workIntervalCount: 1,
         exercises: [expect.objectContaining({ label: "Hang Ten Work", workDurationSeconds: 7 })],
       }),
