@@ -272,9 +272,8 @@ function kayaSessionLocalTimeContext(session: KayaSession, startedAt: Date, ende
   }
 
   const startUtcOffsetMinutes = offsetMinutesFromTimestamp(session.start_time);
-  const endUtcOffsetMinutes = endedAt !== null && session.end_time
-    ? offsetMinutesFromTimestamp(session.end_time)
-    : null;
+  const endUtcOffsetMinutes =
+    endedAt !== null && session.end_time ? offsetMinutesFromTimestamp(session.end_time) : null;
   if (
     startUtcOffsetMinutes == null ||
     startUtcOffsetMinutes === 0 ||

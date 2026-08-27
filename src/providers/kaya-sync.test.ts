@@ -432,15 +432,17 @@ describe("KayaSyncProvider", () => {
       accessToken: "access-token",
       scopes: JSON.stringify({ kayaUserId: "42" }),
     });
-    mocks.listSessions.mockResolvedValue([
-      [-90, 0],
-      [90, 0],
-      [0, -180],
-      [0, 180],
-    ].map(([latitude, longitude], index) => ({
-      ...session(`session-${index}`),
-      gym: { id: `gym-${index}`, name: "Kaya Gym", latitude, longitude },
-    })));
+    mocks.listSessions.mockResolvedValue(
+      [
+        [-90, 0],
+        [90, 0],
+        [0, -180],
+        [0, 180],
+      ].map(([latitude, longitude], index) => ({
+        ...session(`session-${index}`),
+        gym: { id: `gym-${index}`, name: "Kaya Gym", latitude, longitude },
+      })),
+    );
     mocks.ascents.mockResolvedValue([]);
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
 
