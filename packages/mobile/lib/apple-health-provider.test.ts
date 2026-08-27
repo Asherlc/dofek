@@ -228,6 +228,7 @@ describe("AppleHealthProviderModel", () => {
         label: "Apple Health",
         enabled: true,
         authStatus: "connected",
+        recentLogs: [],
       }),
     );
     expect(model.toDisplayProvider()).toEqual(

@@ -23725,6 +23725,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-08-27 — Provider cards temporarily reported no sync history
+
+- **Status:** Fixed in this workspace; deployment is pending.
+- **Symptoms / impact:** All regular provider cards could briefly report no sync history even though historical `fitness.sync_log` rows existed. This made the dashboard imply data loss and obscured the provider's actual latest sync outcome.
+- **Evidence / root cause:** Production retained 468,035 sync-log rows, including 8,381 in the preceding 24 hours. The UI loaded `sync.providers` and the account-wide, 100-row `sync.logs` query independently, then treated an unresolved/empty global log response as no history for every provider. The global limit could also exclude a quiet provider when another provider generated the most recent rows. A worker scale-to-zero was observed during [Deploy Web run 33103071018](https://github.com/Asherlc/dofek/actions/runs/33103071018), but it cannot explain the already-stored history disappearing from the UI.
+- **Fix / mitigation:** `sync.providers` now includes the three most recent logs for each provider via a provider-partitioned query. Web and mobile cards render that provider-scoped history, while the account-wide log query remains only for file-import history. The status treatment now uses a single concise current/failed indicator instead of repeated checkmark icons.
+- **Validation:** Provider repository, router, web panel/card, Apple Health model, and mobile provider tests pass (237 tests); TypeScript typecheck passes; non-database lint checks pass. The final analytics SQL lint requires a local ClickHouse instance, which this workspace could not start because its image was unavailable. The first hosted PR CI run caught two contract omissions: nested logs lacked `providerId` required by the mobile card model, and three web fixtures omitted newly required `id` and `dataType` fields. The corrected contract and fixtures pass 213 affected tests and package TypeScript checks locally.
+- **Remaining risk / follow-up:** Confirm the next production deployment and observe a provider card while the global history query is delayed or fails; its status should remain based on `sync.providers` data.
+
 ## 2026-08-27 — Mobile shared Strong import used retired Blob and upload endpoints
 
 - **Status:** Fix prepared; physical-device verification and hosted CI remain pending.
@@ -24193,3 +24202,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Restore Axiom access, deploy the diagnostic
   commit, reproduce the refresh, and correlate the reported operation with
   server request duration and error traces before selecting a behavior change.
+
+## 2026-08-27 — PR 2584 provider grouping CI typecheck and Knip failures
+
+- **Status:** Fixed in source; a fresh hosted CI workflow is queued.
+- **Symptoms / impact:** PR #2584 could not merge because typechecks for the
+  providers, server, web, and mobile packages failed, along with Knip.
+- **Evidence / root cause:** The first fatal typecheck line was
+  `Type '{ [k: string]: string | undefined; }' is not assignable to type
+  'Readonly<Record<string, string>>'` in the catalog-derived `BRAND_COLORS`
+  map. Knip independently reported an unlisted `@storybook/react` import in
+  the new provider-family story. See the [providers typecheck job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638133825)
+  and [Knip job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638070205).
+- **Subsequent evidence:** The next CI run exposed the provider-family return
+  type as a possibly-empty array to the mobile typechecker, despite its runtime
+  family-size guard. Its integration shard also started its dedicated Timescale
+  container before Postgres logged readiness, producing `the database system is
+  starting up` in the migration test.
+- **Fix / mitigation:** Replaced the nullable color-map pipeline with an
+  explicitly typed accumulator that only writes defined colors, and imported
+  Storybook types from the package already declared by the web workspace
+  (`@storybook/react-vite`). Encoded the two-member family invariant in the
+  shared return type and waited for Postgres's ready log in the dedicated
+  migration test container. No retry, timeout, or workflow suppression was
+  added.
+- **Validation:** Full local `pnpm typecheck` and `pnpm knip` pass. Focused
+  provider catalog and mobile tests pass (99 tests), exact mobile and provider
+  typechecks pass, and the dedicated Timescale migration integration test
+  completed successfully. The fresh CI workflow for commit `d73f6ae` is queued.
+- **Remaining risk / follow-up:** Confirm the queued hosted CI workflow passes
+  before merging the PR.

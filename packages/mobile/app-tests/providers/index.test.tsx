@@ -462,6 +462,7 @@ function makeProvider(
     authStatus: "connected" | "not_connected" | "expired";
     authType: string;
     lastSyncAt: string | null;
+    recentLogs: Array<{ status: string }>;
     lastSuccessfulSyncAt: string | null;
     syncFreshness: {
       status: "unknown" | "current" | "overdue";
@@ -479,6 +480,7 @@ function makeProvider(
     authStatus: overrides.authStatus ?? "connected",
     authType: overrides.authType ?? "oauth",
     lastSyncAt: overrides.lastSyncAt ?? null,
+    recentLogs: overrides.recentLogs ?? [],
     lastSuccessfulSyncAt: overrides.lastSuccessfulSyncAt ?? null,
     syncFreshness: overrides.syncFreshness ?? null,
     importOnly: overrides.importOnly ?? false,
@@ -517,6 +519,41 @@ describe("providerActionLabel", () => {
 });
 
 describe("ProviderCard", () => {
+  it("shows a failed latest sync independently of connection state", async () => {
+    const { ProviderCard } = await import("../../app/providers/provider-card");
+    render(
+      <ProviderCard
+        provider={makeProvider({ recentLogs: [{ status: "error" }] })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Latest sync failed")).toBeTruthy();
+  });
+
+  it("shows a degraded latest sync as completed with issues", async () => {
+    const { ProviderCard } = await import("../../app/providers/provider-card");
+    render(
+      <ProviderCard
+        provider={makeProvider({ recentLogs: [{ status: "degraded" }] })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Latest sync completed with issues")).toBeTruthy();
+    expect(screen.queryByText("Latest sync failed")).toBeNull();
+  });
+
   it("exposes one primary action and one details control", async () => {
     const { ProviderCard } = await import("../../app/providers/provider-card");
     render(
@@ -1031,6 +1068,30 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
     });
+  });
+
+  it("groups Garmin connection methods and shows the selected method", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        { ...connectedProvider, id: "garmin", name: "Garmin", authType: "custom:garmin" },
+        {
+          ...importOnlyProvider,
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authType: "file-import",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByTestId("provider-family-garmin")).toBeTruthy();
+    expect(screen.getByLabelText("Select Garmin Data export")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Select Garmin Data export"));
+    expect(screen.getByTestId("provider-card-garmin-dump")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
   });
 
   it("renders server-authored overdue and current freshness without evaluating timestamps", async () => {

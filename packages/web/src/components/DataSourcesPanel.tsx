@@ -1,3 +1,4 @@
+import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
@@ -20,6 +21,7 @@ import {
   getFileImportConfig,
 } from "./file-import-configs.ts";
 import { ProcessingStatusWidget } from "./ProcessingStatusWidget.tsx";
+import { ProviderFamilyCard } from "./ProviderFamilyCard.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 import { SyncAllControls } from "./SyncAllControls.tsx";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
@@ -225,36 +227,20 @@ export function DataSourcesPanel() {
     [providers.data, syncMutation, updateState, doPollSyncJob],
   );
 
-  // Pre-compute stats and logs maps
+  // Pre-compute provider stats.
   const statsByProvider = useMemo(
     () => new Map((stats.data ?? []).map((s) => [s.providerId, s])),
     [stats.data],
   );
-
-  const syncRows: Array<{
-    id: string;
-    providerId: string;
-    dataType: string;
-    status: string;
-    recordCount: number | null;
-    errorMessage: string | null;
-    authFailureReason: string | null;
-    durationMs: number | null;
-    syncedAt: string;
-  }> = logs.data ?? [];
-
-  const logsByProvider = useMemo(() => {
-    const map = new Map<string, typeof syncRows>();
-    for (const row of syncRows) {
-      let arr = map.get(row.providerId);
-      if (!arr) {
-        arr = [];
-        map.set(row.providerId, arr);
-      }
-      arr.push(row);
+  const importLogsByProvider = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof logs.data>>();
+    for (const row of logs.data ?? []) {
+      const providerLogs = map.get(row.providerId) ?? [];
+      providerLogs.push(row);
+      map.set(row.providerId, providerLogs);
     }
     return map;
-  }, [syncRows]);
+  }, [logs.data]);
 
   const allProviders = providers.data ?? [];
   const activeImportByProvider = new Map(
@@ -409,6 +395,51 @@ export function DataSourcesPanel() {
       unifiedProviders.push({ kind: "sync", provider: p });
     }
   }
+  const providerGroups = groupProviderEntries(
+    unifiedProviders.map((entry) => ({
+      ...entry,
+      id: entry.kind === "import" ? entry.id : entry.provider.id,
+    })),
+  );
+
+  const renderProviderEntry = (entry: (typeof unifiedProviders)[number]) => {
+    if (entry.kind === "import") {
+      const providerStats = statsByProvider.get(entry.id);
+      const recentLogs = (importLogsByProvider.get(entry.id) ?? []).slice(0, 5);
+      return (
+        <FileImportProviderCard
+          providerId={entry.id}
+          {...entry.config}
+          stats={providerStats}
+          recentLogs={recentLogs}
+          activeImport={activeImportByProvider.get(entry.id)}
+        />
+      );
+    }
+
+    const provider = entry.provider;
+    const state = providerStates[provider.id] ?? { status: "idle" };
+    const needsAuth =
+      !provider.pushOnly &&
+      provider.authType !== "none" &&
+      provider.authType !== "file-import" &&
+      !provider.authorized;
+    const needsReauth = provider.needsReauth === true;
+    const providerStats = statsByProvider.get(provider.id);
+
+    return (
+      <SyncProviderCard
+        provider={provider}
+        state={state}
+        needsAuth={needsAuth}
+        needsReauth={needsReauth}
+        pushOnly={provider.pushOnly === true}
+        stats={providerStats}
+        recentLogs={provider.recentLogs ?? []}
+        onSync={() => handleProviderClick(provider)}
+      />
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -450,47 +481,21 @@ export function DataSourcesPanel() {
             ? ["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
                 <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
               ))
-            : unifiedProviders.map((entry) => {
-                if (entry.kind === "import") {
-                  const providerStats = statsByProvider.get(entry.id);
-                  const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
-                  return (
-                    <FileImportProviderCard
-                      key={entry.id}
-                      providerId={entry.id}
-                      {...entry.config}
-                      stats={providerStats}
-                      recentLogs={recentLogs}
-                      activeImport={activeImportByProvider.get(entry.id)}
-                    />
-                  );
-                }
-
-                const provider = entry.provider;
-                const state = providerStates[provider.id] ?? { status: "idle" };
-                const needsAuth =
-                  !provider.pushOnly &&
-                  provider.authType !== "none" &&
-                  provider.authType !== "file-import" &&
-                  !provider.authorized;
-                const needsReauth = provider.needsReauth === true;
-                const providerStats = statsByProvider.get(provider.id);
-                const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
-
-                return (
-                  <SyncProviderCard
-                    key={provider.id}
-                    provider={provider}
-                    state={state}
-                    needsAuth={needsAuth}
-                    needsReauth={needsReauth}
-                    pushOnly={provider.pushOnly === true}
-                    stats={providerStats}
-                    recentLogs={recentLogs}
-                    onSync={() => handleProviderClick(provider)}
+            : providerGroups.map((group) =>
+                group.kind === "provider" ? (
+                  <div key={group.provider.id}>{renderProviderEntry(group.provider)}</div>
+                ) : (
+                  <ProviderFamilyCard
+                    key={group.family.id}
+                    familyLabel={group.family.label}
+                    methods={group.providers.map((provider) => ({
+                      id: provider.id,
+                      label: providerFamily(provider.id)?.methodLabel ?? provider.id,
+                      content: <div key={provider.id}>{renderProviderEntry(provider)}</div>,
+                    }))}
                   />
-                );
-              })}
+                ),
+              )}
         </div>
       </section>
 
