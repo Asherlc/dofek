@@ -2,7 +2,7 @@ import type { AnyRouter } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { vi } from "vitest";
-import { z } from "zod";
+import type { z } from "zod";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
@@ -84,12 +84,16 @@ function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
   return rows.length > 0 && Array.isArray(rows[0]);
 }
 
+function isRows<T>(value: unknown): value is T[] {
+  return Array.isArray(value);
+}
+
 export function makeMockSensorStore(rows: unknown[] | unknown[][] = []): ActivitySensorStore {
   const rowBatches = isMatrix(rows) ? [...rows] : undefined;
   const queryTarget: Pick<ActivitySensorStore, "query"> = {
-    query: async <TSchema extends z.ZodType>(schema: TSchema): Promise<z.infer<TSchema>[]> => {
+    query: async <TSchema extends z.ZodType>(_schema: TSchema): Promise<z.infer<TSchema>[]> => {
       const batch = rowBatches ? (rowBatches.shift() ?? []) : rows;
-      return batch as z.infer<TSchema>[];
+      return isRows<z.infer<TSchema>>(batch) ? batch : [];
     },
   };
   vi.spyOn(queryTarget, "query");
