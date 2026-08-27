@@ -199,9 +199,6 @@ importers:
       kafkajs:
         specifier: 2.2.4
         version: 2.2.4
-      nodemailer:
-        specifier: 9.0.1
-        version: 9.0.1
       pg:
         specifier: 8.16.0
         version: 8.16.0
@@ -269,9 +266,6 @@ importers:
       '@types/node':
         specifier: 26.1.2
         version: 26.1.2
-      '@types/nodemailer':
-        specifier: 8.0.0
-        version: 8.0.0
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
@@ -8457,9 +8451,6 @@ packages:
   '@types/node@26.1.2':
     resolution: {integrity: sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg==}
 
-  '@types/nodemailer@8.0.0':
-    resolution: {integrity: sha512-fyf8jWULsCo0d0BuoQ75i6IeoHs47qcqxWc7yUdUcV0pOZGjUTTOvwdG1PRXUDqN/8A64yQdQdnA2pZgcdi+cA==}
-
   '@types/normalize-package-data@2.4.4':
     resolution: {integrity: sha512-37i+OaWTh9qeK4LSHPsyRC7NahnGotNuZvjLSgcPzblpHB3rrCJxAOgI5gCdKm7coonsaX1Of0ILiTcnZjbfxA==}
 
@@ -13145,10 +13136,6 @@ packages:
   node-releases@2.0.51:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
     engines: {node: '>=18'}
-
-  nodemailer@9.0.1:
-    resolution: {integrity: sha512-Gwv8SQewT616ZM/URn0H54b8PWo/Wum7md3EW2aWy1lO27+WZCX+Xyak3J+NlmHUjDh5ME+uesJUDRbR3Ye8Bw==}
-    engines: {node: '>=6.0.0'}
 
   nopt@5.0.0:
     resolution: {integrity: sha512-Tbj67rffqceeLpcRXrT7vKAN8CwfPeIBgM7E6iBkmKLV7bEMwpGgYLGv0jACUsECaa/vuxP0IjEont6umdMgtQ==}
@@ -25302,10 +25289,6 @@ snapshots:
     dependencies:
       undici-types: 8.3.0
 
-  '@types/nodemailer@8.0.0':
-    dependencies:
-      '@types/node': 26.1.2
-
   '@types/normalize-package-data@2.4.4': {}
 
   '@types/oracledb@6.5.2':
@@ -30740,8 +30723,6 @@ snapshots:
       process-on-spawn: 1.1.0
 
   node-releases@2.0.51: {}
-
-  nodemailer@9.0.1: {}
 
   nopt@5.0.0:
     dependencies:
