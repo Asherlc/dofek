@@ -28,7 +28,29 @@ describe("KayaClient", () => {
                 id: "session-1",
                 start_time: "2026-08-01T10:00:00.000Z",
                 end_time: "2026-08-01T11:00:00.000Z",
-                gym: { id: "gym-1", name: "Kaya Gym" },
+                notes: "Worked the steep wall.",
+                gym: {
+                  id: "gym-1",
+                  name: "Kaya Gym",
+                  address: "123 Climb Way",
+                  city: "Boulder",
+                  region: "CO",
+                  country: "US",
+                  latitude: 40.01499,
+                  longitude: -105.27055,
+                },
+                board: {
+                  id: "board-1",
+                  name: "Training Board",
+                  latitude: 40.01,
+                  longitude: -105.27,
+                },
+                destination: {
+                  id: "destination-1",
+                  name: "Boulder Canyon",
+                  latitude: 40.0,
+                  longitude: -105.3,
+                },
               },
             ],
           },
@@ -42,8 +64,12 @@ describe("KayaClient", () => {
                 id: "ascent-1",
                 session_id: "session-1",
                 date: "2026-08-01T10:30:00.000Z",
+                comment: "Felt smooth.",
+                rating: 4,
+                stiffness: 3,
                 attempts: 2,
                 ascent_type: { id: "redpoint", name: "Redpoint" },
+                gym: { id: "gym-1", name: "Kaya Gym" },
                 climb: {
                   id: "climb-1",
                   name: "Lead Route",
@@ -66,11 +92,21 @@ describe("KayaClient", () => {
 
     const client = new KayaClient("kaya-access-token", fetchFn);
     await expect(client.listSessions("42")).resolves.toEqual([
-      expect.objectContaining({ id: "session-1", gym: { id: "gym-1", name: "Kaya Gym" } }),
+      expect.objectContaining({
+        id: "session-1",
+        notes: "Worked the steep wall.",
+        board: expect.objectContaining({ name: "Training Board" }),
+        destination: expect.objectContaining({ name: "Boulder Canyon" }),
+        gym: expect.objectContaining({ city: "Boulder", latitude: 40.01499 }),
+      }),
     ]);
     await expect(client.listAscents("42")).resolves.toEqual([
       expect.objectContaining({
         id: "ascent-1",
+        comment: "Felt smooth.",
+        rating: 4,
+        stiffness: 3,
+        gym: { id: "gym-1", name: "Kaya Gym" },
         climb: expect.objectContaining({ lead: true }),
       }),
     ]);
@@ -92,6 +128,12 @@ describe("KayaClient", () => {
     expect(JSON.parse(graphQlRequests[0] ?? "")).toMatchObject({
       variables: { user_id: "42", offset: 0, count: 100 },
     });
+    expect(graphQlRequests[0]).toContain("notes");
+    expect(graphQlRequests[0]).toContain("board");
+    expect(graphQlRequests[0]).toContain("destination");
+    expect(graphQlRequests[1]).toContain("comment");
+    expect(graphQlRequests[1]).toContain("rating");
+    expect(graphQlRequests[1]).toContain("stiffness");
     expect(graphQlRequests[1]).toContain("lead");
     expect(fetchFn.mock.calls[1]?.[1]?.headers).toMatchObject({
       authorization: "Bearer kaya-access-token",
