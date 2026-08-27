@@ -51,12 +51,12 @@ let calendarDataInput: unknown;
 let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
-let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
-let invalidateWeekList: ReturnType<typeof vi.fn>;
-let invalidateActivityOverview: ReturnType<typeof vi.fn>;
-let invalidateCalendarData: ReturnType<typeof vi.fn>;
-let invalidateActivityList: ReturnType<typeof vi.fn>;
-let invalidateDataHealth: ReturnType<typeof vi.fn>;
+let bulkDeleteMutateAsync: CallableVitestMock;
+let invalidateWeekList: CallableVitestMock;
+let invalidateActivityOverview: CallableVitestMock;
+let invalidateCalendarData: CallableVitestMock;
+let invalidateActivityList: CallableVitestMock;
+let invalidateDataHealth: CallableVitestMock;
 let mockDataHealthQuery: {
   data: unknown;
   isLoading: boolean;

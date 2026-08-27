@@ -206,7 +206,7 @@ describe("SupplementsRepository", () => {
 
 function makeRepository(rows: Record<string, unknown>[]): {
   repository: SupplementsRepository;
-  execute: ReturnType<typeof vi.fn>;
+  execute: CallableVitestMock;
 } {
   const execute = vi.fn().mockResolvedValue(rows);
   return {

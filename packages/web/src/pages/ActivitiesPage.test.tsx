@@ -47,11 +47,11 @@ let weekListInput: unknown;
 let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
-let bulkDeleteMutate: ReturnType<typeof vi.fn>;
-let restoreProviderAbsentMutate: ReturnType<typeof vi.fn>;
-let invalidateWeekList: ReturnType<typeof vi.fn>;
-let invalidateActivityOverview: ReturnType<typeof vi.fn>;
-let invalidateActivityList: ReturnType<typeof vi.fn>;
+let bulkDeleteMutate: CallableVitestMock;
+let restoreProviderAbsentMutate: CallableVitestMock;
+let invalidateWeekList: CallableVitestMock;
+let invalidateActivityOverview: CallableVitestMock;
+let invalidateActivityList: CallableVitestMock;
 let mockBulkDeleteShouldFail: boolean;
 let mockDataHealthQuery: {
   data: unknown;

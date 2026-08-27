@@ -58,7 +58,7 @@ const mockDb: SyncDatabase = {
 
 interface MockJob {
   data: ExportJobData;
-  updateProgress: ReturnType<typeof vi.fn>;
+  updateProgress: CallableVitestMock;
 }
 
 function createMockJob(overrides: Partial<ExportJobData> = {}): MockJob {

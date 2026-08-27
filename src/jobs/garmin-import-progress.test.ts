@@ -61,7 +61,7 @@ interface TestProgressImportJob {
     checkpoint: unknown;
   };
   progress: unknown;
-  updateProgress: ReturnType<typeof vi.fn>;
+  updateProgress: CallableVitestMock;
 }
 
 function createImportJob(

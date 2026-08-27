@@ -240,10 +240,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
   beforeEach(() => {
     peerDbClientMocks.Client.mockReset().mockImplementation(
-      class {
-        constructor() {
-          return peerDbClientMocks;
-        }
+      // biome-ignore lint/complexity/useArrowFunction: Vitest invokes this mock with new.
+      function peerDbClientConstructor() {
+        return peerDbClientMocks;
       },
     );
     peerDbClientMocks.connect.mockReset().mockResolvedValue(undefined);

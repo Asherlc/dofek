@@ -58,7 +58,7 @@ function createCurrentMetricStreamDeletedEvent(scope: MetricStreamDeleteScopeInp
   return createMetricStreamDeletedEvent(scope, operationRevision);
 }
 
-function firstCommandQuery(command: ReturnType<typeof vi.fn>): string {
+function firstCommandQuery(command: CallableVitestMock): string {
   const call = command.mock.calls[0]?.[0];
   if (!call || typeof call !== "object" || !("query" in call) || typeof call.query !== "string") {
     throw new Error("expected command call");
@@ -66,7 +66,7 @@ function firstCommandQuery(command: ReturnType<typeof vi.fn>): string {
   return call.query;
 }
 
-function insertedValues(insert: ReturnType<typeof vi.fn>, callIndex: number): unknown[] {
+function insertedValues(insert: CallableVitestMock, callIndex: number): unknown[] {
   const call = insert.mock.calls[callIndex]?.[0];
   if (!call || typeof call !== "object" || !("values" in call) || !Array.isArray(call.values)) {
     throw new Error("expected an insert call with row values");

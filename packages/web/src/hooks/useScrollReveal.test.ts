@@ -10,9 +10,9 @@ type IntersectionCallback = (entries: Partial<IntersectionObserverEntry>[]) => v
 let observerInstances: Array<{
   callback: IntersectionCallback;
   options: IntersectionObserverInit | undefined;
-  observe: ReturnType<typeof vi.fn>;
-  unobserve: ReturnType<typeof vi.fn>;
-  disconnect: ReturnType<typeof vi.fn>;
+  observe: CallableVitestMock;
+  unobserve: CallableVitestMock;
+  disconnect: CallableVitestMock;
 }>;
 
 beforeEach(() => {

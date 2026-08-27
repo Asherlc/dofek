@@ -43,7 +43,7 @@ const hoisted = vi.hoisted(() => {
 
   // Per-worker `on` mocks, keyed by queue name, so tests can find handlers
   // registered by a specific worker rather than relying on call order.
-  const workerOnMocks: Record<string, ReturnType<typeof vi.fn>> = {};
+  const workerOnMocks: Record<string, CallableVitestMock> = {};
   const workerProcessors: Record<string, (job: unknown) => unknown> = {};
 
   const mockReadinessListen = vi.fn();

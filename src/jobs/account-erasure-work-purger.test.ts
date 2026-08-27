@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 
 const mocks = vi.hoisted(() => {
-  const closeByQueue = new Map<string, ReturnType<typeof vi.fn>>();
+  const closeByQueue = new Map<string, CallableVitestMock>();
   const queuesByName = new Map<
     string,
     {
-      close: ReturnType<typeof vi.fn>;
-      getJobs: ReturnType<typeof vi.fn>;
+      close: CallableVitestMock;
+      getJobs: CallableVitestMock;
       name: string;
     }
   >();

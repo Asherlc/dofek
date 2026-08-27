@@ -10,7 +10,7 @@ interface MockQuery {
   error: Error | null;
   isFetching: boolean;
   isLoading: boolean;
-  refetch: ReturnType<typeof vi.fn>;
+  refetch: CallableVitestMock;
 }
 
 const mocks = vi.hoisted(() => ({

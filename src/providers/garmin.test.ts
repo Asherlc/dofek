@@ -226,19 +226,19 @@ function fakeStoredTokens(overrides?: { expiresAt?: Date }): TokenSet {
 }
 
 interface MockDb {
-  select: ReturnType<typeof vi.fn>;
-  from: ReturnType<typeof vi.fn>;
-  where: ReturnType<typeof vi.fn>;
-  limit: ReturnType<typeof vi.fn>;
-  insert: ReturnType<typeof vi.fn>;
-  update: ReturnType<typeof vi.fn>;
-  set: ReturnType<typeof vi.fn>;
-  values: ReturnType<typeof vi.fn>;
-  onConflictDoUpdate: ReturnType<typeof vi.fn>;
-  onConflictDoNothing: ReturnType<typeof vi.fn>;
-  returning: ReturnType<typeof vi.fn>;
-  delete: ReturnType<typeof vi.fn>;
-  execute: ReturnType<typeof vi.fn>;
+  select: CallableVitestMock;
+  from: CallableVitestMock;
+  where: CallableVitestMock;
+  limit: CallableVitestMock;
+  insert: CallableVitestMock;
+  update: CallableVitestMock;
+  set: CallableVitestMock;
+  values: CallableVitestMock;
+  onConflictDoUpdate: CallableVitestMock;
+  onConflictDoNothing: CallableVitestMock;
+  returning: CallableVitestMock;
+  delete: CallableVitestMock;
+  execute: CallableVitestMock;
 }
 
 function createMockDb(): MockDb {

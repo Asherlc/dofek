@@ -104,7 +104,7 @@ function setMigrationHistory(migrations: TestMigration[]): void {
 
 function makeClient(
   rows: Array<{ content_hash: string | null; created_at: number | string | null; hash: string }>,
-): { client: Client; queryMock: ReturnType<typeof vi.fn> } {
+): { client: Client; queryMock: CallableVitestMock } {
   const client = new Client();
   const queryMock = vi.fn().mockImplementation((query: string) => {
     if (query.includes("SELECT hash, created_at, content_hash")) {

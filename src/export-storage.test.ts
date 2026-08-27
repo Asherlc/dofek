@@ -9,8 +9,20 @@ const mockS3Client = vi.fn(
     }
   },
 );
-const mockPutObjectCommand = vi.fn((input: unknown) => ({ command: "put", input }));
-const mockGetObjectCommand = vi.fn((input: unknown) => ({ command: "get", input }));
+const mockPutObjectCommand = vi.fn(
+  class {
+    constructor(input: unknown) {
+      return { command: "put", input };
+    }
+  },
+);
+const mockGetObjectCommand = vi.fn(
+  class {
+    constructor(input: unknown) {
+      return { command: "get", input };
+    }
+  },
+);
 const mockGetSignedUrl = vi.fn().mockResolvedValue("https://r2.example.test/signed");
 
 vi.mock("@aws-sdk/client-s3", () => ({

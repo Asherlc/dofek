@@ -222,7 +222,7 @@ describe("auth/providers", () => {
 
       // Verify Apple constructor received DER bytes, not raw PEM text
       const { Apple: AppleMock } = await import("arctic");
-      const appleMock: ReturnType<typeof vi.fn> = vi.mocked(AppleMock);
+      const appleMock: CallableVitestMock = vi.mocked(AppleMock);
       const constructorCall = appleMock.mock.calls[0];
       const keyArg = constructorCall[3];
       // Should be the base64-decoded DER bytes [1, 2, 3], not the UTF-8 encoded PEM string

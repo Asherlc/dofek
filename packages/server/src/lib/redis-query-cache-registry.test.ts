@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface RedisMockState {
   client: object;
-  RedisConnection: ReturnType<typeof vi.fn>;
+  RedisConnection: CallableVitestMock;
 }
 
 const redisMocks = vi.hoisted<RedisMockState>(() => {
