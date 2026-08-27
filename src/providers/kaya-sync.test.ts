@@ -209,7 +209,7 @@ describe("KayaSyncProvider", () => {
 
   it("leaves a climbing-entry location empty when Kaya supplies no location", async () => {
     const db = database();
-    const locationlessAscent = {
+    const ascentWithoutLocation = {
       ...ascent("ascent-1", { lead: true, climbType: "Routes", grade: "5.11a" }),
       climb: {
         ...ascent("ascent-1", { lead: true, climbType: "Routes", grade: "5.11a" }).climb,
@@ -221,7 +221,7 @@ describe("KayaSyncProvider", () => {
       scopes: JSON.stringify({ kayaUserId: "42" }),
     });
     mocks.listSessions.mockResolvedValue([{ ...session("session-1"), gym: null }]);
-    mocks.ascents.mockResolvedValue([locationlessAscent]);
+    mocks.ascents.mockResolvedValue([ascentWithoutLocation]);
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
 
     await new KayaSyncProvider().sync(run(db));
