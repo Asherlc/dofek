@@ -23725,6 +23725,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-08-27 — Mobile shared Strong import used retired Blob and upload endpoints
+
+- **Status:** Fix prepared; physical-device verification and hosted CI remain pending.
+- **Symptoms / impact:** Sharing a Strong CSV into the iOS app displayed `Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported`. The data-sources screen also reported timed-out import and sync-progress requests, so the shared workout could not be imported.
+- **Evidence / root cause:** The mobile client passed an Expo `File` through the JavaScript `Blob`/`fetch` upload path and posted to legacy `/api/upload/*` URLs. The current server owns file-import sessions through `fileUpload` tRPC and R2 multipart authorization; it has no matching `/api/upload` route. The Blob conversion therefore failed locally, while the legacy progress request timed out.
+- **Fix / mitigation:** Replaced the legacy client flow with the canonical durable file-upload lifecycle: mobile creates the authenticated tRPC session, uploads each server-authorized R2 part with Expo FileSystem's native URI upload task, completes the session, and polls the server-owned lifecycle. Native part tasks avoid JS Blob construction; Expo documents the FileSystem upload-task API at <https://docs.expo.dev/versions/latest/sdk/filesystem/>. No retry, timeout extension, or compatibility endpoint was added.
+- **Validation:** Focused mobile tests passed 98/98, including native-URI upload transport, Strong import lifecycle, provider-screen wiring, and server-authored import failure display. Mobile lint and TypeScript typecheck passed; the full unit/mobile suite passed 1,122 files and 16,845 tests.
+- **Remaining risk / follow-up:** Verify the exact Strong share-sheet flow on a physical iPhone and confirm hosted CI passes before release.
 ## 2026-08-14 — Journal PR Metro gate rejected stale Expo SDK patch dependencies
 
 - **Status:** Fixed in [PR #2527](https://github.com/Asherlc/dofek/pull/2527); hosted CI rerun is pending.
