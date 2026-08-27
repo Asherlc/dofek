@@ -112,6 +112,39 @@ export async function readFingerLoadingRange(input: {
   return rows.map(toFingerLoadingDetail);
 }
 
+/** Returns structured finger-loading details for one visible activity. */
+export async function readFingerLoadingActivity(input: {
+  activityId: string;
+  database: SchemaExecutionDatabase;
+  userId: string;
+}): Promise<FingerLoadingDetail[]> {
+  const rows = await executeWithSchema(
+    input.database,
+    fingerLoadingRowSchema,
+    sql`SELECT
+          a.id::text AS activity_id,
+          a.started_at,
+          entry.exercise,
+          entry.edge_size_mm,
+          entry.grip_position,
+          entry.external_load_kg,
+          entry.bodyweight_kg,
+          entry.laterality,
+          entry.set_count,
+          entry.hold_duration_seconds,
+          entry.rest_interval_seconds,
+          entry.rpe,
+          entry.notes
+        FROM fitness.v_activity AS a
+        JOIN fitness.finger_loading_entry AS entry
+          ON entry.activity_id = ANY(a.member_activity_ids)
+        WHERE a.id = ${input.activityId}::uuid
+          AND a.user_id = ${input.userId}::uuid
+        ORDER BY entry.created_at DESC`,
+  );
+  return rows.map(toFingerLoadingDetail);
+}
+
 type TrainingLogDatabase = Pick<Database, "execute">;
 
 export class ClimbingTrainingLogRepository extends BaseRepository<TrainingLogDatabase> {
