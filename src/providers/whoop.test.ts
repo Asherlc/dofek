@@ -1469,6 +1469,57 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     expect(store.clear).toHaveBeenCalledTimes(1);
   });
 
+  it("reports progress for every queued WHOOP API step", async () => {
+    const initialCheckpoint = {
+      runId: "run-progress-labels",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "strain_deep_dive", date: "2026-03-01" },
+        { type: "sleep_stages", sleepId: "sleep-1" },
+        { type: "developer_workouts" },
+        { type: "persist_workouts" },
+        { type: "weightlifting", activityId: "activity-1" },
+        {
+          type: "heart_rate",
+          start: "2026-03-01T00:00:00.000Z",
+          end: "2026-03-01T01:00:00.000Z",
+        },
+        { type: "journal" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const onProgress = vi.fn();
+
+    await runWhoopOrchestratedSync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        onProgress,
+      }),
+      makeSyncMockFetch({ journalData: [] }),
+      Date.now(),
+    );
+
+    expect(onProgress.mock.calls.map(([, label]) => label)).toEqual([
+      "Daily steps 2026-03-01",
+      "Sleep stages sleep-1",
+      "Developer workout list",
+      "Persist workouts",
+      "Strength activity-1",
+      "Heart rate stream",
+      "Journal",
+    ]);
+  });
+
   it("applies rate-limit checkpoint state when an API step is rate limited", async () => {
     await mockStoredWhoopTokens();
     const initialCheckpoint = {
