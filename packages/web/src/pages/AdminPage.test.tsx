@@ -312,6 +312,117 @@ describe("AdminPage", () => {
     expect(screen.getByText("Sync health is unavailable.")).toBeTruthy();
   });
 
+  it("formats active rate limits and sync health states", () => {
+    mockUsersUseQuery.mockReturnValue(
+      queryResult([
+        {
+          id: "user-admin",
+          name: "Grace Admin",
+          email: null,
+          is_admin: true,
+          created_at: null,
+        },
+      ]),
+    );
+    mockSyncHealthUseQuery.mockReturnValue(
+      queryResult([
+        {
+          provider_id: "garmin",
+          total: 0,
+          succeeded: 0,
+          failed: 0,
+          last_sync: null,
+        },
+        {
+          provider_id: "strava",
+          total: 10,
+          succeeded: 10,
+          failed: 0,
+          last_sync: "2026-01-01T00:00:00Z",
+        },
+      ]),
+    );
+    mockRateLimitsUseQuery.mockReturnValue(
+      queryResult([
+        {
+          providerId: "fitbit",
+          scope: "user",
+          userId: "short-id",
+          queueLimiterMax: 1,
+          queueLimiterDurationMs: 500,
+          syncTier: "active",
+          throttleMs: 1_500,
+          defaultThrottleMs: 750,
+          inferredBudget: 10_000,
+          requestCount: 0,
+          observedCooldownSeconds: 1,
+          cooldownExpiresAt: "2026-12-01T00:00:00Z",
+          consecutiveHits: 1,
+          stravaShortUsage: 1,
+          stravaShortLimit: 2,
+          stravaDailyUsage: 3,
+          stravaDailyLimit: 4,
+        },
+        {
+          providerId: "garmin",
+          scope: "provider",
+          userId: "long-user-id",
+          queueLimiterMax: 2,
+          queueLimiterDurationMs: 3_600_000,
+          syncTier: "backfill",
+          throttleMs: null,
+          defaultThrottleMs: 60_000,
+          inferredBudget: null,
+          requestCount: null,
+          observedCooldownSeconds: null,
+          cooldownExpiresAt: null,
+          consecutiveHits: null,
+          stravaShortUsage: null,
+          stravaShortLimit: null,
+          stravaDailyUsage: null,
+          stravaDailyLimit: null,
+        },
+      ]),
+    );
+
+    render(<AdminPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(mockSetAdminMutate).toHaveBeenCalledWith({ userId: "user-admin", isAdmin: false });
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync Health" }));
+    expect(screen.getByText("0%")).toHaveClass("text-amber-400");
+    expect(screen.getByText("100%")).toHaveClass("text-green-400");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rate Limits" }));
+    expect(screen.getByText("1 / 500ms")).toBeTruthy();
+    expect(screen.getByText("2 / 1.0h")).toBeTruthy();
+    expect(screen.getByText("1.5s")).toHaveClass("text-amber-400");
+    expect(screen.getByText("1m")).toHaveClass("text-muted");
+    expect(screen.getByText("short-id")).toBeTruthy();
+    expect(screen.getByText("long-use…")).toBeTruthy();
+    expect(screen.getByText("10,000")).toBeTruthy();
+    expect(screen.getByText("1s")).toBeTruthy();
+  });
+
+  it("shows loading and error states for lazy administrative views", () => {
+    mockSyncLogsUseQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
+    mockActivitiesUseQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Activities are unavailable."),
+      isLoading: false,
+    });
+
+    render(<AdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync Logs" }));
+    expect(document.querySelector(".animate-spin")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Activities" }));
+    expect(screen.getByText("Activities are unavailable.")).toBeTruthy();
+  });
+
   it("renders empty-value and alternate-status administrative records", () => {
     mockOverviewUseQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
     mockSyncHealthUseQuery.mockReturnValue(
