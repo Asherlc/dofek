@@ -281,16 +281,7 @@ describe("AdminPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "No" }));
     expect(mockSetAdminMutate).toHaveBeenCalledWith({ userId: "user-123456789", isAdmin: true });
 
-    for (const label of [
-      "Sync Health",
-      "Rate Limits",
-      "Sync Logs",
-      "Activities",
-      "Sleep",
-      "Food",
-      "Body",
-      "Daily Metrics",
-    ]) {
+    for (const label of ["Sync Logs", "Activities", "Sleep", "Food", "Body", "Daily Metrics"]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
     }
 
@@ -319,5 +310,202 @@ describe("AdminPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sync Health" }));
 
     expect(screen.getByText("Sync health is unavailable.")).toBeTruthy();
+  });
+
+  it("renders empty-value and alternate-status administrative records", () => {
+    mockOverviewUseQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
+    mockSyncHealthUseQuery.mockReturnValue(
+      queryResult([
+        {
+          provider_id: "garmin",
+          total: 0,
+          succeeded: 0,
+          failed: 0,
+          last_sync: null,
+        },
+      ]),
+    );
+    mockRateLimitsUseQuery.mockReturnValue(
+      queryResult([
+        {
+          providerId: "whoop",
+          scope: "provider",
+          userId: null,
+          queueLimiterMax: null,
+          queueLimiterDurationMs: null,
+          syncTier: "backfill",
+          throttleMs: null,
+          defaultThrottleMs: 750,
+          inferredBudget: null,
+          requestCount: null,
+          observedCooldownSeconds: null,
+          cooldownExpiresAt: null,
+          consecutiveHits: 1,
+          stravaShortUsage: null,
+          stravaShortLimit: null,
+          stravaDailyUsage: null,
+          stravaDailyLimit: null,
+        },
+      ]),
+    );
+    mockSyncLogsUseQuery.mockReturnValue(
+      queryResult({
+        rows: [
+          {
+            provider_id: "garmin",
+            user_name: null,
+            data_type: "sleep",
+            status: "success",
+            record_count: null,
+            error_message: null,
+            synced_at: null,
+          },
+          {
+            provider_id: "whoop",
+            user_name: "Ada Admin",
+            data_type: "activity",
+            status: "pending",
+            record_count: 1,
+            error_message: "",
+            synced_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+        total: 51,
+      }),
+    );
+    mockActivitiesUseQuery.mockReturnValue(
+      queryResult({
+        rows: [
+          {
+            id: "activity-empty",
+            user_name: null,
+            provider_id: "garmin",
+            canonical_type: null,
+            name: "",
+            duration_seconds: null,
+            started_at: null,
+            source_name: null,
+          },
+        ],
+        total: 51,
+      }),
+    );
+    mockSleepSessionsUseQuery.mockReturnValue(
+      queryResult({
+        rows: [
+          {
+            id: "sleep-empty",
+            user_name: null,
+            provider_id: "garmin",
+            sleep_type: null,
+            started_at: null,
+            ended_at: null,
+            source_name: null,
+          },
+        ],
+        total: 51,
+      }),
+    );
+    mockFoodEntriesUseQuery.mockReturnValue(
+      queryResult({
+        rows: [
+          {
+            id: "food-empty",
+            user_name: null,
+            food_name: "Water",
+            calories: null,
+            protein_g: null,
+            meal: null,
+            logged_at: null,
+            provider_id: "manual",
+          },
+        ],
+        total: 51,
+      }),
+    );
+    mockBodyMeasurementsUseQuery.mockReturnValue(
+      queryResult({
+        rows: [
+          {
+            id: "body-empty",
+            user_name: null,
+            provider_id: null,
+            recorded_at: null,
+            source_name: null,
+          },
+        ],
+        total: 51,
+      }),
+    );
+    mockDailyMetricsUseQuery.mockReturnValue(
+      queryResult({
+        rows: [
+          {
+            id: "metric-empty",
+            user_name: null,
+            date: "2026-01-02",
+            provider_id: "manual",
+            source_name: null,
+          },
+        ],
+        total: 51,
+      }),
+    );
+    mockSessionsUseQuery.mockReturnValue(
+      queryResult({
+        rows: [
+          {
+            id: "session-expired",
+            user_name: null,
+            created_at: null,
+            expires_at: null,
+            is_expired: true,
+          },
+        ],
+        total: 51,
+      }),
+    );
+    mockOauthTokensUseQuery.mockReturnValue(
+      queryResult([
+        {
+          user_name: null,
+          provider_id: "garmin",
+          scopes: null,
+          expires_at: null,
+          updated_at: null,
+        },
+        {
+          user_name: "Ada Admin",
+          provider_id: "strava",
+          scopes: "read",
+          expires_at: "2020-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ]),
+    );
+
+    render(<AdminPage />);
+    expect(document.querySelector(".animate-spin")).toBeTruthy();
+
+    for (const label of [
+      "Sync Logs",
+      "Activities",
+      "Sleep",
+      "Food",
+      "Body",
+      "Daily Metrics",
+      "Sessions",
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Rate Limits" }));
+    expect(screen.getByText("750ms")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "OAuth Tokens" }));
+    expect(screen.getByText("read")).toHaveClass("max-w-xs");
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 });
