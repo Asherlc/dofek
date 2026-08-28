@@ -166,8 +166,15 @@ const mockClimbingEntriesUseQuery = vi.fn(
   (
     _input?: unknown,
     _options?: { enabled?: boolean },
-  ): { data: ClimbingActivityEntryRow[]; isLoading: boolean } => ({
+  ): {
+    data: ClimbingActivityEntryRow[] | undefined;
+    error: Error | null;
+    isError: boolean;
+    isLoading: boolean;
+  } => ({
     data: [],
+    error: null,
+    isError: false,
     isLoading: false,
   }),
 );
@@ -319,7 +326,12 @@ afterEach(() => {
     (_input?: unknown, _options?: unknown): MockHrZonesResult => defaultMockHrZonesResult(),
   );
   mockClimbingEntriesUseQuery.mockReset();
-  mockClimbingEntriesUseQuery.mockReturnValue({ data: [], isLoading: false });
+  mockClimbingEntriesUseQuery.mockReturnValue({
+    data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockStrengthExercisesUseQuery.mockReset();
   mockStrengthExercisesUseQuery.mockReturnValue({
     data: [],
@@ -653,6 +665,19 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText(/^Source:/)).toBeNull();
   });
 
+  it("omits duration for an activity that has not ended", async () => {
+    const ActivityHeader = await importActivityHeader();
+    renderWithUnits(
+      <ActivityHeader
+        activity={{ ...mockActivity, endedAt: null }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.getByText("10.0 km")).toBeDefined();
+  });
+
   it("shows a sensor section error when the stream query fails without data", async () => {
     mockStreamUseQuery.mockReturnValue({
       data: undefined,
@@ -906,6 +931,27 @@ describe("ActivityDetailPage", () => {
     metricEvents.updateAxisPointer({ axesInfo: [{ value: 1 }] });
 
     expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a climbing-entry query failure for a climbing activity", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, activityType: "climbing", name: "Morning Climb" },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    mockClimbingEntriesUseQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Climbing entries are unavailable."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Climbs")).toBeDefined();
+    expect(screen.getByText("Climbing entries are unavailable.")).toBeDefined();
   });
 
   it("shows a power zone section error", async () => {
