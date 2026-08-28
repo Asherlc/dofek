@@ -82,6 +82,7 @@ interface MockProvider {
   authType: string;
   lastSyncedAt: string | null;
   importOnly: boolean;
+  description?: string;
   needsReauth?: boolean;
   pushOnly?: boolean;
   tokenAuth?: { label: string; instructionsUrl: string } | null;
@@ -993,6 +994,122 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Sync Range")).toBeNull();
     expect(screen.queryByText("Sync Dates")).toBeNull();
     expect(screen.queryByText("Disconnect")).toBeNull();
+  });
+
+  it("shows a loading skeleton until the provider inventory is available", async () => {
+    mockProviders.data = undefined;
+    mockProviders.isLoading = true;
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(document.querySelector(".animate-pulse")).toBeTruthy();
+    expect(screen.queryByText("Provider not found")).toBeNull();
+  });
+
+  it("shows mobile-only providers without sync controls or history", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+    mockProviders.data = [
+      {
+        id: "whoop-mobile",
+        name: "WHOOP Mobile",
+        description: "Streams live sensor data.",
+        authorized: true,
+        authType: "none",
+        lastSyncedAt: "2026-06-30T12:00:00Z",
+        importOnly: false,
+        pushOnly: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Mobile sync" })).toBeTruthy();
+    expect(screen.getByText(/Streams live sensor data\. Open the Dofek app/)).toBeTruthy();
+    expect(screen.getByText(/Last received:/)).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
+    expect(screen.queryByText("Sync History")).toBeNull();
+  });
+
+  it("opens the credential and token reconnect forms for expired providers", async () => {
+    mockUseParams.mockReturnValue({ id: "fitbit" });
+    mockProviders.data = [
+      {
+        id: "fitbit",
+        name: "Fitbit",
+        authorized: false,
+        authType: "credential",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    const { rerender } = render(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Fitbit" }));
+    expect(screen.getByText("Credential reconnect form")).toBeTruthy();
+
+    mockUseParams.mockReturnValue({ id: "ultrahuman" });
+    mockProviders.data = [
+      {
+        id: "ultrahuman",
+        name: "Ultrahuman",
+        authorized: false,
+        authType: "token",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+        tokenAuth: { label: "Access token", instructionsUrl: "https://example.com/token" },
+      },
+    ];
+    rerender(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
+    expect(screen.getByText("Token reconnect form")).toBeTruthy();
+  });
+
+  it("displays completed polling progress and a failed provider result", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [{ providerId: "wahoo", status: "started", jobId: "job-1" }],
+    });
+    mockPollSyncJob.mockImplementationOnce(
+      async ({
+        updateState,
+      }: {
+        updateState: (id: string, state: Record<string, unknown>) => void;
+      }) => {
+        updateState("job-1", { status: "done", percentage: 100, message: "Finishing" });
+      },
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+    expect(screen.getByText("Sync complete")).toBeTruthy();
+
+    mockSyncMutation.mutateAsync.mockResolvedValueOnce({
+      providerResults: [
+        { providerId: "wahoo", status: "failed", message: "Polar API unavailable" },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+    expect(screen.getByText("Polar API unavailable")).toBeTruthy();
   });
 });
 
