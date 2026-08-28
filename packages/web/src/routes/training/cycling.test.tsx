@@ -19,6 +19,7 @@ const state = vi.hoisted<{
   capturedAerobicEfficiencyActivities: unknown[] | null;
   performanceHasData: boolean;
   timeToExhaustionAvailable: boolean;
+  summaryMetricsAvailable: boolean;
   performanceError: Error | null;
   activityAnalyticsHasData: boolean;
   activityAnalyticsError: Error | null;
@@ -33,6 +34,7 @@ const state = vi.hoisted<{
   capturedAerobicEfficiencyActivities: null,
   performanceHasData: true,
   timeToExhaustionAvailable: true,
+  summaryMetricsAvailable: true,
   performanceError: null,
   activityAnalyticsHasData: true,
   activityAnalyticsError: null,
@@ -183,8 +185,8 @@ vi.mock("../../lib/trpc.ts", () => ({
                 wattsPerKg,
               },
             ],
-            maximalAerobicPower: watts,
-            vo2Max,
+            maximalAerobicPower: state.summaryMetricsAvailable ? watts : null,
+            vo2Max: state.summaryMetricsAvailable ? vo2Max : null,
             timeToExhaustionSeconds: state.timeToExhaustionAvailable ? 200 : null,
           });
           return {
@@ -332,6 +334,7 @@ describe("CyclingTab", () => {
     state.capturedAerobicEfficiencyActivities = null;
     state.performanceHasData = true;
     state.timeToExhaustionAvailable = true;
+    state.summaryMetricsAvailable = true;
     state.performanceError = null;
     state.activityAnalyticsHasData = true;
     state.activityAnalyticsError = null;
@@ -365,6 +368,16 @@ describe("CyclingTab", () => {
 
     const row = screen.getByText("Time to Exhaustion").parentElement;
     expect(row?.textContent).toContain("--");
+  });
+
+  it("renders unavailable aerobic summary values from the server", async () => {
+    state.summaryMetricsAvailable = false;
+    await renderCyclingTab();
+
+    for (const label of ["Maximal Aerobic Power", "Estimated aerobic capacity (VO₂ max)"]) {
+      const row = screen.getByText(label).parentElement;
+      expect(row?.textContent).toContain("--");
+    }
   });
 
   it("keeps cached performance data visible during a background query failure", async () => {
