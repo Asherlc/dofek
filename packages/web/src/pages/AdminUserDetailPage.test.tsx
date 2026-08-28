@@ -3,7 +3,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminPage } from "./AdminPage.tsx";
-import { AdminUserDetailPage } from "./AdminUserDetailPage.tsx";
+import { type AdminUserDetail, AdminUserDetailPage } from "./AdminUserDetailPage.tsx";
+
+type AdminUserDetailQueryResult = {
+  data: AdminUserDetail | undefined;
+  isLoading: boolean;
+  error: Error | null;
+};
 
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockUseParams = vi.hoisted(() => vi.fn(() => ({ userId: "user-1" })));
@@ -32,55 +38,57 @@ const mockAdminUsersQuery = vi.hoisted(() =>
 );
 
 const mockAdminUserDetailQuery = vi.hoisted(() =>
-  vi.fn(() => ({
-    data: {
-      profile: {
-        id: "user-1",
-        name: "Alice Admin",
-        email: "alice@example.com",
-        birth_date: null,
-        is_admin: false,
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-02T00:00:00Z",
-      },
-      flags: { providerGuideDismissed: false },
-      billing: {
-        user_id: "user-1",
-        stripe_customer_id: "cus_123",
-        stripe_subscription_id: "sub_123",
-        stripe_subscription_status: "active",
-        stripe_current_period_end: "2026-05-01T00:00:00Z",
-        paid_grant_reason: null,
-        created_at: "2024-01-03T00:00:00Z",
-        updated_at: "2024-01-04T00:00:00Z",
-      },
-      access: { kind: "full", paid: true, reason: "stripe_subscription" },
-      stripeLinks: {
-        customer: "https://dashboard.stripe.com/customers/cus_123",
-        subscription: "https://dashboard.stripe.com/subscriptions/sub_123",
-      },
-      accounts: [
-        {
-          id: "account-1",
-          auth_provider: "google",
-          provider_account_id: "google-1",
-          email: "alice@example.com",
+  vi.fn(
+    (): AdminUserDetailQueryResult => ({
+      data: {
+        profile: {
+          id: "user-1",
           name: "Alice Admin",
+          email: "alice@example.com",
+          birth_date: null,
+          is_admin: false,
           created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-02T00:00:00Z",
         },
-      ],
-      providers: [{ id: "whoop", name: "WHOOP", created_at: "2024-01-05T00:00:00Z" }],
-      sessions: [
-        {
-          id: "session-1",
-          created_at: "2024-01-06T00:00:00Z",
-          expires_at: "2024-02-06T00:00:00Z",
+        flags: { providerGuideDismissed: false },
+        billing: {
+          user_id: "user-1",
+          stripe_customer_id: "cus_123",
+          stripe_subscription_id: "sub_123",
+          stripe_subscription_status: "active",
+          stripe_current_period_end: "2026-05-01T00:00:00Z",
+          paid_grant_reason: null,
+          created_at: "2024-01-03T00:00:00Z",
+          updated_at: "2024-01-04T00:00:00Z",
         },
-      ],
-    },
-    isLoading: false,
-    error: null,
-  })),
+        access: { kind: "full", paid: true, reason: "stripe_subscription" },
+        stripeLinks: {
+          customer: "https://dashboard.stripe.com/customers/cus_123",
+          subscription: "https://dashboard.stripe.com/subscriptions/sub_123",
+        },
+        accounts: [
+          {
+            id: "account-1",
+            auth_provider: "google",
+            provider_account_id: "google-1",
+            email: "alice@example.com",
+            name: "Alice Admin",
+            created_at: "2024-01-01T00:00:00Z",
+          },
+        ],
+        providers: [{ id: "whoop", name: "WHOOP", created_at: "2024-01-05T00:00:00Z" }],
+        sessions: [
+          {
+            id: "session-1",
+            created_at: "2024-01-06T00:00:00Z",
+            expires_at: "2024-02-06T00:00:00Z",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    }),
+  ),
 );
 
 vi.mock("@tanstack/react-router", () => ({
