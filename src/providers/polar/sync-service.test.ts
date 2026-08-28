@@ -4,7 +4,9 @@ import { SyncWindow } from "../sync-window.ts";
 const mocks = vi.hoisted(() => ({
   ensureProvider: vi.fn(),
   loadTokens: vi.fn(),
+  saveTokens: vi.fn(),
   deleteTokens: vi.fn(),
+  refreshAccessToken: vi.fn(),
   withSyncLog: vi.fn(),
   getExercises: vi.fn(),
   getSleep: vi.fn(),
@@ -18,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../db/tokens.ts", () => ({
   ensureProvider: mocks.ensureProvider,
   loadTokens: mocks.loadTokens,
-  saveTokens: vi.fn(),
+  saveTokens: mocks.saveTokens,
   deleteTokens: mocks.deleteTokens,
 }));
 
@@ -29,6 +31,10 @@ vi.mock("../../db/sync-log.ts", () => ({
 vi.mock("../../db/provider-activity-sync.ts", () => ({
   finishProviderActivityListSync: mocks.finishProviderActivityListSync,
   upsertProviderActivity: mocks.upsertProviderActivity,
+}));
+
+vi.mock("../../auth/oauth.ts", () => ({
+  refreshAccessToken: mocks.refreshAccessToken,
 }));
 
 vi.mock("./oauth.ts", () => ({
@@ -139,6 +145,53 @@ describe("PolarSyncService", () => {
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
     expect(mocks.polarOAuthConfig).not.toHaveBeenCalled();
+    expect(mocks.getExercises).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes expired Polar credentials before syncing", async () => {
+    const refreshedTokens = {
+      accessToken: "refreshed-token",
+      refreshToken: "refreshed-refresh-token",
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+      scopes: null,
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+    });
+    mocks.polarOAuthConfig.mockReturnValue({
+      clientId: "polar-client-id",
+      clientSecret: "polar-client-secret",
+      authorizeUrl: "https://polar.example.test/authorize",
+      tokenUrl: "https://polar.example.test/token",
+      redirectUri: "https://dofek.example.test/oauth/callback",
+      scopes: ["accesslink.read_all"],
+    });
+    mocks.refreshAccessToken.mockResolvedValue(refreshedTokens);
+    mocks.getExercises.mockResolvedValue([]);
+    mocks.getSleep.mockResolvedValue([]);
+    mocks.getDailyActivity.mockResolvedValue([]);
+    mocks.getNightlyRecharge.mockResolvedValue([]);
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const db = Object.create(null);
+    const result = await service(db).run(window);
+
+    expect(result).toEqual({ recordsSynced: 0, errors: [] });
+    expect(mocks.refreshAccessToken).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "polar-client-id" }),
+      "refresh-token",
+      expect.any(Function),
+    );
+    expect(mocks.saveTokens).toHaveBeenCalledWith(db, "polar", refreshedTokens);
     expect(mocks.getExercises).toHaveBeenCalledOnce();
   });
 
