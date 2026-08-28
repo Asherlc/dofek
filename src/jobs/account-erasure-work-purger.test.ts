@@ -235,6 +235,30 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     );
   });
 
+  it.each([
+    "active",
+    "completed",
+    "delayed",
+    "failed",
+    "paused",
+    "prioritized",
+    "repeat",
+    "wait",
+    "waiting",
+    "waiting-children",
+  ])("passes the supported %s BullMQ state through to the queue", async (state) => {
+    const purger = createAccountErasureWorkPurgerFromEnv();
+    await purger.purge(snapshot);
+    const dependencies = mocks.purgeAccountWork.mock.calls.at(-1)?.[1];
+    if (!dependencies) throw new Error("Work erasure dependencies were not passed");
+    const rawQueue = mocks.queuesByName.get("sync");
+    if (!rawQueue) throw new Error("Legacy sync queue was not created");
+
+    await dependencies.queues[0]?.getJobs([state], 0, 99, true);
+
+    expect(rawQueue.getJobs).toHaveBeenCalledWith([state], 0, 99, true);
+  });
+
   it("uses the configured local work directory", async () => {
     process.env.JOB_FILES_DIR = "/var/lib/dofek-job-files";
     const purger = createAccountErasureWorkPurgerFromEnv();

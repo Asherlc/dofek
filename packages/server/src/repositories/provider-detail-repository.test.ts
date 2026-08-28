@@ -162,6 +162,22 @@ describe("ProviderDetailRepository", () => {
     return { bodyStore, query };
   }
 
+  it.each([
+    ["activities", ["canonical_type", "provider_type", "modality", "source_name"]],
+    ["dailyMetrics", ["source_name"]],
+    ["sleepSessions", ["sleep_type", "source_name"]],
+    ["foodEntries", ["meal", "source_name"]],
+    ["healthEvents", ["type", "source_name"]],
+    ["labPanels", ["status", "source_name"]],
+    ["labResults", ["status"]],
+    ["journalEntries", ["question_slug"]],
+    ["bodyMeasurements", ["source_name"]],
+    ["metricStream", ["source_type", "channel", "device_id"]],
+    ["nutritionDaily", []],
+  ] as const)("returns the supported select filter columns for %s", (dataType, columns) => {
+    expect(getRecordSelectFilterColumns(dataType)).toEqual(columns);
+  });
+
   // ── getRecords ──
 
   describe("getAvailableDataTypes", () => {
