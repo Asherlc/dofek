@@ -1192,6 +1192,31 @@ describe("DataSourcesPanel", () => {
     open.mockRestore();
   });
 
+  it("opens OAuth1 provider authorization in a new tab", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "strava",
+          name: "Strava",
+          authorized: false,
+          authType: "oauth1",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-strava")).getByText("Sync"));
+
+    expect(open).toHaveBeenCalledWith("/auth/provider/strava", "_blank");
+    open.mockRestore();
+  });
+
   it("shows single-provider cooldown and startup failures without polling", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [
