@@ -423,6 +423,87 @@ describe("AdminPage", () => {
     expect(screen.getByText("Activities are unavailable.")).toBeTruthy();
   });
 
+  it("keeps every administrative view in a loading state until its data resolves", () => {
+    const loadingQueries = [
+      mockOverviewUseQuery,
+      mockUsersUseQuery,
+      mockSyncHealthUseQuery,
+      mockRateLimitsUseQuery,
+      mockSyncLogsUseQuery,
+      mockActivitiesUseQuery,
+      mockSleepSessionsUseQuery,
+      mockFoodEntriesUseQuery,
+      mockBodyMeasurementsUseQuery,
+      mockDailyMetricsUseQuery,
+      mockSessionsUseQuery,
+      mockOauthTokensUseQuery,
+    ];
+    for (const query of loadingQueries) {
+      query.mockReturnValue({ data: undefined, error: null, isLoading: true });
+    }
+
+    render(<AdminPage />);
+    expect(document.querySelector(".animate-spin")).toBeTruthy();
+
+    for (const label of [
+      "Users",
+      "Sync Health",
+      "Rate Limits",
+      "Sync Logs",
+      "Activities",
+      "Sleep",
+      "Food",
+      "Body",
+      "Daily Metrics",
+      "Sessions",
+      "OAuth Tokens",
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(document.querySelector(".animate-spin")).toBeTruthy();
+    }
+  });
+
+  it("renders empty administrative data responses without a query error", () => {
+    const emptyQueries = [
+      mockOverviewUseQuery,
+      mockUsersUseQuery,
+      mockSyncHealthUseQuery,
+      mockRateLimitsUseQuery,
+      mockSyncLogsUseQuery,
+      mockActivitiesUseQuery,
+      mockSleepSessionsUseQuery,
+      mockFoodEntriesUseQuery,
+      mockBodyMeasurementsUseQuery,
+      mockDailyMetricsUseQuery,
+      mockSessionsUseQuery,
+      mockOauthTokensUseQuery,
+    ];
+    for (const query of emptyQueries) {
+      query.mockReturnValue({ data: undefined, error: null, isLoading: false });
+    }
+
+    render(<AdminPage />);
+    expect(screen.getByText("Table Row Counts")).toBeTruthy();
+
+    for (const label of [
+      "Users",
+      "Sync Health",
+      "Rate Limits",
+      "Sync Logs",
+      "Activities",
+      "Sleep",
+      "Food",
+      "Body",
+      "Daily Metrics",
+      "Sessions",
+      "OAuth Tokens",
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+    }
+
+    expect(screen.getByRole("table")).toBeTruthy();
+  });
+
   it("renders empty-value and alternate-status administrative records", () => {
     mockOverviewUseQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
     mockSyncHealthUseQuery.mockReturnValue(
