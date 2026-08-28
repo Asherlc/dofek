@@ -173,4 +173,59 @@ describe("Oura optional sync steps", () => {
     ]);
     expect(syncLogMocks.outcomes).toEqual([]);
   });
+
+  it("persists enhanced tags with custom-name, type-code, and unknown fallbacks", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((value: Record<string, unknown>) => {
+          inserted.push(value);
+          return { onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const client = new OuraClient("token", vi.fn());
+    vi.spyOn(client, "getEnhancedTags").mockResolvedValue({
+      data: [
+        {
+          id: "custom-tag",
+          custom_name: "Late coffee",
+          tag_type_code: "coffee",
+          start_time: "2026-06-01T10:00:00Z",
+          end_time: "2026-06-01T10:30:00Z",
+          start_day: "2026-06-01",
+          end_day: "2026-06-01",
+          comment: null,
+        },
+        {
+          id: "typed-tag",
+          custom_name: null,
+          tag_type_code: "workout",
+          start_time: "2026-06-02T10:00:00Z",
+          end_time: null,
+          start_day: "2026-06-02",
+          end_day: null,
+          comment: null,
+        },
+        {
+          id: "unknown-tag",
+          custom_name: null,
+          tag_type_code: null,
+          start_time: "2026-06-03T10:00:00Z",
+          end_time: null,
+          start_day: "2026-06-03",
+          end_day: null,
+          comment: null,
+        },
+      ],
+      next_token: null,
+    });
+    const syncContext = context(client);
+    syncContext.db = db;
+
+    expect(await syncEnhancedTags(syncContext)).toBe(3);
+    expect(inserted.map((value) => value.valueText)).toEqual(["Late coffee", "workout", "unknown"]);
+    expect(inserted[0]?.endDate).toEqual(new Date("2026-06-01T10:30:00Z"));
+    expect(inserted.slice(1).map((value) => value.endDate)).toEqual([undefined, undefined]);
+  });
 });
