@@ -390,6 +390,50 @@ describe.sequential("external write API network contract", () => {
     }
   });
 
+  it("returns authorization validation errors for an authenticated session without consuming a link", async () => {
+    const session = await createSession(testContext.db, USER_ID);
+    const requestId = "external-link-validation-1";
+    const responses = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/authorize?linkId=not-a-uuid`, {
+        headers: { Authorization: `Bearer ${session.sessionId}`, "X-Request-Id": requestId },
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+        method: "POST",
+        redirect: "manual",
+        headers: {
+          Authorization: `Bearer ${session.sessionId}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+        method: "POST",
+        redirect: "manual",
+        headers: {
+          Authorization: `Bearer ${session.sessionId}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          linkId: randomUUID(),
+          approved: "true",
+          csrfToken: "c".repeat(43),
+        }),
+      }),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([404, 422, 404]);
+    const invalidLink = DeveloperApiProblemSchema.parse(await responses[0]?.json());
+    expect(invalidLink).toMatchObject({ code: "NOT_FOUND", requestId });
+    expect(DeveloperApiProblemSchema.parse(await responses[1]?.json())).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(DeveloperApiProblemSchema.parse(await responses[2]?.json())).toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+    });
+  });
+
   it("rejects expired and revoked grants while reporting a revoked grant status", async () => {
     const expired = await createGrant(testContext, {
       clientId: "expired-grant-client",
