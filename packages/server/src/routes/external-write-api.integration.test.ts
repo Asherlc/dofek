@@ -390,6 +390,54 @@ describe.sequential("external write API network contract", () => {
     }
   });
 
+  it("rejects an exchange that would take over another user's external identity", async () => {
+    const created = await createDeveloperClient("identity-takeover-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "i".repeat(43);
+    const code = "identity-takeover-code".padEnd(43, "x");
+    const start = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.uuid() }).parse(await start.json());
+    const otherUserId = randomUUID();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${otherUserId}::uuid, 'Identity owner', NULL, false)`,
+    );
+    await testContext.db.execute(sql`
+      INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject)
+      VALUES ('slack', 'identity-takeover-subject', ${otherUserId}::uuid, 'opaque-other-user')
+    `);
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET user_id = ${USER_ID}::uuid,
+          approved_at = NOW(),
+          code_hash = ${hashSecret(code)},
+          code_expires_at = NOW() + INTERVAL '5 minutes'
+      WHERE link_id = ${linkId}::uuid
+    `);
+
+    const response = await fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        linkId,
+        code,
+        codeVerifier,
+        externalSubject: { namespace: "slack", subject: "identity-takeover-subject" },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "EXTERNAL_IDENTITY_ALREADY_LINKED",
+      status: 409,
+    });
+  });
+
   it("returns authorization validation errors for an authenticated session without consuming a link", async () => {
     const session = await createSession(testContext.db, USER_ID);
     const requestId = "external-link-validation-1";
