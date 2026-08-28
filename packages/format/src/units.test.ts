@@ -193,6 +193,19 @@ describe("format functions", () => {
     expect(formatMeasurementText(imperial.formatHeight(170))).toBe("66.9 in");
   });
 
+  it("uses the placeholder for missing and non-finite measurements", () => {
+    for (const value of [null, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(formatMeasurementText(metric.formatWeight(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatDistance(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatElevation(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatTemperature(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatTemperatureDelta(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatSpeed(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatHeight(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatHeartRate(value))).toBe("--");
+    }
+  });
+
   it("falls back to numeric label formatting when Intl unit formatting is unsupported", async () => {
     vi.resetModules();
     const OriginalNumberFormat = Intl.NumberFormat;
