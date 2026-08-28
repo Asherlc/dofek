@@ -346,4 +346,86 @@ describe("LifeEventsPanel", () => {
     expect(screen.getByText("175.3 lb")).toBeDefined();
     expect(screen.queryByText("[object Object]")).toBeNull();
   });
+
+  it("submits range and ongoing events with their selected form semantics", () => {
+    const mutate = vi.fn();
+    mocks.createUseMutation.mockReturnValue({ error: null, isPending: false, mutate });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add event" }));
+    fireEvent.click(screen.getByRole("button", { name: "Date range" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Label" }), {
+      target: { value: "Travel block" },
+    });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-03-01" } });
+    fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-03-07" } });
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "lifestyle" } });
+    fireEvent.change(screen.getByLabelText("Notes (optional)"), {
+      target: { value: "Crossed time zones" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mutate).toHaveBeenLastCalledWith({
+      label: "Travel block",
+      startedAt: "2026-03-01",
+      endedAt: "2026-03-07",
+      category: "lifestyle",
+      ongoing: false,
+      notes: "Crossed time zones",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ongoing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ endedAt: null, ongoing: true }),
+    );
+  });
+
+  it("renders every event category and ended-event analysis details", () => {
+    const categoryEvents = ["diet", "supplement", "injury", "lifestyle", "training", "other"].map(
+      (category) => ({
+        ...event,
+        id: `event-${category}`,
+        label: `${category} event`,
+        category,
+        ended_at: "2026-02-08",
+        ongoing: false,
+        notes: "Recorded context",
+      }),
+    );
+    mocks.listUseQuery.mockReturnValue({ data: categoryEvents, error: null, isLoading: false });
+    mocks.analyzeUseQuery.mockReturnValue({
+      data: {
+        ...analysisData,
+        event: categoryEvents[0],
+        metrics: [
+          { period: "before", days: 10, avg_resting_hr: 60, avg_hrv: 50, avg_steps: 0 },
+          { period: "after", days: 11, avg_resting_hr: 60, avg_hrv: 55, avg_steps: 100 },
+        ],
+        sleep: [
+          { period: "before", nights: 10, avg_sleep_min: 420, avg_deep_min: 80 },
+          { period: "after", nights: 11, avg_sleep_min: 430, avg_deep_min: 90 },
+        ],
+        bodyComp: [
+          { period: "before", measurements: 2, avg_weight: 80, avg_body_fat: 20 },
+          { period: "after", measurements: 3, avg_weight: 81, avg_body_fat: 19 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+
+    for (const category of ["diet", "supplement", "injury", "lifestyle", "training", "other"]) {
+      expect(
+        screen.getByRole("button", { name: new RegExp(`${category} event`, "i") }),
+      ).toBeDefined();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: /diet event/i }));
+    expect(screen.getByText(/Recorded context/)).toBeDefined();
+    expect(screen.getAllByText("During")).toHaveLength(7);
+    expect(screen.getByText("+10%")).toBeDefined();
+  });
 });
