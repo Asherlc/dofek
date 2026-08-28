@@ -322,6 +322,127 @@ describe.sequential("external write API network contract", () => {
     expect(await countExternalLinks()).toBe(0);
   });
 
+  it("does not exchange expired codes or codes with an invalid PKCE verifier", async () => {
+    const created = await createDeveloperClient("link-exchange-validation-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+
+    const prepareApprovedLink = async (code: string, codeVerifier: string, expiresAt: string) => {
+      const started = await startLink({
+        authorization,
+        codeVerifier,
+        redirectUri: created.client.client.redirectUris[0] ?? "",
+      });
+      expect(started.status).toBe(200);
+      const { linkId } = z.object({ linkId: z.uuid() }).parse(await started.json());
+      await testContext.db.execute(sql`
+        UPDATE fitness.external_link
+        SET user_id = ${USER_ID}::uuid,
+            approved_at = NOW(),
+            code_hash = ${hashSecret(code)},
+            code_expires_at = ${expiresAt}
+        WHERE link_id = ${linkId}::uuid
+      `);
+      return linkId;
+    };
+
+    const codeVerifier = "p".repeat(43);
+    const [expiredLinkId, invalidVerifierLinkId] = await Promise.all([
+      prepareApprovedLink(
+        "expired-link-code".padEnd(20, "x"),
+        codeVerifier,
+        "2000-01-01T00:00:00Z",
+      ),
+      prepareApprovedLink(
+        "invalid-verifier-link-code".padEnd(20, "x"),
+        codeVerifier,
+        "2099-01-01T00:00:00Z",
+      ),
+    ]);
+    const responses = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkId: expiredLinkId,
+          code: "expired-link-code".padEnd(20, "x"),
+          codeVerifier,
+          externalSubject: { namespace: "slack", subject: "expired-link-subject" },
+        }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkId: invalidVerifierLinkId,
+          code: "invalid-verifier-link-code".padEnd(20, "x"),
+          codeVerifier: "q".repeat(43),
+          externalSubject: { namespace: "slack", subject: "invalid-verifier-subject" },
+        }),
+      }),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(401);
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "INVALID_CREDENTIALS",
+        status: 401,
+      });
+    }
+  });
+
+  it("rejects expired and revoked grants while reporting a revoked grant status", async () => {
+    const expired = await createGrant(testContext, {
+      clientId: "expired-grant-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "expired-grant-subject",
+      expired: true,
+    });
+    const revoked = await createGrant(testContext, {
+      clientId: "revoked-grant-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "revoked-grant-subject",
+      revoked: true,
+    });
+    const [expiredWrite, revokedWrite, revokedStatus] = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${expired.oldToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${revoked.oldToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { Authorization: revoked.authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ namespace: "slack", subject: "revoked-grant-subject" }),
+      }),
+    ]);
+
+    for (const response of [expiredWrite, revokedWrite]) {
+      expect(response.status).toBe(401);
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "INVALID_CREDENTIALS",
+        status: 401,
+      });
+    }
+    expect(await revokedStatus.json()).toMatchObject({
+      status: "revoked",
+      externalSubject: "opaque-revoked-grant-client",
+      grantId: revoked.grantId,
+    });
+  });
+
   it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
     const created = await createDeveloperClient("lifecycle-test");
     const provisioned = created.client;
