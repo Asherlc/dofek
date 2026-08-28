@@ -195,6 +195,32 @@ describe("PolarSyncService", () => {
     expect(mocks.getExercises).toHaveBeenCalledOnce();
   });
 
+  it("removes a revoked refresh token without making provider requests", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-token",
+      refreshToken: "revoked-refresh-token",
+      expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+    });
+    mocks.polarOAuthConfig.mockReturnValue({
+      clientId: "polar-client-id",
+      clientSecret: "polar-client-secret",
+      authorizeUrl: "https://polar.example.test/authorize",
+      tokenUrl: "https://polar.example.test/token",
+      redirectUri: "https://dofek.example.test/oauth/callback",
+      scopes: ["accesslink.read_all"],
+    });
+    mocks.refreshAccessToken.mockRejectedValue(new Error("invalid_grant"));
+
+    const result = await service().run(window);
+
+    expect(result).toMatchObject({
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: "Polar refresh token was revoked or expired." })],
+    });
+    expect(mocks.deleteTokens).toHaveBeenCalledOnce();
+    expect(mocks.getExercises).not.toHaveBeenCalled();
+  });
+
   it("fails clearly when an expired refreshable token has no OAuth configuration", async () => {
     mocks.loadTokens.mockResolvedValue({
       accessToken: "expired-token",
