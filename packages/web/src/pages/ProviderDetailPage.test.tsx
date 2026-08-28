@@ -1032,6 +1032,75 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Sync History")).toBeNull();
   });
 
+  it("uses the generic mobile sync instructions when a push provider has no description", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+    mockProviders.data = [
+      {
+        id: "whoop-mobile",
+        name: "WHOOP Mobile",
+        authorized: true,
+        authType: "none",
+        lastSyncedAt: null,
+        importOnly: false,
+        pushOnly: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(
+      screen.getByText(/Open the Dofek app on your phone with your WHOOP nearby/),
+    ).toBeTruthy();
+  });
+
+  it.each(["oauth", "oauth1"])(
+    "opens %s provider reauthorization in a new tab",
+    async (authType) => {
+      const openWindow = vi.spyOn(window, "open").mockImplementation(() => null);
+      mockUseParams.mockReturnValue({ id: "wahoo" });
+      mockProviders.data = [
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authorized: false,
+          authType,
+          lastSyncedAt: null,
+          importOnly: false,
+          needsReauth: true,
+        },
+      ];
+
+      const { ProviderDetailPage } = await import("./ProviderDetailPage");
+      render(<ProviderDetailPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Reconnect Wahoo" }));
+
+      expect(openWindow).toHaveBeenCalledWith("/auth/provider/wahoo", "_blank");
+      openWindow.mockRestore();
+    },
+  );
+
+  it("opens the Garmin reconnect form for an expired Garmin account", async () => {
+    mockUseParams.mockReturnValue({ id: "garmin" });
+    mockProviders.data = [
+      {
+        id: "garmin",
+        name: "Garmin",
+        authorized: false,
+        authType: "custom:garmin",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+
+    expect(screen.getByText("Garmin reconnect form")).toBeTruthy();
+  });
+
   it("opens the credential and token reconnect forms for expired providers", async () => {
     mockUseParams.mockReturnValue({ id: "fitbit" });
     mockProviders.data = [
