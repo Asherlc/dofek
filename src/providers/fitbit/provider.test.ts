@@ -725,6 +725,29 @@ describe("FitbitProvider", () => {
   });
 
   describe("sync()", () => {
+    it("retains non-Error transport failures from each independent sync step", async () => {
+      setupEnv();
+      const provider = new FitbitProvider(async () => {
+        throw "upstream transport unavailable";
+      });
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+        }),
+      );
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors.map((error) => error.message)).toEqual([
+        "activity: upstream transport unavailable",
+        "sleep: upstream transport unavailable",
+        "daily_metrics 2026-03-01: upstream transport unavailable",
+        "weight 2026-03-01: upstream transport unavailable",
+      ]);
+      expectReasonableDuration(result.duration);
+    });
+
     it("syncs activities, sleep, daily metrics, and body measurements with user-scoped targets", async () => {
       setupEnv();
       const mockFetch = createMockApiFetch({

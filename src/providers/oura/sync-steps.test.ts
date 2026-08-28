@@ -24,7 +24,20 @@ vi.mock("../../db/sync-log.ts", () => ({
 }));
 
 import { OuraApiError, OuraClient } from "./client.ts";
-import { syncCardiovascularAge, syncDailyResilience, syncDailyStress } from "./sync-steps.ts";
+import {
+  syncCardiovascularAge,
+  syncDailyResilience,
+  syncDailyResilienceWebhook,
+  syncDailyStress,
+  syncDailyStressWebhook,
+  syncEnhancedTags,
+  syncRestMode,
+  syncSessions,
+  syncSleep,
+  syncSleepTime,
+  syncTags,
+  syncWorkouts,
+} from "./sync-steps.ts";
 
 function context(client: OuraClient) {
   return {
@@ -114,6 +127,47 @@ describe("Oura optional sync steps", () => {
       expect.objectContaining({
         message: "daily_stress: API error 500 on /daily_stress: unavailable",
       }),
+    ]);
+    expect(syncLogMocks.outcomes).toEqual([]);
+  });
+
+  it("preserves non-Error transport failures from independent sync steps", async () => {
+    const client = new OuraClient("token", vi.fn());
+    const failure = "upstream transport unavailable";
+    vi.spyOn(client, "getSleep").mockRejectedValue(failure);
+    vi.spyOn(client, "getWorkouts").mockRejectedValue(failure);
+    vi.spyOn(client, "getSessions").mockRejectedValue(failure);
+    vi.spyOn(client, "getDailyStress").mockRejectedValue(failure);
+    vi.spyOn(client, "getDailyResilience").mockRejectedValue(failure);
+    vi.spyOn(client, "getTags").mockRejectedValue(failure);
+    vi.spyOn(client, "getEnhancedTags").mockRejectedValue(failure);
+    vi.spyOn(client, "getRestModePeriods").mockRejectedValue(failure);
+    vi.spyOn(client, "getSleepTime").mockRejectedValue(failure);
+    const syncContext = context(client);
+
+    const results = [
+      await syncSleep(syncContext),
+      await syncWorkouts(syncContext),
+      await syncSessions(syncContext),
+      await syncDailyStressWebhook(syncContext),
+      await syncDailyResilienceWebhook(syncContext),
+      await syncTags(syncContext),
+      await syncEnhancedTags(syncContext),
+      await syncRestMode(syncContext),
+      await syncSleepTime(syncContext),
+    ];
+
+    expect(results).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(syncContext.errors.map((error) => error.message)).toEqual([
+      "sleep: upstream transport unavailable",
+      "workouts: upstream transport unavailable",
+      "sessions: upstream transport unavailable",
+      "daily_stress: upstream transport unavailable",
+      "daily_resilience: upstream transport unavailable",
+      "tags: upstream transport unavailable",
+      "enhanced_tags: upstream transport unavailable",
+      "rest_mode: upstream transport unavailable",
+      "sleep_time: upstream transport unavailable",
     ]);
     expect(syncLogMocks.outcomes).toEqual([]);
   });
