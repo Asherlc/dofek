@@ -257,6 +257,71 @@ describe.sequential("external write API network contract", () => {
     expect(rows[0]?.secret_hash).not.toBe(created.client.clientSecret);
   });
 
+  it("rejects malformed and non-canonical link requests before creating a link", async () => {
+    const created = await createDeveloperClient("link-validation-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const validRequest = {
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+      codeChallenge: pkceChallenge("v".repeat(43)),
+      requestedScopes: ["nutrition:write"],
+      state: "state-value",
+    };
+    const responses = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...validRequest,
+          redirectUri: "https://slack.example.test:443/dofek/callback",
+        }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...validRequest,
+          redirectUri: "https://unregistered.example.test/callback",
+        }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/authorize?linkId=not-a-uuid`),
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    ]);
+
+    expect(responses.slice(0, 3).map((response) => response.status)).toEqual([422, 422, 422]);
+    expect(responses[3]?.status).toBe(401);
+    expect(responses.slice(4).map((response) => response.status)).toEqual([422, 422, 422]);
+    for (const response of [...responses.slice(0, 3), ...responses.slice(4)]) {
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "VALIDATION_ERROR",
+        status: 422,
+      });
+    }
+    expect(DeveloperApiProblemSchema.parse(await responses[3]?.json())).toMatchObject({
+      code: "INVALID_CREDENTIALS",
+      status: 401,
+    });
+    expect(await countExternalLinks()).toBe(0);
+  });
+
   it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
     const created = await createDeveloperClient("lifecycle-test");
     const provisioned = created.client;
