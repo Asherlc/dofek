@@ -8,6 +8,7 @@ import {
   fetchWhoopDeveloperWorkoutsPage,
   persistWhoopWorkoutsFromCycles,
   syncWhoopStrengthForActivity,
+  syncWhoopWorkouts,
 } from "./sync-workouts.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
@@ -19,6 +20,17 @@ const exerciseProvenanceMocks = vi.hoisted(() => ({
   resolveUserExerciseWithProvenance: vi.fn().mockResolvedValue("exercise-1"),
 }));
 
+const syncLogMocks = vi.hoisted(() => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      callback: () => Promise<{ result: number }>,
+    ) => (await callback()).result,
+  ),
+}));
+
 vi.mock("../../db/provider-activity-sync.ts", () => ({
   finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
   upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
@@ -27,6 +39,8 @@ vi.mock("../../db/provider-activity-sync.ts", () => ({
 vi.mock("../../db/exercise-provenance.ts", () => ({
   resolveUserExerciseWithProvenance: exerciseProvenanceMocks.resolveUserExerciseWithProvenance,
 }));
+
+vi.mock("../../db/sync-log.ts", () => ({ withSyncLog: syncLogMocks.withSyncLog }));
 
 function makeDb(selectedRows: unknown[] = []) {
   const chain = {
@@ -166,6 +180,7 @@ beforeEach(() => {
   providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue(undefined);
   exerciseProvenanceMocks.resolveUserExerciseWithProvenance.mockClear();
   exerciseProvenanceMocks.resolveUserExerciseWithProvenance.mockResolvedValue("exercise-1");
+  syncLogMocks.withSyncLog.mockClear();
 });
 
 describe("WHOOP workout sync helpers", () => {
@@ -295,6 +310,41 @@ describe("WHOOP workout sync helpers", () => {
     await expect(persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]))).resolves.toBe(0);
     expect(context.errors[0]?.externalId).toBe("workout-1");
     expect(context.errors[0]?.message).toContain("invalid-range");
+  });
+
+  it("reconciles the developer workout window after persisting workouts", async () => {
+    const client = makeClient();
+    const presentExternalIds = new Set(["workout-1"]);
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(presentExternalIds);
+    const context = makeContext({
+      client,
+      cycles: [{ workouts: [makeWorkoutRecord()] }],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      context.db,
+      expect.objectContaining({ providerId: "whoop", presentExternalIds }),
+    );
+  });
+
+  it("records developer reconciliation failures while preserving workout persistence", async () => {
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockRejectedValue(
+      new Error("Developer workouts unavailable"),
+    );
+    const context = makeContext({
+      client,
+      cycles: [{ workouts: [makeWorkoutRecord()] }],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+    expect(context.errors).toEqual([
+      expect.objectContaining({ message: "developer workouts: Developer workouts unavailable" }),
+    ]);
   });
 
   it("syncWhoopStrengthForActivity returns 0 when the workout is missing from cycles", async () => {
