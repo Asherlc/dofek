@@ -186,12 +186,16 @@ function textArray(values: readonly string[]) {
 }
 
 function isExternalIdConflict(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
+  const databaseError =
+    error && typeof error === "object" && "cause" in error ? error.cause : error;
+  if (!databaseError || typeof databaseError !== "object") return false;
   return (
-    "code" in error &&
-    error.code === "23505" &&
-    (("constraint" in error && error.constraint === "food_entry_provider_external_idx") ||
-      ("constraint_name" in error && error.constraint_name === "food_entry_provider_external_idx"))
+    "code" in databaseError &&
+    databaseError.code === "23505" &&
+    (("constraint" in databaseError &&
+      databaseError.constraint === "food_entry_provider_external_idx") ||
+      ("constraint_name" in databaseError &&
+        databaseError.constraint_name === "food_entry_provider_external_idx"))
   );
 }
 
