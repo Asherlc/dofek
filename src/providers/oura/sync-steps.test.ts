@@ -27,11 +27,13 @@ import type { SyncError } from "../types.ts";
 import { OuraApiError, OuraClient } from "./client.ts";
 import {
   syncCardiovascularAge,
+  syncDailyMetricsComposite,
   syncDailyResilience,
   syncDailyResilienceWebhook,
   syncDailyStress,
   syncDailyStressWebhook,
   syncEnhancedTags,
+  syncHeartRate,
   syncRestMode,
   syncSessions,
   syncSleep,
@@ -40,7 +42,7 @@ import {
   syncWorkouts,
 } from "./sync-steps.ts";
 
-function context(client: OuraClient) {
+function context(client: OuraClient, userId?: string) {
   const errors: SyncError[] = [];
   return {
     db: Object.create(null),
@@ -49,6 +51,7 @@ function context(client: OuraClient) {
     sinceDate: "2026-06-01",
     todayDate: "2026-06-30",
     errors,
+    options: userId ? { userId } : undefined,
   };
 }
 
@@ -63,7 +66,7 @@ describe("Oura optional sync steps", () => {
     const getDailyStress = vi
       .spyOn(client, "getDailyStress")
       .mockRejectedValue(new OuraApiError(401, "/daily_stress", "missing scope"));
-    const syncContext = context(client);
+    const syncContext = context(client, "daily-stress-user");
 
     const result = await syncDailyStress(syncContext);
 
@@ -88,7 +91,7 @@ describe("Oura optional sync steps", () => {
     vi.spyOn(client, "getDailyResilience").mockRejectedValue(
       new OuraApiError(401, "/daily_resilience", "missing scope"),
     );
-    const syncContext = context(client);
+    const syncContext = context(client, "daily-resilience-user");
 
     const result = await syncDailyResilience(syncContext);
 
@@ -104,7 +107,7 @@ describe("Oura optional sync steps", () => {
     vi.spyOn(client, "getDailyCardiovascularAge").mockRejectedValue(
       new OuraApiError(401, "/daily_cardiovascular_age", "missing scope"),
     );
-    const syncContext = context(client);
+    const syncContext = context(client, "cardiovascular-age-user");
 
     const result = await syncCardiovascularAge(syncContext);
 
@@ -145,7 +148,8 @@ describe("Oura optional sync steps", () => {
     vi.spyOn(client, "getEnhancedTags").mockRejectedValue(failure);
     vi.spyOn(client, "getRestModePeriods").mockRejectedValue(failure);
     vi.spyOn(client, "getSleepTime").mockRejectedValue(failure);
-    const syncContext = context(client);
+    vi.spyOn(client, "getHeartRate").mockRejectedValue(failure);
+    const syncContext = context(client, "sync-run-user");
 
     const results = [
       await syncSleep(syncContext),
@@ -157,9 +161,10 @@ describe("Oura optional sync steps", () => {
       await syncEnhancedTags(syncContext),
       await syncRestMode(syncContext),
       await syncSleepTime(syncContext),
+      await syncHeartRate(syncContext, new Date("2026-06-01T00:00:00Z")),
     ];
 
-    expect(results).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(results).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     expect(syncContext.errors.map((error) => error.message)).toEqual([
       "sleep: upstream transport unavailable",
       "workouts: upstream transport unavailable",
@@ -170,8 +175,134 @@ describe("Oura optional sync steps", () => {
       "enhanced_tags: upstream transport unavailable",
       "rest_mode: upstream transport unavailable",
       "sleep_time: upstream transport unavailable",
+      "heart_rate: upstream transport unavailable",
     ]);
     expect(syncLogMocks.outcomes).toEqual([]);
+    expect(syncLogMocks.withSyncLog).toHaveBeenCalledWith(
+      syncContext.db,
+      "oura",
+      "heart_rate",
+      expect.any(Function),
+      "sync-run-user",
+    );
+  });
+
+  it.each([false, true])(
+    "fetches an empty daily-metrics window with optional endpoints %s",
+    async (useOptionalFetch) => {
+      const client = new OuraClient("token", vi.fn());
+      const emptyResponse = { data: [], next_token: null };
+      vi.spyOn(client, "getDailyReadiness").mockResolvedValue(emptyResponse);
+      vi.spyOn(client, "getDailyActivity").mockResolvedValue(emptyResponse);
+      vi.spyOn(client, "getDailySpO2").mockResolvedValue(emptyResponse);
+      vi.spyOn(client, "getVO2Max").mockResolvedValue(emptyResponse);
+      vi.spyOn(client, "getDailyStress").mockResolvedValue(emptyResponse);
+      vi.spyOn(client, "getDailyResilience").mockResolvedValue(emptyResponse);
+      vi.spyOn(client, "getSleep").mockResolvedValue(emptyResponse);
+      const syncContext = context(client, "daily-metrics-user");
+
+      expect(await syncDailyMetricsComposite(syncContext, useOptionalFetch)).toBe(0);
+      expect(syncContext.errors).toEqual([]);
+      expect(syncLogMocks.withSyncLog).toHaveBeenCalledWith(
+        syncContext.db,
+        "oura",
+        "daily_metrics",
+        expect.any(Function),
+        "daily-metrics-user",
+      );
+    },
+  );
+
+  it("persists Oura tags, sleep-time recommendations, stress, and resilience", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((value: Record<string, unknown> | Array<Record<string, unknown>>) => {
+          inserted.push(...(Array.isArray(value) ? value : [value]));
+          return { onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const client = new OuraClient("token", vi.fn());
+    vi.spyOn(client, "getTags").mockResolvedValue({
+      data: [
+        {
+          id: "tag-1",
+          day: "2026-06-01",
+          text: null,
+          timestamp: "2026-06-01T08:30:00Z",
+          tags: ["coffee", "late"],
+        },
+      ],
+      next_token: null,
+    });
+    vi.spyOn(client, "getSleepTime").mockResolvedValue({
+      data: [
+        {
+          id: "sleep-time-1",
+          day: "2026-06-02",
+          optimal_bedtime: null,
+          recommendation: "earlier_bedtime",
+          status: "optimal_found",
+        },
+      ],
+      next_token: null,
+    });
+    vi.spyOn(client, "getDailyStress").mockResolvedValue({
+      data: [
+        {
+          id: "stress-1",
+          day: "2026-06-03",
+          stress_high: 120,
+          recovery_high: 30,
+          day_summary: "stressful",
+        },
+      ],
+      next_token: null,
+    });
+    vi.spyOn(client, "getDailyResilience").mockResolvedValue({
+      data: [
+        {
+          id: "resilience-1",
+          day: "2026-06-04",
+          contributors: { sleep_recovery: 70, daytime_recovery: 50, stress: 30 },
+          level: "solid",
+        },
+      ],
+      next_token: null,
+    });
+    const syncContext = context(client);
+    syncContext.db = db;
+
+    await expect(syncTags(syncContext)).resolves.toBe(1);
+    await expect(syncSleepTime(syncContext)).resolves.toBe(1);
+    await expect(syncDailyStress(syncContext)).resolves.toBe(1);
+    await expect(syncDailyResilience(syncContext)).resolves.toBe(1);
+    expect(inserted).toEqual([
+      expect.objectContaining({
+        externalId: "tag-1",
+        type: "oura_tag",
+        valueText: "coffee, late",
+        startDate: new Date("2026-06-01T08:30:00Z"),
+      }),
+      expect.objectContaining({
+        externalId: "sleep-time-1",
+        type: "oura_sleep_time",
+        valueText: "earlier_bedtime",
+        startDate: new Date("2026-06-02T00:00:00"),
+      }),
+      expect.objectContaining({
+        externalId: "stress-1",
+        type: "oura_daily_stress",
+        value: 120,
+        valueText: "stressful",
+      }),
+      expect.objectContaining({
+        externalId: "resilience-1",
+        type: "oura_daily_resilience",
+        valueText: "solid",
+      }),
+    ]);
   });
 
   it("persists enhanced tags with custom-name, type-code, and unknown fallbacks", async () => {
