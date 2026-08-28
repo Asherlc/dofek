@@ -1191,4 +1191,120 @@ describe("DataSourcesPanel", () => {
     expect(mockSyncMutateAsync).not.toHaveBeenCalled();
     open.mockRestore();
   });
+
+  it("shows single-provider cooldown and startup failures without polling", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "syncable",
+          name: "Syncable",
+          authorized: true,
+          authType: "none",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: undefined,
+      jobIds: [],
+      providerJobs: [],
+      providerResults: [
+        {
+          providerId: "syncable",
+          status: "skippedCooldown",
+          message: "Syncable is cooling down",
+        },
+      ],
+    });
+
+    const { rerender } = render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-syncable")).getByText("Sync"));
+    await waitFor(() => expect(screen.getByText("Syncable is cooling down")).toBeTruthy());
+    expect(mockPollSyncJob).not.toHaveBeenCalled();
+
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: undefined,
+      jobIds: [],
+      providerJobs: [],
+      providerResults: [
+        { providerId: "syncable", status: "failed", message: "Syncable queue is unavailable" },
+      ],
+    });
+    rerender(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-syncable")).getByText("Sync"));
+
+    await waitFor(() => expect(screen.getByText("Syncable queue is unavailable")).toBeTruthy());
+    expect(mockPollSyncJob).not.toHaveBeenCalled();
+  });
+
+  it("polls the fallback job id for a provider whose result has no status", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "syncable",
+          name: "Syncable",
+          authorized: true,
+          authType: "none",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "syncable:job-1",
+      jobIds: ["syncable:job-1"],
+      providerJobs: [],
+      providerResults: [],
+    });
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-syncable")).getByText("Sync"));
+
+    await waitFor(() => {
+      expect(mockPollSyncJob).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: "syncable:job-1", providerIds: ["syncable"] }),
+      );
+    });
+  });
+
+  it("starts a full sync after a valid OAuth completion message", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "syncable",
+          name: "Syncable",
+          authorized: true,
+          authType: "none",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        data: { type: "oauth-complete", providerId: "syncable" },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockProvidersInvalidate).toHaveBeenCalled();
+      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
+        providerId: "syncable",
+        sinceDays: undefined,
+      });
+    });
+  });
 });
