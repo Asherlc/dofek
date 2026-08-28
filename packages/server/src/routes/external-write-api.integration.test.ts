@@ -220,6 +220,8 @@ describe.sequential("external write API network contract", () => {
     codeVerifier: string;
     ip?: string;
     redirectUri: string;
+    requestedScopes?: string[];
+    state?: string;
   }): Promise<Response> {
     return fetch(`${baseUrl}/api/external/v1/link/start`, {
       method: "POST",
@@ -231,8 +233,8 @@ describe.sequential("external write API network contract", () => {
       body: JSON.stringify({
         redirectUri: input.redirectUri,
         codeChallenge: pkceChallenge(input.codeVerifier),
-        requestedScopes: ["nutrition:write"],
-        state: "state-value",
+        requestedScopes: input.requestedScopes ?? ["nutrition:write"],
+        state: input.state ?? "state-value",
       }),
     });
   }
@@ -390,6 +392,48 @@ describe.sequential("external write API network contract", () => {
     }
   });
 
+  it("rejects ungranted scopes and omits an absent OAuth state from the approval redirect", async () => {
+    const created = await createDeveloperClient("scope-and-state-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "s".repeat(43);
+    const rejected = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+      requestedScopes: ["profile:read"],
+    });
+    expect(rejected.status).toBe(422);
+
+    const start = await fetch(`${baseUrl}/api/external/v1/link/start`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        redirectUri: created.client.client.redirectUris[0],
+        codeChallenge: pkceChallenge(codeVerifier),
+        requestedScopes: ["nutrition:write"],
+      }),
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.uuid() }).parse(await start.json());
+    const authorizePage = await fetch(
+      `${baseUrl}/api/external/v1/link/authorize?linkId=${linkId}`,
+      { headers: { Authorization: `Bearer ${created.sessionId}` } },
+    );
+    expect(authorizePage.status).toBe(200);
+    const csrfToken = (await authorizePage.text()).match(/name="csrfToken" value="([^"]+)"/)?.[1];
+    const approval = await fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${created.sessionId}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ linkId, approved: "true", csrfToken: csrfToken ?? "" }),
+    });
+    expect(approval.status).toBe(303);
+    expect(new URL(approval.headers.get("location") ?? "").searchParams.get("state")).toBeNull();
+  });
+
   it("rejects an exchange that would take over another user's external identity", async () => {
     const created = await createDeveloperClient("identity-takeover-client");
     const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
@@ -435,6 +479,51 @@ describe.sequential("external write API network contract", () => {
     expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
       code: "EXTERNAL_IDENTITY_ALREADY_LINKED",
       status: 409,
+    });
+  });
+
+  it("blocks link exchange while the account is being erased", async () => {
+    const created = await createDeveloperClient("erased-link-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "e".repeat(43);
+    const code = "erased-link-code".padEnd(43, "x");
+    const start = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.uuid() }).parse(await start.json());
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET user_id = ${ERASURE_USER_ID}::uuid,
+          approved_at = NOW(),
+          code_hash = ${hashSecret(code)},
+          code_expires_at = NOW() + INTERVAL '5 minutes'
+      WHERE link_id = ${linkId}::uuid
+    `);
+    await initiateAccountErasure(
+      testContext.db,
+      ERASURE_USER_ID,
+      async () => "snapshot",
+      async () => undefined,
+    );
+
+    const response = await fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        linkId,
+        code,
+        codeVerifier,
+        externalSubject: { namespace: "slack", subject: "erased-link-subject" },
+      }),
+    });
+
+    expect(response.status).toBe(423);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "ACCOUNT_ERASURE_ACTIVE",
+      status: 423,
     });
   });
 
@@ -1005,6 +1094,40 @@ describe.sequential("external write API network contract", () => {
       "nutrition-mixed-date-key",
     );
     expect(mixedDates.status).toBe(422);
+  });
+
+  it("rejects a second nutrition write for an existing provider external ID", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "duplicate-external-id-client",
+      clientSecret: "duplicate-external-id-secret",
+      namespace: "slack",
+      subject: "duplicate-external-id-subject",
+    });
+    const entry = {
+      date: "2026-08-20",
+      meal: "dinner",
+      foodName: "Duplicate dinner",
+      externalId: "duplicate-provider-entry",
+      nutrients: { calories: 600 },
+    };
+    const write = (key: string) =>
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${grant.oldToken}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify({ entries: [entry] }),
+      });
+
+    expect((await write("duplicate-external-id-request-1")).status).toBe(200);
+    const duplicate = await write("duplicate-external-id-request-2");
+    expect(duplicate.status).toBe(409);
+    expect(DeveloperApiProblemSchema.parse(await duplicate.json())).toMatchObject({
+      code: "EXTERNAL_ID_ALREADY_EXISTS",
+      status: 409,
+    });
   });
 
   it("rolls back nutrition writes when completing the idempotency receipt fails", async () => {
