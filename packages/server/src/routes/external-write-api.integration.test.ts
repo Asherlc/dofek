@@ -727,6 +727,28 @@ describe.sequential("external write API network contract", () => {
     );
   });
 
+  it("rejects link scopes removed from an otherwise valid developer client", async () => {
+    const created = await createDeveloperClient("scoped-client");
+    const client = created.client.client;
+    await testContext.db.execute(
+      sql`UPDATE fitness.external_client
+          SET scopes = ARRAY[]::text[]
+          WHERE client_id = ${client.clientId}`,
+    );
+
+    const response = await startLink({
+      authorization: `Bearer ${client.clientId}.${created.client.clientSecret}`,
+      codeVerifier: "t".repeat(43),
+      redirectUri: client.redirectUris[0] ?? "",
+    });
+
+    expect(response.status).toBe(422);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+  });
+
   it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
     const created = await createDeveloperClient("lifecycle-test");
     const provisioned = created.client;
@@ -1197,6 +1219,48 @@ describe.sequential("external write API network contract", () => {
       "nutrition-mixed-date-key",
     );
     expect(mixedDates.status).toBe(422);
+  });
+
+  it("does not duplicate an idempotency key while its original write is in progress", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "in-progress-nutrition-client",
+      clientSecret: "in-progress-nutrition-secret",
+      namespace: "slack",
+      subject: "in-progress-nutrition-subject",
+    });
+    const body = {
+      entries: [
+        {
+          date: "2026-08-20",
+          foodName: "In-progress lunch",
+          externalId: "in-progress-entry",
+          nutrients: { calories: 500 },
+        },
+      ],
+    };
+    const key = "nutrition-request-in-progress";
+    await testContext.db.execute(sql`
+      INSERT INTO fitness.external_idempotency_receipt
+        (grant_id, method, path, idempotency_key, request_hash, status)
+      VALUES
+        (${grant.grantId}::uuid, 'POST', '/api/external/v1/nutrition/entries', ${key}, ${createHash("sha256").update(JSON.stringify(body)).digest("hex")}, 'in_progress')
+    `);
+
+    const response = await fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${grant.oldToken}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify(body),
+    });
+
+    expect(response.status).toBe(409);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "REQUEST_IN_PROGRESS",
+      status: 409,
+    });
   });
 
   it("rejects a second nutrition write for an existing provider external ID", async () => {
