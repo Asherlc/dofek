@@ -25,7 +25,15 @@ type SettingsNavigation = {
 const mockNavigate = vi.fn<(options: SettingsNavigation) => void>();
 const mockBillingStatusQuery = vi.fn();
 const mockInvalidate = vi.fn();
-const mockMutation = {
+type MockZeppPairingData = { connectionType: "zepp-main" | "zepp-workout" } | undefined;
+const mockMutation: {
+  data: MockZeppPairingData;
+  error: Error | null;
+  isPending: boolean;
+  isSuccess: boolean;
+  mutate: ReturnType<typeof vi.fn>;
+} = {
+  data: undefined,
   error: null,
   isPending: false,
   isSuccess: false,
@@ -149,6 +157,10 @@ vi.mock("../lib/trpc.ts", () => ({
 beforeEach(() => {
   mockSearch = {};
   mockZeppConnections = [];
+  mockMutation.data = undefined;
+  mockMutation.error = null;
+  mockMutation.isPending = false;
+  mockMutation.isSuccess = false;
   mockBillingStatusQuery.mockReturnValue({
     data: undefined,
     isLoading: false,
@@ -434,6 +446,79 @@ describe("SettingsPage categories", () => {
     expect(screen.getByRole("button", { name: "Manage Billing" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Subscribe to Full Access" })).toBeNull();
   });
+
+  it("shows the pending checkout label while starting a subscription", async () => {
+    mockSearch = { tab: "billing" };
+    mockMutation.isPending = true;
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: {
+          kind: "limited",
+          reason: "signup_window",
+          startDate: "2026-08-01",
+          endDateExclusive: "2026-08-08",
+        },
+        canManageBilling: false,
+        hasFullAccess: false,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("button", { name: "Opening checkout..." })).toBeDisabled();
+  });
+
+  it("shows the pending billing-portal label while opening account management", async () => {
+    mockSearch = { tab: "billing" };
+    mockMutation.isPending = true;
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: { kind: "full", reason: "stripe_subscription" },
+        stripeSubscriptionStatus: "active",
+        canManageBilling: true,
+        hasFullAccess: true,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("button", { name: "Opening billing portal..." })).toBeDisabled();
+  });
+
+  it("shows the pending pairing label while claiming a Zepp connection", async () => {
+    mockSearch = { tab: "data-sources" };
+    mockMutation.isPending = true;
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("button", { name: "Connecting..." })).toBeDisabled();
+  });
+
+  it.each([
+    ["zepp-main", "Zepp app"],
+    ["zepp-workout", "Workout extension"],
+  ] as const)(
+    "identifies a successful %s Zepp pairing",
+    async (connectionType, connectionLabel) => {
+      mockSearch = { tab: "data-sources" };
+      mockMutation.data = { connectionType };
+      mockMutation.isSuccess = true;
+      const { SettingsPage } = await import("./SettingsPage.tsx");
+
+      render(<SettingsPage />);
+
+      expect(
+        screen.getByText(`${connectionLabel} connected. Return to Zepp to sync.`),
+      ).toBeTruthy();
+    },
+  );
 
   it("preserves server billing errors and an absent billing response", async () => {
     mockSearch = { tab: "billing" };
