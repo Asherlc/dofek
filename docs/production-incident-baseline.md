@@ -7,6 +7,29 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-28 — PR 2589 watchOS build blocked during pnpm dependency fetches
+
+- **Status:** Fixed in source; a fresh hosted CI workflow is pending.
+- **Symptoms / user impact:** The `Build Mobile / watchOS Build` job failed
+  before Expo prebuild or watchOS compilation, blocking the hangboarding
+  activity-page fix from merging.
+- **Evidence / root cause:** The job's `pnpm install --frozen-lockfile` step
+  logged simultaneous `ETIMEDOUT` responses from `registry.npmjs.org` and
+  ended with `TimeoutError: The operation was aborted due to timeout`. The
+  lockfile cache miss required package downloads; the shared install action
+  did not set a request-concurrency limit for this runner. pnpm exposes
+  `networkConcurrency` as a request setting
+  ([pnpm settings](https://pnpm.io/settings#networkconcurrency)).
+- **Fix / mitigation:** Set `--network-concurrency=8` on the shared CI install
+  command. This limits concurrent registry requests without retrying, extending
+  timeouts, or suppressing failures.
+- **Validation:** The changed frozen install command succeeds locally and the
+  shared action passes repository lint. The new hosted workflow must complete
+  before merging.
+- **Remaining risk / follow-up:** If a fresh cache miss still times out at this
+  concurrency, capture its first registry failure before choosing another
+  network policy.
+
 ## 2026-08-27 — Kaya activities displayed UTC as their local clock time
 
 - **Status:** Fix implemented; deployment verification is pending.

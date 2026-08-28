@@ -15,7 +15,17 @@ describe("providerFamily", () => {
     });
   });
 
-  it("groups Zepp and Kaya connection methods under their user-facing providers", () => {
+  it("groups WHOOP, Zepp, and Kaya connection methods under their user-facing providers", () => {
+    expect(providerFamily("whoop")).toEqual({
+      id: "whoop",
+      label: "WHOOP",
+      methodLabel: "Cloud",
+    });
+    expect(providerFamily("whoop_ble")).toEqual({
+      id: "whoop",
+      label: "WHOOP",
+      methodLabel: "Bluetooth",
+    });
     expect(providerFamily("amazfit-zepp")).toEqual({
       id: "zepp",
       label: "Zepp",

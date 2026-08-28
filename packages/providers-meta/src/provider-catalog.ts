@@ -23,6 +23,13 @@ const garminExport: ProviderFamily = {
   methodLabel: "Data export",
 };
 
+const whoopCloud: ProviderFamily = { id: "whoop", label: "WHOOP", methodLabel: "Cloud" };
+const whoopBluetooth: ProviderFamily = {
+  id: "whoop",
+  label: "WHOOP",
+  methodLabel: "Bluetooth",
+};
+
 const zeppCloud: ProviderFamily = {
   id: "zepp",
   label: "Zepp",
@@ -68,7 +75,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   },
   "fit-file": { label: "FIT File" },
   polar: { label: "Polar", logo: { type: "png" } },
-  whoop: { label: "WHOOP (Cloud)", logo: { type: "png" } },
+  whoop: { label: "WHOOP (Cloud)", family: whoopCloud, logo: { type: "png" } },
   peloton: { label: "Peloton", logo: { type: "svg" } },
   oura: { label: "Oura", logo: { type: "png" } },
   zwift: { label: "Zwift", logo: { type: "png" } },
@@ -99,7 +106,11 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   bodyspec: { label: "BodySpec", brandColor: "#00B4D8" },
   dofek: { label: "Dofek", brandColor: "#4A9D8E" },
   manual_review: { label: "Manual review" },
-  whoop_ble: { label: "WHOOP (Bluetooth)", logo: { id: "whoop", type: "png" } },
+  whoop_ble: {
+    label: "WHOOP (Bluetooth)",
+    family: whoopBluetooth,
+    logo: { id: "whoop", type: "png" },
+  },
   ble_heart_rate: { label: "Heart Rate Monitor (Bluetooth)", brandColor: "#E0245E" },
 };
 

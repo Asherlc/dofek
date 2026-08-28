@@ -1094,6 +1094,37 @@ describe("ProvidersScreen", () => {
     expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
   });
 
+  it("groups WHOOP Cloud and Bluetooth and hides Auto-Supplements", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        { ...connectedProvider, id: "whoop", name: "WHOOP (Cloud)", authType: "custom:whoop" },
+        {
+          ...pushOnlyProvider,
+          id: "whoop_ble",
+          name: "WHOOP (Bluetooth)",
+          authType: "none",
+        },
+        {
+          ...connectedProvider,
+          id: "auto-supplements",
+          name: "Auto-Supplements",
+          authType: "none",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByTestId("provider-family-whoop")).toBeTruthy();
+    expect(screen.getByLabelText("Select WHOOP Bluetooth")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Select WHOOP Bluetooth"));
+    expect(screen.getByTestId("provider-card-whoop_ble")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-whoop")).toBeNull();
+    expect(screen.queryByTestId("provider-card-auto-supplements")).toBeNull();
+  });
+
   it("renders server-authored overdue and current freshness without evaluating timestamps", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [

@@ -56,6 +56,7 @@ import {
 import { styles } from "./styles.ts";
 import { SyncAllControls } from "./sync-all-controls.tsx";
 
+const hiddenProviderIds = new Set(["auto-supplements"]);
 function deleteSharedFile(fileUri: string): void {
   const file = new ExpoFile(fileUri);
   if (file.exists) {
@@ -650,7 +651,10 @@ export default function ProvidersScreen() {
   });
 
   const isLoading = providers.isLoading;
-  const enabledProviders = providerList.filter((p) => p.enabled);
+  const visibleProviderList = providerList.filter(
+    (provider) => !hiddenProviderIds.has(provider.id),
+  );
+  const enabledProviders = visibleProviderList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealth.model.toProviderCard();
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
@@ -677,7 +681,7 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
-  const providerGroups = groupProviderEntries(providerList);
+  const providerGroups = groupProviderEntries(visibleProviderList);
 
   const renderProviderCard = (provider: Provider) => {
     const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
