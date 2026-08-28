@@ -527,6 +527,34 @@ describe.sequential("external write API network contract", () => {
     });
   });
 
+  it("blocks token reissue while the linked account is being erased", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "erasure-reissue-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "erasure-reissue-subject",
+      userId: ERASURE_USER_ID,
+    });
+    await initiateAccountErasure(
+      testContext.db,
+      ERASURE_USER_ID,
+      async () => "snapshot",
+      async () => undefined,
+    );
+
+    const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "slack", subject: "erasure-reissue-subject" }),
+    });
+
+    expect(response.status).toBe(423);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "ACCOUNT_ERASURE_ACTIVE",
+      status: 423,
+    });
+  });
+
   it("returns authorization validation errors for an authenticated session without consuming a link", async () => {
     const session = await createSession(testContext.db, USER_ID);
     const requestId = "external-link-validation-1";
