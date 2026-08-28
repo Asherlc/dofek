@@ -7,6 +7,7 @@ import type { WhoopSyncContext } from "./sync-types.ts";
 import {
   fetchWhoopDeveloperWorkoutsPage,
   persistWhoopWorkoutsFromCycles,
+  syncWhoopStrength,
   syncWhoopStrengthForActivity,
   syncWhoopWorkouts,
 } from "./sync-workouts.ts";
@@ -345,6 +346,62 @@ describe("WHOOP workout sync helpers", () => {
     expect(context.errors).toEqual([
       expect.objectContaining({ message: "developer workouts: Developer workouts unavailable" }),
     ]);
+  });
+
+  it("persists strength workouts and reuses resolved exercises across the batch", async () => {
+    const db = makeDb([{ id: "exercise-1" }]);
+    const client = makeClient();
+    vi.spyOn(client, "getWeightliftingWorkout").mockResolvedValue(makeWeightliftingData());
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-1" });
+    const context = makeContext({
+      db: db.db,
+      client,
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "workout-1" }),
+            makeWorkoutRecord({ activity_id: "workout-2" }),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 2, rateLimited: false });
+    expect(exerciseProvenanceMocks.resolveUserExerciseWithProvenance).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledTimes(2);
+    expect(db.delete).toHaveBeenCalledTimes(2);
+    expect(db.chain.values).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityId: "activity-1",
+          exerciseId: "exercise-1",
+          weightKg: 60,
+        }),
+      ]),
+    );
+  });
+
+  it("skips unavailable strength detail without abandoning other workouts", async () => {
+    const client = makeClient();
+    vi.spyOn(client, "getWeightliftingWorkout")
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeWeightliftingData());
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-1" });
+    const context = makeContext({
+      client,
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "workout-without-detail" }),
+            makeWorkoutRecord({ activity_id: "workout-with-detail" }),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 1, rateLimited: false });
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledOnce();
+    expect(context.errors).toEqual([]);
   });
 
   it("syncWhoopStrengthForActivity returns 0 when the workout is missing from cycles", async () => {
