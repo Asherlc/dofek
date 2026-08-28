@@ -115,6 +115,20 @@ vi.mock("../lib/trpc.ts", () => ({
   },
 }));
 
+function getTooltipFormatter(
+  option: Record<string, unknown> | undefined,
+): (params: unknown) => string {
+  const tooltip = option?.tooltip;
+  if (!tooltip || typeof tooltip !== "object") {
+    throw new Error("Scatter plot tooltip was not configured");
+  }
+  const formatter = Reflect.get(tooltip, "formatter");
+  if (typeof formatter !== "function") {
+    throw new Error("Scatter plot tooltip formatter was not configured");
+  }
+  return (params) => String(formatter(params));
+}
+
 describe("CorrelationExplorerPage", () => {
   beforeEach(() => {
     state.correlationError = null;
@@ -342,7 +356,9 @@ describe("CorrelationExplorerPage", () => {
         uncertainty: { availability: "unavailable", reason },
       };
       rerender(<CorrelationExplorerPage />);
-      expect(screen.getByText(`95% block-bootstrap interval unavailable (${expected}).`)).toBeTruthy();
+      expect(
+        screen.getByText(`95% block-bootstrap interval unavailable (${expected}).`),
+      ).toBeTruthy();
     }
   });
 
@@ -498,10 +514,10 @@ describe("CorrelationExplorerPage", () => {
     const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
     render(<CorrelationExplorerPage />);
 
-    const tooltip = state.chartOption?.tooltip as { formatter?: (params: unknown) => string };
-    expect(tooltip.formatter?.(null)).toBe("");
-    expect(tooltip.formatter?.({})).toBe("");
-    expect(tooltip.formatter?.({ value: [1.25] })).toBe(
+    const formatTooltip = getTooltipFormatter(state.chartOption);
+    expect(formatTooltip(null)).toBe("");
+    expect(formatTooltip({})).toBe("");
+    expect(formatTooltip({ value: [1.25] })).toBe(
       "Protein (g): 1.3<br/>Heart Rate Variability (ms): 0",
     );
   });
