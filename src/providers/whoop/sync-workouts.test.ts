@@ -1,5 +1,6 @@
 import { WhoopClient } from "@dofek/whoop/client";
 import type { WhoopWeightliftingWorkoutResponse, WhoopWorkoutRecord } from "@dofek/whoop/types";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { SyncWindow } from "../sync-window.ts";
@@ -402,6 +403,33 @@ describe("WHOOP workout sync helpers", () => {
     await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 1, rateLimited: false });
     expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledOnce();
     expect(context.errors).toEqual([]);
+  });
+
+  it("marks an outer WHOOP rate-limit failure as retryable", async () => {
+    const error = new ProviderRateLimitError({
+      message: "WHOOP rate limit exceeded",
+      providerId: "whoop",
+      statusCode: 429,
+      responseBody: "",
+    });
+    syncLogMocks.withSyncLog.mockRejectedValueOnce(error);
+    const context = makeContext();
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 0, rateLimited: true });
+    expect(context.errors).toEqual([
+      expect.objectContaining({ message: "strength: WHOOP rate limit exceeded", cause: error }),
+    ]);
+  });
+
+  it("reports non-rate-limit outer strength failures without marking them retryable", async () => {
+    const error = new Error("sync log unavailable");
+    syncLogMocks.withSyncLog.mockRejectedValueOnce(error);
+    const context = makeContext();
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 0, rateLimited: false });
+    expect(context.errors).toEqual([
+      expect.objectContaining({ message: "strength: sync log unavailable", cause: error }),
+    ]);
   });
 
   it("syncWhoopStrengthForActivity returns 0 when the workout is missing from cycles", async () => {
