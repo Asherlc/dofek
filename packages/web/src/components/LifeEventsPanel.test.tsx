@@ -320,6 +320,16 @@ describe("LifeEventsPanel", () => {
     });
   });
 
+  it("disables the add form while a life event is saving", () => {
+    mocks.createUseMutation.mockReturnValue({ error: null, isPending: true, mutate: vi.fn() });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add event" }));
+
+    const saveButton = screen.getByRole<HTMLButtonElement>("button", { name: "Saving..." });
+    expect(saveButton.disabled).toBe(true);
+  });
+
   it("shows and reports delete failures without clearing the selection", () => {
     const deleteError = new Error("Life event could not be deleted");
     let onError: ((error: unknown) => void) | undefined;
@@ -346,6 +356,17 @@ describe("LifeEventsPanel", () => {
     expect(mocks.captureException).toHaveBeenCalledWith(deleteError, {
       operation: "lifeEvents.delete",
     });
+  });
+
+  it("disables deletion while the selected life event is being deleted", () => {
+    mocks.deleteUseMutation.mockReturnValue({ error: null, isPending: true, mutate: vi.fn() });
+    mocks.analyzeUseQuery.mockReturnValue({ data: analysisData, error: null, isLoading: false });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Started creatine/i }));
+
+    const deleteButton = screen.getByRole<HTMLButtonElement>("button", { name: "Deleting..." });
+    expect(deleteButton.disabled).toBe(true);
   });
 
   it("formats analyzed body weight with the shared unit formatter", () => {
@@ -446,6 +467,24 @@ describe("LifeEventsPanel", () => {
     render(<LifeEventsPanel />);
 
     expect(screen.getByRole("button", { name: /Race day/i }).textContent).not.toContain("now");
+  });
+
+  it("labels a completed point-event analysis as after and reports absent comparison data", () => {
+    const pointEvent = { ...event, label: "Race day", ongoing: false };
+    mocks.listUseQuery.mockReturnValue({ data: [pointEvent], error: null, isLoading: false });
+    mocks.analyzeUseQuery.mockReturnValue({
+      data: { event: pointEvent, metrics: [], sleep: [], bodyComp: [] },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Race day/i }));
+
+    expect(
+      screen.getByText(/Comparing 30 days before vs\. after\. Before: 0 days of metrics/),
+    ).toBeDefined();
+    expect(screen.queryByText("Resting HR")).toBeNull();
   });
 
   it("renders every event category and ended-event analysis details", () => {
