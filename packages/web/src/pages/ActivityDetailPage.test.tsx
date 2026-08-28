@@ -574,6 +574,21 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Activity not found")).toBeNull();
   });
 
+  it("keeps activity details visible while reporting a background refresh failure", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: mockActivity,
+      error: new Error("Activity details refresh failed."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Morning Run" })).toBeDefined();
+    expect(screen.getByText("Activity details refresh failed.")).toBeDefined();
+  });
+
   it("uses the not-found state only for a NOT_FOUND response", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: undefined,
@@ -852,6 +867,45 @@ describe("ActivityDetailPage", () => {
 
     expect(screen.getByText("Heart Rate Zones")).toBeDefined();
     expect(screen.getByText("Heart-rate zones refresh failed.")).toBeDefined();
+  });
+
+  it("shows a heart-rate zone error when no cached zone data is available", async () => {
+    mockHrZonesUseQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Heart-rate zones are unavailable."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Heart Rate Zones")).toBeDefined();
+    expect(screen.getByText("Heart-rate zones are unavailable.")).toBeDefined();
+  });
+
+  it("clears the route hover marker for an intermittent GPS sample", async () => {
+    mockStreamUseQuery.mockReturnValue({
+      data: mockStreamPoints.map((point, index) =>
+        index === 1 ? { ...point, lat: null, lng: null, speed: null } : point,
+      ),
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    await waitFor(() => expect(leafletMocks.map).toHaveBeenCalledOnce());
+    const metricEvents = capturedEvents.find((events) => events.updateAxisPointer != null);
+    if (!metricEvents?.updateAxisPointer) {
+      throw new Error("Metrics chart pointer events were not registered");
+    }
+
+    metricEvents.updateAxisPointer({ axesInfo: [{ value: 1 }] });
+
+    expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2);
   });
 
   it("shows a power zone section error", async () => {
