@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted<{
   correlationData: Record<string, unknown> | undefined;
   correlationError: Error | null;
+  correlationLoading: boolean;
   observationData: Record<string, unknown>;
   observationPages: Record<string, Record<string, unknown>>;
   observationInputs: Array<Record<string, unknown>>;
@@ -22,13 +23,20 @@ const state = vi.hoisted<{
         availabilityDescription: string;
       }>
     | undefined;
+  metricsError: Error | null;
+  observationsError: Error | null;
+  observationsLoading: boolean;
 }>(() => ({
   correlationData: {},
   correlationError: null,
+  correlationLoading: false,
   observationData: {},
   observationPages: {},
   observationInputs: [],
   metricsData: undefined,
+  metricsError: null,
+  observationsError: null,
+  observationsLoading: false,
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -76,7 +84,8 @@ vi.mock("../lib/trpc.ts", () => ({
       metrics: {
         useQuery: () => ({
           data: state.metricsData,
-          isError: false,
+          error: state.metricsError,
+          isError: state.metricsError !== null,
         }),
       },
       computeV2: {
@@ -84,7 +93,7 @@ vi.mock("../lib/trpc.ts", () => ({
           data: state.correlationData,
           error: state.correlationError,
           isError: state.correlationError !== null,
-          isLoading: false,
+          isLoading: state.correlationLoading,
         }),
       },
       observations: {
@@ -93,8 +102,9 @@ vi.mock("../lib/trpc.ts", () => ({
           const cursor = typeof input.cursor === "string" ? input.cursor : "first";
           return {
             data: state.observationPages[cursor] ?? state.observationData,
-            isError: false,
-            isLoading: false,
+            error: state.observationsError,
+            isError: state.observationsError !== null,
+            isLoading: state.observationsLoading,
           };
         },
       },
@@ -105,6 +115,10 @@ vi.mock("../lib/trpc.ts", () => ({
 describe("CorrelationExplorerPage", () => {
   beforeEach(() => {
     state.correlationError = null;
+    state.correlationLoading = false;
+    state.metricsError = null;
+    state.observationsError = null;
+    state.observationsLoading = false;
     state.metricsData = [
       {
         id: "protein",
@@ -226,6 +240,27 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.getByText("Choose two different metrics to compare.")).toBeTruthy();
   });
 
+  it("shows the metric query error and results loading state", async () => {
+    state.metricsError = new Error("Metric definitions are unavailable.");
+    state.correlationData = undefined;
+    state.correlationLoading = true;
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    const { container } = render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Metric definitions are unavailable.")).toBeTruthy();
+    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(2);
+  });
+
+  it("shows the observations query error alongside a completed correlation", async () => {
+    state.observationsError = new Error("Paired observations could not be loaded.");
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Paired observations could not be loaded.")).toBeTruthy();
+  });
+
   it("shows sample requirements without inferential statistics when data is insufficient", async () => {
     const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
     render(<CorrelationExplorerPage />);
@@ -257,6 +292,24 @@ describe("CorrelationExplorerPage", () => {
 
     expect(screen.getByText("1 more paired calendar day needed")).toBeTruthy();
     expect(screen.queryByText("1 more paired calendar days needed")).toBeNull();
+  });
+
+  it("explains every unavailable bootstrap outcome", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    const { rerender } = render(<CorrelationExplorerPage />);
+
+    for (const [reason, expected] of [
+      ["empty_input", "no eligible calendar days"],
+      ["degenerate_input", "one metric did not vary"],
+      ["insufficient_valid_replicates", "not enough valid resamples"],
+    ] as const) {
+      state.correlationData = {
+        ...state.correlationData,
+        uncertainty: { availability: "unavailable", reason },
+      };
+      rerender(<CorrelationExplorerPage />);
+      expect(screen.getByText(`95% block-bootstrap interval unavailable (${expected}).`)).toBeTruthy();
+    }
   });
 
   it("shows coverage, dependence-aware uncertainty, and server-computed effect estimates", async () => {
@@ -305,6 +358,52 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.queryByText(/Pearson/)).toBeNull();
     expect(screen.queryByText(/^p =/)).toBeNull();
     expect(screen.queryByText("Early signal")).toBeNull();
+  });
+
+  it("reports unavailable correlation estimates without inventing a trend", async () => {
+    state.correlationData = {
+      analysisVersion: 2,
+      availability: "available",
+      epistemicStatus: { kind: "associated", label: "Associated" },
+      spearmanRho: null,
+      regression: { slope: null, intercept: null, rSquared: null },
+      dataPoints: [
+        { x: 1, y: 2, date: "2025-01-01" },
+        { x: 2, y: 3, date: "2025-01-02" },
+      ],
+      sampleCount: 5,
+      coverage: {
+        selectedDayCount: 5,
+        eligiblePairDayCount: 5,
+        observedXDayCount: 5,
+        observedYDayCount: 5,
+        pairedDayCount: 5,
+        missingPairDayCount: 0,
+      },
+      uncertainty: {
+        availability: "available",
+        method: "circular_moving_block_bootstrap",
+        level: 0.95,
+        blockLength: 2,
+        requestedReplicateCount: 2_000,
+        attemptedReplicateCount: 2_000,
+        validReplicateCount: 2_000,
+        lower: 0.2,
+        upper: 0.9,
+      },
+      xStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
+      yStats: { mean: 2.5, median: 2.5, stddev: 0.5, min: 2, max: 3, n: 5 },
+      insight: "The metrics move together.",
+    };
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Spearman rho not estimable")).toBeTruthy();
+    expect(screen.queryByText(/Slope =/)).toBeNull();
+    expect(screen.queryByText(/R²/)).toBeNull();
+    const option = JSON.parse(screen.getByTestId("scatter-plot").dataset.option ?? "{}");
+    expect(option.series).toHaveLength(1);
   });
 
   it("uses a neutral trend color without legacy confidence styling", async () => {
