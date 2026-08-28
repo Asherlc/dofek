@@ -438,6 +438,49 @@ describe.sequential("external write API network contract", () => {
     expect(statuses[60]).toBe(429);
   });
 
+  it("rejects unauthenticated requests at every protected external endpoint", async () => {
+    const requests = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": "198.51.100.242" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/erasure/ack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    ]);
+
+    for (const response of requests) {
+      expect(response.status).toBe(401);
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "INVALID_CREDENTIALS",
+        status: 401,
+      });
+    }
+  });
+
   it("counts rejected client authentication toward the link-start limit", async () => {
     const created = await createDeveloperClient("rejected-link-rate-limit-test");
     const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
