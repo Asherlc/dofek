@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { ClimbingActivityEntryRow } from "../../../server/src/repositories/climbing-repository.ts";
+import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
@@ -279,6 +280,15 @@ vi.mock("leaflet", () => ({
   latLngBounds: () => ({}),
   polyline: () => ({ addTo: vi.fn() }),
   circleMarker: () => ({ addTo: vi.fn() }),
+}));
+
+vi.mock("react-body-highlighter", () => ({
+  default: ({ type }: { type: string }) => <div data-testid={`muscle-map-${type}`} />,
+  MuscleType: {
+    BACK_DELTOIDS: "back_deltoids",
+    CHEST: "chest",
+    FRONT_DELTOIDS: "front_deltoids",
+  },
 }));
 
 afterEach(() => {
@@ -1073,6 +1083,59 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("strength exercise query gating", () => {
+    it("renders recorded strength exercise values and the workout muscle map", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "strength", name: "Strength session" });
+      const exercises: StrengthExerciseDetail[] = [
+        {
+          exerciseIndex: 0,
+          exerciseName: "Bench Press",
+          equipment: "BARBELL",
+          muscleGroups: ["chest"],
+          exerciseType: "strength",
+          sets: [
+            {
+              setIndex: 0,
+              setType: "working",
+              weightKg: 80,
+              reps: 5,
+              durationSeconds: 45,
+              rpe: 8,
+              notes: null,
+            },
+            {
+              setIndex: 1,
+              setType: null,
+              weightKg: null,
+              reps: null,
+              durationSeconds: null,
+              rpe: null,
+              notes: null,
+            },
+          ],
+        },
+      ];
+      mockStrengthExercisesUseQuery.mockReturnValue({
+        data: exercises,
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      await waitFor(() => expect(screen.getByTestId("muscle-map-anterior")).toBeDefined());
+      expect(screen.getByTestId("muscle-map-posterior")).toBeDefined();
+      expect(screen.getByText("Bench Press")).toBeDefined();
+      expect(screen.getByText("barbell")).toBeDefined();
+      expect(screen.getByText("Weight (kg)")).toBeDefined();
+      expect(screen.getByText("80.0")).toBeDefined();
+      expect(screen.getByText("45s")).toBeDefined();
+
+      Object.assign(mockActivity, originalData);
+    });
+
     it("disables strength exercises query for non-strength activities", async () => {
       const originalData = { ...mockActivity };
       Object.assign(mockActivity, { activityType: "running" });
