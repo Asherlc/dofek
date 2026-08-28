@@ -44,8 +44,10 @@ const mockSyncMutateAsync = vi.hoisted(() => vi.fn());
 const mockTriggerSyncUseMutation = vi.hoisted(() => vi.fn());
 const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
+const mockProvidersInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
 const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
+const mockSyncProviderCard = vi.hoisted(() => vi.fn());
 const mockActiveImportsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
     data: [],
@@ -96,7 +98,7 @@ vi.mock("../lib/trpc.ts", () => ({
     useUtils: () => ({
       invalidate: mockInvalidate,
       sync: {
-        providers: { invalidate: vi.fn() },
+        providers: { invalidate: mockProvidersInvalidate },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
       processing: { status: { invalidate: vi.fn() } },
@@ -199,23 +201,32 @@ vi.mock("./SyncProviderCard.tsx", () => ({
     provider,
     state,
     recentLogs,
+    needsAuth,
+    needsReauth,
+    pushOnly,
     onSync,
   }: {
     provider: { id: string; name: string };
     state: { status: string; message?: string };
     recentLogs: Array<{ status: string }>;
+    needsAuth: boolean;
+    needsReauth: boolean;
+    pushOnly: boolean;
     onSync: () => void;
-  }) => (
-    <section data-testid={`provider-card-${provider.id}`}>
-      <h4>{provider.name}</h4>
-      <p>{state.status}</p>
-      {recentLogs[0] ? <p>Latest sync: {recentLogs[0].status}</p> : null}
-      {state.message ? <p>{state.message}</p> : null}
-      <button type="button" onClick={onSync}>
-        Sync
-      </button>
-    </section>
-  ),
+  }) => {
+    mockSyncProviderCard({ provider, state, recentLogs, needsAuth, needsReauth, pushOnly });
+    return (
+      <section data-testid={`provider-card-${provider.id}`}>
+        <h4>{provider.name}</h4>
+        <p>{state.status}</p>
+        {recentLogs[0] ? <p>Latest sync: {recentLogs[0].status}</p> : null}
+        {state.message ? <p>{state.message}</p> : null}
+        <button type="button" onClick={onSync}>
+          Sync
+        </button>
+      </section>
+    );
+  },
 }));
 
 vi.mock("../lib/poll-sync-job.ts", () => ({
@@ -273,8 +284,10 @@ describe("DataSourcesPanel", () => {
     mockPollSyncJob.mockReset();
     mockPollSyncJob.mockResolvedValue(undefined);
     mockInvalidate.mockReset();
+    mockProvidersInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
     mockFileImportProviderCard.mockClear();
+    mockSyncProviderCard.mockClear();
     mockActiveImportsQuery.mockReset();
     mockActiveImportsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockActiveSyncsQuery.mockReset();
@@ -1024,5 +1037,158 @@ describe("DataSourcesPanel", () => {
         importType: "apple-health",
       }),
     );
+  });
+
+  it("passes each provider's connection state to its card", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "credentials",
+          name: "Credentials",
+          authorized: false,
+          authType: "credential",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "reauth",
+          name: "Reauthentication",
+          authorized: true,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: true,
+        },
+        {
+          id: "push",
+          name: "Push only",
+          authorized: false,
+          authType: "none",
+          importOnly: false,
+          pushOnly: true,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(mockSyncProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({ id: "credentials" }),
+        needsAuth: true,
+        needsReauth: false,
+        pushOnly: false,
+      }),
+    );
+    expect(mockSyncProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({ id: "reauth" }),
+        needsAuth: false,
+        needsReauth: true,
+        pushOnly: false,
+      }),
+    );
+    expect(mockSyncProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({ id: "push" }),
+        needsAuth: false,
+        needsReauth: false,
+        pushOnly: true,
+      }),
+    );
+  });
+
+  it("opens and completes every supported authentication modal", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "credentials",
+          name: "Credentials",
+          authorized: false,
+          authType: "credential",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "whoop",
+          name: "WHOOP",
+          authorized: false,
+          authType: "custom:whoop",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: false,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    fireEvent.click(within(screen.getByTestId("provider-card-credentials")).getByText("Sync"));
+    expect(screen.getByText("Credentials credentials")).toBeTruthy();
+    fireEvent.click(screen.getByText("Save credentials"));
+    expect(mockProvidersInvalidate).toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByTestId("provider-card-whoop")).getByText("Sync"));
+    expect(screen.getByText("WHOOP auth")).toBeTruthy();
+    fireEvent.click(screen.getByText("Save WHOOP auth"));
+
+    fireEvent.click(within(screen.getByTestId("provider-card-garmin")).getByText("Sync"));
+    expect(screen.getByText("Garmin auth")).toBeTruthy();
+    fireEvent.click(screen.getByText("Save Garmin auth"));
+
+    expect(mockProvidersInvalidate).toHaveBeenCalledTimes(3);
+  });
+
+  it("opens an OAuth connection and leaves push-only providers inactive", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "oauth",
+          name: "OAuth",
+          authorized: false,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "push",
+          name: "Push",
+          authorized: false,
+          authType: "none",
+          importOnly: false,
+          pushOnly: true,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    fireEvent.click(within(screen.getByTestId("provider-card-oauth")).getByText("Sync"));
+    fireEvent.click(within(screen.getByTestId("provider-card-push")).getByText("Sync"));
+
+    expect(open).toHaveBeenCalledWith("/auth/provider/oauth", "_blank");
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+    open.mockRestore();
   });
 });
