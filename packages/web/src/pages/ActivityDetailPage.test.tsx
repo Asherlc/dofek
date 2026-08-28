@@ -482,6 +482,61 @@ async function importPage() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("shows a loading skeleton before activity details resolve", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isLoading: true,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByTestId("chart-loading-skeleton")).toBeTruthy();
+    expect(screen.queryByText("Activity not found")).toBeNull();
+  });
+
+  it("renders active and removed source links with their distinct affordances", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: {
+        ...mockActivity,
+        sourceLinks: [
+          {
+            providerId: "strava",
+            externalId: "strava-activity",
+            subsource: null,
+            label: "Strava",
+            url: "https://strava.example.test/activities/1",
+          },
+          {
+            providerId: "garmin",
+            externalId: "garmin-activity",
+            subsource: null,
+            label: "Garmin",
+            url: null,
+            providerAbsentAt: "2026-06-20T10:00:00.000Z",
+          },
+        ],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("link", { name: "Strava" }).getAttribute("href")).toBe(
+      "https://strava.example.test/activities/1",
+    );
+    const removed = screen.getByText("Garmin (removed)");
+    expect(removed.getAttribute("title")).toBe(
+      `Removed ${formatDateTime("2026-06-20T10:00:00.000Z")}`,
+    );
+    expect(removed.className).toContain("line-through");
+  });
+
   it("shows the primary server error instead of reporting a missing activity", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: undefined,
