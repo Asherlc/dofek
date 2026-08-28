@@ -6,7 +6,7 @@ import { expect, vi } from "vitest";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
 import type { TimeRangeDays } from "../../lib/timeRange.ts";
 
-const state = vi.hoisted<{
+const state: {
   days: TimeRangeDays;
   queryCalls: Array<{ name: string; input: unknown; options?: unknown }>;
   recentActivitiesProps: Array<{
@@ -25,7 +25,7 @@ const state = vi.hoisted<{
     isLoading: boolean;
     error: Error | null;
   };
-}>(() => ({
+} = {
   days: 90,
   queryCalls: [],
   recentActivitiesProps: [],
@@ -47,7 +47,7 @@ const state = vi.hoisted<{
     isLoading: false,
     error: null,
   },
-}));
+};
 
 export { state };
 
@@ -58,7 +58,7 @@ function recordQuery(name: string) {
   };
 }
 
-;vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (path: string) => (config: { component?: ComponentType }) => {
     if (config.component) state.routeComponents[path] = config.component;
     return {};

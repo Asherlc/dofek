@@ -6,15 +6,15 @@ import { BodyDaysContext } from "../../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
 import { emptyJournalTrendEvidence } from "../journal-trend-test-fixtures.ts";
 
-const state = vi.hoisted<{
+const state: {
   queryCalls: Array<{ name: string; input: unknown }>;
   routeComponents: Record<string, ComponentType>;
-}>(() => ({
+} = {
   queryCalls: [],
   routeComponents: {},
-}));
+};
 
-;vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (path: string) => (config: { component: ComponentType }) => {
     state.routeComponents[path] = config.component;
     return {};
