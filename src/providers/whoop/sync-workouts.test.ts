@@ -1,6 +1,6 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { WhoopClient } from "@dofek/whoop/client";
 import type { WhoopWeightliftingWorkoutResponse, WhoopWorkoutRecord } from "@dofek/whoop/types";
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { SyncWindow } from "../sync-window.ts";
