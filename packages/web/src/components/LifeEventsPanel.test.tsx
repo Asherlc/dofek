@@ -381,6 +381,52 @@ describe("LifeEventsPanel", () => {
     );
   });
 
+  it("submits a one-time event with omitted optional fields as null", () => {
+    const mutate = vi.fn();
+    mocks.createUseMutation.mockReturnValue({ error: null, isPending: false, mutate });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add event" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Label" }), {
+      target: { value: "Moved house" },
+    });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-04-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mutate).toHaveBeenCalledWith({
+      label: "Moved house",
+      startedAt: "2026-04-01",
+      endedAt: null,
+      category: null,
+      ongoing: false,
+      notes: null,
+    });
+  });
+
+  it("toggles a selected event and shows its loading analysis state", () => {
+    mocks.analyzeUseQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
+
+    const { container } = render(<LifeEventsPanel />);
+    const eventButton = screen.getByRole("button", { name: /Started creatine/i });
+    fireEvent.click(eventButton);
+
+    expect(container.querySelector(".animate-pulse")).toBeTruthy();
+    fireEvent.click(eventButton);
+    expect(container.querySelector(".animate-pulse")).toBeNull();
+  });
+
+  it("does not add a now suffix to a completed point event", () => {
+    mocks.listUseQuery.mockReturnValue({
+      data: [{ ...event, label: "Race day", ongoing: false }],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+
+    expect(screen.getByRole("button", { name: /Race day/i }).textContent).not.toContain("now");
+  });
+
   it("renders every event category and ended-event analysis details", () => {
     const categoryEvents = ["diet", "supplement", "injury", "lifestyle", "training", "other"].map(
       (category) => ({
