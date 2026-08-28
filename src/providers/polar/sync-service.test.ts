@@ -47,7 +47,7 @@ vi.mock("./client.ts", () => ({
   PolarUnauthorizedError: class PolarUnauthorizedError extends Error {},
 }));
 
-import { PolarUnauthorizedError } from "./client.ts";
+import { PolarNotFoundError, PolarUnauthorizedError } from "./client.ts";
 import { PolarSyncService } from "./sync-service.ts";
 
 const window = new SyncWindow({
@@ -188,9 +188,7 @@ describe("PolarSyncService", () => {
       expiresAt: new Date("2027-07-01T00:00:00.000Z"),
     });
     mocks.getExercises.mockResolvedValue([]);
-    mocks.getSleep.mockRejectedValue(
-      new (await import("./client.ts")).PolarNotFoundError("missing"),
-    );
+    mocks.getSleep.mockRejectedValue(new PolarNotFoundError("missing"));
     mocks.withSyncLog.mockImplementation(
       async (
         _db: unknown,
