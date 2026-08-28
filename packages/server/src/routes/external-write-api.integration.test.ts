@@ -652,6 +652,81 @@ describe.sequential("external write API network contract", () => {
     });
   });
 
+  it("reports linked grants and records the latest erasure acknowledgement", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "linked-grant-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "linked-grant-subject",
+    });
+
+    const status = await fetch(`${baseUrl}/api/external/v1/link/status`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "slack", subject: "linked-grant-subject" }),
+    });
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({
+      status: "linked",
+      externalSubject: "opaque-linked-grant-client",
+      grantId: grant.grantId,
+    });
+
+    const acknowledge = (body: unknown) =>
+      fetch(`${baseUrl}/api/external/v1/erasure/ack`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${grant.oldToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    expect(
+      (
+        await acknowledge({
+          eventId: "linked-grant-erasure-event",
+          result: "failed",
+          reasonCode: "upstream-unavailable",
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await acknowledge({ eventId: "linked-grant-erasure-event", result: "completed" })).status,
+    ).toBe(200);
+
+    const acknowledgements = await executeWithSchema(
+      testContext.db,
+      z.object({ result: z.string(), reason_code: z.string().nullable() }),
+      sql`SELECT result, reason_code
+          FROM fitness.external_erasure_ack
+          WHERE event_id = 'linked-grant-erasure-event'`,
+    );
+    expect(acknowledgements).toEqual([{ result: "completed", reason_code: null }]);
+  });
+
+  it("rejects incomplete and revoked developer client credentials", async () => {
+    const created = await createDeveloperClient("credential-validation-client");
+    const client = created.client.client;
+    const request = (authorization: string) =>
+      startLink({
+        authorization,
+        codeVerifier: "r".repeat(43),
+        redirectUri: client.redirectUris[0] ?? "",
+      });
+
+    expect((await request(`Bearer ${client.clientId}`)).status).toBe(401);
+    expect((await request(`Bearer ${client.clientId}.`)).status).toBe(401);
+
+    const revoke = await fetch(`${baseUrl}/api/developer/clients/${client.clientId}/revoke`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${created.sessionId}` },
+    });
+    expect(revoke.status).toBe(200);
+    expect((await request(`Bearer ${client.clientId}.${created.client.clientSecret}`)).status).toBe(
+      401,
+    );
+  });
+
   it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
     const created = await createDeveloperClient("lifecycle-test");
     const provisioned = created.client;
