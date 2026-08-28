@@ -272,6 +272,43 @@ describe("BodyPage", () => {
     expect(screen.queryByText("Goal weight input")).toBeNull();
   });
 
+  it("falls back to the available body-fat trend when weight data is empty", () => {
+    queryMocks.weightOverview.mockReturnValue(
+      mockQuery({
+        data: {
+          ...healthyWeightOverview,
+          smoothedWeight: [],
+          prediction: null,
+          recomposition: [],
+        },
+      }),
+    );
+
+    render(<BodyPage />);
+
+    expect(screen.getByText("Body-fat prediction")).toBeTruthy();
+    expect(screen.queryByText("Goal weight input")).toBeNull();
+    expect(screen.getAllByTestId("body-fat-chart")).toHaveLength(2);
+  });
+
+  it("keeps the weight trend selected when body-fat data is unavailable", () => {
+    queryMocks.weightOverview.mockReturnValue(
+      mockQuery({
+        data: {
+          ...healthyWeightOverview,
+          bodyFatTrend: [],
+          bodyFatPrediction: null,
+        },
+      }),
+    );
+
+    render(<BodyPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
+
+    expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
+    expect(screen.getByText("Weight prediction")).toBeTruthy();
+  });
+
   it("shows one dependency notice for a repeated body-composition query failure", () => {
     queryMocks.weightOverview.mockReturnValue(
       mockQuery({ error: new Error("Body measurements are unavailable.") }),
