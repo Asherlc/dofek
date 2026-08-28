@@ -187,9 +187,11 @@ function makeSyncMockFetch(options: {
   journalError?: boolean;
   cyclesError?: boolean;
   cyclesRateLimit?: boolean;
+  strainError?: boolean;
   strainRateLimit?: boolean;
   strainSteps?: number;
   sleepRateLimit?: boolean;
+  weightliftingError?: boolean;
   developerWorkoutsError?: boolean;
   developerWorkoutPages?: Array<{
     records: Array<{ id: string; start: string; end: string }>;
@@ -233,6 +235,9 @@ function makeSyncMockFetch(options: {
     if (url.includes("deep-dive/strain")) {
       if (options.strainRateLimit) {
         return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
+      if (options.strainError) {
+        return Promise.resolve(new Response("Strain error", { status: 500 }));
       }
       if (options.strainSteps != null) {
         return Promise.resolve(
@@ -282,6 +287,9 @@ function makeSyncMockFetch(options: {
 
     // Weightlifting
     if (url.includes("weightlifting-service")) {
+      if (options.weightliftingError) {
+        return Promise.resolve(new Response("Strength error", { status: 500 }));
+      }
       if (options.weightliftingData === null) {
         return Promise.resolve(new Response("", { status: 404 }));
       }
@@ -1518,6 +1526,63 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       "Heart rate stream",
       "Journal",
     ]);
+  });
+
+  it.each([
+    [
+      "strain",
+      { type: "strain_deep_dive", date: "2026-03-01" },
+      makeSyncMockFetch({ strainError: true }),
+      "daily_activity: WHOOP API error (500): Strain error",
+    ],
+    [
+      "weightlifting",
+      { type: "weightlifting", activityId: "activity-1" },
+      makeSyncMockFetch({ weightliftingError: true }),
+      "strength: WHOOP weightlifting API error (500): Strength error",
+    ],
+    [
+      "heart-rate",
+      {
+        type: "heart_rate",
+        start: "2026-03-01T00:00:00.000Z",
+        end: "2026-03-01T01:00:00.000Z",
+      },
+      makeSyncMockFetch({ hrError: true }),
+      "hr_stream: WHOOP API error (500): HR error",
+    ],
+    [
+      "sleep",
+      { type: "sleep_stages", sleepId: "sleep-1" },
+      makeSyncMockFetch({ sleepError: true }),
+      "sleep_stages: WHOOP API error (500): Sleep error",
+    ],
+  ])("labels failed %s API checkpoints", async (_name, step, fetchFn, expectedMessage) => {
+    const { store } = makeCheckpointStore({
+      runId: `run-${_name}-error`,
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: _name === "weightlifting" ? [{ workouts: [{ activity_id: "activity-1" }] }] : [],
+      apiSteps: [step],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    });
+
+    const result = await runWhoopOrchestratedSync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+      fetchFn,
+      Date.now(),
+    );
+
+    expect(result.errors).toContainEqual(expect.objectContaining({ message: expectedMessage }));
   });
 
   it("applies rate-limit checkpoint state when an API step is rate limited", async () => {
