@@ -240,6 +240,18 @@ describe("PolarSyncService", () => {
         has_route: false,
         detailed_sport_info: "Road running",
       },
+      {
+        id: "exercise-after-window",
+        upload_time: "2026-07-01T10:00:00.000Z",
+        polar_user: "polar-user",
+        device: "Polar Vantage",
+        start_time: "2026-07-01T10:00:00.000Z",
+        duration: "PT45M",
+        calories: 0,
+        sport: "running",
+        has_route: false,
+        detailed_sport_info: "Road running",
+      },
     ]);
     mocks.getSleep.mockResolvedValue([]);
     mocks.getDailyActivity.mockResolvedValue([]);
@@ -321,6 +333,86 @@ describe("PolarSyncService", () => {
     expect(mocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ presentExternalIds: new Set(["exercise-write-failure"]) }),
+    );
+  });
+
+  it("invalidates credentials when Polar rejects the sleep endpoint", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "active-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockResolvedValue([]);
+    mocks.getSleep.mockRejectedValue(new PolarUnauthorizedError("Unauthorized"));
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result.errors[0]?.message).toBe("Polar authorization failed while syncing sleep.");
+    expect(mocks.deleteTokens).toHaveBeenCalledOnce();
+    expect(mocks.getDailyActivity).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing daily activity endpoint without deleting valid credentials", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "active-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockResolvedValue([]);
+    mocks.getSleep.mockResolvedValue([]);
+    mocks.getDailyActivity.mockRejectedValue(new PolarNotFoundError("missing"));
+    mocks.getNightlyRecharge.mockResolvedValue([]);
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result.errors[0]?.message).toBe(
+      "Polar daily activity endpoint returned 404 — try re-authenticating with Polar",
+    );
+    expect(mocks.deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a failed credential cleanup after an authorization failure", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "revoked-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockRejectedValue(new PolarUnauthorizedError("Unauthorized"));
+    mocks.deleteTokens.mockRejectedValue(new Error("token storage unavailable"));
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "Polar authorization failed while syncing exercises." }),
+        expect.objectContaining({
+          message: "Failed to delete dead tokens: token storage unavailable",
+        }),
+      ]),
     );
   });
 });
