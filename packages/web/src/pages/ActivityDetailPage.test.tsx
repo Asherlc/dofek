@@ -497,7 +497,7 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Activity not found")).toBeNull();
   });
 
-  it("renders active and removed source links with their distinct affordances", async () => {
+  it("renders active and removed source links with their distinct displays", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: {
         ...mockActivity,
