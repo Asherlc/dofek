@@ -749,6 +749,41 @@ describe.sequential("external write API network contract", () => {
     });
   });
 
+  it("does not present expired or already exchanged authorization links", async () => {
+    const created = await createDeveloperClient("expired-authorization-link-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const session = await createSession(testContext.db, USER_ID);
+    const start = async () => {
+      const response = await startLink({
+        authorization,
+        codeVerifier: "u".repeat(43),
+        redirectUri: created.client.client.redirectUris[0] ?? "",
+      });
+      expect(response.status).toBe(200);
+      return z.object({ linkId: z.uuid() }).parse(await response.json()).linkId;
+    };
+    const [expiredLinkId, exchangedLinkId] = await Promise.all([start(), start()]);
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET expires_at = NOW() - INTERVAL '1 minute'
+      WHERE link_id = ${expiredLinkId}::uuid
+    `);
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET exchanged_at = NOW()
+      WHERE link_id = ${exchangedLinkId}::uuid
+    `);
+
+    const responses = await Promise.all(
+      [expiredLinkId, exchangedLinkId].map((linkId) =>
+        fetch(`${baseUrl}/api/external/v1/link/authorize?linkId=${linkId}`, {
+          headers: { Authorization: `Bearer ${session.sessionId}` },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.status)).toEqual([404, 404]);
+  });
+
   it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
     const created = await createDeveloperClient("lifecycle-test");
     const provisioned = created.client;
