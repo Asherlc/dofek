@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RecordsBrowser, SyncHistory } from "./provider-detail-data.tsx";
 
@@ -32,6 +32,10 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     },
   },
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children }: { children: string }) => <a href="/activity/activity-1">{children}</a>,
 }));
 
 describe("RecordsBrowser", () => {
@@ -138,6 +142,59 @@ describe("RecordsBrowser", () => {
     render(<RecordsBrowser providerId="wahoo" stats={undefined} />);
 
     expect(screen.getByText("Records could not be loaded.")).toBeTruthy();
+  });
+
+  it("renders available record data, raw details, stats, and a full-page control", () => {
+    mocks.recordsUseQuery.mockReturnValue({
+      data: {
+        rows: Array.from({ length: 25 }, (_, index) => ({
+          id: `activity-${index + 1}`,
+          name: `Activity ${index + 1}`,
+          raw: { provider: "wahoo", sequence: index + 1 },
+        })),
+        columns: ["id", "name"],
+        filterColumns: ["name"],
+      },
+      isError: false,
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <RecordsBrowser
+        providerId="wahoo"
+        stats={{
+          activities: 25,
+          bodyMeasurements: 0,
+          dailyMetrics: 0,
+          foodEntries: 0,
+          healthEvents: 0,
+          journalEntries: 0,
+          labPanels: 0,
+          labResults: 0,
+          metricStream: 0,
+          nutritionDaily: 0,
+          sleepSessions: 0,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Activities(25)" })).toBeTruthy();
+    const viewButtons = screen.getAllByRole("button", { name: "View" });
+    expect(viewButtons).toHaveLength(25);
+    expect(screen.getByRole("columnheader", { name: "Data" })).toBeTruthy();
+    const nextButton = screen.getByRole("button", { name: "Next" });
+    expect(nextButton).not.toBeDisabled();
+
+    const firstViewButton = viewButtons[0];
+    if (!firstViewButton) throw new Error("Expected the first record's view button");
+    fireEvent.click(firstViewButton);
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("Raw Provider Data");
+    expect(screen.getByRole("link", { name: "Open activity" })).toHaveAttribute(
+      "href",
+      "/activity/activity-1",
+    );
   });
 });
 
