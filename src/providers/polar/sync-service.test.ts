@@ -260,6 +260,35 @@ describe("PolarSyncService", () => {
     expect(mocks.getDailyActivity).not.toHaveBeenCalled();
   });
 
+  it("reports an unavailable exercise endpoint while continuing with sleep and daily sync", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "active-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockRejectedValue(new PolarNotFoundError("missing"));
+    mocks.getSleep.mockResolvedValue([]);
+    mocks.getDailyActivity.mockResolvedValue([]);
+    mocks.getNightlyRecharge.mockResolvedValue([]);
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result.errors[0]?.message).toBe(
+      "Polar exercises endpoint returned 404 — try re-authenticating with Polar",
+    );
+    expect(mocks.deleteTokens).not.toHaveBeenCalled();
+    expect(mocks.getSleep).toHaveBeenCalledOnce();
+    expect(mocks.getDailyActivity).toHaveBeenCalledOnce();
+  });
+
   it("reports a missing sleep endpoint while continuing with daily sync", async () => {
     mocks.loadTokens.mockResolvedValue({
       accessToken: "active-token",
@@ -464,6 +493,32 @@ describe("PolarSyncService", () => {
       "Polar daily activity endpoint returned 404 — try re-authenticating with Polar",
     );
     expect(mocks.deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it("invalidates credentials when Polar rejects the daily activity endpoint", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "active-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockResolvedValue([]);
+    mocks.getSleep.mockResolvedValue([]);
+    mocks.getDailyActivity.mockRejectedValue(new PolarUnauthorizedError("Unauthorized"));
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result.errors[0]?.message).toBe(
+      "Polar authorization failed while syncing daily activity.",
+    );
+    expect(mocks.deleteTokens).toHaveBeenCalledOnce();
   });
 
   it("surfaces a failed credential cleanup after an authorization failure", async () => {
