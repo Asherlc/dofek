@@ -87,6 +87,27 @@ describe("LifeEventsPanel", () => {
     mocks.listUseQuery.mockReturnValue({ data: [event], error: null, isLoading: false });
   });
 
+  it("shows a loading state while the first life-events list is loading", () => {
+    mocks.listUseQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: true,
+    });
+
+    render(<LifeEventsPanel />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeDefined();
+    expect(screen.queryByText("No life events yet.")).toBeNull();
+  });
+
+  it("shows the empty state after a successful list response with no life events", () => {
+    mocks.listUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+
+    render(<LifeEventsPanel />);
+
+    expect(screen.getByText("No life events yet.")).toBeDefined();
+  });
+
   it("renders an initial list failure instead of the empty state", () => {
     const refetch = vi.fn();
     mocks.listUseQuery.mockReturnValue({
