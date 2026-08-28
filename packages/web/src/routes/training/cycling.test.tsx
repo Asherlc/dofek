@@ -18,6 +18,7 @@ const state = vi.hoisted<{
   }>;
   capturedAerobicEfficiencyActivities: unknown[] | null;
   performanceHasData: boolean;
+  timeToExhaustionAvailable: boolean;
   performanceError: Error | null;
   activityAnalyticsHasData: boolean;
   activityAnalyticsError: Error | null;
@@ -31,6 +32,7 @@ const state = vi.hoisted<{
   efficiencyActivities: [],
   capturedAerobicEfficiencyActivities: null,
   performanceHasData: true,
+  timeToExhaustionAvailable: true,
   performanceError: null,
   activityAnalyticsHasData: true,
   activityAnalyticsError: null,
@@ -183,7 +185,7 @@ vi.mock("../../lib/trpc.ts", () => ({
             ],
             maximalAerobicPower: watts,
             vo2Max,
-            timeToExhaustionSeconds: 200,
+            timeToExhaustionSeconds: state.timeToExhaustionAvailable ? 200 : null,
           });
           return {
             ...recordQuery("cycling.performance")(input),
@@ -329,6 +331,7 @@ describe("CyclingTab", () => {
     state.efficiencyActivities = [];
     state.capturedAerobicEfficiencyActivities = null;
     state.performanceHasData = true;
+    state.timeToExhaustionAvailable = true;
     state.performanceError = null;
     state.activityAnalyticsHasData = true;
     state.activityAnalyticsError = null;
@@ -354,6 +357,14 @@ describe("CyclingTab", () => {
     expect(screen.getAllByText("Indirect estimate")).toHaveLength(2);
     expect(screen.getAllByText(/Threshold Intervals/)).toHaveLength(3);
     expect(screen.getByText(/Do not use this estimate to set pacing/)).toBeTruthy();
+  });
+
+  it("renders unavailable time-to-exhaustion values from the server", async () => {
+    state.timeToExhaustionAvailable = false;
+    await renderCyclingTab();
+
+    const row = screen.getByText("Time to Exhaustion").parentElement;
+    expect(row?.textContent).toContain("--");
   });
 
   it("keeps cached performance data visible during a background query failure", async () => {
