@@ -94,9 +94,9 @@ const mockStreamPoints: Array<{
   lng: number | null;
   heartRate: number | null;
   power: number | null;
-  speed: number;
+  speed: number | null;
   cadence: number | null;
-  altitude: number;
+  altitude: number | null;
 }> = [
   {
     recordedAt: "2026-03-18T07:00:00Z",
@@ -673,6 +673,33 @@ describe("ActivityDetailPage", () => {
 
     metricEvents.updateAxisPointer({ axesInfo: [{ value: 0 }] });
     await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3));
+  });
+
+  it("hides sensor sections when no sensor measurements are available", async () => {
+    mockStreamUseQuery.mockReturnValue({
+      data: [
+        {
+          recordedAt: "2026-03-18T07:00:00Z",
+          lat: null,
+          lng: null,
+          heartRate: null,
+          power: null,
+          speed: null,
+          cadence: null,
+          altitude: null,
+        },
+      ],
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.queryByText("Route Map")).toBeNull();
+    expect(screen.queryByText("Performance")).toBeNull();
+    expect(screen.queryByText("Elevation Profile")).toBeNull();
+    expect(screen.queryByText("Heart Rate Zones")).toBeNull();
   });
 
   it("applies only boolean legend selections to the metrics chart", async () => {
