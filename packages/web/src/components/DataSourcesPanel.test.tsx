@@ -1332,4 +1332,79 @@ describe("DataSourcesPanel", () => {
       });
     });
   });
+
+  it("deduplicates repeated OAuth completion messages", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "syncable",
+          name: "Syncable",
+          authorized: true,
+          authType: "none",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+    const message = new MessageEvent("message", {
+      origin: window.location.origin,
+      data: { type: "oauth-complete", providerId: "syncable" },
+    });
+    window.dispatchEvent(message);
+    window.dispatchEvent(message);
+
+    await waitFor(() => expect(mockSyncMutateAsync).toHaveBeenCalledTimes(1));
+    expect(mockProvidersInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("ignores OAuth completion messages from another origin", () => {
+    render(<DataSourcesPanel />);
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "https://untrusted.example",
+        data: { type: "oauth-complete", providerId: "garmin" },
+      }),
+    );
+
+    expect(mockProvidersInvalidate).not.toHaveBeenCalled();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("does not start a bulk sync when no provider is connected", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "oauth-one",
+          name: "OAuth one",
+          authorized: false,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "oauth-two",
+          name: "OAuth two",
+          authorized: false,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Sync all providers for the last 7 days" }));
+
+    await Promise.resolve();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+  });
 });
