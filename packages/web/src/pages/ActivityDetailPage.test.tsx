@@ -1010,6 +1010,22 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("ActivityHeader unit display", () => {
+    it("formats multi-hour activity durations", async () => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{
+            ...mockActivity,
+            startedAt: "2026-03-18T07:00:00Z",
+            endedAt: "2026-03-18T09:05:00Z",
+          }}
+          units={new UnitConverter("metric")}
+        />,
+      );
+
+      expect(screen.getByText("2h 5m")).toBeDefined();
+    });
+
     it("shows metric distance and elevation", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />, "metric");
