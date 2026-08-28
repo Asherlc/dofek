@@ -103,6 +103,26 @@ describe("JournalPanel", () => {
     expect(refetch).toHaveBeenCalledOnce();
   });
 
+  it("shows a loading state while journal entries have not arrived", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: true,
+    });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByTestId("query-state-loading")).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("shows an empty state when the journal has no entries", () => {
+    mocks.entriesQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("No journal entries yet.")).toBeDefined();
+  });
+
   it("retains cached entries during a background refresh failure", () => {
     mocks.entriesQuery.mockReturnValue({
       data: [entry],
@@ -198,6 +218,12 @@ describe("JournalPanel", () => {
     expect(
       screen.getByRole("button", { name: "Hide technical source details for Manual review" }),
     ).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Hide technical source details for Manual review" }),
+    );
+
+    expect(screen.queryByText("Provider ID: manual_review")).toBeNull();
   });
 
   it("paginates journal entries", () => {
