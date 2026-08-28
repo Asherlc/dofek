@@ -466,7 +466,9 @@ describe("canonical activity types Postgres migration", () => {
       .withWaitStrategy(
         Wait.forAll([
           Wait.forListeningPorts(),
-          Wait.forSuccessfulCommand("pg_isready --username=test --dbname=test"),
+          Wait.forSuccessfulCommand(
+            "pg_isready --host=127.0.0.1 --port=5432 --username=test --dbname=test",
+          ),
         ]),
       )
       .start();
