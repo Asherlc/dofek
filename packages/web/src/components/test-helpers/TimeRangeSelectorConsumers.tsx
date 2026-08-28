@@ -14,7 +14,7 @@ const state = vi.hoisted<{
   routeComponents: {},
 }));
 
-vi.mock("@tanstack/react-router", () => ({
+;vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (path: string) => (config: { component: ComponentType }) => {
     state.routeComponents[path] = config.component;
     return {};

@@ -58,7 +58,7 @@ function recordQuery(name: string) {
   };
 }
 
-vi.mock("@tanstack/react-router", () => ({
+;vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (path: string) => (config: { component?: ComponentType }) => {
     if (config.component) state.routeComponents[path] = config.component;
     return {};
