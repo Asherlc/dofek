@@ -4,6 +4,7 @@ import { SyncWindow } from "../sync-window.ts";
 const mocks = vi.hoisted(() => ({
   ensureProvider: vi.fn(),
   loadTokens: vi.fn(),
+  deleteTokens: vi.fn(),
   withSyncLog: vi.fn(),
   getExercises: vi.fn(),
   getSleep: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("../../db/tokens.ts", () => ({
   ensureProvider: mocks.ensureProvider,
   loadTokens: mocks.loadTokens,
   saveTokens: vi.fn(),
-  deleteTokens: vi.fn(),
+  deleteTokens: mocks.deleteTokens,
 }));
 
 vi.mock("../../db/sync-log.ts", () => ({
@@ -39,6 +40,7 @@ vi.mock("./client.ts", () => ({
   PolarUnauthorizedError: class PolarUnauthorizedError extends Error {},
 }));
 
+import { PolarUnauthorizedError } from "./client.ts";
 import { PolarSyncService } from "./sync-service.ts";
 
 const window = new SyncWindow({
@@ -147,5 +149,29 @@ describe("PolarSyncService", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors[0]?.message).toBe("OAuth config required to refresh Polar tokens");
     expect(mocks.getExercises).not.toHaveBeenCalled();
+  });
+
+  it("removes dead credentials and stops the sync after Polar rejects authorization", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "revoked-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockRejectedValue(new PolarUnauthorizedError("Unauthorized"));
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result.errors[0]?.message).toBe("Polar authorization failed while syncing exercises.");
+    expect(mocks.deleteTokens).toHaveBeenCalledOnce();
+    expect(mocks.getSleep).not.toHaveBeenCalled();
+    expect(mocks.getDailyActivity).not.toHaveBeenCalled();
   });
 });
