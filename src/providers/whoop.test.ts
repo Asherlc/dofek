@@ -1585,6 +1585,40 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     expect(result.errors).toContainEqual(expect.objectContaining({ message: expectedMessage }));
   });
 
+  it("labels workout persistence failures", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
+      new Error("reconciliation unavailable"),
+    );
+    const { store } = makeCheckpointStore({
+      runId: "run-persist-workouts-error",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "persist_workouts" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+      developerWorkoutPaginationComplete: true,
+    });
+
+    const result = await runWhoopOrchestratedSync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+      makeSyncMockFetch({ cycles: [] }),
+      Date.now(),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ message: "workouts: reconciliation unavailable" }),
+    );
+  });
+
   it("applies rate-limit checkpoint state when an API step is rate limited", async () => {
     await mockStoredWhoopTokens();
     const initialCheckpoint = {

@@ -420,9 +420,15 @@ describe("CorosProvider", () => {
       expect(result.errors.length).toBeGreaterThan(0);
     });
 
-    it.each([null, "deepSleep", "lightSleep", "remSleep", "awakeDuration"] as const)(
-      "sync uses user-scoped conflict targets and preserves staging completeness (%s absent)",
-      async (missingStage) => {
+    it.each([
+      [null, "steps"],
+      ["deepSleep", "hrv"],
+      ["lightSleep", "spo2Avg"],
+      ["remSleep", "distance"],
+      ["awakeDuration", "steps"],
+    ] as const)(
+      "sync uses user-scoped conflict targets and preserves staging completeness (%s absent; %s daily metric)",
+      async (missingStage, dailyMetric) => {
         process.env.COROS_CLIENT_ID = "id";
         process.env.COROS_CLIENT_SECRET = "secret";
 
@@ -470,12 +476,12 @@ describe("CorosProvider", () => {
               data: [
                 {
                   date: "20260301",
-                  steps: 8000,
-                  distance: 6200,
+                  steps: dailyMetric === "steps" ? 8000 : undefined,
+                  distance: dailyMetric === "distance" ? 6200 : undefined,
                   calories: 2100,
                   restingHr: 52,
-                  hrv: 45,
-                  spo2Avg: 97,
+                  hrv: dailyMetric === "hrv" ? 45 : undefined,
+                  spo2Avg: dailyMetric === "spo2Avg" ? 97 : undefined,
                   sleepDuration: 420,
                   deepSleep: 90,
                   lightSleep: 220,

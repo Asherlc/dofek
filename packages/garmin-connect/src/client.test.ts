@@ -1046,6 +1046,21 @@ describe("GarminConnectClient.signIn", () => {
     ).rejects.toThrow(GarminMfaRequiredError);
   });
 
+  it("includes an OAuth1 MFA token in the OAuth2 exchange", async () => {
+    const fetchFn = buildSignInMock({
+      oauth1Response: {
+        ok: true,
+        status: 200,
+        text: "oauth_token=token123&oauth_token_secret=secret456&mfa_token=mfa789",
+      },
+    });
+
+    await GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn);
+
+    const [, oauth2Options] = expectFetchCall(fetchFn, 5);
+    expect(oauth2Options?.body).toBe("mfa_token=mfa789");
+  });
+
   it("throws GarminAuthError when login fails", async () => {
     const fetchFn = buildSignInMock({
       signinPostHtml: "<title>Login Error</title><body>Bad password</body>",

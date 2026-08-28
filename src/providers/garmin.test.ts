@@ -1894,6 +1894,43 @@ describe("GarminProvider.sync()", () => {
     );
   });
 
+  it.each([
+    ["activity lists", { type: "activities_list", offset: 0 }, "Activity list"],
+    [
+      "later activity-list pages",
+      { type: "activities_list", offset: 50 },
+      "Activity list (offset 50)",
+    ],
+    [
+      "activity details",
+      { type: "activity_detail", activityId: 123, activityModality: "running" },
+      "Activity detail 123",
+    ],
+    ["activity reconciliation", { type: "activity_reconcile" }, "Activity reconciliation"],
+    ["sleep", { type: "sleep", date: "2026-04-27" }, "Sleep 2026-04-27"],
+    ["daily summaries", { type: "daily_summary", date: "2026-04-27" }, "Daily summary 2026-04-27"],
+    ["HRV summaries", { type: "hrv_summary", date: "2026-04-27" }, "HRV 2026-04-27"],
+    ["stress", { type: "stress", date: "2026-04-27" }, "Stress 2026-04-27"],
+    ["heart-rate streams", { type: "heart_rate", date: "2026-04-27" }, "Heart rate 2026-04-27"],
+  ] satisfies ReadonlyArray<[string, GarminSyncStep, string]>)(
+    "reports the %s step in sync progress",
+    async (_name, step, description) => {
+      const onProgress = vi.fn();
+      const checkpointStore = {
+        load: vi.fn().mockResolvedValue(createGarminSyncCheckpoint([step])),
+        save: vi.fn().mockResolvedValue(undefined),
+        clear: vi.fn().mockResolvedValue(undefined),
+      };
+
+      await syncProvider(provider, db, new Date("2026-04-27T00:00:00Z"), {
+        checkpoint: checkpointStore,
+        onProgress,
+      });
+
+      expect(onProgress).toHaveBeenCalledWith(0, description);
+    },
+  );
+
   it("enqueues a continuation after completing the activities list step", async () => {
     const checkpointStore = {
       load: vi.fn().mockResolvedValue(null),
