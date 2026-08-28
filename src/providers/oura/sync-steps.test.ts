@@ -274,4 +274,35 @@ describe("Oura optional sync steps", () => {
       endDate: new Date("2026-06-04T17:00:00Z"),
     });
   });
+
+  it("persists available cardiovascular ages and skips unavailable values", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((value: Record<string, unknown>) => {
+          inserted.push(value);
+          return { onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const client = new OuraClient("token", vi.fn());
+    vi.spyOn(client, "getDailyCardiovascularAge").mockResolvedValue({
+      data: [
+        { day: "2026-06-01", vascular_age: null },
+        { day: "2026-06-02", vascular_age: 31.5 },
+      ],
+      next_token: null,
+    });
+    const syncContext = context(client);
+    syncContext.db = db;
+
+    expect(await syncCardiovascularAge(syncContext)).toBe(1);
+    expect(inserted).toEqual([
+      expect.objectContaining({
+        externalId: "oura_cv_age:2026-06-02",
+        value: 31.5,
+        startDate: new Date("2026-06-02T00:00:00"),
+      }),
+    ]);
+  });
 });
