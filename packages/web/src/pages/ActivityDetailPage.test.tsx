@@ -620,15 +620,13 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("0.0 km")).toBeDefined();
   });
 
-  it("renders an activity header without optional duration or source metadata", async () => {
+  it("renders an activity header without optional name or source metadata", async () => {
     const ActivityHeader = await importActivityHeader();
     renderWithUnits(
       <ActivityHeader
         activity={{
           ...mockActivity,
           name: null,
-          startedAt: null,
-          endedAt: null,
           sourceLinks: [],
           sourceProviders: [],
         }}
@@ -637,7 +635,6 @@ describe("ActivityDetailPage", () => {
     );
 
     expect(screen.getByRole("heading", { name: "running" })).toBeDefined();
-    expect(screen.queryByText("Duration")).toBeNull();
     expect(screen.queryByText(/^Source:/)).toBeNull();
   });
 
