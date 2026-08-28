@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { WhoopClient } from "@dofek/whoop/client";
 import type { WhoopWeightliftingWorkoutResponse, WhoopWorkoutRecord } from "@dofek/whoop/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,7 +8,9 @@ import type { WhoopSyncContext } from "./sync-types.ts";
 import {
   fetchWhoopDeveloperWorkoutsPage,
   persistWhoopWorkoutsFromCycles,
+  syncWhoopStrength,
   syncWhoopStrengthForActivity,
+  syncWhoopWorkouts,
 } from "./sync-workouts.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
@@ -19,6 +22,17 @@ const exerciseProvenanceMocks = vi.hoisted(() => ({
   resolveUserExerciseWithProvenance: vi.fn().mockResolvedValue("exercise-1"),
 }));
 
+const syncLogMocks = vi.hoisted(() => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      callback: () => Promise<{ result: number }>,
+    ) => (await callback()).result,
+  ),
+}));
+
 vi.mock("../../db/provider-activity-sync.ts", () => ({
   finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
   upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
@@ -27,6 +41,8 @@ vi.mock("../../db/provider-activity-sync.ts", () => ({
 vi.mock("../../db/exercise-provenance.ts", () => ({
   resolveUserExerciseWithProvenance: exerciseProvenanceMocks.resolveUserExerciseWithProvenance,
 }));
+
+vi.mock("../../db/sync-log.ts", () => ({ withSyncLog: syncLogMocks.withSyncLog }));
 
 function makeDb(selectedRows: unknown[] = []) {
   const chain = {
@@ -166,6 +182,7 @@ beforeEach(() => {
   providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue(undefined);
   exerciseProvenanceMocks.resolveUserExerciseWithProvenance.mockClear();
   exerciseProvenanceMocks.resolveUserExerciseWithProvenance.mockResolvedValue("exercise-1");
+  syncLogMocks.withSyncLog.mockClear();
 });
 
 describe("WHOOP workout sync helpers", () => {
@@ -269,18 +286,23 @@ describe("WHOOP workout sync helpers", () => {
         localTimeSource: "unknown",
       },
     ],
-  ])("persists WHOOP local-time context from timezone offset %s", async (timezoneOffset, expected) => {
-    const context = makeContext({
-      cycles: [{ workouts: [makeWorkoutRecord({ timezone_offset: timezoneOffset })] }],
-    });
+  ])(
+    "persists WHOOP local-time context from timezone offset %s",
+    async (timezoneOffset, expected) => {
+      const context = makeContext({
+        cycles: [{ workouts: [makeWorkoutRecord({ timezone_offset: timezoneOffset })] }],
+      });
 
-    await expect(persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]))).resolves.toBe(1);
-    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
-      context.db,
-      expect.objectContaining(expected),
-      expect.objectContaining(expected),
-    );
-  });
+      await expect(persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]))).resolves.toBe(
+        1,
+      );
+      expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+        context.db,
+        expect.objectContaining(expected),
+        expect.objectContaining(expected),
+      );
+    },
+  );
 
   it("records parse failures while persisting provider activities", async () => {
     const context = makeContext({
@@ -290,6 +312,124 @@ describe("WHOOP workout sync helpers", () => {
     await expect(persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]))).resolves.toBe(0);
     expect(context.errors[0]?.externalId).toBe("workout-1");
     expect(context.errors[0]?.message).toContain("invalid-range");
+  });
+
+  it("reconciles the developer workout window after persisting workouts", async () => {
+    const client = makeClient();
+    const presentExternalIds = new Set(["workout-1"]);
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(presentExternalIds);
+    const context = makeContext({
+      client,
+      cycles: [{ workouts: [makeWorkoutRecord()] }],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      context.db,
+      expect.objectContaining({ providerId: "whoop", presentExternalIds }),
+    );
+  });
+
+  it("records developer reconciliation failures while preserving workout persistence", async () => {
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockRejectedValue(
+      new Error("Developer workouts unavailable"),
+    );
+    const context = makeContext({
+      client,
+      cycles: [{ workouts: [makeWorkoutRecord()] }],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+    expect(context.errors).toEqual([
+      expect.objectContaining({ message: "developer workouts: Developer workouts unavailable" }),
+    ]);
+  });
+
+  it("persists strength workouts and reuses resolved exercises across the batch", async () => {
+    const db = makeDb([{ id: "exercise-1" }]);
+    const client = makeClient();
+    vi.spyOn(client, "getWeightliftingWorkout").mockResolvedValue(makeWeightliftingData());
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-1" });
+    const context = makeContext({
+      db: db.db,
+      client,
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "workout-1" }),
+            makeWorkoutRecord({ activity_id: "workout-2" }),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 2, rateLimited: false });
+    expect(exerciseProvenanceMocks.resolveUserExerciseWithProvenance).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledTimes(2);
+    expect(db.delete).toHaveBeenCalledTimes(2);
+    expect(db.chain.values).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityId: "activity-1",
+          exerciseId: "exercise-1",
+          weightKg: 60,
+        }),
+      ]),
+    );
+  });
+
+  it("skips unavailable strength detail without abandoning other workouts", async () => {
+    const client = makeClient();
+    vi.spyOn(client, "getWeightliftingWorkout")
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeWeightliftingData());
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-1" });
+    const context = makeContext({
+      client,
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "workout-without-detail" }),
+            makeWorkoutRecord({ activity_id: "workout-with-detail" }),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 1, rateLimited: false });
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledOnce();
+    expect(context.errors).toEqual([]);
+  });
+
+  it("marks an outer WHOOP rate-limit failure as retryable", async () => {
+    const error = new ProviderRateLimitError({
+      message: "WHOOP rate limit exceeded",
+      providerId: "whoop",
+      statusCode: 429,
+      responseBody: "",
+    });
+    syncLogMocks.withSyncLog.mockRejectedValueOnce(error);
+    const context = makeContext();
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 0, rateLimited: true });
+    expect(context.errors).toEqual([
+      expect.objectContaining({ message: "strength: WHOOP rate limit exceeded", cause: error }),
+    ]);
+  });
+
+  it("reports non-rate-limit outer strength failures without marking them retryable", async () => {
+    const error = new Error("sync log unavailable");
+    syncLogMocks.withSyncLog.mockRejectedValueOnce(error);
+    const context = makeContext();
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({ count: 0, rateLimited: false });
+    expect(context.errors).toEqual([
+      expect.objectContaining({ message: "strength: sync log unavailable", cause: error }),
+    ]);
   });
 
   it("syncWhoopStrengthForActivity returns 0 when the workout is missing from cycles", async () => {

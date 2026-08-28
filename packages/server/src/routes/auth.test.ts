@@ -2951,59 +2951,60 @@ describe("createAuthRouter", () => {
         error: new AccountErasureUserFencedError(),
         fence: "user",
       },
-    ])("revokes and consumes a pending authorization rejected by the $fence erasure fence", async ({
-      error,
-    }) => {
-      vi.mocked(getAllProviders).mockReturnValue([
-        {
-          id: "strava",
-          name: "Strava",
-          authSetup: () => ({
-            oauthConfig: {
-              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
-              clientId: "test",
-              redirectUri: "https://dofek.asherlc.com/callback",
-              revokeUrl: "https://www.strava.com/oauth/deauthorize",
-              scopes: ["read"],
-            },
-            exchangeCode: vi.fn(),
+    ])(
+      "revokes and consumes a pending authorization rejected by the $fence erasure fence",
+      async ({ error }) => {
+        vi.mocked(getAllProviders).mockReturnValue([
+          {
+            id: "strava",
+            name: "Strava",
+            authSetup: () => ({
+              oauthConfig: {
+                authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+                clientId: "test",
+                redirectUri: "https://dofek.asherlc.com/callback",
+                revokeUrl: "https://www.strava.com/oauth/deauthorize",
+                scopes: ["read"],
+              },
+              exchangeCode: vi.fn(),
+            }),
+          },
+        ]);
+        vi.mocked(withAccountErasureUserAndIdentityWriteFence).mockRejectedValueOnce(error);
+        const { app } = createTestApp();
+        const pendingStore = getPendingEmailSignupStoreRef();
+        const token = await pendingStore.issue(makePendingEmailSignupEntry());
+        const releaseSpy = vi.spyOn(pendingStore, "release");
+        const completeSpy = vi.spyOn(pendingStore, "complete");
+
+        const firstResponse = await request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "runner@example.com" },
+        });
+        const responseAfterLoss = await request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "runner@example.com" },
+        });
+
+        expect(firstResponse.status).toBe(409);
+        expect(responseAfterLoss.status).toBe(400);
+        expect(revokeToken).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({
+            revokeUrl: "https://www.strava.com/oauth/deauthorize",
           }),
-        },
-      ]);
-      vi.mocked(withAccountErasureUserAndIdentityWriteFence).mockRejectedValueOnce(error);
-      const { app } = createTestApp();
-      const pendingStore = getPendingEmailSignupStoreRef();
-      const token = await pendingStore.issue(makePendingEmailSignupEntry());
-      const releaseSpy = vi.spyOn(pendingStore, "release");
-      const completeSpy = vi.spyOn(pendingStore, "complete");
-
-      const firstResponse = await request(app, "post", "/auth/complete-signup", {
-        formBody: { token, email: "runner@example.com" },
-      });
-      const responseAfterLoss = await request(app, "post", "/auth/complete-signup", {
-        formBody: { token, email: "runner@example.com" },
-      });
-
-      expect(firstResponse.status).toBe(409);
-      expect(responseAfterLoss.status).toBe(400);
-      expect(revokeToken).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({
-          revokeUrl: "https://www.strava.com/oauth/deauthorize",
-        }),
-        "pending-access-token",
-      );
-      expect(revokeToken).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({
-          revokeUrl: "https://www.strava.com/oauth/deauthorize",
-        }),
-        "pending-refresh-token",
-      );
-      expect(completeSpy).toHaveBeenCalledOnce();
-      expect(releaseSpy).not.toHaveBeenCalled();
-      await expect(pendingStore.get(token)).resolves.toBeNull();
-    });
+          "pending-access-token",
+        );
+        expect(revokeToken).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            revokeUrl: "https://www.strava.com/oauth/deauthorize",
+          }),
+          "pending-refresh-token",
+        );
+        expect(completeSpy).toHaveBeenCalledOnce();
+        expect(releaseSpy).not.toHaveBeenCalled();
+        await expect(pendingStore.get(token)).resolves.toBeNull();
+      },
+    );
 
     it("retains the claimed pending authorization when fenced cleanup cannot be completed", async () => {
       vi.mocked(getAllProviders).mockReturnValue([

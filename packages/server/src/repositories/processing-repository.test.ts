@@ -1727,16 +1727,18 @@ describe("ProcessingRepository", () => {
     expect(compiledQuery.params).toEqual(expect.arrayContaining([userId, operationId, userId]));
   });
 
-  it.each([
-    "10000000-0000-4000-8000-000000000091",
-    "10000000-0000-4000-8000-000000000092",
-  ])("rejects dismissing an unknown or foreign operation (%s)", async (targetOperationId) => {
-    mockExecuteWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
-    const repository = new ProcessingRepository(database, userId);
+  it.each(["10000000-0000-4000-8000-000000000091", "10000000-0000-4000-8000-000000000092"])(
+    "rejects dismissing an unknown or foreign operation (%s)",
+    async (targetOperationId) => {
+      mockExecuteWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      const repository = new ProcessingRepository(database, userId);
 
-    await expect(repository.dismiss(targetOperationId)).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "NOT_FOUND",
-      message: "Processing operation not found",
-    });
-  });
+      await expect(repository.dismiss(targetOperationId)).rejects.toMatchObject<Partial<TRPCError>>(
+        {
+          code: "NOT_FOUND",
+          message: "Processing operation not found",
+        },
+      );
+    },
+  );
 });

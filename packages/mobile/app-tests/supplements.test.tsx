@@ -10,7 +10,7 @@ interface QueryState {
 }
 
 const mocks = vi.hoisted<{
-  captureException: ReturnType<typeof vi.fn>;
+  captureException: CallableVitestMock;
   query: QueryState;
 }>(() => ({
   captureException: vi.fn(),

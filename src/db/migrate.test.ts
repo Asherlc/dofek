@@ -40,7 +40,9 @@ const postgresMocks = vi.hoisted(() => {
   return {
     client,
     connect,
-    constructor: vi.fn(() => client),
+    constructor: vi.fn(function vitestConstructor() {
+      return client;
+    }),
     end,
     query,
   };

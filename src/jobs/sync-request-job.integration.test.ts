@@ -2,12 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { registerSyncRequestQueryResolver } from "../lib/sync-request-query.ts";
-import { resolveWhoopSyncRequestQuery } from "../providers/whoop/sync-request-query.ts";
 import type { SyncJobData } from "./queues.ts";
 import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
-
-registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
 
 function testRedisConnection(): ConnectionOptions {
   const redisUrl = process.env.REDIS_URL;
@@ -119,10 +115,22 @@ describe("full sync BullMQ lifecycle deduplication", () => {
   });
 
   it("keeps checkpoint continuations distinct from the pending initial operation", async () => {
+    vi.resetModules();
+    const [
+      { registerSyncRequestQueryResolver },
+      { resolveWhoopSyncRequestQuery },
+      { enqueueSyncJobWithRequestDedup: enqueueWithFreshResolverRegistry },
+    ] = await Promise.all([
+      import("../lib/sync-request-query.ts"),
+      import("../providers/whoop/sync-request-query.ts"),
+      import("./sync-request-job.ts"),
+    ]);
+    registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
+
     const { queue } = createQueue("checkpoint");
     const initial = await enqueueFull(queue, "2026-07-29T17:00:00.000Z", "whoop");
 
-    const continuation = await enqueueSyncJobWithRequestDedup(
+    const continuation = await enqueueWithFreshResolverRegistry(
       "whoop",
       {
         userId: "user-1",
