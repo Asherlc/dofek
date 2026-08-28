@@ -109,31 +109,67 @@ vi.mock("../lib/telemetry.ts", () => ({
 }));
 
 vi.mock("./DataSourcesAuthModals.tsx", () => ({
-  CredentialAuthModal: ({ providerName }: { providerName: string }) => (
-    <div>{providerName} credentials</div>
+  CredentialAuthModal: ({
+    onClose,
+    onSuccess,
+    providerName,
+  }: {
+    onClose: () => void;
+    onSuccess: () => void;
+    providerName: string;
+  }) => (
+    <div>
+      {providerName} credentials
+      <button type="button" onClick={onClose}>
+        Close credentials
+      </button>
+      <button type="button" onClick={onSuccess}>
+        Save credentials
+      </button>
+    </div>
   ),
   TokenAuthModal: ({
+    onClose,
+    onSuccess,
     providerName,
     tokenLabel,
     instructionsUrl,
   }: {
+    onClose: () => void;
+    onSuccess: () => void;
     providerName: string;
     tokenLabel: string;
     instructionsUrl: string;
   }) => (
     <div>
       {providerName} {tokenLabel} {instructionsUrl}
+      <button type="button" onClick={onClose}>
+        Close token
+      </button>
+      <button type="button" onClick={onSuccess}>
+        Save token
+      </button>
     </div>
   ),
-  GarminAuthModal: ({ onClose }: { onClose: () => void }) => (
-    <button type="button" onClick={onClose}>
-      Garmin auth
-    </button>
+  GarminAuthModal: ({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) => (
+    <>
+      <button type="button" onClick={onClose}>
+        Garmin auth
+      </button>
+      <button type="button" onClick={onSuccess}>
+        Save Garmin auth
+      </button>
+    </>
   ),
-  WhoopAuthModal: ({ onClose }: { onClose: () => void }) => (
-    <button type="button" onClick={onClose}>
-      WHOOP auth
-    </button>
+  WhoopAuthModal: ({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) => (
+    <>
+      <button type="button" onClick={onClose}>
+        WHOOP auth
+      </button>
+      <button type="button" onClick={onSuccess}>
+        Save WHOOP auth
+      </button>
+    </>
   ),
 }));
 
@@ -781,6 +817,33 @@ describe("DataSourcesPanel", () => {
     expect(
       screen.getByText("Active syncs are temporarily unavailable. Please try again."),
     ).toBeTruthy();
+  });
+
+  it("reflects completed and failed active provider jobs before polling resumes", async () => {
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "sync-active",
+          status: "queued",
+          providers: {
+            garmin: { status: "done", message: "Garmin is up to date" },
+            wahoo: { status: "error", message: "Wahoo authorization expired" },
+          },
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Garmin is up to date")).toBeTruthy();
+      expect(screen.getByText("Wahoo authorization expired")).toBeTruthy();
+    });
+    expect(mockPollSyncJob).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: "sync-active", providerIds: ["garmin", "wahoo"] }),
+    );
   });
 
   it("cancels active sync polling when the panel unmounts", async () => {
