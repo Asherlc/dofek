@@ -1665,6 +1665,8 @@ describe("ActivityDetailPage", () => {
             wallAngleDegrees: 35,
           },
         ],
+        error: null,
+        isError: false,
         isLoading: false,
       });
 
