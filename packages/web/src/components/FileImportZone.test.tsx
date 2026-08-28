@@ -428,16 +428,24 @@ describe("FileImportZone", () => {
         showDetailsLink={false}
         recentLogs={[
           {
+            id: "sync-success",
             status: "success",
             syncedAt: "2026-01-01T00:00:00.000Z",
             recordCount: 1,
             durationMs: 10,
+            dataType: "activity",
+            errorMessage: null,
+            authFailureReason: null,
           },
           {
+            id: "sync-error",
             status: "error",
             syncedAt: "2026-01-02T00:00:00.000Z",
             recordCount: 0,
             durationMs: 10,
+            dataType: "activity",
+            errorMessage: "Provider unavailable",
+            authFailureReason: null,
           },
         ]}
       />,

@@ -13,11 +13,21 @@ type ChartProps = {
   };
 };
 
-const mockChart = vi.hoisted(() => vi.fn<(props: ChartProps) => void>());
+const mockChart = vi.hoisted(() => vi.fn());
+
+function isChartProps(value: unknown): value is ChartProps {
+  if (!value || typeof value !== "object" || !("empty" in value) || !("option" in value)) {
+    return false;
+  }
+  if (typeof value.empty !== "boolean" || !value.option || typeof value.option !== "object") {
+    return false;
+  }
+  return "series" in value.option && "tooltip" in value.option && "yAxis" in value.option;
+}
 
 function capturedChartProps(): ChartProps {
   const props = mockChart.mock.calls[0]?.[0];
-  if (!props) throw new Error("Expected the chart to render.");
+  if (!isChartProps(props)) throw new Error("Expected the chart to render.");
   return props;
 }
 
