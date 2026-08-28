@@ -1497,4 +1497,105 @@ describe("ActivityDetailPage", () => {
       mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
     });
   });
+
+  describe("retained activity details", () => {
+    it("keeps recorded strength details visible with a refresh error", async () => {
+      const exercises: StrengthExerciseDetail[] = [
+        {
+          exerciseIndex: 0,
+          exerciseName: "Weighted pull-up",
+          equipment: null,
+          muscleGroups: ["back"],
+          exerciseType: "strength",
+          sets: [
+            {
+              setIndex: 0,
+              setType: "working",
+              weightKg: 20,
+              reps: 6,
+              durationSeconds: null,
+              rpe: null,
+              notes: null,
+            },
+          ],
+        },
+      ];
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, activityType: "strength" },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockStrengthExercisesUseQuery.mockReturnValue({
+        data: exercises,
+        error: new Error("Strength refresh failed"),
+        isError: true,
+        isLoading: false,
+      });
+      const ActivityDetailPage = await importPage();
+
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Weighted pull-up")).toBeTruthy();
+      expect(screen.getByText("Strength refresh failed")).toBeTruthy();
+    });
+
+    it("keeps cached heart-rate and power zones visible with refresh errors", async () => {
+      const cyclingPoints = mockStreamPoints.map((point) => ({ ...point, power: 210 }));
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, activityType: "cycling", avgPower: 210, maxPower: 260 },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockStreamUseQuery.mockReturnValue({
+        data: cyclingPoints,
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [{ zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 240, percent: 100 }],
+        error: new Error("Heart-rate zones refresh failed"),
+        isError: true,
+        isLoading: false,
+      });
+      mockPowerZonesUseQuery.mockReturnValue({
+        data: {
+          ftp: 250,
+          zones: [
+            { zone: 1, label: "Endurance", minPct: 56, maxPct: 75, seconds: 240, percent: 100 },
+          ],
+        },
+        error: new Error("Power zones refresh failed"),
+        isError: true,
+        isLoading: false,
+      });
+      const ActivityDetailPage = await importPage();
+
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Heart Rate Zones")).toBeTruthy();
+      expect(screen.getByText("Power Zones")).toBeTruthy();
+      expect(screen.getByText("Heart-rate zones refresh failed")).toBeTruthy();
+      expect(screen.getByText("Power zones refresh failed")).toBeTruthy();
+    });
+
+    it("does not render sensor sections when every optional sensor is absent", async () => {
+      mockStreamUseQuery.mockReturnValue({
+        data: [],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      const ActivityDetailPage = await importPage();
+
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.queryByText("Route Map")).toBeNull();
+      expect(screen.queryByText("Performance")).toBeNull();
+      expect(screen.queryByText("Elevation Profile")).toBeNull();
+      expect(screen.queryByText("Heart Rate Zones")).toBeNull();
+    });
+  });
 });

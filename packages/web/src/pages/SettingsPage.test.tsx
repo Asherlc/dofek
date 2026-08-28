@@ -385,4 +385,74 @@ describe("SettingsPage categories", () => {
     expect(resolvedContainer?.className).toContain("sm:min-h-32");
     expect(resolvedContainer?.className).toContain("lg:min-h-28");
   });
+
+  it("explains a limited access window and offers checkout", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: {
+          kind: "limited",
+          reason: "signup_window",
+          startDate: "2026-08-01",
+          endDateExclusive: "2026-08-08",
+        },
+        canManageBilling: false,
+        hasFullAccess: false,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText(/Your access is limited to your signup week/)).toBeTruthy();
+    expect(
+      screen.getByText(/New data is available only for this first 7 calendar days/),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Subscribe to Full Access" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Manage Billing" })).toBeNull();
+  });
+
+  it("shows Stripe status and billing controls for a paid subscription", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: { kind: "full", reason: "stripe_subscription" },
+        stripeSubscriptionStatus: "past_due",
+        canManageBilling: true,
+        hasFullAccess: true,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("Stripe subscription status: past_due")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Manage Billing" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Subscribe to Full Access" })).toBeNull();
+  });
+
+  it("preserves server billing errors and an absent billing response", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Billing status is unavailable"),
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+    const { rerender } = render(<SettingsPage />);
+
+    expect(screen.getByText("Billing status is unavailable")).toBeTruthy();
+
+    mockBillingStatusQuery.mockReturnValue({ data: undefined, error: null, isLoading: false });
+    rerender(<SettingsPage />);
+
+    expect(screen.queryByText("Billing status is unavailable")).toBeNull();
+    expect(screen.getByRole("region", { name: "Billing" }).textContent).not.toContain(
+      "subscription",
+    );
+  });
 });
