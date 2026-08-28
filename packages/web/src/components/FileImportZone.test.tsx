@@ -143,6 +143,33 @@ describe("FileImportZone", () => {
     expect(mocks.invalidateRecords).toHaveBeenCalledOnce();
   });
 
+  it("reports an unexpected upload failure with the actionable fallback message", async () => {
+    mocks.runUpload.mockRejectedValue("connection reset");
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+      />,
+    );
+
+    const input = screen
+      .getByRole("region", { name: "Garmin file drop zone" })
+      .querySelector("input");
+    if (!input) throw new Error("Expected the file input");
+    fireEvent.change(input, {
+      target: { files: [new File(["zip-data"], "garmin.zip", { type: "application/zip" })] },
+    });
+
+    await waitFor(() => expect(screen.getByText("Upload failed")).toBeTruthy());
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      "connection reset",
+      expect.objectContaining({ tags: { uploadId: "pending" } }),
+    );
+  });
+
   it("keeps an upload active across mutation-result rerenders", async () => {
     mocks.freshMutationResults = true;
     let uploadSignal: AbortSignal | undefined;
