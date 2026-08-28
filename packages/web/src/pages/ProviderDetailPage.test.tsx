@@ -795,6 +795,115 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(pollSyncJob).not.toHaveBeenCalled();
   });
 
+  it("shows a provider-declared sync failure without starting job polling", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "failed",
+          message: "Wahoo authorization expired before sync could start.",
+        },
+      ],
+    });
+    const { pollSyncJob } = await import("../lib/poll-sync-job.ts");
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(screen.getByText("Wahoo authorization expired before sync could start.")).toBeTruthy();
+    expect(pollSyncJob).not.toHaveBeenCalled();
+  });
+
+  it("polls an already queued provider job through completion", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [{ providerId: "wahoo", status: "alreadyQueued", jobId: "queued-job" }],
+    });
+    mockPollSyncJob.mockImplementationOnce(
+      async ({
+        updateState,
+        onComplete,
+      }: {
+        updateState: (
+          jobId: string,
+          state: { percentage: number; message?: string; status: string },
+        ) => void;
+        onComplete: () => void;
+      }) => {
+        updateState("queued-job", { percentage: 100, status: "done" });
+        onComplete();
+      },
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockPollSyncJob).toHaveBeenCalledOnce();
+    expect(screen.getByText("Sync complete")).toBeTruthy();
+  });
+
+  it("starts a full provider sync without a lookback range", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Full sync is already current.",
+        },
+      ],
+    });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Full Sync" }));
+    });
+
+    expect(mockSyncMutation.mutateAsync).toHaveBeenCalledWith({ providerId: "wahoo" });
+    expect(screen.getByText("Full sync is already current.")).toBeTruthy();
+  });
+
   it("invalidates processing status when a manual sync completes", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
