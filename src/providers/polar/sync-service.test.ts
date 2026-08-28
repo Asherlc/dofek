@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getDailyActivity: vi.fn(),
   getNightlyRecharge: vi.fn(),
   polarOAuthConfig: vi.fn(),
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
 }));
 
 vi.mock("../../db/tokens.ts", () => ({
@@ -22,6 +24,11 @@ vi.mock("../../db/tokens.ts", () => ({
 
 vi.mock("../../db/sync-log.ts", () => ({
   withSyncLog: mocks.withSyncLog,
+}));
+
+vi.mock("../../db/provider-activity-sync.ts", () => ({
+  finishProviderActivityListSync: mocks.finishProviderActivityListSync,
+  upsertProviderActivity: mocks.upsertProviderActivity,
 }));
 
 vi.mock("./oauth.ts", () => ({
@@ -48,8 +55,7 @@ const window = new SyncWindow({
   until: new Date("2026-06-30T23:59:59.999Z"),
 });
 
-function service() {
-  const db = Object.create(null);
+function service(db = Object.create(null)) {
   const fetchFn: typeof globalThis.fetch = vi.fn();
   return new PolarSyncService({
     db,
@@ -173,5 +179,150 @@ describe("PolarSyncService", () => {
     expect(mocks.deleteTokens).toHaveBeenCalledOnce();
     expect(mocks.getSleep).not.toHaveBeenCalled();
     expect(mocks.getDailyActivity).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing sleep endpoint while continuing with daily sync", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "active-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockResolvedValue([]);
+    mocks.getSleep.mockRejectedValue(
+      new (await import("./client.ts")).PolarNotFoundError("missing"),
+    );
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result.errors[0]?.message).toBe(
+      "Polar sleep endpoint returned 404 — try re-authenticating with Polar",
+    );
+    expect(mocks.deleteTokens).not.toHaveBeenCalled();
+    expect(mocks.getDailyActivity).toHaveBeenCalledOnce();
+  });
+
+  it("persists in-window exercises and reconciles their external IDs", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "active-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockResolvedValue([
+      {
+        id: "exercise-in-window",
+        upload_time: "2026-06-15T10:00:00.000Z",
+        polar_user: "polar-user",
+        device: "Polar Vantage",
+        start_time: "2026-06-15T10:00:00.000Z",
+        duration: "PT45M",
+        calories: 0,
+        distance: 10_000,
+        heart_rate: { average: 145, maximum: 170 },
+        sport: "running",
+        has_route: false,
+        detailed_sport_info: "Road running",
+      },
+      {
+        id: "exercise-before-window",
+        upload_time: "2026-05-31T10:00:00.000Z",
+        polar_user: "polar-user",
+        device: "Polar Vantage",
+        start_time: "2026-05-31T10:00:00.000Z",
+        duration: "PT45M",
+        calories: 0,
+        sport: "running",
+        has_route: false,
+        detailed_sport_info: "Road running",
+      },
+    ]);
+    mocks.getSleep.mockResolvedValue([]);
+    mocks.getDailyActivity.mockResolvedValue([]);
+    mocks.getNightlyRecharge.mockResolvedValue([]);
+    mocks.upsertProviderActivity.mockResolvedValue({ id: "activity-1" });
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const db = Object.create(null);
+    const result = await service(db).run(window);
+
+    expect(result).toEqual({ recordsSynced: 1, errors: [] });
+    expect(mocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "polar",
+        externalId: "exercise-in-window",
+        name: "Road running",
+        raw: expect.objectContaining({ distanceMeters: 10_000, avgHeartRate: 145 }),
+      }),
+      expect.objectContaining({ name: "Road running" }),
+    );
+    expect(mocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ presentExternalIds: new Set(["exercise-in-window"]) }),
+    );
+  });
+
+  it("retains successful exercise reconciliation when one activity write fails", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "active-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-07-01T00:00:00.000Z"),
+    });
+    mocks.getExercises.mockResolvedValue([
+      {
+        id: "exercise-write-failure",
+        upload_time: "2026-06-15T10:00:00.000Z",
+        polar_user: "polar-user",
+        device: "Polar Vantage",
+        start_time: "2026-06-15T10:00:00.000Z",
+        duration: "PT45M",
+        calories: 0,
+        sport: "running",
+        has_route: false,
+        detailed_sport_info: "Road running",
+      },
+    ]);
+    mocks.getSleep.mockResolvedValue([]);
+    mocks.getDailyActivity.mockResolvedValue([]);
+    mocks.getNightlyRecharge.mockResolvedValue([]);
+    mocks.upsertProviderActivity.mockRejectedValue(new Error("database offline"));
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _providerId: string,
+        _type: string,
+        work: () => Promise<{ result: number }>,
+      ) => (await work()).result,
+    );
+
+    const result = await service().run(window);
+
+    expect(result).toMatchObject({
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({
+          externalId: "exercise-write-failure",
+          message: "Exercise exercise-write-failure: database offline",
+        }),
+      ],
+    });
+    expect(mocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ presentExternalIds: new Set(["exercise-write-failure"]) }),
+    );
   });
 });
