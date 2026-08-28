@@ -117,6 +117,7 @@ describe("web auth account identity", () => {
     expect(cleanupError).toEqual(
       expect.objectContaining({ message: expect.stringMatching(/another account became active/i) }),
     );
+    expect(result.current.user?.id).toBe("user-2");
     expect(result.current.accountErasureCleanupInProgress).toBe(false);
     expect(mockLogout).not.toHaveBeenCalled();
   });
