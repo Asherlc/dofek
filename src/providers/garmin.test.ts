@@ -1817,6 +1817,83 @@ describe("GarminProvider.sync()", () => {
     ).toBe(true);
   });
 
+  it.each([
+    [
+      "activity details",
+      { type: "activity_detail", activityId: 123, activityModality: "running" },
+      "getActivityDetail",
+      "Activities",
+    ],
+    ["sleep", { type: "sleep", date: "2026-04-27" }, "getSleepData", "Sleep"],
+    [
+      "daily summaries",
+      { type: "daily_summary", date: "2026-04-27" },
+      "getDailySummary",
+      "Daily metrics",
+    ],
+    [
+      "HRV summaries",
+      { type: "hrv_summary", date: "2026-04-27" },
+      "getHrvSummary",
+      "Daily metrics",
+    ],
+    ["stress", { type: "stress", date: "2026-04-27" }, "getDailyStress", "Stress"],
+    [
+      "heart-rate streams",
+      { type: "heart_rate", date: "2026-04-27" },
+      "getDailyHeartRate",
+      "Heart rate",
+    ],
+  ] satisfies ReadonlyArray<
+    [
+      string,
+      GarminSyncStep,
+      (
+        | "getActivityDetail"
+        | "getSleepData"
+        | "getDailySummary"
+        | "getHrvSummary"
+        | "getDailyStress"
+        | "getDailyHeartRate"
+      ),
+      string,
+    ]
+  >)("surfaces the %s failure with its sync label", async (_name, step, clientMethod, label) => {
+    mocks.client[clientMethod].mockRejectedValue(new Error(`${clientMethod} unavailable`));
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue(createGarminSyncCheckpoint([step])),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await syncProvider(provider, db, new Date("2026-04-27T00:00:00Z"), {
+      checkpoint: checkpointStore,
+    });
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining(`${label} sync failed`) }),
+    );
+  });
+
+  it("surfaces activity reconciliation failures with the activities label", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
+      new Error("reconciliation unavailable"),
+    );
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue(createGarminSyncCheckpoint([{ type: "activity_reconcile" }])),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await syncProvider(provider, db, new Date("2026-04-27T00:00:00Z"), {
+      checkpoint: checkpointStore,
+    });
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining("Activities sync failed") }),
+    );
+  });
+
   it("enqueues a continuation after completing the activities list step", async () => {
     const checkpointStore = {
       load: vi.fn().mockResolvedValue(null),
