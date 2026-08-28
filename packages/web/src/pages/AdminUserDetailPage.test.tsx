@@ -207,4 +207,128 @@ describe("AdminUserDetailPage", () => {
     expect(screen.getByText("You do not have admin access.")).toBeTruthy();
     expect(mockAdminUserDetailQuery).not.toHaveBeenCalled();
   });
+
+  it("shows loading, server-error, and absent-user states before rendering details", () => {
+    mockAdminUserDetailQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    const { rerender } = render(<AdminUserDetailPage />);
+
+    expect(document.querySelector(".animate-spin")).toBeTruthy();
+
+    mockAdminUserDetailQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("User detail lookup is unavailable"),
+    });
+    rerender(<AdminUserDetailPage />);
+    expect(screen.getByText("User detail lookup is unavailable")).toBeTruthy();
+
+    mockAdminUserDetailQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    rerender(<AdminUserDetailPage />);
+    expect(screen.getByText("User not found.")).toBeTruthy();
+  });
+
+  it("renders limited access and empty related records without inventing billing data", () => {
+    mockAdminUserDetailQuery.mockReturnValue({
+      data: {
+        profile: {
+          id: "user-limited",
+          name: "Limited Member",
+          email: null,
+          birth_date: null,
+          is_admin: true,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+        },
+        flags: { providerGuideDismissed: true },
+        billing: null,
+        access: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-01-01",
+          endDateExclusive: "2026-01-08",
+        },
+        stripeLinks: { customer: null, subscription: null },
+        accounts: [],
+        providers: [],
+        sessions: [],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<AdminUserDetailPage />);
+
+    expect(screen.getByText("Limited to 2026-01-01 through 2026-01-08")).toBeTruthy();
+    expect(screen.getByText("Dismissed")).toBeTruthy();
+    expect(screen.getAllByText("—")).toHaveLength(7);
+    expect(screen.getAllByText("No accounts")).toHaveLength(1);
+    expect(screen.getAllByText("No providers")).toHaveLength(1);
+    expect(screen.getAllByText("No sessions")).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: /Open .* in Stripe/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove admin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark banner visible" }));
+    fireEvent.click(screen.getByRole("button", { name: "Grant free access" }));
+
+    expect(mockSetAdminMutate).toHaveBeenCalledWith({ userId: "user-limited", isAdmin: false });
+    expect(mockSetProviderGuideDismissedMutate).toHaveBeenCalledWith({
+      userId: "user-limited",
+      dismissed: false,
+    });
+    expect(mockSetPaidGrantMutate).toHaveBeenCalledWith({ userId: "user-limited", enabled: true });
+  });
+
+  it("renders local paid access and account identifiers when an auth email is absent", () => {
+    mockAdminUserDetailQuery.mockReturnValue({
+      data: {
+        profile: {
+          id: "user-paid",
+          name: "Paid Member",
+          email: "paid@example.com",
+          birth_date: "1990-01-01",
+          is_admin: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+        },
+        flags: { providerGuideDismissed: false },
+        billing: {
+          user_id: "user-paid",
+          stripe_customer_id: null,
+          stripe_subscription_id: null,
+          stripe_subscription_status: null,
+          stripe_current_period_end: null,
+          paid_grant_reason: "migration",
+          created_at: "2026-01-03T00:00:00Z",
+          updated_at: "2026-01-04T00:00:00Z",
+        },
+        access: { kind: "full", paid: true, reason: "paid_grant" },
+        stripeLinks: { customer: null, subscription: null },
+        accounts: [
+          {
+            id: "account-paid",
+            auth_provider: "apple",
+            provider_account_id: "apple-subject-123",
+            email: null,
+            name: null,
+            created_at: "2026-01-03T00:00:00Z",
+          },
+        ],
+        providers: [],
+        sessions: [],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<AdminUserDetailPage />);
+
+    expect(screen.getByText("Full access from local grant")).toBeTruthy();
+    expect(screen.getByText("migration")).toBeTruthy();
+    expect(screen.getByText("apple-subject-123")).toBeTruthy();
+    expect(screen.queryByText(/Stripe subscription status:/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke free access" }));
+    expect(mockSetPaidGrantMutate).toHaveBeenCalledWith({ userId: "user-paid", enabled: false });
+  });
 });
