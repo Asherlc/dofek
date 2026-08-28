@@ -138,16 +138,6 @@ describe.sequential("external write API network contract", () => {
 
   beforeEach(async () => {
     await testContext.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
-          VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
-          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
-    );
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
-          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
-          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
-    );
-    await testContext.db.execute(
       sql`DELETE FROM fitness.account_erasure_identity_fence
           WHERE request_id IN (
             SELECT id
@@ -162,6 +152,16 @@ describe.sequential("external write API network contract", () => {
     await testContext.db.execute(
       sql`DELETE FROM fitness.account_erasure_request
           WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
     );
     await testContext.db.execute(sql`DELETE FROM fitness.external_erasure_ack`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_idempotency_receipt`);
