@@ -10,7 +10,7 @@ const state = vi.hoisted<{
   correlationData: Record<string, unknown> | undefined;
   correlationError: Error | null;
   correlationLoading: boolean;
-  observationData: Record<string, unknown>;
+  observationData: Record<string, unknown> | undefined;
   observationPages: Record<string, Record<string, unknown>>;
   observationInputs: Array<Record<string, unknown>>;
   metricsData:
@@ -26,6 +26,7 @@ const state = vi.hoisted<{
   metricsError: Error | null;
   observationsError: Error | null;
   observationsLoading: boolean;
+  chartOption: Record<string, unknown> | undefined;
 }>(() => ({
   correlationData: {},
   correlationError: null,
@@ -37,6 +38,7 @@ const state = vi.hoisted<{
   metricsError: null,
   observationsError: null,
   observationsLoading: false,
+  chartOption: undefined,
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -61,9 +63,10 @@ vi.mock("../components/ChartDescriptionTooltip.tsx", () => ({
 
 vi.mock("../components/DofekChart.tsx", () => ({
   ChartRangeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DofekChart: ({ option }: { option: Record<string, unknown> }) => (
-    <div data-testid="scatter-plot" data-option={JSON.stringify(option)} />
-  ),
+  DofekChart: ({ option }: { option: Record<string, unknown> }) => {
+    state.chartOption = option;
+    return <div data-testid="scatter-plot" data-option={JSON.stringify(option)} />;
+  },
 }));
 
 vi.mock("../components/PageLayout.tsx", () => ({
@@ -119,6 +122,7 @@ describe("CorrelationExplorerPage", () => {
     state.metricsError = null;
     state.observationsError = null;
     state.observationsLoading = false;
+    state.chartOption = undefined;
     state.metricsData = [
       {
         id: "protein",
@@ -219,6 +223,17 @@ describe("CorrelationExplorerPage", () => {
     expect(within(yAxisSelect).queryByRole("option", { name: "Weight (kg)" })).toBeNull();
   });
 
+  it("keeps the explorer legible when no metric metadata is available", async () => {
+    state.metricsData = [];
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getAllByRole("option", { name: "No matching metrics" })).toHaveLength(2);
+    expect(screen.getByText("X vs Y on the same calendar day")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Start experiment with this outcome" })).toBeTruthy();
+  });
+
   it("renders the server-authored interpretation warning", async () => {
     const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
     render(<CorrelationExplorerPage />);
@@ -259,6 +274,25 @@ describe("CorrelationExplorerPage", () => {
     render(<CorrelationExplorerPage />);
 
     expect(screen.getByText("Paired observations could not be loaded.")).toBeTruthy();
+  });
+
+  it("shows an observations loading placeholder instead of stale table controls", async () => {
+    state.observationsLoading = true;
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    const { container } = render(<CorrelationExplorerPage />);
+
+    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Next observation page" })).toBeNull();
+  });
+
+  it("does not render an observations table before its query has data", async () => {
+    state.observationData = undefined;
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.queryByRole("heading", { name: "Paired Observations" })).toBeNull();
   });
 
   it("shows sample requirements without inferential statistics when data is insufficient", async () => {
@@ -448,6 +482,28 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.queryByText("Strong")).toBeNull();
     const option = JSON.parse(screen.getByTestId("scatter-plot").dataset.option ?? "{}");
     expect(option.series[1].lineStyle.color).toBe(chartColors.blue);
+  });
+
+  it("formats scatter tooltips defensively when ECharts gives incomplete values", async () => {
+    state.correlationData = {
+      ...state.correlationData,
+      availability: "available",
+      spearmanRho: 0.25,
+      regression: { slope: 1, intercept: 0, rSquared: 0.2 },
+      dataPoints: [{ x: 1, y: 2, date: "2025-01-01" }],
+      xStats: { mean: 1, median: 1, stddev: 0, min: 1, max: 1, n: 1 },
+      yStats: { mean: 2, median: 2, stddev: 0, min: 2, max: 2, n: 1 },
+    };
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    const tooltip = state.chartOption?.tooltip as { formatter?: (params: unknown) => string };
+    expect(tooltip.formatter?.(null)).toBe("");
+    expect(tooltip.formatter?.({})).toBe("");
+    expect(tooltip.formatter?.({ value: [1.25] })).toBe(
+      "Protein (g): 1.3<br/>Heart Rate Variability (ms): 0",
+    );
   });
 
   it("waits for metric metadata before rendering unit-dependent evidence", async () => {
