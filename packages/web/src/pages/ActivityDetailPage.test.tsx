@@ -496,6 +496,11 @@ async function importPage() {
   return mod.ActivityDetailPage;
 }
 
+async function importActivityHeader() {
+  const mod = await import("./ActivityDetailPage.tsx");
+  return mod.ActivityHeader;
+}
+
 describe("ActivityDetailPage", () => {
   it("shows a loading skeleton before activity details resolve", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
@@ -615,6 +620,27 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("0.0 km")).toBeDefined();
   });
 
+  it("renders an activity header without optional duration or source metadata", async () => {
+    const ActivityHeader = await importActivityHeader();
+    renderWithUnits(
+      <ActivityHeader
+        activity={{
+          ...mockActivity,
+          name: null,
+          startedAt: null,
+          endedAt: null,
+          sourceLinks: [],
+          sourceProviders: [],
+        }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "running" })).toBeDefined();
+    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.queryByText(/^Source:/)).toBeNull();
+  });
+
   it("shows a sensor section error when the stream query fails without data", async () => {
     mockStreamUseQuery.mockReturnValue({
       data: undefined,
@@ -642,6 +668,20 @@ describe("ActivityDetailPage", () => {
 
     expect(screen.getByText("Performance")).toBeDefined();
     expect(screen.getByText("Sensor stream refresh failed.")).toBeDefined();
+  });
+
+  it("renders loading placeholders for cached sensor charts during an active fetch", async () => {
+    mockStreamUseQuery.mockReturnValue({
+      data: mockStreamPoints,
+      error: null,
+      isError: false,
+      isLoading: true,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getAllByTestId("chart-loading-skeleton")).toHaveLength(2);
   });
 
   it("does not bind chart hover events when stream points have no GPS coordinates", async () => {
