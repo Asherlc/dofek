@@ -441,4 +441,59 @@ describe("PersonalExperimentsPage", () => {
       personalExperimentId: "exp-1",
     });
   });
+
+  it("keeps metric choices available while showing a refresh error", async () => {
+    state.listData = [];
+    state.metricsError = new Error("Metric catalog refresh failed");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByLabelText("Outcome metric")).toBeTruthy();
+    expect(screen.getByText("Metric catalog refresh failed")).toBeTruthy();
+  });
+
+  it("keeps a failed create action actionable", async () => {
+    state.listData = [];
+    state.createError = new Error("Experiment could not be saved");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.getByText("Experiment could not be saved")).toBeTruthy();
+  });
+
+  it("shows when a completed experiment was stopped", async () => {
+    state.listData = [
+      {
+        id: "exp-stopped",
+        hypothesis: "Does hydration improve recovery?",
+        intervention: "Drink water",
+        outcomeMetricId: "hrv",
+        outcomeMetricLabel: "Heart Rate Variability",
+        lagDays: 0,
+        baselineDays: 7,
+        interventionDays: 14,
+        startDate: "2026-07-01",
+        status: "stopped",
+        stoppedAt: "2026-07-10",
+        phase: "stopped",
+        phaseLabel: "Stopped",
+        schedule: {
+          baselineStartDate: "2026-07-01",
+          baselineEndDate: "2026-07-07",
+          interventionStartDate: "2026-07-08",
+          interventionEndDate: "2026-07-21",
+          scheduleSummary: "Stopped early",
+        },
+      },
+    ];
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByText("Stopped on 2026-07-10")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Stop experiment" })).toBeNull();
+  });
 });
