@@ -848,7 +848,7 @@ describe("DataSourcesPanel", () => {
       error: null,
     });
 
-    render(<DataSourcesPanel />);
+    const { rerender } = render(<DataSourcesPanel />);
 
     await waitFor(() => {
       expect(screen.getByText("Garmin is up to date")).toBeTruthy();
@@ -857,6 +857,24 @@ describe("DataSourcesPanel", () => {
     expect(mockPollSyncJob).toHaveBeenCalledWith(
       expect.objectContaining({ jobId: "sync-active", providerIds: ["garmin", "wahoo"] }),
     );
+
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "sync-active",
+          status: "queued",
+          providers: {
+            garmin: { status: "done", message: "Garmin is up to date" },
+            wahoo: { status: "error", message: "Wahoo authorization expired" },
+          },
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    rerender(<DataSourcesPanel />);
+
+    expect(mockPollSyncJob).toHaveBeenCalledTimes(1);
   });
 
   it("cancels active sync polling when the panel unmounts", async () => {
