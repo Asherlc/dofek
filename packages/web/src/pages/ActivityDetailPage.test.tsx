@@ -784,6 +784,65 @@ describe("ActivityDetailPage", () => {
     Object.assign(mockActivity, originalActivity);
   });
 
+  it("shows a loading exercise section while a strength workout is still resolving", async () => {
+    const originalActivity = { ...mockActivity };
+    Object.assign(mockActivity, { activityType: "strength" });
+    mockStrengthExercisesUseQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isLoading: true,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Exercises")).toBeDefined();
+    Object.assign(mockActivity, originalActivity);
+  });
+
+  it("keeps cached strength exercises visible while reporting a refresh failure", async () => {
+    const originalActivity = { ...mockActivity };
+    Object.assign(mockActivity, { activityType: "strength" });
+    mockStrengthExercisesUseQuery.mockReturnValue({
+      data: [
+        {
+          exerciseIndex: 0,
+          exerciseName: "Pull-up",
+          equipment: null,
+          muscleGroups: null,
+          exerciseType: "strength",
+          sets: [],
+        },
+      ],
+      error: new Error("Strength exercise refresh failed."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Pull-up")).toBeDefined();
+    expect(screen.getByText("Strength exercise refresh failed.")).toBeDefined();
+    Object.assign(mockActivity, originalActivity);
+  });
+
+  it("keeps cached heart-rate zones visible while reporting their refresh failure", async () => {
+    mockHrZonesUseQuery.mockReturnValue({
+      data: [{ zone: 1, label: "Zone 1", minPct: 0, maxPct: 60, seconds: 300, percent: 100 }],
+      error: new Error("Heart-rate zones refresh failed."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Heart Rate Zones")).toBeDefined();
+    expect(screen.getByText("Heart-rate zones refresh failed.")).toBeDefined();
+  });
+
   it("shows a power zone section error", async () => {
     const originalActivity = { ...mockActivity };
     const originalStream = [...mockStreamPoints];
@@ -804,6 +863,34 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Power zones are unavailable.")).toBeDefined();
+    Object.assign(mockActivity, originalActivity);
+    mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+  });
+
+  it("keeps cached power zones visible while reporting their refresh failure", async () => {
+    const originalActivity = { ...mockActivity };
+    const originalStream = [...mockStreamPoints];
+    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+    mockStreamPoints.splice(
+      0,
+      mockStreamPoints.length,
+      ...originalStream.map((point) => ({ ...point, power: 210 })),
+    );
+    mockPowerZonesUseQuery.mockReturnValue({
+      data: {
+        ftp: 250,
+        zones: [{ zone: 1, label: "Zone 1", minPct: 0, maxPct: 55, seconds: 300, percent: 100 }],
+      },
+      error: new Error("Power zones refresh failed."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Power Zones")).toBeDefined();
+    expect(screen.getByText("Power zones refresh failed.")).toBeDefined();
     Object.assign(mockActivity, originalActivity);
     mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
   });
