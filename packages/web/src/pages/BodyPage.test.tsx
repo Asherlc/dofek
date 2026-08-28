@@ -326,6 +326,33 @@ describe("BodyPage", () => {
     expect(screen.getByText("Goal weight input")).toBeTruthy();
   });
 
+  it("keeps other body sections visible when multiple supporting queries are unavailable", () => {
+    queryMocks.dailyMetrics.mockReturnValue(
+      mockQuery({ error: new Error("Metrics unavailable.") }),
+    );
+    queryMocks.hrvBaseline.mockReturnValue(mockQuery({ error: new Error("HRV unavailable.") }));
+    queryMocks.stress.mockReturnValue(mockQuery({ error: new Error("Stress unavailable.") }));
+    queryMocks.insights.mockReturnValue(mockQuery({ error: new Error("Insights unavailable.") }));
+
+    render(<BodyPage />);
+
+    expect(
+      screen.getByText(
+        "Blood oxygen and skin temperature is unavailable. Retry from the notice above.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Heart rate variability is unavailable. Retry from the notice above."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Stress data is unavailable. Retry from the notice above."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Body insights is unavailable. Retry from the notice above."),
+    ).toBeTruthy();
+    expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
+  });
+
   it("keeps distinct failed query identities labeled when their messages match", () => {
     const sharedMessage = "Analytics dependency is unavailable.";
     queryMocks.trends.mockReturnValue(mockQuery({ error: new Error(sharedMessage) }));
