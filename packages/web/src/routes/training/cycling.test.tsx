@@ -20,6 +20,7 @@ const state = vi.hoisted<{
   performanceHasData: boolean;
   timeToExhaustionAvailable: boolean;
   summaryMetricsAvailable: boolean;
+  powerModelsAvailable: boolean;
   performanceError: Error | null;
   activityAnalyticsHasData: boolean;
   activityAnalyticsError: Error | null;
@@ -35,6 +36,7 @@ const state = vi.hoisted<{
   performanceHasData: true,
   timeToExhaustionAvailable: true,
   summaryMetricsAvailable: true,
+  powerModelsAvailable: true,
   performanceError: null,
   activityAnalyticsHasData: true,
   activityAnalyticsError: null,
@@ -175,7 +177,7 @@ vi.mock("../../lib/trpc.ts", () => ({
                 activityDate: "2026-03-15",
               },
             ],
-            model: { cp, wPrime: 20_000, r2: 0.95 },
+            model: state.powerModelsAvailable ? { cp, wPrime: 20_000, r2: 0.95 } : null,
           });
           const summary = (watts: number, wattsPerKg: number, vo2Max: number) => ({
             efforts: [
@@ -335,6 +337,7 @@ describe("CyclingTab", () => {
     state.performanceHasData = true;
     state.timeToExhaustionAvailable = true;
     state.summaryMetricsAvailable = true;
+    state.powerModelsAvailable = true;
     state.performanceError = null;
     state.activityAnalyticsHasData = true;
     state.activityAnalyticsError = null;
@@ -375,6 +378,16 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     for (const label of ["Maximal Aerobic Power", "Estimated aerobic capacity (VO₂ max)"]) {
+      const row = screen.getByText(label).parentElement;
+      expect(row?.textContent).toContain("--");
+    }
+  });
+
+  it("renders unavailable power-model summaries from the server", async () => {
+    state.powerModelsAvailable = false;
+    await renderCyclingTab();
+
+    for (const label of ["Sustainable cycling power", "Short-burst power reserve"]) {
       const row = screen.getByText(label).parentElement;
       expect(row?.textContent).toContain("--");
     }
