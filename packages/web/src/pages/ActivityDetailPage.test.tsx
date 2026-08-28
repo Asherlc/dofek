@@ -12,10 +12,25 @@ import type { StrengthExerciseDetail } from "../../../server/src/routers/activit
 import { UnitContext } from "../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
+const capturedEvents: Array<Record<string, (...params: Array<Record<string, unknown>>) => void>> =
+  [];
+
+const leafletMocks = vi.hoisted(() => ({
+  map: vi.fn(() => ({ remove: vi.fn(), fitBounds: vi.fn() })),
+  tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
+  latLng: vi.fn((lat: number, lng: number) => ({ lat, lng })),
+  latLngBounds: vi.fn(() => ({})),
+  polyline: vi.fn(() => ({ addTo: vi.fn() })),
+  circleMarker: vi.fn(() => ({ addTo: vi.fn(), remove: vi.fn(), setLatLng: vi.fn() })),
+}));
 
 vi.mock("echarts-for-react", () => ({
-  default: (props: { option: Record<string, unknown> }) => {
+  default: (props: {
+    option: Record<string, unknown>;
+    onEvents?: Record<string, (...params: Array<Record<string, unknown>>) => void>;
+  }) => {
     capturedOptions.push(props.option);
+    if (props.onEvents) capturedEvents.push(props.onEvents);
     return <div data-testid="echarts" />;
   },
 }));
@@ -75,8 +90,8 @@ const mockActivity: ActivityDetail = {
 
 const mockStreamPoints: Array<{
   recordedAt: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   heartRate: number | null;
   power: number | null;
   speed: number;
@@ -273,14 +288,7 @@ vi.mock("../lib/trpc.ts", () => ({
   },
 }));
 
-vi.mock("leaflet", () => ({
-  map: () => ({ remove: vi.fn(), fitBounds: vi.fn() }),
-  tileLayer: () => ({ addTo: vi.fn() }),
-  latLng: (lat: number, lng: number) => ({ lat, lng }),
-  latLngBounds: () => ({}),
-  polyline: () => ({ addTo: vi.fn() }),
-  circleMarker: () => ({ addTo: vi.fn() }),
-}));
+vi.mock("leaflet", () => leafletMocks);
 
 vi.mock("react-body-highlighter", () => ({
   default: ({ type }: { type: string }) => <div data-testid={`muscle-map-${type}`} />,
@@ -342,6 +350,13 @@ afterEach(() => {
 
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
+  capturedEvents.length = 0;
+  leafletMocks.map.mockClear();
+  leafletMocks.tileLayer.mockClear();
+  leafletMocks.latLng.mockClear();
+  leafletMocks.latLngBounds.mockClear();
+  leafletMocks.polyline.mockClear();
+  leafletMocks.circleMarker.mockClear();
   mockStrengthExercisesUseQuery.mockClear();
   mockHangboardDetailsUseQuery.mockClear();
   mockClimbingEntriesUseQuery.mockClear();
@@ -627,6 +642,65 @@ describe("ActivityDetailPage", () => {
 
     expect(screen.getByText("Performance")).toBeDefined();
     expect(screen.getByText("Sensor stream refresh failed.")).toBeDefined();
+  });
+
+  it("does not bind chart hover events when stream points have no GPS coordinates", async () => {
+    mockStreamUseQuery.mockReturnValue({
+      data: mockStreamPoints.map((point) => ({ ...point, lat: null, lng: null })),
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.queryByText("Route Map")).toBeNull();
+    const metricEvents = capturedEvents.find((events) => events.legendselectchanged != null);
+    expect(metricEvents?.updateAxisPointer).toBeUndefined();
+  });
+
+  it("creates a route hover marker from valid chart pointer events", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    await waitFor(() => expect(leafletMocks.map).toHaveBeenCalledOnce());
+    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2));
+    const metricEvents = capturedEvents.find((events) => events.updateAxisPointer != null);
+    if (!metricEvents?.updateAxisPointer || !metricEvents.globalout) {
+      throw new Error("Metrics chart pointer events were not registered");
+    }
+
+    metricEvents.updateAxisPointer({ axesInfo: [{ value: 0 }] });
+    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3));
+  });
+
+  it("applies only boolean legend selections to the metrics chart", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    const metricEvents = capturedEvents.find((events) => events.legendselectchanged != null);
+    if (!metricEvents?.legendselectchanged) {
+      throw new Error("Metrics chart legend event was not registered");
+    }
+    metricEvents.legendselectchanged({
+      selected: { "Heart Rate": false, Speed: true, ignored: "not-a-boolean" },
+    });
+
+    await waitFor(() => {
+      const metricOptions = capturedOptions.filter((option) => Array.isArray(option.yAxis));
+      const latestOption = metricOptions.at(-1);
+      if (!latestOption || !Array.isArray(latestOption.yAxis)) {
+        throw new Error("Metrics chart option was not captured");
+      }
+      const heartRateAxis = latestOption.yAxis.find(
+        (axis): axis is Record<string, unknown> =>
+          typeof axis === "object" &&
+          axis !== null &&
+          Reflect.get(axis, "name") === "Heart Rate (bpm)",
+      );
+      expect(heartRateAxis?.show).toBe(false);
+    });
   });
 
   it("shows a strength exercise section error", async () => {
