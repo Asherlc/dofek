@@ -24255,3 +24255,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completed successfully. The fresh CI workflow for commit `d73f6ae` is queued.
 - **Remaining risk / follow-up:** Confirm the queued hosted CI workflow passes
   before merging the PR.
+
+## 2026-08-28 — PR 2581 Timescale integration readiness and coverage gate
+
+- **Status:** Fixed and validated in hosted CI.
+- **Symptoms / impact:** PR #2581's integration shard failed before its
+  migration assertions with `error: the database system is starting up`; the
+  coverage job also blocked the PR at 88.86% branch coverage, below the 89%
+  required threshold.
+- **Evidence / root cause:** The first fatal line came from the migration test's
+  PostgreSQL client connection in [CI run 33197919887](https://github.com/Asherlc/dofek/actions/runs/33197919887).
+  Its readiness probe used `pg_isready` without a host, which could succeed
+  through the temporary local socket while the Timescale container had not yet
+  accepted its required TCP connection at `127.0.0.1:5432`. Testcontainers
+  supports command-based readiness checks through
+  [`Wait.forSuccessfulCommand`](https://node.testcontainers.org/features/wait-strategies/#shell-command).
+- **Fix / mitigation:** Changed the dedicated container's readiness command to
+  probe the same TCP host, port, database, and user used by the test client.
+  Added behavior-focused tests for provider sync progress and errors, COROS
+  metric shapes, local-time validation, and the Garmin MFA exchange to cover
+  the 15 missing branch hits. No retry, timeout, threshold reduction, or
+  failure suppression was added.
+- **Validation:** [CI run 33214313923](https://github.com/Asherlc/dofek/actions/runs/33214313923)
+  passed all 112 checks: all four integration shards, merged coverage, and web
+  E2E included.
+- **Remaining risk / follow-up:** The readiness command is deliberately tied to
+  the client transport, so future test containers should use an equivalent
+  transport-specific readiness check when their application connection differs
+  from the image's default probe.
