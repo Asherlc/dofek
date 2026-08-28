@@ -710,6 +710,17 @@ describe("ActivityDetailPage", () => {
 
     metricEvents.updateAxisPointer({ axesInfo: [{ value: 0 }] });
     await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3));
+
+    metricEvents.updateAxisPointer({});
+    metricEvents.updateAxisPointer({ axesInfo: [] });
+    metricEvents.updateAxisPointer({ axesInfo: [{ value: -1 }] });
+    metricEvents.updateAxisPointer({ axesInfo: [{ value: mockStreamPoints.length + 1 }] });
+
+    expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3);
+
+    metricEvents.updateAxisPointer({ axesInfo: [{ value: 1 }] });
+    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(4));
+    metricEvents.globalout();
   });
 
   it("hides sensor sections when no sensor measurements are available", async () => {
