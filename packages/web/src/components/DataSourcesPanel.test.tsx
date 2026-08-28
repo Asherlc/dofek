@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1423,6 +1425,79 @@ describe("DataSourcesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sync all providers for the last 7 days" }));
 
     await Promise.resolve();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("starts a sync for an unconnected provider that needs no authentication", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "manual-import",
+          name: "Manual import",
+          authorized: false,
+          authType: "none",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-manual-import")).getByText("Sync"));
+
+    await waitFor(() => {
+      expect(mockSyncMutateAsync).toHaveBeenCalledWith({
+        providerId: "manual-import",
+        sinceDays: ROUTINE_SYNC_DAYS,
+      });
+    });
+  });
+
+  it("reports resumed multi-provider polling failures without assigning one provider", async () => {
+    const error = new Error("Sync status service is unavailable");
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "resume-all",
+          status: "running",
+          providers: {
+            garmin: { status: "pending", message: "Waiting to sync Garmin" },
+            wahoo: { status: "running", message: "Syncing Wahoo" },
+          },
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockPollSyncJob.mockImplementation(async (options) => {
+      options.onError?.(error);
+    });
+
+    render(<DataSourcesPanel />);
+
+    await waitFor(() => {
+      expect(mockPollSyncJob).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: "resume-all", providerIds: ["garmin", "wahoo"] }),
+      );
+    });
+    expect(screen.getByText("Waiting to sync Garmin")).toBeTruthy();
+    expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
+    expect(mockCaptureException).toHaveBeenCalledWith(error, { operation: "sync.syncStatus" });
+  });
+
+  it("rejects malformed OAuth completion messages from the current origin", () => {
+    render(<DataSourcesPanel />);
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        data: { type: "oauth-complete", providerId: 42 },
+      }),
+    );
+
+    expect(mockProvidersInvalidate).not.toHaveBeenCalled();
     expect(mockSyncMutateAsync).not.toHaveBeenCalled();
   });
 });

@@ -827,4 +827,54 @@ describe("ActivitiesPage", () => {
       "/activity/hidden-1",
     );
   });
+
+  it("shows the server list failure when there is no cached activity history", () => {
+    const error = new Error("Activity history is unavailable. Try again shortly.");
+    mockQuery = { data: undefined, isLoading: false, isError: true, error };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText(error.message)).toBeTruthy();
+    expect(screen.queryByTestId("activity-card-grid")).toBeNull();
+  });
+
+  it("keeps cached activity cards visible during an activity-history refresh failure", () => {
+    const error = new Error("Activity history refresh failed");
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: true,
+      error,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("Trainer Ride")).toBeTruthy();
+    expect(screen.getByText(error.message)).toBeTruthy();
+  });
+
+  it("keeps the activity history available while overview totals are loading", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    mockOverviewQuery = { data: undefined, isLoading: true, isError: false, error: null };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("Trainer Ride")).toBeTruthy();
+    expect(screen.getAllByTestId("query-state-loading")).toHaveLength(1);
+  });
+
+  it("uses the hidden-activity empty state after the user includes provider-absent activities", () => {
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show hidden activities" }));
+
+    expect(
+      screen.getByText("No activities in the last 4 weeks, including hidden ones."),
+    ).toBeTruthy();
+    expect(weekListInput).toMatchObject({ includeProviderAbsent: true });
+  });
 });
