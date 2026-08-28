@@ -23,6 +23,7 @@ vi.mock("../../db/sync-log.ts", () => ({
   withSyncLog: syncLogMocks.withSyncLog,
 }));
 
+import type { SyncError } from "../types.ts";
 import { OuraApiError, OuraClient } from "./client.ts";
 import {
   syncCardiovascularAge,
@@ -40,13 +41,14 @@ import {
 } from "./sync-steps.ts";
 
 function context(client: OuraClient) {
+  const errors: SyncError[] = [];
   return {
     db: Object.create(null),
     providerId: "oura",
     client,
     sinceDate: "2026-06-01",
     todayDate: "2026-06-30",
-    errors: [],
+    errors,
   };
 }
 
