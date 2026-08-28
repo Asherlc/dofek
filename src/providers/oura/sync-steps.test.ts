@@ -228,4 +228,50 @@ describe("Oura optional sync steps", () => {
     expect(inserted[0]?.endDate).toEqual(new Date("2026-06-01T10:30:00Z"));
     expect(inserted.slice(1).map((value) => value.endDate)).toEqual([undefined, undefined]);
   });
+
+  it("persists Rest Mode periods using date fields when precise times are absent", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((value: Record<string, unknown>) => {
+          inserted.push(value);
+          return { onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const client = new OuraClient("token", vi.fn());
+    vi.spyOn(client, "getRestModePeriods").mockResolvedValue({
+      data: [
+        {
+          id: "date-only",
+          start_time: null,
+          end_time: null,
+          start_day: "2026-06-01",
+          end_day: "2026-06-03",
+        },
+        {
+          id: "timed",
+          start_time: "2026-06-04T08:00:00Z",
+          end_time: "2026-06-04T17:00:00Z",
+          start_day: "2026-06-04",
+          end_day: "2026-06-04",
+        },
+      ],
+      next_token: null,
+    });
+    const syncContext = context(client);
+    syncContext.db = db;
+
+    expect(await syncRestMode(syncContext)).toBe(2);
+    expect(inserted[0]).toMatchObject({
+      externalId: "date-only",
+      startDate: new Date("2026-06-01T00:00:00"),
+      endDate: new Date("2026-06-03T23:59:59"),
+    });
+    expect(inserted[1]).toMatchObject({
+      externalId: "timed",
+      startDate: new Date("2026-06-04T08:00:00Z"),
+      endDate: new Date("2026-06-04T17:00:00Z"),
+    });
+  });
 });
