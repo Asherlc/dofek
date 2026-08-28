@@ -481,6 +481,52 @@ describe.sequential("external write API network contract", () => {
     }
   });
 
+  it("returns not found for unknown client subjects and rejects unapproved link exchanges", async () => {
+    const created = await createDeveloperClient("unapproved-link-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "d".repeat(43);
+
+    const start = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.string().uuid() }).parse(await start.json());
+
+    const [status, reissue, exchange] = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ namespace: "slack", subject: "not-linked" }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ namespace: "slack", subject: "not-linked" }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkId,
+          code: "unapproved-link-code".padEnd(20, "x"),
+          codeVerifier,
+          externalSubject: { namespace: "slack", subject: "not-linked" },
+        }),
+      }),
+    ]);
+
+    expect(status.status).toBe(404);
+    expect(reissue.status).toBe(404);
+    expect(exchange.status).toBe(401);
+    for (const response of [status, reissue, exchange]) {
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: response === exchange ? "INVALID_CREDENTIALS" : "NOT_FOUND",
+      });
+    }
+  });
+
   it("counts rejected client authentication toward the link-start limit", async () => {
     const created = await createDeveloperClient("rejected-link-rate-limit-test");
     const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
