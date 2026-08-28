@@ -392,7 +392,7 @@ describe.sequential("external write API network contract", () => {
     }
   });
 
-  it("rejects ungranted scopes and omits an absent OAuth state from the approval redirect", async () => {
+  it("rejects unapproved scopes and omits an absent OAuth state from the approval redirect", async () => {
     const created = await createDeveloperClient("scope-and-state-client");
     const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
     const codeVerifier = "s".repeat(43);
