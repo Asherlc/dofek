@@ -1,5 +1,7 @@
 import HealthKit
 
+private let clinicalNoteRecordIdentifier = "HKClinicalTypeIdentifierClinicalNoteRecord"
+
 private let clinicalRecordTypesByIdentifier: [String: String] = [
     "HKClinicalTypeIdentifierAllergyRecord": "allergy",
     "HKClinicalTypeIdentifierConditionRecord": "condition",
@@ -9,7 +11,7 @@ private let clinicalRecordTypesByIdentifier: [String: String] = [
     "HKClinicalTypeIdentifierMedicationRecord": "medication",
     "HKClinicalTypeIdentifierProcedureRecord": "procedure",
     "HKClinicalTypeIdentifierVitalSignRecord": "vitalSign",
-    "HKClinicalTypeIdentifierClinicalNoteRecord": "clinicalNote",
+    clinicalNoteRecordIdentifier: "clinicalNote",
 ]
 
 let clinicalRecordTypeIdentifiers = Array(clinicalRecordTypesByIdentifier.keys)
@@ -23,7 +25,7 @@ func healthKitClinicalType(for identifier: String) -> HKClinicalType? {
     guard clinicalRecordType(for: identifier) != nil else {
         return nil
     }
-    if identifier == HKClinicalTypeIdentifier.clinicalNoteRecord.rawValue {
+    if identifier == clinicalNoteRecordIdentifier {
         guard #available(iOS 16.4, *) else {
             return nil
         }
