@@ -13,7 +13,7 @@ function record(clinicalType: string, fhir: Record<string, unknown>): Record<str
     clinicalType,
     displayName: "Wellness panel",
     sourceName: "Example Health",
-    fhirVersion: "R4",
+    fhirVersion: "4.0.1",
     fhir,
     downloadedAt: DOWNLOADED_AT,
   };
@@ -60,7 +60,7 @@ describe("clinicalRecordInputSchema", () => {
 describe("deriveClinicalRecordDates", () => {
   it("uses the faithful clinical and issued timestamps for a lab observation", () => {
     expect(
-      deriveClinicalRecordDates("labResult", {
+      deriveClinicalRecordDates("labResult", "4.0.1", {
         resourceType: "Observation",
         effectiveDateTime: "2026-08-25T08:30:00-07:00",
         issued: "2026-08-25T16:00:00Z",
@@ -73,7 +73,7 @@ describe("deriveClinicalRecordDates", () => {
 
   it("uses FHIR dates appropriate to non-observation clinical resources", () => {
     expect(
-      deriveClinicalRecordDates("immunization", {
+      deriveClinicalRecordDates("immunization", "4.0.1", {
         resourceType: "Immunization",
         occurrenceDateTime: "2026-04-02T12:00:00Z",
         recorded: "2026-04-03T12:00:00Z",
@@ -90,20 +90,82 @@ describe("deriveClinicalRecordDates", () => {
     ["MedicationDispense", { whenHandedOver: "2026-04-02T12:00:00Z" }],
     ["MedicationStatement", { effectiveDateTime: "2026-04-02T12:00:00Z" }],
   ])("derives medication dates from %s FHIR", (resourceType, dateFields) => {
-    expect(deriveClinicalRecordDates("medication", { resourceType, ...dateFields })).toEqual({
+    expect(
+      deriveClinicalRecordDates("medication", "4.0.1", { resourceType, ...dateFields }),
+    ).toEqual({
       recordedAt: new Date("2026-04-02T12:00:00.000Z"),
       issuedAt: null,
     });
   });
 
-  it("does not invent timestamps from malformed FHIR dates", () => {
+  it.each([
+    "2026",
+    "2026-08",
+    "2026-08-25",
+    "2026-02-30T12:00:00Z",
+    "2026-13-01T12:00:00Z",
+    "2026-08-25T08:30Z",
+    "2026-08-25T08:30:00",
+    "2026-08-25T08:30:00+14:01",
+    "not-a-date",
+  ])("does not invent an instant from partial or invalid FHIR date %s", (recordedDate) => {
     expect(
-      deriveClinicalRecordDates("condition", {
+      deriveClinicalRecordDates("condition", "4.0.1", {
         resourceType: "Condition",
-        recordedDate: "not-a-date",
+        recordedDate,
       }),
     ).toEqual({ recordedAt: null, issuedAt: null });
   });
+
+  it.each([
+    [
+      "1.0.2",
+      "condition",
+      {
+        resourceType: "Condition",
+        dateRecorded: "2016-01-02T12:00:00Z",
+        recordedDate: "2026-01-02T12:00:00Z",
+      },
+      "2016-01-02T12:00:00.000Z",
+    ],
+    [
+      "4.0.1",
+      "condition",
+      {
+        resourceType: "Condition",
+        dateRecorded: "2016-01-02T12:00:00Z",
+        recordedDate: "2026-01-02T12:00:00Z",
+      },
+      "2026-01-02T12:00:00.000Z",
+    ],
+    [
+      "1.0.2",
+      "immunization",
+      {
+        resourceType: "Immunization",
+        date: "2016-03-04T12:00:00Z",
+        occurrenceDateTime: "2026-03-04T12:00:00Z",
+      },
+      "2016-03-04T12:00:00.000Z",
+    ],
+    [
+      "4.0.1",
+      "immunization",
+      {
+        resourceType: "Immunization",
+        date: "2016-03-04T12:00:00Z",
+        occurrenceDateTime: "2026-03-04T12:00:00Z",
+      },
+      "2026-03-04T12:00:00.000Z",
+    ],
+  ] as const)(
+    "uses %s release fields for %s records",
+    (fhirVersion, clinicalType, fhir, expectedRecordedAt) => {
+      expect(deriveClinicalRecordDates(clinicalType, fhirVersion, fhir).recordedAt).toEqual(
+        new Date(expectedRecordedAt),
+      );
+    },
+  );
 });
 
 describe("summarizeClinicalRecord", () => {
@@ -155,6 +217,26 @@ describe("summarizeClinicalRecord", () => {
       sourceLabel: "Unknown source",
       date: DOWNLOADED_AT,
       dateLabel: "Downloaded Aug 28, 2026",
+    });
+  });
+
+  it("formats the clinical instant in the user's timezone", () => {
+    const summary = summarizeClinicalRecord(
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        clinicalType: "condition",
+        displayName: "Timezone boundary",
+        sourceName: "Example Health",
+        downloadedAt: new Date(DOWNLOADED_AT),
+        recordedAt: new Date("2026-08-25T00:30:00+02:00"),
+        issuedAt: null,
+      },
+      "America/Los_Angeles",
+    );
+
+    expect(summary).toMatchObject({
+      date: "2026-08-24T22:30:00.000Z",
+      dateLabel: "Recorded Aug 24, 2026",
     });
   });
 });

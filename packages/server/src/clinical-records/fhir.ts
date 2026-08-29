@@ -15,6 +15,14 @@ export const CLINICAL_TYPE_IDS = [
 export type ClinicalType = (typeof CLINICAL_TYPE_IDS)[number];
 
 export const fhirObjectSchema = z.record(z.string(), z.unknown());
+const fhirInstantSchema = z
+  .string()
+  .regex(
+    /^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00))$/,
+  )
+  .pipe(z.iso.datetime({ offset: true }));
+
+type FhirRelease = "dstu2" | "r4" | "unknown";
 
 const compatibleResourceTypes: Readonly<Record<ClinicalType, readonly string[]>> = {
   allergy: ["AllergyIntolerance"],
@@ -89,10 +97,26 @@ function firstArrayObjectAtPath(
   return Array.isArray(value) ? objectValue(value[0]) : null;
 }
 
-function parseFhirDate(value: string | null): Date | null {
-  if (value === null) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+function fhirRelease(version: string): FhirRelease {
+  const normalized = version.trim().toUpperCase();
+  if (normalized === "DSTU2" || normalized === "R2" || normalized.startsWith("1.")) {
+    return "dstu2";
+  }
+  if (normalized === "R4" || normalized.startsWith("4.")) return "r4";
+  return "unknown";
+}
+
+function parseFhirInstant(value: string | null): Date | null {
+  const parsed = fhirInstantSchema.safeParse(value);
+  return parsed.success ? new Date(parsed.data) : null;
+}
+
+function firstFhirInstant(...values: Array<string | null>): Date | null {
+  for (const value of values) {
+    const instant = parseFhirInstant(value);
+    if (instant) return instant;
+  }
+  return null;
 }
 
 export interface ClinicalRecordDates {
@@ -102,59 +126,82 @@ export interface ClinicalRecordDates {
 
 export function deriveClinicalRecordDates(
   clinicalType: ClinicalType,
+  fhirVersion: string,
   fhir: Record<string, unknown>,
 ): ClinicalRecordDates {
-  let recordedAt: string | null = null;
-  let issuedAt: string | null = null;
+  const release = fhirRelease(fhirVersion);
+  let recordedAt: Date | null = null;
+  let issuedAt: Date | null = null;
 
   switch (clinicalType) {
     case "allergy":
-      recordedAt = stringAtPath(fhir, "recordedDate") ?? stringAtPath(fhir, "onsetDateTime");
+      recordedAt = firstFhirInstant(
+        stringAtPath(fhir, "recordedDate"),
+        stringAtPath(fhir, "onsetDateTime"),
+      );
       break;
     case "condition":
-      recordedAt = stringAtPath(fhir, "recordedDate") ?? stringAtPath(fhir, "onsetDateTime");
+      recordedAt = firstFhirInstant(
+        release === "dstu2"
+          ? stringAtPath(fhir, "dateRecorded")
+          : release === "r4"
+            ? stringAtPath(fhir, "recordedDate")
+            : null,
+        stringAtPath(fhir, "onsetDateTime"),
+      );
       break;
     case "coverage":
-      recordedAt = stringAtPath(fhir, "period", "start");
+      recordedAt = firstFhirInstant(stringAtPath(fhir, "period", "start"));
       break;
     case "immunization":
-      recordedAt = stringAtPath(fhir, "occurrenceDateTime");
-      issuedAt = stringAtPath(fhir, "recorded");
+      recordedAt = firstFhirInstant(
+        release === "dstu2"
+          ? stringAtPath(fhir, "date")
+          : release === "r4"
+            ? stringAtPath(fhir, "occurrenceDateTime")
+            : null,
+      );
+      issuedAt = firstFhirInstant(release === "r4" ? stringAtPath(fhir, "recorded") : null);
       break;
     case "labResult":
     case "vitalSign":
-      recordedAt =
-        stringAtPath(fhir, "effectiveDateTime") ?? stringAtPath(fhir, "effectivePeriod", "start");
-      issuedAt = stringAtPath(fhir, "issued");
+      recordedAt = firstFhirInstant(
+        stringAtPath(fhir, "effectiveDateTime"),
+        stringAtPath(fhir, "effectivePeriod", "start"),
+      );
+      issuedAt = firstFhirInstant(stringAtPath(fhir, "issued"));
       break;
     case "medication": {
       const dosageInstruction = firstArrayObjectAtPath(fhir, "dosageInstruction");
-      recordedAt =
-        stringAtPath(fhir, "authoredOn") ??
-        stringAtPath(fhir, "dateWritten") ??
-        stringAtPath(fhir, "whenHandedOver") ??
-        stringAtPath(fhir, "whenPrepared") ??
-        stringAtPath(fhir, "effectiveDateTime") ??
-        stringAtPath(fhir, "effectivePeriod", "start") ??
-        stringAtPath(fhir, "dateAsserted") ??
-        (dosageInstruction
+      recordedAt = firstFhirInstant(
+        stringAtPath(fhir, "authoredOn"),
+        stringAtPath(fhir, "dateWritten"),
+        stringAtPath(fhir, "whenHandedOver"),
+        stringAtPath(fhir, "whenPrepared"),
+        stringAtPath(fhir, "effectiveDateTime"),
+        stringAtPath(fhir, "effectivePeriod", "start"),
+        stringAtPath(fhir, "dateAsserted"),
+        dosageInstruction
           ? stringAtPath(dosageInstruction, "timing", "repeat", "boundsPeriod", "start")
-          : null);
+          : null,
+      );
       break;
     }
     case "procedure":
-      recordedAt =
-        stringAtPath(fhir, "performedDateTime") ?? stringAtPath(fhir, "performedPeriod", "start");
+      recordedAt = firstFhirInstant(
+        stringAtPath(fhir, "performedDateTime"),
+        stringAtPath(fhir, "performedPeriod", "start"),
+      );
       break;
     case "clinicalNote":
-      recordedAt = stringAtPath(fhir, "date") ?? stringAtPath(fhir, "context", "period", "start");
+      recordedAt = firstFhirInstant(
+        stringAtPath(fhir, "date"),
+        stringAtPath(fhir, "context", "period", "start"),
+      );
       break;
   }
 
-  return {
-    recordedAt: parseFhirDate(recordedAt),
-    issuedAt: parseFhirDate(issuedAt),
-  };
+  return { recordedAt, issuedAt };
 }
 
 export const clinicalRecordSummarySchema = z.object({
