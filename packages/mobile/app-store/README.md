@@ -27,7 +27,11 @@ Before building or capturing:
    seed. A local `dev-session` token is not acceptable evidence. Keep the
    username and password in approved secret storage; never commit them.
 2. Verify the configured API health endpoint and password-auth provider are
-   reachable from both simulators.
+   reachable from both simulators. Before starting the Release capture pass,
+   verify that an authenticated production `clinicalRecords.list` request succeeds
+   and that the permanent account's Apple Health provider reports at least one
+   clinical record. Treat a missing route or empty fixture as a blocker; do not use
+   an empty/error screen as review evidence.
 3. Run `asc screenshots --help`, `asc screenshots sizes --output table`,
    `asc auth status --validate`, and `xcrun simctl list devices available`.
 4. Reserve an iPhone Simulator that renders an accepted 6.5-inch size and a
@@ -82,6 +86,10 @@ The local `asc screenshots run` workflow is experimental and currently uses
 AXe for accessibility polling, taps, typing, and capture. Capture fails closed
 if a required screen label is absent. Re-check `asc screenshots run --help`
 and inspect a fresh native accessibility snapshot before changing a selector.
+Dismiss native iOS overlays such as Save Password before accepting a candidate.
+If the runner reports a successful action but a fresh accessibility snapshot proves
+that it did not occur, record the exact failure and obtain strategy-pivot approval
+before continuing with direct AXe actions.
 
 ### Validate and review
 

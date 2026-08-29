@@ -3,11 +3,12 @@
 Date: 2026-08-29
 
 Status: partially complete; documentation, capture configuration, reviewer-account
-verification, Release build, one iPhone capture, and App Store Connect review-note
-updates are complete. The remaining simulator captures require approval to switch
-from the defective `asc screenshots run` tap execution to direct AXe. The separate
-physical-iPhone HealthKit acceptance gate is blocked because the paired iPhone is
-unavailable to Xcode.
+verification, Release build, four native captures, and App Store Connect review-note
+updates are complete. The Clinical Records list/detail captures are blocked because
+the production server returns 404 for `clinicalRecords.list` and the permanent
+review account has zero seeded clinical records. The separate physical-iPhone
+HealthKit acceptance gate is blocked because the paired iPhone is unavailable to
+Xcode.
 
 ## Durable work completed
 
@@ -27,6 +28,9 @@ unavailable to Xcode.
   path were added.
 - Built the production-server Release configuration successfully for the arm64 iOS
   Simulator and installed the same artifact on both reserved simulators.
+- Captured and visually inspected authenticated Today and Apple Health provider
+  controls on both display classes. The provider controls show the optional,
+  read-only clinical-record explanation and the Danger Zone deletion action.
 
 No screenshot was uploaded, planned, applied, or attached in App Store Connect. No
 incomplete local review manifest was approved.
@@ -37,7 +41,7 @@ incomplete local review manifest was approved.
 | --- | --- |
 | `asc auth status --validate` | Valid App Store Connect keychain credential |
 | Permanent review login | Production password-auth endpoint returned HTTP 200; only status booleans were emitted |
-| `asc screenshots sizes --output table` | `IPHONE_65` accepts 1242x2688; `IPAD_PRO_3GEN_129` accepts 2048x2732 |
+| `asc screenshots sizes --output table` | `IPHONE_65` accepts 1242x2688; `IPAD_PRO_3GEN_129` accepts the captured 2064x2752 size |
 | AXe | 1.8.0 installed |
 | iPhone Simulator | iPhone 11 Pro Max, `AA78427D-0CAB-4F95-864E-7817CED14BA6` |
 | iPad Simulator | iPad Pro 13-inch (M5), `8DD82424-FB13-4431-80A8-DB54F1990FA8` |
@@ -52,13 +56,14 @@ authorization or record queries. Apple's authorization behavior is documented in
 
 | Display class | Today | Provider controls | Clinical list | Clinical detail |
 | --- | --- | --- | --- | --- |
-| iPhone 6.5 | Captured, 1242x2688 | Blocked | Blocked | Blocked |
-| iPad 13 | Not run | Not run | Not run | Not run |
+| iPhone 6.5 | Captured, 1242x2688 | Captured, 1242x2688 | Blocked | Blocked |
+| iPad 13 | Captured, 2064x2752 | Captured, 2064x2752 | Blocked | Blocked |
 
-The valid partial candidate is
-`packages/mobile/app-store/screenshots/native/raw/en-US/iphone-6.5/01-today.png`.
-It contains authenticated native UI and no login, splash, Expo Launcher, or
-development-menu content.
+The four valid partial candidates are under
+`packages/mobile/app-store/screenshots/native/raw/en-US/{iphone-6.5,ipad-13}`.
+They contain authenticated native UI and no login, splash, password-save prompt,
+Expo Launcher, or development-menu content. No empty or error screen was accepted
+as clinical evidence.
 
 ## Exact software blocker
 
@@ -79,7 +84,7 @@ screen contained `test@test.` and showed `Enter a valid email address.`. Explici
 settling waits after text entry resolved that failure and the subsequent clean run
 authenticated and captured Today.
 
-The remaining automation failure is reproducible:
+The asc automation failure was reproducible:
 
 ```text
 Error: screenshots run: step 15 (wait_for): wait_for timed out after 15000ms
@@ -91,9 +96,22 @@ The live accessibility tree contains exactly one enabled `More` `AXButton` at
 `axe tap --label More --udid AA78427D-0CAB-4F95-864E-7817CED14BA6` navigates to
 the expected screen immediately. The same `asc screenshots run` failure persisted
 after a two-second pre-tap wait and a reset of the isolated simulator's app container
-and Keychain. The current asc-runner strategy is therefore exhausted at a tool tap
-defect. Per the repository's mandatory strategy-pivot gate, direct AXe execution has
-been proposed and is awaiting explicit approval.
+and Keychain. The asc-runner strategy was therefore exhausted at a tool tap defect.
+After explicit approval, the remaining valid navigation and captures were completed
+with direct AXe commands against fresh accessibility snapshots. Credentials were
+typed via standard input rather than exposed as command arguments. The iPad's native
+Save Password prompt was dismissed before recapturing and visually inspecting Today.
+
+The remaining blocker is production state, not simulator automation. The permanent
+review account's Apple Health screen reports `No records yet for this provider`, and
+its provider statistics report zero clinical records. The production UI intentionally
+shows `View clinical records` only when `clinicalRecords > 0`. A credential-safe
+authenticated production request to `clinicalRecords.list` returned HTTP 404, while
+the current branch registers that router. The deterministic review fixture exists in
+the repository seed code but has not been applied to the permanent production review
+account. Capturing valid list/detail evidence therefore requires deployment of the
+current server and an authorized production seed operation. Neither production
+mutation was performed as part of this capture task.
 
 ## Validation performed
 
@@ -105,8 +123,11 @@ been proposed and is awaiting explicit approval.
 - `xcrun simctl list devices available`
 - Release `xcodebuild` retry: exit 0
 - `xcrun simctl install` and `get_app_container` on both reserved simulators
-- `sips -g pixelWidth -g pixelHeight` on the iPhone Today candidate: 1242x2688
+- `asc screenshots validate` on the iPhone directory: two ready, zero errors or warnings
+- `asc screenshots validate` on the iPad directory: two ready, zero errors or warnings
+- `sips -g pixelWidth -g pixelHeight` on all candidates: iPhone 1242x2688; iPad 2064x2752
 - Reviewer login availability check: HTTP 200 without logging credentials
+- Authenticated production `clinicalRecords.list` availability check: HTTP 404 without logging credentials
 - App Store Connect review-detail re-read after update
 - `git diff --check`
 
@@ -116,13 +137,15 @@ with the repository rule against testing static configuration files.
 ## Retrospective
 
 The credential-safe reviewer login, accepted simulator sizes, isolated devices,
-native Release artifact, and exact first-failure evidence all made the workflow
-auditable. Native inspection was necessary to separate an app validation failure
-from an asc automation defect. Next time, the capture runbook should state that
-simulator Keychain state survives app uninstall and document the `rtk proxy` rule
-for secret-bearing JSON pipelines. A short AXe fallback section, gated by the
-strategy-pivot rule, would also reduce recovery time when asc reports a successful
-tap that does not activate the target.
+native Release artifact, and exact first-failure evidence made the workflow
+auditable. Native inspection separated app behavior, an asc automation defect, an
+iOS password-save overlay, and missing production prerequisites. Next time, verify
+the production clinical router and permanent-account fixture before starting the
+expensive Release capture pass. The runbook should also state that simulator
+Keychain state survives app uninstall, describe dismissal of native password-save
+prompts, and document the `rtk proxy` rule for secret-bearing JSON pipelines. A
+short AXe fallback section, gated by the strategy-pivot rule, would reduce recovery
+time when asc reports a successful tap that does not activate the target.
 
 For similar work, use `asc-shots-pipeline` and `ios-simulator-audit` again. A small
 repository skill for credential-safe App Store reviewer-account capture would close
