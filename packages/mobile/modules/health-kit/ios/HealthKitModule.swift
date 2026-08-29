@@ -590,6 +590,116 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
+        // Clinical records are deliberately query-only. Do not register them for background
+        // delivery; users initiate each clinical-record sync explicitly.
+        AsyncFunction("queryClinicalRecords") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
+            guard clinicalRecordType(for: typeIdentifier) != nil else {
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Unknown clinical record type: \(typeIdentifier)"
+                )
+                return
+            }
+            guard let clinicalType = healthKitClinicalType(for: typeIdentifier) else {
+                self.rejectPromise(
+                    promise,
+                    code: "UNAVAILABLE_TYPE",
+                    reason: "Clinical record type is unavailable on this iOS version: \(typeIdentifier)"
+                )
+                return
+            }
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
+                return
+            }
+            let queryStartDate = self.effectiveStartDate(startDate)
+            guard queryStartDate < endDate else {
+                promise.resolve([[String: Any]]())
+                return
+            }
+
+            let query = HKSampleQuery(
+                sampleType: clinicalType,
+                predicate: HealthKitQueries.datePredicate(start: queryStartDate, end: endDate),
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [
+                    NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true),
+                ]
+            ) { _, results, error in
+                if let error {
+                    let authorizationPending = HealthKitErrorDetails
+                        .isAuthorizationNotDetermined(error)
+                    if !authorizationPending {
+                        SentrySDK.capture(error: error) { scope in
+                            scope.setTag(
+                                value: "queryClinicalRecords",
+                                key: "healthkit.operation"
+                            )
+                            scope.setTag(
+                                value: typeIdentifier,
+                                key: "healthkit.sample_type"
+                            )
+                        }
+                    }
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryClinicalRecords(\(typeIdentifier))",
+                        fallbackCode: authorizationPending
+                            ? "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED"
+                            : "QUERY_ERROR",
+                        error: error
+                    )
+                    return
+                }
+
+                do {
+                    let records = try (results as? [HKClinicalRecord])?
+                        .filter {
+                            self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                        }
+                        .map { sample in
+                            try HealthKitQueries.mapClinicalRecord(
+                                ClinicalRecordMappingInput(
+                                    clinicalRecordUUID: sample.uuid,
+                                    clinicalTypeIdentifier: sample.clinicalType.identifier,
+                                    clinicalDisplayName: sample.displayName,
+                                    clinicalSourceName: sample.sourceRevision.source.name,
+                                    clinicalFHIRVersion: sample.fhirResource?
+                                        .fhirVersion.stringRepresentation,
+                                    clinicalFHIRData: sample.fhirResource?.data,
+                                    clinicalDownloadDate: sample.startDate
+                                )
+                            )
+                        } ?? []
+                    promise.resolve(records)
+                } catch {
+                    SentrySDK.capture(error: error) { scope in
+                        scope.setTag(
+                            value: "mapClinicalRecord",
+                            key: "healthkit.operation"
+                        )
+                        scope.setTag(
+                            value: typeIdentifier,
+                            key: "healthkit.sample_type"
+                        )
+                    }
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryClinicalRecords(\(typeIdentifier))",
+                        fallbackCode: "CLINICAL_RECORD_MAPPING_ERROR",
+                        error: error
+                    )
+                }
+            }
+            self.healthStore.execute(query)
+        }
+
         AsyncFunction("deleteDietarySamples") { (syncIdentifiers: [String], promise: Promise) in
             guard !syncIdentifiers.isEmpty else {
                 promise.resolve(0)
