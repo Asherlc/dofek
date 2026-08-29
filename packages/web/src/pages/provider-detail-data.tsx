@@ -1,4 +1,5 @@
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
+import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { ProviderSyncHistoryEntry } from "../components/ProviderSyncHistoryEntry.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -176,6 +177,19 @@ export function RecordsBrowser({
   return (
     <section>
       <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+
+      {providerId === "apple_health" ? (
+        <div className="mb-3 rounded border border-border bg-surface px-3 py-3 text-xs text-subtle">
+          <p>
+            Clinical records are optional, read-only, and sync only when you connect or select Sync.
+          </p>
+          {stats && stats.clinicalRecords > 0 ? (
+            <Link to="/clinical-records" className="mt-2 inline-block text-accent hover:underline">
+              View clinical records
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
       <div role="tablist" aria-label="Record types" className="flex flex-wrap gap-1 mb-3">
         {availableTypes.map((dataType) => {

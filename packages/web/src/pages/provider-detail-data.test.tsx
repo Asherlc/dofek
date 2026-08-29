@@ -35,7 +35,9 @@ vi.mock("../lib/trpc.ts", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: string }) => <a href="/activity/activity-1">{children}</a>,
+  Link: ({ children, params, to }: { children: string; params?: { id: string }; to: string }) => (
+    <a href={params ? to.replace("$id", params.id) : to}>{children}</a>
+  ),
 }));
 
 describe("RecordsBrowser", () => {
@@ -193,6 +195,31 @@ describe("RecordsBrowser", () => {
     expect(screen.getByRole("link", { name: "Open activity" })).toHaveAttribute(
       "href",
       "/activity/activity-1",
+    );
+  });
+
+  it("links Apple Health records to the clinical records list when records exist", () => {
+    render(
+      <RecordsBrowser
+        providerId="apple_health"
+        stats={{
+          activities: 0,
+          bodyMeasurements: 0,
+          clinicalRecords: 1,
+          dailyMetrics: 0,
+          foodEntries: 0,
+          healthEvents: 0,
+          journalEntries: 0,
+          metricStream: 0,
+          nutritionDaily: 0,
+          sleepSessions: 0,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "View clinical records" })).toHaveAttribute(
+      "href",
+      "/clinical-records",
     );
   });
 });

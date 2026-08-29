@@ -1122,6 +1122,22 @@ describe("ProviderDetailScreen", () => {
         expect(screen.getByText("Apple Health permissions were not granted")).toBeTruthy();
       });
     });
+
+    it("opens the clinical records list when Apple Health records exist", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({
+        data: [{ ...appleHealthStats, clinicalRecords: 1, totalRecords: 1 }],
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(await screen.findByRole("link", { name: "View clinical records" }));
+
+      expect(mockPush).toHaveBeenCalledWith("/clinical-records");
+    });
   });
 
   describe("Disconnect", () => {
