@@ -2,6 +2,11 @@ import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import { z } from "zod";
 import { type ClickHouseCommandClient, createClickHouseClientFromEnv } from "./clickhouse.ts";
+import {
+  dropObsoleteClinicalRawTables,
+  transitionLegacyClinicalMirror,
+  waitForCanonicalClinicalMirror,
+} from "./clickhouse-clinical-cdc.ts";
 
 interface PeerDbClient {
   query(queryText: string): Promise<unknown>;
@@ -961,6 +966,17 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
     rawAnalyticsInitialCopyValues,
   );
   const existingMirrorNames = await readExistingManagedMirrorNames(options.peerDbClient);
+  const peerDbMirrorApiClient = options.peerDbMirrorApiClient;
+  if (existingMirrorNames.size > 0 && !peerDbMirrorApiClient) {
+    throw new Error("PeerDB mirror API client is required to reconcile existing mirror mappings");
+  }
+  const transitionedLegacyClinicalMirror = peerDbMirrorApiClient
+    ? await transitionLegacyClinicalMirror(
+        options.peerDbClient,
+        peerDbMirrorApiClient,
+        existingMirrorNames,
+      )
+    : false;
   await truncateMissingInitialCopyRawAnalyticsDestinations(
     options.clickHouseClient,
     rawAnalyticsInitialCopyValues,
@@ -980,12 +996,16 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
       throw error;
     }
   }
+  if (transitionedLegacyClinicalMirror && peerDbMirrorApiClient) {
+    await waitForCanonicalClinicalMirror(peerDbMirrorApiClient);
+  }
   if (existingMirrorNames.size > 0) {
-    if (!options.peerDbMirrorApiClient) {
+    if (!peerDbMirrorApiClient) {
       throw new Error("PeerDB mirror API client is required to reconcile existing mirror mappings");
     }
-    await ensureExistingMirrorTableMappings(options.peerDbMirrorApiClient, existingMirrorNames);
+    await ensureExistingMirrorTableMappings(peerDbMirrorApiClient, existingMirrorNames);
   }
+  await dropObsoleteClinicalRawTables(options.clickHouseClient);
 }
 
 export async function setupClickHouseCdcFromEnv(): Promise<void> {

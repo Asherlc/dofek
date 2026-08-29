@@ -651,7 +651,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(getMirrorStatus).toHaveBeenCalledTimes(6);
+    expect(getMirrorStatus).toHaveBeenCalledTimes(7);
     expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledTimes(4);
     expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(1, {
       flowJobName: "dofek_fitness_raw_analytics",
@@ -704,6 +704,165 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries.join("\n")).not.toContain("DROP MIRROR dofek_fitness_raw_analytics");
     expect(peerDbQueries.join("\n")).not.toContain(
       "DROP MIRROR dofek_provider_inventory_raw_analytics",
+    );
+  });
+
+  it("recreates a legacy clinical mirror before dropping obsolete raw tables", async () => {
+    const events: string[] = [];
+    let providerInventoryMappings: PeerDbTableMapping[] = [
+      {
+        sourceTableIdentifier: "fitness.food_entry",
+        destinationTableIdentifier: "food_entry",
+        exclude: [],
+      },
+      {
+        sourceTableIdentifier: "fitness.lab_panel",
+        destinationTableIdentifier: "lab_panel",
+        exclude: [],
+      },
+      {
+        sourceTableIdentifier: "fitness.lab_result",
+        destinationTableIdentifier: "lab_result",
+        exclude: [],
+      },
+    ];
+    const canonicalProviderInventoryMappings: PeerDbTableMapping[] = [
+      {
+        sourceTableIdentifier: "fitness.food_entry",
+        destinationTableIdentifier: "food_entry",
+        exclude: [],
+      },
+      {
+        sourceTableIdentifier: "fitness.health_event",
+        destinationTableIdentifier: "health_event",
+        exclude: [],
+      },
+      {
+        sourceTableIdentifier: "fitness.clinical_record",
+        destinationTableIdentifier: "clinical_record",
+        exclude: [],
+      },
+      {
+        sourceTableIdentifier: "fitness.journal_entry",
+        destinationTableIdentifier: "journal_entry",
+        exclude: [],
+      },
+      {
+        sourceTableIdentifier: "fitness.processing_flow_marker",
+        destinationTableIdentifier: "processing_flow_marker_provider_inventory",
+        exclude: [],
+      },
+    ];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbMirrorApiClient: {
+        async getMirrorStatus(mirrorName) {
+          if (mirrorName === "dofek_provider_inventory_raw_analytics") {
+            return { currentFlowState: "STATUS_RUNNING", tableMappings: providerInventoryMappings };
+          }
+          if (mirrorName === "dofek_fitness_raw_analytics") {
+            return {
+              currentFlowState: "STATUS_RUNNING",
+              tableMappings: [
+                {
+                  sourceTableIdentifier: "fitness.provider_connection",
+                  destinationTableIdentifier: "provider_connection",
+                  exclude: [],
+                },
+                {
+                  sourceTableIdentifier: "fitness.processing_flow_marker",
+                  destinationTableIdentifier: "processing_flow_marker",
+                  exclude: [],
+                },
+              ],
+            };
+          }
+          return { currentFlowState: "STATUS_RUNNING", tableMappings: [] };
+        },
+        async listMirrors() {
+          return [];
+        },
+        async changeMirrorState() {
+          throw new Error("Canonical mirror replacement must not use additive reconciliation");
+        },
+      },
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("obsolete_metric_stream_mirror_name")) return { rows: [] };
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
+            return {
+              rows: [
+                { name: "dofek_fitness_raw_analytics" },
+                { name: "dofek_provider_inventory_raw_analytics" },
+                { name: "dofek_sensor_priority_raw_analytics" },
+              ],
+            };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return {
+              rows: [
+                { existing_mirror_name: "dofek_fitness_raw_analytics" },
+                { existing_mirror_name: "dofek_provider_inventory_raw_analytics" },
+                { existing_mirror_name: "dofek_sensor_priority_raw_analytics" },
+              ],
+            };
+          }
+          events.push(`peerdb:${query}`);
+          if (query === "DROP MIRROR dofek_provider_inventory_raw_analytics") {
+            providerInventoryMappings = [];
+          }
+          if (
+            query.includes("CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics")
+          ) {
+            providerInventoryMappings = canonicalProviderInventoryMappings;
+          }
+          return {};
+        },
+      },
+      sourcePostgresClient: { async query() {} },
+      clickHouseClient: {
+        async command({ query }) {
+          events.push(`clickhouse:${query}`);
+        },
+      },
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    const dropMirrorIndex = events.indexOf(
+      "peerdb:DROP MIRROR dofek_provider_inventory_raw_analytics",
+    );
+    const createMirrorIndex = events.findIndex((event) =>
+      event.includes("CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics"),
+    );
+    const dropLabPanelIndex = events.indexOf(
+      "clickhouse:DROP TABLE IF EXISTS postgres_fitness.lab_panel",
+    );
+    const dropLabResultIndex = events.indexOf(
+      "clickhouse:DROP TABLE IF EXISTS postgres_fitness.lab_result",
+    );
+    expect(dropMirrorIndex).toBeGreaterThanOrEqual(0);
+    expect(createMirrorIndex).toBeGreaterThan(dropMirrorIndex);
+    expect(dropLabPanelIndex).toBeGreaterThan(createMirrorIndex);
+    expect(dropLabResultIndex).toBeGreaterThan(createMirrorIndex);
+    expect(providerInventoryMappings).toEqual(canonicalProviderInventoryMappings);
+    expect(providerInventoryMappings).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceTableIdentifier: "fitness.lab_panel" }),
+        expect.objectContaining({ sourceTableIdentifier: "fitness.lab_result" }),
+      ]),
     );
   });
 
