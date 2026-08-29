@@ -758,6 +758,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     await setupClickHouseCdc({
       peerDbMirrorApiClient: {
         async getMirrorStatus(mirrorName) {
+          events.push(`status:${mirrorName}`);
           if (mirrorName === "dofek_provider_inventory_raw_analytics") {
             return { currentFlowState: "STATUS_RUNNING", tableMappings: providerInventoryMappings };
           }
@@ -855,6 +856,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
     );
     expect(dropMirrorIndex).toBeGreaterThanOrEqual(0);
     expect(createMirrorIndex).toBeGreaterThan(dropMirrorIndex);
+    expect(
+      events.findIndex(
+        (event, index) =>
+          index > createMirrorIndex && event === "status:dofek_provider_inventory_raw_analytics",
+      ),
+    ).toBeGreaterThan(createMirrorIndex);
     expect(dropLabPanelIndex).toBeGreaterThan(createMirrorIndex);
     expect(dropLabResultIndex).toBeGreaterThan(createMirrorIndex);
     expect(providerInventoryMappings).toEqual(canonicalProviderInventoryMappings);
