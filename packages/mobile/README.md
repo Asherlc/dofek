@@ -231,6 +231,20 @@ Before App Store submission or production approval, run the
 against the exact TestFlight build using the dedicated synthetic-only account
 and hardware described there.
 
+### App Store clinical-record evidence
+
+Clinical-record submissions require signed native captures on both a 6.5-inch
+iPhone and a 13-inch iPad. Each device set contains Today, the Apple Health
+provider controls, the Clinical Records list, and one Clinical Record detail,
+all signed in through the permanent review account and visibly labeled as
+synthetic demo data. The capture prerequisites, secret-safe `.asc` plan,
+validation commands, App Review notes, physical-iPhone gate, and explicit
+no-upload-without-confirmation rule are maintained in the
+[App Store asset guide](app-store/README.md#native-clinical-record-review-evidence).
+Apple's current
+[screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications)
+remain authoritative for accepted dimensions.
+
 ## Dependency pins
 
 - `@react-native-async-storage/async-storage@2.2.0` — stay on 2.2.x for Expo SDK 57. AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see [expo/expo#43757](https://github.com/expo/expo/issues/43757).

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "app": {
+    "bundle_id": "com.dofek.app",
+    "udid": "booted",
+    "output_dir": "packages/mobile/app-store/screenshots/native/raw/en-US/iphone-6.5"
+  },
+  "defaults": {
+    "post_action_delay_ms": 500
+  },
+  "steps": [
+    { "action": "launch" },
+    { "action": "wait_for", "label": "Email", "timeout_ms": 30000 },
+    { "action": "tap", "label": "Email" },
+    { "action": "type", "text": "__APP_REVIEW_EMAIL__" },
+    { "action": "wait", "duration_ms": 1500 },
+    { "action": "tap", "label": "Password" },
+    { "action": "type", "text": "__APP_REVIEW_PASSWORD__" },
+    { "action": "wait", "duration_ms": 1500 },
+    { "action": "tap", "label": "Sign in with email" },
+    { "action": "wait_for", "label": "Today", "timeout_ms": 30000 },
+    { "action": "wait", "duration_ms": 2000 },
+    { "action": "screenshot", "name": "01-today" },
+    { "action": "wait", "duration_ms": 2000 },
+    { "action": "tap", "label": "More" },
+    { "action": "wait_for", "contains": "Account and data tools", "timeout_ms": 15000 },
+    {
+      "action": "tap",
+      "label": "Account & settings. Manage your profile, preferences, data sources, and account."
+    },
+    { "action": "wait_for", "label": "Data Sources", "timeout_ms": 15000 },
+    { "action": "tap", "label": "Data Sources" },
+    {
+      "action": "wait_for",
+      "contains": "Connect and manage health data providers",
+      "timeout_ms": 15000
+    },
+    { "action": "tap", "label": "Data Sources" },
+    { "action": "wait_for", "contains": "Import from Share", "timeout_ms": 30000 },
+    { "action": "tap", "label": "Open Apple Health details" },
+    {
+      "action": "wait_for",
+      "contains": "Clinical records are optional",
+      "timeout_ms": 30000
+    },
+    { "action": "wait", "duration_ms": 1000 },
+    { "action": "screenshot", "name": "02-apple-health-provider-controls" },
+    { "action": "tap", "label": "View clinical records" },
+    {
+      "action": "wait_for",
+      "contains": "Read-only records synced explicitly from Apple Health",
+      "timeout_ms": 30000
+    },
+    { "action": "wait", "duration_ms": 1000 },
+    { "action": "screenshot", "name": "03-clinical-records" },
+    { "action": "tap", "label": "Review Wellness Panel" },
+    { "action": "wait_for", "label": "FHIR resource", "timeout_ms": 30000 },
+    { "action": "wait", "duration_ms": 1000 },
+    { "action": "screenshot", "name": "04-clinical-record-detail" }
+  ]
+}

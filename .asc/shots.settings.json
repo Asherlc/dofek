@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "app": {
+    "bundle_id": "com.dofek.app",
+    "project": "packages/mobile/ios/Dofek.xcworkspace",
+    "scheme": "Dofek",
+    "simulator_udid": "booted"
+  },
+  "paths": {
+    "plan": ".asc/screenshots.json",
+    "raw_dir": "packages/mobile/app-store/screenshots/native/raw",
+    "framed_dir": "packages/mobile/app-store/screenshots/native/raw"
+  },
+  "pipeline": {
+    "frame_enabled": false,
+    "upload_enabled": false
+  },
+  "upload": {
+    "version_localization_id": "",
+    "device_type": "IPHONE_65",
+    "source_dir": "packages/mobile/app-store/screenshots/native/raw"
+  }
+}
