@@ -99,6 +99,49 @@ describe("deriveClinicalRecordDates", () => {
   });
 
   it.each([
+    [
+      "allergy onset",
+      "allergy",
+      { resourceType: "AllergyIntolerance", onsetDateTime: "2026-05-01T08:00:00Z" },
+      "2026-05-01T08:00:00.000Z",
+    ],
+    [
+      "coverage period",
+      "coverage",
+      { resourceType: "Coverage", period: { start: "2026-01-01T00:00:00Z" } },
+      "2026-01-01T00:00:00.000Z",
+    ],
+    [
+      "medication dosage period",
+      "medication",
+      {
+        resourceType: "MedicationRequest",
+        dosageInstruction: [
+          { timing: { repeat: { boundsPeriod: { start: "2026-04-02T12:00:00Z" } } } },
+        ],
+      },
+      "2026-04-02T12:00:00.000Z",
+    ],
+    [
+      "procedure period",
+      "procedure",
+      { resourceType: "Procedure", performedPeriod: { start: "2026-06-01T09:00:00Z" } },
+      "2026-06-01T09:00:00.000Z",
+    ],
+    [
+      "clinical note context period",
+      "clinicalNote",
+      { resourceType: "DocumentReference", context: { period: { start: "2026-07-01T10:00:00Z" } } },
+      "2026-07-01T10:00:00.000Z",
+    ],
+  ] as const)("derives the timestamp from %s", (_description, clinicalType, fhir, expected) => {
+    expect(deriveClinicalRecordDates(clinicalType, "4.0.1", fhir)).toEqual({
+      recordedAt: new Date(expected),
+      issuedAt: null,
+    });
+  });
+
+  it.each([
     "2026",
     "2026-08",
     "2026-08-25",
