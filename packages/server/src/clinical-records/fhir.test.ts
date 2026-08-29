@@ -134,6 +134,30 @@ describe("deriveClinicalRecordDates", () => {
       { resourceType: "DocumentReference", context: { period: { start: "2026-07-01T10:00:00Z" } } },
       "2026-07-01T10:00:00.000Z",
     ],
+    [
+      "allergy recorded date",
+      "allergy",
+      { resourceType: "AllergyIntolerance", recordedDate: "2026-05-02T08:00:00Z" },
+      "2026-05-02T08:00:00.000Z",
+    ],
+    [
+      "lab effective period",
+      "labResult",
+      { resourceType: "Observation", effectivePeriod: { start: "2026-08-01T08:00:00Z" } },
+      "2026-08-01T08:00:00.000Z",
+    ],
+    [
+      "procedure date time",
+      "procedure",
+      { resourceType: "Procedure", performedDateTime: "2026-06-02T09:00:00Z" },
+      "2026-06-02T09:00:00.000Z",
+    ],
+    [
+      "clinical note date",
+      "clinicalNote",
+      { resourceType: "DocumentReference", date: "2026-07-02T10:00:00Z" },
+      "2026-07-02T10:00:00.000Z",
+    ],
   ] as const)("derives the timestamp from %s", (_description, clinicalType, fhir, expected) => {
     expect(deriveClinicalRecordDates(clinicalType, "4.0.1", fhir)).toEqual({
       recordedAt: new Date(expected),
