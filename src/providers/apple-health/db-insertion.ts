@@ -10,7 +10,7 @@ import {
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
-import { healthEvent, labResult } from "../../db/schema/clinical.ts";
+import { healthEvent } from "../../db/schema/clinical.ts";
 import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
@@ -168,8 +168,6 @@ export const ALL_ROUTED_TYPES = new Set([
 function dateToString(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
-
-export { labResult };
 
 export async function upsertMetricStreamBatch(
   db: SyncDatabase,

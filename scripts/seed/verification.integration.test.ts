@@ -186,18 +186,26 @@ async function insertVerificationPrerequisites(): Promise<void> {
   `;
 
   await sql`
-    INSERT INTO fitness.lab_result (
-      provider_id,
+    INSERT INTO fitness.clinical_record (
       user_id,
+      provider_id,
       external_id,
-      test_name,
+      clinical_type,
+      display_name,
+      fhir_version,
+      fhir,
+      downloaded_at,
       recorded_at
     )
     SELECT
-      'manual_review',
       ${USER_ID},
+      'manual_review',
       'verification-lab-' || generated_index,
+      'labResult',
       'Verification lab result',
+      'R4',
+      jsonb_build_object('resourceType', 'Observation', 'id', 'verification-lab-' || generated_index),
+      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day',
       TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
     FROM generate_series(1, 8) AS generated_index
   `;

@@ -998,8 +998,7 @@ describe("DataSourcesPanel", () => {
       healthEvents: 392,
       foodEntries: 0,
       nutritionDaily: 0,
-      labPanels: 0,
-      labResults: 0,
+      clinicalRecords: 0,
       journalEntries: 0,
     };
     const kayaStats = {
@@ -1012,8 +1011,7 @@ describe("DataSourcesPanel", () => {
       healthEvents: 392,
       foodEntries: 0,
       nutritionDaily: 0,
-      labPanels: 0,
-      labResults: 0,
+      clinicalRecords: 0,
       journalEntries: 0,
     };
     mockProvidersQuery.mockReturnValue({
