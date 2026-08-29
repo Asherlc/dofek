@@ -233,6 +233,22 @@ describe("deriveClinicalRecordDates", () => {
       );
     },
   );
+
+  it("uses literal R4 field names and falls back to onset for an unknown FHIR release", () => {
+    expect(
+      deriveClinicalRecordDates("condition", "R4", {
+        resourceType: "Condition",
+        recordedDate: "2026-01-03T12:00:00Z",
+      }),
+    ).toEqual({ recordedAt: new Date("2026-01-03T12:00:00.000Z"), issuedAt: null });
+    expect(
+      deriveClinicalRecordDates("condition", "R5", {
+        resourceType: "Condition",
+        recordedDate: "2026-01-03T12:00:00Z",
+        onsetDateTime: "2026-01-04T12:00:00Z",
+      }),
+    ).toEqual({ recordedAt: new Date("2026-01-04T12:00:00.000Z"), issuedAt: null });
+  });
 });
 
 describe("summarizeClinicalRecord", () => {
@@ -285,6 +301,23 @@ describe("summarizeClinicalRecord", () => {
       date: DOWNLOADED_AT,
       dateLabel: "Downloaded Aug 28, 2026",
     });
+  });
+
+  it("uses the issued date when no clinical timestamp is available", () => {
+    expect(
+      summarizeClinicalRecord(
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          clinicalType: "labResult",
+          displayName: "Issued result",
+          sourceName: "Example Health",
+          downloadedAt: new Date(DOWNLOADED_AT),
+          recordedAt: null,
+          issuedAt: new Date("2026-08-26T16:00:00Z"),
+        },
+        "UTC",
+      ),
+    ).toMatchObject({ dateLabel: "Issued Aug 26, 2026" });
   });
 
   it("formats the clinical instant in the user's timezone", () => {
