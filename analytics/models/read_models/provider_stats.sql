@@ -277,21 +277,7 @@ current_providers AS (
     SELECT DISTINCT
         user_id,
         provider_id
-    FROM {{ source('postgres_fitness', 'lab_panel') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND (user_id, provider_id) IN (
-            SELECT
-                user_id,
-                provider_id
-            FROM providers
-        )
-
-    UNION DISTINCT
-
-    SELECT DISTINCT
-        user_id,
-        provider_id
-    FROM {{ source('postgres_fitness', 'lab_result') }} FINAL
+    FROM {{ source('postgres_fitness', 'clinical_record') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND (user_id, provider_id) IN (
             SELECT
@@ -446,28 +432,12 @@ nutrition_daily_counts AS (
     GROUP BY user_id, provider_id
 ),
 
-lab_panel_counts AS (
+clinical_record_counts AS (
     SELECT
         user_id,
         provider_id,
         count() AS count
-    FROM {{ source('postgres_fitness', 'lab_panel') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND (user_id, provider_id) IN (
-            SELECT
-                user_id,
-                provider_id
-            FROM providers
-        )
-    GROUP BY user_id, provider_id
-),
-
-lab_result_counts AS (
-    SELECT
-        user_id,
-        provider_id,
-        count() AS count
-    FROM {{ source('postgres_fitness', 'lab_result') }} FINAL
+    FROM {{ source('postgres_fitness', 'clinical_record') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND (user_id, provider_id) IN (
             SELECT
@@ -511,8 +481,7 @@ SELECT
     coalesce(health_event_counts.count, 0) AS health_events,
     coalesce(metric_stream_counts.count, 0) AS metric_stream,
     coalesce(nutrition_daily_counts.count, 0) AS nutrition_daily,
-    coalesce(lab_panel_counts.count, 0) AS lab_panels,
-    coalesce(lab_result_counts.count, 0) AS lab_results,
+    coalesce(clinical_record_counts.count, 0) AS clinical_records,
     coalesce(journal_entry_counts.count, 0) AS journal_entries,
     if(current_providers.provider_id IS null, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
@@ -546,12 +515,9 @@ LEFT JOIN health_event_counts
 LEFT JOIN nutrition_daily_counts
     ON nutrition_daily_counts.user_id = providers.user_id
     AND nutrition_daily_counts.provider_id = providers.provider_id
-LEFT JOIN lab_panel_counts
-    ON lab_panel_counts.user_id = providers.user_id
-    AND lab_panel_counts.provider_id = providers.provider_id
-LEFT JOIN lab_result_counts
-    ON lab_result_counts.user_id = providers.user_id
-    AND lab_result_counts.provider_id = providers.provider_id
+LEFT JOIN clinical_record_counts
+    ON clinical_record_counts.user_id = providers.user_id
+    AND clinical_record_counts.provider_id = providers.provider_id
 LEFT JOIN journal_entry_counts
     ON journal_entry_counts.user_id = providers.user_id
     AND journal_entry_counts.provider_id = providers.provider_id
