@@ -52,7 +52,7 @@ export class ClinicalRecordsRepository {
     if (records.length === 0) return { inserted: 0, ids: [] };
 
     const rows = records.map((record) => {
-      const dates = deriveClinicalRecordDates(record.clinicalType, record.fhir);
+      const dates = deriveClinicalRecordDates(record.clinicalType, record.fhirVersion, record.fhir);
       return {
         userId: this.#userId,
         providerId: PROVIDER_ID,
