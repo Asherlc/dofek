@@ -21,6 +21,7 @@ vi.mock("./routers/ble-heart-rate-sync.ts", () => ({ bleHeartRateSyncRouter: moc
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
 vi.mock("./routers/calendar.ts", () => ({ calendarRouter: mockRouter }));
+vi.mock("./routers/clinical-records.ts", () => ({ clinicalRecordsRouter: mockRouter }));
 vi.mock("./routers/climbing.ts", () => ({ climbingRouter: mockRouter }));
 vi.mock("./routers/companion-pairing.ts", () => ({ companionPairingRouter: mockRouter }));
 vi.mock("./routers/correlation.ts", () => ({ correlationRouter: mockRouter }));
@@ -150,6 +151,7 @@ describe("appRouter", () => {
       "training",
       "trends",
       "calendar",
+      "clinicalRecords",
       "climbing",
       "correlation",
       "credentialAuth",
