@@ -113,10 +113,7 @@ export default function ClinicalRecordsScreen() {
               </View>
             ))}
 
-            <View
-              accessibilityLabel="Clinical record pages"
-              style={styles.pagination}
-            >
+            <View accessibilityLabel="Clinical record pages" style={styles.pagination}>
               <TouchableOpacity
                 accessibilityLabel="Previous"
                 accessibilityRole="button"
