@@ -170,6 +170,24 @@ describe("account erasure persistence (integration)", () => {
           )`,
     );
     await context.db.execute(
+      sql`INSERT INTO fitness.clinical_record (
+            user_id, provider_id, external_id, clinical_type, display_name,
+            source_name, fhir_version, fhir, downloaded_at
+          ) VALUES
+            (
+              ${deletingUserId}::uuid, 'apple_health', 'account-erasure-clinical-delete',
+              'condition', 'Deleted condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"account-erasure-clinical-delete"}'::jsonb,
+              now()
+            ),
+            (
+              ${otherUserId}::uuid, 'apple_health', 'account-erasure-clinical-keep',
+              'condition', 'Retained condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"account-erasure-clinical-keep"}'::jsonb,
+              now()
+            )`,
+    );
+    await context.db.execute(
       sql`INSERT INTO fitness.daily_metric_value (
             daily_metrics_id, metric_type_id, value
           )
@@ -861,8 +879,15 @@ describe("account erasure persistence (integration)", () => {
     const profiles = await context.db.execute(
       sql`SELECT id FROM fitness.user_profile WHERE id = ${deletingUserId}::uuid`,
     );
+    const clinicalRecords = await context.db.execute(
+      sql`SELECT user_id
+          FROM fitness.clinical_record
+          WHERE user_id IN (${deletingUserId}::uuid, ${otherUserId}::uuid)
+          ORDER BY user_id`,
+    );
 
     expect(profiles).toEqual([]);
+    expect(clinicalRecords).toEqual([{ user_id: otherUserId }]);
     expect(rows).toEqual([
       expect.objectContaining({
         completed: true,

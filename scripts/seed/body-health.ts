@@ -75,10 +75,10 @@ async function seedLabs(sql: Sql, today: Date): Promise<void> {
         fhir_version, fhir, downloaded_at, recorded_at, issued_at
       ) VALUES (
         ${USER_ID}, 'apple_health', ${panelExternalId}, 'labResult',
-        'Review Wellness Panel', 'Apple Health FHIR Review Seed', 'R4',
+        'Review Wellness Panel', 'Demo data — synthetic', 'R4',
         jsonb_build_object(
           'resourceType', 'DiagnosticReport',
-          'id', ${panelExternalId},
+          'id', ${panelExternalId}::text,
           'status', 'final',
           'code', jsonb_build_object('text', 'Review Wellness Panel'),
           'effectiveDateTime', ${recordedAt}::text,
@@ -107,19 +107,28 @@ async function seedLabs(sql: Sql, today: Date): Promise<void> {
         ) VALUES (
           ${USER_ID}, 'apple_health',
           ${`seed-lab-${panelIndex + 1}-${resultIndex + 1}`}, 'labResult',
-          ${testName}, 'Apple Health FHIR Review Seed', 'R4',
+          ${testName}, 'Demo data — synthetic', 'R4',
           jsonb_build_object(
             'resourceType', 'Observation',
-            'id', ${`seed-lab-${panelIndex + 1}-${resultIndex + 1}`},
+            'id', ${`seed-lab-${panelIndex + 1}-${resultIndex + 1}`}::text,
             'status', 'final',
             'category', jsonb_build_array(jsonb_build_object(
               'coding', jsonb_build_array(jsonb_build_object('code', 'laboratory'))
             )),
-            'code', jsonb_build_object('text', ${testName}),
-            'valueQuantity', jsonb_build_object('value', ${Number(valueText)}, 'unit', ${unit}),
+            'code', jsonb_build_object('text', ${testName}::text),
+            'valueQuantity', jsonb_build_object(
+              'value', ${Number(valueText)}::double precision,
+              'unit', ${unit}::text
+            ),
             'referenceRange', jsonb_build_array(jsonb_build_object(
-              'low', jsonb_build_object('value', ${referenceRangeLow}, 'unit', ${unit}),
-              'high', jsonb_build_object('value', ${referenceRangeHigh}, 'unit', ${unit})
+              'low', jsonb_build_object(
+                'value', ${referenceRangeLow}::double precision,
+                'unit', ${unit}::text
+              ),
+              'high', jsonb_build_object(
+                'value', ${referenceRangeHigh}::double precision,
+                'unit', ${unit}::text
+              )
             )),
             'effectiveDateTime', ${timestampAt(date, 8, resultIndex)}::text,
             'issued', ${issuedAt}::text
@@ -138,7 +147,7 @@ async function seedClinicalRecords(sql: Sql, today: Date): Promise<void> {
       fhir_version, fhir, downloaded_at, recorded_at, issued_at
     ) VALUES (
       ${USER_ID}, 'apple_health', 'seed-medication-1', 'medication',
-      'Albuterol inhaler', 'Apple Health FHIR Review Seed', 'R4',
+      'Albuterol inhaler', 'Demo data — synthetic', 'R4',
       jsonb_build_object(
         'resourceType', 'MedicationRequest', 'id', 'seed-medication-1', 'status', 'active',
         'medicationCodeableConcept', jsonb_build_object('text', 'Albuterol inhaler'),
@@ -154,7 +163,7 @@ async function seedClinicalRecords(sql: Sql, today: Date): Promise<void> {
       fhir_version, fhir, downloaded_at, recorded_at
     ) VALUES (
       ${USER_ID}, 'apple_health', 'seed-condition-1', 'condition',
-      'Mild exercise induced asthma', 'Apple Health FHIR Review Seed', 'R4',
+      'Mild exercise induced asthma', 'Demo data — synthetic', 'R4',
       jsonb_build_object(
         'resourceType', 'Condition', 'id', 'seed-condition-1',
         'clinicalStatus', jsonb_build_object('text', 'active'),
@@ -172,7 +181,7 @@ async function seedClinicalRecords(sql: Sql, today: Date): Promise<void> {
       fhir_version, fhir, downloaded_at, recorded_at
     ) VALUES (
       ${USER_ID}, 'apple_health', 'seed-allergy-1', 'allergy',
-      'Penicillin', 'Apple Health FHIR Review Seed', 'R4',
+      'Penicillin', 'Demo data — synthetic', 'R4',
       jsonb_build_object(
         'resourceType', 'AllergyIntolerance', 'id', 'seed-allergy-1', 'type', 'allergy',
         'clinicalStatus', jsonb_build_object('text', 'active'),
@@ -186,6 +195,90 @@ async function seedClinicalRecords(sql: Sql, today: Date): Promise<void> {
       ),
       NOW(), ${daysBefore(today, 1200)}
     )
+  `;
+
+  const coverageRecordedAt = timestampAt(daysBefore(today, 365), 9, 0);
+  const immunizationRecordedAt = timestampAt(daysBefore(today, 180), 10, 30);
+  const procedureRecordedAt = timestampAt(daysBefore(today, 75), 14, 15);
+  const vitalSignRecordedAt = timestampAt(daysBefore(today, 2), 7, 45);
+  const clinicalNoteRecordedAt = timestampAt(daysBefore(today, 30), 16, 0);
+  await sql`
+    INSERT INTO fitness.clinical_record (
+      user_id, provider_id, external_id, clinical_type, display_name, source_name,
+      fhir_version, fhir, downloaded_at, recorded_at, issued_at
+    ) VALUES
+      (
+        ${USER_ID}, 'apple_health', 'seed-coverage-1', 'coverage',
+        'Review Health Plan', 'Demo data — synthetic', 'R4',
+        jsonb_build_object(
+          'resourceType', 'Coverage',
+          'id', 'seed-coverage-1',
+          'status', 'active',
+          'type', jsonb_build_object('text', 'Synthetic review health plan'),
+          'beneficiary', jsonb_build_object('display', 'Review User'),
+          'payor', jsonb_build_array(jsonb_build_object('display', 'Example Health Plan')),
+          'period', jsonb_build_object('start', ${coverageRecordedAt}::text)
+        ),
+        NOW(), ${coverageRecordedAt}, NULL
+      ),
+      (
+        ${USER_ID}, 'apple_health', 'seed-immunization-1', 'immunization',
+        'Seasonal influenza vaccine', 'Demo data — synthetic', 'R4',
+        jsonb_build_object(
+          'resourceType', 'Immunization',
+          'id', 'seed-immunization-1',
+          'status', 'completed',
+          'vaccineCode', jsonb_build_object('text', 'Seasonal influenza vaccine'),
+          'occurrenceDateTime', ${immunizationRecordedAt}::text,
+          'recorded', ${immunizationRecordedAt}::text,
+          'primarySource', true
+        ),
+        NOW(), ${immunizationRecordedAt}, ${immunizationRecordedAt}
+      ),
+      (
+        ${USER_ID}, 'apple_health', 'seed-procedure-1', 'procedure',
+        'Annual preventive visit', 'Demo data — synthetic', 'R4',
+        jsonb_build_object(
+          'resourceType', 'Procedure',
+          'id', 'seed-procedure-1',
+          'status', 'completed',
+          'code', jsonb_build_object('text', 'Annual preventive visit'),
+          'performedDateTime', ${procedureRecordedAt}::text
+        ),
+        NOW(), ${procedureRecordedAt}, NULL
+      ),
+      (
+        ${USER_ID}, 'apple_health', 'seed-vital-sign-1', 'vitalSign',
+        'Resting heart rate', 'Demo data — synthetic', 'R4',
+        jsonb_build_object(
+          'resourceType', 'Observation',
+          'id', 'seed-vital-sign-1',
+          'status', 'final',
+          'category', jsonb_build_array(jsonb_build_object(
+            'coding', jsonb_build_array(jsonb_build_object('code', 'vital-signs'))
+          )),
+          'code', jsonb_build_object('text', 'Resting heart rate'),
+          'valueQuantity', jsonb_build_object('value', 54, 'unit', 'beats/minute'),
+          'effectiveDateTime', ${vitalSignRecordedAt}::text
+        ),
+        NOW(), ${vitalSignRecordedAt}, NULL
+      ),
+      (
+        ${USER_ID}, 'apple_health', 'seed-clinical-note-1', 'clinicalNote',
+        'Preventive visit summary', 'Demo data — synthetic', 'R4',
+        jsonb_build_object(
+          'resourceType', 'DocumentReference',
+          'id', 'seed-clinical-note-1',
+          'status', 'current',
+          'type', jsonb_build_object('text', 'Preventive visit summary'),
+          'date', ${clinicalNoteRecordedAt}::text,
+          'description', 'Synthetic clinical note for App Review',
+          'content', jsonb_build_array(jsonb_build_object(
+            'attachment', jsonb_build_object('title', 'Synthetic preventive visit summary')
+          ))
+        ),
+        NOW(), ${clinicalNoteRecordedAt}, NULL
+      )
   `;
 
   for (let daysAgo = 0; daysAgo < 14; daysAgo += 2) {
