@@ -62,6 +62,14 @@ export default function ClinicalRecordsScreen() {
             onRetry={() => void recordsQuery.refetch()}
             retrying={recordsQuery.isFetching}
           />
+        ) : recordsQuery.error && records?.length === 0 ? (
+          <QueryStatePanel
+            variant="error"
+            title="Clinical records refresh failed"
+            message={getQueryErrorMessage(recordsQuery.error)}
+            onRetry={() => void recordsQuery.refetch()}
+            retrying={recordsQuery.isFetching}
+          />
         ) : records?.length === 0 ? (
           <QueryStatePanel
             variant="empty"

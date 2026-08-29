@@ -44,6 +44,7 @@ import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
 import { Route as NutritionIndexRouteImport } from './routes/nutrition/index'
 import { Route as DeveloperIntegrationsIndexRouteImport } from './routes/developer-integrations/index'
+import { Route as ClinicalRecordsIndexRouteImport } from './routes/clinical-records/index'
 import { Route as BodyIndexRouteImport } from './routes/body/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as TrainingStrengthRouteImport } from './routes/training/strength'
@@ -240,6 +241,11 @@ const DeveloperIntegrationsIndexRoute =
     path: '/developer-integrations/',
     getParentRoute: () => rootRouteImport,
   } as Parameters<typeof DeveloperIntegrationsIndexRouteImport.update>[0])
+const ClinicalRecordsIndexRoute = ClinicalRecordsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ClinicalRecordsRoute,
+} as Parameters<typeof ClinicalRecordsIndexRouteImport.update>[0])
 const BodyIndexRoute = BodyIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -381,6 +387,7 @@ export interface FileRoutesByFullPath {
   '/training/strength': typeof TrainingStrengthRoute
   '/admin/': typeof AdminIndexRoute
   '/body/': typeof BodyIndexRoute
+  '/clinical-records/': typeof ClinicalRecordsIndexRoute
   '/developer-integrations/': typeof DeveloperIntegrationsIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
@@ -393,7 +400,6 @@ export interface FileRoutesByTo {
   '/activities': typeof ActivitiesRoute
   '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
-  '/clinical-records': typeof ClinicalRecordsRouteWithChildren
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
@@ -430,6 +436,7 @@ export interface FileRoutesByTo {
   '/training/strength': typeof TrainingStrengthRoute
   '/admin': typeof AdminIndexRoute
   '/body': typeof BodyIndexRoute
+  '/clinical-records': typeof ClinicalRecordsIndexRoute
   '/developer-integrations': typeof DeveloperIntegrationsIndexRoute
   '/nutrition': typeof NutritionIndexRoute
   '/providers': typeof ProvidersIndexRoute
@@ -485,6 +492,7 @@ export interface FileRoutesById {
   '/training/strength': typeof TrainingStrengthRoute
   '/admin/': typeof AdminIndexRoute
   '/body/': typeof BodyIndexRoute
+  '/clinical-records/': typeof ClinicalRecordsIndexRoute
   '/developer-integrations/': typeof DeveloperIntegrationsIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
@@ -541,6 +549,7 @@ export interface FileRouteTypes {
     | '/training/strength'
     | '/admin/'
     | '/body/'
+    | '/clinical-records/'
     | '/developer-integrations/'
     | '/nutrition/'
     | '/providers/'
@@ -553,7 +562,6 @@ export interface FileRouteTypes {
     | '/activities'
     | '/alerts'
     | '/behavior-impact'
-    | '/clinical-records'
     | '/correlation'
     | '/cycle'
     | '/dashboard'
@@ -590,6 +598,7 @@ export interface FileRouteTypes {
     | '/training/strength'
     | '/admin'
     | '/body'
+    | '/clinical-records'
     | '/developer-integrations'
     | '/nutrition'
     | '/providers'
@@ -644,6 +653,7 @@ export interface FileRouteTypes {
     | '/training/strength'
     | '/admin/'
     | '/body/'
+    | '/clinical-records/'
     | '/developer-integrations/'
     | '/nutrition/'
     | '/providers/'
@@ -935,6 +945,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeveloperIntegrationsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clinical-records/': {
+      id: '/clinical-records/'
+      path: '/'
+      fullPath: '/clinical-records/'
+      preLoaderRoute: typeof ClinicalRecordsIndexRouteImport
+      parentRoute: typeof ClinicalRecordsRoute
+    }
     '/body/': {
       id: '/body/'
       path: '/'
@@ -1083,10 +1100,12 @@ const BodyRouteWithChildren = BodyRoute._addFileChildren(BodyRouteChildren)
 
 interface ClinicalRecordsRouteChildren {
   ClinicalRecordsIdRoute: typeof ClinicalRecordsIdRoute
+  ClinicalRecordsIndexRoute: typeof ClinicalRecordsIndexRoute
 }
 
 const ClinicalRecordsRouteChildren: ClinicalRecordsRouteChildren = {
   ClinicalRecordsIdRoute: ClinicalRecordsIdRoute,
+  ClinicalRecordsIndexRoute: ClinicalRecordsIndexRoute,
 }
 
 const ClinicalRecordsRouteWithChildren = ClinicalRecordsRoute._addFileChildren(
