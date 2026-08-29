@@ -397,6 +397,11 @@ function AuthGate() {
     startStartupPhase("service-bootstrap");
     let serviceBootstrapFailed = false;
     const syncClient: SyncTrpcClient = {
+      clinicalRecords: {
+        push: {
+          mutate: (input) => trpcClient.clinicalRecords.push.mutate(input),
+        },
+      },
       healthKitSync: {
         deleteQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.deleteQuantitySamples.mutate(input),
