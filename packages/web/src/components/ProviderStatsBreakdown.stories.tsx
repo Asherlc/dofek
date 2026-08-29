@@ -12,8 +12,7 @@ const populatedStats = {
   healthEvents: 396,
   foodEntries: 0,
   nutritionDaily: 0,
-  labPanels: 0,
-  labResults: 0,
+  clinicalRecords: 0,
   journalEntries: 0,
 } satisfies ProviderStats;
 
@@ -27,8 +26,7 @@ const zeroStats = {
   healthEvents: 0,
   foodEntries: 0,
   nutritionDaily: 0,
-  labPanels: 0,
-  labResults: 0,
+  clinicalRecords: 0,
   journalEntries: 0,
 } satisfies ProviderStats;
 

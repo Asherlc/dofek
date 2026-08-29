@@ -1,9 +1,5 @@
 import { daysBefore, round, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
-interface IdRow {
-  id: string;
-}
-
 export async function seedBodyHealth(sql: Sql): Promise<void> {
   const today = new Date();
   await seedDexaScans(sql, today);
@@ -17,7 +13,7 @@ async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
     const date = daysBefore(today, daysAgo);
     const bodyFatPct = scanIndex === 0 ? 18.6 : 16.8;
     const totalMassKg = scanIndex === 0 ? 82.8 : 80.4;
-    const [{ id: scanId }] = await sql<IdRow[]>`
+    const [{ id: scanId }] = await sql<{ id: string }[]>`
       INSERT INTO fitness.dexa_scan (
         provider_id, user_id, external_id, recorded_at, scanner_model,
         total_fat_mass_kg, total_lean_mass_kg, total_bone_mass_kg, total_mass_kg,
@@ -70,14 +66,26 @@ async function seedDexaRegions(sql: Sql, scanId: string, scanIndex: number): Pro
 async function seedLabs(sql: Sql, today: Date): Promise<void> {
   for (const [panelIndex, daysAgo] of [120, 20].entries()) {
     const date = daysBefore(today, daysAgo);
-    const [{ id: panelId }] = await sql<IdRow[]>`
-      INSERT INTO fitness.lab_panel (
-        provider_id, user_id, external_id, name, status, source_name, recorded_at, issued_at
+    const panelExternalId = `seed-lab-panel-${panelIndex + 1}`;
+    const recordedAt = timestampAt(date, 8, 0);
+    const issuedAt = timestampAt(date, 11, 30);
+    await sql`
+      INSERT INTO fitness.clinical_record (
+        user_id, provider_id, external_id, clinical_type, display_name, source_name,
+        fhir_version, fhir, downloaded_at, recorded_at, issued_at
       ) VALUES (
-        'apple_health', ${USER_ID}, ${`seed-lab-panel-${panelIndex + 1}`},
-        'Review Wellness Panel', 'final', 'Apple Health FHIR Review Seed',
-        ${timestampAt(date, 8, 0)}, ${timestampAt(date, 11, 30)}
-      ) RETURNING id
+        ${USER_ID}, 'apple_health', ${panelExternalId}, 'labResult',
+        'Review Wellness Panel', 'Apple Health FHIR Review Seed', 'R4',
+        jsonb_build_object(
+          'resourceType', 'DiagnosticReport',
+          'id', ${panelExternalId},
+          'status', 'final',
+          'code', jsonb_build_object('text', 'Review Wellness Panel'),
+          'effectiveDateTime', ${recordedAt}::text,
+          'issued', ${issuedAt}::text
+        ),
+        NOW(), ${recordedAt}, ${issuedAt}
+      )
     `;
 
     const results = [
@@ -93,15 +101,30 @@ async function seedLabs(sql: Sql, today: Date): Promise<void> {
       [testName, valueText, unit, referenceRangeLow, referenceRangeHigh],
     ] of results.entries()) {
       await sql`
-        INSERT INTO fitness.lab_result (
-          provider_id, user_id, panel_id, external_id, test_name, value, value_text,
-          unit, reference_range_low, reference_range_high, status, source_name,
-          recorded_at, issued_at
+        INSERT INTO fitness.clinical_record (
+          user_id, provider_id, external_id, clinical_type, display_name, source_name,
+          fhir_version, fhir, downloaded_at, recorded_at, issued_at
         ) VALUES (
-          'apple_health', ${USER_ID}, ${panelId}, ${`seed-lab-${panelIndex + 1}-${resultIndex + 1}`},
-          ${testName}, ${Number(valueText)}, ${valueText}, ${unit}, ${referenceRangeLow},
-          ${referenceRangeHigh}, 'final', 'Apple Health FHIR Review Seed',
-          ${timestampAt(date, 8, resultIndex)}, ${timestampAt(date, 11, 30)}
+          ${USER_ID}, 'apple_health',
+          ${`seed-lab-${panelIndex + 1}-${resultIndex + 1}`}, 'labResult',
+          ${testName}, 'Apple Health FHIR Review Seed', 'R4',
+          jsonb_build_object(
+            'resourceType', 'Observation',
+            'id', ${`seed-lab-${panelIndex + 1}-${resultIndex + 1}`},
+            'status', 'final',
+            'category', jsonb_build_array(jsonb_build_object(
+              'coding', jsonb_build_array(jsonb_build_object('code', 'laboratory'))
+            )),
+            'code', jsonb_build_object('text', ${testName}),
+            'valueQuantity', jsonb_build_object('value', ${Number(valueText)}, 'unit', ${unit}),
+            'referenceRange', jsonb_build_array(jsonb_build_object(
+              'low', jsonb_build_object('value', ${referenceRangeLow}, 'unit', ${unit}),
+              'high', jsonb_build_object('value', ${referenceRangeHigh}, 'unit', ${unit})
+            )),
+            'effectiveDateTime', ${timestampAt(date, 8, resultIndex)}::text,
+            'issued', ${issuedAt}::text
+          ),
+          NOW(), ${timestampAt(date, 8, resultIndex)}, ${issuedAt}
         )
       `;
     }
@@ -110,35 +133,58 @@ async function seedLabs(sql: Sql, today: Date): Promise<void> {
 
 async function seedClinicalRecords(sql: Sql, today: Date): Promise<void> {
   await sql`
-    INSERT INTO fitness.medication (
-      provider_id, user_id, external_id, name, status, authored_on, start_date,
-      dosage_text, route, form, prescriber_name, reason_text, source_name
+    INSERT INTO fitness.clinical_record (
+      user_id, provider_id, external_id, clinical_type, display_name, source_name,
+      fhir_version, fhir, downloaded_at, recorded_at, issued_at
     ) VALUES (
-      'apple_health', ${USER_ID}, 'seed-medication-1', 'Albuterol inhaler', 'active',
-      ${daysBefore(today, 400)}, ${daysBefore(today, 390)}, '2 puffs as needed',
-      'inhalation', 'inhaler', 'Review Clinic', 'Exercise induced bronchospasm',
-      'Apple Health FHIR Review Seed'
+      ${USER_ID}, 'apple_health', 'seed-medication-1', 'medication',
+      'Albuterol inhaler', 'Apple Health FHIR Review Seed', 'R4',
+      jsonb_build_object(
+        'resourceType', 'MedicationRequest', 'id', 'seed-medication-1', 'status', 'active',
+        'medicationCodeableConcept', jsonb_build_object('text', 'Albuterol inhaler'),
+        'authoredOn', ${daysBefore(today, 400)}::text,
+        'dosageInstruction', jsonb_build_array(jsonb_build_object('text', '2 puffs as needed'))
+      ),
+      NOW(), ${daysBefore(today, 390)}, ${daysBefore(today, 400)}
     )
   `;
   await sql`
-    INSERT INTO fitness.condition (
-      provider_id, user_id, external_id, name, clinical_status, verification_status,
-      icd10_code, onset_date, recorded_date, source_name
+    INSERT INTO fitness.clinical_record (
+      user_id, provider_id, external_id, clinical_type, display_name, source_name,
+      fhir_version, fhir, downloaded_at, recorded_at
     ) VALUES (
-      'apple_health', ${USER_ID}, 'seed-condition-1', 'Mild exercise induced asthma',
-      'active', 'confirmed', 'J45.990', ${daysBefore(today, 900)}, ${daysBefore(today, 390)},
-      'Apple Health FHIR Review Seed'
+      ${USER_ID}, 'apple_health', 'seed-condition-1', 'condition',
+      'Mild exercise induced asthma', 'Apple Health FHIR Review Seed', 'R4',
+      jsonb_build_object(
+        'resourceType', 'Condition', 'id', 'seed-condition-1',
+        'clinicalStatus', jsonb_build_object('text', 'active'),
+        'verificationStatus', jsonb_build_object('text', 'confirmed'),
+        'code', jsonb_build_object('text', 'Mild exercise induced asthma'),
+        'onsetDateTime', ${daysBefore(today, 900)}::text,
+        'recordedDate', ${daysBefore(today, 390)}::text
+      ),
+      NOW(), ${daysBefore(today, 390)}
     )
   `;
   await sql`
-    INSERT INTO fitness.allergy_intolerance (
-      provider_id, user_id, external_id, name, type, clinical_status,
-      verification_status, onset_date, reactions, source_name
+    INSERT INTO fitness.clinical_record (
+      user_id, provider_id, external_id, clinical_type, display_name, source_name,
+      fhir_version, fhir, downloaded_at, recorded_at
     ) VALUES (
-      'apple_health', ${USER_ID}, 'seed-allergy-1', 'Penicillin', 'allergy',
-      'active', 'confirmed', ${daysBefore(today, 1200)},
-      '[{"manifestation":"Rash","severity":"mild"}]'::jsonb,
-      'Apple Health FHIR Review Seed'
+      ${USER_ID}, 'apple_health', 'seed-allergy-1', 'allergy',
+      'Penicillin', 'Apple Health FHIR Review Seed', 'R4',
+      jsonb_build_object(
+        'resourceType', 'AllergyIntolerance', 'id', 'seed-allergy-1', 'type', 'allergy',
+        'clinicalStatus', jsonb_build_object('text', 'active'),
+        'verificationStatus', jsonb_build_object('text', 'confirmed'),
+        'code', jsonb_build_object('text', 'Penicillin'),
+        'onsetDateTime', ${daysBefore(today, 1200)}::text,
+        'reaction', jsonb_build_array(jsonb_build_object(
+          'manifestation', jsonb_build_array(jsonb_build_object('text', 'Rash')),
+          'severity', 'mild'
+        ))
+      ),
+      NOW(), ${daysBefore(today, 1200)}
     )
   `;
 

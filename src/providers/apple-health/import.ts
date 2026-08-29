@@ -10,15 +10,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { dailyMetrics } from "../../db/schema/activity.ts";
-import {
-  allergyIntolerance,
-  condition,
-  healthEvent,
-  labPanel,
-  labResult,
-  medication,
-  medicationDoseEvent,
-} from "../../db/schema/clinical.ts";
+import { clinicalRecord, healthEvent, medicationDoseEvent } from "../../db/schema/clinical.ts";
 import { foodEntry } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
@@ -576,29 +568,10 @@ export async function importClinicalRecords(
     throw new Error("apple-health clinical import requires user context");
   }
 
-  // Delete existing clinical records for this provider so re-imports
-  // don't create duplicate panels (lab_result FK references lab_panel,
-  // so lab_result must be deleted first).
+  // A ZIP import is a complete replacement for this provider's clinical records.
   await db
-    .delete(labResult)
-    .where(and(eq(labResult.userId, scopedUserId), eq(labResult.providerId, providerId)));
-  await db
-    .delete(labPanel)
-    .where(and(eq(labPanel.userId, scopedUserId), eq(labPanel.providerId, providerId)));
-  await db
-    .delete(medication)
-    .where(and(eq(medication.userId, scopedUserId), eq(medication.providerId, providerId)));
-  await db
-    .delete(condition)
-    .where(and(eq(condition.userId, scopedUserId), eq(condition.providerId, providerId)));
-  await db
-    .delete(allergyIntolerance)
-    .where(
-      and(
-        eq(allergyIntolerance.userId, scopedUserId),
-        eq(allergyIntolerance.providerId, providerId),
-      ),
-    );
+    .delete(clinicalRecord)
+    .where(and(eq(clinicalRecord.userId, scopedUserId), eq(clinicalRecord.providerId, providerId)));
 
   // Read all FHIR JSON files from the zip
   const clinicalFiles = await readZipEntries(
@@ -612,7 +585,7 @@ export async function importClinicalRecords(
 
   // Parse files, separating by resource type
   const observations: { obs: FhirObservation; fileName: string }[] = [];
-  const diagnosticReports: FhirDiagnosticReport[] = [];
+  const diagnosticReports: { resource: FhirDiagnosticReport; fileName: string }[] = [];
   const medicationRequests: { resource: FhirMedicationRequest; fileName: string }[] = [];
   const conditions: { resource: FhirCondition; fileName: string }[] = [];
   const allergies: { resource: FhirAllergyIntolerance; fileName: string }[] = [];
@@ -631,7 +604,7 @@ export async function importClinicalRecords(
           observations.push({ obs: result.data, fileName: file.name });
           break;
         case "DiagnosticReport":
-          diagnosticReports.push(result.data);
+          diagnosticReports.push({ resource: result.data, fileName: file.name });
           break;
         case "MedicationRequest":
           medicationRequests.push({ resource: result.data, fileName: file.name });
@@ -653,64 +626,37 @@ export async function importClinicalRecords(
   // Build source name map from XML stubs
   const sourceNameMap = await buildSourceNameMap(xmlPath);
 
-  // Insert lab panels from DiagnosticReports
-  const panelBatch: (typeof labPanel.$inferInsert)[] = [];
-  const observationToPanelExternalId = new Map<string, string>();
+  const downloadedAt = new Date();
+  const batch: (typeof clinicalRecord.$inferInsert)[] = [];
 
-  for (const report of diagnosticReports) {
+  for (const { resource, fileName } of diagnosticReports) {
     try {
-      const sourceName = "Unknown"; // DiagnosticReports don't have individual file paths
-      const parsed = parseFhirDiagnosticReport(report, sourceName);
-
-      panelBatch.push({
+      const normalizedPath = fileName.replace(/^apple_health_export\//, "");
+      const parsed = parseFhirDiagnosticReport(
+        resource,
+        sourceNameMap.get(normalizedPath) ?? "Unknown",
+      );
+      batch.push({
+        userId: scopedUserId,
         providerId,
         externalId: parsed.externalId,
-        name: parsed.name,
-        loincCode: parsed.loincCode,
-        status: parsed.status,
+        clinicalType: "labResult",
+        displayName: parsed.name,
         sourceName: parsed.sourceName,
+        fhirVersion: "R4",
+        fhir: parsed.raw,
+        downloadedAt,
         recordedAt: parsed.recordedAt,
         issuedAt: parsed.issuedAt,
-        raw: parsed.raw,
       });
-
-      for (const obsId of parsed.observationIds) {
-        observationToPanelExternalId.set(obsId, parsed.externalId);
-      }
     } catch (err) {
       errors.push({
-        message: `DiagnosticReport ${report.id}: ${err instanceof Error ? err.message : String(err)}`,
+        message: `DiagnosticReport ${resource.id}: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   }
 
-  for (let i = 0; i < panelBatch.length; i += 500) {
-    await db
-      .insert(labPanel)
-      .values(panelBatch.slice(i, i + 500))
-      .onConflictDoNothing();
-  }
-
-  // Query back panel IDs so we can link lab results via FK
-  const panelIdMap = new Map<string, string>();
-  if (panelBatch.length > 0) {
-    const panelRows = await db
-      .select({ id: labPanel.id, externalId: labPanel.externalId })
-      .from(labPanel)
-      .where(and(eq(labPanel.userId, scopedUserId), eq(labPanel.providerId, providerId)));
-    for (const row of panelRows) {
-      if (row.externalId) {
-        panelIdMap.set(row.externalId, row.id);
-      }
-    }
-  }
-
-  // Parse and insert Observations
-  let inserted = 0;
-  const batch: (typeof labResult.$inferInsert)[] = [];
-
   for (const { obs, fileName } of observations) {
-    // Only import lab results (skip vitals, etc.)
     const categories = Array.isArray(obs.category)
       ? obs.category
       : obs.category
@@ -728,35 +674,19 @@ export async function importClinicalRecords(
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
       const parsed = parseFhirObservation(obs, sourceName);
-
-      // Resolve panel FK: obs FHIR ID -> panel external ID -> panel DB UUID
-      const panelExternalId = observationToPanelExternalId.get(obs.id);
-      const panelId = panelExternalId ? panelIdMap.get(panelExternalId) : undefined;
-
       batch.push({
+        userId: scopedUserId,
         providerId,
         externalId: parsed.externalId,
-        testName: parsed.testName,
-        loincCode: parsed.loincCode,
-        value: parsed.value,
-        valueText: parsed.valueText,
-        unit: parsed.unit,
-        referenceRangeLow: parsed.referenceRangeLow,
-        referenceRangeHigh: parsed.referenceRangeHigh,
-        referenceRangeText: parsed.referenceRangeText,
-        panelId,
-        status: parsed.status,
+        clinicalType: "labResult",
+        displayName: parsed.testName,
         sourceName: parsed.sourceName,
+        fhirVersion: "R4",
+        fhir: parsed.raw,
+        downloadedAt,
         recordedAt: parsed.recordedAt,
         issuedAt: parsed.issuedAt,
-        raw: parsed.raw,
       });
-
-      if (batch.length >= 500) {
-        await db.insert(labResult).values(batch).onConflictDoNothing();
-        inserted += batch.length;
-        batch.length = 0;
-      }
     } catch (err) {
       errors.push({
         message: `Observation ${obs.id}: ${err instanceof Error ? err.message : String(err)}`,
@@ -765,35 +695,26 @@ export async function importClinicalRecords(
     }
   }
 
-  if (batch.length > 0) {
-    await db.insert(labResult).values(batch).onConflictDoNothing();
-    inserted += batch.length;
-  }
-
-  // Insert medications from MedicationRequests
-  const medicationBatch: (typeof medication.$inferInsert)[] = [];
   for (const { resource, fileName } of medicationRequests) {
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
       const parsed = parseFhirMedicationRequest(resource, sourceName);
-      medicationBatch.push({
+      batch.push({
+        userId: scopedUserId,
         providerId,
         externalId: parsed.externalId,
-        name: parsed.name,
-        status: parsed.status,
-        authoredOn: parsed.authoredOn,
-        startDate: parsed.startDate,
-        endDate: parsed.endDate,
-        dosageText: parsed.dosageText,
-        route: parsed.route,
-        form: parsed.form,
-        rxnormCode: parsed.rxnormCode,
-        prescriberName: parsed.prescriberName,
-        reasonText: parsed.reasonText,
-        reasonSnomedCode: parsed.reasonSnomedCode,
+        clinicalType: "medication",
+        displayName: parsed.name,
         sourceName: parsed.sourceName,
-        raw: parsed.raw,
+        fhirVersion: "R4",
+        fhir: parsed.raw,
+        downloadedAt,
+        recordedAt: parsed.authoredOn
+          ? new Date(parsed.authoredOn)
+          : parsed.startDate
+            ? new Date(parsed.startDate)
+            : undefined,
       });
     } catch (err) {
       errors.push({
@@ -802,34 +723,26 @@ export async function importClinicalRecords(
       });
     }
   }
-  for (let i = 0; i < medicationBatch.length; i += 500) {
-    await db
-      .insert(medication)
-      .values(medicationBatch.slice(i, i + 500))
-      .onConflictDoNothing();
-  }
-  inserted += medicationBatch.length;
-
-  // Insert conditions
-  const conditionBatch: (typeof condition.$inferInsert)[] = [];
   for (const { resource, fileName } of conditions) {
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
       const parsed = parseFhirCondition(resource, sourceName);
-      conditionBatch.push({
+      batch.push({
+        userId: scopedUserId,
         providerId,
         externalId: parsed.externalId,
-        name: parsed.name,
-        clinicalStatus: parsed.clinicalStatus,
-        verificationStatus: parsed.verificationStatus,
-        icd10Code: parsed.icd10Code,
-        snomedCode: parsed.snomedCode,
-        onsetDate: parsed.onsetDate,
-        abatementDate: parsed.abatementDate,
-        recordedDate: parsed.recordedDate,
+        clinicalType: "condition",
+        displayName: parsed.name,
         sourceName: parsed.sourceName,
-        raw: parsed.raw,
+        fhirVersion: "R4",
+        fhir: parsed.raw,
+        downloadedAt,
+        recordedAt: parsed.recordedDate
+          ? new Date(parsed.recordedDate)
+          : parsed.onsetDate
+            ? new Date(parsed.onsetDate)
+            : undefined,
       });
     } catch (err) {
       errors.push({
@@ -838,33 +751,22 @@ export async function importClinicalRecords(
       });
     }
   }
-  for (let i = 0; i < conditionBatch.length; i += 500) {
-    await db
-      .insert(condition)
-      .values(conditionBatch.slice(i, i + 500))
-      .onConflictDoNothing();
-  }
-  inserted += conditionBatch.length;
-
-  // Insert allergies/intolerances
-  const allergyBatch: (typeof allergyIntolerance.$inferInsert)[] = [];
   for (const { resource, fileName } of allergies) {
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
       const parsed = parseFhirAllergyIntolerance(resource, sourceName);
-      allergyBatch.push({
+      batch.push({
+        userId: scopedUserId,
         providerId,
         externalId: parsed.externalId,
-        name: parsed.name,
-        type: parsed.type,
-        clinicalStatus: parsed.clinicalStatus,
-        verificationStatus: parsed.verificationStatus,
-        rxnormCode: parsed.rxnormCode,
-        onsetDate: parsed.onsetDate,
-        reactions: parsed.reactions,
+        clinicalType: "allergy",
+        displayName: parsed.name,
         sourceName: parsed.sourceName,
-        raw: parsed.raw,
+        fhirVersion: "R4",
+        fhir: parsed.raw,
+        downloadedAt,
+        recordedAt: parsed.onsetDate ? new Date(parsed.onsetDate) : undefined,
       });
     } catch (err) {
       errors.push({
@@ -873,15 +775,14 @@ export async function importClinicalRecords(
       });
     }
   }
-  for (let i = 0; i < allergyBatch.length; i += 500) {
+  for (let i = 0; i < batch.length; i += 500) {
     await db
-      .insert(allergyIntolerance)
-      .values(allergyBatch.slice(i, i + 500))
+      .insert(clinicalRecord)
+      .values(batch.slice(i, i + 500))
       .onConflictDoNothing();
   }
-  inserted += allergyBatch.length;
 
-  return { inserted, skipped, errors };
+  return { inserted: batch.length, skipped, errors };
 }
 
 export async function importMedicationDoseEvents(

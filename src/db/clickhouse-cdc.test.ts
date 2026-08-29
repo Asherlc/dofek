@@ -95,6 +95,15 @@ function createConfiguredPeerDbMirrorApiClient(): PeerDbMirrorApiClient {
                       },
                     ]
                   : []),
+                ...(mirrorName === "dofek_provider_inventory_raw_analytics"
+                  ? [
+                      {
+                        sourceTableIdentifier: "fitness.clinical_record",
+                        destinationTableIdentifier: "clinical_record",
+                        exclude: [],
+                      },
+                    ]
+                  : []),
                 {
                   sourceTableIdentifier: "fitness.processing_flow_marker",
                   destinationTableIdentifier,
@@ -174,8 +183,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     "processing_flow_marker",
     "food_entry",
     "health_event",
-    "lab_panel",
-    "lab_result",
+    "clinical_record",
     "journal_entry",
     "provider",
     "provider_connection",
@@ -680,6 +688,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
         cdcFlowConfigUpdate: {
           additional_tables: [
             {
+              sourceTableIdentifier: "fitness.clinical_record",
+              destinationTableIdentifier: "clinical_record",
+              exclude: [],
+            },
+            {
               sourceTableIdentifier: "fitness.processing_flow_marker",
               destinationTableIdentifier: "processing_flow_marker_provider_inventory",
               exclude: [],
@@ -1092,8 +1105,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(truncateCommands).toEqual([
       "TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
-      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_panel",
-      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_result",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.clinical_record",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.journal_entry",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",
@@ -1252,8 +1264,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
-      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_panel",
-      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_result",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.clinical_record",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.journal_entry",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",

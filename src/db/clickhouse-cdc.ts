@@ -99,8 +99,7 @@ const analyticsSourceTables = [
   "daily_metrics",
   "food_entry",
   "health_event",
-  "lab_panel",
-  "lab_result",
+  "clinical_record",
   "journal_entry",
   "provider",
   "provider_connection",
@@ -170,8 +169,7 @@ const rawAnalyticsMirrorTableMappings: Record<
   dofek_provider_inventory_raw_analytics: [
     "food_entry",
     "health_event",
-    "lab_panel",
-    "lab_result",
+    "clinical_record",
     "journal_entry",
   ],
   dofek_sensor_priority_raw_analytics: ["sensor_provider_priority", "sensor_device_priority"],
@@ -190,6 +188,11 @@ const requiredExistingMirrorTableMappings = {
     },
   ],
   dofek_provider_inventory_raw_analytics: [
+    {
+      sourceTableIdentifier: "fitness.clinical_record",
+      destinationTableIdentifier: "clinical_record",
+      exclude: [],
+    },
     {
       sourceTableIdentifier: "fitness.processing_flow_marker",
       destinationTableIdentifier: "processing_flow_marker_provider_inventory",

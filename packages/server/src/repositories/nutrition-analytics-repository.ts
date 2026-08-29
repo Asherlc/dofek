@@ -887,8 +887,9 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             (
               EXISTS (
                 SELECT 1
-                FROM fitness.medication
+                FROM fitness.clinical_record
                 WHERE user_id = ${this.userId}
+                  AND fhir->>'resourceType' = 'MedicationRequest'
               )
               OR EXISTS (
                 SELECT 1

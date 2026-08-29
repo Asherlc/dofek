@@ -1381,8 +1381,7 @@ describe("ProviderDetailPage activity records", () => {
         foodEntries: 0,
         nutritionDaily: 0,
         healthEvents: 0,
-        labPanels: 0,
-        labResults: 0,
+        clinicalRecords: 0,
         journalEntries: 0,
       },
     ];
