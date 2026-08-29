@@ -18,6 +18,8 @@
   "dictionaries": ["typescript", "node", "npm", "html", "css", "en_US"],
   "words": [
     "ABCDEFGHJKLMNPQRSTUVWXYZ",
+    "Atorvastatin",
+    "DSTU",
     "Invalidatable",
     "alertable",
     "refetches",
@@ -28,6 +30,7 @@
     "dbname",
     "deload",
     "dofek",
+    "dstu",
     "datname",
     "Dokploy",
     "Podfile",

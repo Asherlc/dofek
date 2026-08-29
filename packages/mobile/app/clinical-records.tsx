@@ -114,7 +114,6 @@ export default function ClinicalRecordsScreen() {
             ))}
 
             <View
-              accessibilityRole="navigation"
               accessibilityLabel="Clinical record pages"
               style={styles.pagination}
             >
