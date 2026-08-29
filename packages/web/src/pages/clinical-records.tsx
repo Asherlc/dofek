@@ -58,6 +58,13 @@ export function ClinicalRecordsPage() {
           onRetry={() => void recordsQuery.refetch()}
           retrying={recordsQuery.isFetching}
         />
+      ) : recordsQuery.error && records?.length === 0 ? (
+        <QueryStatePanel
+          error={recordsQuery.error}
+          title="Clinical records refresh failed"
+          onRetry={() => void recordsQuery.refetch()}
+          retrying={recordsQuery.isFetching}
+        />
       ) : records?.length === 0 ? (
         <QueryStatePanel
           variant="empty"

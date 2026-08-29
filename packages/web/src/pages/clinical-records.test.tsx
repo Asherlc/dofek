@@ -124,6 +124,20 @@ describe("ClinicalRecordsPage", () => {
     );
   });
 
+  it("shows a cached-empty refetch error instead of the empty state", () => {
+    queryMocks.list.mockReturnValue(
+      queryResult(
+        { records: [], nextOffset: null },
+        { error: new Error("Clinical refresh is unavailable.") },
+      ),
+    );
+
+    render(<ClinicalRecordsPage />);
+
+    expect(screen.getByText("Clinical refresh is unavailable.")).toBeTruthy();
+    expect(screen.queryByTestId("query-state-empty")).toBeNull();
+  });
+
   it("pages with server-provided offsets", () => {
     queryMocks.list.mockReturnValue(queryResult({ records: [summary], nextOffset: 20 }));
     render(<ClinicalRecordsPage />);
