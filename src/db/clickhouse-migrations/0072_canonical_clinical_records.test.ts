@@ -15,6 +15,7 @@ describe("0072_canonical_clinical_records", () => {
     expect(sql).toContain("ALTER TABLE analytics.provider_stats DROP COLUMN IF EXISTS lab_results");
     expect(sql).toContain("INSERT INTO analytics.provider_change_state");
     expect(sql).toContain("FROM analytics.provider_stats FINAL");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record");
     expect(sql).toContain("FROM postgres_fitness.clinical_record FINAL");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_change_from_clinical_record",
