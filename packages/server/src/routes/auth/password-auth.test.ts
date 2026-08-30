@@ -21,7 +21,7 @@ const {
   mockCreateSession: vi.fn(),
   mockSetSessionCookie: vi.fn(),
   mockSanitizeReturnTo: vi.fn((value: string | undefined) => {
-    if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
+    if (!value?.startsWith("/") || value.startsWith("//")) return undefined;
     return value;
   }),
   mockCaptureException: vi.fn(),

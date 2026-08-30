@@ -104,16 +104,17 @@ describe("SettingsRepository", () => {
       { rows: [{ key: "calorieGoal", value: 0 }] },
       { rows: [{ key: "calorieGoal", value: 0.4 }] },
       { rows: [{ key: "calorieGoal", value: "invalid" }] },
-    ])("identifies the canonical default when the target is absent or invalid", async ({
-      rows,
-    }) => {
-      const { repo } = makeRepository(rows);
+    ])(
+      "identifies the canonical default when the target is absent or invalid",
+      async ({ rows }) => {
+        const { repo } = makeRepository(rows);
 
-      await expect(repo.getCalorieGoalContext()).resolves.toEqual({
-        target: 2000,
-        type: "default",
-      });
-    });
+        await expect(repo.getCalorieGoalContext()).resolves.toEqual({
+          target: 2000,
+          type: "default",
+        });
+      },
+    );
   });
 
   describe("set", () => {

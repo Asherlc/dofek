@@ -117,27 +117,30 @@ describe("DailyOverview", () => {
       { strainTargetError: new Error("Strain target unavailable") },
     ],
     ["sleep", "Sleep", { sleepError: new Error("Sleep performance unavailable") }],
-  ])("shows the exact %s query failure instead of hiding the summary", (_name, label, errorProps) => {
-    render(
-      <DailyOverview
-        readiness={undefined}
-        workloadRatio={undefined}
-        sleepPerformance={undefined}
-        readinessLoading={false}
-        workloadLoading={false}
-        strainTargetLoading={false}
-        sleepLoading={false}
-        {...errorProps}
-      />,
-    );
+  ])(
+    "shows the exact %s query failure instead of hiding the summary",
+    (_name, label, errorProps) => {
+      render(
+        <DailyOverview
+          readiness={undefined}
+          workloadRatio={undefined}
+          sleepPerformance={undefined}
+          readinessLoading={false}
+          workloadLoading={false}
+          strainTargetLoading={false}
+          sleepLoading={false}
+          {...errorProps}
+        />,
+      );
 
-    expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
-    const contextHeading = `${label}: Could not load this section`;
-    const alert = screen.getByRole("heading", { name: contextHeading }).closest('[role="alert"]');
-    expect(alert).not.toBeNull();
-    expect(alert).toHaveTextContent(Object.values(errorProps)[0]?.message ?? "");
-    expect(screen.getByTestId("query-state-error")).toBeTruthy();
-  });
+      expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
+      const contextHeading = `${label}: Could not load this section`;
+      const alert = screen.getByRole("heading", { name: contextHeading }).closest('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert).toHaveTextContent(Object.values(errorProps)[0]?.message ?? "");
+      expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    },
+  );
 
   it("shows all core query failures together", () => {
     render(

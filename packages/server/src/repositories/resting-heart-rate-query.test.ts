@@ -101,7 +101,9 @@ describe("localDateString", () => {
 function mockDateTimeFormatParts(parts: Intl.DateTimeFormatPart[]) {
   const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "UTC" });
   vi.spyOn(formatter, "formatToParts").mockReturnValue(parts);
-  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => formatter);
+  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function vitestConstructor() {
+    return formatter;
+  });
 }
 
 describe("representativeRestingHeartRate", () => {

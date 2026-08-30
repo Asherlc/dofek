@@ -655,6 +655,13 @@ export default function ActivityDetailScreen() {
   }
 
   const activity = detail.data;
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   const zones = hrZones.data ?? [];
 
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
@@ -812,9 +819,7 @@ export default function ActivityDetailScreen() {
         <Text style={styles.dateTime}>
           {formatDateLong(activity.startedAt)}
           {" at "}
-          {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
-            ? "Local time unavailable"
-            : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
+          {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
           <View style={styles.sourceRow}>
@@ -831,39 +836,6 @@ export default function ActivityDetailScreen() {
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
-
-      {isHangboardingActivity && (
-        <View style={hangboardingStyles.container}>
-          <Text style={hangboardingStyles.title}>Hangboarding</Text>
-          <HangboardingDetail
-            data={hangboardDetails.data}
-            loading={hangboardDetails.isLoading}
-            error={hangboardDetails.error ?? null}
-          />
-        </View>
-      )}
-
-      {isHangboardingActivity && (
-        <View style={hangboardingStyles.container}>
-          <Text style={hangboardingStyles.title}>Hangboarding</Text>
-          <HangboardingDetail
-            data={hangboardDetails.data}
-            loading={hangboardDetails.isLoading}
-            error={hangboardDetails.error ?? null}
-          />
-        </View>
-      )}
-
-      {isHangboardingActivity && (
-        <View style={hangboardingStyles.container}>
-          <Text style={hangboardingStyles.title}>Hangboarding</Text>
-          <HangboardingDetail
-            data={hangboardDetails.data}
-            loading={hangboardDetails.isLoading}
-            error={hangboardDetails.error ?? null}
-          />
-        </View>
-      )}
 
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>

@@ -247,5 +247,51 @@ describe("buildActivityDataset", () => {
       const activities = generateCardioActivities(40, context);
       expect(buildActivityDataset(activities, [], cardioTarget)).toBeNull();
     });
+
+    it("keeps only sessions that can provide the selected prediction target", () => {
+      const cardioActivities = generateCardioActivities(40, context);
+      const strengthActivities = generateStrengthWorkouts(40, context);
+      const mixedActivities = [...cardioActivities, ...strengthActivities].sort((a, b) =>
+        a.date.localeCompare(b.date),
+      );
+      const strengthTarget = ACTIVITY_PREDICTION_TARGETS.find(
+        (candidate) => candidate.id === "strength_volume",
+      );
+      if (!strengthTarget) throw new Error("expected strength_volume target");
+
+      const cardioDataset = buildActivityDataset(mixedActivities, context, cardioTarget);
+      const strengthDataset = buildActivityDataset(mixedActivities, context, strengthTarget);
+
+      expect(cardioDataset?.y).toEqual(cardioActivities.map((activity) => activity.avgPower));
+      expect(strengthDataset?.y).toEqual(
+        strengthActivities.map((activity) => activity.totalVolume),
+      );
+    });
+
+    it("builds a dataset when some trailing daily context values are unavailable", () => {
+      const partialContext = context.map((day, index) =>
+        index % 3 === 0
+          ? {
+              ...day,
+              hrv: null,
+              restingHr: null,
+              sleepDurationMin: null,
+              deepMin: null,
+              sleepEfficiency: null,
+              calories: null,
+              proteinG: null,
+              weightKg: null,
+              exerciseMinutes: null,
+              steps: null,
+            }
+          : day,
+      );
+      const activities = generateCardioActivities(80, partialContext);
+
+      const dataset = buildActivityDataset(activities, partialContext, cardioTarget);
+
+      expect(dataset?.X).toHaveLength(activities.length);
+      expect(dataset?.X.every((row) => row.every((value) => Number.isFinite(value)))).toBe(true);
+    });
   });
 });

@@ -23,8 +23,8 @@ const kayaHeader =
 
 function makeTransactionalImportDb(): {
   db: KayaImportDatabase;
-  deleteWhere: ReturnType<typeof vi.fn>;
-  insertValues: ReturnType<typeof vi.fn>;
+  deleteWhere: CallableVitestMock;
+  insertValues: CallableVitestMock;
   transactionDb: SyncDatabase;
 } {
   const deleteWhere = vi.fn().mockResolvedValue(undefined);

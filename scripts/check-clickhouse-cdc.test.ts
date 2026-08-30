@@ -23,7 +23,9 @@ class MockPgClient {
 }
 
 vi.mock("pg", () => ({
-  Client: vi.fn((options: { connectionString: string }) => new MockPgClient(options)),
+  Client: vi.fn(function vitestConstructor(options: { connectionString: string }) {
+    return new MockPgClient(options);
+  }),
 }));
 
 vi.mock("../src/db/clickhouse.ts", () => ({
@@ -91,6 +93,7 @@ describe("check-clickhouse-cdc", () => {
       query: vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
     };
     mockedCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
+    mockedAssertClickHouseCdcHealth.mockReset();
     mockedCheckClickHouseCdcHealth.mockResolvedValue({
       evidence: {
         peerDbMirrors: [

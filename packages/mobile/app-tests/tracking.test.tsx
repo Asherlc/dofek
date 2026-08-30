@@ -4,9 +4,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted<{
-  query: ReturnType<typeof vi.fn>;
+  query: CallableVitestMock;
   queryInputs: Array<{ days: number; endDate: string }>;
-  refetch: ReturnType<typeof vi.fn>;
+  refetch: CallableVitestMock;
 }>(() => ({
   query: vi.fn(),
   queryInputs: [],

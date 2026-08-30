@@ -7,6 +7,79 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-28 — PR 2589 watchOS build blocked during pnpm dependency fetches
+
+- **Status:** Fixed in source; a fresh hosted CI workflow is pending.
+- **Symptoms / user impact:** The `Build Mobile / watchOS Build` job failed
+  before Expo prebuild or watchOS compilation, blocking the hangboarding
+  activity-page fix from merging.
+- **Evidence / root cause:** The job's `pnpm install --frozen-lockfile` step
+  logged simultaneous `ETIMEDOUT` responses from `registry.npmjs.org` and
+  ended with `TimeoutError: The operation was aborted due to timeout`. The
+  lockfile cache miss required package downloads; the shared install action
+  did not set a request-concurrency limit for this runner. pnpm exposes
+  `networkConcurrency` as a request setting
+  ([pnpm settings](https://pnpm.io/settings#networkconcurrency)).
+- **Fix / mitigation:** Set `--network-concurrency=8` on the shared CI install
+  command. This limits concurrent registry requests without retrying, extending
+  timeouts, or suppressing failures.
+- **Validation:** The changed frozen install command succeeds locally and the
+  shared action passes repository lint. The new hosted workflow must complete
+  before merging.
+- **Remaining risk / follow-up:** If a fresh cache miss still times out at this
+  concurrency, capture its first registry failure before choosing another
+  network policy.
+
+## 2026-08-27 — Kaya activities displayed UTC as their local clock time
+
+- **Status:** Fix implemented; deployment verification is pending.
+- **Symptoms / user impact:** The latest Kaya session was shown seven hours late
+  on the web activity page and showed a duration of `0 mins`.
+- **Evidence / root cause:** The raw Kaya session supplied
+  `start_time = end_time = 2026-08-27T14:51:43.000Z`. The sync adapter treated
+  the transport `Z` suffix as the activity's local UTC offset and persisted
+  `provider_offset = 0`, even though the gym coordinates resolve to
+  `America/Los_Angeles`. `Z` denotes a UTC offset, not an activity's physical
+  time zone ([RFC 3339](https://www.rfc-editor.org/rfc/rfc3339)). The equal end
+  timestamp represents an incomplete Kaya session, not a completed
+  zero-duration activity.
+- **Fix / mitigation:** Kaya now resolves its gym coordinates to an IANA zone,
+  persists that zone as provider time context, and stores an end time as absent
+  when it is equal to or earlier than the start time. Shared web/mobile activity
+  rendering falls back to the viewer's zone only when a source has no local-time
+  context. No converted timestamp is stored; UTC remains the canonical instant.
+- **Validation:** Regression tests first failed with the prior UTC-local offset
+  and zero-duration behavior, then passed after the fix. Focused formatter,
+  Kaya provider, web, and mobile activity suites passed; the Docker-free
+  repository test tier and typecheck passed. Code lint stages passed, while
+  database-dependent SQL lint was blocked because Docker's filesystem reported
+  zero available bytes when ClickHouse started.
+- **Remaining risk / follow-up:** Deploy and run a Kaya sync. The normal
+  30-day sync window will update the affected sessions; confirm the latest one
+  displays its gym-local start time and no false duration.
+
+## 2026-08-27 — Kaya web sync rejected string-valued gym coordinates
+
+- **Status:** Fix implemented; deployment verification is pending.
+- **Symptoms / user impact:** Kaya showed “couldn’t sync” and did not ingest
+  the user’s latest climbing data.
+- **Evidence / root cause:** At `2026-08-27T13:17:51Z`, the production worker
+  logged `Invalid input: expected number, received string` for
+  `data.ascentsForUser[*].climb.gym.latitude` and `.longitude`. The deployed
+  Kaya client required numeric coordinates at that response boundary
+  ([client schema](../packages/kaya-client/src/client.ts)). Kaya returned
+  decimal coordinates as strings for the affected ascents.
+- **Fix / mitigation:** The client now accepts non-empty finite numeric
+  coordinate strings and normalizes them to numbers before the sync provider
+  processes the response. Invalid and non-finite coordinates still fail
+  validation; no retry, timeout, or error suppression was added.
+- **Validation:** A focused regression test first reproduced the production
+  Zod failure, then passed after the schema change; the Kaya client and sync
+  provider suites passed 28 unit tests.
+- **Remaining risk / follow-up:** Deploy the fix and trigger a Kaya sync;
+  confirm the provider records a successful result and no coordinate-validation
+  errors recur.
+
 ## 2026-08-22 — Rollout request gap and hidden dbt failure diagnostics
 
 - **Symptoms:** Sentry reported a mobile `processing.alerts` request receiving a Cloudflare `502`, unhandled `ECONNRESET` and `ENOTFOUND redis` errors in server tasks, and repeated `dbt build --select activity_source_records+` failures.
@@ -23675,6 +23748,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-08-27 — Provider cards temporarily reported no sync history
+
+- **Status:** Fixed in this workspace; deployment is pending.
+- **Symptoms / impact:** All regular provider cards could briefly report no sync history even though historical `fitness.sync_log` rows existed. This made the dashboard imply data loss and obscured the provider's actual latest sync outcome.
+- **Evidence / root cause:** Production retained 468,035 sync-log rows, including 8,381 in the preceding 24 hours. The UI loaded `sync.providers` and the account-wide, 100-row `sync.logs` query independently, then treated an unresolved/empty global log response as no history for every provider. The global limit could also exclude a quiet provider when another provider generated the most recent rows. A worker scale-to-zero was observed during [Deploy Web run 33103071018](https://github.com/Asherlc/dofek/actions/runs/33103071018), but it cannot explain the already-stored history disappearing from the UI.
+- **Fix / mitigation:** `sync.providers` now includes the three most recent logs for each provider via a provider-partitioned query. Web and mobile cards render that provider-scoped history, while the account-wide log query remains only for file-import history. The status treatment now uses a single concise current/failed indicator instead of repeated checkmark icons.
+- **Validation:** Provider repository, router, web panel/card, Apple Health model, and mobile provider tests pass (237 tests); TypeScript typecheck passes; non-database lint checks pass. The final analytics SQL lint requires a local ClickHouse instance, which this workspace could not start because its image was unavailable. The first hosted PR CI run caught two contract omissions: nested logs lacked `providerId` required by the mobile card model, and three web fixtures omitted newly required `id` and `dataType` fields. The corrected contract and fixtures pass 213 affected tests and package TypeScript checks locally.
+- **Remaining risk / follow-up:** Confirm the next production deployment and observe a provider card while the global history query is delayed or fails; its status should remain based on `sync.providers` data.
+
+## 2026-08-27 — Mobile shared Strong import used retired Blob and upload endpoints
+
+- **Status:** Fix prepared; physical-device verification and hosted CI remain pending.
+- **Symptoms / impact:** Sharing a Strong CSV into the iOS app displayed `Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported`. The data-sources screen also reported timed-out import and sync-progress requests, so the shared workout could not be imported.
+- **Evidence / root cause:** The mobile client passed an Expo `File` through the JavaScript `Blob`/`fetch` upload path and posted to legacy `/api/upload/*` URLs. The current server owns file-import sessions through `fileUpload` tRPC and R2 multipart authorization; it has no matching `/api/upload` route. The Blob conversion therefore failed locally, while the legacy progress request timed out.
+- **Fix / mitigation:** Replaced the legacy client flow with the canonical durable file-upload lifecycle: mobile creates the authenticated tRPC session, uploads each server-authorized R2 part with Expo FileSystem's native URI upload task, completes the session, and polls the server-owned lifecycle. Native part tasks avoid JS Blob construction; Expo documents the FileSystem upload-task API at <https://docs.expo.dev/versions/latest/sdk/filesystem/>. No retry, timeout extension, or compatibility endpoint was added.
+- **Validation:** Focused mobile tests passed 98/98, including native-URI upload transport, Strong import lifecycle, provider-screen wiring, and server-authored import failure display. Mobile lint and TypeScript typecheck passed; the full unit/mobile suite passed 1,122 files and 16,845 tests.
+- **Remaining risk / follow-up:** Verify the exact Strong share-sheet flow on a physical iPhone and confirm hosted CI passes before release.
 ## 2026-08-14 — Journal PR Metro gate rejected stale Expo SDK patch dependencies
 
 - **Status:** Fixed in [PR #2527](https://github.com/Asherlc/dofek/pull/2527); hosted CI rerun is pending.
@@ -24106,3 +24196,104 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation passes.
 - **Remaining risk / follow-up:** Deploy the migration, then verify the
   production activity group resolves to Hang Ten.
+
+## 2026-08-27 — Mobile settings data-source refresh timed out without operation telemetry
+
+- **Status:** Unresolved; diagnostic instrumentation is prepared in this PR and
+  has not yet been deployed.
+- **Symptoms / impact:** The iOS Settings > Data Sources screen retained its
+  cached provider count but displayed `Could not refresh data sources`; the
+  Zepp App Pairing connection query failed with the same
+  `fetch failed: UnexpectedException: The request timed out.` message. This
+  prevented users from refreshing provider and Zepp connection state.
+- **Evidence / root cause:** The screenshot captured the first fatal client
+  message. Production Swarm service state was healthy (`dofek_web` 2/2), but
+  Axiom access was unavailable because its user token had expired and the
+  eight-hour `dofek_web` service-log window contained no request evidence.
+  Mobile React Query intentionally excluded transient network failures from
+  `captureException`, so the client did not preserve the failing tRPC operation
+  for correlation. The request timeout's underlying server or transport cause
+  is therefore not yet established.
+- **Fix / mitigation:** Removed the transient-error exclusion so every handled
+  mobile query error reports its query hash through the existing telemetry
+  path. This records whether the next failure is `sync.providers`,
+  `companionToken.list`, or another batched operation; no retry or timeout
+  change was added.
+- **Validation:** The focused mobile query-client test passes and Biome
+  validates the changed files. A deployment and an Axiom-authenticated trace
+  query are still required to identify and correct the underlying timeout.
+- **Remaining risk / follow-up:** Restore Axiom access, deploy the diagnostic
+  commit, reproduce the refresh, and correlate the reported operation with
+  server request duration and error traces before selecting a behavior change.
+
+## 2026-08-27 — PR 2584 provider grouping CI typecheck and Knip failures
+
+- **Status:** Fixed in source; a fresh hosted CI workflow is queued.
+- **Symptoms / impact:** PR #2584 could not merge because typechecks for the
+  providers, server, web, and mobile packages failed, along with Knip.
+- **Evidence / root cause:** The first fatal typecheck line was
+  `Type '{ [k: string]: string | undefined; }' is not assignable to type
+  'Readonly<Record<string, string>>'` in the catalog-derived `BRAND_COLORS`
+  map. Knip independently reported an unlisted `@storybook/react` import in
+  the new provider-family story. See the [providers typecheck job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638133825)
+  and [Knip job](https://github.com/Asherlc/dofek/actions/runs/33106558060/job/98638070205).
+- **Subsequent evidence:** The next CI run exposed the provider-family return
+  type as a possibly-empty array to the mobile typechecker, despite its runtime
+  family-size guard. Its integration shard also started its dedicated Timescale
+  container before Postgres logged readiness, producing `the database system is
+  starting up` in the migration test.
+- **Fix / mitigation:** Replaced the nullable color-map pipeline with an
+  explicitly typed accumulator that only writes defined colors, and imported
+  Storybook types from the package already declared by the web workspace
+  (`@storybook/react-vite`). Encoded the two-member family invariant in the
+  shared return type and waited for Postgres's ready log in the dedicated
+  migration test container. No retry, timeout, or workflow suppression was
+  added.
+- **Validation:** Full local `pnpm typecheck` and `pnpm knip` pass. Focused
+  provider catalog and mobile tests pass (99 tests), exact mobile and provider
+  typechecks pass, and the dedicated Timescale migration integration test
+  completed successfully. The fresh CI workflow for commit `d73f6ae` is queued.
+- **Remaining risk / follow-up:** Confirm the queued hosted CI workflow passes
+  before merging the PR.
+
+## 2026-08-29 — PR 2575 native mobile builds rejected legacy Sentry source mode
+
+- **Status:** Fixed in source; hosted native-build validation is pending.
+- **Symptoms / user impact:** PR #2575's iOS and watchOS native build jobs
+  failed during CocoaPods resolution, blocking the PR from merging.
+- **Evidence / root cause:** Both jobs first failed with `[Sentry]
+  SENTRY_USE_XCFRAMEWORK=0 is no longer supported.` The mobile Podfile plugin
+  still injected that legacy setting, while Sentry React Native 8.24's
+  [`RNSentry.podspec`](https://github.com/getsentry/sentry-react-native/blob/8.24.0/RNSentry.podspec)
+  requires the prebuilt XCFramework because newer sentry-cocoa releases are not
+  published to the CocoaPods trunk.
+- **Fix / mitigation:** Removed the source-build injection and make the plugin
+  remove its previously generated preamble; the unrelated ExpoModulesCore
+  post-install workaround remains. No retry, timeout, or fallback was added.
+- **Validation:** The focused plugin test proves a generated Podfile omits the
+  legacy setting and retains the ExpoModulesCore workaround; mobile typecheck
+  and Biome pass. Local Expo prebuild is separately blocked before Podfile
+  evaluation by `@bacons/apple-targets` calling `chalk` as a function.
+- **Remaining risk / follow-up:** Confirm the rerun iOS and watchOS jobs pass;
+  investigate the local `@bacons/apple-targets`/`chalk` prebuild incompatibility
+  only if it reproduces in hosted CI.
+
+## 2026-08-30 — PR 2575 iOS archive rejected Sentry XCFramework headers
+
+- **Status:** Fixed in source; hosted iOS-build validation is pending.
+- **Symptoms / user impact:** The rerun passed watchOS, CocoaPods installation,
+  Metro, mobile tests, and all completed non-E2E checks, but its iOS native
+  archive failed and keeps the mobile build gate red.
+- **Evidence:** The exact failed step is
+  [`Archive (Release, no signing)`](https://github.com/Asherlc/dofek/actions/runs/33289320658/job/99198139105),
+  which exited with code 65 after CocoaPods completed. Its first fatal line was
+  `Sentry.h:10:13: error: include of non-modular header inside framework module
+  'Sentry'`, emitted while `RNSentry` imported the Sentry XCFramework.
+- **Root cause / fix:** Applied
+  `CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES=YES` only to the
+  generated `RNSentry` pod target. The setting directly permits the
+  XCFramework's private-header imports without restoring the unsupported
+  source-built Sentry configuration.
+- **Validation:** The Podfile-plugin regression test passes, as do mobile
+  typecheck and Biome.
+- **Remaining risk / follow-up:** Confirm the rerun iOS archive passes.

@@ -73,25 +73,25 @@ describe("initProductionSentry", () => {
     expect(mocks.initProductionPostHog).not.toHaveBeenCalled();
   });
 
-  it.each([
-    "prod",
-    "production",
-  ])("initializes the %s deployment with the production Sentry environment", async (deploymentEnvironment) => {
-    vi.stubEnv("DEPLOY_ENVIRONMENT", deploymentEnvironment);
-    vi.stubEnv("SENTRY_RELEASE", "0123456789abcdef");
-    const initProductionSentry = await loadInitProductionSentry();
+  it.each(["prod", "production"])(
+    "initializes the %s deployment with the production Sentry environment",
+    async (deploymentEnvironment) => {
+      vi.stubEnv("DEPLOY_ENVIRONMENT", deploymentEnvironment);
+      vi.stubEnv("SENTRY_RELEASE", "0123456789abcdef");
+      const initProductionSentry = await loadInitProductionSentry();
 
-    initProductionSentry("https://key@sentry.example/456");
+      initProductionSentry("https://key@sentry.example/456");
 
-    expect(mocks.initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
-    expect(mocks.init).toHaveBeenCalledWith({
-      beforeSend: expect.any(Function),
-      dsn: "https://key@sentry.example/456",
-      environment: "production",
-      release: "0123456789abcdef",
-      skipOpenTelemetrySetup: true,
-    });
-  });
+      expect(mocks.initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
+      expect(mocks.init).toHaveBeenCalledWith({
+        beforeSend: expect.any(Function),
+        dsn: "https://key@sentry.example/456",
+        environment: "production",
+        release: "0123456789abcdef",
+        skipOpenTelemetrySetup: true,
+      });
+    },
+  );
 
   it("drops an expected account-erasure fence before its database cause reaches Sentry", async () => {
     vi.stubEnv("DEPLOY_ENVIRONMENT", "production");

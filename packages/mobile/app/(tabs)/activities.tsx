@@ -82,7 +82,13 @@ function displayRecordLocalTime(
   startedAt: string,
   localTimeContext: RecordLocalTimeContext,
 ): string {
-  const localTime = formatRecordLocalTime(startedAt, localTimeContext, "start");
+  const localTime = formatRecordLocalTime(
+    startedAt,
+    localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   return localTime === "--" ? "Local time unavailable" : localTime;
 }
 
