@@ -1,4 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const rawTableMockState = vi.hoisted(() => ({ omitClinicalRecord: false }));
+
+vi.mock("../clickhouse-raw-tables.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../clickhouse-raw-tables.ts")>();
+
+  return {
+    ...actual,
+    buildPostgresFitnessRawTableStatements: () => {
+      const statements = actual.buildPostgresFitnessRawTableStatements();
+      return rawTableMockState.omitClinicalRecord
+        ? statements.filter((statement) => !statement.includes("postgres_fitness.clinical_record"))
+        : statements;
+    },
+  };
+});
+
 import { createMigration } from "./0072_canonical_clinical_records.ts";
 
 describe("0072_canonical_clinical_records", () => {
@@ -21,5 +38,15 @@ describe("0072_canonical_clinical_records", () => {
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_change_from_clinical_record",
     );
     expect(sql).not.toContain("FROM postgres_fitness.lab_");
+  });
+
+  it("fails explicitly when the canonical raw clinical table definition is unavailable", () => {
+    rawTableMockState.omitClinicalRecord = true;
+
+    expect(() => createMigration()).toThrow(
+      "Missing ClickHouse clinical record definition: CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (",
+    );
+
+    rawTableMockState.omitClinicalRecord = false;
   });
 });
