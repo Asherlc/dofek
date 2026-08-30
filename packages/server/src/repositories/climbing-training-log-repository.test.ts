@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SchemaExecutionDatabase } from "../lib/typed-sql.ts";
 import {
   ClimbingTrainingLogRepository,
+  readFingerLoadingActivity,
   readFingerLoadingRange,
 } from "./climbing-training-log-repository.ts";
 import { collectSqlText } from "./test-helpers.ts";
@@ -45,6 +46,34 @@ describe("readFingerLoadingRange", () => {
     const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
     expect(queryText).toContain("FROM fitness.v_activity AS a");
     expect(queryText).toContain("entry.activity_id = ANY(a.member_activity_ids)");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("user-1");
+  });
+});
+
+describe("readFingerLoadingActivity", () => {
+  it("returns one activity's finger-loading details scoped to its owner", async () => {
+    const execute = vi.fn(
+      async (_query: SQL): Promise<Record<string, unknown>[]> => [fingerLoadingRow],
+    );
+    const database = { execute } satisfies SchemaExecutionDatabase;
+
+    await expect(
+      readFingerLoadingActivity({
+        activityId: "activity-1",
+        database,
+        userId: "user-1",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ activityId: "activity-1", effectiveLoadKg: 90 }),
+    ]);
+
+    const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
+    expect(queryText).toContain("FROM fitness.v_activity AS a");
+    expect(queryText).toContain("entry.activity_id = ANY(a.member_activity_ids)");
+    expect(queryText).toContain("a.id =");
+    expect(queryText).toContain("a.user_id =");
+    expect(queryText).toContain("ORDER BY entry.created_at DESC");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("activity-1");
     expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("user-1");
   });
 });

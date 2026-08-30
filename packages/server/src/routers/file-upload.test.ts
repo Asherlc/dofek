@@ -102,8 +102,8 @@ function setup(currentUpload = upload()) {
       _database,
       _userId,
       operation: (database: {
-        execute: ReturnType<typeof vi.fn>;
-        select: ReturnType<typeof vi.fn>;
+        execute: CallableVitestMock;
+        select: CallableVitestMock;
       }) => Promise<unknown>,
     ) => operation(transaction),
   );

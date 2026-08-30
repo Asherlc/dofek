@@ -70,7 +70,7 @@ describe("createAppQueryClient", () => {
     "User cancelled",
     "fetch failed: canceled",
     "fetch failed: cancelled",
-  ])("does not report transient query error %j to Sentry", async (message) => {
+  ])("reports transient query error %j to Sentry", async (message) => {
     const queryClient = createAppQueryClient();
     const queryError = new Error(message);
 
@@ -84,7 +84,11 @@ describe("createAppQueryClient", () => {
       }),
     ).rejects.toThrow(queryError);
 
-    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(queryError, {
+      source: "react-query",
+      queryHash: `["offline-query","${message}"]`,
+      failureCount: 1,
+    });
   });
   it("reports a non-transient query error to Sentry", async () => {
     const queryClient = createAppQueryClient();

@@ -13,9 +13,6 @@ export function createAppQueryClient() {
   return new QueryClient({
     queryCache: new QueryCache({
       onError(error, query) {
-        if (isTransientNetworkError(error)) {
-          return;
-        }
         captureException(error, {
           source: "react-query",
           queryHash: query.queryHash,

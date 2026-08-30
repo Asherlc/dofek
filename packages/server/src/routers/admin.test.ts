@@ -84,7 +84,7 @@ import { adminRouter } from "./admin.ts";
 const createCaller = createTestCallerFactory(adminRouter);
 
 function makeCaller(
-  execute: ReturnType<typeof vi.fn>,
+  execute: CallableVitestMock,
   sensorQuery = vi.fn().mockResolvedValue([]),
   timezone = "UTC",
   userId = "admin-1",

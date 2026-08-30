@@ -138,16 +138,6 @@ describe.sequential("external write API network contract", () => {
 
   beforeEach(async () => {
     await testContext.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
-          VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
-          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
-    );
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
-          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
-          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
-    );
-    await testContext.db.execute(
       sql`DELETE FROM fitness.account_erasure_identity_fence
           WHERE request_id IN (
             SELECT id
@@ -162,6 +152,16 @@ describe.sequential("external write API network contract", () => {
     await testContext.db.execute(
       sql`DELETE FROM fitness.account_erasure_request
           WHERE user_id IN (${USER_ID}::uuid, ${ERASURE_USER_ID}::uuid)`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${USER_ID}, 'External API Test', 'external-api@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${ERASURE_USER_ID}, 'External API Erasure Test', 'external-api-erasure@example.test', true)
+          ON CONFLICT (id) DO UPDATE SET is_admin = true`,
     );
     await testContext.db.execute(sql`DELETE FROM fitness.external_erasure_ack`);
     await testContext.db.execute(sql`DELETE FROM fitness.external_idempotency_receipt`);
@@ -220,6 +220,8 @@ describe.sequential("external write API network contract", () => {
     codeVerifier: string;
     ip?: string;
     redirectUri: string;
+    requestedScopes?: string[];
+    state?: string;
   }): Promise<Response> {
     return fetch(`${baseUrl}/api/external/v1/link/start`, {
       method: "POST",
@@ -231,8 +233,8 @@ describe.sequential("external write API network contract", () => {
       body: JSON.stringify({
         redirectUri: input.redirectUri,
         codeChallenge: pkceChallenge(input.codeVerifier),
-        requestedScopes: ["nutrition:write"],
-        state: "state-value",
+        requestedScopes: input.requestedScopes ?? ["nutrition:write"],
+        state: input.state ?? "state-value",
       }),
     });
   }
@@ -255,6 +257,531 @@ describe.sequential("external write API network contract", () => {
       },
     ]);
     expect(rows[0]?.secret_hash).not.toBe(created.client.clientSecret);
+  });
+
+  it("rejects malformed and non-canonical link requests before creating a link", async () => {
+    const created = await createDeveloperClient("link-validation-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const validRequest = {
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+      codeChallenge: pkceChallenge("v".repeat(43)),
+      requestedScopes: ["nutrition:write"],
+      state: "state-value",
+    };
+    const responses = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...validRequest,
+          redirectUri: "https://slack.example.test:443/dofek/callback",
+        }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...validRequest,
+          redirectUri: "https://unregistered.example.test/callback",
+        }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/authorize?linkId=not-a-uuid`),
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    ]);
+
+    expect(responses.slice(0, 3).map((response) => response.status)).toEqual([422, 422, 422]);
+    expect(responses[3]?.status).toBe(401);
+    expect(responses.slice(4).map((response) => response.status)).toEqual([422, 422, 422]);
+    for (const response of [...responses.slice(0, 3), ...responses.slice(4)]) {
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "VALIDATION_ERROR",
+        status: 422,
+      });
+    }
+    expect(DeveloperApiProblemSchema.parse(await responses[3]?.json())).toMatchObject({
+      code: "INVALID_CREDENTIALS",
+      status: 401,
+    });
+    expect(await countExternalLinks()).toBe(0);
+  });
+
+  it("does not exchange expired codes or codes with an invalid PKCE verifier", async () => {
+    const created = await createDeveloperClient("link-exchange-validation-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+
+    const prepareApprovedLink = async (code: string, codeVerifier: string, expiresAt: string) => {
+      const started = await startLink({
+        authorization,
+        codeVerifier,
+        redirectUri: created.client.client.redirectUris[0] ?? "",
+      });
+      expect(started.status).toBe(200);
+      const { linkId } = z.object({ linkId: z.uuid() }).parse(await started.json());
+      await testContext.db.execute(sql`
+        UPDATE fitness.external_link
+        SET user_id = ${USER_ID}::uuid,
+            approved_at = NOW(),
+            code_hash = ${hashSecret(code)},
+            code_expires_at = ${expiresAt}
+        WHERE link_id = ${linkId}::uuid
+      `);
+      return linkId;
+    };
+
+    const codeVerifier = "p".repeat(43);
+    const [expiredLinkId, invalidVerifierLinkId] = await Promise.all([
+      prepareApprovedLink(
+        "expired-link-code".padEnd(20, "x"),
+        codeVerifier,
+        "2000-01-01T00:00:00Z",
+      ),
+      prepareApprovedLink(
+        "invalid-verifier-link-code".padEnd(20, "x"),
+        codeVerifier,
+        "2099-01-01T00:00:00Z",
+      ),
+    ]);
+    const responses = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkId: expiredLinkId,
+          code: "expired-link-code".padEnd(20, "x"),
+          codeVerifier,
+          externalSubject: { namespace: "slack", subject: "expired-link-subject" },
+        }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkId: invalidVerifierLinkId,
+          code: "invalid-verifier-link-code".padEnd(20, "x"),
+          codeVerifier: "q".repeat(43),
+          externalSubject: { namespace: "slack", subject: "invalid-verifier-subject" },
+        }),
+      }),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(401);
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "INVALID_CREDENTIALS",
+        status: 401,
+      });
+    }
+  });
+
+  it("rejects unapproved scopes and omits an absent OAuth state from the approval redirect", async () => {
+    const created = await createDeveloperClient("scope-and-state-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "s".repeat(43);
+    const rejected = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+      requestedScopes: ["profile:read"],
+    });
+    expect(rejected.status).toBe(422);
+
+    const start = await fetch(`${baseUrl}/api/external/v1/link/start`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        redirectUri: created.client.client.redirectUris[0],
+        codeChallenge: pkceChallenge(codeVerifier),
+        requestedScopes: ["nutrition:write"],
+      }),
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.uuid() }).parse(await start.json());
+    const authorizePage = await fetch(
+      `${baseUrl}/api/external/v1/link/authorize?linkId=${linkId}`,
+      { headers: { Authorization: `Bearer ${created.sessionId}` } },
+    );
+    expect(authorizePage.status).toBe(200);
+    const csrfToken = (await authorizePage.text()).match(/name="csrfToken" value="([^"]+)"/)?.[1];
+    const approval = await fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${created.sessionId}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ linkId, approved: "true", csrfToken: csrfToken ?? "" }),
+    });
+    expect(approval.status).toBe(303);
+    expect(new URL(approval.headers.get("location") ?? "").searchParams.get("state")).toBeNull();
+  });
+
+  it("rejects an exchange that would take over another user's external identity", async () => {
+    const created = await createDeveloperClient("identity-takeover-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "i".repeat(43);
+    const code = "identity-takeover-code".padEnd(43, "x");
+    const start = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.uuid() }).parse(await start.json());
+    const otherUserId = randomUUID();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email, is_admin)
+          VALUES (${otherUserId}::uuid, 'Identity owner', NULL, false)`,
+    );
+    await testContext.db.execute(sql`
+      INSERT INTO fitness.external_identity_link (namespace, subject, user_id, opaque_subject)
+      VALUES ('slack', 'identity-takeover-subject', ${otherUserId}::uuid, 'opaque-other-user')
+    `);
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET user_id = ${USER_ID}::uuid,
+          approved_at = NOW(),
+          code_hash = ${hashSecret(code)},
+          code_expires_at = NOW() + INTERVAL '5 minutes'
+      WHERE link_id = ${linkId}::uuid
+    `);
+
+    const response = await fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        linkId,
+        code,
+        codeVerifier,
+        externalSubject: { namespace: "slack", subject: "identity-takeover-subject" },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "EXTERNAL_IDENTITY_ALREADY_LINKED",
+      status: 409,
+    });
+  });
+
+  it("blocks link exchange while the account is being erased", async () => {
+    const created = await createDeveloperClient("erased-link-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "e".repeat(43);
+    const code = "erased-link-code".padEnd(43, "x");
+    const start = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.uuid() }).parse(await start.json());
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET user_id = ${ERASURE_USER_ID}::uuid,
+          approved_at = NOW(),
+          code_hash = ${hashSecret(code)},
+          code_expires_at = NOW() + INTERVAL '5 minutes'
+      WHERE link_id = ${linkId}::uuid
+    `);
+    await initiateAccountErasure(
+      testContext.db,
+      ERASURE_USER_ID,
+      async () => "snapshot",
+      async () => undefined,
+    );
+
+    const response = await fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        linkId,
+        code,
+        codeVerifier,
+        externalSubject: { namespace: "slack", subject: "erased-link-subject" },
+      }),
+    });
+
+    expect(response.status).toBe(423);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "ACCOUNT_ERASURE_ACTIVE",
+      status: 423,
+    });
+  });
+
+  it("blocks token reissue while the linked account is being erased", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "erasure-reissue-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "erasure-reissue-subject",
+      userId: ERASURE_USER_ID,
+    });
+    await initiateAccountErasure(
+      testContext.db,
+      ERASURE_USER_ID,
+      async () => "snapshot",
+      async () => undefined,
+    );
+
+    const response = await fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "slack", subject: "erasure-reissue-subject" }),
+    });
+
+    expect(response.status).toBe(423);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "ACCOUNT_ERASURE_ACTIVE",
+      status: 423,
+    });
+  });
+
+  it("returns authorization validation errors for an authenticated session without consuming a link", async () => {
+    const session = await createSession(testContext.db, USER_ID);
+    const requestId = "external-link-validation-1";
+    const responses = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/authorize?linkId=not-a-uuid`, {
+        headers: { Authorization: `Bearer ${session.sessionId}`, "X-Request-Id": requestId },
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+        method: "POST",
+        redirect: "manual",
+        headers: {
+          Authorization: `Bearer ${session.sessionId}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/authorize`, {
+        method: "POST",
+        redirect: "manual",
+        headers: {
+          Authorization: `Bearer ${session.sessionId}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          linkId: randomUUID(),
+          approved: "true",
+          csrfToken: "c".repeat(43),
+        }),
+      }),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([404, 422, 404]);
+    const invalidLink = DeveloperApiProblemSchema.parse(await responses[0]?.json());
+    expect(invalidLink).toMatchObject({ code: "NOT_FOUND", requestId });
+    expect(DeveloperApiProblemSchema.parse(await responses[1]?.json())).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(DeveloperApiProblemSchema.parse(await responses[2]?.json())).toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+    });
+  });
+
+  it("rejects expired and revoked grants while reporting a revoked grant status", async () => {
+    const expired = await createGrant(testContext, {
+      clientId: "expired-grant-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "expired-grant-subject",
+      expired: true,
+    });
+    const revoked = await createGrant(testContext, {
+      clientId: "revoked-grant-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "revoked-grant-subject",
+      revoked: true,
+    });
+    const [expiredWrite, revokedWrite, revokedStatus] = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${expired.oldToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${revoked.oldToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { Authorization: revoked.authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ namespace: "slack", subject: "revoked-grant-subject" }),
+      }),
+    ]);
+
+    for (const response of [expiredWrite, revokedWrite]) {
+      expect(response.status).toBe(401);
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "INVALID_CREDENTIALS",
+        status: 401,
+      });
+    }
+    expect(await revokedStatus.json()).toMatchObject({
+      status: "revoked",
+      externalSubject: "opaque-revoked-grant-client",
+      grantId: revoked.grantId,
+    });
+  });
+
+  it("reports linked grants and records the latest erasure acknowledgement", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "linked-grant-client",
+      clientSecret: "client-secret",
+      namespace: "slack",
+      subject: "linked-grant-subject",
+    });
+
+    const status = await fetch(`${baseUrl}/api/external/v1/link/status`, {
+      method: "POST",
+      headers: { Authorization: grant.authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "slack", subject: "linked-grant-subject" }),
+    });
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({
+      status: "linked",
+      externalSubject: "opaque-linked-grant-client",
+      grantId: grant.grantId,
+    });
+
+    const acknowledge = (body: unknown) =>
+      fetch(`${baseUrl}/api/external/v1/erasure/ack`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${grant.oldToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    expect(
+      (
+        await acknowledge({
+          eventId: "linked-grant-erasure-event",
+          result: "failed",
+          reasonCode: "upstream-unavailable",
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await acknowledge({ eventId: "linked-grant-erasure-event", result: "completed" })).status,
+    ).toBe(200);
+
+    const acknowledgements = await executeWithSchema(
+      testContext.db,
+      z.object({ result: z.string(), reason_code: z.string().nullable() }),
+      sql`SELECT result, reason_code
+          FROM fitness.external_erasure_ack
+          WHERE event_id = 'linked-grant-erasure-event'`,
+    );
+    expect(acknowledgements).toEqual([{ result: "completed", reason_code: null }]);
+  });
+
+  it("rejects incomplete and revoked developer client credentials", async () => {
+    const created = await createDeveloperClient("credential-validation-client");
+    const client = created.client.client;
+    const request = (authorization: string) =>
+      startLink({
+        authorization,
+        codeVerifier: "r".repeat(43),
+        redirectUri: client.redirectUris[0] ?? "",
+      });
+
+    expect((await request(`Bearer ${client.clientId}`)).status).toBe(401);
+    expect((await request(`Bearer ${client.clientId}.`)).status).toBe(401);
+
+    const revoke = await fetch(`${baseUrl}/api/developer/clients/${client.clientId}/revoke`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${created.sessionId}` },
+    });
+    expect(revoke.status).toBe(200);
+    expect((await request(`Bearer ${client.clientId}.${created.client.clientSecret}`)).status).toBe(
+      401,
+    );
+  });
+
+  it("rejects link scopes removed from an otherwise valid developer client", async () => {
+    const created = await createDeveloperClient("scoped-client");
+    const client = created.client.client;
+    await testContext.db.execute(
+      sql`UPDATE fitness.external_client
+          SET scopes = ARRAY[]::text[]
+          WHERE client_id = ${client.clientId}`,
+    );
+
+    const response = await startLink({
+      authorization: `Bearer ${client.clientId}.${created.client.clientSecret}`,
+      codeVerifier: "t".repeat(43),
+      redirectUri: client.redirectUris[0] ?? "",
+    });
+
+    expect(response.status).toBe(422);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+  });
+
+  it("does not present expired or already exchanged authorization links", async () => {
+    const created = await createDeveloperClient("expired-authorization-link-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const session = await createSession(testContext.db, USER_ID);
+    const start = async () => {
+      const response = await startLink({
+        authorization,
+        codeVerifier: "u".repeat(43),
+        redirectUri: created.client.client.redirectUris[0] ?? "",
+      });
+      expect(response.status).toBe(200);
+      return z.object({ linkId: z.uuid() }).parse(await response.json()).linkId;
+    };
+    const [expiredLinkId, exchangedLinkId] = await Promise.all([start(), start()]);
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET expires_at = NOW() - INTERVAL '1 minute'
+      WHERE link_id = ${expiredLinkId}::uuid
+    `);
+    await testContext.db.execute(sql`
+      UPDATE fitness.external_link
+      SET exchanged_at = NOW()
+      WHERE link_id = ${exchangedLinkId}::uuid
+    `);
+
+    const responses = await Promise.all(
+      [expiredLinkId, exchangedLinkId].map((linkId) =>
+        fetch(`${baseUrl}/api/external/v1/link/authorize?linkId=${linkId}`, {
+          headers: { Authorization: `Bearer ${session.sessionId}` },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.status)).toEqual([404, 404]);
   });
 
   it("covers exact redirect linking, one-time exchange, nutrition write, status, and revocation", async () => {
@@ -436,6 +963,95 @@ describe.sequential("external write API network contract", () => {
     }
     expect(statuses.slice(0, 60).every((status) => status === 200)).toBe(true);
     expect(statuses[60]).toBe(429);
+  });
+
+  it("rejects unauthenticated requests at every protected external endpoint", async () => {
+    const requests = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": "198.51.100.242" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${baseUrl}/api/external/v1/erasure/ack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    ]);
+
+    for (const response of requests) {
+      expect(response.status).toBe(401);
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: "INVALID_CREDENTIALS",
+        status: 401,
+      });
+    }
+  });
+
+  it("returns not found for unknown client subjects and rejects unapproved link exchanges", async () => {
+    const created = await createDeveloperClient("unapproved-link-client");
+    const authorization = `Bearer ${created.client.client.clientId}.${created.client.clientSecret}`;
+    const codeVerifier = "d".repeat(43);
+
+    const start = await startLink({
+      authorization,
+      codeVerifier,
+      redirectUri: created.client.client.redirectUris[0] ?? "",
+    });
+    expect(start.status).toBe(200);
+    const { linkId } = z.object({ linkId: z.string().uuid() }).parse(await start.json());
+
+    const [status, reissue, exchange] = await Promise.all([
+      fetch(`${baseUrl}/api/external/v1/link/status`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ namespace: "slack", subject: "not-linked" }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/reissue`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ namespace: "slack", subject: "not-linked" }),
+      }),
+      fetch(`${baseUrl}/api/external/v1/link/exchange`, {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkId,
+          code: "unapproved-link-code".padEnd(20, "x"),
+          codeVerifier,
+          externalSubject: { namespace: "slack", subject: "not-linked" },
+        }),
+      }),
+    ]);
+
+    expect(status.status).toBe(404);
+    expect(reissue.status).toBe(404);
+    expect(exchange.status).toBe(401);
+    for (const response of [status, reissue, exchange]) {
+      expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+        code: response === exchange ? "INVALID_CREDENTIALS" : "NOT_FOUND",
+      });
+    }
   });
 
   it("counts rejected client authentication toward the link-start limit", async () => {
@@ -638,6 +1254,82 @@ describe.sequential("external write API network contract", () => {
       "nutrition-mixed-date-key",
     );
     expect(mixedDates.status).toBe(422);
+  });
+
+  it("does not duplicate an idempotency key while its original write is in progress", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "in-progress-nutrition-client",
+      clientSecret: "in-progress-nutrition-secret",
+      namespace: "slack",
+      subject: "in-progress-nutrition-subject",
+    });
+    const body = {
+      entries: [
+        {
+          date: "2026-08-20",
+          foodName: "In-progress lunch",
+          externalId: "in-progress-entry",
+          nutrients: { calories: 500 },
+        },
+      ],
+    };
+    const key = "nutrition-request-in-progress";
+    await testContext.db.execute(sql`
+      INSERT INTO fitness.external_idempotency_receipt
+        (grant_id, method, path, idempotency_key, request_hash, status)
+      VALUES
+        (${grant.grantId}::uuid, 'POST', '/api/external/v1/nutrition/entries', ${key}, ${createHash("sha256").update(JSON.stringify(body)).digest("hex")}, 'in_progress')
+    `);
+
+    const response = await fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${grant.oldToken}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify(body),
+    });
+
+    expect(response.status).toBe(409);
+    expect(DeveloperApiProblemSchema.parse(await response.json())).toMatchObject({
+      code: "REQUEST_IN_PROGRESS",
+      status: 409,
+    });
+  });
+
+  it("rejects a second nutrition write for an existing provider external ID", async () => {
+    const grant = await createGrant(testContext, {
+      clientId: "duplicate-external-id-client",
+      clientSecret: "duplicate-external-id-secret",
+      namespace: "slack",
+      subject: "duplicate-external-id-subject",
+    });
+    const entry = {
+      date: "2026-08-20",
+      meal: "dinner",
+      foodName: "Duplicate dinner",
+      externalId: "duplicate-provider-entry",
+      nutrients: { calories: 600 },
+    };
+    const write = (key: string) =>
+      fetch(`${baseUrl}/api/external/v1/nutrition/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${grant.oldToken}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify({ entries: [entry] }),
+      });
+
+    expect((await write("duplicate-external-id-request-1")).status).toBe(200);
+    const duplicate = await write("duplicate-external-id-request-2");
+    expect(duplicate.status).toBe(409);
+    expect(DeveloperApiProblemSchema.parse(await duplicate.json())).toMatchObject({
+      code: "EXTERNAL_ID_ALREADY_EXISTS",
+      status: 409,
+    });
   });
 
   it("rolls back nutrition writes when completing the idempotency receipt fails", async () => {

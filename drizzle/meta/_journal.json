@@ -694,6 +694,20 @@
       "when": 1787612400000,
       "tag": "0096_self_service_developer_clients",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1787754612000,
+      "tag": "0097_restore_hang_ten_activity_priority",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1787858000000,
+      "tag": "0098_remove_mcp_oauth_nutrition_write_scope",
+      "breakpoints": true
     }
   ]
 }

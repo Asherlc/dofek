@@ -3,6 +3,30 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
+const zeppStubPath = path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js");
+const zeppModules = [
+  "@zos/app-access",
+  "@zos/sensor",
+  "@zos/fs",
+  "@zos/utils",
+  "@zos/device",
+  "@zos/display",
+  "@zos/interaction",
+  "@zos/app",
+  "@zos/ble",
+  "@zos/app-service",
+  "@zeppos/zml/base-page",
+  "@zeppos/zml/base-side",
+  "@zeppos/zml/base-app",
+  "@zeppos/zml/3.0/module/messaging/plugin/page",
+  "@zeppos/zml/3.0/module/messaging/plugin/side",
+  "@zeppos/zml/3.0/module/messaging/plugin/app",
+  "@zeppos/zml",
+];
+const zeppAliases: Record<string, string> = {};
+for (const moduleName of zeppModules) {
+  zeppAliases[moduleName] = `${zeppStubPath}?zepp-module=${encodeURIComponent(moduleName)}`;
+}
 
 const testCredentialEncryptionKey = Buffer.from("a".repeat(32), "utf8").toString("base64");
 
@@ -12,11 +36,7 @@ const sharedTestConfig = {
   hookTimeout: 120_000,
   fileParallelism: true,
   pool: "forks" as const,
-  poolOptions: {
-    forks: {
-      execArgv: ["--no-experimental-webstorage"],
-    },
-  },
+  execArgv: ["--no-experimental-webstorage"],
   env: {
     ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: JSON.stringify({
       activeKeyId: "test-v1",
@@ -110,32 +130,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "./src",
-      "@zos/app-access": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/sensor": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/fs": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/utils": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/device": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/display": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/interaction": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/app": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/ble": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zos/app-service": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml/base-page": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml/base-side": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml/base-app": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml/3.0/module/messaging/plugin/page": path.resolve(
-        dirname,
-        "packages/zepp/src/__mocks__/zos-stub.js",
-      ),
-      "@zeppos/zml/3.0/module/messaging/plugin/side": path.resolve(
-        dirname,
-        "packages/zepp/src/__mocks__/zos-stub.js",
-      ),
-      "@zeppos/zml/3.0/module/messaging/plugin/app": path.resolve(
-        dirname,
-        "packages/zepp/src/__mocks__/zos-stub.js",
-      ),
+      ...zeppAliases,
     },
   },
 });

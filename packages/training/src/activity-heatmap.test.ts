@@ -40,17 +40,15 @@ describe("activity heatmap semantics", () => {
     expect(activityHeatmapBandForMinutes(minutes)).toBe(expectedBand);
   });
 
-  it.each([
-    -1,
-    Number.NaN,
-    Number.POSITIVE_INFINITY,
-    Number.NEGATIVE_INFINITY,
-  ])("rejects malformed training time: %s", (minutes) => {
-    expect(() => activityHeatmapBandForMinutes(minutes)).toThrow(ActivityHeatmapDataError);
-    expect(() => activityHeatmapBandForMinutes(minutes)).toThrow(
-      "Training time must be a finite non-negative number",
-    );
-  });
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "rejects malformed training time: %s",
+    (minutes) => {
+      expect(() => activityHeatmapBandForMinutes(minutes)).toThrow(ActivityHeatmapDataError);
+      expect(() => activityHeatmapBandForMinutes(minutes)).toThrow(
+        "Training time must be a finite non-negative number",
+      );
+    },
+  );
 
   it("rejects a finite value outside the supported band ranges", () => {
     expect(() => activityHeatmapBandForMinutes(30.5)).toThrow(ActivityHeatmapDataError);

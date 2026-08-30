@@ -15,7 +15,9 @@ const mockPoolInstance = {
   idleCount: 0,
   waitingCount: 0,
 };
-const mockPool = vi.fn(() => mockPoolInstance);
+const mockPool = vi.fn(function vitestConstructor() {
+  return mockPoolInstance;
+});
 const mockRegisterPostgresPoolMetrics = vi.fn();
 
 vi.mock("@sentry/node", () => ({

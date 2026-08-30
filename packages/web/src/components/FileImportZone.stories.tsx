@@ -40,8 +40,10 @@ export const WithRecentImport: Story = {
   args: {
     recentLogs: [
       {
+        id: "garmin-dump-sync-1",
         status: "success",
         syncedAt: "2026-07-19T12:00:00.000Z",
+        dataType: "garmin-dump",
         recordCount: 120,
         durationMs: 4_200,
         errorMessage: null,

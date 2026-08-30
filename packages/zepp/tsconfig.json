@@ -17,7 +17,8 @@
     "app-side",
     "setting",
     "app-service",
-    "workout-extension"
+    "workout-extension",
+    "../../src/vitest-mock-types.d.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

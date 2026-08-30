@@ -488,32 +488,30 @@ describe("Amazfit/Zepp provider", () => {
     });
   });
 
-  it.each([
-    "dp",
-    "lt",
-    "dt",
-    "wk",
-  ] as const)("marks staging unavailable when %s is omitted", (omittedField) => {
-    const stages = { dp: 85, lt: 280, dt: 45, wk: 20 };
-    delete stages[omittedField];
+  it.each(["dp", "lt", "dt", "wk"] as const)(
+    "marks staging unavailable when %s is omitted",
+    (omittedField) => {
+      const stages = { dp: 85, lt: 280, dt: 45, wk: 20 };
+      delete stages[omittedField];
 
-    const parsed = parseZeppBandDay({
-      date_time: "2026-02-06",
-      summary: encodeBase64(
-        JSON.stringify({
-          slp: { st: 1320, ed: 1800, ...stages },
-        }),
-      ),
-    });
+      const parsed = parseZeppBandDay({
+        date_time: "2026-02-06",
+        summary: encodeBase64(
+          JSON.stringify({
+            slp: { st: 1320, ed: 1800, ...stages },
+          }),
+        ),
+      });
 
-    expect(parsed.sleep).toMatchObject({
-      stagingAvailable: false,
-      deepMinutes: omittedField === "dp" ? undefined : 85,
-      lightMinutes: omittedField === "lt" ? undefined : 280,
-      remMinutes: omittedField === "dt" ? undefined : 45,
-      awakeMinutes: omittedField === "wk" ? undefined : 20,
-    });
-  });
+      expect(parsed.sleep).toMatchObject({
+        stagingAvailable: false,
+        deepMinutes: omittedField === "dp" ? undefined : 85,
+        lightMinutes: omittedField === "lt" ? undefined : 280,
+        remMinutes: omittedField === "dt" ? undefined : 45,
+        awakeMinutes: omittedField === "wk" ? undefined : 20,
+      });
+    },
+  );
 
   it("omits daily metrics and sleep when summary values are incomplete", () => {
     const withoutMetrics = parseZeppBandDay({

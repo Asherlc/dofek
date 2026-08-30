@@ -61,6 +61,19 @@ describe("resolveRecordLocalTimeContext", () => {
     ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
   });
 
+  it.each([{ startUtcOffsetMinutes: 0 }, { endUtcOffsetMinutes: 0 }])(
+    "rejects UTC offsets attached to the unknown source",
+    (offsets) => {
+      expect(() =>
+        resolveRecordLocalTimeContext({
+          startedAt: new Date("2026-01-01T00:00:00.000Z"),
+          source: "unknown",
+          ...offsets,
+        }),
+      ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
+    },
+  );
+
   it("rejects an invalid IANA timezone", () => {
     expect(() =>
       resolveRecordLocalTimeContext({
@@ -265,6 +278,18 @@ describe("formatRecordLocalTime", () => {
         "en-US",
       ),
     ).toBe("--");
+  });
+
+  it("formats an unknown activity-local context in the viewer timezone when supplied", () => {
+    expect(
+      formatRecordLocalTime(
+        "2026-08-27T14:51:43.000Z",
+        localTimeContextUnknown(),
+        "start",
+        "en-US",
+        "America/Los_Angeles",
+      ),
+    ).toBe("7:51 AM");
   });
 
   it("returns a placeholder for invalid timestamps and timezones", () => {
