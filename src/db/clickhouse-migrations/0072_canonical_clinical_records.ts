@@ -5,13 +5,9 @@ import type { ClickHouseMigration } from "./types.ts";
 const clinicalRecordTablePrefix = "CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (";
 
 function buildClinicalRecordRawTableStatement(): string {
-  const statement = buildPostgresFitnessRawTableStatements().find((candidate) =>
+  return buildPostgresFitnessRawTableStatements().find((candidate) =>
     candidate.startsWith(clinicalRecordTablePrefix),
-  );
-  if (!statement) {
-    throw new Error(`Missing ClickHouse clinical record definition: ${clinicalRecordTablePrefix}`);
-  }
-  return statement;
+  )!;
 }
 
 export function createMigration(): ClickHouseMigration {
