@@ -24255,3 +24255,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completed successfully. The fresh CI workflow for commit `d73f6ae` is queued.
 - **Remaining risk / follow-up:** Confirm the queued hosted CI workflow passes
   before merging the PR.
+
+## 2026-08-29 — PR 2575 native mobile builds rejected legacy Sentry source mode
+
+- **Status:** Fixed in source; hosted native-build validation is pending.
+- **Symptoms / user impact:** PR #2575's iOS and watchOS native build jobs
+  failed during CocoaPods resolution, blocking the PR from merging.
+- **Evidence / root cause:** Both jobs first failed with `[Sentry]
+  SENTRY_USE_XCFRAMEWORK=0 is no longer supported.` The mobile Podfile plugin
+  still injected that legacy setting, while Sentry React Native 8.24's
+  [`RNSentry.podspec`](https://github.com/getsentry/sentry-react-native/blob/8.24.0/RNSentry.podspec)
+  requires the prebuilt XCFramework because newer sentry-cocoa releases are not
+  published to the CocoaPods trunk.
+- **Fix / mitigation:** Removed the source-build injection and make the plugin
+  remove its previously generated preamble; the unrelated ExpoModulesCore
+  post-install workaround remains. No retry, timeout, or fallback was added.
+- **Validation:** The focused plugin test proves a generated Podfile omits the
+  legacy setting and retains the ExpoModulesCore workaround; mobile typecheck
+  and Biome pass. Local Expo prebuild is separately blocked before Podfile
+  evaluation by `@bacons/apple-targets` calling `chalk` as a function.
+- **Remaining risk / follow-up:** Confirm the rerun iOS and watchOS jobs pass;
+  investigate the local `@bacons/apple-targets`/`chalk` prebuild incompatibility
+  only if it reproduces in hosted CI.
+
+## 2026-08-30 — PR 2575 iOS archive rejected Sentry XCFramework headers
+
+- **Status:** Fixed in source; hosted iOS-build validation is pending.
+- **Symptoms / user impact:** The rerun passed watchOS, CocoaPods installation,
+  Metro, mobile tests, and all completed non-E2E checks, but its iOS native
+  archive failed and keeps the mobile build gate red.
+- **Evidence:** The exact failed step is
+  [`Archive (Release, no signing)`](https://github.com/Asherlc/dofek/actions/runs/33289320658/job/99198139105),
+  which exited with code 65 after CocoaPods completed. Its first fatal line was
+  `Sentry.h:10:13: error: include of non-modular header inside framework module
+  'Sentry'`, emitted while `RNSentry` imported the Sentry XCFramework.
+- **Root cause / fix:** Applied
+  `CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES=YES` only to the
+  generated `RNSentry` pod target. The setting directly permits the
+  XCFramework's private-header imports without restoring the unsupported
+  source-built Sentry configuration.
+- **Validation:** The Podfile-plugin regression test passes, as do mobile
+  typecheck and Biome.
+- **Remaining risk / follow-up:** Confirm the rerun iOS archive passes.
