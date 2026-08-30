@@ -279,7 +279,7 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     const validated = await validateMcpToken(this.#db, token);
-    if (!validated || !validated.oauthClientId || validated.oauthResource !== this.#resource.href) {
+    if (!validated?.oauthClientId || validated.oauthResource !== this.#resource.href) {
       throw new InvalidTokenError("Invalid or expired access token");
     }
     return {

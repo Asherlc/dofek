@@ -200,10 +200,7 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
     // 2. Then check session (returns 401 if not logged in)
     const handoffCode = typeof req.query.code === "string" ? req.query.code : undefined;
     const handoff = handoffCode ? await getMobileAuthExchangeStoreRef().consume(handoffCode) : null;
-    if (
-      handoffCode &&
-      (!handoff || handoff.kind !== "provider" || handoff.providerId !== providerId)
-    ) {
+    if (handoffCode && (handoff?.kind !== "provider" || handoff.providerId !== providerId)) {
       res.status(401).send("Invalid provider handoff code");
       return;
     }

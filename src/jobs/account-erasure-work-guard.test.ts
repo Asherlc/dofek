@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => {
     loggerInfo: vi.fn(),
     pool,
     poolClient,
-    Pool: vi.fn(() => pool),
+    Pool: vi.fn(function vitestConstructor() {
+      return pool;
+    }),
   };
 });
 

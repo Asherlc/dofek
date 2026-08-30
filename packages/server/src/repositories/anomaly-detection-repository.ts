@@ -276,7 +276,7 @@ export class AnomalyDetectionRepository {
     const checkedMetrics: string[] = [];
 
     const row = rows[0];
-    if (!row || !row.date) return { anomalies, checkedMetrics };
+    if (!row?.date) return { anomalies, checkedMetrics };
 
     const date = String(row.date);
     const sleepStats =

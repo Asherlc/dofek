@@ -143,6 +143,33 @@ describe("FileImportZone", () => {
     expect(mocks.invalidateRecords).toHaveBeenCalledOnce();
   });
 
+  it("reports an unexpected upload failure with the actionable fallback message", async () => {
+    mocks.runUpload.mockRejectedValue("connection reset");
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+      />,
+    );
+
+    const input = screen
+      .getByRole("region", { name: "Garmin file drop zone" })
+      .querySelector("input");
+    if (!input) throw new Error("Expected the file input");
+    fireEvent.change(input, {
+      target: { files: [new File(["zip-data"], "garmin.zip", { type: "application/zip" })] },
+    });
+
+    await waitFor(() => expect(screen.getByText("Upload failed")).toBeTruthy());
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      "connection reset",
+      expect.objectContaining({ tags: { uploadId: "pending" } }),
+    );
+  });
+
   it("keeps an upload active across mutation-result rerenders", async () => {
     mocks.freshMutationResults = true;
     let uploadSignal: AbortSignal | undefined;
@@ -416,5 +443,113 @@ describe("FileImportZone", () => {
     await waitFor(() => expect(screen.getByText("Upload cancelled")).toBeTruthy());
     expect(mocks.abort).not.toHaveBeenCalled();
     expect(mocks.sessionDelete).not.toHaveBeenCalled();
+  });
+
+  it("renders an import without a provider link and accepts drag state changes", () => {
+    render(
+      <FileImportZone
+        importType="fit-file"
+        title="FIT File"
+        description="A local FIT activity export"
+        accept=".fit"
+        showDetailsLink={false}
+        recentLogs={[
+          {
+            id: "sync-success",
+            status: "success",
+            syncedAt: "2026-01-01T00:00:00.000Z",
+            recordCount: 1,
+            durationMs: 10,
+            dataType: "activity",
+            errorMessage: null,
+            authFailureReason: null,
+          },
+          {
+            id: "sync-error",
+            status: "error",
+            syncedAt: "2026-01-02T00:00:00.000Z",
+            recordCount: 0,
+            durationMs: 10,
+            dataType: "activity",
+            errorMessage: "Provider unavailable",
+            authFailureReason: null,
+          },
+        ]}
+      />,
+    );
+
+    const dropZone = screen.getByRole("region", { name: "FIT File file drop zone" });
+    fireEvent.dragOver(dropZone);
+    expect(dropZone.className).toContain("border-blue-500");
+    fireEvent.dragLeave(dropZone);
+    expect(dropZone.className).toContain("border-border-strong");
+    fireEvent.drop(dropZone, { dataTransfer: { files: [] } });
+
+    expect(screen.queryByRole("link", { name: "Details" })).toBeNull();
+  });
+
+  it("reports terminal upload failures and expiry messages", async () => {
+    mocks.resume.mockResolvedValueOnce({
+      upload: { state: "failed", progressPercent: 40, errorMessage: null },
+      parts: [],
+    });
+    const { rerender } = render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{ jobId: "file-import-failed", status: "running" }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Import failed")).toBeTruthy());
+
+    mocks.resume.mockResolvedValueOnce({
+      upload: { state: "expired", progressPercent: 20 },
+      parts: [],
+    });
+    rerender(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{ jobId: "file-import-expired", status: "running" }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Upload expired")).toBeTruthy());
+  });
+
+  it("surfaces failed local cleanup after cancelling a server upload", async () => {
+    mocks.resume.mockResolvedValue({
+      upload: { state: "queued", progressPercent: 20 },
+      parts: [],
+    });
+    mocks.sessionDelete.mockRejectedValue(new Error("Local upload cleanup failed"));
+
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{
+          jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+          status: "running",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.getByText("Local upload cleanup failed")).toBeTruthy());
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { uploadId: "00000000-0000-4000-8000-0000000000f7" },
+    });
   });
 });

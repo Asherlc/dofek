@@ -233,54 +233,56 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.queryByTestId("processing-status-progress")).toBeNull();
   });
 
-  it.each([
-    "failed",
-    "blocked",
-  ] as const)("surfaces %s datasets, their last ready age, and the actionable error", (status) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
-    render(
-      <ProcessingStatusWidget
-        data={{
-          ...snapshot,
-          overallStatus: status,
-          datasets: [
-            {
-              ...activityDataset,
-              status,
-              progressPercentage: null,
-              lastFailedAt: "2026-07-22T13:00:00.000Z",
-              lastReadyAt: "2026-07-22T12:00:00.000Z",
-            },
-          ],
-          operations: [
-            {
-              ...operation,
-              status,
-              dismissed: false,
-              errorMessage: "Reconnect Garmin, then start the sync again.",
-              errorCode: "provider_auth_failed",
-              timeline: [
-                {
-                  ...timelineEvent,
-                  status: "failed",
-                  errorMessage: "Reconnect Garmin, then start the sync again.",
-                },
-              ],
-            },
-          ],
-        }}
-      />,
-    );
+  it.each(["failed", "blocked"] as const)(
+    "surfaces %s datasets, their last ready age, and the actionable error",
+    (status) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+      render(
+        <ProcessingStatusWidget
+          data={{
+            ...snapshot,
+            overallStatus: status,
+            datasets: [
+              {
+                ...activityDataset,
+                status,
+                progressPercentage: null,
+                lastFailedAt: "2026-07-22T13:00:00.000Z",
+                lastReadyAt: "2026-07-22T12:00:00.000Z",
+              },
+            ],
+            operations: [
+              {
+                ...operation,
+                status,
+                dismissed: false,
+                errorMessage: "Reconnect Garmin, then start the sync again.",
+                errorCode: "provider_auth_failed",
+                timeline: [
+                  {
+                    ...timelineEvent,
+                    status: "failed",
+                    errorMessage: "Reconnect Garmin, then start the sync again.",
+                  },
+                ],
+              },
+            ],
+          }}
+        />,
+      );
 
-    expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
-    expect(screen.getByText("Activities")).toBeTruthy();
-    expect(screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`)).toBeTruthy();
-    expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
-    expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
-    expect(mockPush).toHaveBeenCalledWith("/providers/garmin");
-  });
+      expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
+      expect(screen.getByText("Activities")).toBeTruthy();
+      expect(
+        screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`),
+      ).toBeTruthy();
+      expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
+      expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+      expect(mockPush).toHaveBeenCalledWith("/providers/garmin");
+    },
+  );
 
   it("groups current failed datasets by operation and offers dismissal", () => {
     vi.useFakeTimers();

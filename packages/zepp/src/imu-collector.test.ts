@@ -30,7 +30,7 @@ function makeMockSensor(
 }
 
 /** Returns the first argument the mock was called with, asserting it was called. */
-function firstCallArg(mockFn: ReturnType<typeof vi.fn>) {
+function firstCallArg(mockFn: CallableVitestMock) {
   const [firstCall] = mockFn.mock.calls;
   if (!firstCall) throw new Error("expected mock to have been called at least once");
   return firstCall[0];

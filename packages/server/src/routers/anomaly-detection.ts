@@ -24,7 +24,7 @@ function requireSensorStore(
 }
 
 // ── Re-exports (preserve public API) ───────────────────────────────
-export type { AnomalyRow, AnomalyCheckResult };
+export type { AnomalyCheckResult, AnomalyRow };
 export { checkAnomalies };
 
 // ── Router ───────────────────────────────────────────────────────────

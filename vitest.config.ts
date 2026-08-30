@@ -15,17 +15,17 @@ const zeppModules = [
   "@zos/app",
   "@zos/ble",
   "@zos/app-service",
-  "@zeppos/zml",
   "@zeppos/zml/base-page",
   "@zeppos/zml/base-side",
   "@zeppos/zml/base-app",
   "@zeppos/zml/3.0/module/messaging/plugin/page",
   "@zeppos/zml/3.0/module/messaging/plugin/side",
   "@zeppos/zml/3.0/module/messaging/plugin/app",
+  "@zeppos/zml",
 ];
 const zeppAliases: Record<string, string> = {};
 for (const moduleName of zeppModules) {
-  zeppAliases[moduleName] = zeppStubPath;
+  zeppAliases[moduleName] = `${zeppStubPath}?zepp-module=${encodeURIComponent(moduleName)}`;
 }
 
 const sharedTestConfig = {
@@ -35,11 +35,7 @@ const sharedTestConfig = {
   teardownTimeout: 60_000,
   fileParallelism: true,
   pool: "forks" as const,
-  poolOptions: {
-    forks: {
-      execArgv: ["--no-experimental-webstorage"],
-    },
-  },
+  execArgv: ["--no-experimental-webstorage"],
   retry: 2,
 };
 
@@ -110,12 +106,8 @@ export default defineConfig({
           ...sharedTestConfig,
           name: "integration",
           fileParallelism: false,
-          poolOptions: {
-            forks: {
-              ...sharedTestConfig.poolOptions.forks,
-              singleFork: true,
-            },
-          },
+          maxWorkers: 1,
+          isolate: false,
           include: [
             "src/**/*.integration.test.ts",
             "packages/*/src/**/*.integration.test.ts",

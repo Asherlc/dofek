@@ -10,6 +10,7 @@ const queryMocks = vi.hoisted(() => ({
   dailyMetrics: vi.fn(),
   hrvBaseline: vi.fn(),
   stress: vi.fn(),
+  timeSeries: vi.fn(),
   weightOverview: vi.fn(),
   insights: vi.fn(),
 }));
@@ -72,7 +73,10 @@ vi.mock("../components/SmoothedWeightChart.tsx", () => ({
 vi.mock("../components/StressChart.tsx", () => ({ StressChart: () => <div>Stress chart</div> }));
 vi.mock("../components/TimeRangeSelector.tsx", () => ({ TimeRangeSelector: () => null }));
 vi.mock("../components/TimeSeriesChart.tsx", () => ({
-  TimeSeriesChart: () => <div>Time series chart</div>,
+  TimeSeriesChart: ({ series, yAxis }: { series: Array<{ name: string }>; yAxis: unknown[] }) => {
+    queryMocks.timeSeries({ series, yAxis });
+    return <div>Time series chart</div>;
+  },
 }));
 vi.mock("../components/WeightPredictionSummary.tsx", () => ({
   WeightPredictionSummary: ({ metric = "weight" }: { metric?: "weight" | "bodyFat" }) => (
@@ -255,6 +259,68 @@ describe("BodyPage", () => {
     expect(bodyFatCharts[0]).toHaveTextContent("Body fat points: 0");
   });
 
+  it("renders a combined oxygen and skin-temperature chart when both metrics are available", () => {
+    queryMocks.dailyMetrics.mockReturnValue(
+      mockQuery({
+        data: [{ date: "2026-07-25", hrv: null, spo2_avg: 97, skin_temp_c: 33.2, steps: null }],
+      }),
+    );
+
+    render(<BodyPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Blood Oxygen Saturation (SpO2) & Skin Temperature" }),
+    ).toBeTruthy();
+    expect(queryMocks.timeSeries).toHaveBeenCalledWith(
+      expect.objectContaining({
+        series: expect.arrayContaining([
+          expect.objectContaining({ name: "Blood Oxygen Saturation (SpO2)" }),
+          expect.objectContaining({ name: "Skin Temp" }),
+        ]),
+        yAxis: expect.arrayContaining([
+          expect.objectContaining({ name: "Blood Oxygen Saturation (%)" }),
+          expect.objectContaining({ name: "°C" }),
+        ]),
+      }),
+    );
+  });
+
+  it("renders a single-axis oxygen chart when no skin temperature was recorded", () => {
+    queryMocks.dailyMetrics.mockReturnValue(
+      mockQuery({
+        data: [{ date: "2026-07-25", hrv: null, spo2_avg: 97, skin_temp_c: null, steps: null }],
+      }),
+    );
+
+    render(<BodyPage />);
+
+    expect(screen.getByRole("heading", { name: "Blood Oxygen Saturation (SpO2)" })).toBeTruthy();
+    expect(queryMocks.timeSeries).toHaveBeenCalledWith(
+      expect.objectContaining({
+        series: [expect.objectContaining({ name: "Blood Oxygen Saturation (SpO2)" })],
+        yAxis: [expect.objectContaining({ name: "Blood Oxygen Saturation (%)" })],
+      }),
+    );
+  });
+
+  it("renders a single-axis skin-temperature chart when no oxygen reading was recorded", () => {
+    queryMocks.dailyMetrics.mockReturnValue(
+      mockQuery({
+        data: [{ date: "2026-07-25", hrv: null, spo2_avg: null, skin_temp_c: 33.2, steps: null }],
+      }),
+    );
+
+    render(<BodyPage />);
+
+    expect(screen.getByRole("heading", { name: "Skin Temperature" })).toBeTruthy();
+    expect(queryMocks.timeSeries).toHaveBeenCalledWith(
+      expect.objectContaining({
+        series: [expect.objectContaining({ name: "Skin Temp", yAxisIndex: 0 })],
+        yAxis: [expect.objectContaining({ name: "°C" })],
+      }),
+    );
+  });
+
   it("toggles the shared trend summary and chart between weight and body fat", () => {
     render(<BodyPage />);
 
@@ -272,6 +338,43 @@ describe("BodyPage", () => {
     expect(screen.queryByText("Goal weight input")).toBeNull();
   });
 
+  it("falls back to the available body-fat trend when weight data is empty", () => {
+    queryMocks.weightOverview.mockReturnValue(
+      mockQuery({
+        data: {
+          ...healthyWeightOverview,
+          smoothedWeight: [],
+          prediction: null,
+          recomposition: [],
+        },
+      }),
+    );
+
+    render(<BodyPage />);
+
+    expect(screen.getByText("Body-fat prediction")).toBeTruthy();
+    expect(screen.queryByText("Goal weight input")).toBeNull();
+    expect(screen.getAllByTestId("body-fat-chart")).toHaveLength(2);
+  });
+
+  it("keeps the weight trend selected when body-fat data is unavailable", () => {
+    queryMocks.weightOverview.mockReturnValue(
+      mockQuery({
+        data: {
+          ...healthyWeightOverview,
+          bodyFatTrend: [],
+          bodyFatPrediction: null,
+        },
+      }),
+    );
+
+    render(<BodyPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Body Fat" }));
+
+    expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
+    expect(screen.getByText("Weight prediction")).toBeTruthy();
+  });
+
   it("shows one dependency notice for a repeated body-composition query failure", () => {
     queryMocks.weightOverview.mockReturnValue(
       mockQuery({ error: new Error("Body measurements are unavailable.") }),
@@ -287,6 +390,33 @@ describe("BodyPage", () => {
     );
     expect(screen.getByText("Health status bar")).toBeTruthy();
     expect(screen.getByText("Goal weight input")).toBeTruthy();
+  });
+
+  it("keeps other body sections visible when multiple supporting queries are unavailable", () => {
+    queryMocks.dailyMetrics.mockReturnValue(
+      mockQuery({ error: new Error("Metrics unavailable.") }),
+    );
+    queryMocks.hrvBaseline.mockReturnValue(mockQuery({ error: new Error("HRV unavailable.") }));
+    queryMocks.stress.mockReturnValue(mockQuery({ error: new Error("Stress unavailable.") }));
+    queryMocks.insights.mockReturnValue(mockQuery({ error: new Error("Insights unavailable.") }));
+
+    render(<BodyPage />);
+
+    expect(
+      screen.getByText(
+        "Blood oxygen and skin temperature is unavailable. Retry from the notice above.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Heart rate variability is unavailable. Retry from the notice above."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Stress data is unavailable. Retry from the notice above."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Body insights is unavailable. Retry from the notice above."),
+    ).toBeTruthy();
+    expect(screen.getByText("Smoothed weight points: 1")).toBeTruthy();
   });
 
   it("keeps distinct failed query identities labeled when their messages match", () => {

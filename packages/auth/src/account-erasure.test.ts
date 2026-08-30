@@ -173,28 +173,27 @@ describe("describeAccountErasureStatus", () => {
     expect(presentation.isComplete).toBe(false);
   });
 
-  it.each([
-    "pending",
-    "waiting_replay",
-    "waiting_retention",
-  ] as const)("preserves overdue support messaging while deletion is %s", (status) => {
-    const presentation = describeAccountErasureStatus({
-      completedAt: null,
-      currentPhase: "retrying",
-      deadlineMissed: true,
-      id: "11111111-1111-4111-8111-111111111111",
-      message:
-        "Account deletion missed its 30-day deadline. Deletion remains active and automatic retries are continuing; support has been alerted.",
-      replayRetainedUntil: "2026-08-02T12:00:00.000Z",
-      requestedAt: "2026-07-26T12:00:00.000Z",
-      retentionUntil: "2026-08-25T12:00:00.000Z",
-      status,
-    });
+  it.each(["pending", "waiting_replay", "waiting_retention"] as const)(
+    "preserves overdue support messaging while deletion is %s",
+    (status) => {
+      const presentation = describeAccountErasureStatus({
+        completedAt: null,
+        currentPhase: "retrying",
+        deadlineMissed: true,
+        id: "11111111-1111-4111-8111-111111111111",
+        message:
+          "Account deletion missed its 30-day deadline. Deletion remains active and automatic retries are continuing; support has been alerted.",
+        replayRetainedUntil: "2026-08-02T12:00:00.000Z",
+        requestedAt: "2026-07-26T12:00:00.000Z",
+        retentionUntil: "2026-08-25T12:00:00.000Z",
+        status,
+      });
 
-    expect(presentation.detail).toContain("missed its 30-day deadline");
-    expect(presentation.detail).toContain("support has been alerted");
-    expect(presentation.isComplete).toBe(false);
-  });
+      expect(presentation.detail).toContain("missed its 30-day deadline");
+      expect(presentation.detail).toContain("support has been alerted");
+      expect(presentation.isComplete).toBe(false);
+    },
+  );
 
   it("reports the actual completion time when deletion finishes after its deadline", () => {
     const presentation = describeAccountErasureStatus({

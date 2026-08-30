@@ -181,6 +181,7 @@ export function formatRecordLocalTime(
   context: RecordLocalTimeContext,
   boundary: "start" | "end",
   locale?: string,
+  viewerTimezone?: string,
 ): string {
   const date = parseValidDate(timestamp);
   if (!date) return "--";
@@ -197,7 +198,16 @@ export function formatRecordLocalTime(
 
   const offsetMinutes =
     boundary === "start" ? context.startUtcOffsetMinutes : context.endUtcOffsetMinutes;
-  if (offsetMinutes == null) return "--";
+  if (offsetMinutes == null) {
+    if (!viewerTimezone) return "--";
+    try {
+      return timeFormatter(locale, viewerTimezone)
+        .format(date)
+        .replace(/\u202f/g, " ");
+    } catch {
+      return "--";
+    }
+  }
   const shiftedDate = new Date(date.getTime() + offsetMinutes * 60_000);
   return timeFormatter(locale, "UTC")
     .format(shiftedDate)

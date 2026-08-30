@@ -16,8 +16,19 @@ import {
 } from "@dofek/scoring/tokens";
 import { lightColors } from "./theme-palette";
 
-export { chartColors, operationalStatusColors, statusColors, surfaceColors, textColors };
-export { duration, easing, fontSize, fontWeight, radius, spacing };
+export {
+  chartColors,
+  duration,
+  easing,
+  fontSize,
+  fontWeight,
+  operationalStatusColors,
+  radius,
+  spacing,
+  statusColors,
+  surfaceColors,
+  textColors,
+};
 
 export const fonts = {
   body: fontFamily.body,

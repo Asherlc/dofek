@@ -40,7 +40,7 @@ describe("loadMobileTrainingTab", () => {
   function makeQuery(
     strainRows: unknown[] = [],
     readinessRows: unknown[] = defaultReadinessRows,
-  ): ReturnType<typeof vi.fn> {
+  ): CallableVitestMock {
     return vi.fn(async (_schema: unknown, sqlText: unknown) => {
       const sql = String(sqlText);
       if (sql.includes("analytics.daily_strain")) return strainRows;
@@ -50,7 +50,7 @@ describe("loadMobileTrainingTab", () => {
   }
 
   function makeCtx(
-    query: ReturnType<typeof vi.fn>,
+    query: CallableVitestMock,
     accessWindow?: import("../billing/entitlement.ts").AccessWindow,
   ) {
     return {
