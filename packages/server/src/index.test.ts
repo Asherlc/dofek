@@ -56,10 +56,9 @@ const mockCreateDeveloperClientsRouter = vi.fn(() => {
 });
 
 vi.mock("@bull-board/express", () => ({
-  ExpressAdapter: vi.fn(() => ({
-    setBasePath: vi.fn(),
-    getRouter: vi.fn(() => express.Router()),
-  })),
+  ExpressAdapter: vi.fn(function vitestConstructor() {
+    return { setBasePath: vi.fn(), getRouter: vi.fn(() => express.Router()) };
+  }),
 }));
 
 vi.mock("@bull-board/api", () => ({
@@ -71,7 +70,9 @@ vi.mock("@trpc/server/adapters/express", () => ({
 }));
 
 vi.mock("@bull-board/api/bullMQAdapter", () => ({
-  BullMQAdapter: vi.fn(() => ({})),
+  BullMQAdapter: vi.fn(function vitestConstructor() {
+    return {};
+  }),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -322,20 +323,19 @@ describe("createApp", () => {
     expect(res.body).toContain("<!doctype html>");
   });
 
-  it.each([
-    "/robots.txt",
-    "/llms.txt",
-    "/missing/image.png",
-  ])("returns 404 instead of the SPA shell for missing file-like path %s", async (path) => {
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const fakeDb = createDatabaseFromEnv();
-    const app = createApp(fakeDb, makeMockSensorStore());
+  it.each(["/robots.txt", "/llms.txt", "/missing/image.png"])(
+    "returns 404 instead of the SPA shell for missing file-like path %s",
+    async (path) => {
+      const { createDatabaseFromEnv } = await import("dofek/db");
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb, makeMockSensorStore());
 
-    const res = await request(app, "GET", path);
+      const res = await request(app, "GET", path);
 
-    expect(res.status).toBe(404);
-    expect(res.body).not.toContain("<!doctype html>");
-  });
+      expect(res.status).toBe(404);
+      expect(res.body).not.toContain("<!doctype html>");
+    },
+  );
 
   it("registers the ingest route using createIngestZosHealthRouter", async () => {
     const { createIngestZosHealthRouter } = await import("./routes/ingest-zos-health.ts");

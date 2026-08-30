@@ -291,7 +291,7 @@ vi.mock("./provider-rate-limit-cooldown.ts", async (importOriginal) => {
 const { processSyncJob } = await import("./process-sync-job.ts");
 
 // All DB functions are mocked at module level, so the db object is never actually called.
-const mockDb: SyncDatabase & { transaction: ReturnType<typeof vi.fn> } = {
+const mockDb: SyncDatabase & { transaction: CallableVitestMock } = {
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
@@ -312,8 +312,8 @@ interface MockJob {
     checkpoint?: unknown;
     processingOperationIds?: Record<string, string>;
   };
-  updateProgress: ReturnType<typeof vi.fn>;
-  updateData: ReturnType<typeof vi.fn>;
+  updateProgress: CallableVitestMock;
+  updateData: CallableVitestMock;
 }
 
 function createMockJob(

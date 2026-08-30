@@ -10,31 +10,32 @@ type IntersectionCallback = (entries: Partial<IntersectionObserverEntry>[]) => v
 let observerInstances: Array<{
   callback: IntersectionCallback;
   options: IntersectionObserverInit | undefined;
-  observe: ReturnType<typeof vi.fn>;
-  unobserve: ReturnType<typeof vi.fn>;
-  disconnect: ReturnType<typeof vi.fn>;
+  observe: CallableVitestMock;
+  unobserve: CallableVitestMock;
+  disconnect: CallableVitestMock;
 }>;
 
 beforeEach(() => {
   observerInstances = [];
 
-  const MockIntersectionObserver = vi.fn(
-    (callback: IntersectionCallback, options?: IntersectionObserverInit) => {
-      const instance = {
-        callback,
-        options,
-        observe: vi.fn(),
-        unobserve: vi.fn(),
-        disconnect: vi.fn(),
-        root: null,
-        rootMargin: options?.rootMargin ?? "0px",
-        thresholds: options?.threshold ? [Number(options.threshold)] : [0],
-        takeRecords: () => [],
-      };
-      observerInstances.push(instance);
-      return instance;
-    },
-  );
+  const MockIntersectionObserver = vi.fn(function vitestConstructor(
+    callback: IntersectionCallback,
+    options?: IntersectionObserverInit,
+  ) {
+    const instance = {
+      callback,
+      options,
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+      root: null,
+      rootMargin: options?.rootMargin ?? "0px",
+      thresholds: options?.threshold ? [Number(options.threshold)] : [0],
+      takeRecords: () => [],
+    };
+    observerInstances.push(instance);
+    return instance;
+  });
 
   vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
 });

@@ -131,7 +131,7 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
   const oauthProviders = allProviders.filter((p) => p.authSetup);
   const provider = oauthProviders.find((p) => p.id === providerArg);
 
-  if (!providerArg || !provider || !provider.authSetup) {
+  if (!providerArg || !provider?.authSetup) {
     const supported = oauthProviders.map((p) => p.id).join("|");
     logger.error(`Usage: health-data auth <${supported}>`);
     return 1;

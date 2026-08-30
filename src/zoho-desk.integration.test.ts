@@ -104,6 +104,23 @@ describe("ZohoDeskClient", () => {
     ).rejects.toBeInstanceOf(ZohoDeskError);
   });
 
+  it("fails loudly when it cannot refresh the Zoho access token", async () => {
+    mswServer.use(
+      http.post("https://accounts.zoho.com/oauth/v2/token", () =>
+        HttpResponse.json({ message: "token unavailable" }, { status: 503 }),
+      ),
+    );
+
+    await expect(
+      new ZohoDeskClient(config).createTicket({
+        subject: "s",
+        description: "d",
+        contactEmail: "u@example.com",
+        contactName: "U",
+      }),
+    ).rejects.toThrow("Zoho token refresh failed with status 503");
+  });
+
   it("finds legacy tickets only when the controlled footer has the exact Dofek user ID", async () => {
     const userId = "10000000-0000-4000-8000-000000001994";
     const otherUserId = "20000000-0000-4000-8000-000000001994";
@@ -140,6 +157,75 @@ describe("ZohoDeskClient", () => {
     await expect(new ZohoDeskClient(config).listTicketIdsByDofekUserId(userId)).resolves.toEqual([
       "98",
     ]);
+  });
+
+  it("paginates legacy ticket searches and preserves unique exact-footer matches", async () => {
+    const userId = "10000000-0000-4000-8000-000000001995";
+    mswServer.use(
+      http.post("https://accounts.zoho.com/oauth/v2/token", () =>
+        HttpResponse.json({ access_token: "access-1", expires_in: 3600 }),
+      ),
+      http.get("https://desk.zoho.com/api/v1/tickets/search", ({ request }) => {
+        const from = new URL(request.url).searchParams.get("from");
+        if (from === "0") {
+          return HttpResponse.json({
+            count: 2,
+            data: [
+              {
+                description: `---\nUser ID: ${userId}\nApp version: 1.0.0`,
+                id: "first",
+              },
+            ],
+          });
+        }
+        return HttpResponse.json({
+          count: 2,
+          data: [
+            {
+              description: `---\nUser ID: ${userId}\nApp version: 1.0.0`,
+              id: "second",
+            },
+          ],
+        });
+      }),
+    );
+
+    await expect(new ZohoDeskClient(config).listTicketIdsByDofekUserId(userId)).resolves.toEqual([
+      "first",
+      "second",
+    ]);
+  });
+
+  it("fails closed when a legacy ticket search cannot advance", async () => {
+    const userId = "10000000-0000-4000-8000-000000001996";
+    mswServer.use(
+      http.post("https://accounts.zoho.com/oauth/v2/token", () =>
+        HttpResponse.json({ access_token: "access-1", expires_in: 3600 }),
+      ),
+      http.get("https://desk.zoho.com/api/v1/tickets/search", () =>
+        HttpResponse.json({ count: 1, data: [] }),
+      ),
+    );
+
+    await expect(new ZohoDeskClient(config).listTicketIdsByDofekUserId(userId)).rejects.toThrow(
+      "Zoho legacy ticket search could not make progress",
+    );
+  });
+
+  it("rejects legacy ticket searches that exceed the supported result bound", async () => {
+    const userId = "10000000-0000-4000-8000-000000001997";
+    mswServer.use(
+      http.post("https://accounts.zoho.com/oauth/v2/token", () =>
+        HttpResponse.json({ access_token: "access-1", expires_in: 3600 }),
+      ),
+      http.get("https://desk.zoho.com/api/v1/tickets/search", () =>
+        HttpResponse.json({ count: 5_001, data: [] }),
+      ),
+    );
+
+    await expect(new ZohoDeskClient(config).listTicketIdsByDofekUserId(userId)).rejects.toThrow(
+      "Zoho legacy ticket search exceeded 5000 results",
+    );
   });
 
   it("moves a ticket to trash and permanently deletes its exact Zoho ID", async () => {
@@ -196,6 +282,21 @@ describe("ZohoDeskClient", () => {
     await expect(new ZohoDeskClient(config).deleteTicket("100")).resolves.toBeUndefined();
   });
 
+  it("fails loudly when an active-ticket lookup returns an unexpected response", async () => {
+    mswServer.use(
+      http.post("https://accounts.zoho.com/oauth/v2/token", () =>
+        HttpResponse.json({ access_token: "access-1", expires_in: 3600 }),
+      ),
+      http.get("https://desk.zoho.com/api/v1/tickets/:ticketId", () =>
+        HttpResponse.json({ message: "unavailable" }, { status: 503 }),
+      ),
+    );
+
+    await expect(new ZohoDeskClient(config).deleteTicket("100")).rejects.toThrow(
+      "Zoho ticket lookup failed with status 503",
+    );
+  });
+
   it("permanently deletes a ticket left in the recycle bin by an interrupted attempt", async () => {
     mswServer.use(
       http.post("https://accounts.zoho.com/oauth/v2/token", () =>
@@ -214,6 +315,31 @@ describe("ZohoDeskClient", () => {
         HttpResponse.json({
           results: [{ errors: null, id: "100", success: true }],
         }),
+      ),
+    );
+
+    await expect(new ZohoDeskClient(config).deleteTicket("100")).resolves.toBeUndefined();
+  });
+
+  it("continues through full recycle-bin pages before permanently deleting a ticket", async () => {
+    mswServer.use(
+      http.post("https://accounts.zoho.com/oauth/v2/token", () =>
+        HttpResponse.json({ access_token: "access-1", expires_in: 3600 }),
+      ),
+      http.get(
+        "https://desk.zoho.com/api/v1/tickets/:ticketId",
+        () => new HttpResponse(null, { status: 404 }),
+      ),
+      http.get("https://desk.zoho.com/api/v1/recycleBin", ({ request }) => {
+        if (new URL(request.url).searchParams.get("from") === "0") {
+          return HttpResponse.json({
+            data: Array.from({ length: 100 }, (_, index) => ({ id: `other-${index}` })),
+          });
+        }
+        return HttpResponse.json({ data: [{ id: "100" }] });
+      }),
+      http.post("https://desk.zoho.com/api/v1/recycleBin/delete", () =>
+        HttpResponse.json({ results: [{ errors: null, id: "100", success: true }] }),
       ),
     );
 
@@ -241,6 +367,24 @@ describe("ZohoDeskClient", () => {
 
     await expect(new ZohoDeskClient(config).deleteTicket("100")).rejects.toThrow(
       "Zoho did not confirm permanent deletion of ticket 100",
+    );
+  });
+
+  it("fails loudly when Zoho rejects moving an active ticket to the trash", async () => {
+    mswServer.use(
+      http.post("https://accounts.zoho.com/oauth/v2/token", () =>
+        HttpResponse.json({ access_token: "access-1", expires_in: 3600 }),
+      ),
+      http.get("https://desk.zoho.com/api/v1/tickets/:ticketId", () =>
+        HttpResponse.json({ id: "100" }),
+      ),
+      http.post("https://desk.zoho.com/api/v1/tickets/moveToTrash", () =>
+        HttpResponse.json({ message: "forbidden" }, { status: 403 }),
+      ),
+    );
+
+    await expect(new ZohoDeskClient(config).deleteTicket("100")).rejects.toThrow(
+      "Zoho ticket move-to-trash failed with status 403",
     );
   });
 });

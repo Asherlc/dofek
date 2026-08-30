@@ -26,18 +26,16 @@ describe("parseFitbitSleep", () => {
     expect(parseFitbitSleep(completeSleep).stagingAvailable).toBe(true);
   });
 
-  it.each([
-    "deep",
-    "light",
-    "rem",
-    "wake",
-  ] as const)("marks staging unavailable when %s is absent", (missingStage) => {
-    const summary = { ...completeSleep.levels.summary, [missingStage]: undefined };
-    const parsed = parseFitbitSleep({
-      ...completeSleep,
-      levels: { summary },
-    });
+  it.each(["deep", "light", "rem", "wake"] as const)(
+    "marks staging unavailable when %s is absent",
+    (missingStage) => {
+      const summary = { ...completeSleep.levels.summary, [missingStage]: undefined };
+      const parsed = parseFitbitSleep({
+        ...completeSleep,
+        levels: { summary },
+      });
 
-    expect(parsed.stagingAvailable).toBe(false);
-  });
+      expect(parsed.stagingAvailable).toBe(false);
+    },
+  );
 });

@@ -417,33 +417,35 @@ describe("foodRouter", () => {
 
     it("does not log an aggregate-only day as an empty-data anomaly", async () => {
       const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([
-          {
-            calories: 1800,
-            protein_g: 90,
-            carbs_g: 220,
-            fat_g: 60,
-            breakfast_calories: 0,
-            lunch_calories: 0,
-            dinner_calories: 0,
-            snack_calories: 0,
-            other_calories: 1800,
-            resolution_status: "available",
-            resolution_message: "Totals use the only available nutrition source.",
-            source_providers: ["apple-health"],
-            contributing_providers: ["apple-health"],
-            excluded_providers: [],
-            source_labels: ["Apple Health"],
-            contributing_source_labels: ["Apple Health"],
-            excluded_source_labels: [],
-            contribution_grain: "daily_aggregate",
-            contribution_source_label: "Apple Health",
-          },
-        ]);
+      infoSpy.mockClear();
+      const aggregateOnlyDailyRow = {
+        calories: 1800,
+        protein_g: 90,
+        carbs_g: 220,
+        fat_g: 60,
+        breakfast_calories: 0,
+        lunch_calories: 0,
+        dinner_calories: 0,
+        snack_calories: 0,
+        other_calories: 1800,
+        resolution_status: "available",
+        resolution_message: "Totals use the only available nutrition source.",
+        source_providers: ["apple-health"],
+        contributing_providers: ["apple-health"],
+        excluded_providers: [],
+        source_labels: ["Apple Health"],
+        contributing_source_labels: ["Apple Health"],
+        excluded_source_labels: [],
+        contribution_grain: "daily_aggregate",
+        contribution_source_label: "Apple Health",
+      };
+      const execute = vi.fn((query: unknown) =>
+        Promise.resolve(
+          JSON.stringify(query).includes("fitness.v_nutrition_daily")
+            ? [aggregateOnlyDailyRow]
+            : [],
+        ),
+      );
       const caller = createCaller({
         db: { execute },
         userId: "user-1",

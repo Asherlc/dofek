@@ -54,7 +54,7 @@ function queryChunkLength(value: unknown): number {
   return Array.isArray(queryChunks) ? queryChunks.length : -1;
 }
 
-function expectCallsUseNonEmptySql(executeMock: ReturnType<typeof vi.fn>) {
+function expectCallsUseNonEmptySql(executeMock: CallableVitestMock) {
   for (const [arg] of executeMock.mock.calls) {
     expect(queryChunkLength(arg)).toBeGreaterThan(0);
   }

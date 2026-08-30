@@ -226,19 +226,19 @@ function fakeStoredTokens(overrides?: { expiresAt?: Date }): TokenSet {
 }
 
 interface MockDb {
-  select: ReturnType<typeof vi.fn>;
-  from: ReturnType<typeof vi.fn>;
-  where: ReturnType<typeof vi.fn>;
-  limit: ReturnType<typeof vi.fn>;
-  insert: ReturnType<typeof vi.fn>;
-  update: ReturnType<typeof vi.fn>;
-  set: ReturnType<typeof vi.fn>;
-  values: ReturnType<typeof vi.fn>;
-  onConflictDoUpdate: ReturnType<typeof vi.fn>;
-  onConflictDoNothing: ReturnType<typeof vi.fn>;
-  returning: ReturnType<typeof vi.fn>;
-  delete: ReturnType<typeof vi.fn>;
-  execute: ReturnType<typeof vi.fn>;
+  select: CallableVitestMock;
+  from: CallableVitestMock;
+  where: CallableVitestMock;
+  limit: CallableVitestMock;
+  insert: CallableVitestMock;
+  update: CallableVitestMock;
+  set: CallableVitestMock;
+  values: CallableVitestMock;
+  onConflictDoUpdate: CallableVitestMock;
+  onConflictDoNothing: CallableVitestMock;
+  returning: CallableVitestMock;
+  delete: CallableVitestMock;
+  execute: CallableVitestMock;
 }
 
 function createMockDb(): MockDb {
@@ -1276,7 +1276,9 @@ describe("GarminProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
 
     // Verify sleep values were passed to DB
-    const sleepCall = db.values.mock.calls.find((call) => call[0]?.durationMinutes === 480);
+    const sleepCall = db.values.mock.calls.find(
+      (call: [{ durationMinutes?: number }]) => call[0]?.durationMinutes === 480,
+    );
     if (!sleepCall) throw new Error("expected sleep insert");
     expect(sleepCall[0].providerId).toBe("garmin");
     expect(sleepCall[0].deepMinutes).toBe(90);
@@ -1324,7 +1326,7 @@ describe("GarminProvider.sync()", () => {
     // Verify sleep stages were inserted
     // db.delete should have been called for existing stages, then db.insert for new ones
     const stageInsertCall = db.values.mock.calls.find(
-      (call) => Array.isArray(call[0]) && call[0][0]?.stage === "deep",
+      (call: [Array<{ stage?: string }>]) => Array.isArray(call[0]) && call[0][0]?.stage === "deep",
     );
     expect(stageInsertCall).toBeDefined();
     expect(stageInsertCall?.[0]).toHaveLength(3);
@@ -1359,13 +1361,13 @@ describe("GarminProvider.sync()", () => {
 
     // Should NOT have inserted any stage arrays
     const stageInsertCall = db.values.mock.calls.find(
-      (call) => Array.isArray(call[0]) && call[0][0]?.stage,
+      (call: [Array<{ stage?: string }>]) => Array.isArray(call[0]) && call[0][0]?.stage,
     );
     expect(stageInsertCall).toBeUndefined();
 
     // Should NOT have called values with an empty array (stage guard: length > 0)
     const emptyArrayInsert = db.values.mock.calls.find(
-      (call) => Array.isArray(call[0]) && call[0].length === 0,
+      (call: [unknown[]]) => Array.isArray(call[0]) && call[0].length === 0,
     );
     expect(emptyArrayInsert).toBeUndefined();
 
@@ -1415,7 +1417,9 @@ describe("GarminProvider.sync()", () => {
     expect(mocks.client.getHrvSummary).toHaveBeenCalled();
 
     // Verify daily metrics insert values
-    const dailyCall = db.values.mock.calls.find((call) => call[0]?.steps === 10000);
+    const dailyCall = db.values.mock.calls.find(
+      (call: [{ steps?: number }]) => call[0]?.steps === 10000,
+    );
     if (!dailyCall) throw new Error("expected daily metrics insert");
     expect(dailyCall[0].providerId).toBe("garmin");
     expect(dailyCall[0].distanceKm).toBe(8.5);
@@ -1428,13 +1432,13 @@ describe("GarminProvider.sync()", () => {
     expect(Object.hasOwn(dailyCall[0], "vo2max")).toBe(false);
     expect(mocks.client.getTrainingStatus).not.toHaveBeenCalled();
     const hrvConflictCall = db.onConflictDoUpdate.mock.calls.find(
-      (call) => call[0]?.set?.hrv === 45,
+      (call: [{ set?: { hrv?: number } }]) => call[0]?.set?.hrv === 45,
     );
     expect(hrvConflictCall).toBeDefined();
 
     // Verify the onConflictDoUpdate set clause has the same values
     const conflictCall = db.onConflictDoUpdate.mock.calls.find(
-      (call) => call[0]?.set?.steps === 10000,
+      (call: [{ set?: { steps?: number } }]) => call[0]?.set?.steps === 10000,
     );
     expect(conflictCall).toBeDefined();
     expect(conflictCall?.[0].set.distanceKm).toBe(8.5);
@@ -1473,7 +1477,9 @@ describe("GarminProvider.sync()", () => {
 
     expect(result.recordsSynced).toBe(1);
 
-    const dailyCall = db.values.mock.calls.find((call) => call[0]?.steps === 5000);
+    const dailyCall = db.values.mock.calls.find(
+      (call: [{ steps?: number }]) => call[0]?.steps === 5000,
+    );
     if (!dailyCall) throw new Error("expected daily metrics insert");
     expect(dailyCall[0].hrv).toBeUndefined();
     expect(Object.hasOwn(dailyCall[0], "vo2max")).toBe(false);
@@ -1810,6 +1816,120 @@ describe("GarminProvider.sync()", () => {
       ),
     ).toBe(true);
   });
+
+  it.each([
+    [
+      "activity details",
+      { type: "activity_detail", activityId: 123, activityModality: "running" },
+      "getActivityDetail",
+      "Activities",
+    ],
+    ["sleep", { type: "sleep", date: "2026-04-27" }, "getSleepData", "Sleep"],
+    [
+      "daily summaries",
+      { type: "daily_summary", date: "2026-04-27" },
+      "getDailySummary",
+      "Daily metrics",
+    ],
+    [
+      "HRV summaries",
+      { type: "hrv_summary", date: "2026-04-27" },
+      "getHrvSummary",
+      "Daily metrics",
+    ],
+    ["stress", { type: "stress", date: "2026-04-27" }, "getDailyStress", "Stress"],
+    [
+      "heart-rate streams",
+      { type: "heart_rate", date: "2026-04-27" },
+      "getDailyHeartRate",
+      "Heart rate",
+    ],
+  ] satisfies ReadonlyArray<
+    [
+      string,
+      GarminSyncStep,
+      (
+        | "getActivityDetail"
+        | "getSleepData"
+        | "getDailySummary"
+        | "getHrvSummary"
+        | "getDailyStress"
+        | "getDailyHeartRate"
+      ),
+      string,
+    ]
+  >)("surfaces the %s failure with its sync label", async (_name, step, clientMethod, label) => {
+    mocks.client[clientMethod].mockRejectedValue(new Error(`${clientMethod} unavailable`));
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue(createGarminSyncCheckpoint([step])),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await syncProvider(provider, db, new Date("2026-04-27T00:00:00Z"), {
+      checkpoint: checkpointStore,
+    });
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining(`${label} sync failed`) }),
+    );
+  });
+
+  it("surfaces activity reconciliation failures with the activities label", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
+      new Error("reconciliation unavailable"),
+    );
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue(createGarminSyncCheckpoint([{ type: "activity_reconcile" }])),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await syncProvider(provider, db, new Date("2026-04-27T00:00:00Z"), {
+      checkpoint: checkpointStore,
+    });
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining("Activities sync failed") }),
+    );
+  });
+
+  it.each([
+    ["activity lists", { type: "activities_list", offset: 0 }, "Activity list"],
+    [
+      "later activity-list pages",
+      { type: "activities_list", offset: 50 },
+      "Activity list (offset 50)",
+    ],
+    [
+      "activity details",
+      { type: "activity_detail", activityId: 123, activityModality: "running" },
+      "Activity detail 123",
+    ],
+    ["activity reconciliation", { type: "activity_reconcile" }, "Activity reconciliation"],
+    ["sleep", { type: "sleep", date: "2026-04-27" }, "Sleep 2026-04-27"],
+    ["daily summaries", { type: "daily_summary", date: "2026-04-27" }, "Daily summary 2026-04-27"],
+    ["HRV summaries", { type: "hrv_summary", date: "2026-04-27" }, "HRV 2026-04-27"],
+    ["stress", { type: "stress", date: "2026-04-27" }, "Stress 2026-04-27"],
+    ["heart-rate streams", { type: "heart_rate", date: "2026-04-27" }, "Heart rate 2026-04-27"],
+  ] satisfies ReadonlyArray<[string, GarminSyncStep, string]>)(
+    "reports the %s step in sync progress",
+    async (_name, step, description) => {
+      const onProgress = vi.fn();
+      const checkpointStore = {
+        load: vi.fn().mockResolvedValue(createGarminSyncCheckpoint([step])),
+        save: vi.fn().mockResolvedValue(undefined),
+        clear: vi.fn().mockResolvedValue(undefined),
+      };
+
+      await syncProvider(provider, db, new Date("2026-04-27T00:00:00Z"), {
+        checkpoint: checkpointStore,
+        onProgress,
+      });
+
+      expect(onProgress).toHaveBeenCalledWith(0, description);
+    },
+  );
 
   it("enqueues a continuation after completing the activities list step", async () => {
     const checkpointStore = {

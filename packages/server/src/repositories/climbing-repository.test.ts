@@ -126,7 +126,7 @@ describe("ClimbingActivityEntry", () => {
 });
 
 describe("ClimbingRepository", () => {
-  function executeDb(execute: ReturnType<typeof vi.fn>) {
+  function executeDb(execute: CallableVitestMock) {
     return { execute };
   }
 

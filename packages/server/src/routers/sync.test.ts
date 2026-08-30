@@ -38,7 +38,9 @@ const {
   mockLoggerWarn: vi.fn(),
   mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-  mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
+  mockVeloHeroProvider: vi.fn(function vitestConstructor() {
+    return { id: "velohero" };
+  }),
   mockCachedProtectedQuery: vi.fn(),
   mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
   mockWithUserWriteFence: vi.fn(),
@@ -263,7 +265,9 @@ describe("syncRouter", () => {
     mockProtectedQueryCache.clear();
     mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
-    mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
+    mockVeloHeroProvider.mockImplementation(function vitestConstructor() {
+      return { id: "velohero" };
+    });
     mockGetProviderSyncQueue.mockImplementation((id: string) => ({
       add: mockAdd,
       getJob: mockGetJob,

@@ -764,7 +764,7 @@ function defaultWindow(): SyncWindow {
   });
 }
 
-function database(): SyncDatabase & { insertValues: ReturnType<typeof vi.fn> } {
+function database(): SyncDatabase & { insertValues: CallableVitestMock } {
   const insertValues = vi.fn().mockResolvedValue(undefined);
   const deleteFrom = vi.fn();
   const insertInto = vi.fn();
