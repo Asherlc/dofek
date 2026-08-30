@@ -53,6 +53,21 @@ describe("HangboardingDetail", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(5);
   });
 
+  it("renders an empty state when there are no completed hangs", () => {
+    render(
+      <HangboardingDetail
+        data={{
+          ...detail,
+          summary: { ...detail.summary, exercises: [] },
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText("No completed hangs recorded.")).toBeTruthy();
+  });
+
   it("preserves valid intervals while showing an actionable import warning", () => {
     render(
       <HangboardingDetail

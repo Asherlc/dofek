@@ -26,6 +26,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const Empty: Story = {
+  args: { data: { ...data, summary: { ...data.summary, exercises: [] } } },
+};
 export const SegmentWarning: Story = {
   args: { data: { ...data, segmentsError: "Some intervals had incomplete timestamps." } },
 };
