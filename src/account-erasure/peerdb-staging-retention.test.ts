@@ -207,31 +207,31 @@ describe("verifyPeerDbStagingRetention", () => {
       legacyPrefix: "peerdb-only/",
       restriction: "a legacy prefix",
     },
-  ])("rejects a one-day lifecycle rule scoped by $restriction", async ({
-    filter,
-    legacyPrefix,
-  }) => {
-    await expect(
-      verifyPeerDbStagingRetention(
-        storage({
-          getLifecycleConfiguration: vi.fn(async () => ({
-            rules: [
-              {
-                expirationDays: 1,
-                filter,
-                id: "peerdb-transient-stage-retention",
-                legacyPrefix,
-                status: "Enabled",
-              },
-            ],
-          })),
-        }),
-        verificationInput,
-      ),
-    ).rejects.toThrow(
-      "PeerDB staging bucket is missing the required global one-day lifecycle rule",
-    );
-  });
+  ])(
+    "rejects a one-day lifecycle rule scoped by $restriction",
+    async ({ filter, legacyPrefix }) => {
+      await expect(
+        verifyPeerDbStagingRetention(
+          storage({
+            getLifecycleConfiguration: vi.fn(async () => ({
+              rules: [
+                {
+                  expirationDays: 1,
+                  filter,
+                  id: "peerdb-transient-stage-retention",
+                  legacyPrefix,
+                  status: "Enabled",
+                },
+              ],
+            })),
+          }),
+          verificationInput,
+        ),
+      ).rejects.toThrow(
+        "PeerDB staging bucket is missing the required global one-day lifecycle rule",
+      );
+    },
+  );
 
   it("fails closed when bucket versioning could retain hidden object versions", async () => {
     await expect(

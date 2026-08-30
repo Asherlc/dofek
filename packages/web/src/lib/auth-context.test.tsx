@@ -198,6 +198,130 @@ describe("web auth account identity", () => {
     expect(result.current.accountSessionOwnerNonce).not.toBe(firstOwnerNonce);
   });
 
+  it("reports bootstrap failures and clears the error after a successful retry", async () => {
+    const bootstrapError = new Error("Session lookup failed");
+    mockFetchCurrentUser.mockRejectedValueOnce(bootstrapError).mockResolvedValueOnce({
+      email: "test@example.com",
+      id: "user-1",
+      name: "Test",
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.bootstrapError).toBe("Session lookup failed");
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(bootstrapError, { source: "auth-bootstrap" });
+
+    await act(async () => result.current.retryBootstrap());
+
+    expect(result.current.bootstrapError).toBeNull();
+    expect(result.current.user?.id).toBe("user-1");
+  });
+
+  it("shows non-Error bootstrap failures to the user", async () => {
+    mockFetchCurrentUser.mockRejectedValueOnce("Session lookup unavailable");
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.bootstrapError).toBe("Session lookup unavailable");
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith("Session lookup unavailable", {
+      source: "auth-bootstrap",
+    });
+  });
+
+  it("ignores unrelated storage events", async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.user?.id).toBe("user-1"));
+    const ownerNonce = result.current.accountSessionOwnerNonce;
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "unrelated-key",
+          newValue: "new-value",
+          oldValue: "old-value",
+        }),
+      );
+    });
+
+    expect(result.current.accountSessionOwnerNonce).toBe(ownerNonce);
+  });
+
+  it("rejects cleanup continuation after another account becomes authoritative", async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.user?.id).toBe("user-1"));
+    const ownerNonce = result.current.accountSessionOwnerNonce;
+    if (!ownerNonce) throw new Error("Session owner nonce was not created.");
+    mockFetchCurrentUser.mockResolvedValue({
+      email: "second@example.com",
+      id: "user-2",
+      name: "Second User",
+    });
+
+    await expect(
+      act(async () => result.current.beginAccountErasureCleanupForNonce(ownerNonce)),
+    ).rejects.toThrow(/another account became active/i);
+
+    expect(result.current.accountErasureCleanupInProgress).toBe(false);
+  });
+
+  it("rejects cleanup continuation when its persisted owner nonce is stale", async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.user?.id).toBe("user-1"));
+
+    await expect(
+      act(async () => result.current.beginAccountErasureCleanupForNonce("stale-owner-nonce")),
+    ).rejects.toThrow(/another account became active/i);
+
+    expect(result.current.accountErasureCleanupInProgress).toBe(false);
+  });
+
+  it("continues cleanup after the authoritative session has ended", async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.user?.id).toBe("user-1"));
+    const ownerNonce = result.current.accountSessionOwnerNonce;
+    if (!ownerNonce) throw new Error("Session owner nonce was not created.");
+    mockFetchCurrentUser.mockResolvedValue(null);
+
+    let cleanupLease:
+      | Awaited<ReturnType<typeof result.current.beginAccountErasureCleanupForNonce>>
+      | undefined;
+    await act(async () => {
+      cleanupLease = await result.current.beginAccountErasureCleanupForNonce(ownerNonce);
+    });
+
+    expect(result.current.user).toBeNull();
+    expect(result.current.accountErasureCleanupInProgress).toBe(true);
+    if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+    const activeCleanupLease = cleanupLease;
+    act(() => result.current.finishAccountErasureCleanup(activeCleanupLease));
+  });
+
+  it("does not let a stale cleanup lease finish the active cleanup", async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.user?.id).toBe("user-1"));
+
+    let cleanupLease:
+      | Awaited<ReturnType<typeof result.current.beginAccountErasureCleanup>>
+      | undefined;
+    await act(async () => {
+      cleanupLease = await result.current.beginAccountErasureCleanup("user-1");
+    });
+    if (!cleanupLease) throw new Error("Cleanup lease was not created.");
+    const activeCleanupLease = cleanupLease;
+
+    act(() => result.current.finishAccountErasureCleanup({ ...activeCleanupLease }));
+    expect(result.current.accountErasureCleanupInProgress).toBe(true);
+
+    act(() => result.current.finishAccountErasureCleanup(activeCleanupLease));
+    expect(result.current.accountErasureCleanupInProgress).toBe(false);
+  });
+
   it("serializes a later account adoption after the prior owner's destructive purge", async () => {
     const firstTab = renderHook(() => useAuth(), { wrapper });
     const secondTab = renderHook(() => useAuth(), { wrapper });

@@ -234,23 +234,22 @@ describe("supportRouter", () => {
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
-  it.each(statusCases)("maps PostHog status $status to $code", async ({
-    status,
-    code,
-    message,
-  }) => {
-    mockCreateTicket.mockRejectedValue(
-      new MockPostHogConversationsError("upstream failure", status),
-    );
+  it.each(statusCases)(
+    "maps PostHog status $status to $code",
+    async ({ status, code, message }) => {
+      mockCreateTicket.mockRejectedValue(
+        new MockPostHogConversationsError("upstream failure", status),
+      );
 
-    await expect(
-      makeCaller({ name: "Support User", email: "user@example.com" }).createTicket(ticketInput),
-    ).rejects.toMatchObject({ code, message });
-    expect(mockCaptureException).toHaveBeenCalledTimes(
-      status >= 500 || status < 300 || status === 401 || status === 403 || status === 408 ? 1 : 0,
-    );
-    expect(mockLoggerError).toHaveBeenCalledTimes(1);
-  });
+      await expect(
+        makeCaller({ name: "Support User", email: "user@example.com" }).createTicket(ticketInput),
+      ).rejects.toMatchObject({ code, message });
+      expect(mockCaptureException).toHaveBeenCalledTimes(
+        status >= 500 || status < 300 || status === 401 || status === 403 || status === 408 ? 1 : 0,
+      );
+      expect(mockLoggerError).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("maps non-PostHog failures to a retryable gateway error", async () => {
     mockCreateTicket.mockRejectedValue(new Error("network unavailable"));

@@ -977,17 +977,15 @@ describe("parseStrongExerciseName — additional cases", () => {
     expect(result.equipment).toBe("Dumbbell");
   });
 
-  it.each([
-    "Curl",
-    "Curl (Dumbbell",
-    "(Dumbbell)",
-    "Curl ()",
-  ])("does not invent equipment for malformed parentheses: %s", (name) => {
-    expect(parseStrongExerciseName(name)).toEqual({
-      equipment: null,
-      exerciseName: name,
-    });
-  });
+  it.each(["Curl", "Curl (Dumbbell", "(Dumbbell)", "Curl ()"])(
+    "does not invent equipment for malformed parentheses: %s",
+    (name) => {
+      expect(parseStrongExerciseName(name)).toEqual({
+        equipment: null,
+        exerciseName: name,
+      });
+    },
+  );
 });
 
 describe("parseDurationString — additional cases", () => {

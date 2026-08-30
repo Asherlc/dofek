@@ -34,12 +34,12 @@ describe("healthKitSampleSchema", () => {
     });
   });
 
-  it.each([
-    { nested: { value: true } },
-    { nested: ["value"] },
-  ])("rejects non-scalar metadata values", (metadata) => {
-    expect(() => healthKitSampleSchema.parse({ ...sample, metadata })).toThrow();
-  });
+  it.each([{ nested: { value: true } }, { nested: ["value"] }])(
+    "rejects non-scalar metadata values",
+    (metadata) => {
+      expect(() => healthKitSampleSchema.parse({ ...sample, metadata })).toThrow();
+    },
+  );
 });
 
 describe("workoutActivityTypeMap", () => {

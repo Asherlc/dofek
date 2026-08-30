@@ -11,10 +11,22 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/mountain-project-client#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["mountain-project", "climbing", "api-client", "unofficial", "typescript"],
-  "engines": { "node": ">=22.14.0" },
+  "keywords": [
+    "mountain-project",
+    "climbing",
+    "api-client",
+    "unofficial",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/client.ts",
     "./*": "./src/*.ts"
@@ -22,8 +34,14 @@
   "publishConfig": {
     "access": "public",
     "exports": {
-      ".": { "types": "./dist/client.d.ts", "import": "./dist/client.js" },
-      "./*": { "types": "./dist/*.d.ts", "import": "./dist/*.js" }
+      ".": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
     }
   },
   "scripts": {
@@ -34,6 +52,11 @@
     "lint": "biome check .",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@dofek/training": "workspace:*" },
-  "devDependencies": { "typescript": "6.0.3", "vitest": "3.2.6" }
+  "dependencies": {
+    "@dofek/training": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
 }

@@ -200,13 +200,13 @@ interface MockJob {
   id: string;
   queueQualifiedName: string;
   data: ImportJobData;
-  updateProgress: ReturnType<typeof vi.fn>;
-  updateData: ReturnType<typeof vi.fn>;
-  moveToWaitingChildren: ReturnType<typeof vi.fn>;
-  getChildrenValues: ReturnType<typeof vi.fn>;
-  getIgnoredChildrenFailures: ReturnType<typeof vi.fn>;
-  extendLock: ReturnType<typeof vi.fn>;
-  log: ReturnType<typeof vi.fn>;
+  updateProgress: CallableVitestMock;
+  updateData: CallableVitestMock;
+  moveToWaitingChildren: CallableVitestMock;
+  getChildrenValues: CallableVitestMock;
+  getIgnoredChildrenFailures: CallableVitestMock;
+  extendLock: CallableVitestMock;
+  log: CallableVitestMock;
 }
 
 function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {

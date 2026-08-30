@@ -421,189 +421,192 @@ describe("CorosProvider", () => {
     });
 
     it.each([
-      null,
-      "deepSleep",
-      "lightSleep",
-      "remSleep",
-      "awakeDuration",
-    ] as const)("sync uses user-scoped conflict targets and preserves staging completeness (%s absent)", async (missingStage) => {
-      process.env.COROS_CLIENT_ID = "id";
-      process.env.COROS_CLIENT_SECRET = "secret";
+      [null, "steps"],
+      ["deepSleep", "hrv"],
+      ["lightSleep", "spo2Avg"],
+      ["remSleep", "distance"],
+      ["awakeDuration", "steps"],
+    ] as const)(
+      "sync uses user-scoped conflict targets and preserves staging completeness (%s absent; %s daily metric)",
+      async (missingStage, dailyMetric) => {
+        process.env.COROS_CLIENT_ID = "id";
+        process.env.COROS_CLIENT_SECRET = "secret";
 
-      const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
-      vi.mocked(ensureProvider).mockResolvedValue("coros");
-      vi.mocked(loadTokens).mockResolvedValue({
-        accessToken: "valid-token",
-        refreshToken: "valid-refresh-token",
-        expiresAt: new Date("2099-01-01T00:00:00Z"),
-        scopes: null,
-      });
-      const enqueueFitImportSpy = vi
-        .spyOn(fitImportQueueModule, "enqueueFitFileImportAndWait")
-        .mockResolvedValue({ recordsSynced: 0, errors: [] });
+        const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+        vi.mocked(ensureProvider).mockResolvedValue("coros");
+        vi.mocked(loadTokens).mockResolvedValue({
+          accessToken: "valid-token",
+          refreshToken: "valid-refresh-token",
+          expiresAt: new Date("2099-01-01T00:00:00Z"),
+          scopes: null,
+        });
+        const enqueueFitImportSpy = vi
+          .spyOn(fitImportQueueModule, "enqueueFitFileImportAndWait")
+          .mockResolvedValue({ recordsSynced: 0, errors: [] });
 
-      const mockFetch: typeof globalThis.fetch = async (
-        input: RequestInfo | URL,
-      ): Promise<Response> => {
-        const url = input.toString();
-        if (url.includes("/v2/coros/sport/list")) {
-          return Response.json({
-            data: [
-              {
-                labelId: "w-1",
-                mode: 8,
-                subMode: 0,
-                startTime: 1709290800,
-                endTime: 1709294400,
-                duration: 3600,
-                distance: 10000,
-                avgHeartRate: 150,
-                maxHeartRate: 170,
-                avgSpeed: 2.8,
-                maxSpeed: 3.5,
-                totalCalories: 500,
-                fitUrl: "https://cdn.coros.com/workout-w-1.fit",
-              },
-            ],
-            message: "OK",
-            result: "0000",
-          });
-        }
-        if (url.includes("/v2/coros/daily/list")) {
-          return Response.json({
-            data: [
-              {
-                date: "20260301",
-                steps: 8000,
-                distance: 6200,
-                calories: 2100,
-                restingHr: 52,
-                hrv: 45,
-                spo2Avg: 97,
-                sleepDuration: 420,
-                deepSleep: 90,
-                lightSleep: 220,
-                remSleep: 80,
-                awakeDuration: 30,
-                ...(missingStage === null ? {} : { [missingStage]: undefined }),
-              },
-            ],
-            message: "OK",
-            result: "0000",
-          });
-        }
-        if (url === "https://cdn.coros.com/workout-w-1.fit") {
-          return new Response(new Uint8Array([1, 2, 3]));
-        }
-        return new Response("Not Found", { status: 404 });
-      };
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/v2/coros/sport/list")) {
+            return Response.json({
+              data: [
+                {
+                  labelId: "w-1",
+                  mode: 8,
+                  subMode: 0,
+                  startTime: 1709290800,
+                  endTime: 1709294400,
+                  duration: 3600,
+                  distance: 10000,
+                  avgHeartRate: 150,
+                  maxHeartRate: 170,
+                  avgSpeed: 2.8,
+                  maxSpeed: 3.5,
+                  totalCalories: 500,
+                  fitUrl: "https://cdn.coros.com/workout-w-1.fit",
+                },
+              ],
+              message: "OK",
+              result: "0000",
+            });
+          }
+          if (url.includes("/v2/coros/daily/list")) {
+            return Response.json({
+              data: [
+                {
+                  date: "20260301",
+                  steps: dailyMetric === "steps" ? 8000 : undefined,
+                  distance: dailyMetric === "distance" ? 6200 : undefined,
+                  calories: 2100,
+                  restingHr: 52,
+                  hrv: dailyMetric === "hrv" ? 45 : undefined,
+                  spo2Avg: dailyMetric === "spo2Avg" ? 97 : undefined,
+                  sleepDuration: 420,
+                  deepSleep: 90,
+                  lightSleep: 220,
+                  remSleep: 80,
+                  awakeDuration: 30,
+                  ...(missingStage === null ? {} : { [missingStage]: undefined }),
+                },
+              ],
+              message: "OK",
+              result: "0000",
+            });
+          }
+          if (url === "https://cdn.coros.com/workout-w-1.fit") {
+            return new Response(new Uint8Array([1, 2, 3]));
+          }
+          return new Response("Not Found", { status: 404 });
+        };
 
-      const chain = {
-        values: vi.fn(),
-        onConflictDoUpdate: vi.fn(),
-        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        returning: vi.fn().mockResolvedValue([{ id: "mock-activity-id" }]),
-        where: vi.fn().mockResolvedValue(undefined),
-      };
-      chain.values.mockReturnValue(chain);
-      chain.onConflictDoUpdate.mockReturnValue(chain);
-      chain.onConflictDoNothing.mockReturnValue(chain);
+        const chain = {
+          values: vi.fn(),
+          onConflictDoUpdate: vi.fn(),
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          returning: vi.fn().mockResolvedValue([{ id: "mock-activity-id" }]),
+          where: vi.fn().mockResolvedValue(undefined),
+        };
+        chain.values.mockReturnValue(chain);
+        chain.onConflictDoUpdate.mockReturnValue(chain);
+        chain.onConflictDoNothing.mockReturnValue(chain);
 
-      const deleteFn = vi.fn().mockReturnValue(chain);
+        const deleteFn = vi.fn().mockReturnValue(chain);
 
-      const mockDb: SyncDatabase = {
-        select: vi.fn(),
-        insert: vi.fn().mockReturnValue(chain),
-        delete: deleteFn,
-        execute: vi.fn(),
-      };
-      const metricStreamPublisher = {
-        publishRows: vi.fn(async () => []),
-      };
+        const mockDb: SyncDatabase = {
+          select: vi.fn(),
+          insert: vi.fn().mockReturnValue(chain),
+          delete: deleteFn,
+          execute: vi.fn(),
+        };
+        const metricStreamPublisher = {
+          publishRows: vi.fn(async () => []),
+        };
 
-      const result = await new CorosProvider(mockFetch).sync(
-        new SyncRun({
-          db: mockDb,
-          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
-          userId: "00000000-0000-0000-0000-000000000001",
-          metricStreamPublisher,
-        }),
-      );
-
-      expect(result.errors).toHaveLength(0);
-      expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
-      expect(enqueueFitImportSpy).toHaveBeenCalledWith({
-        fitBuffer: Buffer.from([1, 2, 3]),
-        providerId: "coros",
-        sourceName: "COROS",
-        userId: "00000000-0000-0000-0000-000000000001",
-        db: mockDb,
-        metricStreamPublisher,
-        activitySummary: {
-          externalId: "w-1",
-          activityType: {
-            canonicalType: "running",
-            providerType: "8",
-            modality: null,
-          },
-          startedAtIso: "2024-03-01T11:00:00.000Z",
-          endedAtIso: "2024-03-01T12:00:00.000Z",
-          name: "COROS running",
-          raw: expect.objectContaining({ distance: 10_000, duration: 3600 }),
-        },
-      });
-
-      const targets = chain.onConflictDoUpdate.mock.calls
-        .map((callArgs) => callArgs[0])
-        .filter((arg): arg is { target: unknown[] } => {
-          if (typeof arg !== "object" || arg === null || !("target" in arg)) return false;
-          return Array.isArray(Reflect.get(arg, "target"));
-        })
-        .map((arg) => arg.target);
-
-      expect(
-        targets.some(
-          (target) =>
-            target.length === 3 &&
-            target[0] === activityTable.userId &&
-            target[1] === activityTable.providerId &&
-            target[2] === activityTable.externalId,
-        ),
-      ).toBe(true);
-
-      expect(
-        targets.some(
-          (target) =>
-            target.length === 4 &&
-            target[0] === dailyMetricsTable.userId &&
-            target[1] === dailyMetricsTable.date &&
-            target[2] === dailyMetricsTable.providerId &&
-            target[3] === dailyMetricsTable.sourceName,
-        ),
-      ).toBe(true);
-
-      expect(
-        targets.some(
-          (target) =>
-            target.length === 3 &&
-            target[0] === sleepSessionTable.userId &&
-            target[1] === sleepSessionTable.providerId &&
-            target[2] === sleepSessionTable.externalId,
-        ),
-      ).toBe(true);
-
-      const sleepValues = chain.values.mock.calls
-        .map((callArgs) => callArgs[0])
-        .find(
-          (values) =>
-            typeof values === "object" &&
-            values !== null &&
-            Reflect.get(values, "externalId") === "coros-sleep-20260301",
+        const result = await new CorosProvider(mockFetch).sync(
+          new SyncRun({
+            db: mockDb,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+            userId: "00000000-0000-0000-0000-000000000001",
+            metricStreamPublisher,
+          }),
         );
-      expect(sleepValues).toMatchObject({
-        stagingAvailable: missingStage === null,
-      });
-    });
+
+        expect(result.errors).toHaveLength(0);
+        expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
+        expect(enqueueFitImportSpy).toHaveBeenCalledWith({
+          fitBuffer: Buffer.from([1, 2, 3]),
+          providerId: "coros",
+          sourceName: "COROS",
+          userId: "00000000-0000-0000-0000-000000000001",
+          db: mockDb,
+          metricStreamPublisher,
+          activitySummary: {
+            externalId: "w-1",
+            activityType: {
+              canonicalType: "running",
+              providerType: "8",
+              modality: null,
+            },
+            startedAtIso: "2024-03-01T11:00:00.000Z",
+            endedAtIso: "2024-03-01T12:00:00.000Z",
+            name: "COROS running",
+            raw: expect.objectContaining({ distance: 10_000, duration: 3600 }),
+          },
+        });
+
+        const targets = chain.onConflictDoUpdate.mock.calls
+          .map((callArgs) => callArgs[0])
+          .filter((arg): arg is { target: unknown[] } => {
+            if (typeof arg !== "object" || arg === null || !("target" in arg)) return false;
+            return Array.isArray(Reflect.get(arg, "target"));
+          })
+          .map((arg) => arg.target);
+
+        expect(
+          targets.some(
+            (target) =>
+              target.length === 3 &&
+              target[0] === activityTable.userId &&
+              target[1] === activityTable.providerId &&
+              target[2] === activityTable.externalId,
+          ),
+        ).toBe(true);
+
+        expect(
+          targets.some(
+            (target) =>
+              target.length === 4 &&
+              target[0] === dailyMetricsTable.userId &&
+              target[1] === dailyMetricsTable.date &&
+              target[2] === dailyMetricsTable.providerId &&
+              target[3] === dailyMetricsTable.sourceName,
+          ),
+        ).toBe(true);
+
+        expect(
+          targets.some(
+            (target) =>
+              target.length === 3 &&
+              target[0] === sleepSessionTable.userId &&
+              target[1] === sleepSessionTable.providerId &&
+              target[2] === sleepSessionTable.externalId,
+          ),
+        ).toBe(true);
+
+        const sleepValues = chain.values.mock.calls
+          .map((callArgs) => callArgs[0])
+          .find(
+            (values) =>
+              typeof values === "object" &&
+              values !== null &&
+              Reflect.get(values, "externalId") === "coros-sleep-20260301",
+          );
+        expect(sleepValues).toMatchObject({
+          stagingAvailable: missingStage === null,
+        });
+      },
+    );
   });
 });
 

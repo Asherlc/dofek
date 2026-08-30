@@ -441,4 +441,218 @@ describe("PersonalExperimentsPage", () => {
       personalExperimentId: "exp-1",
     });
   });
+
+  it("keeps metric choices available while showing a refresh error", async () => {
+    state.listData = [];
+    state.metricsError = new Error("Metric catalog refresh failed");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByLabelText("Outcome metric")).toBeTruthy();
+    expect(screen.getByText("Metric catalog refresh failed")).toBeTruthy();
+  });
+
+  it("keeps a failed create action actionable", async () => {
+    state.listData = [];
+    state.createError = new Error("Experiment could not be saved");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.getByText("Experiment could not be saved")).toBeTruthy();
+  });
+
+  it("shows when a completed experiment was stopped", async () => {
+    state.listData = [
+      {
+        id: "exp-stopped",
+        hypothesis: "Does hydration improve recovery?",
+        intervention: "Drink water",
+        outcomeMetricId: "hrv",
+        outcomeMetricLabel: "Heart Rate Variability",
+        lagDays: 0,
+        baselineDays: 7,
+        interventionDays: 14,
+        startDate: "2026-07-01",
+        status: "stopped",
+        stoppedAt: "2026-07-10",
+        phase: "stopped",
+        phaseLabel: "Stopped",
+        schedule: {
+          baselineStartDate: "2026-07-01",
+          baselineEndDate: "2026-07-07",
+          interventionStartDate: "2026-07-08",
+          interventionEndDate: "2026-07-21",
+          scheduleSummary: "Stopped early",
+        },
+      },
+    ];
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByText("Stopped on 2026-07-10")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Stop experiment" })).toBeNull();
+  });
+
+  it("keeps the experiment visible while the list refresh reports an error", async () => {
+    state.listData = [
+      {
+        id: "exp-refresh",
+        hypothesis: "Does a consistent bedtime improve recovery?",
+        intervention: "Lights out by 10pm",
+        outcomeMetricId: "hrv",
+        outcomeMetricLabel: "Heart Rate Variability",
+        lagDays: 0,
+        baselineDays: 7,
+        interventionDays: 14,
+        startDate: "2026-07-01",
+        status: "active",
+        stoppedAt: null,
+        phase: "baseline",
+        phaseLabel: "Baseline",
+        schedule: {
+          baselineStartDate: "2026-07-01",
+          baselineEndDate: "2026-07-07",
+          interventionStartDate: "2026-07-08",
+          interventionEndDate: "2026-07-21",
+          scheduleSummary: "Day 2 of baseline (6 days remaining)",
+        },
+      },
+    ];
+    state.listError = new Error("Experiment history refresh failed");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByText("Does a consistent bedtime improve recovery?")).toBeTruthy();
+    expect(screen.getByText("Experiment history refresh failed")).toBeTruthy();
+  });
+
+  it("surfaces an unavailable metric catalog instead of showing an empty form", async () => {
+    state.listData = [];
+    state.metricsData = undefined;
+    state.metricsError = new Error("Metric catalog is unavailable. Try again shortly.");
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(screen.getByText("Metric catalog is unavailable. Try again shortly.")).toBeTruthy();
+    expect(screen.queryByLabelText("Outcome metric")).toBeNull();
+  });
+
+  it("renders unavailable evidence with recorded observations and unannotated life events", async () => {
+    state.listData = [
+      {
+        id: "exp-evidence",
+        hypothesis: "Does hydration improve HRV?",
+        intervention: "Drink water throughout the day",
+        outcomeMetricId: "hrv",
+        outcomeMetricLabel: "Heart Rate Variability",
+        lagDays: 1,
+        baselineDays: 7,
+        interventionDays: 14,
+        startDate: "2026-07-01",
+        status: "active",
+        stoppedAt: null,
+        phase: "intervention",
+        phaseLabel: "Intervention",
+        schedule: {
+          baselineStartDate: "2026-07-01",
+          baselineEndDate: "2026-07-07",
+          interventionStartDate: "2026-07-08",
+          interventionEndDate: "2026-07-21",
+          scheduleSummary: "Day 4 of intervention (10 days remaining)",
+        },
+      },
+    ];
+    state.analysisData = {
+      outcomeMetricId: "hrv",
+      outcomeMetricLabel: "Heart Rate Variability",
+      checkIns: [],
+      annotations: [
+        {
+          id: "event-2",
+          label: "Travel",
+          startedAt: "2026-07-12",
+          endedAt: null,
+          category: "lifestyle",
+          ongoing: false,
+          notes: null,
+          createdAt: "2026-07-12T10:00:00.000Z",
+        },
+      ],
+      analysis: {
+        availability: "unavailable",
+        observations: [
+          {
+            phase: "baseline",
+            phaseDate: "2026-07-03",
+            outcomeDate: "2026-07-04",
+            value: 51.2,
+            adherence: null,
+            confounder: null,
+            note: null,
+            sourceProviderIds: ["garmin"],
+          },
+          {
+            phase: "intervention",
+            phaseDate: "2026-07-10",
+            outcomeDate: "2026-07-11",
+            value: 56.8,
+            adherence: "partial",
+            confounder: null,
+            note: null,
+            sourceProviderIds: ["apple_health", "whoop"],
+          },
+        ],
+        coverage: {
+          baseline: {
+            expectedDayCount: 7,
+            observedOutcomeDayCount: 3,
+            missingOutcomeDayCount: 4,
+            checkInCount: 0,
+            adherenceCounts: { adherent: 0, partial: 0, not_adherent: 0, unknown: 0 },
+          },
+          intervention: {
+            expectedDayCount: 14,
+            observedOutcomeDayCount: 2,
+            missingOutcomeDayCount: 12,
+            checkInCount: 1,
+            adherenceCounts: { adherent: 0, partial: 1, not_adherent: 0, unknown: 0 },
+          },
+        },
+        effect: {
+          baselineMean: 51.2,
+          interventionMean: 56.8,
+          differenceInMeans: 5.6,
+          baselineSampleCount: 1,
+          interventionSampleCount: 1,
+        },
+        uncertainty: {
+          availability: "unavailable",
+          reason: "insufficient_observations",
+        },
+        limitations: ["There are not enough outcome observations yet."],
+      },
+    };
+    const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
+
+    render(<PersonalExperimentsPage search={state.search} />);
+
+    expect(
+      screen.getByText("More outcome observations are needed before estimating an effect."),
+    ).toBeTruthy();
+    expect(screen.getByText("Uncertainty unavailable: insufficient observations.")).toBeTruthy();
+    expect(
+      screen.getByText(/2026-07-03 → 2026-07-04: 51.2; baseline; sources: garmin/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/2026-07-10 → 2026-07-11: 56.8; partial; sources: apple_health, whoop/),
+    ).toBeTruthy();
+    expect(screen.getByText("Travel")).toBeTruthy();
+    expect(screen.queryByText("· null")).toBeNull();
+  });
 });

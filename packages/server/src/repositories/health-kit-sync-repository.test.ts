@@ -2468,30 +2468,36 @@ describe("HealthKitSyncRepository.processSleepSamples (mutation: explicit vs der
   it.each([
     ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00", [-480, -420, "device_offset"]],
     ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00", [null, null, "unknown"]],
-  ])("stores record-local sleep context for %s to %s", async (startDate, endDate, expectedContext) => {
-    const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
-    const repo = new HealthKitSyncRepository(makeTransactionalTestDatabase({ execute }), "user-1");
-    const samples: SleepSample[] = [
-      {
-        uuid: "sleep-local-time",
-        startDate,
-        endDate,
-        value: "inBed",
-        sourceName: "Watch",
-      },
-    ];
+  ])(
+    "stores record-local sleep context for %s to %s",
+    async (startDate, endDate, expectedContext) => {
+      const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+      const repo = new HealthKitSyncRepository(
+        makeTransactionalTestDatabase({ execute }),
+        "user-1",
+      );
+      const samples: SleepSample[] = [
+        {
+          uuid: "sleep-local-time",
+          startDate,
+          endDate,
+          value: "inBed",
+          sourceName: "Watch",
+        },
+      ];
 
-    await repo.processSleepSamples(samples);
+      await repo.processSleepSamples(samples);
 
-    const sleepCall = execute.mock.calls.find((call) => {
-      const serialized = JSON.stringify(call[0]);
-      return serialized.includes("sleep_session") && serialized.includes("INSERT");
-    });
-    const serialized = JSON.stringify(sleepCall?.[0]);
-    for (const expected of expectedContext) {
-      expect(serialized).toContain(JSON.stringify(expected));
-    }
-  });
+      const sleepCall = execute.mock.calls.find((call) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
+      });
+      const serialized = JSON.stringify(sleepCall?.[0]);
+      for (const expected of expectedContext) {
+        expect(serialized).toContain(JSON.stringify(expected));
+      }
+    },
+  );
 
   it("filters out unmappable stage values from sleep_stage insert", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);

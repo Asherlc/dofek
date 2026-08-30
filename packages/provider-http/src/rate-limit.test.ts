@@ -12,10 +12,10 @@ import {
 import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 
 function createMockAdaptiveStore(): AdaptiveRateLimitStore & {
-  awaitAdmission: ReturnType<typeof vi.fn>;
-  recordSuccess: ReturnType<typeof vi.fn>;
-  recordRateLimit: ReturnType<typeof vi.fn>;
-  getLearnedCooldownSeconds: ReturnType<typeof vi.fn>;
+  awaitAdmission: CallableVitestMock;
+  recordSuccess: CallableVitestMock;
+  recordRateLimit: CallableVitestMock;
+  getLearnedCooldownSeconds: CallableVitestMock;
 } {
   return {
     awaitAdmission: vi.fn().mockResolvedValue(undefined),

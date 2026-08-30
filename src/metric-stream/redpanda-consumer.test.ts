@@ -34,19 +34,18 @@ const kafkaConsumerFactory = vi.hoisted(() =>
   })),
 );
 const kafkaConstructor = vi.hoisted(() =>
-  vi.fn(() => ({
-    admin: () => ({
-      alterConfigs: kafkaAdminAlterConfigs,
-      connect: kafkaAdminConnect,
-      createTopics: kafkaAdminCreateTopics,
-      disconnect: kafkaAdminDisconnect,
-    }),
-    consumer: kafkaConsumerFactory,
-    producer: () => ({
-      connect: kafkaProducerConnect,
-      send: kafkaProducerSend,
-    }),
-  })),
+  vi.fn(function vitestConstructor() {
+    return {
+      admin: () => ({
+        alterConfigs: kafkaAdminAlterConfigs,
+        connect: kafkaAdminConnect,
+        createTopics: kafkaAdminCreateTopics,
+        disconnect: kafkaAdminDisconnect,
+      }),
+      consumer: kafkaConsumerFactory,
+      producer: () => ({ connect: kafkaProducerConnect, send: kafkaProducerSend }),
+    };
+  }),
 );
 
 vi.mock("kafkajs", () => ({
