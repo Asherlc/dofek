@@ -37,8 +37,6 @@ describe("BleHeartRate native bridge", () => {
         connectionState: "connected",
         lastMeasurementAt: undefined,
         lastHeartRateBpm: undefined,
-        lastRrIntervalsMs: [],
-        bufferedSampleCount: 0,
       },
     ]);
 
@@ -73,8 +71,6 @@ describe("BleHeartRate native bridge", () => {
       connectionState: "connected",
       lastMeasurementAt: undefined,
       lastHeartRateBpm: undefined,
-      lastRrIntervalsMs: [],
-      bufferedSampleCount: 0,
     });
 
     expect(deviceStateListener).toHaveBeenCalledWith({

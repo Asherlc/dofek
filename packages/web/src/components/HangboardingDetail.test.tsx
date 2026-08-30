@@ -2,55 +2,37 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { HangboardingDetail as HangboardingDetailData } from "../../../server/src/repositories/hangboarding-repository.ts";
-
 import { HangboardingDetail } from "./HangboardingDetail.tsx";
 
-const detail: HangboardingDetailData = {
+const detail = {
   planName: "7/3 Repeaters",
-  sessionId: "session-1",
-  boardId: "board-1",
   boardName: "Tension Board",
   segmentsError: null,
-  intervals: [
-    {
-      id: "interval-1",
-      intervalIndex: 0,
-      label: "Step 1: 19 mm edge",
-      intervalType: "work",
-      startedAt: "2026-08-07T14:00:00.000Z",
-      endedAt: "2026-08-07T14:00:07.000Z",
-      durationSeconds: 7,
-    },
-    {
-      id: "interval-2",
-      intervalIndex: 1,
-      label: "Rest",
-      intervalType: "rest",
-      startedAt: "2026-08-07T14:00:07.000Z",
-      endedAt: "2026-08-07T14:00:53.000Z",
-      durationSeconds: 46,
-    },
-  ],
+  summary: {
+    durationSeconds: 300,
+    workIntervalCount: 3,
+    totalWorkDurationSeconds: 21,
+    totalRestDurationSeconds: 106,
+    exercises: [{ label: "19 mm edge", workIntervalCount: 3, workDurationSeconds: 21 }],
+  },
 };
 
 afterEach(cleanup);
 
 describe("HangboardingDetail", () => {
-  it("renders plan and board metadata plus intervals in index order", () => {
+  it("renders a concise finger-loading summary", () => {
     render(<HangboardingDetail data={detail} loading={false} error={null} />);
 
     expect(screen.getByText("Plan")).toBeTruthy();
     expect(screen.getByText("7/3 Repeaters")).toBeTruthy();
-    expect(screen.getByText("Session")).toBeTruthy();
-    expect(screen.getByText("session-1")).toBeTruthy();
     expect(screen.getByText("Board")).toBeTruthy();
     expect(screen.getByText("Tension Board")).toBeTruthy();
-
-    const labels = screen.getAllByTestId("hangboarding-interval-label");
-    expect(labels.map((label) => label.textContent)).toEqual(["Step 1: 19 mm edge", "Rest"]);
-    expect(screen.getByText("7s")).toBeTruthy();
-    expect(screen.getByText("46s")).toBeTruthy();
+    expect(screen.getByText("19 mm edge")).toBeTruthy();
+    expect(screen.getByText("3 hangs · 21s")).toBeTruthy();
+    expect(screen.getByText("Hangs")).toBeTruthy();
+    expect(screen.getByText("Hang time")).toBeTruthy();
+    expect(screen.getByText("Rest time")).toBeTruthy();
+    expect(screen.getByText("Session time")).toBeTruthy();
   });
 
   it("renders an actionable segments note without hiding valid data", () => {
@@ -64,7 +46,7 @@ describe("HangboardingDetail", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("Segment 3 had no end timestamp");
     expect(screen.getByText("7/3 Repeaters")).toBeTruthy();
-    expect(screen.getByText("Step 1: 19 mm edge")).toBeTruthy();
+    expect(screen.getByText("19 mm edge")).toBeTruthy();
   });
 
   it("uses the query-state loading and error conventions", () => {
