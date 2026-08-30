@@ -480,11 +480,15 @@ describe("ActivityDetailScreen", () => {
     mockHangboardDetailsQuery.mockReturnValue({
       data: {
         planName: "Imported 7/3",
-        sessionId: "session-1",
-        boardId: "board-1",
         boardName: "Tension Board",
         segmentsError: null,
-        intervals: [],
+        summary: {
+          durationSeconds: 300,
+          workIntervalCount: 0,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          exercises: [],
+        },
       },
       isLoading: false,
       error: null,

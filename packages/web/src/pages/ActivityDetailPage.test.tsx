@@ -1597,11 +1597,21 @@ describe("ActivityDetailPage", () => {
       mockHangboardDetailsUseQuery.mockReturnValue({
         data: {
           planName: "7/3 Repeaters",
-          sessionId: "session-1",
-          boardId: "board-1",
           boardName: "Tension Board",
           segmentsError: null,
-          intervals: [],
+          summary: {
+            durationSeconds: 600,
+            workIntervalCount: 1,
+            totalWorkDurationSeconds: 7,
+            totalRestDurationSeconds: 3,
+            exercises: [
+              {
+                label: "Repeaters",
+                workIntervalCount: 1,
+                workDurationSeconds: 7,
+              },
+            ],
+          },
         },
         error: null,
         isError: false,

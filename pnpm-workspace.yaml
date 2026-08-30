@@ -72,7 +72,8 @@ overrides:
   shell-quote: 1.10.0
   tar: 7.5.20
   "test-exclude@<8.0.0": 8.0.0
-  "undici@>=6.0.0 <6.27.0": 6.27.0
+  "@sentry/cli>undici": 6.28.0
+  "undici@>=6.0.0 <6.28.0": 6.28.0
   uuid: 11.1.1
   ws: 8.21.0
   yaml: 2.9.0
