@@ -4,23 +4,21 @@ import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
-export interface HangboardingIntervalDetail {
-  id: string;
-  intervalIndex: number;
-  label: string | null;
-  intervalType: "work" | "rest" | null;
-  startedAt: string;
-  endedAt: string | null;
-  durationSeconds: number | null;
-}
-
 export interface HangboardingDetail {
   planName: string | null;
-  sessionId: string | null;
-  boardId: string | null;
   boardName: string | null;
   segmentsError: string | null;
-  intervals: HangboardingIntervalDetail[];
+  summary: {
+    durationSeconds: number | null;
+    workIntervalCount: number;
+    totalWorkDurationSeconds: number | null;
+    totalRestDurationSeconds: number | null;
+    exercises: Array<{
+      label: string;
+      workIntervalCount: number;
+      workDurationSeconds: number | null;
+    }>;
+  };
 }
 
 export interface HangboardingSummary {
@@ -52,8 +50,6 @@ const detailRowSchema = z.object({
   activity_id: z.string(),
   canonical_type: z.string(),
   plan_name: z.string().nullable(),
-  session_id: z.string().nullable(),
-  board_id: z.string().nullable(),
   board_name: z.string().nullable(),
   segments_error: z.string().nullable(),
   interval_id: z.string().nullable(),
@@ -63,6 +59,7 @@ const detailRowSchema = z.object({
   interval_started_at: timestampStringSchema.nullable(),
   interval_ended_at: timestampStringSchema.nullable(),
   duration_seconds: z.coerce.number().nullable(),
+  activity_duration_seconds: z.coerce.number().nullable(),
 });
 
 const summaryRowSchema = z.object({
@@ -100,6 +97,49 @@ const memberSource = sql`
   ) AS member ON TRUE
 `;
 
+interface DetailInterval {
+  label: string | null;
+  intervalType: "work" | "rest" | null;
+  durationSeconds: number | null;
+}
+
+function totalDuration(intervals: DetailInterval[], intervalType: "work" | "rest"): number | null {
+  const matchingIntervals = intervals.filter((interval) => interval.intervalType === intervalType);
+  if (
+    matchingIntervals.length === 0 ||
+    matchingIntervals.some((interval) => interval.durationSeconds === null)
+  ) {
+    return null;
+  }
+  return matchingIntervals.reduce((total, interval) => total + (interval.durationSeconds ?? 0), 0);
+}
+
+function exerciseLabel(label: string | null): string {
+  return label?.replace(/^Step \d+:\s*/, "") || "Hang";
+}
+
+function summarizeDetailIntervals(intervals: DetailInterval[]) {
+  const workIntervals = intervals.filter(
+    (interval) => interval.intervalType === "work" && interval.durationSeconds !== null,
+  );
+  const exercises = new Map<string, DetailInterval[]>();
+  for (const interval of workIntervals) {
+    const label = exerciseLabel(interval.label);
+    exercises.set(label, [...(exercises.get(label) ?? []), interval]);
+  }
+
+  return {
+    workIntervalCount: workIntervals.length,
+    totalWorkDurationSeconds: totalDuration(workIntervals, "work"),
+    totalRestDurationSeconds: totalDuration(intervals, "rest"),
+    exercises: [...exercises].map(([label, exerciseIntervals]) => ({
+      label,
+      workIntervalCount: exerciseIntervals.length,
+      workDurationSeconds: totalDuration(exerciseIntervals, "work"),
+    })),
+  };
+}
+
 export class HangboardingRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
@@ -135,8 +175,6 @@ export class HangboardingRepository {
             a.id::text AS activity_id,
             a.canonical_type::text AS canonical_type,
             NULLIF(member.raw->'hangTen'->>'planName', '') AS plan_name,
-            NULLIF(member.raw->'hangTen'->>'sessionId', '') AS session_id,
-            NULLIF(member.raw->'hangTen'->>'boardId', '') AS board_id,
             NULLIF(member.raw->'hangTen'->>'boardName', '') AS board_name,
             NULLIF(member.raw->'hangTen'->>'activitySegmentsError', '') AS segments_error,
             interval.id::text AS interval_id,
@@ -152,7 +190,14 @@ export class HangboardingRepository {
               WHEN interval.ended_at IS NOT NULL
               THEN EXTRACT(EPOCH FROM (interval.ended_at - interval.started_at))
               ELSE NULL
-            END AS duration_seconds
+            END AS duration_seconds,
+            CASE
+              WHEN member.hang_ten_activity_id IS NULL AND a.ended_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM (a.ended_at - a.started_at))
+              WHEN member.ended_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM (member.ended_at - member.started_at))
+              ELSE NULL
+            END AS activity_duration_seconds
           FROM fitness.v_activity AS a
           ${memberSource}
           LEFT JOIN fitness.activity_interval AS interval
@@ -167,38 +212,37 @@ export class HangboardingRepository {
     const firstRow = rows[0];
     if (firstRow?.canonical_type !== "hangboard") return null;
 
+    const intervals = [...rows]
+      .sort(
+        (left, right) =>
+          (left.interval_index ?? Number.MAX_SAFE_INTEGER) -
+          (right.interval_index ?? Number.MAX_SAFE_INTEGER),
+      )
+      .flatMap((row) => {
+        if (
+          row.interval_id === null ||
+          row.interval_index === null ||
+          row.interval_started_at === null
+        ) {
+          return [];
+        }
+        return [
+          {
+            label: row.label,
+            intervalType: row.interval_type,
+            durationSeconds: row.duration_seconds,
+          },
+        ];
+      });
+
     return {
       planName: firstRow.plan_name,
-      sessionId: firstRow.session_id,
-      boardId: firstRow.board_id,
       boardName: firstRow.board_name,
       segmentsError: firstRow.segments_error,
-      intervals: [...rows]
-        .sort(
-          (left, right) =>
-            (left.interval_index ?? Number.MAX_SAFE_INTEGER) -
-            (right.interval_index ?? Number.MAX_SAFE_INTEGER),
-        )
-        .flatMap((row) => {
-          if (
-            row.interval_id === null ||
-            row.interval_index === null ||
-            row.interval_started_at === null
-          ) {
-            return [];
-          }
-          return [
-            {
-              id: row.interval_id,
-              intervalIndex: row.interval_index,
-              label: row.label,
-              intervalType: row.interval_type,
-              startedAt: row.interval_started_at,
-              endedAt: row.interval_ended_at,
-              durationSeconds: row.duration_seconds,
-            },
-          ];
-        }),
+      summary: {
+        durationSeconds: firstRow.activity_duration_seconds,
+        ...summarizeDetailIntervals(intervals),
+      },
     };
   }
 
