@@ -26,6 +26,40 @@ describe("0072_canonical_clinical_records migration", () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${rawDatabase}` });
   });
 
+  it("bootstraps the canonical raw clinical table before querying it", async () => {
+    const bootstrapAnalyticsDatabase = `clinical_bootstrap_analytics_${suffix}`;
+    const bootstrapRawDatabase = `clinical_bootstrap_raw_${suffix}`;
+    await client.command({ query: `CREATE DATABASE ${bootstrapAnalyticsDatabase}` });
+    await client.command({ query: `CREATE DATABASE ${bootstrapRawDatabase}` });
+    await client.command({
+      query: `CREATE TABLE ${bootstrapAnalyticsDatabase}.provider_change_state (
+        user_id UUID,
+        provider_id String,
+        changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
+      ) ENGINE = AggregatingMergeTree
+      ORDER BY (user_id, provider_id)`,
+    });
+
+    for (const migrationStatement of createMigration().statements) {
+      await client.command({
+        query: migrationStatement
+          .replaceAll("analytics.", `${bootstrapAnalyticsDatabase}.`)
+          .replaceAll("postgres_fitness.", `${bootstrapRawDatabase}.`),
+      });
+    }
+
+    const result = await client.query({
+      query: `SELECT name FROM system.tables
+        WHERE database = {database:String} AND name = 'clinical_record'`,
+      query_params: { database: bootstrapRawDatabase },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ name: "clinical_record" }]);
+
+    await client.command({ query: `DROP DATABASE IF EXISTS ${bootstrapAnalyticsDatabase}` });
+    await client.command({ query: `DROP DATABASE IF EXISTS ${bootstrapRawDatabase}` });
+  });
+
   it("upgrades a deployed legacy provider-stats table and queues canonical recounts", async () => {
     const legacyUserId = randomUUID();
     const clinicalUserId = randomUUID();

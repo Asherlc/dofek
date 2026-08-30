@@ -1,5 +1,18 @@
 import { buildProviderStatsTableSql } from "../clickhouse-provider-stats.ts";
+import { buildPostgresFitnessRawTableStatements } from "../clickhouse-raw-tables.ts";
 import type { ClickHouseMigration } from "./types.ts";
+
+const clinicalRecordTablePrefix = "CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (";
+
+function buildClinicalRecordRawTableStatement(): string {
+  const statement = buildPostgresFitnessRawTableStatements().find((candidate) =>
+    candidate.startsWith(clinicalRecordTablePrefix),
+  );
+  if (!statement) {
+    throw new Error(`Missing ClickHouse clinical record definition: ${clinicalRecordTablePrefix}`);
+  }
+  return statement;
+}
 
 export function createMigration(): ClickHouseMigration {
   return {
@@ -7,6 +20,7 @@ export function createMigration(): ClickHouseMigration {
     statements: [
       "DROP VIEW IF EXISTS analytics.provider_change_from_lab_panel",
       "DROP VIEW IF EXISTS analytics.provider_change_from_lab_result",
+      buildClinicalRecordRawTableStatement(),
       buildProviderStatsTableSql(),
       "ALTER TABLE analytics.provider_stats ADD COLUMN IF NOT EXISTS clinical_records UInt64 AFTER nutrition_daily",
       "ALTER TABLE analytics.provider_stats DROP COLUMN IF EXISTS lab_panels",
