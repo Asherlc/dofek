@@ -371,7 +371,7 @@ describe("Hangboarding activity router integration", () => {
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, label, interval_type, started_at, ended_at
           ) VALUES (
-            ${activityId}::uuid, 0, 'Step 1: Work', 'work',
+            ${activityId}::uuid, 0, 'Step 1: 19 mm edge', 'work',
             '2026-08-08T14:00:00Z'::timestamptz, '2026-08-08T14:00:07Z'::timestamptz
           )`,
     );

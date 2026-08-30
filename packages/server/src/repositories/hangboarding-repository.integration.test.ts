@@ -109,7 +109,7 @@ describe("HangboardingRepository integration", () => {
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, label, interval_type, started_at, ended_at
           ) VALUES
-          (${firstActivityId}::uuid, 0, 'Step 1: Work', 'work',
+          (${firstActivityId}::uuid, 0, 'Step 1: 19 mm edge', 'work',
             CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '7 seconds'),
           (${firstActivityId}::uuid, 1, 'Step 1: Rest', 'rest',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '7 seconds',
