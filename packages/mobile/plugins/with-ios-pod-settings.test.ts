@@ -12,7 +12,7 @@ afterEach(async () => {
   );
 });
 
-test("keeps the Sentry XCFramework enabled while applying the ExpoModulesCore workaround", async () => {
+test("configures RNSentry to import its XCFramework while applying the ExpoModulesCore workaround", async () => {
   const platformProjectRoot = await mkdtemp(path.join(tmpdir(), "dofek-podfile-"));
   temporaryDirectories.push(platformProjectRoot);
   const podfilePath = path.join(platformProjectRoot, "Podfile");
@@ -28,5 +28,9 @@ test("keeps the Sentry XCFramework enabled while applying the ExpoModulesCore wo
 
   const podfile = await readFile(podfilePath, "utf-8");
   expect(podfile).not.toContain("SENTRY_USE_XCFRAMEWORK");
+  expect(podfile).toContain("if target.name == 'RNSentry'");
+  expect(podfile).toContain(
+    "config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'",
+  );
   expect(podfile).toContain("[with-ios-pod-settings] ExpoModulesCore return-type workaround");
 });

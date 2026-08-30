@@ -2,7 +2,8 @@
  * Expo config plugin that applies Dofek's generated Podfile settings.
  *
  * Xcode 26+ treats ExpoModulesCore Worklets return-type warnings as errors in
- * EXJavaScriptSerializable.mm. Downgrade that warning until upstream resolves it.
+ * EXJavaScriptSerializable.mm. It also rejects Sentry XCFramework headers as
+ * non-modular when compiling RNSentry. Scope each setting to its affected pod.
  */
 const { withDangerousMod } = require("expo/config-plugins");
 const fs = require("node:fs");
@@ -24,6 +25,11 @@ const POST_INSTALL_SNIPPET = [
   "            flags << '-Wno-error=return-type'",
   "          end",
   "          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = flags",
+  "        end",
+  "      end",
+  "      if target.name == 'RNSentry'",
+  "        target.build_configurations.each do |config|",
+  "          config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'",
   "        end",
   "      end",
   "    end",

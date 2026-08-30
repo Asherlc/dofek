@@ -24277,3 +24277,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the rerun iOS and watchOS jobs pass;
   investigate the local `@bacons/apple-targets`/`chalk` prebuild incompatibility
   only if it reproduces in hosted CI.
+
+## 2026-08-30 — PR 2575 iOS archive rejected Sentry XCFramework headers
+
+- **Status:** Fixed in source; hosted iOS-build validation is pending.
+- **Symptoms / user impact:** The rerun passed watchOS, CocoaPods installation,
+  Metro, mobile tests, and all completed non-E2E checks, but its iOS native
+  archive failed and keeps the mobile build gate red.
+- **Evidence:** The exact failed step is
+  [`Archive (Release, no signing)`](https://github.com/Asherlc/dofek/actions/runs/33289320658/job/99198139105),
+  which exited with code 65 after CocoaPods completed. Its first fatal line was
+  `Sentry.h:10:13: error: include of non-modular header inside framework module
+  'Sentry'`, emitted while `RNSentry` imported the Sentry XCFramework.
+- **Root cause / fix:** Applied
+  `CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES=YES` only to the
+  generated `RNSentry` pod target. The setting directly permits the
+  XCFramework's private-header imports without restoring the unsupported
+  source-built Sentry configuration.
+- **Validation:** The Podfile-plugin regression test passes, as do mobile
+  typecheck and Biome.
+- **Remaining risk / follow-up:** Confirm the rerun iOS archive passes.
