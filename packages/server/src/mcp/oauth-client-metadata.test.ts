@@ -153,6 +153,21 @@ describe("parseCimdClientMetadata", () => {
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
   });
 
+  it("rejects a successful response without JSON content type", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(
+      (_options: unknown, callback: (response: EventEmitter) => void) => {
+        const request = Object.assign(new EventEmitter(), { end: () => {} });
+        request.end = () =>
+          callback(
+            Object.assign(new EventEmitter(), { headers: {}, resume: vi.fn(), statusCode: 200 }),
+          );
+        return request;
+      },
+    );
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+  });
+
   it("rejects HTTPS transport errors", async () => {
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(() => {
