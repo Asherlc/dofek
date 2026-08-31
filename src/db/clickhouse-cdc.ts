@@ -166,6 +166,7 @@ const rawAnalyticsMirrorTableMappings: Record<
     "health_event",
     "clinical_record",
     "journal_entry",
+    "processing_flow_marker_provider_inventory",
   ],
   dofek_sensor_priority_raw_analytics: ["sensor_provider_priority", "sensor_device_priority"],
 };

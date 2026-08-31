@@ -1283,6 +1283,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.clinical_record",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.journal_entry",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker_provider_inventory",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",
     ]);
