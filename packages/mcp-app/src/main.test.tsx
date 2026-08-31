@@ -35,7 +35,7 @@ describe("ExplorerApp", () => {
 
     act(() => createdApp.ontoolresult?.({ structuredContent: {} }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert").textContent).toBe(
       "Dofek Explorer received an invalid response from the server. Please try again.",
     );
 
