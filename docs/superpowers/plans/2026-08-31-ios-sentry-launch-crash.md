@@ -2,8 +2,6 @@
 
 <!-- cspell:ignore xcframework XCFRAMEWORK -->
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Ship an iOS build that does not call the crashing deprecated Sentry native startup API.
 
 **Architecture:** Upgrade `@sentry/react-native` to the current supported SDK, which replaces the deprecated private iOS startup API and provides Sentry Cocoa 9.24.0. The iOS app and its Expo native modules use the SDK's single prebuilt XCFramework through `RNSentry`; the separate watch executable receives the same Sentry Cocoa release through Swift Package Manager.
@@ -85,12 +83,12 @@ Use XcodeBuildMCP with the generated workspace, `Dofek` scheme, and an isolated 
 
 - [x] **Step 2: Run focused mobile typecheck and relevant native module tests**
 
-Run `pnpm --dir packages/mobile typecheck`, `pnpm test:mobile -- packages/mobile/modules/watch-motion/index.test.ts`, and the HealthKit focused mobile tests.
+Run `pnpm --dir packages/mobile typecheck`, `pnpm test:mobile -- packages/mobile/modules/watch-motion/index.test.ts`, and the HealthKit-focused mobile tests.
 
 - [x] **Step 3: Record the incident evidence**
 
 Append the crash signature, root cause, framework migration, verification output, remaining physical-device risk, and TestFlight follow-up to the production incident baseline.
 
-- [ ] **Step 4: Commit and push**
+- [ ] **Step 4: Request approval before commit and push**
 
-Commit the focused native migration after all validation passes, then push the active branch to its configured remote.
+After validation passes, request operator or workflow approval before committing the focused native migration and pushing the active branch to its configured remote.
