@@ -11,7 +11,7 @@ export function TermsPage() {
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-3">1. Acceptance of Terms</h2>
             <p>
-              By accessing or using Dofek ("the platform", "we", "our"), you agree to be bound by
+              Dofek is operated by Asher Cohen. By accessing or using Dofek ("the platform", "we", "our"), you agree to be bound by
               these Terms of Service. If you do not agree to these terms, do not use the platform.
             </p>
           </section>
@@ -127,7 +127,7 @@ export function TermsPage() {
               9. Limitation of Liability
             </h2>
             <p>
-              To the fullest extent permitted by law, Dofek and its operators shall not be liable
+              To the fullest extent permitted by law, Dofek and Asher Cohen shall not be liable
               for any indirect, incidental, special, consequential, or punitive damages, or any loss
               of data, use, or profits, arising out of or related to your use of the platform.
             </p>
@@ -153,7 +153,7 @@ export function TermsPage() {
 
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-3">12. Contact</h2>
-            <p>For questions about these terms, contact the administrator of this instance.</p>
+            <p>For questions about these terms, use <a href="/support" className="text-accent underline">Dofek support</a>.</p>
           </section>
         </div>
 

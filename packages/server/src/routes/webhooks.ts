@@ -338,7 +338,7 @@ export async function registerWebhookForProvider(
   userId: string,
 ): Promise<void> {
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
-  const publicUrl = process.env.PUBLIC_URL ?? "https://dofek.asherlc.com";
+const publicUrl = process.env.PUBLIC_URL ?? "https://dofek.fit";
   const callbackUrl = `${publicUrl}/api/webhooks/${provider.id}`;
 
   // For app-level webhooks, check if we already have an active subscription

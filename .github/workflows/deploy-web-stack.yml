@@ -39,7 +39,7 @@ on:
         description: "Public app URL"
         required: false
         type: string
-        default: https://dofek.asherlc.com
+        default: https://dofek.fit
       web_host_rule:
         description: "Traefik Host() rule for the app router"
         required: false
@@ -210,7 +210,7 @@ jobs:
       - name: Export deploy env for stack interpolation
         env:
           INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
-          PUBLIC_URL_INPUT: ${{ inputs.public_url || 'https://dofek.asherlc.com' }}
+          PUBLIC_URL_INPUT: ${{ inputs.public_url || 'https://dofek.fit' }}
           WEB_HOST_RULE_INPUT: ${{ inputs.web_host_rule }}
           OTA_BASE_URL_INPUT: ${{ inputs.ota_base_url || 'https://ota.dofek.asherlc.com' }}
           OTA_HOST_RULE_INPUT: ${{ inputs.ota_host_rule }}
