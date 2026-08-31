@@ -58,6 +58,8 @@ ARG DEPENDENCY_CACHE_BUST
 COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY packages/server/package.json ./packages/server/
+COPY packages/mcp-app/package.json ./packages/mcp-app/
+COPY packages/mcp-contracts/package.json ./packages/mcp-contracts/
 COPY packages/web/package.json ./packages/web/
 COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
 COPY packages/eight-sleep/package.json ./packages/eight-sleep/
@@ -110,6 +112,7 @@ RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
     && REQUIRE_SENTRY_AUTH_TOKEN="$REQUIRE_SENTRY_RELEASE_UPLOAD" \
     && export SENTRY_AUTH_TOKEN REQUIRE_SENTRY_AUTH_TOKEN \
+    && pnpm --filter dofek-mcp-app build \
     && cd packages/web && pnpm run build
 
 # ── Server image (Express API + sync runner) ────────────────────────────
@@ -136,6 +139,9 @@ COPY --from=server-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=server-deps --chown=node:node /app/packages ./packages
 COPY --from=source --chown=node:node /app/packages/server/src ./packages/server/src
 COPY --from=source --chown=node:node /app/packages/server/package.json ./packages/server/
+COPY --from=source --chown=node:node /app/packages/mcp-contracts/src ./packages/mcp-contracts/src
+COPY --from=source --chown=node:node /app/packages/mcp-contracts/package.json ./packages/mcp-contracts/
+COPY --from=client-build --chown=node:node /app/packages/mcp-app/dist ./packages/mcp-app/dist
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/package.json ./packages/whoop-whoop/
 COPY --from=source --chown=node:node /app/packages/eight-sleep/src ./packages/eight-sleep/src

@@ -46,6 +46,7 @@ import {
 } from "../routers/sync-helpers.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 import { HealthExplorerService, type HealthTrendRow } from "./health-explorer-service.ts";
+import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
 import { jsonToolResult } from "./tool-result.ts";
 
 export interface DofekMcpContext {
@@ -290,6 +291,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     name: "dofek",
     version: "0.1.0",
   });
+  registerDofekAppResources(server);
 
   server.registerTool(
     "get_daily_health_summary",
@@ -350,6 +352,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       description: "Return a server-computed health analytics snapshot for the Dofek Explorer.",
       inputSchema: healthExplorerInputSchema,
       annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: healthExplorerResourceUri } },
     },
     async (input) => {
       requireMcpScope(context.scopes, "health:read");
