@@ -63,6 +63,7 @@ import { createDeveloperClientsRouter } from "./routes/developer-clients.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createExternalWriteApiRouter } from "./routes/external-write-api.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
+import { createOpenAiAppsChallengeRouter } from "./routes/openai-apps-challenge.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import type { Context } from "./trpc.ts";
@@ -101,6 +102,7 @@ export interface CreateAppOptions {
   accountErasureRestoreLedger?: AccountErasureRestoreLedger;
   metricStreamPublisher?: MetricStreamEventPublisher;
   mcpAuthRateLimit?: McpAuthRateLimitOptions;
+  openAiAppsChallengeToken?: string;
 }
 
 export function createApp(
@@ -112,6 +114,12 @@ export function createApp(
   const app = express();
   const accountErasureRestoreLedger =
     options.accountErasureRestoreLedger ?? createLazyAccountErasureRestoreLedger();
+  const openAiAppsChallengeToken = (
+    options.openAiAppsChallengeToken ?? process.env.OPENAI_APPS_CHALLENGE_TOKEN
+  )?.trim();
+  if (!openAiAppsChallengeToken) {
+    throw new Error("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
+  }
   app.set("trust proxy", 1);
   const limitedSensorStore = new LimitedActivitySensorStore(sensorStore);
 
@@ -124,6 +132,8 @@ export function createApp(
     const result = await checkReadiness({ db, sensorStore });
     res.status(result.status === "ok" ? 200 : 503).json(result);
   });
+
+  app.use("/.well-known", createOpenAiAppsChallengeRouter(openAiAppsChallengeToken));
 
   setupRoutes(app, db, limitedSensorStore, options, accountErasureRestoreLedger);
   // Catch malformed percent-encoded URL params (e.g. %C0) before Sentry sees them.
@@ -364,6 +374,10 @@ function setupRoutes(
 /** Validate env, create app, and start listening. */
 export async function main() {
   initSentry();
+  const openAiAppsChallengeToken = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim();
+  if (!openAiAppsChallengeToken) {
+    throw new Error("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
+  }
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");
@@ -389,6 +403,7 @@ export async function main() {
   const app = createApp(db, sensorStore, {
     accountErasureRestoreLedger,
     metricStreamPublisher,
+    openAiAppsChallengeToken,
   });
 
   app.listen(PORT, () => {

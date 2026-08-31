@@ -5,7 +5,12 @@ describe("parseHealthExplorerResult", () => {
   it("returns a valid Explorer snapshot", () => {
     expect(
       parseHealthExplorerResult({
-        range: { start_date: "2026-08-01", end_date: "2026-08-01", granularity: "daily" },
+        range: {
+          start_date: "2026-08-01",
+          end_date: "2026-08-01",
+          granularity: "daily",
+          timezone: "America/Los_Angeles",
+        },
         series: [
           {
             metric: "hrv",

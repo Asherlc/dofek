@@ -50,6 +50,7 @@ const sharedTestConfig = {
     CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
     CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
     DEPLOY_ENVIRONMENT: "test",
+    OPENAI_APPS_CHALLENGE_TOKEN: "test-openai-apps-challenge-token",
     PUBLIC_URL: "https://app.example.test",
   },
   setupFiles: [path.resolve(dirname, "packages/web/test-setup.ts")],

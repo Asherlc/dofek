@@ -24,7 +24,7 @@
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@radix-ui/react-dialog": "1.1.23",
-    "@sentry/react": "10.69.0",
+    "@sentry/react": "10.72.0",
     "@tanstack/react-query": "5.101.2",
     "@tanstack/react-router": "1.170.17",
     "@tanstack/react-table": "8.21.3",
