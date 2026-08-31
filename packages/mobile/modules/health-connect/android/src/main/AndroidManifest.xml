@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.health.READ_STEPS" />
+  <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+  <uses-permission android:name="android.permission.health.READ_FLOORS_CLIMBED" />
+  <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+  <uses-permission android:name="android.permission.health.READ_SLEEP" />
+  <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+  <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
+  <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+  <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+  <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+  <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+  <uses-permission android:name="android.permission.health.READ_RESPIRATORY_RATE" />
+  <uses-permission android:name="android.permission.health.READ_VO2_MAX" />
+  <uses-permission android:name="android.permission.health.READ_BASAL_BODY_TEMPERATURE" />
+</manifest>
