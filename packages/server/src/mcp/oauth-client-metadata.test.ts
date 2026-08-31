@@ -110,4 +110,14 @@ describe("parseCimdClientMetadata", () => {
     await expect(resolver.getClient(clientId)).resolves.toBeUndefined();
     expect(mocks.request).not.toHaveBeenCalled();
   });
+
+  it.each(["not a URL", "http://claude.ai/metadata.json", "https://claude.ai/"])(
+    "does not resolve an invalid CIMD client ID: %s",
+    async (invalidClientId) => {
+      await expect(
+        new McpOAuthClientMetadataResolver().getClient(invalidClientId),
+      ).resolves.toBeUndefined();
+      expect(mocks.lookup).not.toHaveBeenCalled();
+    },
+  );
 });
