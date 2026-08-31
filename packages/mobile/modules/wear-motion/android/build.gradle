@@ -1,0 +1,22 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+group = 'expo.modules.wearmotion'
+version = '1.0.0'
+
+android {
+  namespace 'com.dofek.wearmotion'
+  compileSdk 36
+
+  defaultConfig {
+    minSdk 26
+    targetSdk 36
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+  implementation 'androidx.room:room-runtime:2.8.4'
+  implementation 'com.google.android.gms:play-services-wearable:20.0.1'
+  implementation 'io.sentry:sentry-android:8.43.0'
+}
