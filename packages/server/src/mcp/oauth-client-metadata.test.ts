@@ -111,6 +111,12 @@ describe("parseCimdClientMetadata", () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
+  it("rejects an empty DNS result without opening a request", async () => {
+    mocks.lookup.mockResolvedValue([]);
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid HTTPS response", async () => {
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(
