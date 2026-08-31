@@ -1,6 +1,6 @@
 {
   "name": "@dofek/zwift",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Unofficial Zwift API client using reverse-engineered Keycloak authentication",
   "type": "module",
   "license": "MIT",
