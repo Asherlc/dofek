@@ -49,6 +49,7 @@ function addWatchSentryPackage(project) {
       repositoryURL: PACKAGE_URL,
       requirement: { kind: "exactVersion", version: PACKAGE_VERSION },
     });
+  remotePackage.props.requirement = { kind: "exactVersion", version: PACKAGE_VERSION };
 
   pbxProject.props.packageReferences ??= [];
   if (!pbxProject.props.packageReferences.includes(remotePackage)) {
