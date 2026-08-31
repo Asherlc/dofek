@@ -1,5 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -37,16 +38,22 @@ export function McpTokensPanel() {
     meta: locallyReportedErrorMeta,
   });
   const [name, setName] = useState("Codex");
-  const [expiresAt, setExpiresAt] = useState("");
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
     () => new Set(mcpScopeValues),
   );
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const mcpEndpoint =
-    typeof window === "undefined" ? "/api/mcp" : `${window.location.origin}/api/mcp`;
+  const [mcpEndpoint, setMcpEndpoint] = useState("/api/mcp");
+  const [isSecureOrigin, setIsSecureOrigin] = useState<boolean | null>(null);
   const tokenForInstall = createdToken ?? "dofek_mcp_your_token";
+
+  useEffect(() => {
+    const secure = window.location.protocol === "https:";
+    setIsSecureOrigin(secure);
+    if (secure) setMcpEndpoint(`${window.location.origin}/api/mcp`);
+  }, []);
 
   const activeScopeCount = selectedScopes.size;
   const canCreate =
@@ -73,7 +80,7 @@ export function McpTokensPanel() {
       const result = await createTokenMutation.mutateAsync({
         name: name.trim(),
         scopes,
-        expiresAt: expiresAt ? new Date(`${expiresAt}T00:00:00.000Z`).toISOString() : null,
+        expiresAt: expiresAt ? `${expiresAt}T23:59:59.999Z` : null,
       });
       setCreatedToken(result.token);
       await trpcUtils.mcp.listTokens.invalidate();
@@ -133,18 +140,20 @@ export function McpTokensPanel() {
   };
 
   if (tokens.isLoading) {
-    return <p className="text-sm text-subtle">Loading MCP tokens...</p>;
+    return <QueryStatePanel variant="loading" message="Loading MCP tokens..." height={96} />;
   }
 
   if (tokens.error) {
-    return <p className="text-sm text-red-400">{tokens.error.message}</p>;
+    return <QueryStatePanel error={tokens.error} contextLabel="MCP tokens" height={96} />;
   }
 
   return (
     <div className="space-y-5">
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div>
-          <p className="text-sm font-medium text-foreground">Connect with OAuth (Recommended)</p>
+          <p className="text-sm font-medium text-foreground">
+            Connect with Model Context Protocol (MCP) using OAuth (Open Authorization) (Recommended)
+          </p>
           <p className="mt-1 text-sm text-subtle">
             For clients that support OAuth auto-discovery (Claude, ChatGPT, and others). Paste the
             URL and sign in when prompted.
@@ -162,18 +171,19 @@ export function McpTokensPanel() {
         </p>
       </div>
 
-      <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
-        <div>
-          <p className="text-sm font-medium text-foreground">Connect with a manual token</p>
-          <p className="mt-1 text-sm text-subtle">
-            For clients that support custom HTTP headers, such as Codex. Create a token below, then
-            configure your client.
-          </p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-subtle">Client settings JSON</p>
-          <pre className="overflow-x-auto rounded bg-surface p-3 text-xs text-foreground">
-            <code>{`{
+      {isSecureOrigin !== false ? (
+        <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">Connect with a manual token</p>
+            <p className="mt-1 text-sm text-subtle">
+              For clients that support custom HTTP headers, such as Codex. Create a token below,
+              then configure your client.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-subtle">Client settings JSON</p>
+            <pre className="overflow-x-auto rounded bg-surface p-3 text-xs text-foreground">
+              <code>{`{
   "mcpServers": {
     "dofek": {
       "url": "${mcpEndpoint}",
@@ -183,12 +193,13 @@ export function McpTokensPanel() {
     }
   }
 }`}</code>
-          </pre>
+            </pre>
+          </div>
+          <p className="text-xs text-dim">
+            Some clients call this screen Settings, MCP Servers, or Connectors.
+          </p>
         </div>
-        <p className="text-xs text-dim">
-          Some clients call this screen Settings, MCP Servers, or Connectors.
-        </p>
-      </div>
+      ) : null}
 
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
@@ -205,8 +216,8 @@ export function McpTokensPanel() {
             <span className="text-xs font-medium text-subtle">Expires</span>
             <input
               type="date"
-              value={expiresAt}
-              onChange={(event) => setExpiresAt(event.target.value)}
+              value={expiresAt ?? ""}
+              onChange={(event) => setExpiresAt(event.target.value || null)}
               className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
           </label>
@@ -269,7 +280,7 @@ export function McpTokensPanel() {
 
       <div className="space-y-2">
         {(tokens.data ?? []).length === 0 ? (
-          <p className="text-sm text-subtle">No MCP tokens yet.</p>
+          <QueryStatePanel variant="empty" message="No MCP tokens yet." height={96} />
         ) : (
           <ul className="space-y-2">
             {(tokens.data ?? []).map((token) => {

@@ -110,15 +110,15 @@ describe("McpTokensPanel", () => {
   it("shows OAuth and manual token connection instructions", () => {
     render(<McpTokensPanel />);
 
-    expect(screen.getByText("Connect with OAuth (Recommended)")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Connect with Model Context Protocol (MCP) using OAuth (Open Authorization) (Recommended)",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText(/For clients that support OAuth auto-discovery/)).toBeTruthy();
     expect(screen.getByText("Remote URL")).toBeTruthy();
 
-    expect(screen.getByText("Connect with a manual token")).toBeTruthy();
-    expect(screen.getByText(/For clients that support custom HTTP headers/)).toBeTruthy();
-    expect(screen.getByText("Client settings JSON")).toBeTruthy();
-    expect(screen.getByText(/"mcpServers"/)).toBeTruthy();
-    expect(screen.getByText(/Bearer dofek_mcp_your_token/)).toBeTruthy();
+    expect(screen.queryByText("Connect with a manual token")).toBeNull();
   });
 
   it("creates a token and shows the raw value once", async () => {
@@ -149,7 +149,6 @@ describe("McpTokensPanel", () => {
     });
     expect(await screen.findByDisplayValue("dofek_mcp_created")).toBeTruthy();
     expect(screen.getByText("Save this token now. It will not be shown again.")).toBeTruthy();
-    expect(screen.getByText(/Bearer dofek_mcp_created/)).toBeTruthy();
     expect(invalidateMcp).toHaveBeenCalled();
   });
 
@@ -212,7 +211,7 @@ describe("McpTokensPanel", () => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
         scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
-        expiresAt: "2026-06-01T00:00:00.000Z",
+        expiresAt: "2026-06-01T23:59:59.999Z",
       });
     });
   });
@@ -381,7 +380,6 @@ describe("McpTokensPanel", () => {
       });
     });
     expect(await screen.findByDisplayValue("dofek_mcp_rotated")).toBeTruthy();
-    expect(screen.getByText(/Bearer dofek_mcp_rotated/)).toBeTruthy();
     expect(invalidateMcp).toHaveBeenCalled();
   });
 

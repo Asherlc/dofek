@@ -372,7 +372,10 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "advanced" ? (
-          <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
+          <PageSection
+            title="Model Context Protocol (MCP)"
+            subtitle="Connect remote MCP clients and manage access tokens"
+          >
             <McpTokensPanel />
           </PageSection>
         ) : null}

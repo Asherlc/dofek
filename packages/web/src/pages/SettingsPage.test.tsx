@@ -253,6 +253,19 @@ describe("SettingsPage categories", () => {
     expect(screen.getByText("Data Export")).toBeTruthy();
   });
 
+  it("finds Model Context Protocol from MCP search terms", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "MCP" },
+    });
+
+    expect(screen.getByRole("tab", { name: "Advanced" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Model Context Protocol (MCP)" })).toBeTruthy();
+  });
+
   it("shows an empty state when no category matches the search", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
@@ -312,7 +325,7 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("heading", { name: "MCP" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Model Context Protocol (MCP)" })).toBeTruthy();
     expect(screen.getByText("Dashboard Layout")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Data Sources" })).toBeNull();
   });
