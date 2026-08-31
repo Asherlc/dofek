@@ -176,8 +176,8 @@ Submit Dofek's remote connector with the canonical endpoint, OAuth flow,
 publisher identity, privacy/terms/support information, and a clear statement
 that it provides user-authorized personal health-data analysis. It must satisfy
 the Connector Directory policy and review process.
-[Anthropic MCP Directory FAQ](https://support.anthropic.com/en/articles/11596036-anthropic-mcp-directory-faq)
-[Anthropic MCP Directory policy](https://support.anthropic.com/en/articles/11697096-anthropic-mcp-directory-policy)
+[Anthropic MCP Directory FAQ](https://support.claude.com/en/articles/11596036-anthropic-mcp-directory-faq)
+[Anthropic MCP Directory policy](https://support.claude.com/en/articles/11697096-anthropic-mcp-directory-policy)
 
 ### Official MCP Registry
 
@@ -204,6 +204,7 @@ It contains no Dofek server, frontend, database, product, or customer-data
 source code. The repository is validated, made public, and submitted to
 Cursor's Marketplace after the canonical endpoint is live.
 [Cursor plugins reference](https://cursor.com/docs/reference/plugins)
+[Cursor Marketplace FAQ](https://cursor.com/docs/plugins)
 [Cursor Marketplace publisher terms](https://cursor.com/marketplace-publisher-terms)
 
 ### First-party installation documentation

@@ -1,13 +1,15 @@
 import type { HealthExplorerSnapshot, HealthMetric } from "@dofek/mcp-contracts/health-explorer";
 import { useApp } from "@modelcontextprotocol/ext-apps/react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { HealthExplorer } from "./health-explorer.tsx";
 import { parseHealthExplorerResult } from "./health-explorer-result.ts";
+import { createMetricRequestHandler } from "./metric-request.ts";
 
 function ExplorerApp() {
   const [snapshot, setSnapshot] = useState<HealthExplorerSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const metricRequestHandler = useRef(createMetricRequestHandler({ setError, setSnapshot }));
   const {
     app,
     isConnected,
@@ -32,22 +34,7 @@ function ExplorerApp() {
   const onMetricChange = useCallback(
     async (metric: HealthMetric) => {
       if (!app || !snapshot) return;
-      try {
-        const result = await app.callServerTool({
-          name: "render_health_explorer",
-          arguments: { ...snapshot.range, metrics: [metric] },
-        });
-        const updatedSnapshot = parseHealthExplorerResult(result.structuredContent);
-        if (!updatedSnapshot) {
-          setError(
-            "Dofek Explorer received an invalid response from the server. Please try again.",
-          );
-          return;
-        }
-        setSnapshot(updatedSnapshot);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Unable to update Dofek Explorer.");
-      }
+      await metricRequestHandler.current(app, snapshot, metric);
     },
     [app, snapshot],
   );

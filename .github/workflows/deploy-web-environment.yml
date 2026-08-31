@@ -46,7 +46,7 @@ on:
         description: "Public app URL"
         required: false
         type: string
-        default: https://dofek.fit
+        default: ""
       web_host_rule:
         description: "Traefik Host() rule for the app router"
         required: false
