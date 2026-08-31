@@ -567,6 +567,7 @@ vi.mock("./modules/health-kit", async () => {
     querySleepSamples: vi.fn(() => Promise.resolve([])),
     queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
     deleteDietarySamples: vi.fn(() => Promise.resolve(0)),
+    writeDietarySamples: vi.fn(() => Promise.resolve(true)),
     purgeAccountState: vi.fn(() => Promise.resolve(true)),
   };
 });

@@ -1,7 +1,7 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { deleteDietarySamples, writeDietarySamples } from "../modules/health-kit";
+import { deleteDietarySamples, writeDietarySamples } from "./platform-native/health";
 import { AppleHealthAuthorizationService } from "./apple-health-provider";
 import { syncDofekFoodToHealthKit } from "./health-kit-food-writeback";
 import { invalidateSyncedHealthData } from "./invalidate-synced-health-data";

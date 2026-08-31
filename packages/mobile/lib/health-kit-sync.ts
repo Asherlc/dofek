@@ -4,7 +4,7 @@ import type {
   RouteLocation,
   SleepSample,
   WorkoutSample,
-} from "../modules/health-kit";
+} from "./platform-native/health";
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   isBackgroundHealthKitTransientNetworkError,

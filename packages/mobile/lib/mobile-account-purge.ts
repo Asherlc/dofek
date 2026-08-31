@@ -5,8 +5,8 @@ import { purgeAccountState as purgeCoreMotionAccountState } from "../modules/cor
 import {
   deleteDietarySamples,
   purgeAccountState as purgeHealthKitAccountState,
-} from "../modules/health-kit";
-import { purgeAccountState as purgeWatchMotionAccountState } from "../modules/watch-motion";
+} from "./platform-native/health";
+import { purgeAccountState as purgeWatchMotionAccountState } from "./platform-native/watch";
 import { purgeAccountState as purgeWhoopBleAccountState } from "../modules/whoop-ble";
 import { clearMobileAccountErasurePreparation } from "./account-erasure-storage";
 import { clearSessionToken } from "./auth";

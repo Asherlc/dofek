@@ -43,7 +43,7 @@ import {
   queryRecordedData,
   startRecording,
 } from "../modules/core-motion";
-import { isWatchAppInstalled, isWatchPaired, requestWatchSync } from "../modules/watch-motion";
+import { isWatchAppInstalled, isWatchPaired, requestWatchSync } from "../lib/platform-native/watch";
 import {
   confirmSamplesDrain as confirmWhoopSamplesDrain,
   findWhoop,

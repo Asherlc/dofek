@@ -1,4 +1,4 @@
-import { deleteWatchFile, getPendingWatchFileNames, readWatchFile } from "../modules/watch-motion";
+import { deleteWatchFile, getPendingWatchFileNames, readWatchFile } from "./platform-native/watch";
 import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";

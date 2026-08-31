@@ -5,7 +5,7 @@ import {
   setObserverSyncInProgress,
   setupBackgroundObservers,
   teardownBackgroundObservers,
-} from "../modules/health-kit";
+} from "./platform-native/health";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
 import {
   isBackgroundHealthKitTransientNetworkError,

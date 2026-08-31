@@ -4,7 +4,7 @@ import {
   isWatchAppInstalled,
   isWatchPaired,
   requestWatchRecording,
-} from "../modules/watch-motion";
+} from "./platform-native/watch";
 import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";
 import {

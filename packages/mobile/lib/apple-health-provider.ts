@@ -11,7 +11,7 @@ import {
   queryWorkoutRoutes,
   queryWorkouts,
   requestPermissions,
-} from "../modules/health-kit";
+} from "./platform-native/health";
 import { loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   type HealthKitAdapter,

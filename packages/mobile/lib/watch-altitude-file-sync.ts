@@ -2,7 +2,7 @@ import {
   deleteWatchFile,
   getPendingWatchAltitudeFileNames,
   readWatchAltitudeFile,
-} from "../modules/watch-motion";
+} from "./platform-native/watch";
 import {
   type WatchAltitudeSample,
   WatchAltitudeSampleSchema,

@@ -35,7 +35,7 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
-import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
+import { deleteDietarySamples, writeDietarySamples } from "../../lib/platform-native/health";
 import { colors } from "../../theme";
 import {
   CredentialAuthModal,
