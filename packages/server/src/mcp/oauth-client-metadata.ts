@@ -12,6 +12,7 @@ const CIMD_CACHE_MAX_AGE_MS = 86_400_000;
 const CIMD_DEFAULT_CACHE_AGE_MS = 300_000;
 const CIMD_FETCH_TIMEOUT_MS = 5_000;
 const CIMD_MAX_RESPONSE_BYTES = 65_536;
+const CIMD_CACHE_MAX_ENTRIES = 100;
 
 class CimdMetadataError extends Error {}
 
@@ -59,12 +60,13 @@ async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: num
   if (!destination) throw new CimdMetadataError("CIMD host did not resolve");
 
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new CimdMetadataError("CIMD metadata request timed out")),
-      CIMD_FETCH_TIMEOUT_MS,
-    );
+    let clientRequest: ReturnType<typeof request>;
+    const timeout = setTimeout(() => {
+      clientRequest.destroy(new CimdMetadataError("CIMD metadata request timed out"));
+      reject(new CimdMetadataError("CIMD metadata request timed out"));
+    }, CIMD_FETCH_TIMEOUT_MS);
     const requestPath = `${url.pathname}${url.search}`;
-    const clientRequest = request(
+    clientRequest = request(
       {
         headers: { Accept: "application/json", Host: url.host },
         host: destination.address,
@@ -165,7 +167,15 @@ export class McpOAuthClientMetadataResolver {
     try {
       const { body, cacheAgeMs } = await fetchMetadata(new URL(clientId));
       const client = parseCimdClientMetadata(clientId, body);
-      this.#cache.set(clientId, { client, expiresAt: Date.now() + cacheAgeMs });
+      const now = Date.now();
+      for (const [key, entry] of this.#cache) {
+        if (entry.expiresAt <= now) this.#cache.delete(key);
+      }
+      if (this.#cache.size >= CIMD_CACHE_MAX_ENTRIES) {
+        const oldest = this.#cache.keys().next().value;
+        if (oldest) this.#cache.delete(oldest);
+      }
+      this.#cache.set(clientId, { client, expiresAt: now + cacheAgeMs });
       return client;
     } catch (error) {
       if (error instanceof CimdMetadataError) return undefined;
