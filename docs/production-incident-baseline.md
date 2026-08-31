@@ -23790,6 +23790,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Updated the direct mobile Sentry CLI dependency to `3.7.0`, pinned `browserslist` to current `4.28.8`, and tightened the existing compatible v6 `undici` override to `6.28.0`. No audit suppression, retry, timeout, or failure bypass was added.
 - **Validation:** A forced lockfile resolution and installed dependency check resolve `browserslist@4.28.8` and `undici@6.28.0`; mobile TypeScript and the focused Expo config test pass locally. The hosted Snyk test is the authoritative remaining validation.
 - **Remaining risk / follow-up:** Confirm the new Snyk run clears all five findings; revisit the override when Expo and the Sentry React Native dependency graph natively select fixed versions.
+
+## 2026-08-31 — iOS archive could not compile the watch-motion Expo module after Sentry migration
+
+- **Status:** Fixed in this workspace; the hosted archive rerun is pending.
+- **Symptoms / impact:** PR #2595's `Build Mobile / iOS Native Build` failed in `Archive (Release, no signing)`, which also failed the mobile build gate. The separate watchOS build passed.
+- **Evidence / root cause:** The first fatal compiler line was `WatchMotionModule.swift:2:8: error: no such module 'Sentry'`. `ExpoWatchMotion` is a CocoaPods Expo module and declares `RNSentry`, but the migration left it importing the standalone `Sentry` Swift module; the watch extension's SwiftPM dependency is not visible to a CocoaPods target.
+- **Fix / mitigation:** Changed the module to import its declared `RNSentry` dependency, which provides the app target's configured Sentry SDK without adding a second CocoaPods or SwiftPM distribution.
+- **Validation:** Expo prebuild completes with an ephemeral validation DSN and generates `ExpoWatchMotion` Swift settings containing the `RNSentry` module map and include path. The focused mobile config/plugin tests pass. This workstation's `xcodebuild` stops before compilation with `DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion`; the hosted archive is the authoritative compilation check.
+- **Remaining risk / follow-up:** Confirm the fresh CI iOS archive succeeds and verify physical-device cold launch on the resulting TestFlight build.
 ## 2026-08-27 — Provider cards temporarily reported no sync history
 
 - **Status:** Fixed in this workspace; deployment is pending.
