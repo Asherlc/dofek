@@ -6,12 +6,9 @@ export interface McpOAuthClientMetadataSource {
 }
 
 function isHostedClientMetadataUrl(clientId: string): boolean {
-  try {
-    const url = new URL(clientId);
-    return url.protocol === "https:" && url.pathname !== "/";
-  } catch {
-    return false;
-  }
+  if (!URL.canParse(clientId)) return false;
+  const url = new URL(clientId);
+  return url.protocol === "https:" && url.pathname !== "/";
 }
 
 export class McpOAuthClientResolver implements OAuthRegisteredClientsStore {

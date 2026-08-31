@@ -64,10 +64,13 @@ export function createMcpOAuthRouter(
   );
 
   const rateLimitOptions = { rateLimit };
-  const metadataRateLimit = rateLimit === false ? [] : [createRateLimiter(rateLimit)];
+  const metadataRateLimit = createRateLimiter({
+    ...rateLimit,
+    skip: rateLimit === false ? () => true : rateLimit?.skip,
+  });
   router.get(
     "/.well-known/oauth-authorization-server",
-    ...metadataRateLimit,
+    metadataRateLimit,
     (_request, response) => {
       response.json({
         ...createOAuthMetadata(oauthRouterOptions),

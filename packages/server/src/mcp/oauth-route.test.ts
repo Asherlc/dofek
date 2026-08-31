@@ -184,6 +184,18 @@ describe("createMcpOAuthRouter", () => {
       expect(second.status).toBe(429);
     });
 
+    it("does not rate limit authorization-server metadata when rate limiting is disabled", async () => {
+      app = await mount(false);
+
+      const responses = await Promise.all(
+        Array.from({ length: 6 }, () =>
+          fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`),
+        ),
+      );
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
+    });
+
     it("applies rate limiting to client registration when configured with a limit", async () => {
       app = await mount({ max: 1, windowMs: 60_000 });
 
