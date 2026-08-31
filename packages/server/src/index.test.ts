@@ -257,6 +257,32 @@ describe("createApp", () => {
     expect(res.status).toBe(404);
   });
 
+  it("rejects a whitespace-only OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", "   ");
+
+    try {
+      expect(() => createApp(createDatabaseFromEnv(), makeMockSensorStore())).toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rejects a missing OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", undefined);
+
+    try {
+      expect(() => createApp(createDatabaseFromEnv(), makeMockSensorStore())).toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("redacts sensitive query parameters in request logs", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     const app = createApp(createDatabaseFromEnv(), makeMockSensorStore());
@@ -480,6 +506,38 @@ describe("main", () => {
     mockReconcileAccountErasureRestoreIntents.mockResolvedValue({
       recoveredRequestIds: [],
     });
+  });
+
+  it("rejects a blank OpenAI Apps challenge token before initializing dependencies", async () => {
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", "   ");
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+      expect(mockValidateAccountErasureLedgerKeyring).not.toHaveBeenCalled();
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rejects a missing OpenAI Apps challenge token before initializing dependencies", async () => {
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", undefined);
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+      expect(mockValidateAccountErasureLedgerKeyring).not.toHaveBeenCalled();
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("does not initialize traffic dependencies when restore reconciliation fails", async () => {
