@@ -73,6 +73,25 @@ ${peerDbMetadataColumnDefinitions}
 ${replacingMergeTreeTable("(user_id, provider_id)")}`;
 }
 
+export function buildPostgresFitnessClinicalRecordRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (
+  id UUID,
+  user_id UUID,
+  provider_id String,
+  external_id String,
+  clinical_type String,
+  display_name String,
+  source_name Nullable(String),
+  fhir_version String,
+  fhir String,
+  downloaded_at DateTime64(6, 'UTC'),
+  recorded_at Nullable(DateTime64(6, 'UTC')),
+  issued_at Nullable(DateTime64(6, 'UTC')),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, downloaded_at, provider_id, id)")}`;
+}
+
 export function buildPostgresFitnessRawTableStatements(): string[] {
   return [
     buildPostgresFitnessActivityRawTableStatement(),
@@ -188,22 +207,7 @@ ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, start_date, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (
-  id UUID,
-  user_id UUID,
-  provider_id String,
-  external_id String,
-  clinical_type String,
-  display_name String,
-  source_name Nullable(String),
-  fhir_version String,
-  fhir String,
-  downloaded_at DateTime64(6, 'UTC'),
-  recorded_at Nullable(DateTime64(6, 'UTC')),
-  issued_at Nullable(DateTime64(6, 'UTC')),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, downloaded_at, provider_id, id)")}`,
+    buildPostgresFitnessClinicalRecordRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.journal_entry (
   id UUID,
   date Date,
