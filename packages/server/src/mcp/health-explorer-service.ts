@@ -1,0 +1,90 @@
+import {
+  type HealthExplorerInput,
+  healthExplorerSnapshotSchema,
+  type HealthExplorerSnapshot,
+  type HealthMetric,
+} from "@dofek/mcp-contracts/health-explorer";
+
+export interface HealthTrendRow {
+  date?: string;
+  week?: string;
+  metrics: Partial<Record<HealthMetric, { avg: number }>>;
+}
+
+export interface HealthTrendReader {
+  list(input: HealthExplorerInput): Promise<HealthTrendRow[]>;
+}
+
+const metricPresentation: Record<HealthMetric, { label: string; unit: string }> = {
+  hrv: { label: "Heart rate variability", unit: "ms" },
+  resting_hr: { label: "Resting heart rate", unit: "bpm" },
+  spo2: { label: "Blood oxygen", unit: "%" },
+  respiratory_rate: { label: "Respiratory rate", unit: "breaths/min" },
+  sleep_efficiency: { label: "Sleep efficiency", unit: "%" },
+  skin_temp: { label: "Skin temperature", unit: "°C" },
+  steps: { label: "Steps", unit: "steps" },
+  distance_km: { label: "Distance", unit: "km" },
+  exercise_minutes: { label: "Exercise minutes", unit: "min" },
+  flights_climbed: { label: "Flights climbed", unit: "flights" },
+};
+
+function daysBetween(startDate: string, endDate: string): number {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000);
+}
+
+function rowKey(row: HealthTrendRow): string {
+  const key = row.date ?? row.week;
+  if (!key) {
+    throw new Error("Health trend row must have a date or week key");
+  }
+  return key;
+}
+
+export class HealthExplorerService {
+  constructor(private readonly reader: HealthTrendReader) {}
+
+  async snapshot(input: HealthExplorerInput): Promise<HealthExplorerSnapshot> {
+    const rows = [...(await this.reader.list(input))].sort((first, second) =>
+      rowKey(first).localeCompare(rowKey(second)),
+    );
+    const series = input.metrics.map((metric) => {
+      const values = rows.map((row) => row.metrics[metric]?.avg ?? null);
+      const observed = values.filter((value): value is number => value !== null);
+      const presentation = metricPresentation[metric];
+      return {
+        metric,
+        label: presentation.label,
+        unit: presentation.unit,
+        points: rows.map((row, index) => ({ key: rowKey(row), value: values[index] ?? null })),
+        summary: {
+          metric,
+          average:
+            observed.length === 0
+              ? null
+              : observed.reduce((total, value) => total + value, 0) / observed.length,
+          min: observed.length === 0 ? null : Math.min(...observed),
+          max: observed.length === 0 ? null : Math.max(...observed),
+        },
+      };
+    });
+    const observedDays = rows.filter((row) =>
+      input.metrics.some((metric) => row.metrics[metric]?.avg != null),
+    ).length;
+
+    return healthExplorerSnapshotSchema.parse({
+      range: {
+        start_date: input.start_date,
+        end_date: input.end_date,
+        granularity: input.granularity,
+      },
+      series: series.map(({ summary: _summary, ...item }) => item),
+      summary: series.map(({ summary }) => summary),
+      coverage: {
+        observed_days: observedDays,
+        requested_days: daysBetween(input.start_date, input.end_date) + 1,
+      },
+    });
+  }
+}

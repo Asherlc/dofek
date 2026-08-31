@@ -237,6 +237,7 @@ const toolListResponseSchema = z.object({
   result: z.object({
     tools: z.array(
       z.object({
+        annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
         description: z.string(),
         inputSchema: z.object({}).passthrough(),
         name: z.string(),
@@ -518,6 +519,16 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        granularity: { enum: ["daily", "weekly"], type: "string" },
+        metrics: { type: "array" },
+        start_date: { format: "date", type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_subjective_timeline").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -575,6 +586,23 @@ describe("createMcpRouter", () => {
       required: ["providerId"],
       type: "object",
     });
+    for (const name of [
+      "get_daily_health_summary",
+      "get_health_trends",
+      "get_sleep_summary",
+      "search_activities",
+      "get_activity_details",
+      "get_activity_summary",
+      "get_finger_loading",
+      "get_nutrition_summary",
+      "get_body_metrics",
+      "get_subjective_timeline",
+      "list_providers",
+      "render_health_explorer",
+    ]) {
+      expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
+    }
+    expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
   });
 
   it("returns a subjective timeline using the request context timezone", async () => {
