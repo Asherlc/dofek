@@ -174,6 +174,16 @@ describe("createMcpOAuthRouter", () => {
   });
 
   describe("rate limiting", () => {
+    it("applies rate limiting to authorization-server metadata when configured with a limit", async () => {
+      app = await mount({ max: 1, windowMs: 60_000 });
+
+      const first = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
+      const second = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(429);
+    });
+
     it("applies rate limiting to client registration when configured with a limit", async () => {
       app = await mount({ max: 1, windowMs: 60_000 });
 

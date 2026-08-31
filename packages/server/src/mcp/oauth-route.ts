@@ -4,7 +4,10 @@ import {
 } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
-import type { Options as RateLimitOptions } from "express-rate-limit";
+import {
+  rateLimit as createRateLimiter,
+  type Options as RateLimitOptions,
+} from "express-rate-limit";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
@@ -61,12 +64,17 @@ export function createMcpOAuthRouter(
   );
 
   const rateLimitOptions = { rateLimit };
-  router.get("/.well-known/oauth-authorization-server", (_request, response) => {
-    response.json({
-      ...createOAuthMetadata(oauthRouterOptions),
-      client_id_metadata_document_supported: true,
-    });
-  });
+  const metadataRateLimit = rateLimit === false ? [] : [createRateLimiter(rateLimit)];
+  router.get(
+    "/.well-known/oauth-authorization-server",
+    ...metadataRateLimit,
+    (_request, response) => {
+      response.json({
+        ...createOAuthMetadata(oauthRouterOptions),
+        client_id_metadata_document_supported: true,
+      });
+    },
+  );
 
   router.use(
     mcpAuthRouter({
