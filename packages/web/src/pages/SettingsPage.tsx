@@ -21,6 +21,7 @@ import {
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
+import { McpTokensPanel } from "./McpTokensPanel.tsx";
 import {
   normalizeSettingsCategory,
   SETTINGS_CATEGORIES,
@@ -367,6 +368,15 @@ export function SettingsPage() {
             >
               Manage developer integrations
             </Link>
+          </PageSection>
+        ) : null}
+
+        {activeCategory === "advanced" ? (
+          <PageSection
+            title="Model Context Protocol (MCP)"
+            subtitle="Connect remote MCP clients and manage access tokens"
+          >
+            <McpTokensPanel />
           </PageSection>
         ) : null}
 
