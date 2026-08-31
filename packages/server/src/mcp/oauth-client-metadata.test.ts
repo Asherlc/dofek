@@ -75,16 +75,13 @@ describe("parseCimdClientMetadata", () => {
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(
       (_options: unknown, callback: (response: EventEmitter) => void) => {
-        const request = new EventEmitter() as EventEmitter & { end: () => void };
+        const request = Object.assign(new EventEmitter(), { end: () => {} });
         request.end = () => {
-          const response = new EventEmitter() as EventEmitter & {
-            headers: Record<string, string>;
-            statusCode: number;
-            resume: () => void;
-          };
-          response.headers = { "cache-control": "max-age=60", "content-type": "application/json" };
-          response.statusCode = 200;
-          response.resume = vi.fn();
+          const response = Object.assign(new EventEmitter(), {
+            headers: { "cache-control": "max-age=60", "content-type": "application/json" },
+            resume: vi.fn(),
+            statusCode: 200,
+          });
           callback(response);
           response.emit(
             "data",
