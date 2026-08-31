@@ -88,6 +88,19 @@ describe("McpTokensPanel", () => {
     expect(screen.getByText("No MCP tokens yet.")).toBeTruthy();
   });
 
+  it("shows query loading and error states", () => {
+    listTokensQuery.isLoading = true;
+    const { rerender } = render(<McpTokensPanel />);
+
+    expect(screen.getByText("Loading MCP tokens...")).toBeTruthy();
+
+    listTokensQuery.isLoading = false;
+    listTokensQuery.error = new Error("MCP token service is unavailable");
+    rerender(<McpTokensPanel />);
+
+    expect(screen.getByText("MCP token service is unavailable")).toBeTruthy();
+  });
+
   it("renders without a browser window", () => {
     vi.stubGlobal("window", undefined);
 
@@ -140,6 +153,110 @@ describe("McpTokensPanel", () => {
     expect(invalidateMcp).toHaveBeenCalled();
   });
 
+  it("requires at least one scope before creating a token", () => {
+    render(<McpTokensPanel />);
+
+    for (const label of [
+      "Health summaries",
+      "Activity history",
+      "Nutrition summaries",
+      "Provider status",
+      "Start sync jobs",
+    ]) {
+      fireEvent.click(screen.getByLabelText(label));
+    }
+
+    expect(screen.getByRole("button", { name: "Create Token" }).getAttribute("disabled")).not.toBe(
+      null,
+    );
+
+    fireEvent.click(screen.getByLabelText("Health summaries"));
+
+    expect(screen.getByRole("button", { name: "Create Token" }).getAttribute("disabled")).toBe(
+      null,
+    );
+  });
+
+  it("shows the create-token error returned by the server", async () => {
+    createTokenMutateAsync.mockRejectedValueOnce(new Error("Token name is already in use"));
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+
+    expect(await screen.findByText("Token name is already in use")).toBeTruthy();
+  });
+
+  it("uses a generic create-token error for unexpected failures", async () => {
+    createTokenMutateAsync.mockRejectedValueOnce("unexpected failure");
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+
+    expect(await screen.findByText("Failed to create MCP token.")).toBeTruthy();
+  });
+
+  it("creates an expiring token", async () => {
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_expiring",
+      metadata: {},
+    });
+
+    render(<McpTokensPanel />);
+
+    fireEvent.change(screen.getByLabelText("Expires"), { target: { value: "2026-06-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+
+    await waitFor(() => {
+      expect(createTokenMutateAsync).toHaveBeenCalledWith({
+        name: "Codex",
+        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+        expiresAt: "2026-06-01T00:00:00.000Z",
+      });
+    });
+  });
+
+  it("copies a newly-created token", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_copyable",
+      metadata: {},
+    });
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+    await screen.findByDisplayValue("dofek_mcp_copyable");
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("dofek_mcp_copyable");
+    });
+    expect(screen.getByText("Copied")).toBeTruthy();
+  });
+
+  it("explains how to copy a token when clipboard access fails", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error("Clipboard unavailable")) },
+    });
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_not_copyable",
+      metadata: {},
+    });
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+    await screen.findByDisplayValue("dofek_mcp_not_copyable");
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    expect(
+      await screen.findByText("Copy failed. Select the token and copy it manually."),
+    ).toBeTruthy();
+  });
+
   it("revokes an active token", async () => {
     listTokensQuery.data = [
       {
@@ -172,6 +289,47 @@ describe("McpTokensPanel", () => {
       });
     });
     expect(invalidateMcp).toHaveBeenCalled();
+  });
+
+  it("shows a revoke error returned by the server", async () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Codex",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ];
+    revokeTokenMutateAsync.mockRejectedValueOnce(new Error("Token has already been revoked"));
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Codex" }));
+
+    expect(await screen.findByText("Token has already been revoked")).toBeTruthy();
+  });
+
+  it("shows revoked tokens without active-token actions", () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Retired Codex",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: "2026-05-21T12:00:00Z",
+      },
+    ];
+
+    render(<McpTokensPanel />);
+
+    expect(screen.getByText("Revoked")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Rotate Retired Codex" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Revoke Retired Codex" })).toBeNull();
   });
 
   it("rotates an active token with the same settings", async () => {
@@ -268,6 +426,29 @@ describe("McpTokensPanel", () => {
         "New token created, but failed to revoke the old token. Revoke the old token manually.",
       ),
     ).toBeTruthy();
+    expect(invalidateMcp).toHaveBeenCalled();
+  });
+
+  it("reports a rotation error when a replacement token cannot be created", async () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Codex",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ];
+    createTokenMutateAsync.mockRejectedValueOnce(new Error("Token limit reached"));
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotate Codex" }));
+
+    expect(await screen.findByText("Token limit reached")).toBeTruthy();
+    expect(revokeTokenMutateAsync).not.toHaveBeenCalled();
     expect(invalidateMcp).toHaveBeenCalled();
   });
 
