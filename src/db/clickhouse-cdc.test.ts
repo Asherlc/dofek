@@ -1396,6 +1396,32 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(clickHouseClientMocks.close).toHaveBeenCalledTimes(1);
   });
 
+  it("defaults the source Postgres template port when DATABASE_URL omits one", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg-credential",
+      "postgres.example",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "clickhouse-credential",
+      "clickhouse.example:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+
+    await setupClickHouseCdcFromEnv();
+
+    const peerDbQueries = peerDbClientMocks.query.mock.calls
+      .map(([queryText]) => String(queryText))
+      .filter((queryText) => !isPeerDbMirrorReconciliationQuery(queryText));
+    expect(peerDbQueries[1]).toContain("host = 'postgres.example'");
+    expect(peerDbQueries[1]).toContain("port = 5432");
+  });
+
   it("uses the internal PeerDB flow API to reconcile an existing mirror", async () => {
     process.env.DATABASE_URL = credentialedUrl(
       "postgres",
@@ -1605,6 +1631,23 @@ describe("PeerDB ClickHouse CDC setup", () => {
     );
   });
 
+  it("uses a clear fallback when PeerDB omits a mirror status failure detail", async () => {
+    configureFlowApiEnvironment("postgres.example");
+    configureExistingFitnessMirrorQuery();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        peerDbStatusResponse("STATUS_RUNNING", [], {
+          ok: false,
+        }),
+      ),
+    );
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PeerDB could not inspect mirror dofek_fitness_raw_analytics: unknown error",
+    );
+  });
+
   it("surfaces a PeerDB mirror state-change failure", async () => {
     configureFlowApiEnvironment("postgres.example");
     configureExistingFitnessMirrorQuery();
@@ -1618,6 +1661,22 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
     await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
       "PeerDB could not change mirror dofek_fitness_raw_analytics: pause failed",
+    );
+  });
+
+  it("uses a clear fallback when PeerDB omits a mirror state-change failure detail", async () => {
+    configureFlowApiEnvironment("postgres.example");
+    configureExistingFitnessMirrorQuery();
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/mirrors/status")) {
+        return peerDbStatusResponse("STATUS_RUNNING", []);
+      }
+      return new Response(JSON.stringify({ ok: false }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PeerDB could not change mirror dofek_fitness_raw_analytics: unknown error",
     );
   });
 
