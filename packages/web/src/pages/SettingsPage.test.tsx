@@ -133,6 +133,17 @@ vi.mock("../lib/trpc.ts", () => ({
         useMutation: () => mockMutation,
       },
     },
+    mcp: {
+      listTokens: {
+        useQuery: () => ({ data: [], error: null, isLoading: false }),
+      },
+      createToken: {
+        useMutation: () => mockMutation,
+      },
+      revokeToken: {
+        useMutation: () => mockMutation,
+      },
+    },
     companionPairing: {
       claim: {
         useMutation: () => mockMutation,
@@ -298,6 +309,7 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
+    expect(screen.getByRole("heading", { name: "MCP" })).toBeTruthy();
     expect(screen.getByText("Dashboard Layout")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Data Sources" })).toBeNull();
   });
@@ -470,7 +482,10 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("button", { name: "Opening checkout..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Opening checkout..." })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it("shows the pending billing-portal label while opening account management", async () => {
@@ -490,7 +505,10 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("button", { name: "Opening billing portal..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Opening billing portal..." })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it("shows the pending pairing label while claiming a Zepp connection", async () => {
@@ -500,7 +518,10 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("button", { name: "Connecting..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Connecting..." })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it.each([
