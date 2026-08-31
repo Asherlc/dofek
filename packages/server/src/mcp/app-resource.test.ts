@@ -40,7 +40,10 @@ describe("registerDofekAppResources", () => {
 
     registerDofekAppResources(server);
 
-    const resourceHandler = mockRegisterAppResource.mock.calls.at(-1)?.[4] as () => Promise<unknown>;
+    const resourceHandler = mockRegisterAppResource.mock.calls.at(-1)?.[4];
+    if (typeof resourceHandler !== "function") {
+      throw new Error("Expected the registered resource handler to be a function");
+    }
     await expect(resourceHandler()).resolves.toEqual({
       contents: [
         {
