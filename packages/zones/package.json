@@ -1,6 +1,6 @@
 {
   "name": "@dofek/zones",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Heart-rate and cycling-power zone calculations and classification",
   "type": "module",
   "license": "MIT",
