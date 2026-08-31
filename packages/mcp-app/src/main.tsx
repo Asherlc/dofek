@@ -23,7 +23,9 @@ function ExplorerApp() {
       createdApp.ontoolresult = (result) => {
         const parsed = healthExplorerSnapshotSchema.safeParse(result.structuredContent);
         if (!parsed.success) {
-          setError("Dofek Explorer received an invalid response from the server. Please try again.");
+          setError(
+            "Dofek Explorer received an invalid response from the server. Please try again.",
+          );
           return;
         }
         setError(null);
