@@ -69,16 +69,6 @@ interface RawAnalyticsInitialCopyValues {
   dofek_sensor_priority_raw_analytics: boolean;
 }
 
-interface ClickHouseRowCount {
-  row_count: number | string | null;
-}
-
-const clickHouseRowCountRowsSchema = z.array(
-  z.object({
-    row_count: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/), z.null()]),
-  }),
-);
-
 interface SetupClickHouseCdcOptions {
   peerDbMirrorApiClient?: PeerDbMirrorApiClient;
   peerDbClient: PeerDbClient;
@@ -237,18 +227,6 @@ function readQueryRows(queryResult: unknown): Array<Record<string, unknown>> {
   return rows.filter(
     (row): row is Record<string, unknown> => typeof row === "object" && row !== null,
   );
-}
-
-function readInteger(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && /^\d+$/.test(value)) {
-    return Number.parseInt(value, 10);
-  }
-
-  return null;
 }
 
 function readErrorMessage(error: unknown): string | null {
@@ -717,80 +695,6 @@ async function dropObsoleteMetricStreamPeerDbMirrors(peerDbClient: PeerDbClient)
   }
 }
 
-async function readClickHouseDestinationRowCount(
-  clickHouseClient: ClickHouseCommandClient,
-  tableNames: readonly string[],
-): Promise<number> {
-  if (!clickHouseClient.query) {
-    throw new Error("ClickHouse raw analytics mirror reconciliation requires query support");
-  }
-
-  const tableNameList = tableNames.map(peerDbStringLiteral).join(", ");
-  const result = await clickHouseClient.query<ClickHouseRowCount>({
-    query: `
-      SELECT coalesce(sum(rows), 0) AS row_count
-      FROM system.parts
-      WHERE database = 'postgres_fitness'
-        AND table IN (${tableNameList})
-        AND active = 1
-    `,
-    format: "JSONEachRow",
-  });
-  const parsedRows = clickHouseRowCountRowsSchema.safeParse(await result.json());
-  if (!parsedRows.success) {
-    throw new Error("Unable to read ClickHouse raw analytics destination row count");
-  }
-
-  const [row] = parsedRows.data;
-  if (!row) {
-    throw new Error("Unable to read ClickHouse raw analytics destination row count");
-  }
-
-  const rowCount = readInteger(row.row_count);
-  if (rowCount === null) {
-    throw new Error("Unable to read ClickHouse raw analytics destination row count");
-  }
-  return rowCount;
-}
-
-async function readSourcePostgresRowCount(
-  sourcePostgresClient: SourcePostgresClient,
-  tableNames: readonly string[],
-): Promise<number> {
-  const postgresCounts = tableNames
-    .map((tableName) => `SELECT count(*) AS row_count FROM fitness.${tableName}`)
-    .join(" UNION ALL ");
-  const postgresResult = await sourcePostgresClient.query(`
-    SELECT coalesce(sum(row_count), 0) AS row_count
-    FROM (${postgresCounts}) AS source_counts
-  `);
-  const [sourceRow] = readQueryRows(postgresResult);
-  if (!sourceRow) {
-    throw new Error("Unable to read Postgres raw analytics source row count");
-  }
-
-  const sourceRowCount = readInteger(sourceRow.row_count);
-  if (sourceRowCount === null) {
-    throw new Error("Unable to read Postgres raw analytics source row count");
-  }
-
-  return sourceRowCount;
-}
-
-async function sourcePostgresTablesHaveAtMostDestinationRows(
-  sourcePostgresClient: SourcePostgresClient,
-  clickHouseClient: ClickHouseCommandClient,
-  tableNames: readonly string[],
-): Promise<boolean> {
-  const destinationRowCount = await readClickHouseDestinationRowCount(clickHouseClient, tableNames);
-  if (destinationRowCount === 0) {
-    return false;
-  }
-
-  const sourceRowCount = await readSourcePostgresRowCount(sourcePostgresClient, tableNames);
-  return sourceRowCount > 0 && destinationRowCount >= sourceRowCount;
-}
-
 async function truncateRawAnalyticsDestinationTables(
   clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
@@ -804,11 +708,10 @@ async function truncateRawAnalyticsDestinationTables(
 
 async function truncateMissingInitialCopyRawAnalyticsDestinations(
   clickHouseClient: ClickHouseCommandClient,
-  rawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues,
   existingMirrorNames: Set<string>,
 ): Promise<void> {
   for (const mirrorName of rawAnalyticsMirrorNames) {
-    if (existingMirrorNames.has(mirrorName) || !rawAnalyticsInitialCopyValues[mirrorName]) {
+    if (existingMirrorNames.has(mirrorName)) {
       continue;
     }
     await truncateRawAnalyticsDestinationTables(
@@ -816,42 +719,6 @@ async function truncateMissingInitialCopyRawAnalyticsDestinations(
       rawAnalyticsMirrorTableMappings[mirrorName],
     );
   }
-}
-
-async function reconcileRawAnalyticsMirrors(
-  peerDbClient: PeerDbClient,
-  sourcePostgresClient: SourcePostgresClient,
-  clickHouseClient: ClickHouseCommandClient,
-): Promise<RawAnalyticsInitialCopyValues> {
-  const rawAnalyticsInitialCopyValues = { ...defaultRawAnalyticsInitialCopyValues };
-  const mirrorNameRows = rawAnalyticsMirrorNames
-    .map((mirrorName) => `('${mirrorName}')`)
-    .join(", ");
-  const result = await peerDbClient.query(`
-    SELECT flows.name
-    FROM public.flows
-    JOIN (VALUES ${mirrorNameRows}) AS expected_mirrors(name)
-      ON expected_mirrors.name = flows.name
-  `);
-  const mirrorRows = readQueryRows(result);
-
-  for (const mirrorName of rawAnalyticsMirrorNames) {
-    const tableNames = rawAnalyticsMirrorTableMappings[mirrorName];
-    const mirrorRow = mirrorRows.find((row) => row.name === mirrorName);
-    if (!mirrorRow) {
-      if (
-        await sourcePostgresTablesHaveAtMostDestinationRows(
-          sourcePostgresClient,
-          clickHouseClient,
-          tableNames,
-        )
-      ) {
-        rawAnalyticsInitialCopyValues[mirrorName] = false;
-      }
-    }
-  }
-
-  return rawAnalyticsInitialCopyValues;
 }
 
 function mirrorHasTableMapping(
@@ -955,15 +822,9 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await dropObsoleteMetricStreamPeerDbMirrors(options.peerDbClient);
-  const rawAnalyticsInitialCopyValues = await reconcileRawAnalyticsMirrors(
-    options.peerDbClient,
-    options.sourcePostgresClient,
-    options.clickHouseClient,
-  );
   const renderedSql = renderPeerDbSqlTemplate(
     options.templateSql,
     options.templateValues,
-    rawAnalyticsInitialCopyValues,
   );
   const existingMirrorNames = await readExistingManagedMirrorNames(options.peerDbClient);
   const peerDbMirrorApiClient = options.peerDbMirrorApiClient;
@@ -979,7 +840,6 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
     : false;
   await truncateMissingInitialCopyRawAnalyticsDestinations(
     options.clickHouseClient,
-    rawAnalyticsInitialCopyValues,
     existingMirrorNames,
   );
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
