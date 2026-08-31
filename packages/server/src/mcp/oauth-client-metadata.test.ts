@@ -1,9 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { parseCimdClientMetadata } from "./oauth-client-metadata.ts";
+import { EventEmitter } from "node:events";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ lookup: vi.fn(), request: vi.fn() }));
+vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
+vi.mock("node:https", () => ({ request: mocks.request }));
+
+import {
+  McpOAuthClientMetadataResolver,
+  parseCimdClientMetadata,
+} from "./oauth-client-metadata.ts";
 
 const clientId = "https://claude.ai/oauth/client-metadata.json";
 
 describe("parseCimdClientMetadata", () => {
+  afterEach(() => vi.resetAllMocks());
   it("accepts a public client whose metadata client ID and callback match", () => {
     expect(
       parseCimdClientMetadata(clientId, {
@@ -59,5 +69,48 @@ describe("parseCimdClientMetadata", () => {
         redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
       }),
     ).toMatchObject({ client_id: clientId });
+  });
+
+  it("resolves and caches a public HTTPS metadata document", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(
+      (_options: unknown, callback: (response: EventEmitter) => void) => {
+        const request = new EventEmitter() as EventEmitter & { end: () => void };
+        request.end = () => {
+          const response = new EventEmitter() as EventEmitter & {
+            headers: Record<string, string>;
+            statusCode: number;
+            resume: () => void;
+          };
+          response.headers = { "cache-control": "max-age=60", "content-type": "application/json" };
+          response.statusCode = 200;
+          response.resume = vi.fn();
+          callback(response);
+          response.emit(
+            "data",
+            Buffer.from(
+              JSON.stringify({
+                client_id: clientId,
+                redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+              }),
+            ),
+          );
+          response.emit("end");
+        };
+        return request;
+      },
+    );
+
+    const resolver = new McpOAuthClientMetadataResolver();
+    await expect(resolver.getClient(clientId)).resolves.toMatchObject({ client_id: clientId });
+    await expect(resolver.getClient(clientId)).resolves.toMatchObject({ client_id: clientId });
+    expect(mocks.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects private DNS destinations without opening a request", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "127.0.0.1", family: 4 }]);
+    const resolver = new McpOAuthClientMetadataResolver();
+    await expect(resolver.getClient(clientId)).resolves.toBeUndefined();
+    expect(mocks.request).not.toHaveBeenCalled();
   });
 });
