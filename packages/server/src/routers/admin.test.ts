@@ -1,19 +1,30 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const developerClientRepositoryMocks = vi.hoisted(() => ({
+  listForSupport: vi.fn(),
+  revokeForSupport: vi.fn(),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock("../trpc.ts", async () => {
-  const { initTRPC } = await import("@trpc/server");
+  const { initTRPC, TRPCError } = await import("@trpc/server");
   const trpc = initTRPC
     .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
     .create();
+  const adminProcedure = trpc.procedure.use(({ ctx, next }) => {
+    if (ctx.userId !== "admin-1") {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+    }
+    return next();
+  });
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    adminProcedure: trpc.procedure,
+    adminProcedure,
     cachedProtectedQuery: () => trpc.procedure,
     cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
@@ -61,19 +72,27 @@ vi.mock("dofek/admin/provider-rate-limit-status", () => ({
   ]),
 }));
 
+vi.mock("../repositories/developer-client-repository.ts", () => ({
+  DeveloperClientRepository: class {
+    listForSupport = developerClientRepositoryMocks.listForSupport;
+    revokeForSupport = developerClientRepositoryMocks.revokeForSupport;
+  },
+}));
+
 import { adminRouter } from "./admin.ts";
 
 const createCaller = createTestCallerFactory(adminRouter);
 
 function makeCaller(
-  execute: ReturnType<typeof vi.fn>,
+  execute: CallableVitestMock,
   sensorQuery = vi.fn().mockResolvedValue([]),
   timezone = "UTC",
+  userId = "admin-1",
 ) {
   return createCaller({
     db: { execute },
     sensorStore: { query: sensorQuery },
-    userId: "admin-1",
+    userId,
     timezone,
   });
 }
@@ -109,6 +128,79 @@ function mockPaginatedExecute(rows: unknown[], countRows: unknown[]) {
 }
 
 describe("adminRouter", () => {
+  describe("external developer clients", () => {
+    beforeEach(() => {
+      developerClientRepositoryMocks.listForSupport.mockReset();
+      developerClientRepositoryMocks.revokeForSupport.mockReset();
+    });
+
+    it("blocks non-admin list and revoke calls", async () => {
+      const caller = makeCaller(vi.fn(), vi.fn(), "UTC", "member-1");
+
+      await expect(caller.externalClients()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.revokeExternalClient({ clientId: "ext_private" })).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      expect(developerClientRepositoryMocks.listForSupport).not.toHaveBeenCalled();
+      expect(developerClientRepositoryMocks.revokeForSupport).not.toHaveBeenCalled();
+    });
+
+    it("returns only support-safe client and owner metadata", async () => {
+      developerClientRepositoryMocks.listForSupport.mockResolvedValue([
+        {
+          clientId: "ext_support",
+          name: "Meal importer",
+          ownerName: "Owner Name",
+          ownerEmail: "owner@example.test",
+          scopes: ["nutrition:write"],
+          status: "active",
+          createdAt: "2026-08-24T20:00:00.000Z",
+          lastRotatedAt: "2026-08-24T21:00:00.000Z",
+        },
+      ]);
+
+      const result = await makeCaller(vi.fn()).externalClients();
+
+      expect(result).toEqual([
+        {
+          clientId: "ext_support",
+          name: "Meal importer",
+          ownerName: "Owner Name",
+          ownerEmail: "owner@example.test",
+          scopes: ["nutrition:write"],
+          status: "active",
+          createdAt: "2026-08-24T20:00:00.000Z",
+          lastRotatedAt: "2026-08-24T21:00:00.000Z",
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toMatch(
+        /secret|redirect|grant|subject|audit|ownerUserId|owner_user_id/,
+      );
+    });
+
+    it("delegates audited revocation and returns a specific not-found error", async () => {
+      developerClientRepositoryMocks.revokeForSupport.mockResolvedValueOnce(true);
+      const caller = makeCaller(vi.fn());
+
+      await expect(caller.revokeExternalClient({ clientId: "ext_support" })).resolves.toEqual({
+        revoked: true,
+      });
+      expect(developerClientRepositoryMocks.revokeForSupport).toHaveBeenCalledWith(
+        "admin-1",
+        "ext_support",
+      );
+
+      developerClientRepositoryMocks.revokeForSupport.mockResolvedValueOnce(false);
+      await expect(caller.revokeExternalClient({ clientId: "ext_support" })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "The developer integration was not found or is already revoked.",
+      });
+      await expect(caller.revokeExternalClient({ clientId: "" })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    });
+  });
+
   describe("overview", () => {
     it("returns table row counts", async () => {
       const rows = [
@@ -142,6 +234,21 @@ describe("adminRouter", () => {
       await caller.overview();
 
       expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("supplement_dose_event");
+    });
+
+    it("includes retained health record tables in the catalog overview", async () => {
+      const rows = [
+        { table_name: "breathwork_session", row_count: "2" },
+        { table_name: "menstrual_period", row_count: "3" },
+      ];
+      const execute = vi.fn().mockResolvedValue(rows);
+      const caller = makeCaller(execute);
+
+      await expect(caller.overview()).resolves.toEqual([rows[1], rows[0]]);
+
+      const sqlText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("breathwork_session");
+      expect(sqlText).toContain("menstrual_period");
     });
 
     it("uses chunk estimates for metric stream hypertable counts", async () => {

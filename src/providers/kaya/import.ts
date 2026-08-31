@@ -81,6 +81,7 @@ export interface KayaClimbingEntry {
   grade: string;
   sent: boolean;
   attemptCount: number;
+  lead: null;
   routeName: string | null;
   locationName: string | null;
   sourceName: "Kaya";
@@ -208,6 +209,7 @@ class KayaExportImporter {
         grade: entry.grade,
         sent: entry.sent,
         attemptCount: entry.attemptCount,
+        lead: entry.lead,
         routeName: entry.routeName,
         locationName: entry.locationName,
         sourceName: entry.sourceName,
@@ -351,6 +353,7 @@ class KayaExportParser {
         grade: parsedGrade.grade,
         sent: true,
         attemptCount,
+        lead: null,
         routeName,
         locationName: gym,
         sourceName: KAYA_PROVIDER_NAME,

@@ -1,9 +1,12 @@
 import { initiateAccountErasure } from "dofek/db/account-erasure";
 import { sql } from "drizzle-orm";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
 import { Client } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { authenticatePasswordUser, registerPasswordUser } from "./password-credential.ts";
 import {
@@ -17,7 +20,7 @@ const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 const RESET_REQUEST_ERASURE_USER_ID = "10000000-0000-4000-8000-000000001995";
 const RESET_CONFIRM_ERASURE_USER_ID = "20000000-0000-4000-8000-000000001995";
 const RESET_EMAIL_ERASURE_USER_ID = "30000000-0000-4000-8000-000000001995";
-const mockSendPlainTextEmail = vi.fn().mockResolvedValue(undefined);
+const BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
 
 const tokenDurationRowSchema = z.object({
   expires_after_minutes: z.union([z.number(), z.string()]),
@@ -32,17 +35,24 @@ const tokenConsumedRowSchema = z.object({
   is_unconsumed: z.boolean(),
 });
 
-const plainTextEmailInputSchema = z.object({
-  text: z.string(),
+const brevoEmailInputSchema = z.object({
+  sender: z.object({ email: z.string() }),
+  subject: z.string(),
+  textContent: z.string(),
+  to: z.array(z.object({ email: z.string() })),
 });
+const sentEmails: Array<z.infer<typeof brevoEmailInputSchema>> = [];
 
-vi.mock("../../../../src/email.ts", () => ({
-  sendPlainTextEmail: (input: unknown) => mockSendPlainTextEmail(input),
-}));
+const emailServer = setupServer(
+  http.post(BREVO_EMAIL_URL, async ({ request }) => {
+    sentEmails.push(brevoEmailInputSchema.parse(await request.json()));
+    return HttpResponse.json({ messageId: "test-email" }, { status: 201 });
+  }),
+);
 
 function extractResetTokenFromLastEmail(): string {
-  const input = plainTextEmailInputSchema.parse(mockSendPlainTextEmail.mock.calls.at(-1)?.[0]);
-  const match = /\/reset-password\?token=([^\s]+)/.exec(input.text);
+  const input = brevoEmailInputSchema.parse(sentEmails.at(-1));
+  const match = /\/reset-password\?token=([^\s]+)/.exec(input.textContent);
   if (!match?.[1]) {
     throw new Error("Reset token missing from email");
   }
@@ -50,8 +60,10 @@ function extractResetTokenFromLastEmail(): string {
 }
 
 function extractResetUrlFromLastEmail(): string {
-  const input = plainTextEmailInputSchema.parse(mockSendPlainTextEmail.mock.calls.at(-1)?.[0]);
-  const resetUrl = input.text.split("\n").find((line) => line.includes("/reset-password?token="));
+  const input = brevoEmailInputSchema.parse(sentEmails.at(-1));
+  const resetUrl = input.textContent
+    .split("\n")
+    .find((line) => line.includes("/reset-password?token="));
   if (!resetUrl) {
     throw new Error("Reset URL missing from email");
   }
@@ -137,15 +149,20 @@ describe("password reset service", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    emailServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     ctx = await setupTestDatabase();
   }, 120_000);
 
   afterAll(async () => {
     await ctx?.cleanup();
+    emailServer.close();
   });
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    sentEmails.length = 0;
+    emailServer.resetHandlers();
+    process.env.BREVO_API_KEY = "brevo-api-key";
+    process.env.EXPORT_EMAIL_FROM = "dofek@dofek.fit";
     process.env.PUBLIC_URL = "https://app.example.test";
     await ctx.db.execute(sql`DELETE FROM fitness.session`);
     await ctx.db.execute(sql`DELETE FROM fitness.password_reset_token`);
@@ -177,11 +194,16 @@ describe("password reset service", () => {
 
     expect(result).toEqual({ sent: true });
     expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(mockSendPlainTextEmail).toHaveBeenCalledWith({
-      subject: "Reset your Dofek password",
-      text: expect.stringContaining(`https://app.example.test/reset-password?token=${token}`),
-      toEmail: "reset@example.com",
-    });
+    expect(sentEmails).toEqual([
+      {
+        sender: { email: "dofek@dofek.fit" },
+        subject: "Reset your Dofek password",
+        textContent: expect.stringContaining(
+          `https://app.example.test/reset-password?token=${token}`,
+        ),
+        to: [{ email: "reset@example.com" }],
+      },
+    ]);
 
     const rows = await executeWithSchema(
       ctx.db,
@@ -198,7 +220,7 @@ describe("password reset service", () => {
     const result = await createPasswordResetToken(ctx.db, "missing@example.com");
 
     expect(result).toEqual({ sent: false });
-    expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+    expect(sentEmails).toHaveLength(0);
   });
 
   it("fails loudly for missing app URL before checking whether the email exists", async () => {
@@ -214,7 +236,7 @@ describe("password reset service", () => {
       sql`SELECT COUNT(*) AS token_count FROM fitness.password_reset_token`,
     );
     expect(Number(rows[0]?.token_count)).toBe(0);
-    expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+    expect(sentEmails).toHaveLength(0);
   });
 
   it("fails loudly when the app URL does not use HTTP", async () => {
@@ -224,7 +246,7 @@ describe("password reset service", () => {
       "PUBLIC_URL environment variable must use http or https",
     );
 
-    expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+    expect(sentEmails).toHaveLength(0);
   });
 
   it("normalizes HTTP app URLs before sending reset emails", async () => {
@@ -406,7 +428,7 @@ describe("password reset service", () => {
       const [, result] = await Promise.all([erasure, resetRequest]);
 
       expect(result).toEqual({ sent: false });
-      expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+      expect(sentEmails).toHaveLength(0);
       const tokens = await executeWithSchema(
         ctx.db,
         tokenCountRowSchema,
@@ -486,12 +508,16 @@ describe("password reset service", () => {
       releaseEmailSend = resolve;
     });
     const operationOrder: string[] = [];
-    mockSendPlainTextEmail.mockImplementationOnce(async () => {
-      operationOrder.push("email_started");
-      signalEmailStarted?.();
-      await emailCanFinish;
-      operationOrder.push("email_finished");
-    });
+    emailServer.use(
+      http.post(BREVO_EMAIL_URL, async ({ request }) => {
+        sentEmails.push(brevoEmailInputSchema.parse(await request.json()));
+        operationOrder.push("email_started");
+        signalEmailStarted?.();
+        await emailCanFinish;
+        operationOrder.push("email_finished");
+        return HttpResponse.json({ messageId: "test-email" }, { status: 201 });
+      }),
+    );
 
     const resetRequest = createPasswordResetToken(ctx.db, "reset-erasure-email@example.com");
     await emailStarted;

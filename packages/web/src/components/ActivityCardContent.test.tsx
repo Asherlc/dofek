@@ -196,25 +196,25 @@ describe("ActivityCardContent", () => {
     expect(screen.queryByText("—")).toBeNull();
   });
 
-  it.each([
-    "stale",
-    "failed",
-    "processing",
-    "conflicting",
-  ] as const)("renders a distinct %s server-authored state", (status) => {
-    render(
-      <ActivityCardContent
-        activity={activity({
-          stats: [{ status, label: "Training Stress Score", reason: "Sync the source and retry." }],
-        })}
-        units={units}
-        selectMode={false}
-        selected={false}
-      />,
-    );
+  it.each(["stale", "failed", "processing", "conflicting"] as const)(
+    "renders a distinct %s server-authored state",
+    (status) => {
+      render(
+        <ActivityCardContent
+          activity={activity({
+            stats: [
+              { status, label: "Training Stress Score", reason: "Sync the source and retry." },
+            ],
+          })}
+          units={units}
+          selectMode={false}
+          selected={false}
+        />,
+      );
 
-    expect(screen.getByText(`Training Stress Score ${status}`)).toBeDefined();
-    expect(screen.getByText("Sync the source and retry.")).toBeDefined();
-    expect(screen.queryByText("—")).toBeNull();
-  });
+      expect(screen.getByText(`Training Stress Score ${status}`)).toBeDefined();
+      expect(screen.getByText("Sync the source and retry.")).toBeDefined();
+      expect(screen.queryByText("—")).toBeNull();
+    },
+  );
 });

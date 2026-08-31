@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { MicronutrientChart } from "./MicronutrientChart.tsx";
 
 interface ChartElementProps {
+  empty?: boolean;
+  loading?: boolean;
   option: {
     tooltip?: {
       formatter?: (params: Array<{ name: string; value: number; dataIndex: number }>) => unknown;
@@ -73,6 +75,20 @@ describe("MicronutrientChart", () => {
               dailyAverageContribution: 5,
               daysTracked: 7,
             },
+            {
+              providerId: "daily-total",
+              sourceLabel: "Imported daily total",
+              intakeType: "provider_daily_total",
+              dailyAverageContribution: 2,
+              daysTracked: 7,
+            },
+            {
+              providerId: "supplement",
+              sourceLabel: "Vitamin C tablet",
+              intakeType: "supplement",
+              dailyAverageContribution: 3,
+              daysTracked: 7,
+            },
           ],
           adequacy: {
             status: "below_daily_value",
@@ -110,6 +126,8 @@ describe("MicronutrientChart", () => {
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     expect(html).toContain("&lt;svg onload=&quot;alert(1)&quot;&gt;");
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(2)&quot;&gt;");
+    expect(html).toContain("Imported daily total · Provider daily total: 2");
+    expect(html).toContain("Vitamin C tablet · Supplement: 3");
     expect(html).not.toContain("<img ");
     expect(html).not.toContain("<svg ");
   });
@@ -343,5 +361,39 @@ describe("MicronutrientChart", () => {
       "Target: U.S. Food and Drug Administration (FDA) Daily Value target not evaluable",
     );
     expect(text).toContain(limitation);
+  });
+
+  it("uses the chart empty state when no target or safety rule applies", () => {
+    const element = MicronutrientChart({
+      data: [
+        {
+          nutrientId: "untracked-nutrient",
+          nutrient: "Untracked nutrient",
+          unit: "mg",
+          intake: {
+            totalDailyAverage: 2,
+            foodDailyAverage: 2,
+            providerDailyTotalAverage: 0,
+            supplementDailyAverage: 0,
+            daysTracked: 3,
+          },
+          sourceBreakdown: [],
+          adequacy: null,
+          upperLimit: {
+            status: "not_in_ruleset",
+            limitation: "No upper-limit rule is included in this bounded ruleset.",
+            message: "No upper-limit rule is included in this bounded ruleset.",
+          },
+          safetyStatus: "no_upper_limit_in_ruleset",
+        },
+      ],
+      loading: true,
+    });
+
+    const chartElement = findChartElement(element);
+
+    expect(chartElement.props.empty).toBe(true);
+    expect(chartElement.props.loading).toBe(true);
+    expect(chartElement.props.option.yAxis?.data).toEqual([]);
   });
 });

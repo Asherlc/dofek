@@ -11,6 +11,12 @@ import { styles } from "./styles.ts";
 
 export type AuthStatus = "connected" | "not_connected" | "expired";
 
+export interface ProviderSyncFreshness {
+  status: "unknown" | "current" | "overdue";
+  label: string;
+  description: string;
+}
+
 export interface Provider {
   id: string;
   label: string;
@@ -19,8 +25,11 @@ export interface Provider {
   authType: string;
   tokenAuth?: { label: string; instructionsUrl: string } | null;
   lastSyncAt: string | null;
+  lastSuccessfulSyncAt: string | null;
+  syncFreshness: ProviderSyncFreshness | null;
   importOnly: boolean;
   pushOnly: boolean;
+  recentLogs: SyncLog[];
 }
 
 export interface SyncLog {
@@ -105,7 +114,18 @@ export function ProviderCard({
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
+  const latestSyncLabel =
+    provider.recentLogs[0]?.status === "error"
+      ? "Latest sync failed"
+      : provider.recentLogs[0]?.status === "degraded"
+        ? "Latest sync completed with issues"
+        : "Sync current";
+  const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
+    ? formatRelativeTime(provider.lastSuccessfulSyncAt)
+    : null;
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
+  const syncFreshness =
+    canRunManualSync && provider.authStatus !== "not_connected" ? provider.syncFreshness : null;
   const canImport = onImport !== undefined;
   const showingProgress = (syncing || importing) && syncProgress !== undefined;
 
@@ -189,6 +209,20 @@ export function ProviderCard({
             ) : (
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
+          {provider.recentLogs[0] ? (
+            <Text style={styles.cardMetaText}>{latestSyncLabel}</Text>
+          ) : null}
+          {canRunManualSync && lastSuccessfulSyncRelative ? (
+            <Text style={styles.cardMetaText}>
+              Last successful sync: {lastSuccessfulSyncRelative}
+            </Text>
+          ) : null}
+          {syncFreshness ? (
+            <View accessibilityRole={syncFreshness.status === "overdue" ? "alert" : undefined}>
+              <Text style={styles.cardMetaText}>{syncFreshness.label}</Text>
+              <Text style={styles.cardMetaText}>{syncFreshness.description}</Text>
+            </View>
+          ) : null}
           {canRunManualSync &&
             provider.authStatus === "connected" &&
             onFullSync !== undefined &&

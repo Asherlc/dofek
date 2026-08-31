@@ -294,12 +294,15 @@ describe("providerDetailRouter", () => {
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
       ["journalEntries", "fitness.journal_entry", "date", "id"],
-    ] as const)("returns correct mapping for %s", (dataType, expectedTable, expectedOrder, expectedId) => {
-      const result = tableInfo(dataType);
-      expect(result.table).toBe(expectedTable);
-      expect(result.orderColumn).toBe(expectedOrder);
-      expect(result.idColumn).toBe(expectedId);
-    });
+    ] as const)(
+      "returns correct mapping for %s",
+      (dataType, expectedTable, expectedOrder, expectedId) => {
+        const result = tableInfo(dataType);
+        expect(result.table).toBe(expectedTable);
+        expect(result.orderColumn).toBe(expectedOrder);
+        expect(result.idColumn).toBe(expectedId);
+      },
+    );
 
     it("covers every value in dataTypeEnum", () => {
       for (const dt of dataTypeEnum.options) {
@@ -655,25 +658,26 @@ describe("providerDetailRouter", () => {
       expect(sqlText).toContain("OFFSET");
     });
 
-    it.each(
-      expectedListColumnCases,
-    )("selects explicit list columns for %s", async (dataType, expectedColumns) => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+    it.each(expectedListColumnCases)(
+      "selects explicit list columns for %s",
+      async (dataType, expectedColumns) => {
+        const mockExecute = vi.fn().mockResolvedValue([]);
+        const caller = createCaller({
+          db: { execute: mockExecute },
+          userId: "user-1",
+          timezone: "UTC",
+        });
 
-      await caller.records({ providerId: "test-provider", dataType });
+        await caller.records({ providerId: "test-provider", dataType });
 
-      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
-      const selectClause = sqlText.slice(
-        sqlText.indexOf("SELECT") + "SELECT".length,
-        sqlText.indexOf("FROM"),
-      );
-      expect(selectClause.trim()).toBe(expectedColumns.join(", "));
-    });
+        const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+        const selectClause = sqlText.slice(
+          sqlText.indexOf("SELECT") + "SELECT".length,
+          sqlText.indexOf("FROM"),
+        );
+        expect(selectClause.trim()).toBe(expectedColumns.join(", "));
+      },
+    );
 
     it("queries body measurement records through ClickHouse", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);

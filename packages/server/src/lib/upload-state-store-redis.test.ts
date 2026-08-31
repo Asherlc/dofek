@@ -179,9 +179,9 @@ describe("RedisUploadStateStore", () => {
 
   it("uses Redis-backed default store outside test env", async () => {
     const fakeRedis = createFakeRedisClient();
-    const redisConnection = vi.fn().mockImplementation(() => ({
-      client: Promise.resolve(fakeRedis.client),
-    }));
+    const redisConnection = vi.fn(function vitestConstructor() {
+      return { client: Promise.resolve(fakeRedis.client) };
+    });
     const getRedisConnection = vi.fn(() => ({ host: "redis" }));
 
     vi.doMock("bullmq", () => ({ RedisConnection: redisConnection }));

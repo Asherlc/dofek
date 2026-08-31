@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import type { Server } from "node:http";
 import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
   ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
@@ -9,6 +11,10 @@ import {
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
 } from "./clickhouse-table.ts";
+import {
+  createMetricStreamConsumerReadinessServer,
+  MetricStreamConsumerReadiness,
+} from "./consumer-readiness.ts";
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
@@ -61,6 +67,9 @@ export interface ClickHouseMetricStreamRow {
   version: number | string;
 }
 
+const MAX_METRIC_STREAM_ROWS_PER_WRITE = 1_000;
+const METRIC_STREAM_HEARTBEAT_INTERVAL_MS = 3_000;
+
 function isClickHouseReplicatedEvent(event: MetricStreamRowEvent): boolean {
   return event.channel !== "imu";
 }
@@ -99,6 +108,54 @@ export function mapMetricStreamEventToClickHouseRow(
     is_deleted: 0,
     version: event.version === 1 ? 0 : (BigInt(event.operationRevision) * 2n + 1n).toString(),
   };
+}
+
+async function keepMetricStreamHeartbeatAlive<T>(
+  context: MetricStreamConsumerBatchContext | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!context) {
+    return operation();
+  }
+
+  let heartbeatFailure: unknown;
+  let heartbeatInFlight: Promise<void> | undefined;
+  const heartbeat = (): void => {
+    if (heartbeatInFlight || heartbeatFailure) {
+      return;
+    }
+    heartbeatInFlight = context
+      .heartbeat()
+      .catch((error: unknown) => {
+        heartbeatFailure = error;
+        captureException(error, {
+          tags: {
+            metricStreamConsumer: "clickhouse-sink",
+            metricStreamFailure: "heartbeat",
+          },
+        });
+      })
+      .finally(() => {
+        heartbeatInFlight = undefined;
+      });
+  };
+  const timer = setInterval(heartbeat, METRIC_STREAM_HEARTBEAT_INTERVAL_MS);
+  const stopHeartbeat = async (): Promise<void> => {
+    clearInterval(timer);
+    await heartbeatInFlight;
+  };
+
+  try {
+    const result = await operation();
+    await stopHeartbeat();
+    if (heartbeatFailure) {
+      throw heartbeatFailure;
+    }
+    return result;
+  } catch (error) {
+    await stopHeartbeat();
+    throw error;
+  }
 }
 
 const providerDataGenerationRowsSchema = z.array(
@@ -497,26 +554,38 @@ export async function applyMetricStreamEventsToClickHouse(
 ): Promise<number> {
   let inserted = 0;
   let rowBuffer: MetricStreamRowEvent[] = [];
+  const heartbeat = async (): Promise<void> => {
+    if (context) {
+      await context.heartbeat();
+    }
+  };
   const flushRows = async () => {
-    if (rowBuffer.length === 0) return;
-    const replicatedEvents = rowBuffer.filter(isClickHouseReplicatedEvent);
-    const accountActiveEvents = await filterEventsByAccountErasureFence(client, replicatedEvents);
-    await insertMetricStreamEventsIntoClickHouse(client, accountActiveEvents);
-    const currentGenerationEvents = await filterEventsByProviderGeneration(
-      client,
-      accountActiveEvents,
-    );
-    const currentEventIds = new Set(currentGenerationEvents.map((event) => event.id));
-    const staleEventIds = [
-      ...new Set(
-        accountActiveEvents
-          .filter((event) => !currentEventIds.has(event.id))
-          .map((event) => event.id),
-      ),
-    ];
-    await tombstoneMetricStreamIds(client, staleEventIds);
-    inserted += currentGenerationEvents.length;
-    rowBuffer = [];
+    if (rowBuffer.length > 0) {
+      await keepMetricStreamHeartbeatAlive(context, async () => {
+        const replicatedEvents = rowBuffer.filter(isClickHouseReplicatedEvent);
+        const accountActiveEvents = await filterEventsByAccountErasureFence(
+          client,
+          replicatedEvents,
+        );
+        await insertMetricStreamEventsIntoClickHouse(client, accountActiveEvents);
+        const currentGenerationEvents = await filterEventsByProviderGeneration(
+          client,
+          accountActiveEvents,
+        );
+        const currentEventIds = new Set(currentGenerationEvents.map((event) => event.id));
+        const staleEventIds = [
+          ...new Set(
+            accountActiveEvents
+              .filter((event) => !currentEventIds.has(event.id))
+              .map((event) => event.id),
+          ),
+        ];
+        await tombstoneMetricStreamIds(client, staleEventIds);
+        inserted += currentGenerationEvents.length;
+        rowBuffer = [];
+      });
+      await heartbeat();
+    }
   };
 
   const acknowledgeProcessingBatch = async (
@@ -571,23 +640,40 @@ export async function applyMetricStreamEventsToClickHouse(
   for (const [eventIndex, event] of events.entries()) {
     if (isMetricStreamBatchCompletedEvent(event)) {
       await flushRows();
-      await acknowledgeProcessingBatch(event, eventIndex);
+      await heartbeat();
+      await keepMetricStreamHeartbeatAlive(context, () =>
+        acknowledgeProcessingBatch(event, eventIndex),
+      );
+      await heartbeat();
       continue;
     }
     if (isMetricStreamDeletedEvent(event)) {
       await flushRows();
-      if ("eventId" in event && (await isMetricStreamDeletionAcknowledged(client, event.eventId))) {
+      await heartbeat();
+      if (
+        "eventId" in event &&
+        (await keepMetricStreamHeartbeatAlive(context, () =>
+          isMetricStreamDeletionAcknowledged(client, event.eventId),
+        ))
+      ) {
+        await heartbeat();
         continue;
       }
-      await markMetricStreamScopeDeletedInClickHouse(
-        client,
-        event.scope,
-        "eventId" in event ? event.eventId : undefined,
-        "operationRevision" in event ? event.operationRevision : undefined,
+      await keepMetricStreamHeartbeatAlive(context, () =>
+        markMetricStreamScopeDeletedInClickHouse(
+          client,
+          event.scope,
+          "eventId" in event ? event.eventId : undefined,
+          "operationRevision" in event ? event.operationRevision : undefined,
+        ),
       );
+      await heartbeat();
       continue;
     }
     rowBuffer.push(event);
+    if (rowBuffer.length >= MAX_METRIC_STREAM_ROWS_PER_WRITE) {
+      await flushRows();
+    }
   }
 
   await flushRows();
@@ -600,7 +686,9 @@ function hasClickHouseInsertClient(
   return typeof client.insert === "function";
 }
 
-export async function runMetricStreamClickHouseSinkFromEnv(): Promise<void> {
+export async function runMetricStreamClickHouseSinkFromEnv(
+  readiness: MetricStreamConsumerReadiness,
+): Promise<void> {
   const client = createClickHouseClientFromEnv();
   if (!hasClickHouseInsertClient(client)) {
     throw new Error("ClickHouse metric-stream sink requires an insert-capable client");
@@ -609,13 +697,40 @@ export async function runMetricStreamClickHouseSinkFromEnv(): Promise<void> {
   const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv(
     "metric-stream-clickhouse-sink",
   );
-
+  if (!consumer.observeGroupLifecycle) {
+    throw new Error("ClickHouse metric-stream sink requires Kafka group lifecycle events");
+  }
   await runMetricStreamEventConsumer({
     consumer,
     quarantine,
     topic,
+    lifecycleListener: readiness,
     handleEvents: async (events, context) => {
       await applyMetricStreamEventsToClickHouse(client, events, context);
     },
+  });
+}
+
+export async function startMetricStreamClickHouseSinkFromEnv(): Promise<void> {
+  const readiness = new MetricStreamConsumerReadiness();
+  const readinessServer = createMetricStreamConsumerReadinessServer(readiness);
+  await listenReadinessServer(readinessServer);
+  readinessServer.unref();
+  await runMetricStreamClickHouseSinkFromEnv(readiness);
+}
+
+function listenReadinessServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = (): void => {
+      server.off("error", onError);
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(3001, "0.0.0.0");
   });
 }
