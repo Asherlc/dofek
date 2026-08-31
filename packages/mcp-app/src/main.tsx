@@ -1,16 +1,12 @@
-import {
-  type HealthMetric,
-  healthExplorerSnapshotSchema,
-} from "@dofek/mcp-contracts/health-explorer";
+import type { HealthExplorerSnapshot, HealthMetric } from "@dofek/mcp-contracts/health-explorer";
 import { useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { HealthExplorer } from "./health-explorer.tsx";
+import { parseHealthExplorerResult } from "./health-explorer-result.ts";
 
 function ExplorerApp() {
-  const [snapshot, setSnapshot] = useState<ReturnType<
-    typeof healthExplorerSnapshotSchema.parse
-  > | null>(null);
+  const [snapshot, setSnapshot] = useState<HealthExplorerSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const {
     app,
@@ -21,15 +17,15 @@ function ExplorerApp() {
     capabilities: {},
     onAppCreated: (createdApp) => {
       createdApp.ontoolresult = (result) => {
-        const parsed = healthExplorerSnapshotSchema.safeParse(result.structuredContent);
-        if (!parsed.success) {
+        const snapshot = parseHealthExplorerResult(result.structuredContent);
+        if (!snapshot) {
           setError(
             "Dofek Explorer received an invalid response from the server. Please try again.",
           );
           return;
         }
         setError(null);
-        setSnapshot(parsed.data);
+        setSnapshot(snapshot);
       };
     },
   });
@@ -41,7 +37,14 @@ function ExplorerApp() {
           name: "render_health_explorer",
           arguments: { ...snapshot.range, metrics: [metric] },
         });
-        setSnapshot(healthExplorerSnapshotSchema.parse(result.structuredContent));
+        const updatedSnapshot = parseHealthExplorerResult(result.structuredContent);
+        if (!updatedSnapshot) {
+          setError(
+            "Dofek Explorer received an invalid response from the server. Please try again.",
+          );
+          return;
+        }
+        setSnapshot(updatedSnapshot);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Unable to update Dofek Explorer.");
       }
