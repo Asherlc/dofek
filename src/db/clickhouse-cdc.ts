@@ -822,10 +822,7 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await dropObsoleteMetricStreamPeerDbMirrors(options.peerDbClient);
-  const renderedSql = renderPeerDbSqlTemplate(
-    options.templateSql,
-    options.templateValues,
-  );
+  const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   const existingMirrorNames = await readExistingManagedMirrorNames(options.peerDbClient);
   const peerDbMirrorApiClient = options.peerDbMirrorApiClient;
   if (existingMirrorNames.size > 0 && !peerDbMirrorApiClient) {
