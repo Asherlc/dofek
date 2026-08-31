@@ -28,6 +28,7 @@ const protectedResourceMetadataSchema = z.object({
 });
 const authorizationServerMetadataSchema = z.object({
   authorization_endpoint: z.string(),
+  client_id_metadata_document_supported: z.boolean(),
   issuer: z.string(),
   scopes_supported: z.array(z.string()),
 });
@@ -101,6 +102,7 @@ describe("createMcpOAuthRouter", () => {
       app = await mount();
       const response = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
       const metadata = authorizationServerMetadataSchema.parse(await response.json());
+      expect(metadata.client_id_metadata_document_supported).toBe(true);
       expect(metadata.scopes_supported).toEqual([...MCP_OAUTH_SCOPES]);
     });
 

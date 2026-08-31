@@ -1,4 +1,7 @@
-import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import {
+  createOAuthMetadata,
+  mcpAuthRouter,
+} from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import type { Options as RateLimitOptions } from "express-rate-limit";
@@ -30,6 +33,13 @@ export function createMcpOAuthRouter(
   const issuerUrl = getMcpIssuerUrl();
   const resourceUrl = getMcpResourceUrl();
   const provider = new DofekOAuthServerProvider(db, resourceUrl);
+  const oauthRouterOptions = {
+    issuerUrl,
+    provider,
+    resourceName: "Dofek",
+    resourceServerUrl: resourceUrl,
+    scopesSupported: [...MCP_OAUTH_SCOPES],
+  };
 
   router.use(
     "/authorize",
@@ -51,13 +61,16 @@ export function createMcpOAuthRouter(
   );
 
   const rateLimitOptions = { rateLimit };
+  router.get("/.well-known/oauth-authorization-server", (_request, response) => {
+    response.json({
+      ...createOAuthMetadata(oauthRouterOptions),
+      client_id_metadata_document_supported: true,
+    });
+  });
+
   router.use(
     mcpAuthRouter({
-      issuerUrl,
-      provider,
-      resourceName: "Dofek",
-      resourceServerUrl: resourceUrl,
-      scopesSupported: [...MCP_OAUTH_SCOPES],
+      ...oauthRouterOptions,
       authorizationOptions: rateLimitOptions,
       clientRegistrationOptions: rateLimitOptions,
       revocationOptions: rateLimitOptions,
