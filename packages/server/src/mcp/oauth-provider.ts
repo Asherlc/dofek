@@ -16,10 +16,13 @@ import type {
   OAuthTokenRevocationRequest,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { Database } from "dofek/db";
 import type { Response } from "express";
 import { z } from "zod";
 import { McpOAuthClientsStore } from "./oauth-client-store.ts";
+import { McpOAuthClientMetadataResolver } from "./oauth-client-metadata.ts";
+import { McpOAuthClientResolver } from "./oauth-client-resolver.ts";
 import {
   createAuthorizationCode,
   exchangeAuthorizationCode,
@@ -147,12 +150,15 @@ export function oauthAccessTokenName(client: OAuthClientInformationFull): string
 export class DofekOAuthServerProvider implements OAuthServerProvider {
   readonly #db: Pick<Database, "execute">;
   readonly #resource: URL;
-  readonly clientsStore: McpOAuthClientsStore;
+  readonly clientsStore: OAuthRegisteredClientsStore;
 
   constructor(db: Pick<Database, "execute">, resource: URL) {
     this.#db = db;
     this.#resource = resource;
-    this.clientsStore = new McpOAuthClientsStore(db);
+    this.clientsStore = new McpOAuthClientResolver(
+      new McpOAuthClientsStore(db),
+      new McpOAuthClientMetadataResolver(),
+    );
   }
 
   async authorize(

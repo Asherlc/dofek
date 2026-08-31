@@ -1,0 +1,29 @@
+import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { describe, expect, it } from "vitest";
+import { McpOAuthClientResolver } from "./oauth-client-resolver.ts";
+
+const claudeClientId = "https://claude.ai/oauth/client-metadata.json";
+const hostedClient: OAuthClientInformationFull = {
+  client_id: claudeClientId,
+  redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+  token_endpoint_auth_method: "none",
+};
+const registeredClient: OAuthClientInformationFull = {
+  client_id: "registered-client",
+  client_secret: "registered-secret",
+  redirect_uris: ["https://client.example/callback"],
+};
+
+describe("McpOAuthClientResolver", () => {
+  it("uses hosted metadata for a URL client ID", async () => {
+    const resolver = new McpOAuthClientResolver(
+      {
+        getClient: async () => registeredClient,
+        registerClient: async () => registeredClient,
+      },
+      { getClient: async () => hostedClient },
+    );
+
+    await expect(resolver.getClient(claudeClientId)).resolves.toEqual(hostedClient);
+  });
+});
