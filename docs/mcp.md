@@ -8,6 +8,10 @@ https://dofek.fit/api/mcp
 
 Production deployments must keep `PUBLIC_URL=https://dofek.fit`; OAuth resource and token audiences are exact canonical URLs, so an alternate production origin is invalid.
 
+### Public-origin cutover precondition
+
+Before retiring a previous production origin, an operator must migrate every active app-level provider webhook callback to `https://dofek.fit/api/webhooks/{provider}` and verify it with that provider. Callback registration is provider-owned external state: some providers expose an API while others require their provider portal, so Dofek intentionally does not attempt a generic automatic re-registration. Retire the previous origin only after each active callback has been verified at the canonical endpoint.
+
 The endpoint uses Streamable HTTP and supports two authentication paths:
 
 - OAuth 2.1 authorization code with PKCE for remote MCP clients (Claude, ChatGPT, and any other client that supports OAuth auto-discovery).
