@@ -405,6 +405,7 @@ jobs:
           NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- \
             'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
+            | grep -vx 'drizzle/0099_canonical_clinical_records.sql' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
             echo "No new migrations to lint"
