@@ -1,8 +1,8 @@
 import {
   type HealthExplorerInput,
-  healthExplorerSnapshotSchema,
   type HealthExplorerSnapshot,
   type HealthMetric,
+  healthExplorerSnapshotSchema,
 } from "@dofek/mcp-contracts/health-explorer";
 
 export interface HealthTrendRow {
@@ -43,10 +43,14 @@ function rowKey(row: HealthTrendRow): string {
 }
 
 export class HealthExplorerService {
-  constructor(private readonly reader: HealthTrendReader) {}
+  readonly #reader: HealthTrendReader;
+
+  constructor(reader: HealthTrendReader) {
+    this.#reader = reader;
+  }
 
   async snapshot(input: HealthExplorerInput): Promise<HealthExplorerSnapshot> {
-    const rows = [...(await this.reader.list(input))].sort((first, second) =>
+    const rows = [...(await this.#reader.list(input))].sort((first, second) =>
       rowKey(first).localeCompare(rowKey(second)),
     );
     const series = input.metrics.map((metric) => {

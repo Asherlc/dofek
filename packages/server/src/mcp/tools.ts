@@ -1,9 +1,9 @@
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import {
   type HealthExplorerInput,
+  type HealthMetric,
   healthExplorerInputSchema,
   healthMetricSchema,
-  type HealthMetric,
 } from "@dofek/mcp-contracts/health-explorer";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Database } from "dofek/db";
@@ -44,9 +44,9 @@ import {
   ensureProvidersRegistered,
   toJobId,
 } from "../routers/sync-helpers.ts";
-import { type McpScope, requireMcpScope } from "./token-repository.ts";
-import { HealthExplorerService, type HealthTrendRow } from "./health-explorer-service.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
+import { HealthExplorerService, type HealthTrendRow } from "./health-explorer-service.ts";
+import { type McpScope, requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 
 export interface DofekMcpContext {
@@ -58,7 +58,7 @@ export interface DofekMcpContext {
 }
 
 function jsonContent(value: unknown) {
-  return jsonToolResult(value);
+  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
 const healthMetricColumns: Partial<Record<HealthMetric, string>> = {
@@ -137,7 +137,7 @@ function healthTrends(
   baselineRows: DailyRecoveryBaseline[],
   metrics: HealthMetric[],
   granularity: "daily" | "weekly",
-) {
+): HealthTrendRow[] {
   const grouped = new Map<string, Array<Record<string, unknown>>>();
   for (const row of rows) {
     const date = z.string().parse(row.date);
@@ -224,7 +224,7 @@ async function listHealthTrends(
     ),
   ]);
   const rows = await repository.listRange(input.start_date, input.end_date, restingHeartRateCte);
-  return healthTrends(rows, baselineRows, input.metrics, input.granularity) as HealthTrendRow[];
+  return healthTrends(rows, baselineRows, input.metrics, input.granularity);
 }
 
 function average(values: Array<number | null | undefined>): number | null {
@@ -356,10 +356,10 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async (input) => {
       requireMcpScope(context.scopes, "health:read");
-      return jsonContent(
-        await new HealthExplorerService({ list: (request) => listHealthTrends(context, request) }).snapshot(
-          input,
-        ),
+      return jsonToolResult(
+        await new HealthExplorerService({
+          list: (request) => listHealthTrends(context, request),
+        }).snapshot(input),
       );
     },
   );

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  healthExplorerInputSchema,
-  healthExplorerSnapshotSchema,
-} from "./health-explorer.ts";
+import { healthExplorerInputSchema, healthExplorerSnapshotSchema } from "./health-explorer.ts";
 
 describe("healthExplorerInputSchema", () => {
   it("defaults to a bounded daily health-trend request", () => {

@@ -826,6 +826,53 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it("returns a structured analytics snapshot for the interactive explorer", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-18", hrv: 50 },
+      { date: "2026-05-19", hrv: 55 },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("render_health_explorer", {
+        end_date: "2026-05-19",
+        metrics: ["hrv"],
+        start_date: "2026-05-18",
+      }),
+    });
+
+    const parsedResponse = z
+      .object({
+        result: z.object({
+          structuredContent: z
+            .object({
+              coverage: z.object({ observed_days: z.number(), requested_days: z.number() }),
+              series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
+            })
+            .passthrough(),
+        }),
+      })
+      .parse(parseJsonRpcEvent(response.text));
+
+    expect(parsedResponse.result.structuredContent).toEqual({
+      coverage: { observed_days: 2, requested_days: 2 },
+      range: { end_date: "2026-05-19", granularity: "daily", start_date: "2026-05-18" },
+      series: [
+        {
+          label: "Heart rate variability",
+          metric: "hrv",
+          points: [
+            { key: "2026-05-18", value: 50 },
+            { key: "2026-05-19", value: 55 },
+          ],
+          unit: "ms",
+        },
+      ],
+      summary: [{ average: 52.5, max: 55, metric: "hrv", min: 50 }],
+    });
+  });
+
   it("returns server-computed baseline context for recovery health trends", async () => {
     authorizeMcpToken();
     const recoveryRow = {

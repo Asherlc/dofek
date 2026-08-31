@@ -29,10 +29,7 @@ export function registerDofekAppResources(server: Pick<McpServer, "registerResou
         {
           uri: healthExplorerResourceUri,
           mimeType: RESOURCE_MIME_TYPE,
-          text: await readFile(
-            resolve(process.cwd(), "packages/mcp-app/dist/index.html"),
-            "utf8",
-          ),
+          text: await readFile(resolve(process.cwd(), "packages/mcp-app/dist/index.html"), "utf8"),
           _meta: resourceMeta,
         },
       ],

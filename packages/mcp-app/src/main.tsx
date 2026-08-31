@@ -1,13 +1,22 @@
-import { healthExplorerSnapshotSchema, type HealthMetric } from "@dofek/mcp-contracts/health-explorer";
+import {
+  type HealthMetric,
+  healthExplorerSnapshotSchema,
+} from "@dofek/mcp-contracts/health-explorer";
 import { useApp } from "@modelcontextprotocol/ext-apps/react";
-import { createRoot } from "react-dom/client";
 import { useCallback, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { HealthExplorer } from "./health-explorer.tsx";
 
 function ExplorerApp() {
-  const [snapshot, setSnapshot] = useState<ReturnType<typeof healthExplorerSnapshotSchema.parse> | null>(null);
+  const [snapshot, setSnapshot] = useState<ReturnType<
+    typeof healthExplorerSnapshotSchema.parse
+  > | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { app, isConnected, error: connectionError } = useApp({
+  const {
+    app,
+    isConnected,
+    error: connectionError,
+  } = useApp({
     appInfo: { name: "Dofek Analytics Explorer", version: "0.1.0" },
     capabilities: {},
     onAppCreated: (createdApp) => {
@@ -17,18 +26,21 @@ function ExplorerApp() {
       };
     },
   });
-  const onMetricChange = useCallback(async (metric: HealthMetric) => {
-    if (!app || !snapshot) return;
-    try {
-      const result = await app.callServerTool({
-        name: "render_health_explorer",
-        arguments: { ...snapshot.range, metrics: [metric] },
-      });
-      setSnapshot(healthExplorerSnapshotSchema.parse(result.structuredContent));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to update Dofek Explorer.");
-    }
-  }, [app, snapshot]);
+  const onMetricChange = useCallback(
+    async (metric: HealthMetric) => {
+      if (!app || !snapshot) return;
+      try {
+        const result = await app.callServerTool({
+          name: "render_health_explorer",
+          arguments: { ...snapshot.range, metrics: [metric] },
+        });
+        setSnapshot(healthExplorerSnapshotSchema.parse(result.structuredContent));
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Unable to update Dofek Explorer.");
+      }
+    },
+    [app, snapshot],
+  );
 
   if (connectionError) return <p role="alert">{connectionError.message}</p>;
   if (error) return <p role="alert">{error}</p>;
@@ -36,4 +48,9 @@ function ExplorerApp() {
   return <HealthExplorer snapshot={snapshot} onMetricChange={onMetricChange} />;
 }
 
-createRoot(document.getElementById("root")!).render(<ExplorerApp />);
+const root = document.getElementById("root");
+if (!root) {
+  throw new Error("Dofek Analytics Explorer root element is missing.");
+}
+
+createRoot(root).render(<ExplorerApp />);

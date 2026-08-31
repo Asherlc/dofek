@@ -1,6 +1,15 @@
-import type { HealthExplorerSnapshot, HealthMetric } from "@dofek/mcp-contracts/health-explorer";
-import * as echarts from "echarts";
+import {
+  type HealthExplorerSnapshot,
+  type HealthMetric,
+  healthMetricSchema,
+} from "@dofek/mcp-contracts/health-explorer";
+import { LineChart } from "echarts/charts";
+import { GridComponent, TooltipComponent } from "echarts/components";
+import * as echarts from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
+
+echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 
 export interface HealthExplorerProps {
   snapshot: HealthExplorerSnapshot;
@@ -19,7 +28,13 @@ export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps
       tooltip: { trigger: "axis" },
       xAxis: { type: "category", data: primarySeries.points.map((point) => point.key) },
       yAxis: { type: "value", name: primarySeries.unit },
-      series: [{ type: "line", connectNulls: false, data: primarySeries.points.map((point) => point.value) }],
+      series: [
+        {
+          type: "line",
+          connectNulls: false,
+          data: primarySeries.points.map((point) => point.value),
+        },
+      ],
     });
     return () => chart.dispose();
   }, [primarySeries]);
@@ -28,19 +43,41 @@ export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps
     <main>
       <header>
         <h1>Dofek Analytics Explorer</h1>
-        <p>{snapshot.range.start_date} to {snapshot.range.end_date}</p>
+        <p>
+          {snapshot.range.start_date} to {snapshot.range.end_date}
+        </p>
       </header>
       <label>
         Metric
-        <select aria-label="Metric" value={primarySeries?.metric} onChange={(event) => onMetricChange(event.target.value as HealthMetric)}>
-          {snapshot.series.map((series) => <option key={series.metric} value={series.metric}>{series.label}</option>)}
+        <select
+          aria-label="Metric"
+          value={primarySeries?.metric}
+          onChange={(event) => onMetricChange(healthMetricSchema.parse(event.target.value))}
+        >
+          {snapshot.series.map((series) => (
+            <option key={series.metric} value={series.metric}>
+              {series.label}
+            </option>
+          ))}
         </select>
       </label>
       <section aria-label="Summary">
-        {snapshot.summary.map((summary) => <article key={summary.metric}><strong>{summary.metric}</strong><span>{summary.average ?? "No data"}</span></article>)}
-        <p>{snapshot.coverage.observed_days} of {snapshot.coverage.requested_days} days observed</p>
+        {snapshot.summary.map((summary) => (
+          <article key={summary.metric}>
+            <strong>{summary.metric}</strong>
+            <span>{summary.average ?? "No data"}</span>
+          </article>
+        ))}
+        <p>
+          {snapshot.coverage.observed_days} of {snapshot.coverage.requested_days} days observed
+        </p>
       </section>
-      <div ref={chartRef} aria-label="Health trend chart" style={{ height: 300, width: "100%" }} />
+      <div
+        ref={chartRef}
+        aria-label="Health trend chart"
+        role="img"
+        style={{ height: 300, width: "100%" }}
+      />
     </main>
   );
 }

@@ -23,7 +23,7 @@ function inlineMcpAppBundle() {
           .replace(scriptSource, "")
           .replace(
             "<script type=\"module\" crossorigin src=\"\"></script>",
-            `<script type="module">${script}</script>`,
+            () => `<script type="module">${script}</script>`,
           ),
       );
     },
@@ -34,9 +34,9 @@ export default defineConfig({
   plugins: [react(), inlineMcpAppBundle()],
   build: {
     cssCodeSplit: false,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
     },
   },
