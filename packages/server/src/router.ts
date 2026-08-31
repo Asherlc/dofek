@@ -1,7 +1,6 @@
 import type { inferRouterOutputs } from "@trpc/server";
 import { accountErasureRouter } from "./routers/account-erasure.ts";
 import { activityRouter } from "./routers/activity.ts";
-import { activityRecordingRouter } from "./routers/activity-recording.ts";
 import { adminRouter } from "./routers/admin.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
@@ -10,7 +9,6 @@ import { billingRouter } from "./routers/billing.ts";
 import { bleHeartRateSyncRouter } from "./routers/ble-heart-rate-sync.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
-import { breathworkRouter } from "./routers/breathwork.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { climbingRouter } from "./routers/climbing.ts";
 import { companionPairingRouter } from "./routers/companion-pairing.ts";
@@ -78,12 +76,10 @@ const appRouterProcedures = {
   inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
   watchAltitudeSync: watchAltitudeSyncRouter,
   activity: activityRouter,
-  activityRecording: activityRecordingRouter,
   anomalyDetection: anomalyDetectionRouter,
   behaviorImpact: behaviorImpactRouter,
   billing: billingRouter,
   bleHeartRateSync: bleHeartRateSyncRouter,
-  breathwork: breathworkRouter,
   personalization: personalizationRouter,
   auth: authRouter,
   sleep: sleepRouter,
@@ -136,8 +132,8 @@ const appRouterProcedures = {
   todayPlan: todayPlanRouter,
   healthReport: healthReportRouter,
   healthspan: healthspanRouter,
-  menstrualCycle: menstrualCycleRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
+  menstrualCycle: menstrualCycleRouter,
   mcp: mcpRouter,
   monthlyReport: monthlyReportRouter,
   weeklyReport: weeklyReportRouter,

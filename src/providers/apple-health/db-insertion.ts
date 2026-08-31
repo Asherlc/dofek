@@ -778,7 +778,16 @@ function workoutName(workout: HealthWorkout): string {
 }
 
 function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
-  const raw: Record<string, unknown> = { durationSeconds: workout.durationSeconds };
+  const raw: Record<string, unknown> = {
+    durationSeconds: workout.durationSeconds,
+    appleHealth: {
+      workoutActivityType: workout.activityType.providerType,
+      sourceName: workout.sourceName,
+      ...(workout.metadata && Object.keys(workout.metadata).length > 0
+        ? { metadata: workout.metadata }
+        : {}),
+    },
+  };
   if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
   if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
   if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;

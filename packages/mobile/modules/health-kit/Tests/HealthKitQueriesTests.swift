@@ -5,6 +5,38 @@ import XCTest
 
 final class HealthKitQueriesTests: XCTestCase {
 
+    func testSampleTypeResolvesMenstrualFlowCategory() {
+        let sampleType = HealthKitQueries.sampleType(
+            for: HKCategoryTypeIdentifier.menstrualFlow.rawValue
+        )
+
+        XCTAssertEqual(sampleType?.identifier, HKCategoryTypeIdentifier.menstrualFlow.rawValue)
+    }
+
+    func testTransportSamplePreservesMenstrualCycleStartMetadata() {
+        let type = HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
+        let start = Date(timeIntervalSince1970: 1_786_140_000)
+        let end = start.addingTimeInterval(300)
+        let sample = HKCategorySample(
+            type: type,
+            value: HKCategoryValueMenstrualFlow.medium.rawValue,
+            start: start,
+            end: end,
+            metadata: [HKMetadataKeyMenstrualCycleStart: true]
+        )
+
+        let result = HealthKitQueries.transportSample(
+            sample,
+            typeIdentifier: HKCategoryTypeIdentifier.menstrualFlow.rawValue
+        )
+
+        XCTAssertEqual(result?["type"] as? String, HKCategoryTypeIdentifier.menstrualFlow.rawValue)
+        XCTAssertEqual(result?["unit"] as? String, "category")
+        XCTAssertEqual(result?["value"] as? Int, HKCategoryValueMenstrualFlow.medium.rawValue)
+        let metadata = result?["metadata"] as? [String: Bool]
+        XCTAssertEqual(metadata?[HKMetadataKeyMenstrualCycleStart], true)
+    }
+
     // MARK: - parseDate
 
     func testParseDateWithFractionalSeconds() {

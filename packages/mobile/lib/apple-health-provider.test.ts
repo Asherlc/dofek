@@ -13,6 +13,7 @@ vi.mock("../modules/health-kit", () => ({
     deletedUUIDs: [],
   })),
   queryDailyStatistics: vi.fn(async () => []),
+  queryCategorySamples: vi.fn(async () => []),
   queryQuantitySamples: vi.fn(async () => []),
   querySleepSamples: vi.fn(async () => []),
   queryWorkoutRoutes: vi.fn(async () => []),
@@ -168,6 +169,7 @@ describe("AppleHealthSyncService", () => {
       trpcClient,
       healthKit: {
         queryDailyStatistics: vi.fn(async () => []),
+        queryCategorySamples: vi.fn(async () => []),
         queryQuantitySamples: vi.fn(async () => []),
         queryWorkouts: vi.fn(async () => []),
         querySleepSamples: vi.fn(async () => []),
@@ -226,6 +228,7 @@ describe("AppleHealthProviderModel", () => {
         label: "Apple Health",
         enabled: true,
         authStatus: "connected",
+        recentLogs: [],
       }),
     );
     expect(model.toDisplayProvider()).toEqual(

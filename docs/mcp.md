@@ -1,10 +1,16 @@
 # Remote MCP
 
-Dofek exposes a remote Model Context Protocol endpoint from the existing API server at:
+Dofek exposes a remote Model Context Protocol endpoint at:
 
 ```text
-https://<your-dofek-host>/api/mcp
+https://dofek.fit/api/mcp
 ```
+
+Production deployments must keep `PUBLIC_URL=https://dofek.fit`; OAuth resource and token audiences are exact canonical URLs, so an alternate production origin is invalid.
+
+### Public-origin cutover precondition
+
+Before retiring a previous production origin, an operator must migrate every active app-level provider webhook callback to `https://dofek.fit/api/webhooks/{provider}` and verify it with that provider. Callback registration is provider-owned external state: some providers expose an API while others require their provider portal, so Dofek intentionally does not attempt a generic automatic re-registration. Retire the previous origin only after each active callback has been verified at the canonical endpoint.
 
 The endpoint uses Streamable HTTP and supports two authentication paths:
 
@@ -18,7 +24,7 @@ Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata (
 Dofek supports [OAuth Dynamic Client Registration (DCR)](https://www.rfc-editor.org/rfc/rfc7591) ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)), so MCP clients create distinct client credentials automatically. Configure the client with only:
 
 ```text
-MCP URL: https://<your-dofek-host>/api/mcp
+MCP URL: https://dofek.fit/api/mcp
 ```
 
 Leave the OAuth Client ID and OAuth Client Secret fields empty when the client supports DCR. The client discovers `/register` ([RFC 7591 §3](https://www.rfc-editor.org/rfc/rfc7591#section-3)), registers itself, and stores the resulting client credentials. Each registration receives a unique client ID and secret; Dofek encrypts the secret at rest with `CREDENTIAL_ENCRYPTION_KEY_BASE64` using the [AWS Encryption SDK](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/introduction.html) raw AES-256-GCM keyring ([`@aws-crypto/client-node`](https://github.com/aws/aws-encryption-sdk-javascript); see [credential encryption](credential-encryption.md)). Registration secrets expire after 30 days via `client_secret_expires_at` ([RFC 7591 §3.2.1](https://www.rfc-editor.org/rfc/rfc7591#section-3.2.1)).
@@ -55,7 +61,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "activity:read", "nutrition:read", "nutrition:write", "providers:read", "sync:write"],
+  "scopes": ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -71,7 +77,6 @@ List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.rev
 | `health:read` | Read daily health summaries. |
 | `activity:read` | Search activity summaries. |
 | `nutrition:read` | Read daily nutrition summaries. |
-| `nutrition:write` | Log food entries. |
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
 
@@ -83,13 +88,14 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 |------|-------|---------|
 | `get_daily_health_summary` | `health:read` | Returns server-computed metrics for one date. |
 | `get_health_trends` | `health:read` | Returns daily or weekly health metric aggregates and baseline-relative recovery context for a date range. |
+| `render_health_explorer` | `health:read` | Returns a server-computed analytics snapshot and renders the Dofek Analytics Explorer in MCP clients that support Apps UI resources. |
 | `get_sleep_summary` | `health:read` | Returns nightly sleep duration, efficiency, stages, and timing. |
 | `search_activities` | `activity:read` | Searches activities inside exact date boundaries. |
+| `get_activity_details` | `activity:read` | Returns one activity with its strength, climbing, and finger-loading details. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type or ISO week. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols and server-derived effective load inside exact date boundaries. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
 | `get_body_metrics` | `health:read` | Returns weight and body-composition measurements. |
-| `log_food` | `nutrition:write` | Creates a Dofek food entry from text. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -110,7 +116,7 @@ For MCP clients that support custom remote HTTP headers directly, configure the 
 {
   "mcpServers": {
     "dofek": {
-      "url": "https://<your-dofek-host>/api/mcp",
+      "url": "https://dofek.fit/api/mcp",
       "headers": {
         "Authorization": "Bearer dofek_mcp_..."
       }
@@ -122,7 +128,7 @@ For MCP clients that support custom remote HTTP headers directly, configure the 
 For clients that need a local bridge, use `mcp-remote`:
 
 ```bash
-npx mcp-remote https://<your-dofek-host>/api/mcp --header "Authorization: Bearer dofek_mcp_..."
+pnpm dlx mcp-remote https://dofek.fit/api/mcp --header "Authorization: Bearer dofek_mcp_..."
 ```
 
 ## Manual Verification
@@ -130,10 +136,16 @@ npx mcp-remote https://<your-dofek-host>/api/mcp --header "Authorization: Bearer
 Use the official inspector during development:
 
 ```bash
-npx @modelcontextprotocol/inspector@latest
+pnpm dlx @modelcontextprotocol/inspector@latest
 ```
 
-Set the transport to Streamable HTTP, URL to `https://<your-dofek-host>/api/mcp`, and include the bearer token header.
+Set the transport to Streamable HTTP, URL to `https://dofek.fit/api/mcp`, and include the bearer token header.
+
+## Directory Listings
+
+Dofek publishes one remote Streamable HTTP endpoint. The [MCP Registry remote-server format](https://modelcontextprotocol.io/registry/remote-servers) requires that endpoint to be publicly accessible and records it in the `remotes` field; the checked-in [registry entry](../registry/dofek/server.json) is ready for publishing after the production endpoint is deployed. ChatGPT plugin review also requires a verified individual or business identity, a production MCP URL, a support URL, policy URLs, accurate tool annotations, and reviewer-ready test credentials ([OpenAI submission requirements](https://developers.openai.com/plugins/deploy/submission)).
+
+For other clients, use the OAuth setup above when the client supports remote MCP OAuth discovery, or the bearer-header configuration when it does not. Clients that support MCP Apps UI render `render_health_explorer`; other clients receive the same readable JSON snapshot.
 
 ## Local Axiom MCP
 

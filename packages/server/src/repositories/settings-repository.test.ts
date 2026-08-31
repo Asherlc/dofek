@@ -104,16 +104,17 @@ describe("SettingsRepository", () => {
       { rows: [{ key: "calorieGoal", value: 0 }] },
       { rows: [{ key: "calorieGoal", value: 0.4 }] },
       { rows: [{ key: "calorieGoal", value: "invalid" }] },
-    ])("identifies the canonical default when the target is absent or invalid", async ({
-      rows,
-    }) => {
-      const { repo } = makeRepository(rows);
+    ])(
+      "identifies the canonical default when the target is absent or invalid",
+      async ({ rows }) => {
+        const { repo } = makeRepository(rows);
 
-      await expect(repo.getCalorieGoalContext()).resolves.toEqual({
-        target: 2000,
-        type: "default",
-      });
-    });
+        await expect(repo.getCalorieGoalContext()).resolves.toEqual({
+          target: 2000,
+          type: "default",
+        });
+      },
+    );
   });
 
   describe("set", () => {
@@ -126,126 +127,6 @@ describe("SettingsRepository", () => {
     it("throws when upsert returns no rows", async () => {
       const { repo } = makeRepository([]);
       await expect(repo.set("theme", "dark")).rejects.toThrow("Failed to upsert setting");
-    });
-  });
-
-  describe("slackStatus", () => {
-    it("returns connected false when no slack account", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.slackStatus();
-      expect(result.connected).toBe(false);
-    });
-
-    it("returns connected true when slack account exists", async () => {
-      const { repo } = makeRepository([{ provider_account_id: "slack-123" }]);
-      const result = await repo.slackStatus();
-      expect(result.connected).toBe(true);
-    });
-
-    it("returns configured true when oauth env vars are set", async () => {
-      const originalClientId = process.env.SLACK_CLIENT_ID;
-      const originalSigningSecret = process.env.SLACK_SIGNING_SECRET;
-      process.env.SLACK_CLIENT_ID = "test-client-id";
-      process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
-      try {
-        const { repo } = makeRepository([]);
-        const result = await repo.slackStatus();
-        expect(result.configured).toBe(true);
-      } finally {
-        process.env.SLACK_CLIENT_ID = originalClientId;
-        process.env.SLACK_SIGNING_SECRET = originalSigningSecret;
-      }
-    });
-
-    it("returns configured true when socket mode env vars are set", async () => {
-      const originalBotToken = process.env.SLACK_BOT_TOKEN;
-      const originalAppToken = process.env.SLACK_APP_TOKEN;
-      process.env.SLACK_BOT_TOKEN = "test-bot-token";
-      process.env.SLACK_APP_TOKEN = "test-app-token";
-      try {
-        const { repo } = makeRepository([]);
-        const result = await repo.slackStatus();
-        expect(result.configured).toBe(true);
-      } finally {
-        process.env.SLACK_BOT_TOKEN = originalBotToken;
-        process.env.SLACK_APP_TOKEN = originalAppToken;
-      }
-    });
-
-    it("returns configured false when only SLACK_CLIENT_ID is set (not signing secret)", async () => {
-      const envBackup = { ...process.env };
-      delete process.env.SLACK_SIGNING_SECRET;
-      delete process.env.SLACK_BOT_TOKEN;
-      delete process.env.SLACK_APP_TOKEN;
-      process.env.SLACK_CLIENT_ID = "only-client-id";
-      try {
-        const { repo } = makeRepository([]);
-        const result = await repo.slackStatus();
-        // && requires both: SLACK_CLIENT_ID && SLACK_SIGNING_SECRET
-        expect(result.configured).toBe(false);
-      } finally {
-        Object.assign(process.env, envBackup);
-      }
-    });
-
-    it("returns configured false when only SLACK_SIGNING_SECRET is set (not client id)", async () => {
-      const envBackup = { ...process.env };
-      delete process.env.SLACK_CLIENT_ID;
-      delete process.env.SLACK_BOT_TOKEN;
-      delete process.env.SLACK_APP_TOKEN;
-      process.env.SLACK_SIGNING_SECRET = "only-signing-secret";
-      try {
-        const { repo } = makeRepository([]);
-        const result = await repo.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        Object.assign(process.env, envBackup);
-      }
-    });
-
-    it("returns configured false when only SLACK_BOT_TOKEN is set (not app token)", async () => {
-      const envBackup = { ...process.env };
-      delete process.env.SLACK_CLIENT_ID;
-      delete process.env.SLACK_SIGNING_SECRET;
-      delete process.env.SLACK_APP_TOKEN;
-      process.env.SLACK_BOT_TOKEN = "only-bot-token";
-      try {
-        const { repo } = makeRepository([]);
-        const result = await repo.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        Object.assign(process.env, envBackup);
-      }
-    });
-
-    it("returns configured false when only SLACK_APP_TOKEN is set (not bot token)", async () => {
-      const envBackup = { ...process.env };
-      delete process.env.SLACK_CLIENT_ID;
-      delete process.env.SLACK_SIGNING_SECRET;
-      delete process.env.SLACK_BOT_TOKEN;
-      process.env.SLACK_APP_TOKEN = "only-app-token";
-      try {
-        const { repo } = makeRepository([]);
-        const result = await repo.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        Object.assign(process.env, envBackup);
-      }
-    });
-
-    it("returns configured false when no slack env vars are set", async () => {
-      const envBackup = { ...process.env };
-      delete process.env.SLACK_CLIENT_ID;
-      delete process.env.SLACK_SIGNING_SECRET;
-      delete process.env.SLACK_BOT_TOKEN;
-      delete process.env.SLACK_APP_TOKEN;
-      try {
-        const { repo } = makeRepository([]);
-        const result = await repo.slackStatus();
-        expect(result.configured).toBe(false);
-      } finally {
-        Object.assign(process.env, envBackup);
-      }
     });
   });
 
@@ -296,9 +177,9 @@ describe("SettingsRepository", () => {
         if (transactionAborted) {
           throw new Error("current transaction is aborted");
         }
-        if (queryText.includes("fitness.menstrual_period")) {
+        if (queryText.includes("fitness.life_events")) {
           transactionAborted = true;
-          throw Object.assign(new Error('relation "fitness.menstrual_period" does not exist'), {
+          throw Object.assign(new Error('relation "fitness.life_events" does not exist'), {
             code: "42P01",
           });
         }
@@ -339,7 +220,7 @@ describe("SettingsRepository", () => {
             ? (Reflect.get(query, "queryChunks") ?? [])
             : [],
         );
-        if (queryText.includes("fitness.menstrual_period")) {
+        if (queryText.includes("fitness.life_events")) {
           throw deletionError;
         }
         return [];
@@ -371,7 +252,7 @@ describe("SettingsRepository", () => {
       expect(queries.some((query) => query.includes("RELEASE SAVEPOINT"))).toBe(true);
     });
 
-    it("deletes exactly 6 user-scoped tables including menstrual periods", async () => {
+    it("deletes every user-scoped table", async () => {
       const transactionExecute = vi.fn().mockResolvedValue([]);
       const transaction = vi
         .fn()
@@ -392,7 +273,9 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(7);
+      expect(queries.some((query) => query.includes("fitness.life_events"))).toBe(true);
+      expect(queries.some((query) => query.includes("fitness.breathwork_session"))).toBe(true);
       expect(queries.some((query) => query.includes("fitness.menstrual_period"))).toBe(true);
     });
 
@@ -403,8 +286,8 @@ describe("SettingsRepository", () => {
             ? (Reflect.get(query, "queryChunks") ?? [])
             : [],
         );
-        if (queryText.includes("fitness.menstrual_period")) {
-          throw Object.assign(new Error('relation "fitness.menstrual_period" does not exist'), {
+        if (queryText.includes("fitness.life_events")) {
+          throw Object.assign(new Error('relation "fitness.life_events" does not exist'), {
             code: "42P01",
           });
         }
@@ -432,7 +315,7 @@ describe("SettingsRepository", () => {
             : [],
         ),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(7);
       expect(queries.some((query) => query.includes("fitness.supplement"))).toBe(true);
     });
 
@@ -458,8 +341,8 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      // 2 child tables + 6 user-scoped tables = 8 delete statements.
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(8);
+      // 2 child tables + 7 user-scoped tables = 9 delete statements.
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(9);
     });
   });
 });

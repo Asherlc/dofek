@@ -66,14 +66,6 @@ const companionPairingSchema = z
   })
   .passthrough();
 const whoopVerificationSchema = z.object({ userId: z.string() }).passthrough();
-const slackPendingEntrySchema = z
-  .object({
-    channelId: z.string().min(1),
-    confirmationMessageTs: z.string().min(1),
-    id: z.string().min(1),
-    userId: z.string(),
-  })
-  .passthrough();
 const uploadOwnedStateSchema = z.object({ userId: z.string() }).passthrough();
 
 interface ManagedJsonNamespace {
@@ -176,15 +168,6 @@ const MANAGED_JSON_NAMESPACES: readonly ManagedJsonNamespace[] = [
     errorLabel: "whoop-verification",
     prefix: "whoop:verification:",
     schema: whoopVerificationSchema,
-  }),
-  managedJsonNamespace({
-    belongsToAccount: (value, identifiers) => value.userId === identifiers.userId,
-    companionKeys: (_key, value) => [
-      `slack:pending-message:${value.channelId}:${value.confirmationMessageTs}`,
-    ],
-    errorLabel: "slack-pending-entry",
-    prefix: "slack:pending-entry:",
-    schema: slackPendingEntrySchema,
   }),
   managedJsonNamespace({
     belongsToAccount: (value, identifiers) => value.userId === identifiers.userId,
@@ -325,18 +308,6 @@ async function collectOwnedKeys(
     scanKeys(client, `query-cache:data:${identifiers.userId}:*`),
   ]);
   for (const key of exactPatternMatches.flat()) keys.add(key);
-
-  const slackAccountIds = identifiers.authIdentities
-    .filter((identity) => identity.authProvider === "slack")
-    .map((identity) => identity.providerAccountId);
-  if (slackAccountIds.length > 0) {
-    const actionDedupeKeys = await scanKeys(client, "slack:dedupe:action:*");
-    for (const key of actionDedupeKeys) {
-      if (slackAccountIds.some((accountId) => key.endsWith(`:${accountId}`))) {
-        keys.add(key);
-      }
-    }
-  }
 
   const bullmqKeys = await scanKeys(client, "bull:*");
   const bullmqKeyIdentifiers = [identifiers.userId, ...identifiers.bullmqJobIds];

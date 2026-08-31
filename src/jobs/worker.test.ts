@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME } from "./import-validation-error.ts";
 
@@ -42,7 +43,7 @@ const hoisted = vi.hoisted(() => {
 
   // Per-worker `on` mocks, keyed by queue name, so tests can find handlers
   // registered by a specific worker rather than relying on call order.
-  const workerOnMocks: Record<string, ReturnType<typeof vi.fn>> = {};
+  const workerOnMocks: Record<string, CallableVitestMock> = {};
   const workerProcessors: Record<string, (job: unknown) => unknown> = {};
 
   const mockReadinessListen = vi.fn();
@@ -137,7 +138,7 @@ const hoisted = vi.hoisted(() => {
 vi.mock("bullmq", () => ({
   Job: { addJobLog: hoisted.mockAddJobLog },
   UnrecoverableError: hoisted.MockUnrecoverableError,
-  Worker: vi.fn((name: string, processor: (job: unknown) => unknown) => {
+  Worker: vi.fn(function vitestConstructor(name: string, processor: (job: unknown) => unknown) {
     const on = vi.fn((...args: unknown[]) => hoisted.mockOn(...args));
     hoisted.workerOnMocks[name] = on;
     hoisted.workerProcessors[name] = processor;
@@ -269,6 +270,7 @@ vi.mock("./file-upload-reconciliation.ts", () => ({
 }));
 
 vi.mock("./scheduled-sync.ts", () => ({
+  DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES: 30,
   setupScheduledSync: () =>
     hoisted.scheduledSyncState.error
       ? Promise.reject(hoisted.scheduledSyncState.error)
@@ -416,7 +418,7 @@ afterAll(() => {
 });
 
 describe("worker module", () => {
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
+  // 2 per-provider workers (strava, garmin) + 1 shared sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
   // + 1 activity-delete-analytics + 1 provider-data-deletion + 1 account-erasure = 13
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
@@ -685,7 +687,7 @@ describe("worker module", () => {
   ): (...args: unknown[]) => unknown {
     const on = workerOnMocks[queueName];
     if (!on) throw new Error(`${queueName} worker on mock was not registered`);
-    const call = on.mock.calls.find((mockCall) => mockCall[0] === eventName);
+    const call = on.mock.calls.find((mockCall: [string, unknown]) => mockCall[0] === eventName);
     expect(call).toBeDefined();
     const handler = call?.[1];
     if (typeof handler !== "function") {
@@ -851,6 +853,47 @@ describe("worker module", () => {
     );
   });
 
+  it("failed event handler logs provider service-unavailable errors without Sentry capture", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.warn).mockClear();
+
+    getWorkerHandler("active")();
+    const error = new ProviderServiceUnavailableError({
+      message: "Zepp API service unavailable (500): upstream outage",
+      providerId: "amazfit-zepp",
+      statusCode: 500,
+      responseBody: "upstream outage",
+    });
+    getWorkerHandler("failed")(undefined, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[worker] Job retrying after provider service unavailable: Zepp API service unavailable (500): upstream outage",
+    );
+  });
+
+  it("failed event handler reports unrelated provider service-unavailable errors", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const error = new ProviderServiceUnavailableError({
+      message: "Zwift API service unavailable (503): upstream outage",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "upstream outage",
+    });
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    getWorkerHandler("failed")(undefined, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Job failed: Zwift API service unavailable (503): upstream outage",
+    );
+  });
+
   it("failed event handler does not restart idle timer while another job is active", async () => {
     const Sentry = await import("@sentry/node");
     vi.mocked(Sentry.captureException).mockClear();
@@ -884,7 +927,7 @@ describe("worker module", () => {
   function getWorkerFailedHandler(queueName: string): (...args: unknown[]) => unknown {
     const on = workerOnMocks[queueName];
     if (!on) throw new Error(`${queueName} worker on mock was not registered`);
-    const failedCall = on.mock.calls.find((call) => call[0] === "failed");
+    const failedCall = on.mock.calls.find((call: [string, unknown]) => call[0] === "failed");
     if (!failedCall || typeof failedCall[1] !== "function") {
       throw new Error(`${queueName} worker failed handler was not registered`);
     }
@@ -898,7 +941,7 @@ describe("worker module", () => {
   function getProviderDataDeletionRedriveHandler(): (...args: unknown[]) => unknown {
     const on = workerOnMocks["provider-data-deletion-queue"];
     if (!on) throw new Error("provider deletion worker on mock was not registered");
-    const failedCall = on.mock.calls.find((call) => call[0] === "failed");
+    const failedCall = on.mock.calls.find((call: [string, unknown]) => call[0] === "failed");
     if (!failedCall || typeof failedCall[1] !== "function") {
       throw new Error("provider deletion redrive handler was not registered");
     }
@@ -1263,16 +1306,13 @@ describe("worker module", () => {
     expect(processSyncJob).toHaveBeenCalled();
   });
 
-  it("legacy sync processor delegates to processSyncJob and logs warning", async () => {
+  it("shared sync processor delegates to processSyncJob", async () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
-    const { logger } = await import("../logger.ts");
     vi.mocked(processSyncJob).mockClear();
-    vi.mocked(logger.warn).mockClear();
 
     await invokeProcessor("sync-queue", { providerId: "wahoo", userId: "user-1" });
 
     expect(processSyncJob).toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalled();
   });
 
   it("import processor delegates to processFileUploadImportJob", async () => {

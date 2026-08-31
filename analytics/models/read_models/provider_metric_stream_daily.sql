@@ -14,7 +14,7 @@
     }
 ) }}
 
-WITH source_day_changes AS materialized (
+WITH source_day_changes AS MATERIALIZED (
     SELECT
         user_id,
         provider_id,
@@ -28,7 +28,7 @@ WITH source_day_changes AS materialized (
 ),
 
 {% if is_incremental() %}
-existing_daily_state AS materialized (
+existing_daily_state AS MATERIALIZED (
     SELECT
         user_id,
         provider_id,
@@ -38,7 +38,7 @@ existing_daily_state AS materialized (
 ),
 {% endif %}
 
-dirty_days AS materialized (
+dirty_days AS MATERIALIZED (
     SELECT
         source_day_changes.user_id AS user_id,
         source_day_changes.provider_id AS provider_id,
@@ -61,7 +61,7 @@ dirty_days AS materialized (
     LIMIT {{ provider_metric_stream_day_batch_size }}
 ),
 
-metric_stream_current AS materialized (
+metric_stream_current AS MATERIALIZED (
     SELECT
         user_id,
         provider_id,
