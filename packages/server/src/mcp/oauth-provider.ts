@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import {
   AccessDeniedError,
   InvalidGrantError,
@@ -16,13 +17,12 @@ import type {
   OAuthTokenRevocationRequest,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { Database } from "dofek/db";
 import type { Response } from "express";
 import { z } from "zod";
-import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import { McpOAuthClientMetadataResolver } from "./oauth-client-metadata.ts";
 import { McpOAuthClientResolver } from "./oauth-client-resolver.ts";
+import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import {
   createAuthorizationCode,
   exchangeAuthorizationCode,

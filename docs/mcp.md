@@ -15,13 +15,15 @@ Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata (
 
 ## Connect With OAuth
 
-Dofek supports [OAuth Dynamic Client Registration (DCR)](https://www.rfc-editor.org/rfc/rfc7591) ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)), so MCP clients create distinct client credentials automatically. Configure the client with only:
+Dofek supports [OAuth Client ID Metadata Documents (CIMD)](https://modelcontextprotocol.io/seps/991-enable-url-based-client-registration-using-oauth-c) and [OAuth Dynamic Client Registration (DCR)](https://www.rfc-editor.org/rfc/rfc7591). Configure the client with only:
 
 ```text
 MCP URL: https://<your-dofek-host>/api/mcp
 ```
 
-Leave the OAuth Client ID and OAuth Client Secret fields empty when the client supports DCR. The client discovers `/register` ([RFC 7591 §3](https://www.rfc-editor.org/rfc/rfc7591#section-3)), registers itself, and stores the resulting client credentials. Each registration receives a unique client ID and secret; Dofek encrypts the secret at rest with `CREDENTIAL_ENCRYPTION_KEY_BASE64` using the [AWS Encryption SDK](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/introduction.html) raw AES-256-GCM keyring ([`@aws-crypto/client-node`](https://github.com/aws/aws-encryption-sdk-javascript); see [credential encryption](credential-encryption.md)). Registration secrets expire after 30 days via `client_secret_expires_at` ([RFC 7591 §3.2.1](https://www.rfc-editor.org/rfc/rfc7591#section-3.2.1)).
+In Claude, select **Use Anthropic’s hosted client metadata**. Claude then uses its HTTPS metadata URL as the OAuth client ID rather than registering a client. Dofek accepts only public HTTPS metadata hosts, rejects redirects and oversized responses, validates the exact client ID and callback URLs, and caches only validated documents. This is the MCP-recommended client-registration mechanism. [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+
+For clients that do not support CIMD, leave the OAuth Client ID and OAuth Client Secret fields empty to use DCR. The client discovers `/register` ([RFC 7591 §3](https://www.rfc-editor.org/rfc/rfc7591#section-3)), registers itself, and stores the resulting client credentials. Each registration receives a unique client ID and secret; Dofek encrypts the secret at rest with `CREDENTIAL_ENCRYPTION_KEY_BASE64` using the [AWS Encryption SDK](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/introduction.html) raw AES-256-GCM keyring ([`@aws-crypto/client-node`](https://github.com/aws/aws-encryption-sdk-javascript); see [credential encryption](credential-encryption.md)). Registration secrets expire after 30 days via `client_secret_expires_at` ([RFC 7591 §3.2.1](https://www.rfc-editor.org/rfc/rfc7591#section-3.2.1)).
 
 The client redirects each user to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails ([OAuth 2.0 Security BCP refresh token rotation](https://www.rfc-editor.org/rfc/rfc9700#name-refresh-tokens); [RFC 6819 §5.2.2.3](https://www.rfc-editor.org/rfc/rfc6819#section-5.2.2.3)). The `/revoke` endpoint invalidates the complete access-and-refresh token pair ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)).
 

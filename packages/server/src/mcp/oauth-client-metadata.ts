@@ -1,9 +1,9 @@
 import { lookup } from "node:dns/promises";
 import { request } from "node:https";
 import {
+  type OAuthClientInformationFull,
   OAuthClientInformationFullSchema,
   OAuthClientMetadataSchema,
-  type OAuthClientInformationFull,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import ipaddr from "ipaddr.js";
 import { isAllowedMcpOAuthRedirectUri } from "./oauth-client-store.ts";
@@ -14,6 +14,10 @@ const CIMD_FETCH_TIMEOUT_MS = 5_000;
 const CIMD_MAX_RESPONSE_BYTES = 65_536;
 
 class CimdMetadataError extends Error {}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 function isCimdClientId(clientId: string): boolean {
   try {
@@ -64,7 +68,8 @@ async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: num
       {
         headers: { Accept: "application/json", Host: url.host },
         host: destination.address,
-        lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family),
+        lookup: (_hostname, _options, callback) =>
+          callback(null, destination.address, destination.family),
         method: "GET",
         path: requestPath,
         port: url.port ? Number(url.port) : 443,
@@ -104,7 +109,11 @@ async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: num
     );
     clientRequest.on("error", (error) => {
       clearTimeout(timeout);
-      reject(error instanceof CimdMetadataError ? error : new CimdMetadataError("CIMD metadata request failed"));
+      reject(
+        error instanceof CimdMetadataError
+          ? error
+          : new CimdMetadataError("CIMD metadata request failed"),
+      );
     });
     clientRequest.end();
   });
@@ -114,38 +123,36 @@ export function parseCimdClientMetadata(
   clientId: string,
   value: unknown,
 ): OAuthClientInformationFull {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new CimdMetadataError("CIMD response must be a JSON object");
   }
-  const metadataWithId = value as Record<string, unknown>;
-  if (metadataWithId.client_id !== clientId) {
+  if (value.client_id !== clientId) {
     throw new CimdMetadataError("CIMD client_id must exactly match the requested URL");
   }
-  if (metadataWithId.client_secret !== undefined) {
+  if (value.client_secret !== undefined) {
     throw new CimdMetadataError("CIMD clients must not include a client_secret");
   }
   if (
-    metadataWithId.token_endpoint_auth_method !== undefined &&
-    metadataWithId.token_endpoint_auth_method !== "none"
+    value.token_endpoint_auth_method !== undefined &&
+    value.token_endpoint_auth_method !== "none"
   ) {
     throw new CimdMetadataError("CIMD clients must use token_endpoint_auth_method none");
   }
 
-  let metadata;
   try {
-    metadata = OAuthClientMetadataSchema.parse(metadataWithId);
+    const metadata = OAuthClientMetadataSchema.parse(value);
+    if (metadata.redirect_uris.length === 0) {
+      throw new CimdMetadataError("CIMD clients must declare at least one redirect_uri");
+    }
+    for (const redirectUri of metadata.redirect_uris) {
+      if (!isAllowedMcpOAuthRedirectUri(redirectUri)) {
+        throw new CimdMetadataError("CIMD client has an invalid redirect_uri");
+      }
+    }
+    return OAuthClientInformationFullSchema.parse({ ...metadata, client_id: clientId });
   } catch {
     throw new CimdMetadataError("CIMD metadata does not match the OAuth client schema");
   }
-  if (metadata.redirect_uris.length === 0) {
-    throw new CimdMetadataError("CIMD clients must declare at least one redirect_uri");
-  }
-  for (const redirectUri of metadata.redirect_uris) {
-    if (!isAllowedMcpOAuthRedirectUri(redirectUri)) {
-      throw new CimdMetadataError("CIMD client has an invalid redirect_uri");
-    }
-  }
-  return OAuthClientInformationFullSchema.parse({ ...metadata, client_id: clientId });
 }
 
 export class McpOAuthClientMetadataResolver {
