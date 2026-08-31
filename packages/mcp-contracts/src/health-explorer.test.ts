@@ -72,7 +72,12 @@ describe("healthExplorerInputSchema", () => {
 describe("healthExplorerSnapshotSchema", () => {
   it("accepts server-provided summaries and missing observations", () => {
     const snapshot = {
-      range: { start_date: "2026-08-01", end_date: "2026-08-03", granularity: "daily" },
+      range: {
+        start_date: "2026-08-01",
+        end_date: "2026-08-03",
+        granularity: "daily",
+        timezone: "America/Los_Angeles",
+      },
       series: [
         {
           metric: "hrv",

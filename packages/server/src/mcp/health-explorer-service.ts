@@ -37,7 +37,9 @@ export class HealthExplorerService {
     this.#reader = reader;
   }
 
-  async snapshot(input: HealthExplorerInput): Promise<HealthExplorerSnapshot> {
+  async snapshot(
+    input: HealthExplorerInput & Required<Pick<HealthExplorerInput, "timezone">>,
+  ): Promise<HealthExplorerSnapshot> {
     const rows = [...(await this.#reader.list(input))].sort((first, second) =>
       rowKey(first).localeCompare(rowKey(second)),
     );
@@ -70,6 +72,7 @@ export class HealthExplorerService {
         start_date: input.start_date,
         end_date: input.end_date,
         granularity: input.granularity,
+        timezone: input.timezone,
       },
       series: series.map(({ summary: _summary, ...item }) => item),
       summary: series.map(({ summary }) => summary),

@@ -26,7 +26,7 @@
 | `packages/web/src/routes/privacy.tsx` | Name the operator and describe MCP-authorized data sharing. |
 | `packages/web/src/routes/terms.tsx` | Name the operator, support channel, and service terms. |
 | `docs/mcp.md` | User-facing installation and capability guide. |
-| `registry/server.json` | Official MCP Registry remote-server metadata. |
+| `registry/dofek/server.json` | Official MCP Registry remote-server metadata. |
 | `docs/mcp-directory-submission.md` | Versioned review copy, test prompts, screenshot checklist, and validation evidence. |
 | separate `dofek-mcp-plugin` repository | Cursor-compatible MIT configuration plugin only. |
 

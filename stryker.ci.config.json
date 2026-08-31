@@ -22,6 +22,7 @@
     "packages/providers-meta/src/**/*.ts",
     "packages/auth/src/**/*.ts",
     "packages/mcp-app/src/**/*.ts",
+    "packages/mcp-app/src/**/*.tsx",
     "packages/mcp-contracts/src/**/*.ts",
     "packages/server/src/**/*.ts",
     "packages/web/src/lib/**/*.ts",

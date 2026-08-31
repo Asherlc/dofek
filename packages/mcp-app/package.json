@@ -10,6 +10,7 @@
   "dependencies": {
     "@dofek/mcp-contracts": "workspace:*",
     "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@sentry/react": "10.72.0",
     "echarts": "6.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3"

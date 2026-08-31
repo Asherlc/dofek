@@ -16,10 +16,16 @@ describe("HealthExplorerService", () => {
       end_date: "2026-08-03",
       metrics: ["hrv"],
       granularity: "daily",
+      timezone: "America/Los_Angeles",
     };
 
     await expect(new HealthExplorerService(reader).snapshot(input)).resolves.toEqual({
-      range: { start_date: "2026-08-01", end_date: "2026-08-03", granularity: "daily" },
+      range: {
+        start_date: "2026-08-01",
+        end_date: "2026-08-03",
+        granularity: "daily",
+        timezone: "America/Los_Angeles",
+      },
       series: [
         {
           metric: "hrv",
@@ -46,10 +52,16 @@ describe("HealthExplorerService", () => {
       end_date: "2026-08-07",
       metrics: ["hrv"],
       granularity: "weekly",
+      timezone: "America/Los_Angeles",
     };
 
     await expect(new HealthExplorerService(reader).snapshot(input)).resolves.toEqual({
-      range: { start_date: "2026-08-01", end_date: "2026-08-07", granularity: "weekly" },
+      range: {
+        start_date: "2026-08-01",
+        end_date: "2026-08-07",
+        granularity: "weekly",
+        timezone: "America/Los_Angeles",
+      },
       series: [
         {
           metric: "hrv",

@@ -24297,3 +24297,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The Podfile-plugin regression test passes, as do mobile
   typecheck and Biome.
 - **Remaining risk / follow-up:** Confirm the rerun iOS archive passes.
+
+## 2026-08-31 — PR 2594 E2E server lacked the OpenAI challenge fixture
+
+- **Status:** Resolved.
+- **Symptoms / impact:** PR #2594's web E2E job exited before Cypress began,
+  blocking the PR's CI gate.
+- **Evidence / root cause:** The first fatal line in the
+  [failed E2E job](https://github.com/Asherlc/dofek/actions/runs/33411019703/job/99550624664)
+  was `Failed to start: Error: OPENAI_APPS_CHALLENGE_TOKEN environment variable
+  is required`. The production server correctly fails fast on this required
+  setting, but `docker-compose.e2e.yml` did not provide its non-secret E2E
+  fixture value.
+- **Fix / mitigation:** Added the fixed test-only token to the E2E server
+  container environment. No production default, retry, or CI bypass was added.
+- **Validation:** `pnpm compose -- -f docker-compose.e2e.yml config --quiet`
+  passes. The full rerun, including web E2E, mutation, integration, coverage,
+  and native mobile build gates, passed in
+  [CI run 33412594683](https://github.com/Asherlc/dofek/actions/runs/33412594683).
+- **Remaining risk / follow-up:** Production still requires the token to be
+  configured in Infisical before the feature branch can be merged and deployed.
