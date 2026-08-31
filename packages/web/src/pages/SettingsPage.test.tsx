@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeSettingsCategory } from "./settingsCategories.ts";
 
 type SettingsSearch = {
@@ -133,6 +133,17 @@ vi.mock("../lib/trpc.ts", () => ({
         useMutation: () => mockMutation,
       },
     },
+    mcp: {
+      listTokens: {
+        useQuery: () => ({ data: [], error: null, isLoading: false }),
+      },
+      createToken: {
+        useMutation: () => mockMutation,
+      },
+      revokeToken: {
+        useMutation: () => mockMutation,
+      },
+    },
     companionPairing: {
       claim: {
         useMutation: () => mockMutation,
@@ -168,6 +179,8 @@ beforeEach(() => {
   });
   vi.clearAllMocks();
 });
+
+afterEach(cleanup);
 
 describe("SettingsPage categories", () => {
   it("renders the complete settings category contract in order", async () => {
@@ -240,6 +253,19 @@ describe("SettingsPage categories", () => {
     expect(screen.getByText("Data Export")).toBeTruthy();
   });
 
+  it("finds Model Context Protocol from MCP search terms", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "MCP" },
+    });
+
+    expect(screen.getByRole("tab", { name: "Advanced" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Model Context Protocol (MCP)" })).toBeTruthy();
+  });
+
   it("shows an empty state when no category matches the search", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
@@ -263,7 +289,10 @@ describe("SettingsPage categories", () => {
     fireEvent.change(searchbox, { target: { value: "medication" } });
     fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
 
-    expect(searchbox).toHaveValue("");
+    if (!(searchbox instanceof HTMLInputElement)) {
+      throw new Error("Expected the settings search control to be an input.");
+    }
+    expect(searchbox.value).toBe("");
     expect(screen.getAllByRole("tab")).toHaveLength(7);
     expect(mockNavigate).toHaveBeenCalledWith({
       search: expect.any(Function),
@@ -296,6 +325,7 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
+    expect(screen.getByRole("heading", { name: "Model Context Protocol (MCP)" })).toBeTruthy();
     expect(screen.getByText("Dashboard Layout")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Data Sources" })).toBeNull();
   });
@@ -468,7 +498,10 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("button", { name: "Opening checkout..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Opening checkout..." })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it("shows the pending billing-portal label while opening account management", async () => {
@@ -488,7 +521,10 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("button", { name: "Opening billing portal..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Opening billing portal..." })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it("shows the pending pairing label while claiming a Zepp connection", async () => {
@@ -498,7 +534,7 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("button", { name: "Connecting..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Connecting..." })).toHaveProperty("disabled", true);
   });
 
   it.each([
