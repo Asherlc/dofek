@@ -111,6 +111,31 @@ describe("parseCimdClientMetadata", () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
+  it("rejects an invalid HTTPS response", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(
+      (_options: unknown, callback: (response: EventEmitter) => void) => {
+        const request = Object.assign(new EventEmitter(), { end: () => {} });
+        request.end = () =>
+          callback(
+            Object.assign(new EventEmitter(), { headers: {}, resume: vi.fn(), statusCode: 500 }),
+          );
+        return request;
+      },
+    );
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+  });
+
+  it("rejects HTTPS transport errors", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(() => {
+      const request = Object.assign(new EventEmitter(), { end: () => {} });
+      request.end = () => request.emit("error", new Error("network"));
+      return request;
+    });
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+  });
+
   it.each(["not a URL", "http://claude.ai/metadata.json", "https://claude.ai/"])(
     "does not resolve an invalid CIMD client ID: %s",
     async (invalidClientId) => {
