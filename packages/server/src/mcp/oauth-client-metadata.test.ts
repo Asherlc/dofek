@@ -189,6 +189,15 @@ describe("parseCimdClientMetadata", () => {
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
   });
 
+  it("rejects a response with multiple DNS addresses when one is private", async () => {
+    mocks.lookup.mockResolvedValue([
+      { address: "8.8.8.8", family: 4 },
+      { address: "127.0.0.1", family: 4 },
+    ]);
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
   it("rejects HTTPS transport errors", async () => {
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(() => {
