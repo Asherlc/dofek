@@ -25,6 +25,7 @@
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/imu": "workspace:*",
+    "@dofek/mcp-contracts": "workspace:*",
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",

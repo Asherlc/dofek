@@ -405,6 +405,12 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/mcp-contracts:
+    dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/mobile:
     dependencies:
       '@aws-crypto/sha256-browser':
@@ -721,6 +727,9 @@ importers:
       '@dofek/imu':
         specifier: workspace:*
         version: link:../imu
+      '@dofek/mcp-contracts':
+        specifier: workspace:*
+        version: link:../mcp-contracts
       '@dofek/nutrition':
         specifier: workspace:*
         version: link:../nutrition
