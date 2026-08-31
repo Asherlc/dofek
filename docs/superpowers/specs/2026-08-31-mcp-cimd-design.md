@@ -17,8 +17,9 @@ compatibility option. [MCP authorization specification](https://modelcontextprot
 ## Chosen Approach
 
 Upgrade `@modelcontextprotocol/sdk` from `1.29.0` to the current stable
-`1.30.0`, then add a Dofek-owned client resolver that composes the existing
-database-backed DCR store with CIMD resolution.
+`1.30.0`, add the current stable `ipaddr.js` `2.5.0` for tested IPv4/IPv6
+range classification, then add a Dofek-owned client resolver that composes the
+existing database-backed DCR store with CIMD resolution.
 
 The resolver will:
 
@@ -74,10 +75,10 @@ resource checks.
 
 Unit tests cover URL eligibility, public-address filtering, exact `client_id`
 matching, redirect URI validation, no-redirect behavior, response-size limits,
-and cache expiry. OAuth integration tests cover discovery advertising CIMD and
-an end-to-end Claude-style public CIMD client completing authorization and a
-token exchange without creating a DCR row. Existing DCR integration coverage
-must remain unchanged.
+cache expiry, and resolver selection. Existing OAuth integration coverage must
+continue proving the real-database DCR flow. A CIMD integration test must not
+use a local or private metadata host, because accepting one would contradict
+the production SSRF policy.
 
 ## Non-goals
 
