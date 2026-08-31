@@ -356,10 +356,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async (input) => {
       requireMcpScope(context.scopes, "health:read");
+      const timezone = input.timezone ?? context.timezone;
       return jsonToolResult(
         await new HealthExplorerService({
           list: (request) => listHealthTrends(context, request),
-        }).snapshot(input),
+        }).snapshot({ ...input, timezone }),
       );
     },
   );

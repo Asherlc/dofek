@@ -114,8 +114,9 @@ export function createApp(
   const app = express();
   const accountErasureRestoreLedger =
     options.accountErasureRestoreLedger ?? createLazyAccountErasureRestoreLedger();
-  const openAiAppsChallengeToken =
-    options.openAiAppsChallengeToken ?? process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim();
+  const openAiAppsChallengeToken = (
+    options.openAiAppsChallengeToken ?? process.env.OPENAI_APPS_CHALLENGE_TOKEN
+  )?.trim();
   if (!openAiAppsChallengeToken) {
     throw new Error("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
   }

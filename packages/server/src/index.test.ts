@@ -270,6 +270,16 @@ describe("createApp", () => {
     }
   });
 
+  it("rejects a whitespace-only explicit OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+
+    expect(() =>
+      createApp(createDatabaseFromEnv(), makeMockSensorStore(), {
+        openAiAppsChallengeToken: "   ",
+      }),
+    ).toThrow("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
+  });
+
   it("rejects a missing OpenAI Apps challenge token", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", undefined);

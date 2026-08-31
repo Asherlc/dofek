@@ -12,7 +12,12 @@ const { mockInit } = vi.hoisted(() => ({
 vi.mock("echarts/core", () => ({ init: mockInit, use: vi.fn() }));
 
 const snapshot: HealthExplorerSnapshot = {
-  range: { start_date: "2026-08-01", end_date: "2026-08-03", granularity: "daily" },
+  range: {
+    start_date: "2026-08-01",
+    end_date: "2026-08-03",
+    granularity: "daily",
+    timezone: "America/Los_Angeles",
+  },
   series: [
     {
       metric: "hrv",

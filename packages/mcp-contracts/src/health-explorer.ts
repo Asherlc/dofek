@@ -95,6 +95,7 @@ export const healthExplorerSnapshotSchema = z.object({
     start_date: dateSchema,
     end_date: dateSchema,
     granularity: z.enum(["daily", "weekly"]),
+    timezone: z.string().min(1),
   }),
   series: z.array(healthExplorerSeriesSchema),
   summary: z.array(healthExplorerSummarySchema),

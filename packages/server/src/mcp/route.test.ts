@@ -835,10 +835,12 @@ describe("createMcpRouter", () => {
 
     const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
+      "x-timezone": "America/Los_Angeles",
       body: createToolCallRequest("render_health_explorer", {
         end_date: "2026-05-19",
         metrics: ["hrv"],
         start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
       }),
     });
 
@@ -857,7 +859,12 @@ describe("createMcpRouter", () => {
 
     expect(parsedResponse.result.structuredContent).toEqual({
       coverage: { observed_days: 2, requested_days: 2 },
-      range: { end_date: "2026-05-19", granularity: "daily", start_date: "2026-05-18" },
+      range: {
+        end_date: "2026-05-19",
+        granularity: "daily",
+        start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
+      },
       series: [
         {
           label: "Heart rate variability",
