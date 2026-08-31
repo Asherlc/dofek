@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeSettingsCategory } from "./settingsCategories.ts";
 
 type SettingsSearch = {
@@ -163,6 +163,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+afterEach(cleanup);
+
 describe("SettingsPage categories", () => {
   it("renders the complete settings category contract in order", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
@@ -257,7 +259,7 @@ describe("SettingsPage categories", () => {
     fireEvent.change(searchbox, { target: { value: "medication" } });
     fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
 
-    expect(searchbox).toHaveValue("");
+    expect((searchbox as HTMLInputElement).value).toBe("");
     expect(screen.getAllByRole("tab")).toHaveLength(7);
     expect(mockNavigate).toHaveBeenCalledWith({
       search: expect.any(Function),
