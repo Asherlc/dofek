@@ -1,9 +1,10 @@
 # Production lineage reconciliation
 
-Production is running `dad875a70`, which descends from the clinical-record
-commit [`97e370259`](https://github.com/Asherlc/dofek/commit/97e370259b8b8085035741268ce3cc6f22859f77), while `main` does not contain that
-lineage. This document tracks the reconciliation work needed to make source,
-deployment, and the production schema agree.
+As of 2026-08-31, production was running `dad875a70`, which descends from the
+clinical-record commit [`97e370259`](https://github.com/Asherlc/dofek/commit/97e370259b8b8085035741268ce3cc6f22859f77), while `main` did not contain that
+lineage. This is reconciliation evidence, not a live deployment record; use
+the latest successful [Deploy Web workflow](https://github.com/Asherlc/dofek/actions/workflows/deploy-web.yml)
+to identify the current production commit.
 
 ## Scope
 
