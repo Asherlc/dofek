@@ -48,7 +48,9 @@ describe("createMetricRequestHandler", () => {
     const secondRequest = handler(app, snapshot, "steps");
     second.resolve({ structuredContent: { ...snapshot, range: { ...snapshot.range } } });
     await secondRequest;
-    first.resolve({ structuredContent: { ...snapshot, summary: [{ metric: "hrv", average: 1, min: 1, max: 1 }] } });
+    first.resolve({
+      structuredContent: { ...snapshot, summary: [{ metric: "hrv", average: 1, min: 1, max: 1 }] },
+    });
     await firstRequest;
 
     expect(app.callServerTool).toHaveBeenNthCalledWith(2, {
