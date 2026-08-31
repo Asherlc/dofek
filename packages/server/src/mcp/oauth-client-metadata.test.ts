@@ -198,6 +198,38 @@ describe("parseCimdClientMetadata", () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
+  it("does not cache a response with max-age zero", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(
+      (_options: unknown, callback: (response: EventEmitter) => void) => {
+        const request = Object.assign(new EventEmitter(), { end: () => {} });
+        request.end = () => {
+          const response = Object.assign(new EventEmitter(), {
+            headers: { "cache-control": "max-age=0", "content-type": "application/json" },
+            resume: vi.fn(),
+            statusCode: 200,
+          });
+          callback(response);
+          response.emit(
+            "data",
+            Buffer.from(
+              JSON.stringify({
+                client_id: clientId,
+                redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+              }),
+            ),
+          );
+          response.emit("end");
+        };
+        return request;
+      },
+    );
+    const resolver = new McpOAuthClientMetadataResolver();
+    await resolver.getClient(clientId);
+    await resolver.getClient(clientId);
+    expect(mocks.lookup).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects HTTPS transport errors", async () => {
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(() => {
