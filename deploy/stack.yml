@@ -85,7 +85,7 @@ services:
         monitor: 90s
       labels:
         - traefik.enable=true
-        - traefik.http.routers.web.rule=(${WEB_HOST_RULE:-Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)}) && !PathPrefix(`/readyz`)
+        - traefik.http.routers.web.rule=(${WEB_HOST_RULE:-Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)}) && !PathPrefix(`/readyz`)
         - traefik.http.routers.web.entrypoints=websecure
         - traefik.http.routers.web.tls=true
         - traefik.http.routers.web.tls.certresolver=le
