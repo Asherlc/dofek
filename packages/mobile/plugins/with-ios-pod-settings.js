@@ -1,10 +1,6 @@
 /**
  * Expo config plugin that applies Dofek's generated Podfile settings.
  *
- * Dofek's HealthKit and watch targets import Sentry Cocoa directly. Use the
- * source-built CocoaPod so those targets and React Native share one Sentry
- * implementation instead of mixing it with RNSentry's prebuilt XCFramework.
- *
  * Xcode 26+ treats ExpoModulesCore Worklets return-type warnings as errors in
  * EXJavaScriptSerializable.mm. Downgrade that warning until upstream resolves it.
  */
@@ -12,12 +8,7 @@ const { withDangerousMod } = require("expo/config-plugins");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SENTRY_MARKER = "[with-ios-pod-settings] Use one source-built Sentry Cocoa pod";
 const POST_INSTALL_MARKER = "[with-ios-pod-settings] ExpoModulesCore return-type workaround";
-
-const SENTRY_PREAMBLE = [`# ${SENTRY_MARKER}`, "ENV['SENTRY_USE_XCFRAMEWORK'] = '0'", ""].join(
-  "\n",
-);
 
 const POST_INSTALL_SNIPPET = [
   "",
@@ -43,10 +34,6 @@ function withIosPodSettings(config) {
     (modConfig) => {
       const podfilePath = path.join(modConfig.modRequest.platformProjectRoot, "Podfile");
       let podfile = fs.readFileSync(podfilePath, "utf-8");
-
-      if (!podfile.includes(SENTRY_MARKER)) {
-        podfile = `${SENTRY_PREAMBLE}${podfile}`;
-      }
 
       if (!podfile.includes(POST_INSTALL_MARKER)) {
         const postInstallEndPattern = /(post_install\s+do\s+\|installer\|[\s\S]*?)(^\s*end\s*$)/m;

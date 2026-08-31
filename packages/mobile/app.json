@@ -135,8 +135,9 @@
       ],
       "expo-sharing",
       "expo-web-browser",
-      "@bacons/apple-targets",
-      "./plugins/with-ios-pod-settings"
+      "./plugins/with-ios-pod-settings",
+      "./plugins/with-watch-sentry-spm",
+      "@bacons/apple-targets"
     ]
   }
 }

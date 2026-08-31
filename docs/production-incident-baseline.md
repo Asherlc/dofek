@@ -1,11 +1,46 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework objc -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
+
+## 2026-08-31 — iOS launch crash from mixed Sentry Cocoa distributions
+
+- **Status:** Migration implemented in this workspace; a fresh TestFlight build
+  and physical-device launch remain required before release.
+- **Symptoms / user impact:** TestFlight build `1.0.0 (1788068430)` crashed at
+  launch before JavaScript loaded, so affected users could not open the iOS
+  app.
+- **Evidence / root cause:** The supplied crash report terminates with
+  `EXC_BAD_ACCESS` in `objc_release` while
+  `RNSentryInternal.appStartMeasurementHybridSDKMode` is set from
+  `RNSentryStart updateWithReactFinals`. The app used React Native Sentry 8.20
+  with a prebuilt Sentry Cocoa framework while custom Expo modules and the
+  watch target also forced CocoaPods Sentry 9.19.1 from source. A clean
+  simulator build then failed with `include of non-modular header inside
+  framework module 'Sentry'` from the 9.24.0 framework resolving headers from
+  the legacy 9.19.1 pod. That proves two incompatible distributions occupied
+  the iOS native build graph. Sentry documents the React Native 8.23 Cocoa SDK
+  integration change in its [8.23.0 release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.23.0), and the official Cocoa SDK package supports SwiftPM through its [package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.24.0/Package.swift).
+- **Fix:** Upgraded `@sentry/react-native` to 8.24.0, removed the legacy
+  `SENTRY_USE_XCFRAMEWORK=0` override, made the iOS Expo modules depend on
+  `RNSentry`, and removed the direct CocoaPods Sentry pin. A generated-project
+  plugin adds exactly Sentry Cocoa 9.24.0 to the standalone watch target via
+  SwiftPM; the iOS app target has no SwiftPM Sentry dependency.
+- **Validation:** Clean Expo prebuild succeeds with an isolated DSN;
+  `Podfile.lock` contains `RNSentry (8.24.0)` and no source `Sentry` pod; the
+  generated workspace resolves `sentry-cocoa` exactly at 9.24.0; mobile config
+  tests and mobile TypeScript typecheck pass; and `DofekWatch` Swift tests
+  build successfully. The local Xcode simulator runner stalled while waiting
+  for the macOS remote source-package service after checkout, with no compiler
+  error, so it did not provide a launch verdict.
+- **Remaining risk / follow-up:** Build and install a new TestFlight candidate,
+  then verify cold launch on a physical iPhone and confirm no recurrence of
+  the crash signature. Keep the app target on the React Native Sentry framework
+  only; the watch extension is the sole SwiftPM Sentry consumer.
 
 ## 2026-08-10 — Sentry production failures from stale analytics data and pool starvation
 
