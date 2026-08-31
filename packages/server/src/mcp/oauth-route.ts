@@ -68,16 +68,12 @@ export function createMcpOAuthRouter(
     ...rateLimit,
     skip: rateLimit === false ? () => true : rateLimit?.skip,
   });
-  router.get(
-    "/.well-known/oauth-authorization-server",
-    metadataRateLimit,
-    (_request, response) => {
-      response.json({
-        ...createOAuthMetadata(oauthRouterOptions),
-        client_id_metadata_document_supported: true,
-      });
-    },
-  );
+  router.get("/.well-known/oauth-authorization-server", metadataRateLimit, (_request, response) => {
+    response.json({
+      ...createOAuthMetadata(oauthRouterOptions),
+      client_id_metadata_document_supported: true,
+    });
+  });
 
   router.use(
     mcpAuthRouter({

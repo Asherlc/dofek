@@ -24,7 +24,7 @@ describe("parseCimdClientMetadata", () => {
     ).toThrow("client_id");
   });
 
-  it.each([null, [], "metadata"])('rejects a non-object metadata document: %j', (metadata) => {
+  it.each([null, [], "metadata"])("rejects a non-object metadata document: %j", (metadata) => {
     expect(() => parseCimdClientMetadata(clientId, metadata)).toThrow("JSON object");
   });
 
