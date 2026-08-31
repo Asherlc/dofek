@@ -6,6 +6,8 @@ Dofek exposes a remote Model Context Protocol endpoint at:
 https://dofek.fit/api/mcp
 ```
 
+Production deployments must keep `PUBLIC_URL=https://dofek.fit`; OAuth resource and token audiences are exact canonical URLs, so an alternate production origin is invalid.
+
 The endpoint uses Streamable HTTP and supports two authentication paths:
 
 - OAuth 2.1 authorization code with PKCE for remote MCP clients (Claude, ChatGPT, and any other client that supports OAuth auto-discovery).
@@ -122,7 +124,7 @@ For MCP clients that support custom remote HTTP headers directly, configure the 
 For clients that need a local bridge, use `mcp-remote`:
 
 ```bash
-npx mcp-remote https://dofek.fit/api/mcp --header "Authorization: Bearer dofek_mcp_..."
+pnpm dlx mcp-remote https://dofek.fit/api/mcp --header "Authorization: Bearer dofek_mcp_..."
 ```
 
 ## Manual Verification
@@ -130,7 +132,7 @@ npx mcp-remote https://dofek.fit/api/mcp --header "Authorization: Bearer dofek_m
 Use the official inspector during development:
 
 ```bash
-npx @modelcontextprotocol/inspector@latest
+pnpm dlx @modelcontextprotocol/inspector@latest
 ```
 
 Set the transport to Streamable HTTP, URL to `https://dofek.fit/api/mcp`, and include the bearer token header.

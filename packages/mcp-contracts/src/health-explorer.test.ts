@@ -54,6 +54,19 @@ describe("healthExplorerInputSchema", () => {
       }),
     ).toMatchObject({ start_date: "2025-01-01", end_date: "2026-01-02" });
   });
+
+  it("rejects duplicate metrics", () => {
+    const result = healthExplorerInputSchema.safeParse({
+      start_date: "2026-08-01",
+      end_date: "2026-08-07",
+      metrics: ["hrv", "hrv"],
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { issues: [{ message: "metrics must not contain duplicates", path: ["metrics"] }] },
+    });
+  });
 });
 
 describe("healthExplorerSnapshotSchema", () => {

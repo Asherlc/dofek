@@ -223,6 +223,11 @@ jobs:
           PEERDB_HOST_RULE_INPUT: ${{ inputs.peerdb_host_rule }}
           STACK_OVERRIDE_INPUT: ${{ inputs.stack_override }}
         run: |
+          if [ "$DEPLOY_ENVIRONMENT" = "prod" ] && [ "$PUBLIC_URL_INPUT" != "https://dofek.fit" ]; then
+            echo "::error::Production PUBLIC_URL must be https://dofek.fit"
+            exit 1
+          fi
+
           STACK_FILE_FLAGS="-c deploy/stack.yml"
 
           # Optional caller-supplied override (e.g. deploy/stack.oracle.yml for

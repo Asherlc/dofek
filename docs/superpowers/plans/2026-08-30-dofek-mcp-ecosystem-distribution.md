@@ -1,7 +1,5 @@
 # Dofek MCP Ecosystem Distribution Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Prepare and submit Dofek's verified remote MCP service to the OpenAI Plugin Directory, Anthropic Connectors Directory, official MCP Registry, and Cursor Marketplace without releasing proprietary product source.
 
 **Architecture:** The already-deployed `https://dofek.fit/api/mcp` service is the sole integration endpoint. Registry metadata and first-party docs describe that remote service. Cursor receives a separate MIT-licensed configuration-only repository; all platform submissions use the same publisher identity, privacy/terms/support links, and synthetic review account.
@@ -68,7 +66,7 @@ git commit -m "docs: identify Dofek MCP publisher and data sharing"
 ### Task 2: Add versioned MCP Registry metadata and review assets
 
 **Files:**
-- Create: `registry/server.json`
+- Create: `registry/dofek/server.json`
 - Create: `docs/mcp-directory-submission.md`
 - Create: `docs/assets/mcp/` finalized screenshot and logo files
 
@@ -76,9 +74,9 @@ git commit -m "docs: identify Dofek MCP publisher and data sharing"
 - Produces registry metadata for a remote `https://dofek.fit/api/mcp` server.
 - Produces factual review prompts and expected results based only on synthetic account data.
 
-- [ ] **Step 1: Write `server.json` from the current official schema**
+- [ ] **Step 1: Write `registry/dofek/server.json` from the current official schema**
 
-Use the official MCP Registry schema/version current on the publishing date. Its remote transport entry names `https://dofek.fit/api/mcp`, describes OAuth 2.1 authorization, lists Dofek/Asher Cohen attribution and support/privacy/terms URLs, and uses the verified GitHub publisher namespace unless accepted DNS verification offers a better permanent identity. Validate with the official `mcp-publisher` command before committing.
+Use the official MCP Registry schema/version current on the publishing date. Its remote transport entry names `https://dofek.fit/api/mcp`, describes OAuth 2.1 authorization, lists Dofek/Asher Cohen attribution and support/privacy/terms URLs, and uses the verified GitHub publisher namespace unless accepted DNS verification offers a better permanent identity. Use the documented registry extension for Apps metadata and validate OAuth protected-resource discovery separately from registry validation. Validate with the official `mcp-publisher` command before committing.
 
 - [ ] **Step 2: Create the submission evidence document**
 
@@ -104,7 +102,7 @@ Use the deployed Explorer and synthetic review account to capture a square trans
 Run official MCP Registry validation, `pnpm lint`, and local image inspection. Then:
 
 ~~~bash
-git add registry/server.json docs/mcp-directory-submission.md docs/assets/mcp
+git add registry/dofek/server.json docs/mcp-directory-submission.md docs/assets/mcp
 git commit -m "docs: add Dofek MCP registry submission assets"
 ~~~
 
@@ -137,10 +135,10 @@ Explain installation, browser-based OAuth sign-in, read-only analysis capability
 
 Run the current Cursor plugin validation/install path and connect using the synthetic account. Confirm tool discovery and OAuth run remotely, then inspect `git ls-files` to verify the repository contains only configuration, docs, the MIT license, and generic skill material.
 
-- [ ] **Step 5: Create a signed commit and push**
+- [ ] **Step 5: Commit and push**
 
 ~~~bash
-git add LICENSE README.md plugin.json skills/dofek/SKILL.md
+git add LICENSE README.md plugin.json mcp.json skills/dofek/SKILL.md
 git commit -m "feat: add Dofek remote MCP Cursor plugin"
 git push origin main
 ~~~

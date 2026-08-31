@@ -1,7 +1,5 @@
 # Dofek MCP Analytics Explorer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Ship a secure, read-only Dofek Analytics Explorer MCP App and make `https://dofek.fit/api/mcp` the sole production MCP/OAuth origin.
 
 **Architecture:** The existing Streamable HTTP MCP service remains the authenticated, user-scoped data boundary. A new server analytics snapshot contract powers a dedicated MCP App resource; the React/ECharts resource renders only server-provided values and requests subsequent snapshots through the MCP Apps bridge. Deploy configuration and OAuth metadata use `dofek.fit` consistently.

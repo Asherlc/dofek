@@ -47,6 +47,7 @@ describe("HealthExplorer", () => {
     expect(screen.getByRole("heading", { name: "Dofek Analytics Explorer" })).toBeDefined();
     expect(screen.getByText("42.5")).toBeDefined();
     expect(screen.getByText("2 of 3 days observed")).toBeDefined();
+    expect(screen.getAllByRole("option")).toHaveLength(10);
 
     fireEvent.change(screen.getByRole("combobox", { name: "Metric" }), {
       target: { value: "resting_hr" },

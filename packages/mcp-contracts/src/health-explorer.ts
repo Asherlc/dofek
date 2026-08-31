@@ -15,6 +15,19 @@ export const healthMetricSchema = z.enum([
 
 export type HealthMetric = z.infer<typeof healthMetricSchema>;
 
+export const healthMetricPresentation = {
+  hrv: { label: "Heart rate variability", unit: "ms" },
+  resting_hr: { label: "Resting heart rate", unit: "bpm" },
+  spo2: { label: "Blood oxygen", unit: "%" },
+  respiratory_rate: { label: "Respiratory rate", unit: "breaths/min" },
+  sleep_efficiency: { label: "Sleep efficiency", unit: "%" },
+  skin_temp: { label: "Skin temperature", unit: "°C" },
+  steps: { label: "Steps", unit: "steps" },
+  distance_km: { label: "Distance", unit: "km" },
+  exercise_minutes: { label: "Exercise minutes", unit: "min" },
+  flights_climbed: { label: "Flights climbed", unit: "flights" },
+} satisfies Record<HealthMetric, { label: string; unit: string }>;
+
 const dateSchema = z.iso.date();
 
 function daysBetween(startDate: string, endDate: string): number {
@@ -32,6 +45,13 @@ export const healthExplorerInputSchema = z
     timezone: z.string().min(1).optional(),
   })
   .superRefine((value, context) => {
+    if (new Set(value.metrics).size !== value.metrics.length) {
+      context.addIssue({
+        code: "custom",
+        message: "metrics must not contain duplicates",
+        path: ["metrics"],
+      });
+    }
     if (value.start_date > value.end_date) {
       context.addIssue({
         code: "custom",

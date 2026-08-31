@@ -1,6 +1,7 @@
 import {
   type HealthExplorerSnapshot,
   type HealthMetric,
+  healthMetricPresentation,
   healthMetricSchema,
 } from "@dofek/mcp-contracts/health-explorer";
 import { LineChart } from "echarts/charts";
@@ -54,9 +55,9 @@ export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps
           value={primarySeries?.metric}
           onChange={(event) => onMetricChange(healthMetricSchema.parse(event.target.value))}
         >
-          {snapshot.series.map((series) => (
-            <option key={series.metric} value={series.metric}>
-              {series.label}
+          {healthMetricSchema.options.map((metric) => (
+            <option key={metric} value={metric}>
+              {healthMetricPresentation[metric].label}
             </option>
           ))}
         </select>

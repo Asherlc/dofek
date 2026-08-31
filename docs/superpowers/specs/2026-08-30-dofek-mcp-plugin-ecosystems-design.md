@@ -31,6 +31,9 @@ first-party installation documentation rather than duplicate listings.
 `dofek.fit` is the single production origin used for server metadata, OAuth
 protected-resource metadata, OAuth authorization server metadata, redirect and
 audience validation, registry records, OpenAI submission, and documentation.
+Production deployments must keep `PUBLIC_URL=https://dofek.fit`; an overridden
+production origin is invalid because OAuth resource and token audiences require
+the exact canonical URL.
 The retired `dofek.asherlc.com` origin must not remain a parallel public MCP or
 OAuth identity. OpenAI's publication process locks a plugin's production
 origin, making this migration a prerequisite for submission.

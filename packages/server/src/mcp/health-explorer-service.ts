@@ -2,6 +2,7 @@ import {
   type HealthExplorerInput,
   type HealthExplorerSnapshot,
   type HealthMetric,
+  healthMetricPresentation,
   healthExplorerSnapshotSchema,
 } from "@dofek/mcp-contracts/health-explorer";
 
@@ -14,19 +15,6 @@ export interface HealthTrendRow {
 export interface HealthTrendReader {
   list(input: HealthExplorerInput): Promise<HealthTrendRow[]>;
 }
-
-const metricPresentation: Record<HealthMetric, { label: string; unit: string }> = {
-  hrv: { label: "Heart rate variability", unit: "ms" },
-  resting_hr: { label: "Resting heart rate", unit: "bpm" },
-  spo2: { label: "Blood oxygen", unit: "%" },
-  respiratory_rate: { label: "Respiratory rate", unit: "breaths/min" },
-  sleep_efficiency: { label: "Sleep efficiency", unit: "%" },
-  skin_temp: { label: "Skin temperature", unit: "°C" },
-  steps: { label: "Steps", unit: "steps" },
-  distance_km: { label: "Distance", unit: "km" },
-  exercise_minutes: { label: "Exercise minutes", unit: "min" },
-  flights_climbed: { label: "Flights climbed", unit: "flights" },
-};
 
 function daysBetween(startDate: string, endDate: string): number {
   const start = new Date(`${startDate}T00:00:00Z`);
@@ -56,7 +44,7 @@ export class HealthExplorerService {
     const series = input.metrics.map((metric) => {
       const values = rows.map((row) => row.metrics[metric]?.avg ?? null);
       const observed = values.filter((value): value is number => value !== null);
-      const presentation = metricPresentation[metric];
+      const presentation = healthMetricPresentation[metric];
       return {
         metric,
         label: presentation.label,
