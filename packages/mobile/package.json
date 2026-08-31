@@ -21,7 +21,10 @@
     "app-store:assets": "pnpm build-storybook && pnpm app-store:screenshots",
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
+    "android": "expo run:android",
+    "android:device": "expo run:android --device",
     "prebuild": "expo prebuild --platform ios --clean",
+    "prebuild:android": "expo prebuild --platform android --clean",
     "lint": "biome check . && pnpm --dir ../.. lint:mobile-telemetry && pnpm --dir ../.. check:mobile-app-routes",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"

@@ -84,6 +84,22 @@ software-only flows; use physical devices for BLE and motion validation. Expo
 lists current simulator hardware limitations here:
 <https://docs.expo.dev/workflow/ios-simulator/#limitations>.
 
+### Android development build
+
+Generate the Android project from the checked-in Expo configuration, then run it
+on an API 36 emulator or a physical Android device:
+
+```bash
+pnpm tsx ../../scripts/with-env.ts -- pnpm prebuild:android
+pnpm android
+```
+
+The generated `android/` directory is not source of truth. Durable native
+configuration and modules live in `app.json`, config plugins, and
+`modules/**/android`; Android prebuild regenerates the project from those
+inputs. Google Play requires new app submissions to target Android 16 (API 36)
+after August 31, 2026: <https://developer.android.com/google/play/requirements/target-sdk>.
+
 ### Signed Release simulator audit
 
 Use an embedded Release bundle when the goal is to audit production-like app UI

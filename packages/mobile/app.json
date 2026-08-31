@@ -58,6 +58,10 @@
         "com.apple.developer.healthkit.access": ["health-records"]
       }
     },
+    "android": {
+      "package": "com.dofek.app",
+      "versionCode": 1
+    },
     "plugins": [
       "expo-router",
       [
@@ -130,6 +134,10 @@
                 "path": "../modules/ble-heart-rate/ios"
               }
             ]
+          },
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
           }
         }
       ],
