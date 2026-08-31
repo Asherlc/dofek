@@ -68,6 +68,7 @@ const nodeTestIncludes = [
   "packages/onboarding/src/**/*.test.ts",
   "packages/providers-meta/src/**/*.test.ts",
   "packages/auth/src/**/*.test.ts",
+  "packages/mcp-contracts/src/**/*.test.ts",
   "packages/server/src/**/*.test.ts",
   "packages/garmin-connect/src/**/*.test.ts",
   "packages/eight-sleep/src/**/*.test.ts",

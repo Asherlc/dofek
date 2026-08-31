@@ -17,18 +17,42 @@ describe("healthExplorerInputSchema", () => {
   });
 
   it("rejects a reversed or overly long date range", () => {
-    expect(() =>
+    const reversedRange = healthExplorerInputSchema.safeParse({
+      start_date: "2026-08-08",
+      end_date: "2026-08-01",
+    });
+    expect(reversedRange).toMatchObject({
+      success: false,
+      error: {
+        issues: [{ message: "start_date must be on or before end_date", path: ["end_date"] }],
+      },
+    });
+
+    const overlyLongRange = healthExplorerInputSchema.safeParse({
+      start_date: "2025-01-01",
+      end_date: "2026-01-03",
+    });
+    expect(overlyLongRange).toMatchObject({
+      success: false,
+      error: {
+        issues: [{ message: "date range must not exceed 366 days", path: ["end_date"] }],
+      },
+    });
+  });
+
+  it("allows same-day requests and the maximum 366-day span", () => {
+    expect(
       healthExplorerInputSchema.parse({
-        start_date: "2026-08-08",
+        start_date: "2026-08-01",
         end_date: "2026-08-01",
       }),
-    ).toThrow("start_date must be on or before end_date");
-    expect(() =>
+    ).toMatchObject({ start_date: "2026-08-01", end_date: "2026-08-01" });
+    expect(
       healthExplorerInputSchema.parse({
         start_date: "2025-01-01",
-        end_date: "2026-01-03",
+        end_date: "2026-01-02",
       }),
-    ).toThrow("date range must not exceed 366 days");
+    ).toMatchObject({ start_date: "2025-01-01", end_date: "2026-01-02" });
   });
 });
 
