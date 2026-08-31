@@ -16,6 +16,8 @@ packages:
   - packages/heart-rate-variability
   - packages/imu
   - packages/server
+  - packages/mcp-contracts
+  - packages/mcp-app
   - packages/web
   - packages/mobile
   - packages/mobile/modules/whoop-ble
