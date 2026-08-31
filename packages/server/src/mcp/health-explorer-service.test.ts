@@ -36,4 +36,30 @@ describe("HealthExplorerService", () => {
       coverage: { observed_days: 2, requested_days: 3 },
     });
   });
+
+  it("preserves weekly periods with no observed metric values", async () => {
+    const reader = {
+      list: async () => [{ week: "2026-W31", metrics: {} }],
+    };
+    const input: HealthExplorerInput = {
+      start_date: "2026-08-01",
+      end_date: "2026-08-07",
+      metrics: ["hrv"],
+      granularity: "weekly",
+    };
+
+    await expect(new HealthExplorerService(reader).snapshot(input)).resolves.toEqual({
+      range: { start_date: "2026-08-01", end_date: "2026-08-07", granularity: "weekly" },
+      series: [
+        {
+          metric: "hrv",
+          label: "Heart rate variability",
+          unit: "ms",
+          points: [{ key: "2026-W31", value: null }],
+        },
+      ],
+      summary: [{ metric: "hrv", average: null, min: null, max: null }],
+      coverage: { observed_days: 0, requested_days: 7 },
+    });
+  });
 });
