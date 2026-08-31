@@ -23401,3 +23401,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-08-31 — Mobile Snyk check detected vulnerable Expo and Sentry CLI transitives
+
+- **Status:** Fixed in [PR #2595](https://github.com/Asherlc/dofek/pull/2595); the hosted Snyk recheck is pending.
+- **Symptoms / impact:** Snyk's `packages/mobile/package.json` security check blocked the PR with two high-severity `browserslist` findings and three `undici` findings. No production impact was observed.
+- **Evidence / root cause:** The first fatal findings were [SNYK-JS-BROWSERSLIST-18854715](https://security.snyk.io/vuln/SNYK-JS-BROWSERSLIST-18854715) through `expo@57.0.12` and [SNYK-JS-UNDICI-18426061](https://security.snyk.io/vuln/SNYK-JS-UNDICI-18426061) through `@sentry/cli@3.6.1`. The lockfile resolved the affected packages to `browserslist@4.28.6` and `undici@6.27.0`; Snyk identifies fixed versions as `browserslist@4.28.7` and `undici@6.28.0` or newer.
+- **Fix / mitigation:** Updated the direct mobile Sentry CLI dependency to `3.7.0`, pinned `browserslist` to current `4.28.8`, and tightened the existing compatible v6 `undici` override to `6.28.0`. No audit suppression, retry, timeout, or failure bypass was added.
+- **Validation:** A forced lockfile resolution and installed dependency check resolve `browserslist@4.28.8` and `undici@6.28.0`; mobile TypeScript and the focused Expo config test pass locally. The hosted Snyk test is the authoritative remaining validation.
+- **Remaining risk / follow-up:** Confirm the new Snyk run clears all five findings; revisit the override when Expo and the Sentry React Native dependency graph natively select fixed versions.
