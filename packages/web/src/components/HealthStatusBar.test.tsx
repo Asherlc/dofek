@@ -279,15 +279,14 @@ describe("HealthStatusBar", () => {
     { statusToken: "moving_as_intended" as const, statusLabel: "Moving as intended", symbol: "✓" },
     { statusToken: "notable_deviation" as const, statusLabel: "Notable deviation", symbol: "!" },
     { statusToken: "far_from_baseline" as const, statusLabel: "Far from baseline", symbol: "×" },
-  ])("renders $statusToken as the non-color symbol $symbol", ({
-    statusToken,
-    statusLabel,
-    symbol,
-  }) => {
-    render(<HealthStatusBar metrics={[{ ...serverMetric, statusToken, statusLabel }]} />);
+  ])(
+    "renders $statusToken as the non-color symbol $symbol",
+    ({ statusToken, statusLabel, symbol }) => {
+      render(<HealthStatusBar metrics={[{ ...serverMetric, statusToken, statusLabel }]} />);
 
-    expect(screen.getByLabelText(`${statusLabel} status`).textContent).toBe(symbol);
-  });
+      expect(screen.getByLabelText(`${statusLabel} status`).textContent).toBe(symbol);
+    },
+  );
 
   it("renders a distinct empty state when no metrics are available", () => {
     render(<HealthStatusBar metrics={[]} />);

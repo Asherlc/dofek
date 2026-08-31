@@ -105,6 +105,34 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 10,
   },
+  providerFamilyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  providerFamilyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  providerFamilyMethods: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  providerFamilyMethod: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  providerFamilyMethodSelected: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  providerFamilyMethodText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
 
   // Provider cards
   card: {

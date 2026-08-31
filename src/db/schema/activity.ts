@@ -120,6 +120,7 @@ export const climbingEntry = fitness.table(
     grade: text("grade").notNull(),
     sent: boolean("sent"),
     attemptCount: integer("attempt_count").default(1),
+    lead: boolean("lead"),
     wallAngleDegrees: real("wall_angle_degrees"),
     holdType: climbingHoldTypeEnum("hold_type"),
     routeName: text("route_name"),

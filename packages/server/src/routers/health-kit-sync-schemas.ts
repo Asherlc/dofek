@@ -39,6 +39,7 @@ export const healthKitSampleSchema = z.object({
   sourceName: z.string(),
   sourceBundle: z.string(),
   uuid: z.string(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
 export const workoutActivitySchema = z.object({

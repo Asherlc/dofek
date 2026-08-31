@@ -6,7 +6,7 @@ import {
 } from "dofek/providers/auth-errors";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod row schemas
@@ -19,7 +19,7 @@ const tokenRowSchema = z.object({
 
 const lastSyncRowSchema = z.object({
   provider_id: z.string(),
-  last_synced: z.string(),
+  last_synced: timestampStringSchema,
 });
 
 const latestErrorRowSchema = z.object({
@@ -27,6 +27,18 @@ const latestErrorRowSchema = z.object({
   error_message: z.string().nullable(),
   auth_failure_reason: providerAuthFailureReasonSchema.nullable(),
   synced_at: z.coerce.date(),
+});
+
+const recentSyncLogRowSchema = z.object({
+  id: z.string(),
+  provider_id: z.string(),
+  status: z.string(),
+  synced_at: z.coerce.date(),
+  duration_ms: z.coerce.number().nullable(),
+  record_count: z.coerce.number().nullable(),
+  data_type: z.string(),
+  error_message: z.string().nullable(),
+  auth_failure_reason: z.string().nullable(),
 });
 
 const clickHouseProviderStatsRowSchema = z.object({
@@ -94,6 +106,18 @@ export interface SyncLogRow {
   authFailureReason: string | null;
 }
 
+export interface ProviderRecentSyncLog {
+  id: string;
+  providerId: string;
+  status: string;
+  syncedAt: string;
+  durationMs: number | null;
+  recordCount: number | null;
+  dataType: string;
+  errorMessage: string | null;
+  authFailureReason: string | null;
+}
+
 interface ProviderStatsClickHouseStore {
   query<TSchema extends z.ZodType>(
     schema: TSchema,
@@ -153,6 +177,24 @@ export class SyncRepository {
     }));
   }
 
+  /** Get the most recent successful sync timestamp per provider. */
+  async getLastSuccessfulSyncTimes(): Promise<LastSync[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      lastSyncRowSchema,
+      sql`SELECT provider_id, MAX(synced_at) AS last_synced
+          FROM fitness.sync_log
+          WHERE user_id = ${this.#userId}
+            AND status = 'success'
+            AND origin = 'scheduled'
+          GROUP BY provider_id`,
+    );
+    return rows.map((row) => ({
+      providerId: row.provider_id,
+      lastSynced: row.last_synced,
+    }));
+  }
+
   /**
    * Get providers whose most recent sync entry is an error.
    * Only returns rows where the latest sync_log entry for a provider is an error.
@@ -204,6 +246,49 @@ export class SyncRepository {
       .limit(limit);
 
     return rows satisfies SyncLogRow[];
+  }
+
+  /** Fetch a bounded history for every provider without one provider crowding out another. */
+  async getRecentLogsByProvider(
+    limitPerProvider: number,
+  ): Promise<Map<string, ProviderRecentSyncLog[]>> {
+    const rows = await executeWithSchema(
+      this.#db,
+      recentSyncLogRowSchema,
+      sql`WITH ranked_sync_logs AS (
+            SELECT id, provider_id, status, synced_at, duration_ms, record_count,
+                   data_type, error_message, auth_failure_reason,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY provider_id
+                     ORDER BY synced_at DESC, id DESC
+                   ) AS row_number
+            FROM fitness.sync_log
+            WHERE user_id = ${this.#userId}
+          )
+          SELECT id, provider_id, status, synced_at, duration_ms, record_count,
+                 data_type, error_message, auth_failure_reason
+          FROM ranked_sync_logs
+          WHERE row_number <= ${limitPerProvider}
+          ORDER BY provider_id, synced_at DESC, id DESC`,
+    );
+
+    const logsByProvider = new Map<string, ProviderRecentSyncLog[]>();
+    for (const row of rows) {
+      const logs = logsByProvider.get(row.provider_id) ?? [];
+      logs.push({
+        id: row.id,
+        providerId: row.provider_id,
+        status: row.status,
+        syncedAt: row.synced_at.toISOString(),
+        durationMs: row.duration_ms,
+        recordCount: row.record_count,
+        dataType: row.data_type,
+        errorMessage: row.error_message,
+        authFailureReason: row.auth_failure_reason,
+      });
+      logsByProvider.set(row.provider_id, logs);
+    }
+    return logsByProvider;
   }
 
   /** Per-provider record counts broken down by table. */

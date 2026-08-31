@@ -6,12 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type MutationOptions = { onSuccess?: () => void };
 
 const mocks = vi.hoisted(() => ({
-  checkInQuery: vi.fn(),
   regionsQuery: vi.fn(),
   injuriesQuery: vi.fn(),
-  saveCheckIn: vi.fn(),
   createInjury: vi.fn(),
-  checkInInvalidate: vi.fn(),
   injuriesInvalidate: vi.fn(),
   timelineInvalidate: vi.fn(),
   captureException: vi.fn(),
@@ -25,18 +22,13 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({
       subjective: {
-        checkIn: { invalidate: mocks.checkInInvalidate },
         timeline: { invalidate: mocks.timelineInvalidate },
         injuries: { invalidate: mocks.injuriesInvalidate },
       },
     }),
     subjective: {
-      checkIn: { useQuery: mocks.checkInQuery },
       regions: { useQuery: mocks.regionsQuery },
       injuries: { useQuery: mocks.injuriesQuery },
-      saveCheckIn: {
-        useMutation: () => ({ error: null, isPending: false, mutate: mocks.saveCheckIn }),
-      },
       createInjury: {
         useMutation: (options: MutationOptions) => ({
           error: null,
@@ -55,54 +47,14 @@ import { SubjectiveTrackingPanel } from "./SubjectiveTrackingPanel.tsx";
 
 describe("SubjectiveTrackingPanel", () => {
   beforeEach(() => {
-    mocks.checkInQuery.mockReturnValue({ data: { logged: false, symptoms: [] } });
     mocks.regionsQuery.mockReturnValue({
       data: [{ id: "left_hand", label: "Left hand", kind: "hand", parent_id: "body" }],
     });
     mocks.injuriesQuery.mockReturnValue({ data: [] });
-    mocks.saveCheckIn.mockReset();
     mocks.createInjury.mockReset();
-    mocks.checkInInvalidate.mockReset();
     mocks.injuriesInvalidate.mockReset();
     mocks.timelineInvalidate.mockReset();
     mocks.captureException.mockReset();
-  });
-
-  it("logs an explicit all-clear check-in", () => {
-    render(<SubjectiveTrackingPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Log all clear" }));
-    expect(mocks.saveCheckIn).toHaveBeenCalledWith({ date: expect.any(String), symptoms: [] });
-  });
-
-  it("clears a staged symptom when logging all clear", () => {
-    mocks.checkInQuery.mockReturnValue({ data: { logged: true, symptoms: [] } });
-    render(<SubjectiveTrackingPanel />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
-      target: { value: "left_hand" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
-    expect(screen.getByText(/Left hand · soreness/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Log all clear" }));
-
-    expect(screen.queryByText(/Left hand · soreness/)).not.toBeInTheDocument();
-    expect(screen.getByText("All clear")).toBeInTheDocument();
-  });
-
-  it("saves a sparse symptom without turning missing regions into zeros", () => {
-    render(<SubjectiveTrackingPanel />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
-      target: { value: "left_hand" },
-    });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Symptom score" }), {
-      target: { value: "4" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save check-in" }));
-    expect(mocks.saveCheckIn).toHaveBeenCalledWith({
-      date: expect.any(String),
-      symptoms: [{ bodyRegionId: "left_hand", kind: "soreness", score: 4 }],
-    });
   });
 
   it("creates an injury or niggle with the selected region", () => {
@@ -114,6 +66,7 @@ describe("SubjectiveTrackingPanel", () => {
       target: { value: "Morning tenderness" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add niggle" }));
+
     expect(mocks.createInjury).toHaveBeenCalledWith(
       expect.objectContaining({
         bodyRegionId: "left_hand",
@@ -124,7 +77,6 @@ describe("SubjectiveTrackingPanel", () => {
     );
     expect(mocks.injuriesInvalidate).toHaveBeenCalledTimes(1);
     expect(mocks.timelineInvalidate).toHaveBeenCalledTimes(1);
-    expect(mocks.checkInInvalidate).not.toHaveBeenCalled();
   });
 
   it("creates an injury with its own kind and zero severity", () => {
@@ -179,65 +131,6 @@ describe("SubjectiveTrackingPanel", () => {
     expect(mocks.createInjury).not.toHaveBeenCalled();
   });
 
-  it("keeps symptom and injury region selections independent", () => {
-    mocks.regionsQuery.mockReturnValue({
-      data: [
-        { id: "left_hand", label: "Left hand", kind: "hand", parent_id: "body" },
-        { id: "right_hand", label: "Right hand", kind: "hand", parent_id: "body" },
-      ],
-    });
-    render(<SubjectiveTrackingPanel />);
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
-      target: { value: "left_hand" },
-    });
-    fireEvent.change(screen.getByRole("combobox", { name: "Injury body region" }), {
-      target: { value: "right_hand" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "Injury description" }), {
-      target: { value: "Right hand pain" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add niggle" }));
-
-    expect(mocks.createInjury).toHaveBeenCalledWith(
-      expect.objectContaining({ bodyRegionId: "right_hand" }),
-    );
-  });
-
-  it("clamps symptom scores before saving", () => {
-    render(<SubjectiveTrackingPanel />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
-      target: { value: "left_hand" },
-    });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Symptom score" }), {
-      target: { value: "15" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save check-in" }));
-
-    expect(mocks.saveCheckIn).toHaveBeenCalledWith({
-      date: expect.any(String),
-      symptoms: [{ bodyRegionId: "left_hand", kind: "soreness", score: 10 }],
-    });
-  });
-
-  it("preserves unsaved symptoms when the check-in refetches", () => {
-    const view = render(<SubjectiveTrackingPanel />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Body region" }), {
-      target: { value: "left_hand" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add symptom" }));
-
-    mocks.checkInQuery.mockReturnValue({ data: { logged: false, symptoms: [] } });
-    view.rerender(<SubjectiveTrackingPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Save check-in" }));
-
-    expect(mocks.saveCheckIn).toHaveBeenCalledWith({
-      date: expect.any(String),
-      symptoms: [{ bodyRegionId: "left_hand", kind: "soreness", score: 1 }],
-    });
-  });
-
   it("shows a region query error instead of an empty selector", () => {
     mocks.regionsQuery.mockReturnValue({
       data: undefined,
@@ -246,7 +139,7 @@ describe("SubjectiveTrackingPanel", () => {
 
     render(<SubjectiveTrackingPanel />);
 
-    expect(screen.getAllByText("Regions unavailable")).toHaveLength(2);
-    expect(screen.queryByRole("combobox", { name: "Body region" })).not.toBeInTheDocument();
+    expect(screen.getByText("Regions unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Injury body region" })).not.toBeInTheDocument();
   });
 });

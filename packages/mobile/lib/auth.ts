@@ -16,8 +16,8 @@ import {
 } from "./secure-store-access";
 import { captureException } from "./telemetry";
 
-export { AuthUserSchema, ConfiguredProvidersSchema };
 export type { AuthUser, ConfiguredProviders };
+export { AuthUserSchema, ConfiguredProvidersSchema };
 
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const SESSION_OWNER_NONCE_KEY = "dofek_session_owner_nonce_v1";

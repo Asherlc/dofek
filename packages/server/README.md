@@ -18,28 +18,9 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **Safe SQL**: Uses `executeWithSchema` (in `src/lib/typed-sql.ts`) which combines Drizzle's `sql` template literal with Zod schema validation to ensure runtime type safety and catch schema drift.
 - **Caching**: Implements a `queryCache` middleware for tRPC procedures (`src/trpc.ts`), with per-user isolation and configurable TTLs.
 - **Nutrition AI Parsing**: `food.analyzeWithAi` estimates one entry, while `food.analyzeItemsWithAi` parses a natural-language meal into multiple itemized entries for client-side logging flows.
-- **Cycle estimate provenance**: `menstrualCycle.currentPhase` counts the cycle
-  day from the latest recorded period start, matching
-  [ACOG's first-day-to-first-day cycle definition](https://www.acog.org/womens-health/faqs/your-first-period).
-  A phase estimate requires at least three completed intervals, every interval
-  to be 21–35 days, and an observed range no wider than 9 days. Otherwise the
-  endpoint returns a server-authored sparse, irregular, or stale-history
-  explanation instead of imposing a regular-cycle model. Those conservative
-  boundaries follow ACOG's adult cycle-length and variation guidance, while
-  ACOG also cautions that 28-day calendar assumptions do not account for
-  irregular cycles or variable ovulation timing
-  ([cycle guidance](https://www.acog.org/womens-health/faqs/abnormal-uterine-bleeding),
-  [calendar-method limitation](https://www.acog.org/clinical/clinical-guidance/committee-opinion/articles/2017/05/methods-for-estimating-the-due-date)).
-  The observed range remains descriptive history, not a calibrated confidence
-  score or next-period forecast. Period rows can be corrected or deleted by
-  stable ID through user-scoped mutations; web and iOS require explicit
-  confirmation before deleting an erroneous entry, consistent with Apple's
-  cycle-history review and correction flow
-  ([Apple Cycle Tracking guide](https://support.apple.com/en-gb/guide/iphone/iph1a4a00aa0/26/ios/26)).
 - **Authentication**: Supports session-based auth with cookie-based persistence for web and Bearer tokens for mobile. See `src/auth/` and `src/routes/auth/`.
 - **Redis pairing store**: Companion pairing uses Lua scripts over related Redis keys and is intended for the single-node Redis deployment used by Dofek. Redis Cluster requires every key touched by one Lua script to be in the same hash slot; supporting Cluster mode would require redesigning the pairing key names with Redis hash tags. See the Redis Cluster scaling and hash tag documentation: https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/ and https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags.
 - **Monitoring**: Integrated with Sentry for error tracking and Prometheus for performance metrics (`src/lib/metrics.ts`).
-- **Slack Integration**: A built-in Slack bot (`src/slack/`) for status updates and basic data interactions.
 
 ### Activity training-stress availability contract
 
@@ -76,6 +57,22 @@ token to an icon or color, but they do not infer a classification from the numer
 or deviation. Recovery classifications use the 30-day baseline in `baselineRelative`; its separate
 7-day-versus-prior-28-day comparison is context and does not determine the status, as defined by
 [`baseline-relative-metrics.ts`](./src/contracts/baseline-relative-metrics.ts).
+
+### Read-only cycle tracking contract
+
+`menstrualCycle.history` and `menstrualCycle.currentPhase` are read-only projections over raw,
+provider-attributed menstrual-flow events in `fitness.health_event`. Exact local-calendar-date
+duplicates are grouped while retaining every source; starts fewer than 21 days apart suppress the
+estimate as conflicting data. Clients render the server-authored phase, availability explanation,
+method, uncertainty, and limitation, and direct corrections back to the source provider.
+
+HealthKit menstrual-flow records carry a cycle-start metadata marker, and Apple permits either one
+interval for a period or multiple flow samples with the first sample marked as the start
+([HealthKit menstrual flow](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
+Read authorization is privacy-preserving and does not disclose whether the user denied a specific
+type, so an empty response is described neutrally as no readable provider data
+([HealthKit authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
+The API exposes no create, update, or delete procedure for cycle records.
 
 ### Correlation evidence contract
 
@@ -120,7 +117,6 @@ display unit and format dates, but they render the supplied direction and summar
 a trend from the observations. The responsive chart selects one exercise at a time so long exercise
 lists stay readable without hiding the time axis.
 
-See `../../docs/nutrition-ai-input.md` for full client/server flow details.
 
 ## Development
 

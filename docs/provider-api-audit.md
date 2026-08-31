@@ -2,7 +2,56 @@
 
 An assessment of every provider we considered reverse engineering, documenting what the official API provides, what gaps exist, and whether reverse engineering is feasible or worthwhile.
 
-Last updated: 2026-06-23
+Last updated: 2026-08-14
+
+---
+
+## Menstrual-cycle record providers
+
+Cycle tracking is intentionally limited to explicit, consented menstrual records. Dofek does not
+infer a period start from temperature, sleep, recovery, stress, or other proxy signals, and it has
+no first-party period create, update, or delete API. Users correct a record in its source and sync
+again.
+
+### Implemented: Apple Health / HealthKit
+
+The iOS app and Apple Health XML importer read menstrual-flow records, retain cycle-start metadata
+and source attribution, and store the raw events in `fitness.health_event`. HealthKit permits one
+interval for a whole period or multiple flow samples whose first sample carries the start marker
+([menstrual-flow documentation](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
+Dofek requests read/background access but no write access. Apple deliberately does not reveal
+whether read access to a specific type was denied, so empty results remain an ambiguous
+no-readable-data state
+([HealthKit authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
+
+### Gated follow-up: Garmin Women's Health
+
+Garmin's official Women's Health API is the strongest cloud follow-up because it explicitly offers
+menstrual-cycle schedules and phase details with push or ping/pull delivery
+([Women's Health API](https://developer.garmin.com/gc-developer-program/womens-health-api/)).
+Implementation is blocked on Connect Developer Program business approval and the official payload
+contract; Dofek will not guess or scrape women's-health endpoints through its private Garmin
+provider ([program FAQ](https://developer.garmin.com/gc-developer-program/program-faq/)).
+
+### Future Android source: Health Connect
+
+Android Health Connect exposes `MenstruationPeriodRecord` plus cycle-tracking data types and
+permissions
+([record API](https://developer.android.com/reference/androidx/health/connect/client/records/MenstruationPeriodRecord),
+[data types](https://developer.android.com/health-and-fitness/health-connect/data-types)). This is a
+future option when Dofek has an Android client; it is not implemented in the current iOS app.
+
+### Unsupported public menstrual-record sources
+
+- WHOOP's public `cycle` resource is an awake-to-sleep physiological day, not a menstrual cycle
+  ([WHOOP definition](https://developer.whoop.com/docs/developing/user-data/cycle/)).
+- The current public catalogs for [Oura](https://cloud.ouraring.com/v2/docs),
+  [Fitbit](https://dev.fitbit.com/build/reference/web-api/explore/),
+  [Polar](https://www.polar.com/polar-api-v4/),
+  [Withings](https://developer.withings.com/developer-guide/v3/data-api/all-available-health-data/),
+  and [Google Health](https://developers.google.com/health/data-types) do not document explicit
+  menstrual-period records. Dofek does not substitute biometric inference or private endpoints for
+  those missing public contracts.
 
 ---
 
@@ -90,10 +139,10 @@ Last updated: 2026-06-23
 ### Oura
 - **Official API:** Oura Cloud API v2 — 17 endpoint groups: sleep (5-min stage resolution), HR (individual timestamped readings), HRV (5-min intervals), readiness, resilience, stress (daily aggregate), SpO2 (daily aggregate), VO2 max, cardiovascular age, workouts
 - **Internal API:** Web portal at `cloud.ouraring.com` exists but no one has documented its internal endpoints
-- **Gaps:** SpO2 time-series (app shows overnight graph, API gives daily average), stress time-series (app shows daytime graph, API gives daily totals), cycle/period tracking, ring battery (BLE only)
+- **Gaps:** SpO2 time-series (app shows overnight graph, API gives daily average), stress time-series (app shows daytime graph, API gives daily totals), ring battery (BLE only)
 - **RE efforts:** Only BLE protocol RE exists ([ringverse/protocol](https://github.com/ringverse/protocol)), not cloud API
 - **Note:** Active membership ($5.99/mo) required for API access on Gen 3/Ring 4
-- **Verdict:** LOW VALUE RE — official API is solid. Gaps (SpO2/stress time-series, cycle tracking) are real but niche.
+- **Verdict:** LOW VALUE RE — official API is solid. SpO2 and stress time-series gaps are real but niche.
 
 ### Samsung Health
 - **Official API:** No public REST API. Samsung charges ~$10K for server-side access. On-device SDK deprecated July 2025, replaced by Samsung Health Data SDK (foreground Android app only).

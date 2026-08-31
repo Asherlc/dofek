@@ -19,11 +19,19 @@ pipeline:
   processors:
     - mapping: |
         root = this
-        meta archive_topic = meta("kafka_topic").from(0)
-        meta archive_partition = meta("kafka_partition").from(0)
+        # Delete events intentionally do not carry a recordedAt payload field.
+        # Kafka record timestamps are present for every event and preserve the
+        # archive's durable UTC date/hour partitioning for those messages too.
+        meta archive_topic = meta("kafka_topic")
+        meta archive_partition = meta("kafka_partition")
+        meta archive_date = meta("kafka_timestamp_unix").number().ts_format("2006-01-02", "UTC")
+        meta archive_hour = meta("kafka_timestamp_unix").number().ts_format("15", "UTC")
+    - group_by_value:
+        value: ${! meta("archive_topic") }-${! meta("archive_partition") }-${! meta("archive_date") }-${! meta("archive_hour") }
+    - mapping: |
+        root = this
         meta archive_first_offset = meta("kafka_offset").from(0)
         meta archive_last_offset = meta("kafka_offset").from(batch_size() - 1)
-        meta archive_recorded_at = json("recordedAt").from(0)
     - archive:
         format: lines
     - compress:
@@ -39,7 +47,7 @@ output:
     # the drain.
     max_in_flight: 8
     path: >-
-      metric-stream/v1/date=${! meta("archive_recorded_at").string().slice(0, 10) }/hour=${! meta("archive_recorded_at").string().slice(11, 13) }/${! meta("archive_topic") }-${! meta("archive_partition") }-${! meta("archive_first_offset") }-${! meta("archive_last_offset") }.jsonl.gz
+      metric-stream/v1/date=${! meta("archive_date") }/hour=${! meta("archive_hour") }/${! meta("archive_topic") }-${! meta("archive_partition") }-${! meta("archive_first_offset") }-${! meta("archive_last_offset") }.jsonl.gz
     credentials:
       id: ${R2_ACCESS_KEY_ID}
       secret: ${R2_SECRET_ACCESS_KEY}

@@ -105,7 +105,9 @@ describe("CyclingAnalyticsRepository", () => {
       ]);
 
     const repository = new CyclingAnalyticsRepository(
-      { execute: vi.fn().mockResolvedValue([]) },
+      {
+        execute: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]),
+      },
       "11111111-1111-4111-8111-111111111111",
       "UTC",
       sensorStore,
@@ -195,7 +197,9 @@ describe("CyclingAnalyticsRepository", () => {
       ])
       .mockResolvedValueOnce([performanceActivityRow()]);
     const repository = new CyclingAnalyticsRepository(
-      { execute: vi.fn().mockResolvedValue([]) },
+      {
+        execute: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]),
+      },
       "11111111-1111-4111-8111-111111111111",
       "UTC",
       sensorStore,
@@ -481,33 +485,32 @@ describe("CyclingAnalyticsRepository", () => {
       expectedConfidence: "limited",
       expectedLabel: "Limited fit quality",
     },
-  ])("classifies threshold confidence as $label", async ({
-    powers,
-    expectedConfidence,
-    expectedLabel,
-  }) => {
-    const sensorStore = makeMockSensorStore();
-    vi.mocked(sensorStore.query)
-      .mockResolvedValueOnce(
-        powers.map((bestPower, index) =>
-          powerComparisonRow([120, 180, 300, 420][index] ?? 120, bestPower, null),
-        ),
-      )
-      .mockResolvedValueOnce([performanceActivityRow({ normalized_power: null })]);
-    const repository = new CyclingAnalyticsRepository(
-      { execute: vi.fn().mockResolvedValue([]) },
-      "11111111-1111-4111-8111-111111111111",
-      "UTC",
-      sensorStore,
-    );
+  ])(
+    "classifies threshold confidence as $label",
+    async ({ powers, expectedConfidence, expectedLabel }) => {
+      const sensorStore = makeMockSensorStore();
+      vi.mocked(sensorStore.query)
+        .mockResolvedValueOnce(
+          powers.map((bestPower, index) =>
+            powerComparisonRow([120, 180, 300, 420][index] ?? 120, bestPower, null),
+          ),
+        )
+        .mockResolvedValueOnce([performanceActivityRow({ normalized_power: null })]);
+      const repository = new CyclingAnalyticsRepository(
+        { execute: vi.fn().mockResolvedValue([]) },
+        "11111111-1111-4111-8111-111111111111",
+        "UTC",
+        sensorStore,
+      );
 
-    const result = await repository.getPerformance(ChartRange.fromDays(90));
+      const result = await repository.getPerformance(ChartRange.fromDays(90));
 
-    expect(result.estimateEvidence.recent.threshold).toMatchObject({
-      confidence: expectedConfidence,
-      confidenceLabel: expectedLabel,
-    });
-  });
+      expect(result.estimateEvidence.recent.threshold).toMatchObject({
+        confidence: expectedConfidence,
+        confidenceLabel: expectedLabel,
+      });
+    },
+  );
 
   it("reports unavailable evidence when a fit or its required inputs are missing", async () => {
     const sensorStore = makeMockSensorStore();

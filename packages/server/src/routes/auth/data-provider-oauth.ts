@@ -32,7 +32,7 @@ export async function handleMobileProviderHandoff(req: Request, res: Response): 
   }
   const { getAllProviders } = await import("dofek/providers/registry");
   await (await import("../../routers/sync-helpers.ts")).ensureProvidersRegistered();
-  if (providerId !== "slack" && !getAllProviders().some((provider) => provider.id === providerId)) {
+  if (!getAllProviders().some((provider) => provider.id === providerId)) {
     res.status(404).json({ error: "Unknown provider" });
     return;
   }
@@ -158,12 +158,12 @@ export async function handleDataLinkStart(req: Request, res: Response): Promise<
     }
     const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
-      res.status(401).send("You must be logged in to link an account");
+      res.redirect(`/login?returnTo=${encodeURIComponent(req.originalUrl)}`);
       return;
     }
     const session = await validateSession(getDb(), sessionId);
     if (!session) {
-      res.status(401).send("Session expired — please log in first");
+      res.redirect(`/login?returnTo=${encodeURIComponent(req.originalUrl)}`);
       return;
     }
 
@@ -200,10 +200,7 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
     // 2. Then check session (returns 401 if not logged in)
     const handoffCode = typeof req.query.code === "string" ? req.query.code : undefined;
     const handoff = handoffCode ? await getMobileAuthExchangeStoreRef().consume(handoffCode) : null;
-    if (
-      handoffCode &&
-      (!handoff || handoff.kind !== "provider" || handoff.providerId !== providerId)
-    ) {
+    if (handoffCode && (handoff?.kind !== "provider" || handoff.providerId !== providerId)) {
       res.status(401).send("Invalid provider handoff code");
       return;
     }
