@@ -58,55 +58,77 @@ git add packages/mobile/app.json packages/mobile/package.json packages/mobile/RE
 git commit -m "feat(mobile): configure Android application"
 ```
 
-### Task 2: Platform capability boundary
+### Task 2: Platform-native gateway
 
 **Files:**
-- Create: `packages/mobile/lib/platform-capabilities.ts`
-- Create: `packages/mobile/lib/platform-capabilities.test.ts`
+- Create: `packages/mobile/lib/platform-native/types.ts`
+- Create: `packages/mobile/lib/platform-native/health.ios.ts`
+- Create: `packages/mobile/lib/platform-native/health.android.ts`
+- Create: `packages/mobile/lib/platform-native/watch.ios.ts`
+- Create: `packages/mobile/lib/platform-native/watch.android.ts`
+- Create: `packages/mobile/lib/platform-native/health.test.ts`
+- Create: `packages/mobile/lib/platform-native/watch.test.ts`
+- Modify: `packages/mobile/lib/apple-health-provider.ts`
+- Modify: `packages/mobile/lib/background-health-kit-sync.ts`
+- Modify: `packages/mobile/lib/health-kit-sync.ts`
+- Modify: `packages/mobile/lib/useAutoSync.ts`
+- Modify: `packages/mobile/lib/watch-file-sync.ts`
+- Modify: `packages/mobile/lib/watch-altitude-file-sync.ts`
+- Modify: `packages/mobile/lib/background-watch-inertial-measurement-unit-sync.ts`
 - Modify: `packages/mobile/lib/mobile-account-purge.ts`
-- Modify: `packages/mobile/lib/mobile-account-purge.test.ts`
+- Modify: `packages/mobile/app/_layout.tsx`
+- Modify: `packages/mobile/app/record.tsx`
+- Modify: `packages/mobile/app/providers/index.tsx`
 
 **Interfaces:**
-- Produces `getPlatformCapabilities(os: "ios" | "android"): { health: "health-kit" | "health-connect"; watch: "watch-os" | "wear-os" }`.
-- Consumes the existing account-purge dependency object; does not call Apple-only native modules on Android.
+- Produces a single platform-resolved health gateway and watch gateway. The
+  iOS files adapt the current `health-kit` and `watch-motion` module contracts;
+  Android files adapt the later Health Connect and Wear OS modules.
+- No shared application file imports `modules/health-kit` or
+  `modules/watch-motion` directly. Metro selects `.ios.ts` or `.android.ts`
+  before an iOS-only native module can be evaluated on Android.
 
-- [ ] **Step 1: Write failing capability tests**
+- [ ] **Step 1: Write failing gateway tests**
 
 ```ts
-expect(getPlatformCapabilities("ios")).toEqual({ health: "health-kit", watch: "watch-os" });
-expect(getPlatformCapabilities("android")).toEqual({ health: "health-connect", watch: "wear-os" });
+expect(healthGateway.kind).toBe("health-kit");
+expect(watchGateway.kind).toBe("watch-os");
 ```
 
 - [ ] **Step 2: Verify RED**
 
-Run: `pnpm vitest run packages/mobile/lib/platform-capabilities.test.ts`
+Run: `pnpm vitest run packages/mobile/lib/platform-native/health.test.ts packages/mobile/lib/platform-native/watch.test.ts`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement the closed platform mapping and inject it where Apple-only cleanup currently runs**
+- [ ] **Step 3: Implement platform-resolved gateways and migrate every direct import**
 
 ```ts
-export function getPlatformCapabilities(os: "ios" | "android") {
-  return os === "ios"
-    ? { health: "health-kit" as const, watch: "watch-os" as const }
-    : { health: "health-connect" as const, watch: "wear-os" as const };
+export interface HealthGateway {
+  readonly kind: "health-kit" | "health-connect";
+  getRequestStatus(): Promise<HealthRequestStatus>;
+  requestPermissions(): Promise<boolean>;
+  purgeAccountState(cutoff: string): Promise<boolean>;
 }
 ```
 
-Keep the existing native dependency mandatory on the platform that supplies it;
-Android provides its own implementation rather than an optional empty result.
+Each exported gateway method is a production feature contract, not a test-only
+optional branch. The Android implementation must reject with a specific
+unsupported or permission-required message until its corresponding Android
+module is added in Task 3. Replace every listed direct import in one change and
+leave no Apple-native import reachable from shared application startup.
 
 - [ ] **Step 4: Verify GREEN**
 
-Run: `pnpm vitest run packages/mobile/lib/platform-capabilities.test.ts packages/mobile/lib/mobile-account-purge.test.ts`
+Run: `pnpm vitest run packages/mobile/lib/platform-native/health.test.ts packages/mobile/lib/platform-native/watch.test.ts packages/mobile/lib/mobile-account-purge.test.ts && cd packages/mobile && pnpm expo export --platform android --clear`
 
-Expected: PASS; Android selection does not invoke a WatchConnectivity module.
+Expected: PASS; Android Metro export evaluates no iOS native module.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/mobile/lib/platform-capabilities.ts packages/mobile/lib/platform-capabilities.test.ts packages/mobile/lib/mobile-account-purge.ts packages/mobile/lib/mobile-account-purge.test.ts
-git commit -m "feat(mobile): model platform health capabilities"
+git add packages/mobile/lib/platform-native packages/mobile/lib packages/mobile/app
+git commit -m "refactor(mobile): isolate platform native gateways"
 ```
 
 ### Task 3: Health Connect module and permission UX
