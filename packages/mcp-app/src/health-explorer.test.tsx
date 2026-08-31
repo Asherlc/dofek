@@ -32,8 +32,8 @@ const snapshot: HealthExplorerSnapshot = {
     },
   ],
   summary: [
-    { metric: "hrv", average: 42.5, minimum: 41, maximum: 44 },
-    { metric: "resting_hr", average: 58, minimum: 58, maximum: 58 },
+    { metric: "hrv", average: 42.5, min: 41, max: 44 },
+    { metric: "resting_hr", average: 58, min: 58, max: 58 },
   ],
   coverage: { requested_days: 3, observed_days: 2 },
 };
