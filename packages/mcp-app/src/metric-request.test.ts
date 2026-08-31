@@ -48,11 +48,34 @@ describe("createMetricRequestHandler", () => {
     const secondRequest = handler(app, snapshot, "steps");
     second.resolve({ structuredContent: { ...snapshot, range: { ...snapshot.range } } });
     await secondRequest;
-    first.reject(new Error("stale failure"));
+    first.resolve({ structuredContent: { ...snapshot, summary: [{ metric: "hrv", average: 1, min: 1, max: 1 }] } });
     await firstRequest;
 
+    expect(app.callServerTool).toHaveBeenNthCalledWith(2, {
+      name: "render_health_explorer",
+      arguments: { ...snapshot.range, metrics: ["steps"] },
+    });
     expect(setSnapshot).toHaveBeenCalledTimes(1);
     expect(setError).not.toHaveBeenCalled();
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports malformed responses and current-request failures", async () => {
+    const setSnapshot = vi.fn();
+    const setError = vi.fn();
+    const handler = createMetricRequestHandler({ setError, setSnapshot });
+    const invalidApp = { callServerTool: vi.fn().mockResolvedValue({ structuredContent: {} }) };
+
+    await handler(invalidApp, snapshot, "hrv");
+    expect(setSnapshot).not.toHaveBeenCalled();
+    expect(setError).toHaveBeenCalledWith(
+      "Dofek Explorer received an invalid response from the server. Please try again.",
+    );
+
+    const failure = new Error("request failed");
+    const failingApp = { callServerTool: vi.fn().mockRejectedValue(failure) };
+    await handler(failingApp, snapshot, "steps");
+    expect(captureException).toHaveBeenCalledWith(failure);
+    expect(setError).toHaveBeenLastCalledWith("request failed");
   });
 });

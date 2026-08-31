@@ -16,10 +16,11 @@ export function createMetricRequestHandler({
   setSnapshot(snapshot: HealthExplorerSnapshot): void;
   setError(message: string): void;
 }) {
-  let latestRequest = 0;
+  let latestRequest: symbol | undefined;
 
   return async (app: ToolApp, snapshot: HealthExplorerSnapshot, metric: HealthMetric) => {
-    const request = ++latestRequest;
+    const request = Symbol("metric-request");
+    latestRequest = request;
     try {
       const result = await app.callServerTool({
         name: "render_health_explorer",
