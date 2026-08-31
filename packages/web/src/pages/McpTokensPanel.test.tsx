@@ -121,6 +121,17 @@ describe("McpTokensPanel", () => {
     expect(screen.queryByText("Connect with a manual token")).toBeNull();
   });
 
+  it("shows manual token configuration for an HTTPS origin", async () => {
+    vi.stubGlobal("window", {
+      location: { origin: "https://dofek.example", protocol: "https:" },
+    });
+
+    render(<McpTokensPanel />);
+
+    expect(await screen.findByText("Connect with a manual token")).toBeTruthy();
+    expect(screen.getByText(/"url": "https:\/\/dofek\.example\/api\/mcp"/)).toBeTruthy();
+  });
+
   it("creates a token and shows the raw value once", async () => {
     createTokenMutateAsync.mockResolvedValueOnce({
       token: "dofek_mcp_created",
