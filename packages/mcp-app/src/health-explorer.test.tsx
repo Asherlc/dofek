@@ -54,4 +54,24 @@ describe("HealthExplorer", () => {
 
     expect(onMetricChange).toHaveBeenCalledWith("resting_hr");
   });
+
+  it("renders an empty server response without initializing a chart", () => {
+    mockInit.mockClear();
+
+    render(
+      <HealthExplorer
+        snapshot={{
+          ...snapshot,
+          series: [],
+          summary: [{ metric: "hrv", average: null, min: null, max: null }],
+          coverage: { requested_days: 3, observed_days: 0 },
+        }}
+        onMetricChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("No data")).toBeDefined();
+    expect(screen.getByText("0 of 3 days observed")).toBeDefined();
+    expect(mockInit).not.toHaveBeenCalled();
+  });
 });
