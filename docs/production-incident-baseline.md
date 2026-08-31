@@ -24348,3 +24348,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The Podfile-plugin regression test passes, as do mobile
   typecheck and Biome.
 - **Remaining risk / follow-up:** Confirm the rerun iOS archive passes.
+
+## 2026-08-31 — GitHub API limit blocked PR-review thread replies
+
+- **Status:** Source fixes are pushed; replies and thread resolution are blocked until GitHub restores API capacity.
+- **Symptoms / impact:** Three valid CodeRabbit documentation comments on PR #2595 could not receive their required inline replies or be marked resolved after their fixes were committed.
+- **Evidence / root cause:** GitHub rejected the first reply request with HTTP 403: `API rate limit exceeded for user ID 1294552` at `2026-08-31T17:50:50Z`. This is an external GitHub API quota limit, not a source or CI failure; GitHub documents rate-limit behavior and response headers in its [REST API rate-limit guide](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+- **Fix / mitigation:** No retry loop, token workaround, or review-resolution bypass was added. The self-contained plan, hyphenation, and approval wording were committed in `3d30806`; post the inline replies and resolve the threads once the API accepts requests.
+- **Validation:** CSpell passes on the revised plan and the commit is pushed to the PR branch.
+- **Remaining risk / follow-up:** Re-attempt the three comment replies and GraphQL thread resolutions after the rate limit resets, confirming each response succeeds before marking review work complete.
