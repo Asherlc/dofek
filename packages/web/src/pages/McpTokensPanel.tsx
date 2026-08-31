@@ -326,4 +326,3 @@ export function McpTokensPanel() {
     </div>
   );
 }
-

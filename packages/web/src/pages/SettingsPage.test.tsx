@@ -276,7 +276,10 @@ describe("SettingsPage categories", () => {
     fireEvent.change(searchbox, { target: { value: "medication" } });
     fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
 
-    expect((searchbox as HTMLInputElement).value).toBe("");
+    if (!(searchbox instanceof HTMLInputElement)) {
+      throw new Error("Expected the settings search control to be an input.");
+    }
+    expect(searchbox.value).toBe("");
     expect(screen.getAllByRole("tab")).toHaveLength(7);
     expect(mockNavigate).toHaveBeenCalledWith({
       search: expect.any(Function),
@@ -518,10 +521,7 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole("button", { name: "Connecting..." })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(screen.getByRole("button", { name: "Connecting..." })).toHaveProperty("disabled", true);
   });
 
   it.each([
