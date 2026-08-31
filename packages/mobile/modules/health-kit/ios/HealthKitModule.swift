@@ -1,7 +1,7 @@
 // swiftlint:disable file_length
 import ExpoModulesCore
 import HealthKit
-import Sentry
+import RNSentry
 
 private final class HealthKitModuleException: ExpoModulesCore.Exception {
     private let exceptionCode: String
