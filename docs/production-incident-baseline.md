@@ -24255,3 +24255,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completed successfully. The fresh CI workflow for commit `d73f6ae` is queued.
 - **Remaining risk / follow-up:** Confirm the queued hosted CI workflow passes
   before merging the PR.
+
+## 2026-08-31 — Clinical-record CDC mirror could not be recreated
+
+- **Status:** Resolved and deployed.
+- **Symptoms / user impact:** The App Store review remediation deployment left
+  the analytics worker, metric-stream ClickHouse sink, and processing
+  reconciliation services quiesced. Clinical records could not be verified in
+  the analytics CDC destination.
+- **Evidence / root cause:** Deployment
+  [33344790633](https://github.com/Asherlc/dofek/actions/runs/33344790633)
+  first reached the clinical migration, then failed because the legacy
+  provider-inventory flow was absent. Deployment
+  [33345363017](https://github.com/Asherlc/dofek/actions/runs/33345363017)
+  then failed because `processing_flow_marker_provider_inventory` already
+  existed and was non-empty. The initial recovery cleared missing mirror
+  destinations and restored initial copy, but its provider-inventory mapping
+  omitted that marker destination. Deployment
+  [33349241856](https://github.com/Asherlc/dofek/actions/runs/33349241856)
+  reproduced the same PeerDB `FailedPrecondition` for the omitted table.
+- **Fix / mitigation:** Missing managed mirrors now clear every destination
+  table before PeerDB recreates them with an initial copy, including
+  `processing_flow_marker_provider_inventory` for provider inventory. No retry,
+  timeout, or failure suppression was added.
+- **Validation:** Focused CDC regression tests, typecheck, and the full hosted
+  CI run [33349761208](https://github.com/Asherlc/dofek/actions/runs/33349761208)
+  passed. Production deployment
+  [33350870715](https://github.com/Asherlc/dofek/actions/runs/33350870715)
+  succeeded; the three managed mirrors and both clinical ClickHouse
+  destinations exist, and eight scoped review records were copied through CDC.
+- **Remaining risk / follow-up:** Keep the destination mapping aligned with
+  every table mapping in the PeerDB template when adding future raw analytics
+  tables.
