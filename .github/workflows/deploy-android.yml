@@ -1,0 +1,154 @@
+name: Deploy Android
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: "Green main commit SHA to deploy"
+        required: true
+        type: string
+      dispatching_run_id:
+        description: "Run ID of the workflow run that dispatched this workflow"
+        required: false
+        type: string
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-android-production
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Deploy Check
+    if: github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.sha }}
+      ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
+    steps:
+      - name: Resolve successful CI commit
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            test -n "$WORKFLOW_RUN_SHA" || { echo "::error::No successful CI commit was provided"; exit 1; }
+            echo "sha=$WORKFLOW_RUN_SHA" >> "$GITHUB_OUTPUT"
+            echo "ci_run_id=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$INPUT_SHA" || { echo "::error::No green main commit SHA was provided"; exit 1; }
+            echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
+            echo "ci_run_id=" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Upload to Google Play Production
+    needs: check
+    if: needs.check.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.check.outputs.commit_sha }}
+      - name: Resolve checked-out commit SHA
+        id: checked-out-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: |
+            GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64
+            ANDROID_UPLOAD_KEYSTORE_BASE64
+            ANDROID_UPLOAD_KEY_ALIAS
+            ANDROID_UPLOAD_KEYSTORE_PASSWORD
+            ANDROID_UPLOAD_KEY_PASSWORD
+            EXPO_PUBLIC_SENTRY_DSN
+            EXPO_PUBLIC_OTEL_ENDPOINT
+            EXPO_PUBLIC_OTEL_HEADERS
+      - name: Validate Google Play release secrets
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ env.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ env.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ env.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ env.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: pnpm tsx -e 'import { validateGooglePlayRelease } from "./scripts/validate-google-play-release.ts"; validateGooglePlayRelease(process.env);'
+      - name: Prepare Google Play credentials
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ env.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          echo -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64" | base64 --decode > "$RUNNER_TEMP/google-play-service-account.json"
+          echo -n "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-upload.keystore"
+      - name: Generate Android native project
+        working-directory: packages/mobile
+        run: pnpm expo prebuild --clean --platform android --no-install
+      - name: Build signed Android App Bundle
+        env:
+          BUILD_NUMBER: ${{ github.run_id }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ env.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ env.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ env.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd packages/mobile/android
+          ./gradlew :app:bundleRelease \
+            -Pandroid.injected.version.code="$BUILD_NUMBER" \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/android-upload.keystore" \
+            -Pandroid.injected.signing.store.password="$ANDROID_UPLOAD_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_UPLOAD_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_UPLOAD_KEY_PASSWORD" \
+            --stacktrace
+      - name: Upload to Google Play Production
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJson: ${{ runner.temp }}/google-play-service-account.json
+          packageName: com.dofek.app
+          releaseFiles: packages/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          tracks: production
+          status: completed
+      - name: Write job summary
+        env:
+          BUILD_NUMBER: ${{ github.run_id }}
+          COMMIT_SHA: ${{ steps.checked-out-sha.outputs.sha }}
+          CI_RUN_ID: ${{ needs.check.outputs.ci_run_id }}
+        run: |
+          VERSION=$(node -p "require('./packages/mobile/app.json').expo.version")
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          {
+            echo "## Android Production Deploy"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Version** | $VERSION |"
+            echo "| **Version code** | $BUILD_NUMBER |"
+            echo "| **Track** | production |"
+            echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
+            if [ -n "$CI_RUN_ID" ]; then
+              echo "| **Triggered by** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove release credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/google-play-service-account.json" "$RUNNER_TEMP/android-upload.keystore"
+

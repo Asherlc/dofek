@@ -466,6 +466,7 @@ Mobile/TestFlight workflows now load runtime secrets directly from Infisical via
 Workflows using this path:
 
 - `.github/workflows/build-mobile.yml`
+- `.github/workflows/deploy-android.yml`
 - `.github/workflows/deploy-ios.yml`
 - `.github/workflows/deploy-ota.yml`
 - `.github/workflows/mobile-preview-ota.yml`
@@ -522,12 +523,39 @@ Required Infisical keys for mobile pipelines:
 - `APP_STORE_CONNECT_KEY_BASE64` (TestFlight deploy)
 - `IOS_DISTRIBUTION_CERT_BASE64` (TestFlight deploy)
 - `IOS_DISTRIBUTION_CERT_PASSWORD` (TestFlight deploy)
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64` (base64-encoded Google Play
+  service-account JSON for Android Production releases)
+- `ANDROID_UPLOAD_KEYSTORE_BASE64` (base64-encoded Android upload keystore)
+- `ANDROID_UPLOAD_KEY_ALIAS` (Android upload-key alias)
+- `ANDROID_UPLOAD_KEYSTORE_PASSWORD` (Android upload-keystore password)
+- `ANDROID_UPLOAD_KEY_PASSWORD` (Android upload-key password)
 
 Optional Infisical keys for mobile pipelines:
 
 - `EXPO_PUBLIC_OTEL_HEADERS` (public client-side OTLP headers; use only write-only ingest credentials because Expo inlines `EXPO_PUBLIC_*` values into the app bundle: https://docs.expo.dev/guides/environment-variables/#reading-environment-variables-from-env-files)
 
 Missing keys fail the workflow immediately with an explicit key name.
+
+### Android Production Releases
+
+`.github/workflows/deploy-android.yml` runs from a successful `CI` completion
+on `main`, checks out that exact commit, derives the Android `versionCode` from
+the GitHub Actions run ID, and signs its AAB with the upload key. It commits
+the release through the Google Play Developer API using only the `production`
+track and a `completed` release status. A missing secret, signing failure,
+Google Play API failure, or review/policy rejection fails the deployment; the
+workflow never falls back to another track. Google documents that publishing
+through the API is performed by committing an edit and that track releases are
+managed by the Android Publisher API:
+<https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit>,
+<https://developers.google.com/android-publisher/api-ref/rest/v3/edits.tracks>.
+
+Before enabling the first release, create the Play Console app record, enroll
+it in Play App Signing, grant the CI service account only the app-release
+permission it needs, and complete the required listing and policy declarations.
+Google's app-signing guidance distinguishes the Google-held app-signing key
+from the upload key used by CI:
+<https://developer.android.com/studio/publish/app-signing>.
 
 ### Deployment Runbook: Cold-Start and DB Availability
 
