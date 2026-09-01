@@ -147,7 +147,7 @@ services:
         condition: service_started
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.4
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.5
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -155,7 +155,7 @@ services:
         condition: service_started
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.4
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.5
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -163,7 +163,7 @@ services:
         condition: service_started
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.4
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.5
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
@@ -185,7 +185,7 @@ services:
         condition: service_started
 
   peerdb-ui:
-    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.4
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.5
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
