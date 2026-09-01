@@ -12,7 +12,7 @@ contract.
 ## Client credentials and browser authorization
 
 An authenticated Dofek user registers and manages their own client from
-[Developer integrations](https://dofek.asherlc.com/developer-integrations).
+[Developer integrations](https://dofek.fit/developer-integrations).
 The creation response contains a client ID and client secret exactly once.
 Dofek stores only a SHA-256 hash of the secret; logs and database rows never
 contain the raw value.

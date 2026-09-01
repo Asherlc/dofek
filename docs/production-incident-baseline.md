@@ -7,6 +7,32 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-31 — Mobile login targeted a retired public hostname
+
+- **Status:** Source fix and compatibility routing prepared; production rollout
+  and mobile-update verification are pending.
+- **Symptoms / user impact:** The iOS login screen reported `Failed to fetch
+  providers: 404 not found`, preventing affected users from signing in.
+- **Evidence / root cause:** The mobile fallback was
+  `https://dofek.asherlc.com`, while the live Traefik `dofek_web` router
+  accepts only `dofek.fit` and `dofek.live`. On 2026-08-31,
+  `GET /api/auth/providers` returned configured providers with `200` for
+  `dofek.fit` and Traefik's `404 page not found` for
+  `dofek.asherlc.com`; the healthy Express service was never reached. Traefik
+  selects routers by rule matching, including `Host()` rules
+  ([Traefik router rules](https://doc.traefik.io/traefik/routing/routers/#rule)).
+- **Fix / mitigation:** Changed the mobile default server URL to the canonical
+  `https://dofek.fit` origin and added a regression test. The production router
+  will also serve `https://dofek.asherlc.com` as a backward-compatible TLS host
+  so existing app builds and links still reach the application.
+- **Validation:** The regression test first failed with the stale hostname,
+  then passed after the change. The 489 affected unit tests, five mobile tests,
+  focused Biome formatting checks, and TypeScript typecheck passed locally.
+- **Remaining risk / follow-up:** Publish the mobile update, then confirm a
+  device without `EXPO_PUBLIC_SERVER_URL` receives the configured-provider
+  response from `dofek.fit`. Renew the expired Axiom query credential so
+  primary production logs are available during future incidents.
+
 ## 2026-08-31 — iOS launch crash from mixed Sentry Cocoa distributions
 
 - **Status:** Migration implemented in this workspace; a fresh TestFlight build

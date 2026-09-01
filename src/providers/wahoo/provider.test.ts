@@ -40,8 +40,8 @@ describe("wahooOAuthConfig", () => {
   it("uses dynamic redirect URI based on host", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
-    const config = wahooOAuthConfig("dofek.asherlc.com");
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    const config = wahooOAuthConfig("dofek.fit");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 });
 
