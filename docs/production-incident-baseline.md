@@ -24310,9 +24310,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [CodeQL job](https://github.com/Asherlc/dofek/actions/runs/33315318029/job/99267540113)
   contains the first fatal diagnostic.
 - **Fix / mitigation:** Updated the three action references atomically to
-  4.37.8 on every affected Dependabot branch. No rerun-only mitigation,
-  timeout, or error suppression was added.
+  4.37.8 on every affected Dependabot branch and configured Dependabot to group
+  `github/codeql-action/*` updates. No rerun-only mitigation, timeout, or
+  error suppression was added.
 - **Validation:** `actionlint` validates the workflow locally; confirm each
   new hosted CodeQL run passes before merging.
-- **Remaining risk / follow-up:** Group coupled CodeQL action updates in
-  Dependabot so future releases remain atomic.
+- **Remaining risk / follow-up:** Dependabot will apply the grouping rule on
+  its next scheduled update scan.
