@@ -345,7 +345,7 @@ Successful evidence must include:
 - Production health check:
 
 ```bash
-curl -fsS https://dofek.asherlc.com/healthz
+curl -fsS https://dofek.fit/healthz
 ```
 
 Record the incident in `docs/production-incident-baseline.md` with symptoms,

@@ -279,6 +279,45 @@ describe("runMigrations", () => {
     }
   });
 
+  it("accepts the production clinical-record migration when it is already applied", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-production-clinical-history-"));
+    const clinicalMigration = {
+      content: readFileSync(
+        join(import.meta.dirname, "../../drizzle/0099_canonical_clinical_records.sql"),
+        "utf8",
+      ),
+      file: "0099_canonical_clinical_records.sql",
+      when: 1_787_982_000_000,
+    };
+    writeTestMigrationFiles(tmpDir, [clinicalMigration]);
+
+    await client.connect();
+    try {
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint,
+        content_hash text
+      )`);
+      await client.query(
+        `INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash)
+         VALUES ($1, $2, $3)`,
+        [
+          "3d3eb7bfc3e32fb8164f94c7be1efb5123d917f2e501f5531fbd1eea0b524115",
+          1_787_982_000_000,
+          "3d3eb7bfc3e32fb8164f94c7be1efb5123d917f2e501f5531fbd1eea0b524115",
+        ],
+      );
+
+      await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(0);
+    } finally {
+      await client.query("DROP SCHEMA drizzle CASCADE");
+      await client.end();
+    }
+  });
+
   it("continues after migrations recorded by the legacy filename tracker", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-legacy-history-"));

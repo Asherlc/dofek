@@ -54,15 +54,36 @@ const syncProviderRowOutputSchema = z.object({
   lastSyncedAt: z.string().nullable(),
   lastSuccessfulSyncAt: z.string().nullable(),
   syncFreshness: z
-    .object({
-      status: z.enum(["unknown", "current", "overdue"]),
-      label: z.string(),
-      description: z.string(),
-    })
+    .discriminatedUnion("status", [
+      z.object({
+        status: z.literal("unknown"),
+        label: z.literal("Sync status unknown"),
+        description: z.string(),
+      }),
+      z.object({ status: z.literal("current"), label: z.literal("Sync current") }),
+      z.object({
+        status: z.literal("overdue"),
+        label: z.literal("Sync overdue"),
+        description: z.string(),
+      }),
+    ])
     .nullable(),
   importOnly: z.boolean(),
   pushOnly: z.boolean(),
   needsReauth: z.boolean(),
+  recentLogs: z.array(
+    z.object({
+      id: z.string(),
+      providerId: z.string(),
+      status: z.string(),
+      syncedAt: z.string(),
+      durationMs: z.number().nullable(),
+      recordCount: z.number().nullable(),
+      dataType: z.string(),
+      errorMessage: z.string().nullable(),
+      authFailureReason: z.string().nullable(),
+    }),
+  ),
 });
 
 const syncDateSchema = z
@@ -118,8 +139,7 @@ const providerStatsOutputSchema = z.array(
     healthEvents: z.number().int().nonnegative(),
     metricStream: z.number().int().nonnegative(),
     nutritionDaily: z.number().int().nonnegative(),
-    labPanels: z.number().int().nonnegative(),
-    labResults: z.number().int().nonnegative(),
+    clinicalRecords: z.number().int().nonnegative(),
     journalEntries: z.number().int().nonnegative(),
   }),
 );
@@ -254,13 +274,15 @@ const syncRouterProcedures = {
       const all = getAllProviders();
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
-      // Batch: load connections, latest attempts, recent auth errors, and latest successes.
-      const [allConnections, lastSyncs, latestErrors, lastSuccessfulSyncs] = await Promise.all([
-        repo.getConnectedProviderIds(),
-        repo.getLastSyncTimes(),
-        repo.getLatestErrors(),
-        repo.getLastSuccessfulSyncTimes(),
-      ]);
+      // Batch: load connections, latest attempts, recent auth errors, successes, and history.
+      const [allConnections, lastSyncs, latestErrors, lastSuccessfulSyncs, recentLogsByProvider] =
+        await Promise.all([
+          repo.getConnectedProviderIds(),
+          repo.getLastSyncTimes(),
+          repo.getLatestErrors(),
+          repo.getLastSuccessfulSyncTimes(),
+          repo.getRecentLogsByProvider(3),
+        ]);
 
       const connectionSet = new Set(allConnections.map((row) => row.providerId));
       const connectionUpdatedAtMap = new Map(
@@ -308,6 +330,7 @@ const syncRouterProcedures = {
             importOnly: model.importOnly,
             pushOnly: false,
             needsReauth: authErrorProviders.has(model.id),
+            recentLogs: recentLogsByProvider.get(model.id) ?? [],
           };
         });
 
@@ -325,6 +348,7 @@ const syncRouterProcedures = {
           importOnly: false,
           pushOnly: true,
           needsReauth: false,
+          recentLogs: recentLogsByProvider.get(provider.id) ?? [],
         };
       });
 

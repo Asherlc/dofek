@@ -51,7 +51,7 @@ services:
       retries: 15
 
   redpanda:
-    image: mirror.gcr.io/redpandadata/redpanda:v26.2.1
+    image: mirror.gcr.io/redpandadata/redpanda:v26.2.2
     command:
       - redpanda
       - start
@@ -195,6 +195,7 @@ services:
       PUBLIC_URL: http://localhost:3100
       DISABLE_QUERY_CACHE: "true"
       MATERIALIZED_VIEW_REFRESH_TOKEN: e2e-refresh-token
+      OPENAI_APPS_CHALLENGE_TOKEN: e2e-openai-apps-challenge-token
       CREDENTIAL_ENCRYPTION_KEY_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: '{"activeKeyId":"e2e-v1","keys":{"e2e-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}}'
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger

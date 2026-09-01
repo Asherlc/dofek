@@ -9,20 +9,25 @@ const mockFileWrite = vi.fn();
 const mockFileDelete = vi.fn();
 const mockDownloadFileAsync = vi.fn();
 vi.mock("expo-file-system", () => {
-  const MockDirectory = vi
-    .fn()
-    .mockImplementation((parent: { uri: string }, directoryName: string) => ({
+  const MockDirectory = vi.fn(function directoryConstructor(
+    parent: { uri: string },
+    directoryName: string,
+  ) {
+    return {
       create: vi.fn(),
       delete: vi.fn(),
       exists: true,
       uri: `${parent.uri}/${directoryName}`,
-    }));
-  const MockFile = vi.fn().mockImplementation((parent: { uri: string }, filename: string) => ({
-    delete: mockFileDelete,
-    exists: true,
-    uri: `${parent.uri}/${filename}`,
-    write: mockFileWrite,
-  }));
+    };
+  });
+  const MockFile = vi.fn(function fileConstructor(parent: { uri: string }, filename: string) {
+    return {
+      delete: mockFileDelete,
+      exists: true,
+      uri: `${parent.uri}/${filename}`,
+      write: mockFileWrite,
+    };
+  });
   MockFile.downloadFileAsync = mockDownloadFileAsync;
   return {
     Directory: MockDirectory,
@@ -396,18 +401,21 @@ describe("SettingsScreen categories", () => {
     ["general", "Goals & Models", "Units"],
     ["health", "Goals & Models", "Units"],
     ["account", "Account", "Password"],
-  ] as const)("normalizes the legacy %s deep link to %s", async (legacyTab, currentCategory, sectionText) => {
-    mockSearchParams = { tab: legacyTab };
-    const { default: SettingsScreen } = await import("../app/settings");
+  ] as const)(
+    "normalizes the legacy %s deep link to %s",
+    async (legacyTab, currentCategory, sectionText) => {
+      mockSearchParams = { tab: legacyTab };
+      const { default: SettingsScreen } = await import("../app/settings");
 
-    render(<SettingsScreen />);
+      render(<SettingsScreen />);
 
-    const selectedCategoryButton = screen
-      .getAllByRole("button", { name: currentCategory })
-      .find((button) => button.getAttribute("aria-selected") === "true");
-    expect(selectedCategoryButton).toBeTruthy();
-    expect(screen.getByText(sectionText)).toBeTruthy();
-  });
+      const selectedCategoryButton = screen
+        .getAllByRole("button", { name: currentCategory })
+        .find((button) => button.getAttribute("aria-selected") === "true");
+      expect(selectedCategoryButton).toBeTruthy();
+      expect(screen.getByText(sectionText)).toBeTruthy();
+    },
+  );
 });
 
 describe("SettingsScreen unit system", () => {

@@ -1,4 +1,10 @@
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import {
+  type HealthExplorerInput,
+  type HealthMetric,
+  healthExplorerInputSchema,
+  healthMetricSchema,
+} from "@dofek/mcp-contracts/health-explorer";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Database } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
@@ -38,7 +44,10 @@ import {
   ensureProvidersRegistered,
   toJobId,
 } from "../routers/sync-helpers.ts";
+import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
+import { HealthExplorerService, type HealthTrendRow } from "./health-explorer-service.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
+import { jsonToolResult } from "./tool-result.ts";
 
 export interface DofekMcpContext {
   db: Pick<Database, "execute" | "select" | "transaction">;
@@ -49,25 +58,8 @@ export interface DofekMcpContext {
 }
 
 function jsonContent(value: unknown) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
-  };
+  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
-
-const healthMetricSchema = z.enum([
-  "hrv",
-  "resting_hr",
-  "spo2",
-  "respiratory_rate",
-  "sleep_efficiency",
-  "skin_temp",
-  "steps",
-  "distance_km",
-  "exercise_minutes",
-  "flights_climbed",
-]);
-
-type HealthMetric = z.infer<typeof healthMetricSchema>;
 
 const healthMetricColumns: Partial<Record<HealthMetric, string>> = {
   hrv: "hrv",
@@ -145,7 +137,7 @@ function healthTrends(
   baselineRows: DailyRecoveryBaseline[],
   metrics: HealthMetric[],
   granularity: "daily" | "weekly",
-) {
+): HealthTrendRow[] {
   const grouped = new Map<string, Array<Record<string, unknown>>>();
   for (const row of rows) {
     const date = z.string().parse(row.date);
@@ -206,6 +198,33 @@ function healthTrends(
         ? { week: key, metrics: metricValues }
         : { date: key, metrics: metricValues };
     });
+}
+
+async function listHealthTrends(
+  context: DofekMcpContext,
+  input: HealthExplorerInput,
+): Promise<HealthTrendRow[]> {
+  assertDateRange(input.start_date, input.end_date);
+  const requestedTimezone = input.timezone ?? context.timezone;
+  const repository = new DailyMetricsRepository(context.db, context.userId, requestedTimezone);
+  if (!context.sensorStore) {
+    throw new Error("get_health_trends requires the ClickHouse analytics store");
+  }
+  const [restingHeartRateCte, baselineRows] = await Promise.all([
+    fetchRestingHeartRateValuesCte({
+      sensorStore: context.sensorStore,
+      userId: context.userId,
+      timezone: requestedTimezone,
+      endDate: input.end_date,
+      days: daysBetween(input.start_date, input.end_date) + 1,
+    }),
+    new RecoveryBaselineRepository(context.userId, context.sensorStore).listRange(
+      input.start_date,
+      input.end_date,
+    ),
+  ]);
+  const rows = await repository.listRange(input.start_date, input.end_date, restingHeartRateCte);
+  return healthTrends(rows, baselineRows, input.metrics, input.granularity);
 }
 
 function average(values: Array<number | null | undefined>): number | null {
@@ -272,12 +291,14 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     name: "dofek",
     version: "0.1.0",
   });
+  registerDofekAppResources(server);
 
   server.registerTool(
     "get_daily_health_summary",
     {
       title: "Get Daily Health Summary",
       description: "Return server-computed health metrics for one day.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         date: dateSchema,
         timezone: z.string().optional(),
@@ -301,6 +322,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Health Trends",
       description:
         "Return daily or weekly health metric aggregates with baseline-relative recovery context for an exact date range.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -311,33 +333,34 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async ({ start_date, end_date, metrics, granularity, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
-      assertDateRange(start_date, end_date);
-      const requestedTimezone = timezone ?? context.timezone;
-      const repository = new DailyMetricsRepository(context.db, context.userId, requestedTimezone);
-      if (!context.sensorStore) {
-        throw new Error("get_health_trends requires the ClickHouse analytics store");
-      }
-      const [restingHeartRateCte, baselineRows] = await Promise.all([
-        fetchRestingHeartRateValuesCte({
-          sensorStore: context.sensorStore,
-          userId: context.userId,
-          timezone: requestedTimezone,
-          endDate: end_date,
-          days: daysBetween(start_date, end_date) + 1,
-        }),
-        new RecoveryBaselineRepository(context.userId, context.sensorStore).listRange(
+      return jsonContent(
+        await listHealthTrends(context, {
           start_date,
           end_date,
-        ),
-      ]);
-      const rows = await repository.listRange(start_date, end_date, restingHeartRateCte);
-      return jsonContent(
-        healthTrends(
-          rows,
-          baselineRows,
-          metrics ?? healthMetricSchema.options,
-          granularity ?? "daily",
-        ),
+          metrics: metrics ?? healthMetricSchema.options,
+          granularity: granularity ?? "daily",
+          timezone,
+        }),
+      );
+    },
+  );
+
+  server.registerTool(
+    "render_health_explorer",
+    {
+      title: "Render Health Explorer",
+      description: "Return a server-computed health analytics snapshot for the Dofek Explorer.",
+      inputSchema: healthExplorerInputSchema,
+      annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: healthExplorerResourceUri } },
+    },
+    async (input) => {
+      requireMcpScope(context.scopes, "health:read");
+      const timezone = input.timezone ?? context.timezone;
+      return jsonToolResult(
+        await new HealthExplorerService({
+          list: (request) => listHealthTrends(context, request),
+        }).snapshot({ ...input, timezone }),
       );
     },
   );
@@ -348,6 +371,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Sleep Summary",
       description:
         "Return nightly sleep duration, efficiency, stages, and timing for a date range.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -422,6 +446,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Search Activities",
       description: "Search authenticated user activity summaries.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         from: dateSchema.optional(),
         to: dateSchema.optional(),
@@ -457,6 +482,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Activity Details",
       description:
         "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         activity_id: z.uuid(),
       },
@@ -505,6 +531,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Activity Summary",
       description: "Aggregate activity volume and effort over an exact date range.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -539,6 +566,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Finger Loading",
       description:
         "Return structured finger-loading protocols and server-computed effective load for an exact date range.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -581,6 +609,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Nutrition Summary",
       description: "Return daily calorie, macronutrient, fiber, and meal totals for a date range.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -622,6 +651,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Body Metrics",
       description: "Return weight and body-composition measurements for an exact date range.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -656,6 +686,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Subjective Timeline",
       description: "Return raw subjective check-ins, symptoms, and injury events for a date range.",
+      annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -674,6 +705,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "List Providers",
       description: "List configured user-facing providers and connection status.",
+      annotations: { readOnlyHint: true },
       inputSchema: {},
     },
     async () => {

@@ -47,6 +47,27 @@ export interface SleepSample {
   sourceName: string;
 }
 
+export type ClinicalRecordType =
+  | "allergy"
+  | "condition"
+  | "coverage"
+  | "immunization"
+  | "labResult"
+  | "medication"
+  | "procedure"
+  | "vitalSign"
+  | "clinicalNote";
+
+export interface ClinicalRecordSample {
+  uuid: string;
+  clinicalType: ClinicalRecordType;
+  displayName: string;
+  sourceName: string;
+  fhirVersion: string;
+  fhir: Record<string, unknown>;
+  downloadedAt: string;
+}
+
 export interface RouteLocation {
   date: string; // ISO 8601
   lat: number;
@@ -118,6 +139,15 @@ export async function queryCategorySamples(
   endDate: string,
 ): Promise<HealthKitSample[]> {
   return HealthKitModule.queryCategorySamples(typeIdentifier, startDate, endDate);
+}
+
+/** Query read-only FHIR clinical records during an explicit user-initiated sync. */
+export async function queryClinicalRecords(
+  typeIdentifier: string,
+  startDate: string,
+  endDate: string,
+): Promise<ClinicalRecordSample[]> {
+  return HealthKitModule.queryClinicalRecords(typeIdentifier, startDate, endDate);
 }
 
 /** Query workouts */

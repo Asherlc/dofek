@@ -59,8 +59,7 @@ describe("0059_provider_change_state migration", () => {
       "body_measurement_sample",
       "food_entry",
       "health_event",
-      "lab_panel",
-      "lab_result",
+      "clinical_record",
       "journal_entry",
     ]) {
       await client.command({
@@ -107,8 +106,7 @@ describe("0059_provider_change_state migration", () => {
       ["postgres_fitness.health_event", `${database}.health_event`],
       ["postgres_fitness.journal_entry", `${database}.journal_entry`],
       ["postgres_fitness.food_entry", `${database}.food_entry`],
-      ["postgres_fitness.lab_panel", `${database}.lab_panel`],
-      ["postgres_fitness.lab_result", `${database}.lab_result`],
+      ["postgres_fitness.clinical_record", `${database}.clinical_record`],
       ["postgres_fitness.activity", `${database}.activity`],
       ["postgres_fitness.provider", `${database}.provider`],
       ["ingest.metric_stream", `${database}.metric_stream`],

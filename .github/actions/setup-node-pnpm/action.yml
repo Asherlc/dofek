@@ -9,7 +9,7 @@ runs:
       with:
         node-version: 26
         cache: pnpm
-    - run: pnpm install --frozen-lockfile
+    - run: pnpm install --frozen-lockfile --network-concurrency=8
       shell: bash
       env:
         CYPRESS_INSTALL_BINARY: "0"

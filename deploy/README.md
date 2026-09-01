@@ -325,7 +325,7 @@ terminated:
       The `dofek-web-assets` bucket must keep Terraform-managed CORS allowing
       cross-origin `GET` and `HEAD` requests, because Vite module scripts and
       module preloads are loaded from `assets.dofek.fit` while the HTML is
-      served from domains such as `dofek.asherlc.com`. If the CORS policy
+      served from domains such as `dofek.fit`. If the CORS policy
       changes while objects are already cached at Cloudflare, purge the
       `assets.dofek.fit` cache hostname so cached asset responses refresh with
       the current `Access-Control-Allow-Origin` header. Cloudflare documents

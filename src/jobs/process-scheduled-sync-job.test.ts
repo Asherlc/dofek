@@ -5,12 +5,12 @@ import type { Database, SyncDatabase } from "../db/index.ts";
 const providerQueues = new Map<
   string,
   {
-    add: ReturnType<typeof vi.fn>;
-    getJobs: ReturnType<typeof vi.fn>;
-    getJob: ReturnType<typeof vi.fn>;
-    getActive: ReturnType<typeof vi.fn>;
-    getWaiting: ReturnType<typeof vi.fn>;
-    getDelayed: ReturnType<typeof vi.fn>;
+    add: CallableVitestMock;
+    getJobs: CallableVitestMock;
+    getJob: CallableVitestMock;
+    getActive: CallableVitestMock;
+    getWaiting: CallableVitestMock;
+    getDelayed: CallableVitestMock;
   }
 >();
 const mockLoggerInfo = vi.fn();

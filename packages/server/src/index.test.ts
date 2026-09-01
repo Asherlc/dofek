@@ -56,10 +56,9 @@ const mockCreateDeveloperClientsRouter = vi.fn(() => {
 });
 
 vi.mock("@bull-board/express", () => ({
-  ExpressAdapter: vi.fn(() => ({
-    setBasePath: vi.fn(),
-    getRouter: vi.fn(() => express.Router()),
-  })),
+  ExpressAdapter: vi.fn(function vitestConstructor() {
+    return { setBasePath: vi.fn(), getRouter: vi.fn(() => express.Router()) };
+  }),
 }));
 
 vi.mock("@bull-board/api", () => ({
@@ -71,7 +70,9 @@ vi.mock("@trpc/server/adapters/express", () => ({
 }));
 
 vi.mock("@bull-board/api/bullMQAdapter", () => ({
-  BullMQAdapter: vi.fn(() => ({})),
+  BullMQAdapter: vi.fn(function vitestConstructor() {
+    return {};
+  }),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -256,6 +257,42 @@ describe("createApp", () => {
     expect(res.status).toBe(404);
   });
 
+  it("rejects a whitespace-only OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", "   ");
+
+    try {
+      expect(() => createApp(createDatabaseFromEnv(), makeMockSensorStore())).toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rejects a whitespace-only explicit OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+
+    expect(() =>
+      createApp(createDatabaseFromEnv(), makeMockSensorStore(), {
+        openAiAppsChallengeToken: "   ",
+      }),
+    ).toThrow("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
+  });
+
+  it("rejects a missing OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", undefined);
+
+    try {
+      expect(() => createApp(createDatabaseFromEnv(), makeMockSensorStore())).toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("redacts sensitive query parameters in request logs", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     const app = createApp(createDatabaseFromEnv(), makeMockSensorStore());
@@ -322,20 +359,19 @@ describe("createApp", () => {
     expect(res.body).toContain("<!doctype html>");
   });
 
-  it.each([
-    "/robots.txt",
-    "/llms.txt",
-    "/missing/image.png",
-  ])("returns 404 instead of the SPA shell for missing file-like path %s", async (path) => {
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const fakeDb = createDatabaseFromEnv();
-    const app = createApp(fakeDb, makeMockSensorStore());
+  it.each(["/robots.txt", "/llms.txt", "/missing/image.png"])(
+    "returns 404 instead of the SPA shell for missing file-like path %s",
+    async (path) => {
+      const { createDatabaseFromEnv } = await import("dofek/db");
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb, makeMockSensorStore());
 
-    const res = await request(app, "GET", path);
+      const res = await request(app, "GET", path);
 
-    expect(res.status).toBe(404);
-    expect(res.body).not.toContain("<!doctype html>");
-  });
+      expect(res.status).toBe(404);
+      expect(res.body).not.toContain("<!doctype html>");
+    },
+  );
 
   it("registers the ingest route using createIngestZosHealthRouter", async () => {
     const { createIngestZosHealthRouter } = await import("./routes/ingest-zos-health.ts");
@@ -480,6 +516,38 @@ describe("main", () => {
     mockReconcileAccountErasureRestoreIntents.mockResolvedValue({
       recoveredRequestIds: [],
     });
+  });
+
+  it("rejects a blank OpenAI Apps challenge token before initializing dependencies", async () => {
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", "   ");
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+      expect(mockValidateAccountErasureLedgerKeyring).not.toHaveBeenCalled();
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rejects a missing OpenAI Apps challenge token before initializing dependencies", async () => {
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", undefined);
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+      expect(mockValidateAccountErasureLedgerKeyring).not.toHaveBeenCalled();
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("does not initialize traffic dependencies when restore reconciliation fails", async () => {

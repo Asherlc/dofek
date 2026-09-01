@@ -185,7 +185,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
@@ -291,7 +291,7 @@ jobs:
       contents: read
     services:
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -402,9 +402,12 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Lint new migration SQL
         run: |
+          # Migration 0099 was applied in production before this repository restored its lineage.
+          # Its recorded bytes are immutable and cannot be reformatted for SQLFluff.
           NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- \
             'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
+            | grep -v '^drizzle/0099_canonical_clinical_records.sql$' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
             echo "No new migrations to lint"
@@ -758,7 +761,7 @@ jobs:
           --health-timeout 5s
           --health-retries 30
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -908,7 +911,7 @@ jobs:
           key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: cypress-${{ runner.os }}-
       - run: pnpm exec cypress install
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
@@ -1215,7 +1218,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default

@@ -11,6 +11,7 @@ import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { climbingRouter } from "./routers/climbing.ts";
+import { clinicalRecordsRouter } from "./routers/clinical-records.ts";
 import { companionPairingRouter } from "./routers/companion-pairing.ts";
 import { companionTokenRouter } from "./routers/companion-token.ts";
 import { correlationRouter } from "./routers/correlation.ts";
@@ -101,6 +102,7 @@ const appRouterProcedures = {
   training: trainingRouter,
   trends: trendsRouter,
   calendar: calendarRouter,
+  clinicalRecords: clinicalRecordsRouter,
   climbing: climbingRouter,
   companionPairing: companionPairingRouter,
   companionToken: companionTokenRouter,

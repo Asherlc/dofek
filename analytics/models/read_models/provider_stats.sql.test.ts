@@ -11,6 +11,16 @@ describe("provider_stats model", () => {
     expect(modelSql).toContain("deleted_at IS null");
   });
 
+  it("uses the canonical clinical record source and count", () => {
+    expect(modelSql).toContain("source('postgres_fitness', 'clinical_record') }} FINAL");
+    expect(modelSql).toContain("clinical_record_counts AS (");
+    expect(modelSql).toContain("coalesce(clinical_record_counts.count, 0) AS clinical_records");
+    expect(modelSql).not.toContain("source('postgres_fitness', 'lab_panel')");
+    expect(modelSql).not.toContain("source('postgres_fitness', 'lab_result')");
+    expect(modelSql).not.toContain("AS lab_panels");
+    expect(modelSql).not.toContain("AS lab_results");
+  });
+
   it("recounts only dirty providers through reusable provider sets", () => {
     const normalizedSql = compactWhitespace(modelSql);
 

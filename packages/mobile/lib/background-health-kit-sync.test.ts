@@ -555,21 +555,20 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it.each([
-    null,
-    "locked",
-    { code: "OTHER_ERROR" },
-  ])("reports a non-HealthKit database error to Sentry: %j", async (syncError) => {
-    vi.mocked(queryWorkouts).mockRejectedValueOnce(syncError);
+  it.each([null, "locked", { code: "OTHER_ERROR" }])(
+    "reports a non-HealthKit database error to Sentry: %j",
+    async (syncError) => {
+      vi.mocked(queryWorkouts).mockRejectedValueOnce(syncError);
 
-    await initBackgroundHealthKitSync(createMockClient());
+      await initBackgroundHealthKitSync(createMockClient());
 
-    await vi.waitFor(() => {
-      expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
-        source: "bg-healthkit-sync",
+      await vi.waitFor(() => {
+        expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+          source: "bg-healthkit-sync",
+        });
       });
-    });
-  });
+    },
+  );
 
   it("skips init when HealthKit is not available", async () => {
     mockIsAvailable.mockReturnValueOnce(false);

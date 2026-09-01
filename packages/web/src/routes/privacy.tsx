@@ -11,9 +11,23 @@ function PrivacyPage() {
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-3">1. Introduction</h2>
             <p>
-              Dofek ("we", "our", "the platform") is a fitness and health data aggregation platform.
-              This policy describes how we collect, use, store, and protect your personal and health
-              data when you use our service.
+              Dofek, operated by Asher Cohen ("we", "our", "the platform"), is a fitness and health
+              data aggregation platform. This policy describes how we collect, use, store, and
+              protect your personal and health data when you use our service.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-3">MCP and AI Clients</h2>
+            <p>
+              When you authorize an AI client through Dofek OAuth, Dofek returns only the results of
+              tools that authorized client requests for your account. The AI client may process
+              those results under its own terms and privacy policy. You can revoke access through
+              the client or by contacting{" "}
+              <a href="/support" className="text-accent underline">
+                Dofek support
+              </a>
+              .
             </p>
           </section>
 

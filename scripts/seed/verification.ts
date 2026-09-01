@@ -39,9 +39,9 @@ export async function verifySeed(sql: TaggedQueryClient): Promise<void> {
       `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
     ],
     [
-      "lab results",
-      8,
-      `SELECT COUNT(*)::int AS count FROM fitness.lab_result WHERE user_id = '${USER_ID}'`,
+      "clinical records",
+      20,
+      `SELECT COUNT(*)::int AS count FROM fitness.clinical_record WHERE user_id = '${USER_ID}'`,
     ],
     [
       "journal entries",

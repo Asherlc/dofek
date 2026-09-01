@@ -1,6 +1,6 @@
 {
   "name": "@dofek/whoop",
-  "version": "0.1.13",
+  "version": "0.1.21",
   "description": "Unofficial WHOOP API client using the internal Cognito-based authentication",
   "type": "module",
   "license": "MIT",
@@ -60,6 +60,6 @@
   "devDependencies": {
     "@types/node": "26.1.2",
     "typescript": "6.0.3",
-    "vitest": "3.2.6"
+    "vitest": "4.1.11"
   }
 }

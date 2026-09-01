@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import type { UnitSystem } from "@dofek/format/units";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
@@ -314,5 +314,53 @@ describe("ActivityList", () => {
     expect(screen.queryByText("Invalid Date")).toBeNull();
     expect(screen.queryByText("NaNm")).toBeNull();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders incomplete activity data and supports a paginated result set", () => {
+    const onPageChange = vi.fn();
+    const firstActivity = mockActivities[0];
+    if (!firstActivity) throw new Error("Expected the activity fixture");
+    renderWithUnits(
+      <ActivityList
+        activities={[
+          {
+            ...firstActivity,
+            ended_at: null,
+            name: null,
+            source_providers: null,
+          },
+          {
+            ...firstActivity,
+            id: "negative-duration",
+            ended_at: "2026-03-18T06:45:00Z",
+            name: "Clock-skewed Run",
+          },
+        ]}
+        totalCount={4}
+        page={0}
+        pageSize={2}
+        onPageChange={onPageChange}
+      />,
+    );
+
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByRole("navigation", { name: "activities pagination" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+    expect(onPageChange).toHaveBeenCalledWith(1);
+  });
+
+  it("clears bulk selection after an asynchronous deletion succeeds", async () => {
+    const onBulkDelete = vi.fn(async () => undefined);
+    renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByText("Morning Run"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => expect(onBulkDelete).toHaveBeenCalledWith(["1"]));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Select activities" })).toBeTruthy(),
+    );
   });
 });

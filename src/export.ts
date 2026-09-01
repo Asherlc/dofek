@@ -138,21 +138,12 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "lab-panels.csv",
+    name: "clinical-records.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.lab_panel WHERE user_id = ${userId} ORDER BY recorded_at`,
-      ),
-  },
-  {
-    name: "lab-results.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.lab_result WHERE user_id = ${userId} ORDER BY recorded_at`,
+        sql`SELECT * FROM fitness.clinical_record WHERE user_id = ${userId} ORDER BY downloaded_at`,
       ),
   },
   {

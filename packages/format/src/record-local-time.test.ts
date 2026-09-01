@@ -61,6 +61,19 @@ describe("resolveRecordLocalTimeContext", () => {
     ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
   });
 
+  it.each([{ startUtcOffsetMinutes: 0 }, { endUtcOffsetMinutes: 0 }])(
+    "rejects UTC offsets attached to the unknown source",
+    (offsets) => {
+      expect(() =>
+        resolveRecordLocalTimeContext({
+          startedAt: new Date("2026-01-01T00:00:00.000Z"),
+          source: "unknown",
+          ...offsets,
+        }),
+      ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
+    },
+  );
+
   it("rejects an invalid IANA timezone", () => {
     expect(() =>
       resolveRecordLocalTimeContext({

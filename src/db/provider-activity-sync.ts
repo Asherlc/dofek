@@ -280,9 +280,9 @@ export async function finishProviderActivityListSync(
   await reconcileProviderActivityAbsence(db, reconciliation);
 }
 
+export type { ProviderActivityAbsenceMark, ProviderActivityAbsenceReconciliation };
 export {
   hasProviderActivityListSyncErrors,
   markProviderActivityAbsent,
   markProviderActivityPresent,
 };
-export type { ProviderActivityAbsenceMark, ProviderActivityAbsenceReconciliation };

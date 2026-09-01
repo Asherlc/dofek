@@ -6,6 +6,7 @@ import {
   isAvailable,
   queryAnchoredSamples,
   queryCategorySamples,
+  queryClinicalRecords,
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
@@ -49,6 +50,7 @@ export interface AppleHealthProviderCard {
   syncFreshness: null;
   importOnly: false;
   pushOnly: false;
+  recentLogs: [];
 }
 
 export interface AppleHealthDisplayProvider {
@@ -214,6 +216,7 @@ export class AppleHealthProviderModel {
       syncFreshness: null,
       importOnly: false,
       pushOnly: false,
+      recentLogs: [],
     };
   }
 
@@ -355,6 +358,8 @@ export const defaultAppleHealthAdapter: HealthKitAdapter = {
   completeAnchoredQuery,
   queryAnchoredSamples,
   queryCategorySamples,
+  queryClinicalRecords: (typeIdentifier, startDate, endDate) =>
+    queryClinicalRecords(typeIdentifier, startDate, endDate),
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,

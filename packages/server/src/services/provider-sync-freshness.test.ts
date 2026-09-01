@@ -29,7 +29,6 @@ describe("evaluateProviderSyncFreshness", () => {
     ).toEqual({
       status: "current",
       label: "Sync current",
-      description: "The last successful sync completed within the expected cadence.",
     });
   });
 
@@ -43,7 +42,6 @@ describe("evaluateProviderSyncFreshness", () => {
     ).toEqual({
       status: "current",
       label: "Sync current",
-      description: "The last successful sync completed within the expected cadence.",
     });
   });
 

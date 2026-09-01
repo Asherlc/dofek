@@ -23,7 +23,6 @@ const providerCardMeta = {
       syncFreshness: {
         status: "current",
         label: "Sync current",
-        description: "The last successful sync completed within the expected cadence.",
       },
       importOnly: false,
       pushOnly: false,

@@ -292,7 +292,7 @@ describe("wahooOAuthConfig", () => {
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = wahooOAuthConfig();
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 });
 

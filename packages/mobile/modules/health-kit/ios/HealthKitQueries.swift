@@ -1,7 +1,60 @@
 import HealthKit
 
+struct ClinicalRecordMappingInput {
+    let clinicalRecordUUID: UUID
+    let clinicalTypeIdentifier: String
+    let clinicalDisplayName: String
+    let clinicalSourceName: String
+    let clinicalFHIRVersion: String?
+    let clinicalFHIRData: Data?
+    let clinicalDownloadDate: Date
+}
+
+private enum ClinicalRecordMappingError: LocalizedError {
+    case invalidFHIRPayload
+    case missingFHIRPayload
+    case unsupportedClinicalType
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidFHIRPayload:
+            return "The clinical record FHIR payload is not a JSON object."
+        case .missingFHIRPayload:
+            return "The clinical record does not contain a FHIR payload and version."
+        case .unsupportedClinicalType:
+            return "The clinical record has an unsupported HealthKit type."
+        }
+    }
+}
+
 /// Common query patterns used by the HealthKit module
 enum HealthKitQueries {
+    static func mapClinicalRecord(
+        _ sample: ClinicalRecordMappingInput
+    ) throws -> [String: Any] {
+        guard let clinicalType = clinicalRecordType(for: sample.clinicalTypeIdentifier) else {
+            throw ClinicalRecordMappingError.unsupportedClinicalType
+        }
+        guard let fhirVersion = sample.clinicalFHIRVersion,
+              let fhirData = sample.clinicalFHIRData else {
+            throw ClinicalRecordMappingError.missingFHIRPayload
+        }
+        guard let fhir = try? JSONSerialization.jsonObject(with: fhirData),
+              let fhirObject = fhir as? [String: Any] else {
+            throw ClinicalRecordMappingError.invalidFHIRPayload
+        }
+
+        return [
+            "uuid": sample.clinicalRecordUUID.uuidString,
+            "clinicalType": clinicalType,
+            "displayName": sample.clinicalDisplayName,
+            "sourceName": sample.clinicalSourceName,
+            "fhirVersion": fhirVersion,
+            "fhir": fhirObject,
+            "downloadedAt": formatInstant(sample.clinicalDownloadDate),
+        ]
+    }
+
     /// Resolve raw HealthKit identifiers used by generic sample queries.
     static func sampleType(for identifier: String) -> HKSampleType? {
         if let quantityType = HKQuantityType.quantityType(
@@ -73,6 +126,14 @@ enum HealthKitQueries {
     static func formatDate(_ date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = .current
+        return formatter.string(from: date)
+    }
+
+    /// Format a date as a server-compatible absolute instant.
+    static func formatInstant(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: date)
     }
 

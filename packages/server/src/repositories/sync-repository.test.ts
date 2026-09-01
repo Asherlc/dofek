@@ -203,6 +203,46 @@ describe("SyncRepository", () => {
     });
   });
 
+  describe("getRecentLogsByProvider", () => {
+    it("returns the latest entries grouped by provider", async () => {
+      const syncedAt = new Date("2026-08-27T18:28:22.481Z");
+      const { repo } = makeRepository([
+        {
+          id: "log-1",
+          provider_id: "strava",
+          status: "success",
+          synced_at: syncedAt,
+          duration_ms: 1234,
+          record_count: 12,
+          data_type: "activities",
+          error_message: null,
+          auth_failure_reason: null,
+        },
+      ]);
+
+      await expect(repo.getRecentLogsByProvider(3)).resolves.toEqual(
+        new Map([
+          [
+            "strava",
+            [
+              {
+                id: "log-1",
+                providerId: "strava",
+                status: "success",
+                syncedAt: "2026-08-27T18:28:22.481Z",
+                durationMs: 1234,
+                recordCount: 12,
+                dataType: "activities",
+                errorMessage: null,
+                authFailureReason: null,
+              },
+            ],
+          ],
+        ]),
+      );
+    });
+  });
+
   describe("getProviderStats", () => {
     it("returns empty array when no providers", async () => {
       const { repo, execute } = makeRepository([]);
@@ -225,8 +265,7 @@ describe("SyncRepository", () => {
             health_events: "1",
             metric_stream: "100",
             nutrition_daily: "6",
-            lab_panels: "4",
-            lab_results: "9",
+            clinical_records: "13",
             journal_entries: "3",
           },
         ],
@@ -244,8 +283,7 @@ describe("SyncRepository", () => {
         healthEvents: 1,
         metricStream: 100,
         nutritionDaily: 6,
-        labPanels: 4,
-        labResults: 9,
+        clinicalRecords: 13,
         journalEntries: 3,
       });
       expect(execute).not.toHaveBeenCalled();
@@ -265,8 +303,7 @@ describe("SyncRepository", () => {
             health_events: "0",
             metric_stream: "0",
             nutrition_daily: "0",
-            lab_panels: "0",
-            lab_results: "0",
+            clinical_records: "0",
             journal_entries: "0",
           },
           {
@@ -279,8 +316,7 @@ describe("SyncRepository", () => {
             health_events: "0",
             metric_stream: "42",
             nutrition_daily: "0",
-            lab_panels: "0",
-            lab_results: "0",
+            clinical_records: "0",
             journal_entries: "0",
           },
         ],
@@ -309,8 +345,7 @@ describe("SyncRepository", () => {
             health_events: "6",
             metric_stream: "7",
             nutrition_daily: "8",
-            lab_panels: "9",
-            lab_results: "10",
+            clinical_records: "19",
             journal_entries: "11",
           },
         ],

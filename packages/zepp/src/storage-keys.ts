@@ -26,7 +26,7 @@ export const STORAGE_KEYS = {
   TELEMETRY_INSTALL_ID: "telemetry_install_id",
 } as const;
 
-export const DEFAULT_DOFEK_SERVER_URL = "https://dofek.asherlc.com";
+export const DEFAULT_DOFEK_SERVER_URL = "https://dofek.fit";
 
 export const FREQ_MODE_LABELS: Record<number, string> = {
   0: "LOW",

@@ -191,18 +191,16 @@ describe("KayaClient", () => {
     await expect(new KayaClient("token", fetchFn).listAscents("42")).resolves.toHaveLength(1);
   });
 
-  it.each([
-    "",
-    "not-a-coordinate",
-    "Infinity",
-    "NaN",
-  ])("rejects an invalid ascent gym latitude of %j", async (latitude) => {
-    const fetchFn = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(ascentResponse({ latitude, longitude: "-122.4194" }));
+  it.each(["", "not-a-coordinate", "Infinity", "NaN"])(
+    "rejects an invalid ascent gym latitude of %j",
+    async (latitude) => {
+      const fetchFn = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(ascentResponse({ latitude, longitude: "-122.4194" }));
 
-    await expect(new KayaClient("token", fetchFn).listAscents("42")).rejects.toThrow();
-  });
+      await expect(new KayaClient("token", fetchFn).listAscents("42")).rejects.toThrow();
+    },
+  );
 
   it("reports invalid credentials for rejected or malformed login responses", async () => {
     await expect(

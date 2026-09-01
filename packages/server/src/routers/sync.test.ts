@@ -38,7 +38,9 @@ const {
   mockLoggerWarn: vi.fn(),
   mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-  mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
+  mockVeloHeroProvider: vi.fn(function vitestConstructor() {
+    return { id: "velohero" };
+  }),
   mockCachedProtectedQuery: vi.fn(),
   mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
   mockWithUserWriteFence: vi.fn(),
@@ -160,8 +162,11 @@ vi.mock("dofek/lib/cache", () => ({
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
   executeWithSchema: vi.fn(
-    async (db: { execute: (q: unknown) => Promise<unknown[]> }, _schema: unknown, query: unknown) =>
-      db.execute(query),
+    async (
+      db: { execute: (q: unknown) => Promise<unknown[] | undefined> },
+      _schema: unknown,
+      query: unknown,
+    ) => (await db.execute(query)) ?? [],
   ),
 }));
 
@@ -260,7 +265,9 @@ describe("syncRouter", () => {
     mockProtectedQueryCache.clear();
     mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
-    mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
+    mockVeloHeroProvider.mockImplementation(function vitestConstructor() {
+      return { id: "velohero" };
+    });
     mockGetProviderSyncQueue.mockImplementation((id: string) => ({
       add: mockAdd,
       getJob: mockGetJob,
@@ -430,7 +437,21 @@ describe("syncRouter", () => {
             // Third call: latest errors (none)
             .mockResolvedValueOnce([])
             // Fourth call: successful syncs
-            .mockResolvedValueOnce([]),
+            .mockResolvedValueOnce([])
+            // Fifth call: bounded recent history per provider
+            .mockResolvedValueOnce([
+              {
+                id: "sync-log-1",
+                provider_id: "wahoo",
+                status: "success",
+                synced_at: new Date("2024-01-01T01:00:00Z"),
+                duration_ms: 400,
+                record_count: 4,
+                data_type: "activities",
+                error_message: null,
+                auth_failure_reason: null,
+              },
+            ]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -466,6 +487,9 @@ describe("syncRouter", () => {
       expect(wahoo?.importOnly).toBe(false);
       expect(wahoo?.pushOnly).toBe(false);
       expect(wahoo?.needsReauth).toBe(false);
+      expect(wahoo?.recentLogs).toEqual([
+        expect.objectContaining({ id: "sync-log-1", status: "success" }),
+      ]);
 
       // WHOOP: custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");
@@ -522,7 +546,6 @@ describe("syncRouter", () => {
           syncFreshness: {
             status: "current",
             label: "Sync current",
-            description: "The last successful sync completed within the expected cadence.",
           },
         });
       } finally {
@@ -2276,8 +2299,7 @@ describe("syncRouter", () => {
               health_events: 1,
               metric_stream: 100,
               nutrition_daily: 7,
-              lab_panels: 2,
-              lab_results: 4,
+              clinical_records: 6,
               journal_entries: 6,
             },
           ]),
@@ -2300,8 +2322,7 @@ describe("syncRouter", () => {
           healthEvents: 1,
           metricStream: 100,
           nutritionDaily: 7,
-          labPanels: 2,
-          labResults: 4,
+          clinicalRecords: 6,
           journalEntries: 6,
         },
       ]);

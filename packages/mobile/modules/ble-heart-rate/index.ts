@@ -21,6 +21,18 @@ function nativeNullable<Schema extends z.ZodTypeAny>(schema: Schema) {
   return schema.nullish().transform((value) => value ?? null);
 }
 
+/**
+ * Accept a native field that is absent as either `null` or `undefined` and
+ * settle on `fallback`.
+ *
+ * Use this instead of {@link nativeNullable} for fields that the UI reads
+ * without a null guard, such as `lastRrIntervalsMs.length` and the rendered
+ * `bufferedSampleCount`. A `null` fallback would only relocate the crash.
+ */
+function nativeDefault<Schema extends z.ZodTypeAny>(schema: Schema, fallback: z.infer<Schema>) {
+  return schema.nullish().transform((value) => value ?? fallback);
+}
+
 /** Persisted state and latest native measurement for a heart-rate monitor. */
 export const BleHeartRateDeviceSnapshotSchema = z.object({
   id: z.string().min(1),
@@ -28,8 +40,8 @@ export const BleHeartRateDeviceSnapshotSchema = z.object({
   connectionState: z.string().min(1),
   lastMeasurementAt: nativeNullable(z.string()),
   lastHeartRateBpm: nativeNullable(z.number()),
-  lastRrIntervalsMs: z.array(z.number()),
-  bufferedSampleCount: z.number().int().nonnegative(),
+  lastRrIntervalsMs: nativeDefault(z.array(z.number()), []),
+  bufferedSampleCount: nativeDefault(z.number().int().nonnegative(), 0),
 });
 
 export type BleHeartRateDeviceSnapshot = z.infer<typeof BleHeartRateDeviceSnapshotSchema>;

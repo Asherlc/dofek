@@ -127,26 +127,37 @@ describe("production PWA build", () => {
   });
 
   it("falls back for SPA documents while preserving every server-owned route", () => {
-    const receivesApplicationShell = (pathname: string) =>
-      !navigationDenylist.some((pattern) => pattern.test(pathname));
+    const receivesApplicationShell = (navigationUrl: string) =>
+      !navigationDenylist.some((pattern) => pattern.test(navigationUrl));
 
     expect(receivesApplicationShell("/dashboard")).toBe(true);
     expect(receivesApplicationShell("/admin")).toBe(true);
 
     for (const pathname of [
       "/api/trpc/recovery.readinessScore",
+      "/api/trpc/recovery.readinessScore?batch=1",
       "/auth/login/google",
+      "/auth/login/google?return_to=%2Fdashboard",
       "/callback",
+      "/callback?code=provider-code&state=provider-state",
       "/authorize",
+      "/authorize?response_type=code&client_id=claude",
       "/admin/queues",
+      "/admin/queues?tab=failed",
       "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-authorization-server?resource=%2Fapi%2Fmcp",
       "/healthz",
+      "/healthz?probe=1",
       "/readyz",
       "/metrics",
       "/register",
+      "/register?client=claude",
       "/token",
+      "/token?grant_type=authorization_code",
       "/revoke",
+      "/revoke?token=access-token",
       "/assets/missing.js",
+      "/assets/missing.js?version=1",
     ]) {
       expect(receivesApplicationShell(pathname), pathname).toBe(false);
     }

@@ -4,14 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("arctic", () => {
   const mockTokens = { idToken: () => "mock-id-token" };
   return {
-    Google: vi.fn().mockImplementation(() => ({
-      createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://accounts.google.com/auth")),
-      validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
-    })),
-    Apple: vi.fn().mockImplementation(() => ({
-      createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://appleid.apple.com/auth")),
-      validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
-    })),
+    Google: vi.fn(function vitestConstructor() {
+      return {
+        createAuthorizationURL: vi
+          .fn()
+          .mockReturnValue(new URL("https://accounts.google.com/auth")),
+        validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
+      };
+    }),
+    Apple: vi.fn(function vitestConstructor() {
+      return {
+        createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://appleid.apple.com/auth")),
+        validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
+      };
+    }),
     decodeIdToken: vi.fn().mockReturnValue({
       sub: "user-123",
       email: "test@example.com",
@@ -210,7 +216,7 @@ describe("auth/providers", () => {
 
       // Verify Apple constructor received DER bytes, not raw PEM text
       const { Apple: AppleMock } = await import("arctic");
-      const appleMock: ReturnType<typeof vi.fn> = vi.mocked(AppleMock);
+      const appleMock: CallableVitestMock = vi.mocked(AppleMock);
       const constructorCall = appleMock.mock.calls[0];
       const keyArg = constructorCall[3];
       // Should be the base64-decoded DER bytes [1, 2, 3], not the UTF-8 encoded PEM string

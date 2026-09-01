@@ -1,0 +1,13 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.asherlc/dofek",
+  "title": "Dofek",
+  "description": "Private health and fitness analytics through a secure remote MCP connection.",
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://dofek.fit/api/mcp"
+    }
+  ]
+}

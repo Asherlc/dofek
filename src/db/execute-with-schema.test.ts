@@ -37,18 +37,16 @@ describe("executeWithSchema", () => {
     ).resolves.toEqual([{ id: 1 }]);
   });
 
-  it.each([
-    null,
-    "invalid database result",
-    { rows: null },
-    { rows: {} },
-  ])("rejects malformed database result %p", async (databaseResult) => {
-    mockExecute.mockResolvedValue(databaseResult);
+  it.each([null, "invalid database result", { rows: null }, { rows: {} }])(
+    "rejects malformed database result %p",
+    async (databaseResult) => {
+      mockExecute.mockResolvedValue(databaseResult);
 
-    await expect(
-      executeWithSchema(createMockDb(), z.object({ id: z.number() }), sql`SELECT 1`),
-    ).rejects.toThrow("Unexpected database execute result shape");
-  });
+      await expect(
+        executeWithSchema(createMockDb(), z.object({ id: z.number() }), sql`SELECT 1`),
+      ).rejects.toThrow("Unexpected database execute result shape");
+    },
+  );
 
   it("rejects rows that do not match the schema", async () => {
     mockExecute.mockResolvedValue([{ id: "not-a-number" }]);

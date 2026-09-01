@@ -7,7 +7,6 @@ export type ProviderSyncFreshness =
   | {
       status: "current";
       label: "Sync current";
-      description: string;
     }
   | {
       status: "overdue";
@@ -41,7 +40,6 @@ export function evaluateProviderSyncFreshness({
     return {
       status: "current",
       label: "Sync current",
-      description: "The last successful sync completed within the expected cadence.",
     };
   }
 
