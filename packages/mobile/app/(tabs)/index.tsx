@@ -162,7 +162,7 @@ export default function TodayScreen() {
           <Text style={styles.anomalyIcon}>{"\u26A0\uFE0F"}</Text>
           <Text style={styles.anomalyText}>
             {anomalies.anomalies[0]?.metric}: {anomalies.anomalies[0]?.value} (baseline{" "}
-            {anomalies.anomalies[0]?.baselineMean} \u00b1 {anomalies.anomalies[0]?.baselineStddev})
+            {anomalies.anomalies[0]?.baselineMean} ± {anomalies.anomalies[0]?.baselineStddev})
           </Text>
         </View>
       )}

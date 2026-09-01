@@ -626,7 +626,7 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
-    expect(screen.getByText(/Resting Heart Rate: 70/)).toBeTruthy();
+    expect(screen.getByText("Resting Heart Rate: 70 (baseline 60 ± 3)")).toBeTruthy();
   });
 
   it("opens add food with today's date and auto-selected meal", async () => {
