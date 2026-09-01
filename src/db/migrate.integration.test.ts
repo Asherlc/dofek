@@ -279,6 +279,29 @@ describe("runMigrations", () => {
     }
   });
 
+  it("accepts the production clinical-record migration when it is already applied", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      await client.query(
+        `INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash)
+         VALUES ($1, $2, $3)`,
+        [
+          "3d3eb7bfc3e32fb8164f94c7be1efb5123d917f2e501f5531fbd1eea0b524115",
+          1_787_982_000_000,
+          "3d3eb7bfc3e32fb8164f94c7be1efb5123d917f2e501f5531fbd1eea0b524115",
+        ],
+      );
+
+      await expect(runMigrations(ctx.connectionString, join(import.meta.dirname, "../../drizzle"))).resolves.toBe(0);
+    } finally {
+      await client.query("DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1", [
+        1_787_982_000_000,
+      ]);
+      await client.end();
+    }
+  });
+
   it("continues after migrations recorded by the legacy filename tracker", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-legacy-history-"));
