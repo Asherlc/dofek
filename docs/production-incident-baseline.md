@@ -26,7 +26,7 @@ them, and the durability work they suggest.
   will also serve `https://dofek.asherlc.com` as a backward-compatible TLS host
   so existing app builds and links still reach the application.
 - **Validation:** The regression test first failed with the stale hostname,
-  then passed after the change. The 489 affected unit tests, five mobile tests,
+  then passed after the change. The 489 unit tests, five mobile server tests,
   focused Biome formatting checks, and TypeScript typecheck passed locally.
 - **Remaining risk / follow-up:** Publish the mobile update, then confirm a
   device without `EXPO_PUBLIC_SERVER_URL` receives the configured-provider
