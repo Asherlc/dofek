@@ -31,6 +31,7 @@ describe("HealthExplorerService", () => {
           metric: "hrv",
           label: "Heart rate variability",
           unit: "ms",
+          note: null,
           points: [
             { key: "2026-08-01", value: 51 },
             { key: "2026-08-02", value: null },
@@ -76,7 +77,8 @@ describe("HealthExplorerService", () => {
           metric: "hrv",
           label: "Heart rate variability",
           unit: "ms",
-          points: [{ key: "2026-W31", value: null }],
+          note: "no_data_in_range",
+          points: [],
         },
       ],
       summary: [{ metric: "hrv", average: null, min: null, max: null }],

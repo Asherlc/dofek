@@ -83,6 +83,7 @@ describe("healthExplorerSnapshotSchema", () => {
           metric: "hrv",
           label: "Heart rate variability",
           unit: "ms",
+          note: null,
           points: [
             { key: "2026-08-01", value: 51 },
             { key: "2026-08-02", value: null },

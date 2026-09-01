@@ -17,6 +17,7 @@ const toolTestMocks = vi.hoisted(() => {
     climbingActivityEntries: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
+    dataCoverageList: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
     fingerLoadingRange: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
@@ -71,6 +72,12 @@ vi.mock("../repositories/climbing-repository.ts", () => ({
 
 vi.mock("../repositories/daily-metrics-repository.ts", () => ({
   DailyMetricsRepository: toolTestMocks.dailyMetricsRepository,
+}));
+
+vi.mock("../repositories/data-coverage-repository.ts", () => ({
+  DataCoverageRepository: vi.fn(function vitestConstructor() {
+    return { list: toolTestMocks.dataCoverageList };
+  }),
 }));
 
 vi.mock("../repositories/food-repository.ts", () => ({
@@ -326,6 +333,7 @@ describe("createMcpRouter", () => {
     toolTestMocks.climbingActivityEntries.mockResolvedValue([]);
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
+    toolTestMocks.dataCoverageList.mockResolvedValue([]);
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
     toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
@@ -519,6 +527,10 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_data_coverage").inputSchema).toMatchObject({
+      properties: {},
+      type: "object",
+    });
     expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -595,6 +607,7 @@ describe("createMcpRouter", () => {
     for (const name of [
       "get_daily_health_summary",
       "get_health_trends",
+      "get_data_coverage",
       "get_sleep_summary",
       "search_activities",
       "get_activity_details",
@@ -793,22 +806,17 @@ describe("createMcpRouter", () => {
         earliest_available: null,
       },
       series: [
-        {
-          metrics: {
-            hrv: { avg: 40, max: 40, min: 40 },
-            resting_hr: { avg: 57, max: 57, min: 57 },
-            steps: { avg: 6_000, max: 6_000, min: 6_000 },
-          },
-          week: "2026-W20",
-        },
-        {
-          metrics: {
-            hrv: { avg: 55, max: 60, min: 50 },
-            resting_hr: { avg: 54, max: 55, min: 53 },
-            steps: { avg: 9_000, max: 10_000, min: 8_000 },
-          },
-          week: "2026-W21",
-        },
+        expect.objectContaining({
+          metric: "hrv",
+          points: [
+            expect.objectContaining({ key: "2026-W20", value: 40 }),
+            expect.objectContaining({ key: "2026-W21", value: 55 }),
+          ],
+          summary: { average: 47.5, min: 40, max: 55 },
+          coverage: expect.objectContaining({ observed_days: 2 }),
+        }),
+        expect.objectContaining({ metric: "resting_hr" }),
+        expect.objectContaining({ metric: "steps" }),
       ],
     });
     expect(toolTestMocks.dailyMetricsListRange).toHaveBeenCalledWith(
@@ -856,15 +864,107 @@ describe("createMcpRouter", () => {
         range_clamped: false,
         earliest_available: "2026-05-18",
       },
-      series: [
-        { date: "2026-05-18", metrics: { hrv: { avg: 50, max: 50, min: 50 } } },
-        { date: "2026-05-19", metrics: { steps: { avg: 10_000, max: 10_000, min: 10_000 } } },
-      ],
+      series: expect.arrayContaining([
+        expect.objectContaining({
+          metric: "hrv",
+          points: [
+            expect.objectContaining({ key: "2026-05-18", value: 50 }),
+            expect.objectContaining({ key: "2026-05-19", value: null }),
+          ],
+          coverage: expect.objectContaining({ observed_days: 1 }),
+        }),
+        expect.objectContaining({
+          metric: "resting_hr",
+          points: [],
+          note: "no_data_in_range",
+        }),
+        expect.objectContaining({
+          metric: "steps",
+          points: [
+            expect.objectContaining({ key: "2026-05-18", value: null }),
+            expect.objectContaining({ key: "2026-05-19", value: 10_000 }),
+          ],
+        }),
+      ]),
     });
     expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
       rhrEndDate: "2026-05-19",
       rhrWindowStart: "2026-05-17",
       timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("returns first and last observed dates for every health metric", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dataCoverageList.mockResolvedValue([
+      {
+        metric: "resting_hr",
+        first_observed: "2026-03-09",
+        last_observed: "2026-09-01",
+        total_days_observed: 170,
+        source_providers: ["apple_health"],
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_data_coverage", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      {
+        metric: "resting_hr",
+        first_observed: "2026-03-09",
+        last_observed: "2026-09-01",
+        total_days_observed: 170,
+        source_providers: ["apple_health"],
+      },
+    ]);
+  });
+
+  it("distinguishes an out-of-range metric from a metric with no recorded history", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
+    toolTestMocks.dataCoverageList.mockResolvedValue([
+      {
+        metric: "resting_hr",
+        first_observed: "2026-03-09",
+        last_observed: "2026-09-01",
+        total_days_observed: 170,
+        source_providers: ["apple_health"],
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        start_date: "2023-06-01",
+        end_date: "2023-08-01",
+        metrics: ["resting_hr"],
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      requested_metrics: ["resting_hr"],
+      series: [
+        {
+          metric: "resting_hr",
+          label: "Resting heart rate",
+          unit: "bpm",
+          points: [],
+          note: "no_data_in_range",
+          summary: { average: null, min: null, max: null },
+          coverage: {
+            observed_days: 0,
+            missing_days_truncated_count: 32,
+          },
+        },
+      ],
+      diagnostics: {
+        metrics_with_no_data: ["resting_hr"],
+        range_clamped: true,
+        earliest_available: "2026-03-09",
+      },
     });
   });
 
@@ -926,6 +1026,7 @@ describe("createMcpRouter", () => {
         {
           label: "Heart rate variability",
           metric: "hrv",
+          note: null,
           points: [
             { key: "2026-05-18", value: 50 },
             { key: "2026-05-19", value: 55 },
@@ -990,13 +1091,12 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toMatchObject({
       series: [
-        {
-          date: "2026-05-19",
-          metrics: {
-            hrv: {
-              avg: 72,
-              max: 72,
-              min: 72,
+        expect.objectContaining({
+          metric: "hrv",
+          points: [
+            expect.objectContaining({
+              key: "2026-05-19",
+              value: 72,
               baseline_relative: expect.objectContaining({
                 baseline: {
                   coverage: 0.8,
@@ -1011,25 +1111,29 @@ describe("createMcpRouter", () => {
                   direction: "increasing",
                 }),
               }),
-            },
-            resting_hr: {
-              avg: 48,
-              max: 48,
-              min: 48,
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          metric: "resting_hr",
+          points: [
+            expect.objectContaining({
               baseline_relative: expect.objectContaining({
                 baseline: expect.objectContaining({ mean: 52, zScore: -2 }),
               }),
-            },
-            sleep_efficiency: {
-              avg: 90,
-              max: 90,
-              min: 90,
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          metric: "sleep_efficiency",
+          points: [
+            expect.objectContaining({
               baseline_relative: expect.objectContaining({
                 baseline: expect.objectContaining({ mean: 85, zScore: 2 }),
               }),
-            },
-          },
-        },
+            }),
+          ],
+        }),
       ],
     });
   });

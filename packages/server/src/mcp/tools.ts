@@ -25,6 +25,7 @@ import {
   readFingerLoadingRange,
 } from "../repositories/climbing-training-log-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
+import { DataCoverageRepository } from "../repositories/data-coverage-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import {
   type DailyRecoveryBaseline,
@@ -45,7 +46,8 @@ import {
   toJobId,
 } from "../routers/sync-helpers.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
-import { HealthExplorerService, type HealthTrendRow } from "./health-explorer-service.ts";
+import { HealthExplorerService } from "./health-explorer-service.ts";
+import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 
@@ -79,15 +81,6 @@ const recoveryMetricKeys: Partial<
 > = {
   hrv: "hrv",
   resting_hr: "resting_heart_rate",
-  respiratory_rate: "respiratory_rate",
-  sleep_efficiency: "sleep_efficiency",
-};
-
-const recoveryCoverageMetricKeys: Partial<
-  Record<HealthMetric, "hrv" | "resting_hr" | "respiratory_rate" | "sleep_efficiency">
-> = {
-  hrv: "hrv",
-  resting_hr: "resting_hr",
   respiratory_rate: "respiratory_rate",
   sleep_efficiency: "sleep_efficiency",
 };
@@ -183,22 +176,31 @@ function healthTrends(
                 return matchingMetric?.value == null ? [] : [matchingMetric.value];
               })
             : [];
-          const aggregate = aggregateNumbers(
+          const datedValues =
             baselineValues.length > 0
-              ? baselineValues
-              : groupRows.map((row) =>
-                  z.coerce
+              ? baselineGroup.map((row) => {
+                  const matchingMetric = row.metrics.find(
+                    (candidate) => candidate.metric === recoveryMetricKey,
+                  );
+                  return { date: row.date, value: matchingMetric?.value ?? null };
+                })
+              : groupRows.map((row) => ({
+                  date: z.string().parse(row.date),
+                  value: z.coerce
                     .number()
                     .nullable()
                     .parse(column ? (row[column] ?? null) : null),
-                ),
-          );
+                }));
+          const aggregate = aggregateNumbers(datedValues.map(({ value }) => value));
           return aggregate
             ? [
                 [
                   metric,
                   {
                     ...aggregate,
+                    observed_dates: datedValues.flatMap(({ date, value }) =>
+                      value == null ? [] : [date],
+                    ),
                     ...(baselineMetric ? { baseline_relative: baselineMetric } : {}),
                   },
                 ],
@@ -248,33 +250,29 @@ async function healthTrendsResponse(
   if (!context.sensorStore) {
     throw new Error("get_health_trends requires the ClickHouse analytics store");
   }
-  const firstRecoveryDates = await new RecoveryBaselineRepository(
-    context.userId,
+  const coverage = await new DataCoverageRepository(
     context.sensorStore,
-  ).firstObservedDates();
-  const firstAvailableDates = input.metrics.flatMap((metric) => {
-    const recoveryMetric = recoveryCoverageMetricKeys[metric];
-    const date = recoveryMetric ? firstRecoveryDates[recoveryMetric] : null;
-    return date ? [date] : [];
-  });
+    context.userId,
+    timezone,
+  ).list();
+  const requestedMetricSet = new Set(input.metrics);
+  const firstAvailableDates = coverage.flatMap((row) =>
+    requestedMetricSet.has(row.metric) && row.first_observed ? [row.first_observed] : [],
+  );
   return healthTrendsEnvelope(series, input, timezone, firstAvailableDates);
 }
 
 function healthTrendsEnvelope(
-  series: HealthTrendRow[],
+  rows: HealthTrendRow[],
   input: HealthExplorerInput,
   timezone: string,
   firstAvailableDates: string[],
 ) {
-  const observedMetrics = new Set<HealthMetric>();
-  const availableDates = series.flatMap((row) => {
-    for (const metric of input.metrics) {
-      if (row.metrics[metric] != null) {
-        observedMetrics.add(metric);
-      }
-    }
-    return row.date ? [row.date] : [];
-  });
+  const built = buildHealthSeries(rows, input);
+  const observedSeries = built.series.filter((item) => item.note == null);
+  const availableDates = observedSeries.flatMap((item) =>
+    item.points.flatMap((point) => (/^\d{4}-\d{2}-\d{2}$/.test(point.key) ? [point.key] : [])),
+  );
   const earliestAvailable = [...availableDates, ...firstAvailableDates].sort()[0] ?? null;
 
   return {
@@ -285,9 +283,11 @@ function healthTrendsEnvelope(
       timezone,
     },
     requested_metrics: input.metrics,
-    series,
+    series: built.series,
     diagnostics: {
-      metrics_with_no_data: input.metrics.filter((metric) => !observedMetrics.has(metric)),
+      metrics_with_no_data: built.series.flatMap((item) =>
+        item.note === "no_data_in_range" ? [item.metric] : [],
+      ),
       range_clamped: earliestAvailable != null && input.start_date < earliestAvailable,
       earliest_available: earliestAvailable,
     },
@@ -457,6 +457,30 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           input,
           requestedTimezone,
         ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_data_coverage",
+    {
+      title: "Get Data Coverage",
+      description:
+        "Return first and last observed dates, observed-day counts, and source providers for every health metric.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {},
+    },
+    async () => {
+      requireMcpScope(context.scopes, "health:read");
+      if (!context.sensorStore) {
+        throw new Error("get_data_coverage requires the ClickHouse analytics store");
+      }
+      return jsonContent(
+        await new DataCoverageRepository(
+          context.sensorStore,
+          context.userId,
+          context.timezone,
+        ).list(),
       );
     },
   );

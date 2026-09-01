@@ -81,6 +81,7 @@ const healthExplorerSeriesSchema = z.object({
   label: z.string().min(1),
   unit: z.string().min(1),
   points: z.array(healthExplorerPointSchema),
+  note: z.literal("no_data_in_range").nullable(),
 });
 
 const healthExplorerSummarySchema = z.object({
