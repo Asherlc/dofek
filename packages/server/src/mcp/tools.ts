@@ -698,13 +698,13 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         context.sensorStore,
       );
       const rows = await repository.listRange(start_date, end_date, canonical_types);
-      return jsonContent(
-        activitySummaries(
-          rows.map((row) => activityMcpRowSchema.parse(row)),
-          group_by ?? "canonical_type",
-          context.timezone,
-        ),
-      );
+      const parsedRows = rows.map((row) => activityMcpRowSchema.parse(row));
+      const unclassifiedCount = parsedRows.filter((row) => row.canonical_type === "other").length;
+      return jsonContent({
+        unclassified_pct:
+          parsedRows.length === 0 ? 0 : (unclassifiedCount / parsedRows.length) * 100,
+        summaries: activitySummaries(parsedRows, group_by ?? "canonical_type", context.timezone),
+      });
     },
   );
 

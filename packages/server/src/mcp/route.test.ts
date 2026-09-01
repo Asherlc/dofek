@@ -1302,22 +1302,25 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      {
-        canonical_type: "cycling",
-        avg_duration_minutes: 45,
-        avg_hr: 145,
-        avg_power: 190,
-        count: 2,
-        max_hr_peak: 175,
-        max_power_peak: 320,
-        power_coverage: { activities_total: 2, activities_with_power: 2, pct: 100 },
-        total_elevation_gain_m: null,
-        avg_elevation_gain_m: null,
-        total_duration_minutes: 90,
-        week: "2026-W21",
-      },
-    ]);
+    expect(parseToolCallText(response.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [
+        {
+          canonical_type: "cycling",
+          avg_duration_minutes: 45,
+          avg_hr: 145,
+          avg_power: 190,
+          count: 2,
+          max_hr_peak: 175,
+          max_power_peak: 320,
+          power_coverage: { activities_total: 2, activities_with_power: 2, pct: 100 },
+          total_elevation_gain_m: null,
+          avg_elevation_gain_m: null,
+          total_duration_minutes: 90,
+          week: "2026-W21",
+        },
+      ],
+    });
   });
 
   it("separates activity summaries by modality and reports power and elevation coverage", async () => {
@@ -1356,22 +1359,25 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      expect.objectContaining({
-        canonical_type: "cycling",
-        modality: "indoor",
-        power_coverage: { activities_total: 1, activities_with_power: 1, pct: 100 },
-        total_elevation_gain_m: 0,
-        avg_elevation_gain_m: 0,
-      }),
-      expect.objectContaining({
-        canonical_type: "cycling",
-        modality: "outdoor",
-        power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
-        total_elevation_gain_m: 736,
-        avg_elevation_gain_m: 736,
-      }),
-    ]);
+    expect(parseToolCallText(response.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [
+        expect.objectContaining({
+          canonical_type: "cycling",
+          modality: "indoor",
+          power_coverage: { activities_total: 1, activities_with_power: 1, pct: 100 },
+          total_elevation_gain_m: 0,
+          avg_elevation_gain_m: 0,
+        }),
+        expect.objectContaining({
+          canonical_type: "cycling",
+          modality: "outdoor",
+          power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
+          total_elevation_gain_m: 736,
+          avg_elevation_gain_m: 736,
+        }),
+      ],
+    });
   });
 
   it("separates commute cycling from training cycling by purpose", async () => {
@@ -1424,27 +1430,74 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      expect.objectContaining({
+    expect(parseToolCallText(response.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [
+        expect.objectContaining({
+          canonical_type: "cycling",
+          purpose: "commute",
+          count: 1,
+          avg_duration_minutes: 22,
+          avg_hr: 114,
+        }),
+        expect.objectContaining({
+          canonical_type: "cycling",
+          purpose: "training",
+          count: 1,
+          avg_duration_minutes: 62,
+          avg_hr: 136,
+        }),
+        expect.objectContaining({
+          canonical_type: "running",
+          purpose: null,
+          count: 1,
+        }),
+      ],
+    });
+  });
+
+  it("reports the percentage of activities that remain unclassified", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      ...Array.from({ length: 9 }, (_, index) => ({
         canonical_type: "cycling",
-        purpose: "commute",
-        count: 1,
-        avg_duration_minutes: 22,
-        avg_hr: 114,
-      }),
-      expect.objectContaining({
-        canonical_type: "cycling",
-        purpose: "training",
-        count: 1,
-        avg_duration_minutes: 62,
+        provider_type: "cycling",
         avg_hr: 136,
-      }),
-      expect.objectContaining({
-        canonical_type: "running",
-        purpose: null,
-        count: 1,
-      }),
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: `2026-08-${String(index + 2).padStart(2, "0")}T11:00:00.000Z`,
+        max_hr: 160,
+        max_power: null,
+        started_at: `2026-08-${String(index + 2).padStart(2, "0")}T10:00:00.000Z`,
+      })),
+      {
+        canonical_type: "other",
+        provider_type: "",
+        avg_hr: 114,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-21T11:00:00.000Z",
+        max_hr: 130,
+        max_power: null,
+        started_at: "2026-08-21T10:00:00.000Z",
+      },
     ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-08-21",
+        start_date: "2026-08-02",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      unclassified_pct: 10,
+      summaries: expect.arrayContaining([
+        expect.objectContaining({ canonical_type: "cycling", count: 9 }),
+        expect.objectContaining({ canonical_type: "other", count: 1 }),
+      ]),
+    });
   });
 
   it("supports activity-type and week grouping with missing measurements", async () => {
@@ -1468,21 +1521,24 @@ describe("createMcpRouter", () => {
         start_date: "2026-05-18",
       }),
     });
-    expect(parseToolCallText(activityTypeResponse.text)).toEqual([
-      {
-        canonical_type: "running",
-        avg_duration_minutes: null,
-        avg_hr: null,
-        avg_power: null,
-        count: 1,
-        max_hr_peak: null,
-        max_power_peak: null,
-        power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
-        total_elevation_gain_m: null,
-        avg_elevation_gain_m: null,
-        total_duration_minutes: 0,
-      },
-    ]);
+    expect(parseToolCallText(activityTypeResponse.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [
+        {
+          canonical_type: "running",
+          avg_duration_minutes: null,
+          avg_hr: null,
+          avg_power: null,
+          count: 1,
+          max_hr_peak: null,
+          max_power_peak: null,
+          power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
+          total_elevation_gain_m: null,
+          avg_elevation_gain_m: null,
+          total_duration_minutes: 0,
+        },
+      ],
+    });
 
     const weekResponse = await request(createTestApp(), {
       authorization: "Bearer good-token",
@@ -1492,9 +1548,10 @@ describe("createMcpRouter", () => {
         start_date: "2026-05-18",
       }),
     });
-    expect(parseToolCallText(weekResponse.text)).toEqual([
-      expect.objectContaining({ week: "2026-W21" }),
-    ]);
+    expect(parseToolCallText(weekResponse.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [expect.objectContaining({ week: "2026-W21" })],
+    });
   });
 
   it("returns daily nutrition totals using the nutrition read scope", async () => {
