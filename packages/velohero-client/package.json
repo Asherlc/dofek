@@ -1,6 +1,6 @@
 {
   "name": "@dofek/velohero",
-  "version": "0.1.13",
+  "version": "0.1.19",
   "description": "Unofficial VeloHero API client using reverse-engineered session authentication",
   "type": "module",
   "license": "MIT",

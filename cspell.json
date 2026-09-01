@@ -18,6 +18,7 @@
   "dictionaries": ["typescript", "node", "npm", "html", "css", "en_US"],
   "words": [
     "ABCDEFGHJKLMNPQRSTUVWXYZ",
+    "CIMD",
     "Invalidatable",
     "alertable",
     "refetches",
@@ -42,6 +43,7 @@
     "Wreturn",
     "timescale",
     "timescaledb",
+    "ontoolresult",
     "hypertables",
     "attname",
     "attnum",

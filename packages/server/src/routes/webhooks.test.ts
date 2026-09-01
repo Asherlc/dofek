@@ -1043,7 +1043,7 @@ describe("registerWebhookForProvider", () => {
 
     await registerWebhookForProvider(getMockDb(), provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalledWith(
-      "https://dofek.asherlc.com/api/webhooks/test-provider",
+      "https://dofek.fit/api/webhooks/test-provider",
       expect.any(String),
     );
 

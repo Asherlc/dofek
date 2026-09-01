@@ -1,12 +1,72 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework objc -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-08-31 — Mobile login targeted a retired public hostname
+
+- **Status:** Source fix and compatibility routing prepared; production rollout
+  and mobile-update verification are pending.
+- **Symptoms / user impact:** The iOS login screen reported `Failed to fetch
+  providers: 404 not found`, preventing affected users from signing in.
+- **Evidence / root cause:** The mobile fallback was
+  `https://dofek.asherlc.com`, while the live Traefik `dofek_web` router
+  accepts only `dofek.fit` and `dofek.live`. On 2026-08-31,
+  `GET /api/auth/providers` returned configured providers with `200` for
+  `dofek.fit` and Traefik's `404 page not found` for
+  `dofek.asherlc.com`; the healthy Express service was never reached. Traefik
+  selects routers by rule matching, including `Host()` rules
+  ([Traefik router rules](https://doc.traefik.io/traefik/routing/routers/#rule)).
+- **Fix / mitigation:** Changed the mobile default server URL to the canonical
+  `https://dofek.fit` origin and added a regression test. The production router
+  will also serve `https://dofek.asherlc.com` as a backward-compatible TLS host
+  so existing app builds and links still reach the application.
+- **Validation:** The regression test first failed with the stale hostname,
+  then passed after the change. The 489 unit tests, five mobile server tests,
+  focused Biome formatting checks, and TypeScript typecheck passed locally.
+- **Remaining risk / follow-up:** Publish the mobile update, then confirm a
+  device without `EXPO_PUBLIC_SERVER_URL` receives the configured-provider
+  response from `dofek.fit`. Renew the expired Axiom query credential so
+  primary production logs are available during future incidents.
+
+## 2026-08-31 — iOS launch crash from mixed Sentry Cocoa distributions
+
+- **Status:** Migration implemented in this workspace; a fresh TestFlight build
+  and physical-device launch remain required before release.
+- **Symptoms / user impact:** TestFlight build `1.0.0 (1788068430)` crashed at
+  launch before JavaScript loaded, so affected users could not open the iOS
+  app.
+- **Evidence / root cause:** The supplied crash report terminates with
+  `EXC_BAD_ACCESS` in `objc_release` while
+  `RNSentryInternal.appStartMeasurementHybridSDKMode` is set from
+  `RNSentryStart updateWithReactFinals`. The app used React Native Sentry 8.20
+  with a prebuilt Sentry Cocoa framework while custom Expo modules and the
+  watch target also forced CocoaPods Sentry 9.19.1 from source. A clean
+  simulator build then failed with `include of non-modular header inside
+  framework module 'Sentry'` from the 9.24.0 framework resolving headers from
+  the legacy 9.19.1 pod. That proves two incompatible distributions occupied
+  the iOS native build graph. Sentry documents the React Native 8.23 Cocoa SDK
+  integration change in its [8.23.0 release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.23.0), and the official Cocoa SDK package supports SwiftPM through its [package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.24.0/Package.swift).
+- **Fix:** Upgraded `@sentry/react-native` to 8.24.0, removed the legacy
+  `SENTRY_USE_XCFRAMEWORK=0` override, made the iOS Expo modules depend on
+  `RNSentry`, and removed the direct CocoaPods Sentry pin. A generated-project
+  plugin adds exactly Sentry Cocoa 9.24.0 to the standalone watch target via
+  SwiftPM; the iOS app target has no SwiftPM Sentry dependency.
+- **Validation:** Clean Expo prebuild succeeds with an isolated DSN;
+  `Podfile.lock` contains `RNSentry (8.24.0)` and no source `Sentry` pod; the
+  generated workspace resolves `sentry-cocoa` exactly at 9.24.0; mobile config
+  tests and mobile TypeScript typecheck pass; and `DofekWatch` Swift tests
+  build successfully. The local Xcode simulator runner stalled while waiting
+  for the macOS remote source-package service after checkout, with no compiler
+  error, so it did not provide a launch verdict.
+- **Remaining risk / follow-up:** Build and install a new TestFlight candidate,
+  then verify cold launch on a physical iPhone and confirm no recurrence of
+  the crash signature. Keep the app target on the React Native Sentry framework
+  only; the watch extension is the sole SwiftPM Sentry consumer.
 ## 2026-08-28 — PR 2589 watchOS build blocked during pnpm dependency fetches
 
 - **Status:** Fixed in source; a fresh hosted CI workflow is pending.
@@ -23748,6 +23808,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-08-31 — Mobile Snyk check detected vulnerable Expo and Sentry CLI transitives
+
+- **Status:** Fixed in [PR #2595](https://github.com/Asherlc/dofek/pull/2595); the hosted Snyk recheck is pending.
+- **Symptoms / impact:** Snyk's `packages/mobile/package.json` security check blocked the PR with two high-severity `browserslist` findings and three `undici` findings. No production impact was observed.
+- **Evidence / root cause:** The first fatal findings were [SNYK-JS-BROWSERSLIST-18854715](https://security.snyk.io/vuln/SNYK-JS-BROWSERSLIST-18854715) through `expo@57.0.12` and [SNYK-JS-UNDICI-18426061](https://security.snyk.io/vuln/SNYK-JS-UNDICI-18426061) through `@sentry/cli@3.6.1`. The lockfile resolved the affected packages to `browserslist@4.28.6` and `undici@6.27.0`; Snyk identifies fixed versions as `browserslist@4.28.7` and `undici@6.28.0` or newer.
+- **Fix / mitigation:** Updated the direct mobile Sentry CLI dependency to `3.7.0`, pinned `browserslist` to current `4.28.8`, and tightened the existing compatible v6 `undici` override to `6.28.0`. No audit suppression, retry, timeout, or failure bypass was added.
+- **Validation:** A forced lockfile resolution and installed dependency check resolve `browserslist@4.28.8` and `undici@6.28.0`; mobile TypeScript and the focused Expo config test pass locally. The hosted Snyk test is the authoritative remaining validation.
+- **Remaining risk / follow-up:** Confirm the new Snyk run clears all five findings; revisit the override when Expo and the Sentry React Native dependency graph natively select fixed versions.
+
+## 2026-08-31 — iOS archive could not compile Expo modules after Sentry migration
+
+- **Status:** Fixed in this workspace; the hosted archive rerun is pending.
+- **Symptoms / impact:** PR #2595's `Build Mobile / iOS Native Build` failed in `Archive (Release, no signing)`, which also failed the mobile build gate. The separate watchOS build passed.
+- **Evidence / root cause:** The first fatal compiler line was `WatchMotionModule.swift:2:8: error: no such module 'Sentry'`. After correcting that module, the next archive reached `HealthKitModule.swift:4:8: error: no such module 'Sentry'`. Both CocoaPods Expo modules declare `RNSentry`, but the migration left them importing the standalone `Sentry` Swift module; the watch extension's SwiftPM dependency is not visible to CocoaPods targets.
+- **Fix / mitigation:** Changed both modules to import their declared `RNSentry` dependency, which provides the app target's configured Sentry SDK without adding a second CocoaPods or SwiftPM distribution.
+- **Validation:** Expo prebuild completes with an ephemeral validation DSN and generates both Expo modules' Swift settings with the `RNSentry` module map and include path. The focused mobile config/plugin tests pass. This workstation's `xcodebuild` stops before compilation with `DVTDeviceOperation: Encountered a build number "" that is incompatible with DVTBuildVersion`; the hosted archive is the authoritative compilation check.
+- **Remaining risk / follow-up:** Confirm the fresh CI iOS archive succeeds and verify physical-device cold launch on the resulting TestFlight build.
 ## 2026-08-27 — Provider cards temporarily reported no sync history
 
 - **Status:** Fixed in this workspace; deployment is pending.
@@ -24317,3 +24394,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   new hosted CodeQL run passes before merging.
 - **Remaining risk / follow-up:** Dependabot will apply the grouping rule on
   its next scheduled update scan.
+
+## 2026-08-31 — GitHub API limit blocked PR-review thread replies
+
+- **Status:** Source fixes are pushed; replies and thread resolution are blocked until GitHub restores API capacity.
+- **Symptoms / impact:** Three valid CodeRabbit documentation comments on PR #2595 could not receive their required inline replies or be marked resolved after their fixes were committed.
+- **Evidence / root cause:** GitHub rejected the first reply request with HTTP 403: `API rate limit exceeded for user ID 1294552` at `2026-08-31T17:50:50Z`. This is an external GitHub API quota limit, not a source or CI failure; GitHub documents rate-limit behavior and response headers in its [REST API rate-limit guide](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+- **Fix / mitigation:** No retry loop, token workaround, or review-resolution bypass was added. The self-contained plan, hyphenation, and approval wording were committed in `3d30806`; post the inline replies and resolve the threads once the API accepts requests.
+- **Validation:** CSpell passes on the revised plan and the commit is pushed to the PR branch.
+- **Remaining risk / follow-up:** Re-attempt the three comment replies and GraphQL thread resolutions after the rate limit resets, confirming each response succeeds before marking review work complete.
+
+## 2026-08-31 — PR 2594 E2E server lacked the OpenAI challenge fixture
+
+- **Status:** Resolved.
+- **Symptoms / impact:** PR #2594's web E2E job exited before Cypress began,
+  blocking the PR's CI gate.
+- **Evidence / root cause:** The first fatal line in the
+  [failed E2E job](https://github.com/Asherlc/dofek/actions/runs/33411019703/job/99550624664)
+  was `Failed to start: Error: OPENAI_APPS_CHALLENGE_TOKEN environment variable
+  is required`. The production server correctly fails fast on this required
+  setting, but `docker-compose.e2e.yml` did not provide its non-secret E2E
+  fixture value.
+- **Fix / mitigation:** Added the fixed test-only token to the E2E server
+  container environment. No production default, retry, or CI bypass was added.
+- **Validation:** `pnpm compose -- -f docker-compose.e2e.yml config --quiet`
+  passes. The full rerun, including web E2E, mutation, integration, coverage,
+  and native mobile build gates, passed in
+  [CI run 33412594683](https://github.com/Asherlc/dofek/actions/runs/33412594683).
+- **Remaining risk / follow-up:** Production still requires the token to be
+  configured in Infisical before the feature branch can be merged and deployed.

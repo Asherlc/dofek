@@ -237,6 +237,7 @@ const toolListResponseSchema = z.object({
   result: z.object({
     tools: z.array(
       z.object({
+        annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
         description: z.string(),
         inputSchema: z.object({}).passthrough(),
         name: z.string(),
@@ -518,6 +519,16 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        granularity: { enum: ["daily", "weekly"], type: "string" },
+        metrics: { type: "array" },
+        start_date: { format: "date", type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_subjective_timeline").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -575,6 +586,23 @@ describe("createMcpRouter", () => {
       required: ["providerId"],
       type: "object",
     });
+    for (const name of [
+      "get_daily_health_summary",
+      "get_health_trends",
+      "get_sleep_summary",
+      "search_activities",
+      "get_activity_details",
+      "get_activity_summary",
+      "get_finger_loading",
+      "get_nutrition_summary",
+      "get_body_metrics",
+      "get_subjective_timeline",
+      "list_providers",
+      "render_health_explorer",
+    ]) {
+      expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
+    }
+    expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
   });
 
   it("returns a subjective timeline using the request context timezone", async () => {
@@ -795,6 +823,60 @@ describe("createMcpRouter", () => {
       rhrEndDate: "2026-05-19",
       rhrWindowStart: "2026-05-17",
       timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("returns a structured analytics snapshot for the interactive explorer", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-18", hrv: 50 },
+      { date: "2026-05-19", hrv: 55 },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      "x-timezone": "America/Los_Angeles",
+      body: createToolCallRequest("render_health_explorer", {
+        end_date: "2026-05-19",
+        metrics: ["hrv"],
+        start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
+      }),
+    });
+
+    const parsedResponse = z
+      .object({
+        result: z.object({
+          structuredContent: z
+            .object({
+              coverage: z.object({ observed_days: z.number(), requested_days: z.number() }),
+              series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
+            })
+            .passthrough(),
+        }),
+      })
+      .parse(parseJsonRpcEvent(response.text));
+
+    expect(parsedResponse.result.structuredContent).toEqual({
+      coverage: { observed_days: 2, requested_days: 2 },
+      range: {
+        end_date: "2026-05-19",
+        granularity: "daily",
+        start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
+      },
+      series: [
+        {
+          label: "Heart rate variability",
+          metric: "hrv",
+          points: [
+            { key: "2026-05-18", value: 50 },
+            { key: "2026-05-19", value: 55 },
+          ],
+          unit: "ms",
+        },
+      ],
+      summary: [{ average: 52.5, max: 55, metric: "hrv", min: 50 }],
     });
   });
 

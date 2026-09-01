@@ -52,6 +52,7 @@ const sharedTestEnv = {
   CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
   CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
+  OPENAI_APPS_CHALLENGE_TOKEN: "test-openai-apps-challenge-token",
   PUBLIC_URL: "https://app.example.test",
   // Classify the test environment as non-production by default so no test run is
   // ever treated as a production deployment. The production-only guard in
