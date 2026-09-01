@@ -1299,7 +1299,9 @@ describe("importClinicalRecords — lab panel DB integration", () => {
 
     const recordsAfter = await ctx.db.select().from(schema.clinicalRecord);
 
-    expect(recordsAfter).toHaveLength(recordsBefore.length);
+    expect(recordsAfter.map((record) => [record.externalId, record.fhir]).sort()).toEqual(
+      recordsBefore.map((record) => [record.externalId, record.fhir]).sort(),
+    );
   }, 60_000);
 
   it("preserves the original FHIR payload after re-import", async () => {

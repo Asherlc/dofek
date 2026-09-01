@@ -715,6 +715,13 @@
       "when": 1787982000000,
       "tag": "0099_canonical_clinical_records",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1788278400000,
+      "tag": "0100_clinical_record_listing_index",
+      "breakpoints": true
     }
   ]
 }

@@ -89,7 +89,7 @@ export function buildPostgresFitnessClinicalRecordRawTableStatement(): string {
   issued_at Nullable(DateTime64(6, 'UTC')),
 ${peerDbMetadataColumnDefinitions}
 )
-${replacingMergeTreeTable("(user_id, downloaded_at, provider_id, id)")}`;
+${replacingMergeTreeTable("(user_id, provider_id, id)")}`;
 }
 
 export function buildPostgresFitnessRawTableStatements(): string[] {

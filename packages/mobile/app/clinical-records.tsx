@@ -40,7 +40,10 @@ function groupRecords(records: ClinicalRecordSummary[]): ClinicalRecordGroup[] {
 export default function ClinicalRecordsScreen() {
   const router = useRouter();
   const [offset, setOffset] = useState(0);
-  const recordsQuery = trpc.clinicalRecords.list.useQuery({ limit: PAGE_SIZE, offset });
+  const recordsQuery = trpc.clinicalRecords.list.useQuery(
+    { limit: PAGE_SIZE, offset },
+    { placeholderData: (previousData) => previousData },
+  );
   const records = recordsQuery.data?.records;
 
   return (

@@ -658,44 +658,33 @@ public class HealthKitModule: Module {
                     return
                 }
 
-                do {
-                    let records = try (results as? [HKClinicalRecord])?
+                let records = (results as? [HKClinicalRecord])?
                         .filter {
                             self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                         }
-                        .map { sample in
-                            try HealthKitQueries.mapClinicalRecord(
-                                ClinicalRecordMappingInput(
-                                    clinicalRecordUUID: sample.uuid,
-                                    clinicalTypeIdentifier: sample.clinicalType.identifier,
-                                    clinicalDisplayName: sample.displayName,
-                                    clinicalSourceName: sample.sourceRevision.source.name,
-                                    clinicalFHIRVersion: sample.fhirResource?
-                                        .fhirVersion.stringRepresentation,
-                                    clinicalFHIRData: sample.fhirResource?.data,
-                                    clinicalDownloadDate: sample.startDate
+                        .compactMap { sample in
+                            do {
+                                return try HealthKitQueries.mapClinicalRecord(
+                                    ClinicalRecordMappingInput(
+                                        clinicalRecordUUID: sample.uuid,
+                                        clinicalTypeIdentifier: sample.clinicalType.identifier,
+                                        clinicalDisplayName: sample.displayName,
+                                        clinicalSourceName: sample.sourceRevision.source.name,
+                                        clinicalFHIRVersion: sample.fhirResource?
+                                            .fhirVersion.stringRepresentation,
+                                        clinicalFHIRData: sample.fhirResource?.data,
+                                        clinicalDownloadDate: sample.startDate
+                                    )
                                 )
-                            )
+                            } catch {
+                                SentrySDK.capture(error: error) { scope in
+                                    scope.setTag(value: "mapClinicalRecord", key: "healthkit.operation")
+                                    scope.setTag(value: typeIdentifier, key: "healthkit.sample_type")
+                                }
+                                return nil
+                            }
                         } ?? []
-                    promise.resolve(records)
-                } catch {
-                    SentrySDK.capture(error: error) { scope in
-                        scope.setTag(
-                            value: "mapClinicalRecord",
-                            key: "healthkit.operation"
-                        )
-                        scope.setTag(
-                            value: typeIdentifier,
-                            key: "healthkit.sample_type"
-                        )
-                    }
-                    self.rejectHealthKitError(
-                        promise,
-                        operation: "queryClinicalRecords(\(typeIdentifier))",
-                        fallbackCode: "CLINICAL_RECORD_MAPPING_ERROR",
-                        error: error
-                    )
-                }
+                promise.resolve(records)
             }
             self.healthStore.execute(query)
         }

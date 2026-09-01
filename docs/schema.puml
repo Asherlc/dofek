@@ -450,41 +450,20 @@ entity "supplement_dose_event" {
   created_at : timestamp
 }
 
-entity "allergy_intolerance" {
+entity "clinical_record" {
   * id : uuid <<PK>>
   --
-  provider_id : text <<FK>>
   user_id : uuid <<FK>>
-  external_id : text
-  name : text
-  type : text
-  clinical_status : text
-  verification_status : text
-  rxnorm_code : text
-  onset_date : date
-  reactions : jsonb
-  source_name : text
-  raw : jsonb
-  created_at : timestamp
-}
-
-entity "condition" {
-  * id : uuid <<PK>>
-  --
   provider_id : text <<FK>>
-  user_id : uuid <<FK>>
   external_id : text
-  name : text
-  clinical_status : text
-  verification_status : text
-  icd10_code : text
-  snomed_code : text
-  onset_date : date
-  abatement_date : date
-  recorded_date : date
+  clinical_type : text
+  display_name : text
   source_name : text
-  raw : jsonb
-  created_at : timestamp
+  fhir_version : text
+  fhir : jsonb
+  downloaded_at : timestamp
+  recorded_at : timestamp
+  issued_at : timestamp
 }
 
 entity "health_event" {
@@ -502,68 +481,6 @@ entity "health_event" {
   metadata : jsonb
   start_date : timestamp
   end_date : timestamp
-  created_at : timestamp
-}
-
-entity "lab_panel" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  name : text
-  loinc_code : text
-  status : lab_result_status
-  source_name : text
-  recorded_at : timestamp
-  issued_at : timestamp
-  raw : jsonb
-  created_at : timestamp
-}
-
-entity "lab_result" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  panel_id : uuid <<FK>>
-  external_id : text
-  test_name : text
-  loinc_code : text
-  value : real
-  value_text : text
-  unit : text
-  reference_range_low : real
-  reference_range_high : real
-  reference_range_text : text
-  status : lab_result_status
-  source_name : text
-  recorded_at : timestamp
-  issued_at : timestamp
-  raw : jsonb
-  created_at : timestamp
-}
-
-entity "medication" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  name : text
-  status : text
-  authored_on : date
-  start_date : date
-  end_date : date
-  dosage_text : text
-  route : text
-  form : text
-  rxnorm_code : text
-  prescriber_name : text
-  reason_text : text
-  reason_snomed_code : text
-  source_name : text
-  raw : jsonb
   created_at : timestamp
 }
 
@@ -1283,19 +1200,10 @@ supplement_definition ||--o{ supplement_definition_nutrient
 nutrient ||--o{ supplement_definition_nutrient
 user_profile ||--o{ supplement_dose_event
 provider ||--o{ supplement_dose_event
-provider ||--o{ allergy_intolerance
-user_profile ||--o{ allergy_intolerance
-provider ||--o{ condition
-user_profile ||--o{ condition
+user_profile ||--o{ clinical_record
+provider ||--o{ clinical_record
 provider ||--o{ health_event
 user_profile ||--o{ health_event
-provider ||--o{ lab_panel
-user_profile ||--o{ lab_panel
-provider ||--o{ lab_result
-user_profile ||--o{ lab_result
-lab_panel ||--o{ lab_result
-provider ||--o{ medication
-user_profile ||--o{ medication
 provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
 account_erasure_request ||--o{ account_erasure_checkpoint

@@ -584,11 +584,25 @@ export async function importClinicalRecords(
   }
 
   // Parse files, separating by resource type
-  const observations: { obs: FhirObservation; fileName: string }[] = [];
-  const diagnosticReports: { resource: FhirDiagnosticReport; fileName: string }[] = [];
-  const medicationRequests: { resource: FhirMedicationRequest; fileName: string }[] = [];
-  const conditions: { resource: FhirCondition; fileName: string }[] = [];
-  const allergies: { resource: FhirAllergyIntolerance; fileName: string }[] = [];
+  const observations: { obs: FhirObservation; raw: Record<string, unknown>; fileName: string }[] =
+    [];
+  const diagnosticReports: {
+    resource: FhirDiagnosticReport;
+    raw: Record<string, unknown>;
+    fileName: string;
+  }[] = [];
+  const medicationRequests: {
+    resource: FhirMedicationRequest;
+    raw: Record<string, unknown>;
+    fileName: string;
+  }[] = [];
+  const conditions: { resource: FhirCondition; raw: Record<string, unknown>; fileName: string }[] =
+    [];
+  const allergies: {
+    resource: FhirAllergyIntolerance;
+    raw: Record<string, unknown>;
+    fileName: string;
+  }[] = [];
   let skipped = 0;
 
   for (const file of clinicalFiles) {
@@ -599,21 +613,22 @@ export async function importClinicalRecords(
         skipped++;
         continue;
       }
+      const rawFhir = z.record(z.string(), z.unknown()).parse(raw);
       switch (result.data.resourceType) {
         case "Observation":
-          observations.push({ obs: result.data, fileName: file.name });
+          observations.push({ obs: result.data, raw: rawFhir, fileName: file.name });
           break;
         case "DiagnosticReport":
-          diagnosticReports.push({ resource: result.data, fileName: file.name });
+          diagnosticReports.push({ resource: result.data, raw: rawFhir, fileName: file.name });
           break;
         case "MedicationRequest":
-          medicationRequests.push({ resource: result.data, fileName: file.name });
+          medicationRequests.push({ resource: result.data, raw: rawFhir, fileName: file.name });
           break;
         case "Condition":
-          conditions.push({ resource: result.data, fileName: file.name });
+          conditions.push({ resource: result.data, raw: rawFhir, fileName: file.name });
           break;
         case "AllergyIntolerance":
-          allergies.push({ resource: result.data, fileName: file.name });
+          allergies.push({ resource: result.data, raw: rawFhir, fileName: file.name });
           break;
       }
     } catch (err) {
@@ -629,7 +644,7 @@ export async function importClinicalRecords(
   const downloadedAt = new Date();
   const batch: (typeof clinicalRecord.$inferInsert)[] = [];
 
-  for (const { resource, fileName } of diagnosticReports) {
+  for (const { resource, raw, fileName } of diagnosticReports) {
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const parsed = parseFhirDiagnosticReport(
@@ -644,7 +659,7 @@ export async function importClinicalRecords(
         displayName: parsed.name,
         sourceName: parsed.sourceName,
         fhirVersion: "R4",
-        fhir: parsed.raw,
+        fhir: raw,
         downloadedAt,
         recordedAt: parsed.recordedAt,
         issuedAt: parsed.issuedAt,
@@ -656,7 +671,7 @@ export async function importClinicalRecords(
     }
   }
 
-  for (const { obs, fileName } of observations) {
+  for (const { obs, raw, fileName } of observations) {
     const categories = Array.isArray(obs.category)
       ? obs.category
       : obs.category
@@ -682,7 +697,7 @@ export async function importClinicalRecords(
         displayName: parsed.testName,
         sourceName: parsed.sourceName,
         fhirVersion: "R4",
-        fhir: parsed.raw,
+        fhir: raw,
         downloadedAt,
         recordedAt: parsed.recordedAt,
         issuedAt: parsed.issuedAt,
@@ -695,7 +710,7 @@ export async function importClinicalRecords(
     }
   }
 
-  for (const { resource, fileName } of medicationRequests) {
+  for (const { resource, raw, fileName } of medicationRequests) {
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
@@ -708,7 +723,7 @@ export async function importClinicalRecords(
         displayName: parsed.name,
         sourceName: parsed.sourceName,
         fhirVersion: "R4",
-        fhir: parsed.raw,
+        fhir: raw,
         downloadedAt,
         recordedAt: parsed.authoredOn
           ? new Date(parsed.authoredOn)
@@ -723,7 +738,7 @@ export async function importClinicalRecords(
       });
     }
   }
-  for (const { resource, fileName } of conditions) {
+  for (const { resource, raw, fileName } of conditions) {
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
@@ -736,7 +751,7 @@ export async function importClinicalRecords(
         displayName: parsed.name,
         sourceName: parsed.sourceName,
         fhirVersion: "R4",
-        fhir: parsed.raw,
+        fhir: raw,
         downloadedAt,
         recordedAt: parsed.recordedDate
           ? new Date(parsed.recordedDate)
@@ -751,7 +766,7 @@ export async function importClinicalRecords(
       });
     }
   }
-  for (const { resource, fileName } of allergies) {
+  for (const { resource, raw, fileName } of allergies) {
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
@@ -764,7 +779,7 @@ export async function importClinicalRecords(
         displayName: parsed.name,
         sourceName: parsed.sourceName,
         fhirVersion: "R4",
-        fhir: parsed.raw,
+        fhir: raw,
         downloadedAt,
         recordedAt: parsed.onsetDate ? new Date(parsed.onsetDate) : undefined,
       });
@@ -775,14 +790,17 @@ export async function importClinicalRecords(
       });
     }
   }
+  let inserted = 0;
   for (let i = 0; i < batch.length; i += 500) {
-    await db
+    const persisted = await db
       .insert(clinicalRecord)
       .values(batch.slice(i, i + 500))
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: clinicalRecord.id });
+    inserted += persisted.length;
   }
 
-  return { inserted: batch.length, skipped, errors };
+  return { inserted, skipped, errors };
 }
 
 export async function importMedicationDoseEvents(

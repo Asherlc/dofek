@@ -526,11 +526,15 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   for (const [typeIdentifier, typeLabel] of CLINICAL_RECORD_TYPES) {
     onProgress?.(`Querying clinical ${typeLabel} records...`);
     onStage?.({ operation: "queryClinicalRecords", typeIdentifier });
-    const clinicalRecords = await healthKit.queryClinicalRecords(
-      typeIdentifier,
-      startDate,
-      endDate,
-    );
+    let clinicalRecords: ClinicalRecordSample[];
+    try {
+      clinicalRecords = await healthKit.queryClinicalRecords(typeIdentifier, startDate, endDate);
+    } catch (error) {
+      if (!isAuthorizationNotDetermined(error)) {
+        throw error;
+      }
+      clinicalRecords = [];
+    }
     const batchCount = Math.ceil(clinicalRecords.length / CLINICAL_RECORD_BATCH_SIZE);
     for (
       let batchOffset = 0;

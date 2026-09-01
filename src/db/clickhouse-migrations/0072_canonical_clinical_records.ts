@@ -20,14 +20,6 @@ SELECT
   max(now64(9)) AS changed_at
 FROM analytics.provider_stats FINAL
 GROUP BY user_id, provider_id`,
-      `INSERT INTO analytics.provider_change_state (user_id, provider_id, changed_at)
-SELECT
-  user_id,
-  provider_id,
-  max(now64(9)) AS changed_at
-FROM postgres_fitness.clinical_record FINAL
-WHERE _peerdb_is_deleted = 0
-GROUP BY user_id, provider_id`,
       `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_change_from_clinical_record
 TO analytics.provider_change_state
 AS
@@ -36,6 +28,14 @@ SELECT
   provider_id,
   max(now64(9)) AS changed_at
 FROM postgres_fitness.clinical_record
+GROUP BY user_id, provider_id`,
+      `INSERT INTO analytics.provider_change_state (user_id, provider_id, changed_at)
+SELECT
+  user_id,
+  provider_id,
+  max(now64(9)) AS changed_at
+FROM postgres_fitness.clinical_record FINAL
+WHERE _peerdb_is_deleted = 0
 GROUP BY user_id, provider_id`,
     ],
   };

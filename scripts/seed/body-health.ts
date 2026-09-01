@@ -81,6 +81,13 @@ async function seedLabs(sql: Sql, today: Date): Promise<void> {
           'id', ${panelExternalId}::text,
           'status', 'final',
           'code', jsonb_build_object('text', 'Review Wellness Panel'),
+          'result', jsonb_build_array(
+            ${`seed-lab-${panelIndex + 1}-1`},
+            ${`seed-lab-${panelIndex + 1}-2`},
+            ${`seed-lab-${panelIndex + 1}-3`},
+            ${`seed-lab-${panelIndex + 1}-4`},
+            ${`seed-lab-${panelIndex + 1}-5`}
+          )::jsonb,
           'effectiveDateTime', ${recordedAt}::text,
           'issued', ${issuedAt}::text
         ),

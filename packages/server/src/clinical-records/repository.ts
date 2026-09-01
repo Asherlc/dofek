@@ -51,9 +51,10 @@ export class ClinicalRecordsRepository {
   async upsert(records: ClinicalRecordInput[]): Promise<ClinicalRecordUpsertResult> {
     if (records.length === 0) return { inserted: 0, ids: [] };
 
-    const rows = records.map((record) => {
+    const rowsByExternalId = new Map<string, typeof clinicalRecord.$inferInsert>();
+    for (const record of records) {
       const dates = deriveClinicalRecordDates(record.clinicalType, record.fhirVersion, record.fhir);
-      return {
+      rowsByExternalId.set(record.externalId, {
         userId: this.#userId,
         providerId: PROVIDER_ID,
         externalId: record.externalId,
@@ -65,8 +66,9 @@ export class ClinicalRecordsRepository {
         downloadedAt: new Date(record.downloadedAt),
         recordedAt: dates.recordedAt,
         issuedAt: dates.issuedAt,
-      };
-    });
+      });
+    }
+    const rows = [...rowsByExternalId.values()];
 
     const persisted = await this.#db
       .insert(clinicalRecord)

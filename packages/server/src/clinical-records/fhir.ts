@@ -53,7 +53,7 @@ export const clinicalRecordInputSchema = z
     externalId: z.uuid(),
     clinicalType: z.enum(CLINICAL_TYPE_IDS),
     displayName: z.string().min(1),
-    sourceName: z.string().nullable(),
+    sourceName: z.string().min(1).nullable(),
     fhirVersion: z.string().min(1),
     fhir: fhirObjectSchema,
     downloadedAt: z.iso.datetime(),

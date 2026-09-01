@@ -103,13 +103,6 @@ export const climbingFailureReasonEnum = fitness.enum("climbing_failure_reason",
   "fear",
 ]);
 
-export const labResultStatusEnum = fitness.enum("lab_result_status", [
-  "final",
-  "preliminary",
-  "corrected",
-  "cancelled",
-]);
-
 export const sleepStageNameEnum = fitness.enum("sleep_stage_name", [
   "deep",
   "light",

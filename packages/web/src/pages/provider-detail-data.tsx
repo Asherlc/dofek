@@ -128,21 +128,19 @@ function getStatCount(stats: ProviderStats, key: DataType): number {
 function RecordsSectionShell({
   children,
   providerId,
-  stats,
+  hasClinicalRecords,
 }: {
   children: ReactNode;
   providerId: string;
-  stats: ProviderStats | undefined;
+  hasClinicalRecords: boolean;
 }) {
   return (
     <section>
       <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
       {providerId === "apple_health" ? (
         <div className="mb-3 rounded border border-border bg-surface px-3 py-3 text-xs text-subtle">
-          <p>
-            Clinical records are optional, read-only, and sync only when you connect or select Sync.
-          </p>
-          {stats && stats.clinicalRecords > 0 ? (
+          <p>Clinical records are optional, read-only, and sync only during an explicit sync.</p>
+          {hasClinicalRecords ? (
             <Link to="/clinical-records" className="mt-2 inline-block text-accent hover:underline">
               View clinical records
             </Link>
@@ -162,6 +160,7 @@ export function RecordsBrowser({
   stats: ProviderStats | undefined;
 }) {
   const availability = trpc.providerDetail.availableDataTypes.useQuery({ providerId });
+  const hasClinicalRecords = availability.data?.includes("clinicalRecords") ?? false;
   const availableTypes = DATA_TYPE_LABELS.filter((dataType) =>
     availability.data?.includes(dataType.key),
   );
@@ -176,7 +175,7 @@ export function RecordsBrowser({
 
   if (availability.isLoading) {
     return (
-      <RecordsSectionShell providerId={providerId} stats={stats}>
+      <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <div className="text-xs text-subtle">Loading records...</div>
       </RecordsSectionShell>
     );
@@ -184,7 +183,7 @@ export function RecordsBrowser({
 
   if (availability.isError) {
     return (
-      <RecordsSectionShell providerId={providerId} stats={stats}>
+      <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <QueryStatePanel error={availability.error} height={80} />
       </RecordsSectionShell>
     );
@@ -192,7 +191,7 @@ export function RecordsBrowser({
 
   if (availableTypes.length === 0) {
     return (
-      <RecordsSectionShell providerId={providerId} stats={stats}>
+      <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <div className="text-xs text-subtle">No records yet for this provider.</div>
       </RecordsSectionShell>
     );
@@ -201,7 +200,7 @@ export function RecordsBrowser({
   const recordPanelId = `provider-records-panel-${providerId}`;
 
   return (
-    <RecordsSectionShell providerId={providerId} stats={stats}>
+    <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
       <div role="tablist" aria-label="Record types" className="flex flex-wrap gap-1 mb-3">
         {availableTypes.map((dataType) => {
           const tabId = `provider-records-tab-${providerId}-${dataType.key}`;

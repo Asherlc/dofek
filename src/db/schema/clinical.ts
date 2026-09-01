@@ -32,6 +32,7 @@ export const clinicalRecord = fitness.table(
       table.providerId,
       table.externalId,
     ),
+    index("clinical_record_user_downloaded_id_idx").on(table.userId, table.downloadedAt, table.id),
   ],
 );
 

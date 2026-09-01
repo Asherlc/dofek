@@ -127,7 +127,7 @@ export function ProviderDetailActionsCard({
       {shouldShowAppleHealthClinicalRecords ? (
         <View style={styles.clinicalRecordsSection}>
           <Text style={styles.clinicalRecordsDescription}>
-            Clinical records are optional, read-only, and sync only when you connect or select Sync.
+            Clinical records are optional, read-only, and sync only during an explicit sync.
           </Text>
           {shouldShowClinicalRecordsLink ? (
             <TouchableOpacity

@@ -9,7 +9,6 @@ import { clinicalRecord } from "./schema/clinical.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
 const USER_ID = "10000000-0000-4000-8000-000000000099";
-const OTHER_USER_ID = "20000000-0000-4000-8000-000000000099";
 const PROVIDER_ID = "clinical-migration-fixture";
 
 const migratedRecordSchema = z.object({
@@ -150,9 +149,9 @@ async function restoreLegacyClinicalSchema(connectionString: string): Promise<vo
     `);
     await client.query(
       `INSERT INTO fitness.user_profile (id, name)
-       VALUES ($1, 'Clinical Migration User'), ($2, 'Other Clinical User')
+       VALUES ($1, 'Clinical Migration User')
        ON CONFLICT (id) DO NOTHING`,
-      [USER_ID, OTHER_USER_ID],
+      [USER_ID],
     );
     await client.query(
       `INSERT INTO fitness.provider (id, name)

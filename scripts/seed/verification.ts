@@ -40,7 +40,7 @@ export async function verifySeed(sql: TaggedQueryClient): Promise<void> {
     ],
     [
       "clinical records",
-      8,
+      20,
       `SELECT COUNT(*)::int AS count FROM fitness.clinical_record WHERE user_id = '${USER_ID}'`,
     ],
     [

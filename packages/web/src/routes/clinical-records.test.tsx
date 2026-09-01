@@ -116,6 +116,8 @@ describe("Clinical Records routes", () => {
     fireEvent.click(await screen.findByRole("link", { name: "Wellness panel" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/clinical-records/${id}`));
+    expect(queryMocks.list).toHaveBeenCalled();
+    expect(queryMocks.detail).toHaveBeenCalledWith({ id });
     expect(await screen.findByRole("heading", { name: "FHIR resource" })).toBeTruthy();
   });
 });
