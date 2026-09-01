@@ -820,7 +820,12 @@ describe("account erasure persistence (integration)", () => {
       leaseOwner,
       "retention_verification",
     );
-    const completedAt = new Date("2026-10-01T12:34:00.000Z");
+    const completionRows = await context.db.execute(
+      sql`SELECT completion_deadline + interval '1 millisecond' AS completed_at
+          FROM fitness.account_erasure_request
+          WHERE id = ${requestId}::uuid`,
+    );
+    const completedAt = new Date(String(completionRows[0]?.completed_at));
     await completeAccountErasure(context.db, requestId, leaseOwner, completedAt);
     await expect(findAccountErasureStatus(context.db, statusToken, completedAt)).resolves.toEqual(
       expect.objectContaining({
