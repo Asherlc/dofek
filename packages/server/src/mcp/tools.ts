@@ -1,4 +1,5 @@
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import { gradeSortValue } from "@dofek/training/climbing-grades";
 import {
   type HealthExplorerInput,
   type HealthMetric,
@@ -97,6 +98,13 @@ const activityMcpRowSchema = z.object({
   max_power: z.coerce.number().nullable().optional(),
   elevation_gain_m: z.coerce.number().nullable().optional(),
   modality: z.string().nullable().optional(),
+});
+const climbingSessionActivitySchema = z.object({
+  avg_hr: z.coerce.number().nullable(),
+  ended_at: z.string().nullable(),
+  id: z.string(),
+  name: z.string().nullable(),
+  started_at: z.string(),
 });
 
 const activityStreamChannelSchema = z.enum([
@@ -678,6 +686,104 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         climbing_entries: climbingEntries.map((entry) => entry.toDetail()),
         finger_loading: fingerLoading,
         strength_exercises: strengthExercises.map((exercise) => exercise.toDetail()),
+      });
+    },
+  );
+
+  server.registerTool(
+    "get_climbing_sessions",
+    {
+      title: "Get Climbing Sessions",
+      description:
+        "Return exact-range climbing sessions with route/problem details, heart rate, duration, grade distribution, send rate, maximum grade, and volume.",
+      annotations: { readOnlyHint: true },
+      inputSchema: { start_date: dateSchema, end_date: dateSchema },
+    },
+    async ({ start_date, end_date }) => {
+      requireMcpScope(context.scopes, "activity:read");
+      assertDateRange(start_date, end_date);
+      const activityRepository = new ActivityRepository(
+        context.db,
+        context.userId,
+        context.timezone,
+        { kind: "full", paid: true, reason: "paid_grant" },
+        context.sensorStore,
+      );
+      const climbingRepository = new ClimbingRepository(
+        context.db,
+        context.userId,
+        context.timezone,
+        { kind: "full", paid: true, reason: "paid_grant" },
+      );
+      const activities = (
+        await activityRepository.listRange(start_date, end_date, ["climbing"])
+      ).map((row) => climbingSessionActivitySchema.parse(row));
+      const sessions = await Promise.all(
+        activities.map(async (activity) => {
+          const entries = (await climbingRepository.getActivityEntries(activity.id)).map((entry) =>
+            entry.toDetail(),
+          );
+          return {
+            activity_id: activity.id,
+            started_at: activity.started_at,
+            duration_minutes:
+              activity.ended_at === null
+                ? null
+                : (new Date(activity.ended_at).getTime() -
+                    new Date(activity.started_at).getTime()) /
+                  60_000,
+            avg_hr: activity.avg_hr,
+            name: activity.name,
+            gym_vs_crag: null,
+            location: entries.find((entry) => entry.locationName !== null)?.locationName ?? null,
+            climbs: entries,
+          };
+        }),
+      );
+      const climbs = sessions.flatMap((session) => session.climbs);
+      const gradeDistribution = new Map<
+        string,
+        { discipline: "boulder" | "route"; grade: string; attempts: number; sends: number }
+      >();
+      const maxGrade: Record<"boulder" | "route", { grade: string; sort: number } | null> = {
+        boulder: null,
+        route: null,
+      };
+      for (const climb of climbs) {
+        const key = `${climb.climbType}:${climb.gradeSystem}:${climb.grade}`;
+        const distribution = gradeDistribution.get(key) ?? {
+          discipline: climb.climbType,
+          grade: climb.grade,
+          attempts: 0,
+          sends: 0,
+        };
+        distribution.attempts += climb.attemptCount;
+        if (climb.sent) distribution.sends += 1;
+        gradeDistribution.set(key, distribution);
+        if (climb.sent) {
+          const sort = gradeSortValue(climb.grade, climb.gradeSystem);
+          const current = maxGrade[climb.climbType];
+          if (sort !== null && (current === null || sort > current.sort)) {
+            maxGrade[climb.climbType] = { grade: climb.grade, sort };
+          }
+        }
+      }
+      const sends = climbs.filter((climb) => climb.sent).length;
+      return jsonContent({
+        sessions,
+        aggregates: {
+          grade_distribution: [...gradeDistribution.values()],
+          send_rate: climbs.length === 0 ? null : sends / climbs.length,
+          max_grade_by_discipline: {
+            boulder: maxGrade.boulder?.grade ?? null,
+            route: maxGrade.route?.grade ?? null,
+          },
+          volume: {
+            climbs: climbs.length,
+            attempts: climbs.reduce((sum, climb) => sum + climb.attemptCount, 0),
+            sends,
+          },
+        },
       });
     },
   );

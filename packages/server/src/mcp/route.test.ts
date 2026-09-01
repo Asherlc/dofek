@@ -596,6 +596,10 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_climbing_sessions").inputSchema).toMatchObject({
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_nutrition_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -641,6 +645,7 @@ describe("createMcpRouter", () => {
       "get_activity_streams",
       "get_activity_summary",
       "get_finger_loading",
+      "get_climbing_sessions",
       "get_nutrition_summary",
       "get_body_metrics",
       "get_subjective_timeline",
@@ -764,6 +769,64 @@ describe("createMcpRouter", () => {
       timezone: "America/Los_Angeles",
       userId: "user-id",
     });
+  });
+
+  it("returns climbing sessions with grade and send aggregates", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: 126,
+        ended_at: "2026-07-09T20:30:00.000Z",
+        id: "activity-1",
+        name: "Pacific Pipe",
+        started_at: "2026-07-09T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      {
+        toDetail: () => ({
+          attemptCount: 3,
+          climbType: "boulder",
+          grade: "V5",
+          gradeSystem: "v_scale",
+          locationName: "Pacific Pipe",
+          routeName: "Blue Circuit",
+          sent: true,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_climbing_sessions", {
+        end_date: "2026-07-10",
+        start_date: "2026-07-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      aggregates: {
+        grade_distribution: [
+          { attempts: 3, discipline: "boulder", grade: "V5", sends: 1 },
+        ],
+        max_grade_by_discipline: { boulder: "V5", route: null },
+        send_rate: 1,
+        volume: { attempts: 3, climbs: 1, sends: 1 },
+      },
+      sessions: [
+        expect.objectContaining({
+          activity_id: "activity-1",
+          avg_hr: 126,
+          duration_minutes: 90,
+          gym_vs_crag: null,
+        }),
+      ],
+    });
+    expect(toolTestMocks.activityListRange).toHaveBeenCalledWith(
+      "2026-07-01",
+      "2026-07-10",
+      ["climbing"],
+    );
   });
 
   it("searches activities and applies the query filter", async () => {
