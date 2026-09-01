@@ -17,7 +17,7 @@ The endpoint uses Streamable HTTP and supports two authentication paths:
 - OAuth 2.1 authorization code with PKCE for remote MCP clients (Claude, ChatGPT, and any other client that supports OAuth auto-discovery).
 - Manually created MCP bearer tokens for clients such as Claude Code and Codex that support custom HTTP headers.
 
-Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
+Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
 
 ## Connect With OAuth
 
@@ -39,7 +39,7 @@ Examples that use this path include [Claude remote connectors](https://support.c
 
 Registrations may use any absolute `https://` callback URL. `http://` is allowed only for loopback hosts (`localhost`, `127.0.0.1`, `::1`) so local MCP clients can complete OAuth during development ([OAuth 2.1](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-13#section-9.7); [RFC 8252 §7.3](https://datatracker.ietf.org/doc/html/rfc8252#section-7.3)). Fragments, embedded credentials, and non-HTTPS remote URLs are rejected. Authorization and token exchange still require exact redirect URI matching against the registered value ([OAuth 2.0 Security BCP §4.1.3](https://www.rfc-editor.org/rfc/rfc9700#section-4.1.3)).
 
-OAuth discovery and protocol endpoints ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization); [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728); [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414); [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591); [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)):
+OAuth discovery and protocol endpoints ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization); [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728); [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414); [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591); [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)):
 
 ```text
 /.well-known/oauth-protected-resource/api/mcp

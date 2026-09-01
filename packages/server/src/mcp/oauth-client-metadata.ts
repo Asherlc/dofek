@@ -62,6 +62,7 @@ async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: num
   return new Promise((resolve, reject) => {
     let clientRequest: ReturnType<typeof request>;
     const timeout = setTimeout(() => {
+      clearTimeout(timeout);
       clientRequest.destroy(new CimdMetadataError("CIMD metadata request timed out"));
       reject(new CimdMetadataError("CIMD metadata request timed out"));
     }, CIMD_FETCH_TIMEOUT_MS);

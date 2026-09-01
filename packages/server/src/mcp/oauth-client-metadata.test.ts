@@ -12,8 +12,39 @@ import {
 
 const clientId = "https://claude.ai/oauth/client-metadata.json";
 
+function mockValidMetadataResponse(cacheControl = "max-age=60") {
+  mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+  mocks.request.mockImplementation(
+    (options: { path: string; servername: string }, callback: (response: EventEmitter) => void) => {
+      const request = Object.assign(new EventEmitter(), { end: () => {} });
+      request.end = () => {
+        const response = Object.assign(new EventEmitter(), {
+          headers: { "cache-control": cacheControl, "content-type": "application/json" },
+          resume: vi.fn(),
+          statusCode: 200,
+        });
+        callback(response);
+        response.emit(
+          "data",
+          Buffer.from(
+            JSON.stringify({
+              client_id: `https://${options.servername}${options.path}`,
+              redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+            }),
+          ),
+        );
+        response.emit("end");
+      };
+      return request;
+    },
+  );
+}
+
 describe("parseCimdClientMetadata", () => {
-  afterEach(() => vi.resetAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.resetAllMocks();
+  });
   it("accepts a public client whose metadata client ID and callback match", () => {
     expect(
       parseCimdClientMetadata(clientId, {
@@ -72,36 +103,39 @@ describe("parseCimdClientMetadata", () => {
   });
 
   it("resolves and caches a public HTTPS metadata document", async () => {
-    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
-    mocks.request.mockImplementation(
-      (_options: unknown, callback: (response: EventEmitter) => void) => {
-        const request = Object.assign(new EventEmitter(), { end: () => {} });
-        request.end = () => {
-          const response = Object.assign(new EventEmitter(), {
-            headers: { "cache-control": "max-age=60", "content-type": "application/json" },
-            resume: vi.fn(),
-            statusCode: 200,
-          });
-          callback(response);
-          response.emit(
-            "data",
-            Buffer.from(
-              JSON.stringify({
-                client_id: clientId,
-                redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
-              }),
-            ),
-          );
-          response.emit("end");
-        };
-        return request;
-      },
-    );
+    mockValidMetadataResponse();
 
     const resolver = new McpOAuthClientMetadataResolver();
     await expect(resolver.getClient(clientId)).resolves.toMatchObject({ client_id: clientId });
     await expect(resolver.getClient(clientId)).resolves.toMatchObject({ client_id: clientId });
     expect(mocks.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("prunes expired entries before caching another metadata document", async () => {
+    vi.useFakeTimers();
+    mockValidMetadataResponse("max-age=1");
+    const deleteSpy = vi.spyOn(Map.prototype, "delete");
+    const resolver = new McpOAuthClientMetadataResolver();
+    await resolver.getClient(clientId);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await resolver.getClient("https://claude.ai/oauth/another-client.json");
+    expect(deleteSpy).toHaveBeenCalledWith(clientId);
+  });
+
+  it("evicts the oldest cached client after reaching the entry limit", async () => {
+    mockValidMetadataResponse();
+    const resolver = new McpOAuthClientMetadataResolver();
+    const oldestClientId = "https://claude.ai/oauth/client-0.json";
+    const clientIds = [
+      oldestClientId,
+      ...Array.from(
+        { length: 100 },
+        (_, index) => `https://claude.ai/oauth/client-${index + 1}.json`,
+      ),
+    ];
+    for (const id of clientIds) await resolver.getClient(id);
+    await resolver.getClient(oldestClientId);
+    expect(mocks.lookup).toHaveBeenCalledTimes(102);
   });
 
   it("rejects private DNS destinations without opening a request", async () => {
@@ -238,6 +272,22 @@ describe("parseCimdClientMetadata", () => {
       return request;
     });
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+  });
+
+  it("cancels an HTTPS request when metadata resolution times out", async () => {
+    vi.useFakeTimers();
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    const destroy = vi.fn();
+    mocks.request.mockImplementation(() => {
+      const request = Object.assign(new EventEmitter(), { destroy, end: () => {} });
+      return request;
+    });
+    const resolution = new McpOAuthClientMetadataResolver().getClient(clientId);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(resolution).resolves.toBeUndefined();
+    const [timeoutError] = destroy.mock.calls[0] ?? [];
+    expect(timeoutError).toBeInstanceOf(Error);
+    expect(timeoutError).toHaveProperty("message", "CIMD metadata request timed out");
   });
 
   it.each(["not a URL", "http://claude.ai/metadata.json", "https://claude.ai/"])(
