@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   assertPostgresAccountErasureCoverage,
   erasePostgresAccount,
@@ -825,11 +826,7 @@ describe("account erasure persistence (integration)", () => {
           FROM fitness.account_erasure_request
           WHERE id = ${requestId}::uuid`,
     );
-    const completedAtValue = completionRows[0]?.completed_at;
-    if (typeof completedAtValue !== "string") {
-      throw new Error("Expected completion deadline query to return a timestamp string");
-    }
-    const completedAt = new Date(completedAtValue);
+    const completedAt = z.coerce.date().parse(completionRows[0]?.completed_at);
     await completeAccountErasure(context.db, requestId, leaseOwner, completedAt);
     await expect(findAccountErasureStatus(context.db, statusToken, completedAt)).resolves.toEqual(
       expect.objectContaining({
