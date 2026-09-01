@@ -232,6 +232,9 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("current_duplicate_matches AS");
     expect(matchesSql).toContain("active_to_tombstoned_matches AS");
     expect(matchesSql).toContain("overlap_ratio");
+    expect(compactWhitespace(matchesSql)).toContain(
+      "left_activity.canonical_type = right_activity.canonical_type OR left_activity.canonical_type = 'other' OR right_activity.canonical_type = 'other'",
+    );
 
     expect(groupsSql).toContain("materialized='incremental'");
     expect(groupsSql).toContain("ref('activity_source_records')");
