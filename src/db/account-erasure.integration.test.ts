@@ -40,6 +40,7 @@ const metricRaceOperationId = "70000000-0000-4000-8000-000000001994";
 const deadlineUserId = "80000000-0000-4000-8000-000000001994";
 const identityRaceUserId = "90000000-0000-4000-8000-000000001994";
 const recreatedIdentityUserId = "91000000-0000-4000-8000-000000001994";
+const incompleteErasureUserId = "92000000-0000-4000-8000-000000001994";
 const leaseOwner = "account-erasure-integration-worker";
 const recoveryPreparationToken = "r".repeat(43);
 
@@ -683,19 +684,31 @@ describe("account erasure persistence (integration)", () => {
   });
 
   it("rejects completion before the request has transitioned to pseudonymous retention", async () => {
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email)
+          VALUES (${incompleteErasureUserId}::uuid, 'Incomplete Erasure User', 'incomplete-erasure-1994@example.test')`,
+    );
+    const incompleteRequest = await initiateAccountErasure(
+      context.db,
+      incompleteErasureUserId,
+      async () => "encrypted-incomplete-erasure-snapshot",
+      async () => undefined,
+    );
     await expect(
-      claimAccountErasureRequest(context.db, requestId, leaseOwner, 60_000),
-    ).resolves.toEqual(expect.objectContaining({ id: requestId }));
-    await expect(completeAccountErasure(context.db, requestId, leaseOwner)).rejects.toThrow(
+      claimAccountErasureRequest(context.db, incompleteRequest.requestId, leaseOwner, 60_000),
+    ).resolves.toEqual(expect.objectContaining({ id: incompleteRequest.requestId }));
+    await expect(
+      completeAccountErasure(context.db, incompleteRequest.requestId, leaseOwner),
+    ).rejects.toThrow(
       "not ready for pseudonymous completion",
     );
     const profiles = await context.db.execute(
       sql`SELECT id
           FROM fitness.user_profile
-          WHERE id IN (${deletingUserId}::uuid, ${otherUserId}::uuid)
+          WHERE id IN (${deletingUserId}::uuid, ${otherUserId}::uuid, ${incompleteErasureUserId}::uuid)
           ORDER BY id`,
     );
-    expect(profiles).toHaveLength(2);
+    expect(profiles).toHaveLength(3);
   });
 
   it("deletes the profile before final propagation and retains a pseudonymous request record", async () => {
