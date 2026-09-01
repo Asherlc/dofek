@@ -24400,15 +24400,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Status:** Fixed in source; hosted CI validation is pending.
 - **Symptoms / impact:** PR #2564's integration-test shard failed, blocking the
   Dependabot CodeQL update from merging. No production impact occurred.
-- **Evidence / root cause:** The
+- **Evidence / root cause:** The initial
   [failed integration job](https://github.com/Asherlc/dofek/actions/runs/33518758591/job/99892954937)
-  first reported `Account erasure request does not own the supplied user` from
-  `deleteAccountErasureUserProfile`. A preceding test had both claimed and
-  mutated the shared request; isolating its request removed the implicit lease
-  setup required by the profile-deletion lifecycle test.
-- **Fix / mitigation:** The rejection test now uses its own request, and the
-  lifecycle test explicitly claims the request it processes. No retry, timeout,
-  or error suppression was added.
+  reported `Account erasure request does not own the supplied user` from
+  `deleteAccountErasureUserProfile`; a preceding test had both claimed and
+  mutated the shared request. After removing that hidden dependency, the
+  [fresh job](https://github.com/Asherlc/dofek/actions/runs/33522549957/job/99905684606)
+  showed the final completion timestamp was earlier than the request's
+  real-clock-derived deadline, contrary to the test's fixed-date expectation.
+- **Fix / mitigation:** The rejection test now uses its own request, the
+  lifecycle test explicitly claims the request it processes, and the shared
+  fixture uses an explicit request timestamp. No retry, timeout, or error
+  suppression was added.
 - **Validation:** Biome passes for the revised integration test; confirm the
   fresh hosted integration shard passes before merging.
 - **Remaining risk / follow-up:** None after the hosted check passes.

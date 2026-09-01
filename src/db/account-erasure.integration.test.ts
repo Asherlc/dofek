@@ -189,6 +189,7 @@ describe("account erasure persistence (integration)", () => {
         restoreIntent = intent;
       },
       {
+        now: new Date("2026-08-01T12:00:00.000Z"),
         preparationTokenHash: createHash("sha256").update(recoveryPreparationToken).digest("hex"),
       },
     );
