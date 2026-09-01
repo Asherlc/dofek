@@ -913,8 +913,7 @@ describe("Router data coverage", () => {
             foodEntries: number;
             healthEvents: number;
             nutritionDaily: number;
-            labPanels: number;
-            labResults: number;
+            clinicalRecords: number;
             journalEntries: number;
           }[]
         >("sync.providerStats");

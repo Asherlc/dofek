@@ -28,8 +28,7 @@ describe("tableInfo", () => {
     ["healthEvents", "fitness.health_event", "start_date", "id"],
     ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
     ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
-    ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
-    ["labResults", "fitness.lab_result", "recorded_at", "id"],
+    ["clinicalRecords", "fitness.clinical_record", "downloaded_at", "id"],
     ["journalEntries", "fitness.journal_entry", "date", "id"],
   ] as const)(
     "returns correct mapping for %s",
@@ -56,8 +55,8 @@ describe("tableInfo", () => {
 // ---------------------------------------------------------------------------
 
 describe("dataTypeEnum", () => {
-  it("contains exactly 11 data types", () => {
-    expect(dataTypeEnum.options).toHaveLength(11);
+  it("contains exactly 10 data types", () => {
+    expect(dataTypeEnum.options).toHaveLength(10);
   });
 
   it("includes all expected data types", () => {
@@ -70,8 +69,7 @@ describe("dataTypeEnum", () => {
       "healthEvents",
       "metricStream",
       "nutritionDaily",
-      "labPanels",
-      "labResults",
+      "clinicalRecords",
       "journalEntries",
     ];
     expect(dataTypeEnum.options).toEqual(expected);
@@ -83,8 +81,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("PROVIDER_ACCOUNT_TABLES", () => {
-  it("contains 18 child tables", () => {
-    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(18);
+  it("contains 14 child tables", () => {
+    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(14);
   });
 
   it("includes all required child tables", () => {
@@ -95,8 +93,7 @@ describe("PROVIDER_ACCOUNT_TABLES", () => {
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.daily_metrics");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sleep_session");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
-    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_result");
-    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_panel");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.clinical_record");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.supplement_dose_event");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.medication_dose_event");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.health_event");
@@ -117,10 +114,9 @@ describe("PROVIDER_ACCOUNT_TABLES", () => {
     expect(lastTwo).toEqual(["fitness.oauth_token", "fitness.provider_connection"]);
   });
 
-  it("deletes lab_result before lab_panel (FK order)", () => {
-    const resultIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_result");
-    const panelIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_panel");
-    expect(resultIndex).toBeLessThan(panelIndex);
+  it("uses only the canonical clinical record table", () => {
+    expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.lab_result");
+    expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.lab_panel");
   });
 });
 
@@ -168,8 +164,7 @@ describe("ProviderDetailRepository", () => {
     ["sleepSessions", ["sleep_type", "source_name"]],
     ["foodEntries", ["meal", "source_name"]],
     ["healthEvents", ["type", "source_name"]],
-    ["labPanels", ["status", "source_name"]],
-    ["labResults", ["status"]],
+    ["clinicalRecords", ["clinical_type", "source_name", "fhir_version"]],
     ["journalEntries", ["question_slug"]],
     ["bodyMeasurements", ["source_name"]],
     ["metricStream", ["source_type", "channel", "device_id"]],
@@ -516,9 +511,7 @@ describe("ProviderDetailRepository", () => {
       });
 
       const deleteSql = txExecute.mock.calls.map((call) => stringifyQuery(call[0])).join("\n");
-      expect(deleteSql).toContain("fitness.medication");
-      expect(deleteSql).toContain("fitness.condition");
-      expect(deleteSql).toContain("fitness.allergy_intolerance");
+      expect(deleteSql).toContain("fitness.clinical_record");
       expect(deleteSql).toContain("fitness.imu_session");
       expect(deleteSql).not.toContain("fitness.oauth_token");
       expect(deleteSql).toContain("fitness.provider_data_generation");
@@ -607,14 +600,9 @@ describe("ProviderDetailRepository", () => {
         orderColumn: "date",
         idColumn: "date",
       });
-      expect(tableInfo("labPanels")).toStrictEqual({
-        table: "fitness.lab_panel",
-        orderColumn: "recorded_at",
-        idColumn: "id",
-      });
-      expect(tableInfo("labResults")).toStrictEqual({
-        table: "fitness.lab_result",
-        orderColumn: "recorded_at",
+      expect(tableInfo("clinicalRecords")).toStrictEqual({
+        table: "fitness.clinical_record",
+        orderColumn: "downloaded_at",
         idColumn: "id",
       });
       expect(tableInfo("journalEntries")).toStrictEqual({
@@ -697,9 +685,9 @@ describe("ProviderDetailRepository", () => {
     });
 
     it("PROVIDER_ACCOUNT_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(18);
+      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(14);
       expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(PROVIDER_ACCOUNT_TABLES[17]).toBe("fitness.provider_connection");
+      expect(PROVIDER_ACCOUNT_TABLES[13]).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
@@ -742,11 +730,11 @@ describe("ProviderDetailRepository", () => {
       expect(result).toHaveLength(2);
     });
 
-    it("dataTypeEnum has exactly 11 options (not 10 or 12 from ArrayDeclaration mutation)", () => {
-      expect(dataTypeEnum.options).toHaveLength(11);
+    it("dataTypeEnum has exactly 10 options", () => {
+      expect(dataTypeEnum.options).toHaveLength(10);
       // Verify first and last entries specifically
       expect(dataTypeEnum.options[0]).toBe("activities");
-      expect(dataTypeEnum.options[10]).toBe("journalEntries");
+      expect(dataTypeEnum.options[9]).toBe("journalEntries");
     });
 
     it("PROVIDER_ACCOUNT_TABLES ordering: activity comes before oauth_token", () => {

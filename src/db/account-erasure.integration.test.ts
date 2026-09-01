@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   assertPostgresAccountErasureCoverage,
   erasePostgresAccount,
@@ -169,6 +170,24 @@ describe("account erasure persistence (integration)", () => {
             'apple_health',
             ${deletingUserId}::uuid
           )`,
+    );
+    await context.db.execute(
+      sql`INSERT INTO fitness.clinical_record (
+            user_id, provider_id, external_id, clinical_type, display_name,
+            source_name, fhir_version, fhir, downloaded_at
+          ) VALUES
+            (
+              ${deletingUserId}::uuid, 'apple_health', 'account-erasure-clinical-delete',
+              'condition', 'Deleted condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"account-erasure-clinical-delete"}'::jsonb,
+              now()
+            ),
+            (
+              ${otherUserId}::uuid, 'apple_health', 'account-erasure-clinical-keep',
+              'condition', 'Retained condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"account-erasure-clinical-keep"}'::jsonb,
+              now()
+            )`,
     );
     await context.db.execute(
       sql`INSERT INTO fitness.daily_metric_value (
@@ -819,7 +838,12 @@ describe("account erasure persistence (integration)", () => {
       leaseOwner,
       "retention_verification",
     );
-    const completedAt = new Date("2026-10-01T12:34:00.000Z");
+    const completionRows = await context.db.execute(
+      sql`SELECT completion_deadline + interval '1 millisecond' AS completed_at
+          FROM fitness.account_erasure_request
+          WHERE id = ${requestId}::uuid`,
+    );
+    const completedAt = z.coerce.date().parse(completionRows[0]?.completed_at);
     await completeAccountErasure(context.db, requestId, leaseOwner, completedAt);
     await expect(findAccountErasureStatus(context.db, statusToken, completedAt)).resolves.toEqual(
       expect.objectContaining({
@@ -878,8 +902,15 @@ describe("account erasure persistence (integration)", () => {
     const profiles = await context.db.execute(
       sql`SELECT id FROM fitness.user_profile WHERE id = ${deletingUserId}::uuid`,
     );
+    const clinicalRecords = await context.db.execute(
+      sql`SELECT user_id
+          FROM fitness.clinical_record
+          WHERE user_id IN (${deletingUserId}::uuid, ${otherUserId}::uuid)
+          ORDER BY user_id`,
+    );
 
     expect(profiles).toEqual([]);
+    expect(clinicalRecords).toEqual([{ user_id: otherUserId }]);
     expect(rows).toEqual([
       expect.objectContaining({
         completed: true,

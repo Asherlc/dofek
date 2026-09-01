@@ -200,13 +200,6 @@ enum food_category {
   other
 }
 
-enum lab_result_status {
-  final
-  preliminary
-  corrected
-  cancelled
-}
-
 enum meal {
   breakfast
   lunch
@@ -849,48 +842,23 @@ table fitness.supplement_dose_event {
   }
 }
 
-table fitness.allergy_intolerance {
+table fitness.clinical_record {
   id uuid [pk, not null, default: `gen_random_uuid()`]
-  provider_id text [not null]
   user_id uuid [not null]
-  external_id text
-  name text [not null]
-  type text
-  clinical_status text
-  verification_status text
-  rxnorm_code text
-  onset_date date
-  reactions jsonb
+  provider_id text [not null]
+  external_id text [not null]
+  clinical_type text [not null]
+  display_name text [not null]
   source_name text
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
+  fhir_version text [not null]
+  fhir jsonb [not null]
+  downloaded_at "timestamp with time zone" [not null]
+  recorded_at "timestamp with time zone"
+  issued_at "timestamp with time zone"
 
   indexes {
-    (user_id, provider_id, external_id) [name: 'allergy_intolerance_provider_external_idx', unique]
-    (user_id, provider_id) [name: 'allergy_intolerance_user_provider_idx']
-  }
-}
-
-table fitness.condition {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  provider_id text [not null]
-  user_id uuid [not null]
-  external_id text
-  name text [not null]
-  clinical_status text
-  verification_status text
-  icd10_code text
-  snomed_code text
-  onset_date date
-  abatement_date date
-  recorded_date date
-  source_name text
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, provider_id, external_id) [name: 'condition_provider_external_idx', unique]
-    (user_id, provider_id) [name: 'condition_user_provider_idx']
+    (user_id, provider_id, external_id) [name: 'clinical_record_user_provider_external_idx', unique]
+    (user_id, downloaded_at, id) [name: 'clinical_record_user_downloaded_id_idx']
   }
 }
 
@@ -914,85 +882,6 @@ table fitness.health_event {
     (user_id, provider_id, external_id) [name: 'health_event_provider_external_idx', unique]
     (type, start_date) [name: 'health_event_type_time_idx']
     (user_id, provider_id) [name: 'health_event_user_provider_idx']
-  }
-}
-
-table fitness.lab_panel {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  provider_id text [not null]
-  user_id uuid [not null]
-  external_id text
-  name text [not null]
-  loinc_code text
-  status lab_result_status
-  source_name text
-  recorded_at "timestamp with time zone" [not null]
-  issued_at "timestamp with time zone"
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, provider_id, external_id) [name: 'lab_panel_provider_external_idx', unique]
-    recorded_at [name: 'lab_panel_recorded_idx']
-    (user_id, provider_id) [name: 'lab_panel_user_provider_idx']
-  }
-}
-
-table fitness.lab_result {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  provider_id text [not null]
-  user_id uuid [not null]
-  panel_id uuid
-  external_id text
-  test_name text [not null]
-  loinc_code text
-  value real
-  value_text text
-  unit text
-  reference_range_low real
-  reference_range_high real
-  reference_range_text text
-  status lab_result_status
-  source_name text
-  recorded_at "timestamp with time zone" [not null]
-  issued_at "timestamp with time zone"
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, provider_id, external_id) [name: 'lab_result_provider_external_idx', unique]
-    recorded_at [name: 'lab_result_recorded_idx']
-    loinc_code [name: 'lab_result_loinc_idx']
-    test_name [name: 'lab_result_test_name_idx']
-    panel_id [name: 'lab_result_panel_idx']
-    (user_id, provider_id) [name: 'lab_result_user_provider_idx']
-  }
-}
-
-table fitness.medication {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  provider_id text [not null]
-  user_id uuid [not null]
-  external_id text
-  name text [not null]
-  status text
-  authored_on date
-  start_date date
-  end_date date
-  dosage_text text
-  route text
-  form text
-  rxnorm_code text
-  prescriber_name text
-  reason_text text
-  reason_snomed_code text
-  source_name text
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, provider_id, external_id) [name: 'medication_provider_external_idx', unique]
-    (user_id, provider_id) [name: 'medication_user_provider_idx']
   }
 }
 
@@ -2028,31 +1917,13 @@ ref supplement_dose_event_definition_fkey: fitness.supplement_dose_event.(defini
 
 ref supplement_dose_event_supersedes_fkey: fitness.supplement_dose_event.(supersedes_event_id, user_id, supplement_id, definition_id, scheduled_date) > fitness.supplement_dose_event.(id, user_id, supplement_id, definition_id, scheduled_date) [delete: no action, update: no action]
 
-ref allergy_intolerance_provider_id_provider_id_fk: fitness.allergy_intolerance.provider_id > fitness.provider.id [delete: no action, update: no action]
+ref clinical_record_user_id_user_profile_id_fk: fitness.clinical_record.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref allergy_intolerance_user_id_user_profile_id_fk: fitness.allergy_intolerance.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref condition_provider_id_provider_id_fk: fitness.condition.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref condition_user_id_user_profile_id_fk: fitness.condition.user_id > fitness.user_profile.id [delete: no action, update: no action]
+ref clinical_record_provider_id_provider_id_fk: fitness.clinical_record.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref health_event_provider_id_provider_id_fk: fitness.health_event.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref health_event_user_id_user_profile_id_fk: fitness.health_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref lab_panel_provider_id_provider_id_fk: fitness.lab_panel.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref lab_panel_user_id_user_profile_id_fk: fitness.lab_panel.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref lab_result_provider_id_provider_id_fk: fitness.lab_result.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref lab_result_user_id_user_profile_id_fk: fitness.lab_result.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref lab_result_panel_id_lab_panel_id_fk: fitness.lab_result.panel_id > fitness.lab_panel.id [delete: cascade, update: no action]
-
-ref medication_provider_id_provider_id_fk: fitness.medication.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref medication_user_id_user_profile_id_fk: fitness.medication.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref medication_dose_event_provider_id_provider_id_fk: fitness.medication_dose_event.provider_id > fitness.provider.id [delete: no action, update: no action]
 

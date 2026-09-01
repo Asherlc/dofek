@@ -248,6 +248,16 @@ describe("clickHouseMigrations", () => {
       ]),
       run: expect.any(Function),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0072_canonical_clinical_records"),
+    ).toMatchObject({
+      id: "0072_canonical_clinical_records",
+      statements: expect.arrayContaining([
+        "DROP VIEW IF EXISTS analytics.provider_change_from_lab_panel",
+        "DROP VIEW IF EXISTS analytics.provider_change_from_lab_result",
+        expect.stringContaining("FROM postgres_fitness.clinical_record"),
+      ]),
+    });
   });
 
   it("rejects duplicate migration ids", async () => {

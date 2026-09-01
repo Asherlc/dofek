@@ -227,7 +227,7 @@ export const adminRouter = router({
             ('auth_account'),
             ('oauth_token'),
             ('provider'),
-            ('lab_panel'),
+            ('clinical_record'),
             ('journal_entry'),
             ('supplement'),
             ('life_events'),

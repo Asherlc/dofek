@@ -402,9 +402,12 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Lint new migration SQL
         run: |
+          # Migration 0099 was applied in production before this repository restored its lineage.
+          # Its recorded bytes are immutable and cannot be reformatted for SQLFluff.
           NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- \
             'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
+            | grep -v '^drizzle/0099_canonical_clinical_records.sql$' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
             echo "No new migrations to lint"

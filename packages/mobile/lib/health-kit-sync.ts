@@ -1,4 +1,5 @@
 import type {
+  ClinicalRecordSample,
   DailyStatistic,
   HealthKitSample,
   RouteLocation,
@@ -46,6 +47,18 @@ export const MENSTRUAL_FLOW_TYPE_IDENTIFIER = "HKCategoryTypeIdentifierMenstrual
 export const WORKOUT_TYPE_IDENTIFIER = "HKWorkoutTypeIdentifier";
 export const WORKOUT_ROUTE_TYPE_IDENTIFIER = "HKWorkoutRouteTypeIdentifier";
 
+const CLINICAL_RECORD_TYPES = [
+  ["HKClinicalTypeIdentifierAllergyRecord", "Allergy"],
+  ["HKClinicalTypeIdentifierConditionRecord", "Condition"],
+  ["HKClinicalTypeIdentifierCoverageRecord", "Coverage"],
+  ["HKClinicalTypeIdentifierImmunizationRecord", "Immunization"],
+  ["HKClinicalTypeIdentifierLabResultRecord", "Lab Result"],
+  ["HKClinicalTypeIdentifierMedicationRecord", "Medication"],
+  ["HKClinicalTypeIdentifierProcedureRecord", "Procedure"],
+  ["HKClinicalTypeIdentifierVitalSignRecord", "Vital Sign"],
+  ["HKClinicalTypeIdentifierClinicalNoteRecord", "Clinical Note"],
+] as const;
+
 const ANCHORED_SAMPLE_TYPES = new Set([
   "HKQuantityTypeIdentifierBodyMass",
   "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -67,6 +80,7 @@ export const BACKGROUND_HEALTH_KIT_TYPES = [
 ];
 
 const BATCH_SIZE = 500;
+const CLINICAL_RECORD_BATCH_SIZE = 100;
 
 function syncWindowStart(syncRangeDays: number | null, minimumSampleDate: string | null): string {
   let rangeStart: string;
@@ -166,6 +180,11 @@ export interface HealthKitAdapter {
     startDate: string,
     endDate: string,
   ): Promise<HealthKitSample[]>;
+  queryClinicalRecords(
+    typeId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<ClinicalRecordSample[]>;
   queryWorkouts(startDate: string, endDate: string): Promise<WorkoutSample[]>;
   querySleepSamples(startDate: string, endDate: string): Promise<SleepSample[]>;
   queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]>;
@@ -180,6 +199,13 @@ interface WorkoutRoutePayload {
 
 /** Abstraction over tRPC client for testability */
 export interface SyncTrpcClient {
+  clinicalRecords: {
+    push: {
+      mutate(input: {
+        records: Array<Omit<ClinicalRecordSample, "uuid"> & { externalId: string }>;
+      }): Promise<{ upserted: number }>;
+    };
+  };
   healthKitSync: {
     pushQuantitySamples: {
       mutate(input: {
@@ -239,7 +265,9 @@ export interface HealthKitSyncStage {
     | "queryWorkoutRoutes"
     | "pushWorkoutRoutes"
     | "querySleepSamples"
-    | "pushSleepSamples";
+    | "pushSleepSamples"
+    | "queryClinicalRecords"
+    | "pushClinicalRecords";
   typeIdentifier?: string;
   batchIndex?: number;
   batchCount?: number;
@@ -493,6 +521,41 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       samples: sleepSamples,
     });
     totalInserted += result.inserted;
+  }
+
+  for (const [typeIdentifier, typeLabel] of CLINICAL_RECORD_TYPES) {
+    onProgress?.(`Querying clinical ${typeLabel} records...`);
+    onStage?.({ operation: "queryClinicalRecords", typeIdentifier });
+    let clinicalRecords: ClinicalRecordSample[];
+    try {
+      clinicalRecords = await healthKit.queryClinicalRecords(typeIdentifier, startDate, endDate);
+    } catch (error) {
+      if (!isAuthorizationNotDetermined(error)) {
+        throw error;
+      }
+      clinicalRecords = [];
+    }
+    const batchCount = Math.ceil(clinicalRecords.length / CLINICAL_RECORD_BATCH_SIZE);
+    for (
+      let batchOffset = 0;
+      batchOffset < clinicalRecords.length;
+      batchOffset += CLINICAL_RECORD_BATCH_SIZE
+    ) {
+      const batch = clinicalRecords.slice(batchOffset, batchOffset + CLINICAL_RECORD_BATCH_SIZE);
+      const recordLabel = batch.length === 1 ? "record" : "records";
+      onProgress?.(`Pushing ${batch.length} clinical ${typeLabel} ${recordLabel}...`);
+      onStage?.({
+        operation: "pushClinicalRecords",
+        typeIdentifier,
+        batchIndex: batchOffset / CLINICAL_RECORD_BATCH_SIZE + 1,
+        batchCount,
+        itemCount: batch.length,
+      });
+      const result = await trpcClient.clinicalRecords.push.mutate({
+        records: batch.map(({ uuid, ...record }) => ({ ...record, externalId: uuid })),
+      });
+      totalInserted += result.upserted;
+    }
   }
 
   return { deleted: 0, inserted: totalInserted, errors };

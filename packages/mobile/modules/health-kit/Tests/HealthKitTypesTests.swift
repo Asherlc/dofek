@@ -5,6 +5,25 @@ import XCTest
 
 final class HealthKitTypesTests: XCTestCase {
 
+    func testClinicalRecordIdentifiersMapEverySupportedType() {
+        let expectedTypes = [
+            "HKClinicalTypeIdentifierAllergyRecord": "allergy",
+            "HKClinicalTypeIdentifierConditionRecord": "condition",
+            "HKClinicalTypeIdentifierCoverageRecord": "coverage",
+            "HKClinicalTypeIdentifierImmunizationRecord": "immunization",
+            "HKClinicalTypeIdentifierLabResultRecord": "labResult",
+            "HKClinicalTypeIdentifierMedicationRecord": "medication",
+            "HKClinicalTypeIdentifierProcedureRecord": "procedure",
+            "HKClinicalTypeIdentifierVitalSignRecord": "vitalSign",
+            "HKClinicalTypeIdentifierClinicalNoteRecord": "clinicalNote",
+        ]
+
+        XCTAssertEqual(Set(clinicalRecordTypeIdentifiers), Set(expectedTypes.keys))
+        for (identifier, expectedType) in expectedTypes {
+            XCTAssertEqual(clinicalRecordType(for: identifier), expectedType)
+        }
+    }
+
     // MARK: - readTypes
 
     func testReadTypesContainsQuantityTypes() {
@@ -143,6 +162,17 @@ final class HealthKitTypesTests: XCTestCase {
                 HKCategoryType.categoryType(forIdentifier: .mindfulSession)!
             )
         )
+    }
+
+    func testBackgroundDeliveryTypesExcludeAllClinicalRecords() {
+        let backgroundIdentifiers = Set(backgroundDeliveryTypes.map(\.identifier))
+
+        for identifier in clinicalRecordTypeIdentifiers {
+            XCTAssertFalse(
+                backgroundIdentifiers.contains(identifier),
+                "Clinical type \(identifier) must remain explicit-sync only"
+            )
+        }
     }
 
     func testBackgroundDeliveryTypesTotalCount() {

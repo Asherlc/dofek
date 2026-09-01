@@ -183,10 +183,7 @@ export async function countActivePeerDbProviderRows(
         SELECT count() AS active_count FROM postgres_fitness.health_event FINAL
           WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
         UNION ALL
-        SELECT count() AS active_count FROM postgres_fitness.lab_panel FINAL
-          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
-        UNION ALL
-        SELECT count() AS active_count FROM postgres_fitness.lab_result FINAL
+        SELECT count() AS active_count FROM postgres_fitness.clinical_record FINAL
           WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
         UNION ALL
         SELECT count() AS active_count FROM postgres_fitness.journal_entry FINAL

@@ -1251,71 +1251,62 @@ describe("importClinicalRecords — lab panel DB integration", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("inserts lab panels from DiagnosticReports", async () => {
+  it("stores DiagnosticReports as canonical FHIR records", async () => {
     const result = await importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath);
 
     expect(result.errors).toHaveLength(0);
 
-    const panels = await ctx.db.select().from(schema.labPanel);
-    expect(panels).toHaveLength(1);
+    const records = await ctx.db.select().from(schema.clinicalRecord);
+    expect(records).toHaveLength(4);
 
-    const panel = panels[0];
+    const panel = records.find((record) => record.externalId === "dr-lipid-001");
     expect(panel).toBeDefined();
-    expect(panel?.name).toBe("Lipid Panel");
-    expect(panel?.loincCode).toBe("57698-3");
-    expect(panel?.status).toBe("final");
-    expect(panel?.externalId).toBe("dr-lipid-001");
+    expect(panel?.displayName).toBe("Lipid Panel");
+    expect(panel?.clinicalType).toBe("labResult");
+    expect(panel?.fhir).toEqual(expect.objectContaining({ resourceType: "DiagnosticReport" }));
     expect(panel?.providerId).toBe("apple_health");
   }, 60_000);
 
-  it("links lab results to their panel via panel_id FK", async () => {
-    const panels = await ctx.db.select().from(schema.labPanel);
-    const lipidPanel = panels.find((p) => p.externalId === "dr-lipid-001");
-    expect(lipidPanel).toBeDefined();
-
-    const results = await ctx.db.select().from(schema.labResult);
+  it("stores panel observations as independent canonical FHIR records", async () => {
+    const results = await ctx.db.select().from(schema.clinicalRecord);
 
     const chol = results.find((r) => r.externalId === "obs-chol-001");
     expect(chol).toBeDefined();
-    expect(chol?.panelId).toBe(lipidPanel?.id);
+    expect(chol?.clinicalType).toBe("labResult");
 
     const ldl = results.find((r) => r.externalId === "obs-ldl-001");
     expect(ldl).toBeDefined();
-    expect(ldl?.panelId).toBe(lipidPanel?.id);
+    expect(ldl?.clinicalType).toBe("labResult");
   });
 
-  it("leaves panel_id null for observations not in any panel", async () => {
-    const results = await ctx.db.select().from(schema.labResult);
+  it("stores standalone observations without a shadow panel relation", async () => {
+    const results = await ctx.db.select().from(schema.clinicalRecord);
     const glucose = results.find((r) => r.externalId === "obs-glucose-001");
     expect(glucose).toBeDefined();
-    expect(glucose?.panelId).toBeNull();
+    expect(glucose?.fhir).toEqual(expect.objectContaining({ id: "obs-glucose-001" }));
   });
 
   it("resolves source names from ClinicalRecord XML stubs", async () => {
-    const results = await ctx.db.select().from(schema.labResult);
+    const results = await ctx.db.select().from(schema.clinicalRecord);
     const chol = results.find((r) => r.externalId === "obs-chol-001");
     expect(chol?.sourceName).toBe("Quest Diagnostics");
   });
 
-  it("is idempotent — re-import does not duplicate panels or results", async () => {
-    const panelsBefore = await ctx.db.select().from(schema.labPanel);
-    const resultsBefore = await ctx.db.select().from(schema.labResult);
+  it("is idempotent — re-import does not duplicate canonical records", async () => {
+    const recordsBefore = await ctx.db.select().from(schema.clinicalRecord);
 
     await importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath);
 
-    const panelsAfter = await ctx.db.select().from(schema.labPanel);
-    const resultsAfter = await ctx.db.select().from(schema.labResult);
+    const recordsAfter = await ctx.db.select().from(schema.clinicalRecord);
 
-    expect(panelsAfter).toHaveLength(panelsBefore.length);
-    expect(resultsAfter).toHaveLength(resultsBefore.length);
+    expect(recordsAfter.map((record) => [record.externalId, record.fhir]).sort()).toEqual(
+      recordsBefore.map((record) => [record.externalId, record.fhir]).sort(),
+    );
   }, 60_000);
 
-  it("preserves panel FK linkage after re-import", async () => {
-    const panels = await ctx.db.select().from(schema.labPanel);
-    const lipidPanel = panels.find((p) => p.externalId === "dr-lipid-001");
-
-    const results = await ctx.db.select().from(schema.labResult);
-    const chol = results.find((r) => r.externalId === "obs-chol-001");
-    expect(chol?.panelId).toBe(lipidPanel?.id);
+  it("preserves the original FHIR payload after re-import", async () => {
+    const records = await ctx.db.select().from(schema.clinicalRecord);
+    const chol = records.find((r) => r.externalId === "obs-chol-001");
+    expect(chol?.fhir).toEqual(JSON.parse(FHIR_OBS_CHOL));
   });
 });

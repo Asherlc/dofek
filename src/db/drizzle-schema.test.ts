@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { drizzleSchema } from "./drizzle-schema.ts";
 import { userSettings } from "./schema/account.ts";
 import { activity, climbingAttempt, climbingEntry, fingerLoadingEntry } from "./schema/activity.ts";
-import { labResult } from "./schema/clinical.ts";
+import { clinicalRecord } from "./schema/clinical.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
   activityModalityEnum,
@@ -75,7 +75,7 @@ describe("drizzleSchema", () => {
       provider,
       activity,
       foodEntry,
-      labResult,
+      clinicalRecord,
       userSettings,
       journalEntry,
     });
