@@ -24472,3 +24472,21 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   backup into an isolated target, determine whether null-raw legacy records
   need canonical repair, and choose a migration-lineage plan for fresh legacy
   databases that may contain cross-table external-ID collisions.
+
+## 2026-09-01 — iOS Strong share import rejected a valid Inbox file URI
+
+- **Status:** Fixed in source; deployment is pending.
+- **Symptoms / user impact:** Sharing a Strong CSV export to Dofek displayed
+  `Shared file URI did not match` and prevented the import from starting.
+- **Evidence / root cause:** The resumable-upload change introduced a strict
+  string comparison between the incoming iOS Inbox URI and Expo's resolved file
+  URI. Expo may normalize the valid `/private/var/...` form to `/var/...`, so
+  the import stopped before reading the CSV or beginning an upload. The guard
+  was introduced in [PR #2587](https://github.com/Asherlc/dofek/commit/f0ad6dbdfed0a80c4f7af8cf23d84b0d113e8b1e).
+- **Fix / mitigation:** Removed the URI string-identity guard. The resolved
+  file object remains the sole source for file metadata and content.
+- **Validation:** A mobile regression test reproduces the `/private/var` to
+  `/var` normalization and completes the Strong durable-upload lifecycle;
+  mobile lint and TypeScript checks pass.
+- **Remaining risk / follow-up:** Verify a Strong share on a physical iPhone
+  after the fixed build is deployed.

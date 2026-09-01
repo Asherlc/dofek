@@ -41,11 +41,11 @@ describe("inferImportProviderFromFile", () => {
 });
 
 describe("importSharedFile", () => {
-  it("imports a shared Strong CSV through the durable upload lifecycle", async () => {
+  it("imports a shared Strong CSV when its resolved URI differs", async () => {
     const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
     const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
     const file: UploadableMobileFile & { text(): Promise<string> } = {
-      uri: "file:///tmp/Strong%20Export.csv",
+      uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
       name: "Strong Export.csv",
       type: "text/csv",
       size: 80,
@@ -79,7 +79,8 @@ describe("importSharedFile", () => {
 
     const result = await importSharedFile(
       {
-        fileUri: file.uri,
+        fileUri:
+          "file:///private/var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
         onProgress: (progress) => statuses.push(progress.status),
       },
       { file, fileUploadApi, createUploadId: () => uploadId, sleep: async () => {} },
