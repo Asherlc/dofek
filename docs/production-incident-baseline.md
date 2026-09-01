@@ -24403,3 +24403,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [CI run 33412594683](https://github.com/Asherlc/dofek/actions/runs/33412594683).
 - **Remaining risk / follow-up:** Production still requires the token to be
   configured in Infisical before the feature branch can be merged and deployed.
+
+## 2026-09-01 — Production clinical-migration recovery requires backup-console access
+
+- **Status:** Unresolved; source fixes are pushed in PR #2603.
+- **Symptoms / user impact:** The web UI deployment remains blocked because
+  production recorded migration `0099_canonical_clinical_records` while the
+  prior mainline did not contain that migration. Two review findings identify
+  data preservation and legacy external-ID collision risks in that immutable
+  migration.
+- **Evidence / root cause:** The deployment migration guard reports that the
+  applied timestamp `1787982000000` is missing from source history. The latest
+  [backup freshness run](https://github.com/Asherlc/dofek/actions/runs/33503549962)
+  succeeded, and the production `dofek_databasus` service reports `1/1`, but
+  Databasus restore verification requires an authenticated console session.
+- **Fix / mitigation:** Restored migration `0099` byte-for-byte and added only
+  forward migration `0100`; no applied migration was edited and no production
+  restore was attempted. The recovery console is held for an authorized
+  isolated restore verification.
+- **Validation:** Targeted web/mobile tests and typecheck pass locally; PR CI
+  is running after the review fixes.
+- **Remaining risk / follow-up:** Sign in to Databasus, restore the pre-0099
+  backup into an isolated target, determine whether null-raw legacy records
+  need canonical repair, and choose a migration-lineage plan for fresh legacy
+  databases that may contain cross-table external-ID collisions.
