@@ -346,6 +346,17 @@ describe("parseCimdClientMetadata", () => {
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
   });
 
+  it("rethrows an unexpected synchronous HTTPS request error without logging a rejection", async () => {
+    const error = new Error("unexpected request failure");
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(() => {
+      throw error;
+    });
+
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).rejects.toBe(error);
+    expect(mocks.loggerWarn).not.toHaveBeenCalled();
+  });
+
   it("cancels an HTTPS request when metadata resolution times out", async () => {
     vi.useFakeTimers();
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
