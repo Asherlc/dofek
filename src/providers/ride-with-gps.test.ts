@@ -107,19 +107,19 @@ describe("parseTripToActivity", () => {
 });
 
 describe("parseTrackPoints", () => {
-  it("converts speed from km/h to m/s", () => {
+  it("preserves track-point speed already expressed in m/s", () => {
     const points: RideWithGpsTrackPoint[] = [
       {
         longitude: -122.6,
         latitude: 45.5,
         distanceMeters: 0,
         epochSeconds: 1723276200,
-        speedKph: 36,
+        speedMetersPerSecond: 16.54,
       },
     ];
     const result = parseTrackPoints(points);
     expect(result).toHaveLength(1);
-    expect(result[0]?.speed).toBeCloseTo(10, 5); // 36 km/h = 10 m/s
+    expect(result[0]?.speed).toBeCloseTo(16.54, 5);
   });
 
   it("maps all sensor fields", () => {
@@ -130,7 +130,7 @@ describe("parseTrackPoints", () => {
         distanceMeters: 1000,
         elevationMeters: 150,
         epochSeconds: 1723276200,
-        speedKph: 25,
+        speedMetersPerSecond: 25,
         temperatureCelsius: 22,
         heartRateBpm: 145,
         cadenceRpm: 90,
@@ -223,7 +223,7 @@ describe("parseTrackPoints", () => {
 });
 
 describe("buildRideWithGpsMetricRows", () => {
-  it("converts parsed track points to source rows for metric stream fan-out", () => {
+  it("maps parsed track points to source rows for metric stream fan-out", () => {
     const rows = buildRideWithGpsMetricRows({
       activityId: "activity-1",
       externalId: "trip-1",
@@ -234,7 +234,7 @@ describe("buildRideWithGpsMetricRows", () => {
           latitude: 45.5,
           elevationMeters: 150,
           epochSeconds: 1723276200,
-          speedKph: 36,
+          speedMetersPerSecond: 10,
           temperatureCelsius: 22,
           heartRateBpm: 145,
           cadenceRpm: 90,
@@ -271,7 +271,7 @@ describe("buildRideWithGpsMetricRows", () => {
           longitude: -122.6,
           latitude: 45.5,
           epochSeconds: 1723276200,
-          speedKph: 36,
+          speedMetersPerSecond: 10,
         },
       ],
     });
@@ -279,6 +279,33 @@ describe("buildRideWithGpsMetricRows", () => {
     expect(rows[0]?.speed).toBeUndefined();
     expect(rows[0]?.lat).toBe(45.5);
     expect(rows[0]?.lng).toBe(-122.6);
+  });
+
+  it("rejects an outdoor cycling stream with an implausible average speed", () => {
+    expect(() =>
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints: [
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200, speedMetersPerSecond: 20 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276201, speedMetersPerSecond: 21 },
+        ],
+      }),
+    ).toThrow("RideWithGPS cycling speed is implausible");
+  });
+
+  it("rejects an outdoor cycling stream with an implausible maximum speed", () => {
+    expect(() =>
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints: [
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200, speedMetersPerSecond: 31 },
+        ],
+      }),
+    ).toThrow("RideWithGPS cycling speed is implausible");
   });
 });
 
