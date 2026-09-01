@@ -84,6 +84,29 @@ describe("deriveClinicalRecordDates", () => {
     });
   });
 
+  it("does not use the R4 issued timestamp field for a DSTU2 immunization", () => {
+    expect(
+      deriveClinicalRecordDates("immunization", "1.0.2", {
+        resourceType: "Immunization",
+        date: "2016-04-02T12:00:00Z",
+        recorded: "2016-04-03T12:00:00Z",
+      }),
+    ).toEqual({
+      recordedAt: new Date("2016-04-02T12:00:00.000Z"),
+      issuedAt: null,
+    });
+  });
+
+  it("does not apply release-specific immunization date fields to an unknown release", () => {
+    expect(
+      deriveClinicalRecordDates("immunization", "R5", {
+        resourceType: "Immunization",
+        date: "2016-04-02T12:00:00Z",
+        occurrenceDateTime: "2026-04-02T12:00:00Z",
+      }),
+    ).toEqual({ recordedAt: null, issuedAt: null });
+  });
+
   it.each([
     ["MedicationRequest", { authoredOn: "2026-04-02T12:00:00Z" }],
     ["MedicationOrder", { dateWritten: "2026-04-02T12:00:00Z" }],

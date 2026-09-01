@@ -92,16 +92,16 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@storybook/addon-ondevice-actions": "10.5.3",
-    "@storybook/addon-ondevice-controls": "10.5.3",
-    "@storybook/react-native": "10.5.3",
+    "@storybook/addon-ondevice-actions": "10.5.4",
+    "@storybook/addon-ondevice-controls": "10.5.4",
+    "@storybook/react-native": "10.5.4",
     "@storybook/react-native-web-vite": "10.5.10",
     "@testing-library/react": "16.3.2",
     "@types/react": "19.2.18",
     "playwright": "1.62.1",
     "react-dom": "19.2.3",
     "react-native-web": "0.21.2",
-    "storybook": "10.5.4",
+    "storybook": "10.5.10",
     "typescript": "6.0.3",
     "vite": "8.0.16"
   }
