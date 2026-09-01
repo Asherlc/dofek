@@ -203,7 +203,7 @@ export interface SyncTrpcClient {
     push: {
       mutate(input: {
         records: Array<Omit<ClinicalRecordSample, "uuid"> & { externalId: string }>;
-      }): Promise<{ inserted: number }>;
+      }): Promise<{ upserted: number }>;
     };
   };
   healthKitSync: {
@@ -554,7 +554,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       const result = await trpcClient.clinicalRecords.push.mutate({
         records: batch.map(({ uuid, ...record }) => ({ ...record, externalId: uuid })),
       });
-      totalInserted += result.inserted;
+      totalInserted += result.upserted;
     }
   }
 

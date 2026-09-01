@@ -18,7 +18,7 @@ const pageSchema = z.object({
 export const clinicalRecordsRouter = router({
   push: protectedProcedure
     .input(z.object({ records: z.array(clinicalRecordInputSchema).max(100) }))
-    .output(z.object({ inserted: z.number().int().nonnegative() }))
+    .output(z.object({ upserted: z.number().int().nonnegative() }))
     .mutation(async ({ ctx, input }) => {
       await ensurePushProvider({
         database: ctx.db,
@@ -28,8 +28,8 @@ export const clinicalRecordsRouter = router({
       });
       const repository = new ClinicalRecordsRepository(ctx.db, ctx.userId, ctx.timezone);
       const result = await repository.upsert(input.records);
-      if (result.inserted > 0) await invalidateAllUserQueries(ctx.userId);
-      return { inserted: result.inserted };
+      if (result.upserted > 0) await invalidateAllUserQueries(ctx.userId);
+      return { upserted: result.upserted };
     }),
 
   list: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })

@@ -16,7 +16,7 @@ describe("syncHealthKitToServer", () => {
     return {
       clinicalRecords: {
         push: {
-          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+          mutate: vi.fn().mockResolvedValue({ upserted: 0 }),
         },
       },
       healthKitSync: {
@@ -133,7 +133,7 @@ describe("syncHealthKitToServer", () => {
     healthKit.queryClinicalRecords.mockImplementation(async (typeIdentifier: string) =>
       typeIdentifier === "HKClinicalTypeIdentifierConditionRecord" ? [clinicalRecord] : [],
     );
-    client.clinicalRecords.push.mutate.mockResolvedValue({ inserted: 1 });
+    client.clinicalRecords.push.mutate.mockResolvedValue({ upserted: 1 });
 
     const result = await syncHealthKitToServer({
       trpcClient: client,
@@ -186,7 +186,7 @@ describe("syncHealthKitToServer", () => {
         : [],
     );
     client.clinicalRecords.push.mutate.mockImplementation(async ({ records }) => ({
-      inserted: records.length,
+      upserted: records.length,
     }));
 
     const result = await syncHealthKitToServer({

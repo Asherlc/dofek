@@ -23,7 +23,7 @@ export interface ClinicalRecordPage {
 }
 
 export interface ClinicalRecordUpsertResult {
-  inserted: number;
+  upserted: number;
   ids: string[];
 }
 
@@ -49,7 +49,7 @@ export class ClinicalRecordsRepository {
   }
 
   async upsert(records: ClinicalRecordInput[]): Promise<ClinicalRecordUpsertResult> {
-    if (records.length === 0) return { inserted: 0, ids: [] };
+    if (records.length === 0) return { upserted: 0, ids: [] };
 
     const rowsByExternalId = new Map<string, typeof clinicalRecord.$inferInsert>();
     for (const record of records) {
@@ -88,7 +88,7 @@ export class ClinicalRecordsRepository {
       })
       .returning({ id: clinicalRecord.id });
 
-    return { inserted: persisted.length, ids: persisted.map((row) => row.id) };
+    return { upserted: persisted.length, ids: persisted.map((row) => row.id) };
   }
 
   async list(input: ClinicalRecordPageInput): Promise<ClinicalRecordPage> {
