@@ -24375,6 +24375,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   typecheck and Biome.
 - **Remaining risk / follow-up:** Confirm the rerun iOS archive passes.
 
+## 2026-09-01 — Dependabot CodeQL-action upgrades used mixed action releases
+
+- **Status:** Fixed in source; fresh hosted CI validation is pending.
+- **Symptoms / impact:** Dependabot PRs #2564, #2566, and #2569 each failed
+  CodeQL analysis and could not merge. No production impact occurred.
+- **Evidence / root cause:** The failed `github/codeql-action/autobuild` step
+  reported `Loaded a configuration file for version '4.37.7', but running
+  version '4.37.8'`. Each PR had upgraded just one of `init`, `autobuild`, and
+  `analyze`, while CodeQL requires them to share a release version. The failed
+  [CodeQL job](https://github.com/Asherlc/dofek/actions/runs/33315318029/job/99267540113)
+  contains the first fatal diagnostic.
+- **Fix / mitigation:** Updated the three action references atomically to
+  4.37.8 on every affected Dependabot branch and configured Dependabot to group
+  `github/codeql-action/*` updates. No rerun-only mitigation, timeout, or
+  error suppression was added.
+- **Validation:** `actionlint` validates the workflow locally; confirm each
+  new hosted CodeQL run passes before merging.
+- **Remaining risk / follow-up:** Dependabot will apply the grouping rule on
+  its next scheduled update scan.
+
+## 2026-09-01 — PR 2564 account-erasure integration fixture relied on hidden state
+
+- **Status:** Fixed in source; hosted CI validation is pending.
+- **Symptoms / impact:** PR #2564's integration-test shard failed, blocking the
+  Dependabot CodeQL update from merging. No production impact occurred.
+- **Evidence / root cause:** The initial
+  [failed integration job](https://github.com/Asherlc/dofek/actions/runs/33518758591/job/99892954937)
+  reported `Account erasure request does not own the supplied user` from
+  `deleteAccountErasureUserProfile`; a preceding test had both claimed and
+  mutated the shared request. After removing that hidden dependency, the
+  [fresh job](https://github.com/Asherlc/dofek/actions/runs/33522549957/job/99905684606)
+  showed the final completion timestamp was earlier than the request's
+  real-clock-derived deadline, contrary to the test's fixed-date expectation.
+  With a fixed request timestamp, a second
+  [fresh job](https://github.com/Asherlc/dofek/actions/runs/33524297471/job/99911696271)
+  showed that the earlier status assertion still used the real clock and
+  therefore reported the request overdue.
+- **Fix / mitigation:** The rejection test now uses its own request, the
+  lifecycle test explicitly claims the request it processes, and the shared
+  fixture and pre-deadline status assertion use explicit timestamps. No retry,
+  timeout, or error suppression was added.
+- **Validation:** Biome passes for the revised integration test; confirm the
+  fresh hosted integration shard passes before merging.
+- **Remaining risk / follow-up:** None after the hosted check passes.
+
 ## 2026-08-31 — GitHub API limit blocked PR-review thread replies
 
 - **Status:** Source fixes are pushed; replies and thread resolution are blocked until GitHub restores API capacity.
