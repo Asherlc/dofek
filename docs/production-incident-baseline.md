@@ -24492,9 +24492,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   rejections now emit only the client host and a stable reason, without sending
   an exception to Sentry. This preserves the IETF CIMD draft’s URL-hosted
   metadata and client-authentication model. [IETF Client ID Metadata Document](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/)
-- **Validation:** The focused CIMD metadata unit suite passes 30 tests,
+- **Validation:** The focused CIMD metadata unit suite passes 32 tests,
   including the real ChatGPT metadata shape, an unsupported-list rejection,
-  and sanitized rejection logging.
+  sanitized rejection logging, unexpected-error propagation, and Node's
+  strip-only TypeScript runtime compatibility.
 - **Remaining risk / follow-up:** Deploy the fix and complete a real ChatGPT
   OAuth connection. Dofek intentionally continues to reject CIMD clients that
   offer no supported method and does not implement `private_key_jwt`.
+
+## 2026-09-01 — PR #2626 E2E server rejected a TypeScript parameter property
+
+- **Status:** Fixed in source; CI rerun is pending.
+- **Symptoms / user impact:** PR #2626's web E2E job never started Cypress
+  because the server container exited during startup. The PR could not be
+  reported ready for review or merge.
+- **Evidence / root cause:** The failing command was
+  `docker compose -f docker-compose.e2e.yml up -d --wait --no-build --no-deps server`.
+  The first fatal server log was
+  `SyntaxError [ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX]: TypeScript parameter property is not supported in strip-only mode`
+  at `oauth-client-metadata.ts:24`, under Node 26.8.1. Node's built-in type
+  stripping supports only erasable TypeScript syntax and explicitly lists
+  parameter properties as requiring transformation. [Node.js TypeScript features](https://nodejs.org/api/typescript.html#typescript-features)
+  [Failed E2E job](https://github.com/Asherlc/dofek/actions/runs/33567902526/job/100055389681)
+- **Direct fix:** Replaced the parameter property with an explicit readonly
+  field and constructor assignment. Added a unit regression test that imports
+  the real server module with Node's strip-only TypeScript runtime.
+- **Validation:** The regression test failed with the same Node syntax error
+  before the fix and passes after it; the direct strip-only module import also
+  exits successfully. The focused OAuth/router suite passed 54 tests, lint and
+  TypeScript checks passed, and the full unit/mobile tier passed 16,672 tests
+  with 21 skipped before the CI rerun.
+- **Independent CI failure:** The same workflow's iOS archive runner could not
+  create its generated `SplashScreenLegacy` image and `actool` reported
+  `Distill failed`. The source splash PNG is valid and byte-identical to
+  current `main`, whose identical iOS job passed minutes earlier; no mobile
+  source change or resilience workaround was made. [Failed iOS job](https://github.com/Asherlc/dofek/actions/runs/33567902526/job/100055389046)
+  [Passing main run](https://github.com/Asherlc/dofek/actions/runs/33566028897)
+- **Remaining risk / follow-up:** Push the E2E source fix and confirm both the
+  E2E server startup and the independent iOS archive succeed on the fresh CI
+  run before reporting the PR ready.

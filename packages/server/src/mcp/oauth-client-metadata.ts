@@ -19,11 +19,11 @@ const CIMD_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = ["none"] as const;
 type CimdTokenEndpointAuthMethod = (typeof CIMD_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS)[number];
 
 class CimdMetadataError extends Error {
-  constructor(
-    message: string,
-    readonly reason = "metadata_rejected",
-  ) {
+  readonly reason: string;
+
+  constructor(message: string, reason = "metadata_rejected") {
     super(message);
+    this.reason = reason;
   }
 }
 

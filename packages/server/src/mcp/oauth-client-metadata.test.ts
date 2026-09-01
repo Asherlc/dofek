@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -48,6 +49,22 @@ describe("parseCimdClientMetadata", () => {
     vi.restoreAllMocks();
     vi.resetAllMocks();
   });
+
+  it("loads in Node's strip-only TypeScript runtime", () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        "await import('./packages/server/src/mcp/oauth-client-metadata.ts')",
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("accepts a public client whose metadata client ID and callback match", () => {
     expect(
       parseCimdClientMetadata(clientId, {
