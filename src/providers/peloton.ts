@@ -96,7 +96,7 @@ export class PelotonProvider implements SyncProvider {
 
   async sync(run: SyncRun): Promise<SyncResult> {
     const { db, window, options } = run;
-    const { onProgress, userId } = options ?? {};
+    const { onProgress, userId, homeTimezone } = options ?? {};
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -158,6 +158,7 @@ export class PelotonProvider implements SyncProvider {
                     endedAt: parsed.endedAt,
                     name: parsed.name,
                     timezone: parsed.timezone,
+                    homeTimezone,
                     stravaId: parsed.stravaId,
                     raw: parsed.raw,
                   },

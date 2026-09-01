@@ -3,6 +3,7 @@ import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
+import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
@@ -22,6 +23,8 @@ export type ProviderActivityInsert = Omit<
   "canonicalType" | "providerType" | "modality"
 > & {
   activityType: ProviderActivityType;
+  /** User-selected geographic zone, used only when a provider emits an untrustworthy fixed zone. */
+  homeTimezone?: string | null;
 };
 
 type StoredActivityConflictUpdateKey = Exclude<
@@ -93,11 +96,15 @@ function requireExternalId(externalId: string | null | undefined): string {
   return normalizedExternalId;
 }
 
+function isFixedEtcGmtZone(timezone: string): boolean {
+  return /^Etc\/GMT(?:[+-]\d{1,2})?$/.test(timezone);
+}
+
 function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
 ): { values: StoredActivityInsert; updateLocalTimeContext: boolean } {
-  const { activityType, ...storedValues } = values;
+  const { activityType, homeTimezone, ...storedValues } = values;
   const externalIdValues: StoredActivityInsert = {
     ...storedValues,
     canonicalType: activityType.canonicalType,
@@ -129,6 +136,52 @@ function normalizeProviderActivityInsert(
       : { values: externalIdValues, updateLocalTimeContext: false };
   }
   try {
+    const normalizedHomeTimezone = homeTimezone?.trim();
+    if (normalizedHomeTimezone) {
+      const providerContext = resolveRecordLocalTimeContext({
+        startedAt: externalIdValues.startedAt,
+        endedAt: externalIdValues.endedAt,
+        timezone,
+        source: "provider_timezone",
+      });
+      const homeContext = resolveRecordLocalTimeContext({
+        startedAt: externalIdValues.startedAt,
+        endedAt: externalIdValues.endedAt,
+        timezone: normalizedHomeTimezone,
+        source: "user_home_timezone",
+      });
+      if (
+        providerContext.startUtcOffsetMinutes != null &&
+        homeContext.startUtcOffsetMinutes != null &&
+        Math.abs(providerContext.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) > 60
+      ) {
+        logger.warn(
+          `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone} home_timezone=${normalizedHomeTimezone}`,
+        );
+      }
+      if (!isFixedEtcGmtZone(timezone)) {
+        return {
+          values: {
+            ...externalIdValues,
+            timezone: providerContext.timezone,
+            startUtcOffsetMinutes: providerContext.startUtcOffsetMinutes,
+            endUtcOffsetMinutes: providerContext.endUtcOffsetMinutes,
+            localTimeSource: providerContext.source,
+          },
+          updateLocalTimeContext: true,
+        };
+      }
+      return {
+        values: {
+          ...externalIdValues,
+          timezone: homeContext.timezone,
+          startUtcOffsetMinutes: homeContext.startUtcOffsetMinutes,
+          endUtcOffsetMinutes: homeContext.endUtcOffsetMinutes,
+          localTimeSource: homeContext.source,
+        },
+        updateLocalTimeContext: true,
+      };
+    }
     const context = resolveRecordLocalTimeContext({
       startedAt: externalIdValues.startedAt,
       endedAt: externalIdValues.endedAt,
