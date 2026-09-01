@@ -160,7 +160,8 @@ export function RecordsBrowser({
   stats: ProviderStats | undefined;
 }) {
   const availability = trpc.providerDetail.availableDataTypes.useQuery({ providerId });
-  const hasClinicalRecords = availability.data?.includes("clinicalRecords") ?? false;
+  const hasClinicalRecords =
+    (stats?.clinicalRecords ?? 0) > 0 || (availability.data?.includes("clinicalRecords") ?? false);
   const availableTypes = DATA_TYPE_LABELS.filter((dataType) =>
     availability.data?.includes(dataType.key),
   );

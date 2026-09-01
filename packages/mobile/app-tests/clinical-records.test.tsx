@@ -191,7 +191,10 @@ describe("ClinicalRecordsScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
-    expect(mocks.list).toHaveBeenLastCalledWith({ limit: 20, offset: 20 });
+    expect(mocks.list).toHaveBeenLastCalledWith(
+      { limit: 20, offset: 20 },
+      { placeholderData: expect.any(Function) },
+    );
   });
 });
 
