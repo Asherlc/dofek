@@ -42,7 +42,7 @@
     "@expo/metro-runtime": "57.0.14",
     "@expo/vector-icons": "15.1.1",
     "@formatjs/intl-getcanonicallocales": "3.2.11",
-    "@formatjs/intl-locale": "5.3.9",
+    "@formatjs/intl-locale": "5.3.10",
     "@formatjs/intl-numberformat": "9.3.14",
     "@formatjs/intl-pluralrules": "6.3.12",
     "@opentelemetry/api-logs": "0.221.0",
