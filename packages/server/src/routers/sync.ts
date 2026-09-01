@@ -57,7 +57,7 @@ const syncProviderRowOutputSchema = z.object({
     .object({
       status: z.enum(["unknown", "current", "overdue"]),
       label: z.string(),
-      description: z.string(),
+      description: z.string().optional(),
     })
     .nullable(),
   importOnly: z.boolean(),

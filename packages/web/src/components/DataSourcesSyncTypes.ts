@@ -20,7 +20,7 @@ export interface SyncLogEntry {
 export interface ProviderSyncFreshness {
   status: "unknown" | "current" | "overdue";
   label: string;
-  description: string;
+  description?: string;
 }
 
 /** Row returned by sync.providers — registered OAuth/import and push-only providers. */

@@ -14,7 +14,7 @@ export type AuthStatus = "connected" | "not_connected" | "expired";
 export interface ProviderSyncFreshness {
   status: "unknown" | "current" | "overdue";
   label: string;
-  description: string;
+  description?: string;
 }
 
 export interface Provider {
@@ -220,7 +220,9 @@ export function ProviderCard({
           {syncFreshness ? (
             <View accessibilityRole={syncFreshness.status === "overdue" ? "alert" : undefined}>
               <Text style={styles.cardMetaText}>{syncFreshness.label}</Text>
-              <Text style={styles.cardMetaText}>{syncFreshness.description}</Text>
+              {syncFreshness.description ? (
+                <Text style={styles.cardMetaText}>{syncFreshness.description}</Text>
+              ) : null}
             </View>
           ) : null}
           {canRunManualSync &&
