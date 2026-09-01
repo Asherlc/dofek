@@ -177,7 +177,7 @@ reproduced the missing row. Healthy means:
 Finally check service and application health:
 
 ```bash
-curl -fsS https://dofek.asherlc.com/healthz
+curl -fsS https://dofek.fit/healthz
 ssh dofek-server 'docker service ls --format "{{.Name}} {{.Replicas}}" | sort'
 ```
 
