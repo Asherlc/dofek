@@ -207,12 +207,18 @@ export class BodyRepository {
             diastolic_bp,
             heart_pulse,
             temperature_c,
-            source_name,
-            created_at
-          FROM analytics.v_body_measurement
-          WHERE user_id = {userId:UUID}
-            AND toDate(toTimeZone(recorded_at, {timezone:String})) >= toDate({startDate:String})
-            AND toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate({endDate:String})
+              source_name,
+              created_at,
+              row_number() OVER (
+                PARTITION BY provider_id, toDate(toTimeZone(recorded_at, {timezone:String}))
+                ORDER BY recorded_at DESC, created_at DESC
+              ) AS row_number
+            FROM analytics.v_body_measurement
+            WHERE user_id = {userId:UUID}
+              AND toDate(toTimeZone(recorded_at, {timezone:String})) >= toDate({startDate:String})
+              AND toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate({endDate:String})
+          ) AS ranked_body_measurements
+          WHERE row_number = 1
         ) AS body_measurements
         ORDER BY body_measurements.recorded_at ASC
       `,

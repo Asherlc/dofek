@@ -68,6 +68,49 @@ describe("BodyRepository exact local-date range", () => {
     expect(rows.map((row) => row.id)).toEqual([matchingLocalDateId]);
   });
 
+  it("keeps the latest same-provider measurement for a local date", async () => {
+    const client = getClickHouseTestClient(testContext);
+    const userId = randomUUID();
+    const earlierMeasurementId = randomUUID();
+    const latestMeasurementId = randomUUID();
+
+    for (const [index, row] of [
+      { id: earlierMeasurementId, recordedAt: "2026-05-14 14:00:00", weightKg: 89.7 },
+      { id: latestMeasurementId, recordedAt: "2026-05-14 15:00:00", weightKg: 90.0 },
+    ].entries()) {
+      await client.command({
+        query: `INSERT INTO analytics.body_measurement_sample (
+          id, provider_id, user_id, recorded_at, channel, external_id, device_id,
+          source_type, scalar, _peerdb_synced_at, _peerdb_is_deleted, _peerdb_version
+        ) VALUES (
+          {id:UUID}, 'apple_health', {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')},
+          'body_weight', {externalId:String}, 'Apple Health', 'healthkit', {weightKg:Float64},
+          now64(9), 0, {version:Int64}
+        )`,
+        query_params: {
+          externalId: `duplicate-body-measurement-${index}`,
+          id: row.id,
+          recordedAt: row.recordedAt,
+          userId,
+          version: index + 1,
+          weightKg: row.weightKg,
+        },
+      });
+    }
+
+    await executeClickHouseTestCommand(
+      testContext,
+      "REBUILD TEST ANALYTICS TABLE analytics.v_body_measurement",
+    );
+
+    const repository = new BodyRepository(store, userId, "America/Los_Angeles");
+    const rows = await repository.listRange("2026-05-14", "2026-05-14");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(latestMeasurementId);
+    expect(rows[0]?.weightKg).toBe(90);
+  });
+
   it("returns provider provenance and configured local clock time", async () => {
     const client = getClickHouseTestClient(testContext);
     const userId = randomUUID();

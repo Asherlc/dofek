@@ -178,6 +178,18 @@ describe("BodyRepository", () => {
     expect(result[0]?.id).toBe("bm-range-1");
   });
 
+  it("selects the latest same-provider measurement for each local date", async () => {
+    const { repo, query } = makeRepository([]);
+
+    await repo.listRange("2026-05-01", "2026-05-31");
+
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain(
+      "PARTITION BY provider_id, toDate(toTimeZone(recorded_at, {timezone:String}))",
+    );
+    expect(queryText).toContain("ORDER BY recorded_at DESC, created_at DESC");
+  });
+
   it("maps all snake_case DB fields to camelCase", async () => {
     const { repo } = makeRepository([
       {
