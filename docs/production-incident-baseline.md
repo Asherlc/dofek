@@ -24395,6 +24395,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Dependabot will apply the grouping rule on
   its next scheduled update scan.
 
+## 2026-09-01 — PR 2564 account-erasure integration fixture relied on hidden state
+
+- **Status:** Fixed in source; hosted CI validation is pending.
+- **Symptoms / impact:** PR #2564's integration-test shard failed, blocking the
+  Dependabot CodeQL update from merging. No production impact occurred.
+- **Evidence / root cause:** The
+  [failed integration job](https://github.com/Asherlc/dofek/actions/runs/33518758591/job/99892954937)
+  first reported `Account erasure request does not own the supplied user` from
+  `deleteAccountErasureUserProfile`. A preceding test had both claimed and
+  mutated the shared request; isolating its request removed the implicit lease
+  setup required by the profile-deletion lifecycle test.
+- **Fix / mitigation:** The rejection test now uses its own request, and the
+  lifecycle test explicitly claims the request it processes. No retry, timeout,
+  or error suppression was added.
+- **Validation:** Biome passes for the revised integration test; confirm the
+  fresh hosted integration shard passes before merging.
+- **Remaining risk / follow-up:** None after the hosted check passes.
+
 ## 2026-08-31 — GitHub API limit blocked PR-review thread replies
 
 - **Status:** Source fixes are pushed; replies and thread resolution are blocked until GitHub restores API capacity.

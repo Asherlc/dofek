@@ -699,9 +699,7 @@ describe("account erasure persistence (integration)", () => {
     ).resolves.toEqual(expect.objectContaining({ id: incompleteRequest.requestId }));
     await expect(
       completeAccountErasure(context.db, incompleteRequest.requestId, leaseOwner),
-    ).rejects.toThrow(
-      "not ready for pseudonymous completion",
-    );
+    ).rejects.toThrow("not ready for pseudonymous completion");
     const profiles = await context.db.execute(
       sql`SELECT id
           FROM fitness.user_profile
@@ -733,6 +731,9 @@ describe("account erasure persistence (integration)", () => {
           ON CONFLICT (request_id, phase) DO UPDATE
             SET details = EXCLUDED.details`,
     );
+    await expect(
+      claimAccountErasureRequest(context.db, requestId, leaseOwner, 60_000),
+    ).resolves.toEqual(expect.objectContaining({ id: requestId }));
     await erasePostgresAccount(context.db, requestId, deletingUserId);
     await deleteAccountErasureUserProfile(context.db, requestId, deletingUserId, leaseOwner);
     await context.db.execute(
