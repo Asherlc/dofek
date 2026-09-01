@@ -52,7 +52,7 @@ function cacheAge(responseCacheControl: string | undefined): number {
 }
 
 async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: number }> {
-  let addresses: Awaited<ReturnType<typeof lookup>>;
+  let addresses: Array<{ address: string; family: number }>;
   try {
     addresses = await lookup(url.hostname, { all: true, verbatim: true });
   } catch {
