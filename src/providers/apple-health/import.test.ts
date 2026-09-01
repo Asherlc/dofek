@@ -225,8 +225,15 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
   const deleteFn = vi.fn().mockReturnValue({ where: deleteWhere });
 
   const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-  const values = vi.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
+  let insertedRowCount = 0;
+  const returning = vi.fn().mockImplementation(() =>
+    Promise.resolve(Array.from({ length: insertedRowCount }, () => ({ id: "inserted-clinical-record" }))),
+  );
+  const onConflictDoNothing = vi.fn().mockReturnValue({ returning });
+  const values = vi.fn().mockImplementation((records: unknown) => {
+    insertedRowCount = Array.isArray(records) ? records.length : 1;
+    return { onConflictDoUpdate, onConflictDoNothing };
+  });
   const insertFn = vi.fn().mockReturnValue({ values });
 
   // select().from().where() must be directly awaitable (returns Promise)
@@ -252,6 +259,7 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
       values,
       onConflictDoUpdate,
       onConflictDoNothing,
+      returning,
       selectFn,
       selectFrom,
       selectWhere,

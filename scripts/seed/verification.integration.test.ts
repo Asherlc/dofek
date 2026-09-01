@@ -207,7 +207,7 @@ async function insertVerificationPrerequisites(): Promise<void> {
       jsonb_build_object('resourceType', 'Observation', 'id', 'verification-lab-' || generated_index),
       TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day',
       TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
-    FROM generate_series(1, 8) AS generated_index
+    FROM generate_series(1, 20) AS generated_index
   `;
 
   await sql`

@@ -80,7 +80,7 @@ describe("clinicalRecordsRouter", () => {
 
   it("upserts valid Apple Health records and invalidates the user's cached reads", async () => {
     mockUpsert.mockResolvedValue({
-      inserted: 1,
+      upserted: 1,
       ids: ["22222222-2222-4222-8222-222222222222"],
     });
 
@@ -93,7 +93,7 @@ describe("clinicalRecordsRouter", () => {
       ],
     });
 
-    expect(result).toEqual({ inserted: 1 });
+    expect(result).toEqual({ upserted: 1 });
     expect(mockEnsurePushProvider).toHaveBeenCalledWith({
       database: {},
       providerId: "apple_health",
