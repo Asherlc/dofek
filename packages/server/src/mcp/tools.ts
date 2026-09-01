@@ -85,12 +85,15 @@ const recoveryMetricKeys: Partial<
 
 const activityMcpRowSchema = z.object({
   canonical_type: z.string(),
+  provider_type: z.string().optional().default(""),
   started_at: z.string(),
   ended_at: z.string().nullable(),
   avg_hr: z.coerce.number().nullable().optional(),
   max_hr: z.coerce.number().nullable().optional(),
   avg_power: z.coerce.number().nullable().optional(),
   max_power: z.coerce.number().nullable().optional(),
+  elevation_gain_m: z.coerce.number().nullable().optional(),
+  modality: z.string().nullable().optional(),
 });
 
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
@@ -231,9 +234,19 @@ function average(values: Array<number | null | undefined>): number | null {
   return aggregateNumbers(values)?.avg ?? null;
 }
 
+function activityPurpose(row: ActivityMcpRow): "commute" | "training" | null {
+  if (row.canonical_type !== "cycling") return null;
+  return row.provider_type.toLowerCase() === "commuting" ? "commute" : "training";
+}
+
 function activitySummaries(
   rows: ActivityMcpRow[],
-  groupBy: "canonical_type" | "week" | "canonical_type_and_week",
+  groupBy:
+    | "canonical_type"
+    | "week"
+    | "canonical_type_and_week"
+    | "canonical_type_and_modality"
+    | "canonical_type_and_purpose",
   timezone: string,
 ) {
   const groups = new Map<string, ActivityMcpRow[]>();
@@ -244,31 +257,63 @@ function activitySummaries(
         ? row.canonical_type
         : groupBy === "week"
           ? week
-          : `${row.canonical_type}|${week}`;
+          : groupBy === "canonical_type_and_week"
+            ? `${row.canonical_type}|${week}`
+            : groupBy === "canonical_type_and_modality"
+              ? `${row.canonical_type}|${row.modality ?? ""}`
+              : `${row.canonical_type}|${activityPurpose(row) ?? ""}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  return [...groups.entries()].map(([key, groupRows]) => {
-    const [activityType, week] =
-      groupBy === "canonical_type_and_week" ? key.split("|") : [undefined, undefined];
-    const durations = groupRows.map((row) => {
-      if (!row.ended_at) return null;
-      return (new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()) / 60_000;
+  return [...groups.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([key, groupRows]) => {
+      const [activityType, week] =
+        groupBy === "canonical_type_and_week" ? key.split("|") : [undefined, undefined];
+      const [modalityActivityType, modality] =
+        groupBy === "canonical_type_and_modality" ? key.split("|") : [undefined, undefined];
+      const [purposeActivityType, purpose] =
+        groupBy === "canonical_type_and_purpose" ? key.split("|") : [undefined, undefined];
+      const durations = groupRows.map((row) => {
+        if (!row.ended_at) return null;
+        return (new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()) / 60_000;
+      });
+      const totalDuration = durations.reduce<number>(
+        (total, duration) => total + (duration ?? 0),
+        0,
+      );
+      const elevations = groupRows.map((row) => row.elevation_gain_m);
+      const observedElevations = elevations.filter((value): value is number => value != null);
+      const totalElevationGain =
+        observedElevations.length === 0
+          ? null
+          : observedElevations.reduce((total, elevation) => total + elevation, 0);
+      const activitiesWithPower = groupRows.filter((row) => row.avg_power != null).length;
+      return {
+        ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
+        ...(groupBy === "week" ? { week: key } : {}),
+        ...(groupBy === "canonical_type_and_week" ? { canonical_type: activityType, week } : {}),
+        ...(groupBy === "canonical_type_and_modality"
+          ? { canonical_type: modalityActivityType, modality: modality || null }
+          : {}),
+        ...(groupBy === "canonical_type_and_purpose"
+          ? { canonical_type: purposeActivityType, purpose: purpose || null }
+          : {}),
+        count: groupRows.length,
+        total_duration_minutes: totalDuration,
+        avg_duration_minutes: average(durations),
+        avg_hr: average(groupRows.map((row) => row.avg_hr)),
+        max_hr_peak: aggregateNumbers(groupRows.map((row) => row.max_hr))?.max ?? null,
+        avg_power: average(groupRows.map((row) => row.avg_power)),
+        max_power_peak: aggregateNumbers(groupRows.map((row) => row.max_power))?.max ?? null,
+        power_coverage: {
+          activities_with_power: activitiesWithPower,
+          activities_total: groupRows.length,
+          pct: (activitiesWithPower / groupRows.length) * 100,
+        },
+        total_elevation_gain_m: totalElevationGain,
+        avg_elevation_gain_m: average(elevations),
+      };
     });
-    const totalDuration = durations.reduce<number>((total, duration) => total + (duration ?? 0), 0);
-    return {
-      ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
-      ...(groupBy === "week" ? { week: key } : {}),
-      ...(groupBy === "canonical_type_and_week" ? { canonical_type: activityType, week } : {}),
-      count: groupRows.length,
-      total_duration_minutes: totalDuration,
-      avg_duration_minutes: average(durations),
-      avg_hr: average(groupRows.map((row) => row.avg_hr)),
-      max_hr_peak: aggregateNumbers(groupRows.map((row) => row.max_hr))?.max ?? null,
-      avg_power: average(groupRows.map((row) => row.avg_power)),
-      max_power_peak: aggregateNumbers(groupRows.map((row) => row.max_power))?.max ?? null,
-      total_calories: null,
-    };
-  });
 }
 
 function validateSyncWindowTriggerInput(input: {
@@ -535,7 +580,15 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
-        group_by: z.enum(["canonical_type", "week", "canonical_type_and_week"]).optional(),
+        group_by: z
+          .enum([
+            "canonical_type",
+            "week",
+            "canonical_type_and_week",
+            "canonical_type_and_modality",
+            "canonical_type_and_purpose",
+          ])
+          .optional(),
         canonical_types: z.array(z.string()).optional(),
       },
     },

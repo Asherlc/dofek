@@ -23,6 +23,7 @@ import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 const activityListRowSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
+  provider_type: z.string(),
   modality: z.string().nullable().optional().default(null),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -45,6 +46,7 @@ const activityListRowSchema = z.object({
 const activityListColumns = sql`
   a.id,
   a.canonical_type,
+  a.provider_type,
   a.modality::text AS modality,
   a.started_at::text AS started_at,
   a.ended_at::text AS ended_at,

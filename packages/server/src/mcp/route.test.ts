@@ -1148,10 +1148,139 @@ describe("createMcpRouter", () => {
         count: 2,
         max_hr_peak: 175,
         max_power_peak: 320,
-        total_calories: null,
+        power_coverage: { activities_total: 2, activities_with_power: 2, pct: 100 },
+        total_elevation_gain_m: null,
+        avg_elevation_gain_m: null,
         total_duration_minutes: 90,
         week: "2026-W21",
       },
+    ]);
+  });
+
+  it("separates activity summaries by modality and reports power and elevation coverage", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        canonical_type: "cycling",
+        avg_hr: 138,
+        avg_power: null,
+        elevation_gain_m: 736,
+        ended_at: "2026-08-30T11:00:00.000Z",
+        max_hr: 170,
+        max_power: null,
+        modality: "outdoor",
+        started_at: "2026-08-30T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 145,
+        avg_power: 142,
+        elevation_gain_m: 0,
+        ended_at: "2026-08-31T11:00:00.000Z",
+        max_hr: 175,
+        max_power: 260,
+        modality: "indoor",
+        started_at: "2026-08-31T10:00:00.000Z",
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-08-31",
+        group_by: "canonical_type_and_modality",
+        start_date: "2026-08-30",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        canonical_type: "cycling",
+        modality: "indoor",
+        power_coverage: { activities_total: 1, activities_with_power: 1, pct: 100 },
+        total_elevation_gain_m: 0,
+        avg_elevation_gain_m: 0,
+      }),
+      expect.objectContaining({
+        canonical_type: "cycling",
+        modality: "outdoor",
+        power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
+        total_elevation_gain_m: 736,
+        avg_elevation_gain_m: 736,
+      }),
+    ]);
+  });
+
+  it("separates commute cycling from training cycling by purpose", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        canonical_type: "cycling",
+        avg_hr: 114,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-30T10:22:00.000Z",
+        max_hr: 130,
+        max_power: null,
+        modality: "outdoor",
+        provider_type: "commuting",
+        started_at: "2026-08-30T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 136,
+        avg_power: 180,
+        elevation_gain_m: 310,
+        ended_at: "2026-08-31T11:02:00.000Z",
+        max_hr: 168,
+        max_power: 280,
+        modality: "outdoor",
+        provider_type: "cycling",
+        started_at: "2026-08-31T10:00:00.000Z",
+      },
+      {
+        canonical_type: "running",
+        avg_hr: 150,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-31T12:30:00.000Z",
+        max_hr: 172,
+        max_power: null,
+        modality: "outdoor",
+        provider_type: "running",
+        started_at: "2026-08-31T12:00:00.000Z",
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-08-31",
+        group_by: "canonical_type_and_purpose",
+        start_date: "2026-08-30",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        canonical_type: "cycling",
+        purpose: "commute",
+        count: 1,
+        avg_duration_minutes: 22,
+        avg_hr: 114,
+      }),
+      expect.objectContaining({
+        canonical_type: "cycling",
+        purpose: "training",
+        count: 1,
+        avg_duration_minutes: 62,
+        avg_hr: 136,
+      }),
+      expect.objectContaining({
+        canonical_type: "running",
+        purpose: null,
+        count: 1,
+      }),
     ]);
   });
 
@@ -1185,7 +1314,9 @@ describe("createMcpRouter", () => {
         count: 1,
         max_hr_peak: null,
         max_power_peak: null,
-        total_calories: null,
+        power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
+        total_elevation_gain_m: null,
+        avg_elevation_gain_m: null,
         total_duration_minutes: 0,
       },
     ]);
