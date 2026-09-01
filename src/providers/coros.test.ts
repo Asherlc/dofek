@@ -36,9 +36,7 @@ vi.mock("../auth/oauth.ts", () => ({
     expiresAt: new Date("2027-01-01T00:00:00Z"),
     scopes: "",
   })),
-  getOAuthRedirectUri: vi.fn(
-    () => process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback",
-  ),
+  getOAuthRedirectUri: vi.fn(() => process.env.OAUTH_REDIRECT_URI ?? "https://dofek.fit/callback"),
   refreshAccessToken: vi.fn(async () => ({
     accessToken: "refreshed-token",
     refreshToken: "refreshed-refresh",
@@ -658,7 +656,7 @@ describe("corosOAuthConfig", () => {
     process.env.COROS_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = corosOAuthConfig();
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 });
 

@@ -170,7 +170,7 @@ jobs:
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
       public_url: https://dofek.fit
-      web_host_rule: "Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
+      web_host_rule: "Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)"
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 

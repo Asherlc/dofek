@@ -23,6 +23,6 @@ describe("Zepp storage keys", () => {
     expect(SERVICE_FILE).toBe("app-service/imu_service");
     expect(FLUSH_SAMPLE_THRESHOLD).toBe(64);
     expect(AUTO_TRANSFER_SAMPLE_COUNT).toBe(5000);
-    expect(DEFAULT_DOFEK_SERVER_URL).toBe("https://dofek.asherlc.com");
+    expect(DEFAULT_DOFEK_SERVER_URL).toBe("https://dofek.fit");
   });
 });
