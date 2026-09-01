@@ -39,7 +39,16 @@ describe("HealthExplorerService", () => {
         },
       ],
       summary: [{ metric: "hrv", average: 53.5, min: 51, max: 56 }],
-      coverage: { observed_days: 2, requested_days: 3 },
+      coverage: {
+        requested_days: 3,
+        by_metric: {
+          hrv: {
+            observed_days: 2,
+            missing_days: ["2026-08-02"],
+            missing_days_truncated_count: 0,
+          },
+        },
+      },
     });
   });
 
@@ -71,7 +80,24 @@ describe("HealthExplorerService", () => {
         },
       ],
       summary: [{ metric: "hrv", average: null, min: null, max: null }],
-      coverage: { observed_days: 0, requested_days: 7 },
+      coverage: {
+        requested_days: 7,
+        by_metric: {
+          hrv: {
+            observed_days: 0,
+            missing_days: [
+              "2026-08-01",
+              "2026-08-02",
+              "2026-08-03",
+              "2026-08-04",
+              "2026-08-05",
+              "2026-08-06",
+              "2026-08-07",
+            ],
+            missing_days_truncated_count: 0,
+          },
+        },
+      },
     });
   });
 });

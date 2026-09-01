@@ -91,7 +91,16 @@ describe("healthExplorerSnapshotSchema", () => {
         },
       ],
       summary: [{ metric: "hrv", average: 53.5, min: 51, max: 56 }],
-      coverage: { observed_days: 2, requested_days: 3 },
+      coverage: {
+        requested_days: 3,
+        by_metric: {
+          hrv: {
+            observed_days: 2,
+            missing_days: ["2026-08-02"],
+            missing_days_truncated_count: 0,
+          },
+        },
+      },
     };
 
     expect(healthExplorerSnapshotSchema.parse(snapshot)).toEqual(snapshot);

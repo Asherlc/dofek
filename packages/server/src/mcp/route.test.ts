@@ -849,7 +849,17 @@ describe("createMcpRouter", () => {
         result: z.object({
           structuredContent: z
             .object({
-              coverage: z.object({ observed_days: z.number(), requested_days: z.number() }),
+              coverage: z.object({
+                requested_days: z.number(),
+                by_metric: z.record(
+                  z.string(),
+                  z.object({
+                    observed_days: z.number(),
+                    missing_days: z.array(z.string()),
+                    missing_days_truncated_count: z.number(),
+                  }),
+                ),
+              }),
               series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
             })
             .passthrough(),
@@ -858,7 +868,12 @@ describe("createMcpRouter", () => {
       .parse(parseJsonRpcEvent(response.text));
 
     expect(parsedResponse.result.structuredContent).toEqual({
-      coverage: { observed_days: 2, requested_days: 2 },
+      coverage: {
+        requested_days: 2,
+        by_metric: {
+          hrv: { observed_days: 2, missing_days: [], missing_days_truncated_count: 0 },
+        },
+      },
       range: {
         end_date: "2026-05-19",
         granularity: "daily",

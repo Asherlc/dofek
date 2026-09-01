@@ -100,8 +100,15 @@ export const healthExplorerSnapshotSchema = z.object({
   series: z.array(healthExplorerSeriesSchema),
   summary: z.array(healthExplorerSummarySchema),
   coverage: z.object({
-    observed_days: z.number().int().nonnegative(),
     requested_days: z.number().int().positive(),
+    by_metric: z.record(
+      z.string(),
+      z.object({
+        observed_days: z.number().int().nonnegative(),
+        missing_days: z.array(dateSchema).max(30),
+        missing_days_truncated_count: z.number().int().nonnegative(),
+      }),
+    ),
   }),
 });
 
