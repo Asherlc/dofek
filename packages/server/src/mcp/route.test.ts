@@ -25,7 +25,9 @@ const toolTestMocks = vi.hoisted(() => {
     getAllProviders: vi.fn(),
     getConnectedProviderIds: vi.fn(),
     getLastSyncTimes: vi.fn(),
+    getLastSuccessfulSyncTimes: vi.fn(),
     getLatestErrors: vi.fn(),
+    getRecentLogsByProvider: vi.fn(),
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
@@ -116,7 +118,9 @@ vi.mock("../repositories/sync-repository.ts", () => ({
     return {
       getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
       getLastSyncTimes: toolTestMocks.getLastSyncTimes,
+      getLastSuccessfulSyncTimes: toolTestMocks.getLastSuccessfulSyncTimes,
       getLatestErrors: toolTestMocks.getLatestErrors,
+      getRecentLogsByProvider: toolTestMocks.getRecentLogsByProvider,
     };
   }),
 }));
@@ -342,7 +346,9 @@ describe("createMcpRouter", () => {
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
+    toolTestMocks.getLastSuccessfulSyncTimes.mockResolvedValue([]);
     toolTestMocks.getLatestErrors.mockResolvedValue([]);
+    toolTestMocks.getRecentLogsByProvider.mockResolvedValue(new Map());
     toolTestMocks.getProviderSyncQueue.mockReturnValue({
       add: toolTestMocks.queueAdd,
       getJob: vi.fn(),
@@ -1582,6 +1588,13 @@ describe("createMcpRouter", () => {
         lastSyncedAt: null,
         name: "Fitbit",
         needsReauth: false,
+        sync_health: {
+          consecutive_failures: 0,
+          last_attempt: null,
+          last_error: null,
+          last_success: null,
+          stale: true,
+        },
       },
       {
         authType: "oauth",
@@ -1591,6 +1604,7 @@ describe("createMcpRouter", () => {
         lastSyncedAt: null,
         name: "Strava",
         needsReauth: false,
+        sync_health: null,
       },
       {
         authType: "oauth",
@@ -1600,6 +1614,13 @@ describe("createMcpRouter", () => {
         lastSyncedAt: "2026-05-20T12:00:00.000Z",
         name: "Wahoo",
         needsReauth: true,
+        sync_health: {
+          consecutive_failures: 0,
+          last_attempt: null,
+          last_error: null,
+          last_success: null,
+          stale: true,
+        },
       },
     ]);
   });
@@ -1643,6 +1664,13 @@ describe("createMcpRouter", () => {
         lastSyncedAt: "2026-05-20T12:00:00.000Z",
         name: "Wahoo",
         needsReauth: false,
+        sync_health: {
+          consecutive_failures: 0,
+          last_attempt: null,
+          last_error: null,
+          last_success: null,
+          stale: true,
+        },
       },
     ]);
   });

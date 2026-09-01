@@ -103,6 +103,23 @@ const activityStreamChannelSchema = z.enum([
   "position",
 ]);
 const DEFAULT_ACTIVITY_STREAM_CHANNELS = activityStreamChannelSchema.options;
+const EXPECTED_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+
+function syncHealth(
+  lastSuccess: string | undefined,
+  logs: Array<{ status: string; syncedAt: string; errorMessage: string | null }>,
+) {
+  const latestAttempt = logs[0];
+  const consecutiveFailures = logs.findIndex((log) => log.status === "success");
+  return {
+    last_success: lastSuccess ?? null,
+    last_attempt: latestAttempt?.syncedAt ?? null,
+    last_error: latestAttempt?.status === "error" ? latestAttempt.errorMessage : null,
+    consecutive_failures: consecutiveFailures === -1 ? logs.length : consecutiveFailures,
+    stale:
+      lastSuccess == null || Date.now() - new Date(lastSuccess).getTime() > EXPECTED_SYNC_INTERVAL_MS * 3,
+  };
+}
 
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
 
@@ -785,10 +802,13 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       requireMcpScope(context.scopes, "providers:read");
       await ensureProvidersRegistered();
       const repository = new SyncRepository(context.db, context.userId);
-      const [connectedProviders, lastSyncs, latestErrors] = await Promise.all([
+      const [connectedProviders, lastSyncs, lastSuccessfulSyncs, latestErrors, recentLogs] =
+        await Promise.all([
         repository.getConnectedProviderIds(),
         repository.getLastSyncTimes(),
+        repository.getLastSuccessfulSyncTimes(),
         repository.getLatestErrors(),
+        repository.getRecentLogsByProvider(20),
       ]);
       const connectedProviderIds = new Set(
         connectedProviders.map((provider) => provider.providerId),
@@ -798,6 +818,9 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
       const lastSyncMap = new Map(
         lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
+      );
+      const lastSuccessfulSyncMap = new Map(
+        lastSuccessfulSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
       );
       const authErrorProviderIds = new Set(
         latestErrors
@@ -828,6 +851,10 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
             lastSyncedAt: model.lastSyncedAt,
             importOnly: model.importOnly,
             needsReauth: model.isConnected && authErrorProviderIds.has(model.id),
+            sync_health:
+              model.isConnected && !model.importOnly
+                ? syncHealth(lastSuccessfulSyncMap.get(model.id), recentLogs.get(model.id) ?? [])
+                : null,
           };
         });
       return jsonContent(providers);
