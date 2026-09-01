@@ -4,10 +4,10 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
-import type { Database, SyncDatabase } from "../db/index.ts";
 import { loadUserHomeTimezone } from "../db/home-timezone.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
+import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
 import { logSync } from "../db/sync-log.ts";
-import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
@@ -415,7 +415,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       }
       logger.info(`[worker] Starting ${provider.name}...`);
       const homeTimezone = await loadUserHomeTimezone(db, job.data.userId);
-      const result = await runWithTokenUser(job.data.userId, () =>
+      const result = await runWithProviderUserIngestContext(job.data.userId, { homeTimezone }, () =>
         provider.sync(
           new SyncRun({
             db,

@@ -16,6 +16,8 @@ describe("backfillRecordLocalTimeContext", () => {
         {
           id: "00000000-0000-4000-8000-000000000001",
           timezone: "  America/Los_Angeles  ",
+          local_time_source: "unknown",
+          home_timezone: null,
           started_at: "2026-03-08T09:30:00.000Z",
           ended_at: "2026-03-08T10:30:00.000Z",
         },
@@ -44,11 +46,42 @@ describe("backfillRecordLocalTimeContext", () => {
     expect(updateQuery.params).not.toContain("  America/Los_Angeles  ");
   });
 
+  it("replaces an unreliable fixed provider zone with the persisted home zone", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "00000000-0000-4000-8000-000000000003",
+          timezone: "Etc/GMT+4",
+          local_time_source: "provider_timezone",
+          home_timezone: "America/Los_Angeles",
+          started_at: "2026-09-01T14:55:54.000Z",
+          ended_at: "2026-09-01T15:25:54.000Z",
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 1 }])
+      .mockResolvedValueOnce([]);
+
+    await expect(
+      backfillRecordLocalTimeContext(
+        { execute },
+        { execute: true, batchSize: 10, maxBatches: 2, ...timeWindow },
+      ),
+    ).resolves.toEqual({ eligible: 1, skipped: 0, updated: 1 });
+
+    const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(updateQuery.params).toContain("America/Los_Angeles");
+    expect(updateQuery.params).toContain("user_home_timezone");
+    expect(updateQuery.params).not.toContain("Etc/GMT+4");
+  });
+
   it("is a bounded dry run and skips invalid stored timezones", async () => {
     const execute = vi.fn().mockResolvedValueOnce([
       {
         id: "00000000-0000-4000-8000-000000000002",
         timezone: "Not/A_Timezone",
+        local_time_source: "unknown",
+        home_timezone: null,
         started_at: "2026-03-08T09:30:00.000Z",
         ended_at: null,
       },

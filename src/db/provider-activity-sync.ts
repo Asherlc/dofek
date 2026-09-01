@@ -13,6 +13,7 @@ import {
   type ProviderActivityAbsenceReconciliation,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
+import { getProviderIngestContext } from "./provider-ingest-context.ts";
 import { activity } from "./schema/activity.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
@@ -104,7 +105,7 @@ function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
 ): { values: StoredActivityInsert; updateLocalTimeContext: boolean } {
-  const { activityType, homeTimezone, ...storedValues } = values;
+  const { activityType, homeTimezone: explicitHomeTimezone, ...storedValues } = values;
   const externalIdValues: StoredActivityInsert = {
     ...storedValues,
     canonicalType: activityType.canonicalType,
@@ -112,7 +113,50 @@ function normalizeProviderActivityInsert(
     modality: activityType.modality,
     externalId: normalizedExternalId,
   };
+  const normalizedHomeTimezone = (
+    explicitHomeTimezone ?? getProviderIngestContext()?.homeTimezone
+  )?.trim();
   if ((externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
+    const timezone = externalIdValues.timezone?.trim();
+    if (normalizedHomeTimezone) {
+      try {
+        const homeContext = resolveRecordLocalTimeContext({
+          startedAt: externalIdValues.startedAt,
+          endedAt: externalIdValues.endedAt,
+          timezone: normalizedHomeTimezone,
+          source: "user_home_timezone",
+        });
+        if (
+          externalIdValues.startUtcOffsetMinutes != null &&
+          homeContext.startUtcOffsetMinutes != null &&
+          Math.abs(externalIdValues.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) > 60
+        ) {
+          logger.warn(
+            `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone ?? "offset-only"} home_timezone=${normalizedHomeTimezone}`,
+          );
+        }
+        if (
+          externalIdValues.localTimeSource === "provider_timezone" &&
+          timezone &&
+          isFixedEtcGmtZone(timezone)
+        ) {
+          return {
+            values: {
+              ...externalIdValues,
+              timezone: homeContext.timezone,
+              startUtcOffsetMinutes: homeContext.startUtcOffsetMinutes,
+              endUtcOffsetMinutes: homeContext.endUtcOffsetMinutes,
+              localTimeSource: homeContext.source,
+            },
+            updateLocalTimeContext: true,
+          };
+        }
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { operation: "provider-activity-home-timezone-context" },
+        });
+      }
+    }
     return { values: externalIdValues, updateLocalTimeContext: true };
   }
 
@@ -136,7 +180,6 @@ function normalizeProviderActivityInsert(
       : { values: externalIdValues, updateLocalTimeContext: false };
   }
   try {
-    const normalizedHomeTimezone = homeTimezone?.trim();
     if (normalizedHomeTimezone) {
       const providerContext = resolveRecordLocalTimeContext({
         startedAt: externalIdValues.startedAt,

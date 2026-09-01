@@ -15,19 +15,28 @@ The context consists of:
   independently so a record that crosses a daylight-saving transition retains
   both clock offsets.
 - `local_time_source`: `provider_timezone`, `provider_offset`,
-  `device_timezone`, `device_offset`, or `unknown`.
+  `device_timezone`, `device_offset`, `user_home_timezone`, or `unknown`.
 
-`unknown` is deliberate. Ingestion must not substitute the current viewer,
-profile, server, or request timezone when the record did not carry trusted
-context. Clients render “Local time unavailable” rather than presenting a
-guessed clock time.
+`unknown` is deliberate. Ingestion never substitutes the current viewer,
+server, or request timezone when the record did not carry trusted context.
+For activity providers, a user-configured geographic home zone may replace a
+fixed `Etc/GMT` label because those labels retain only an offset and cannot
+model daylight-saving transitions. The source is then recorded honestly as
+`user_home_timezone`. Other provider and device zones remain authoritative;
+offset disagreements greater than 60 minutes are logged for investigation.
+The IANA database distinguishes location zones from fixed-offset zones and
+documents the reversed POSIX signs in the `Etc` area in its
+[theory file](https://data.iana.org/time-zones/theory.html).
 
 ## Historical activity backfill
 
-Migration `0064_record_local_time_context` is schema-only. Historical activity
-rows that already contain a provider-supplied IANA `timezone` can be populated
-after deploy with a separate bounded command. Sleep rows and activities without
-retained trusted context remain `unknown`.
+Migrations `0064_record_local_time_context` and
+`0101_user_home_timezone_context` are schema-only. Historical activity rows
+that already contain a provider-supplied IANA `timezone` can be populated after
+deploy with a separate bounded command. The command also repairs fixed
+`Etc/GMT` provider zones only when that user has already saved a valid
+`homeTimezone` setting. Sleep rows and activities without retained trusted
+context remain `unknown`.
 
 Start with a dry run over an explicit half-open UTC time window:
 
@@ -37,9 +46,10 @@ pnpm backfill:record-local-time -- \
   --end-at=2025-02-01T00:00:00.000Z
 ```
 
-The command scans at most 20 batches of 250 rows. Invalid stored zones are
-reported as skipped and are not rewritten. Choose explicit smaller bounds when
-operating under load:
+The command scans at most 20 batches of 250 rows. Invalid stored or configured
+zones are reported as skipped and are not rewritten. Confirm the affected user
+has saved the intended geographic `homeTimezone` before repairing fixed zones.
+Choose explicit smaller bounds when operating under load:
 
 ```bash
 pnpm backfill:record-local-time -- \
@@ -61,10 +71,10 @@ pnpm backfill:record-local-time -- \
 ```
 
 Repeat the dry run with the same time window. Advance `--start-at` and `--end-at`
-only when the updated count matches the expected valid candidates. The update is
-idempotent and resumable: it only writes rows whose source is still `unknown`,
+only when the updated count matches the expected valid candidates. The update
+is idempotent and resumable: it uses compare-and-set on each row's prior source,
 paginates eligible rows by ID within the required time window, and resolves the
-start and end offsets from the stored IANA zone independently.
+start and end offsets from the selected IANA zone independently.
 
 Stop if the skipped count is unexpected, database health degrades, or the
 updated count differs from the valid candidate count. Investigate invalid zones
