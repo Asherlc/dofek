@@ -11,11 +11,10 @@ import { styles } from "./styles.ts";
 
 export type AuthStatus = "connected" | "not_connected" | "expired";
 
-export interface ProviderSyncFreshness {
-  status: "unknown" | "current" | "overdue";
-  label: string;
-  description?: string;
-}
+export type ProviderSyncFreshness =
+  | { status: "unknown"; label: "Sync status unknown"; description: string }
+  | { status: "current"; label: "Sync current" }
+  | { status: "overdue"; label: "Sync overdue"; description: string };
 
 export interface Provider {
   id: string;

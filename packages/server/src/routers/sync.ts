@@ -54,11 +54,19 @@ const syncProviderRowOutputSchema = z.object({
   lastSyncedAt: z.string().nullable(),
   lastSuccessfulSyncAt: z.string().nullable(),
   syncFreshness: z
-    .object({
-      status: z.enum(["unknown", "current", "overdue"]),
-      label: z.string(),
-      description: z.string().optional(),
-    })
+    .discriminatedUnion("status", [
+      z.object({
+        status: z.literal("unknown"),
+        label: z.literal("Sync status unknown"),
+        description: z.string(),
+      }),
+      z.object({ status: z.literal("current"), label: z.literal("Sync current") }),
+      z.object({
+        status: z.literal("overdue"),
+        label: z.literal("Sync overdue"),
+        description: z.string(),
+      }),
+    ])
     .nullable(),
   importOnly: z.boolean(),
   pushOnly: z.boolean(),

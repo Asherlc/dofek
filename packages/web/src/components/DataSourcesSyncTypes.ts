@@ -17,11 +17,10 @@ export interface SyncLogEntry {
   authFailureReason: string | null;
 }
 
-export interface ProviderSyncFreshness {
-  status: "unknown" | "current" | "overdue";
-  label: string;
-  description?: string;
-}
+export type ProviderSyncFreshness =
+  | { status: "unknown"; label: "Sync status unknown"; description: string }
+  | { status: "current"; label: "Sync current" }
+  | { status: "overdue"; label: "Sync overdue"; description: string };
 
 /** Row returned by sync.providers — registered OAuth/import and push-only providers. */
 export interface SyncProviderSummary {
