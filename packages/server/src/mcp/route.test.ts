@@ -13,6 +13,7 @@ const toolTestMocks = vi.hoisted(() => {
     activityListRange: vi.fn(),
     activitySearch: vi.fn(),
     activityFindById: vi.fn(),
+    activityGetStream: vi.fn(),
     bodyListRange: vi.fn(),
     climbingActivityEntries: vi.fn(),
     dailyMetricsList: vi.fn(),
@@ -37,6 +38,7 @@ const toolTestMocks = vi.hoisted(() => {
     activityRepository: vi.fn(function vitestConstructor() {
       return {
         findById: mocks.activityFindById,
+        getStream: mocks.activityGetStream,
         list: mocks.activityList,
         listRange: mocks.activityListRange,
         search: mocks.activitySearch,
@@ -574,6 +576,15 @@ describe("createMcpRouter", () => {
       required: ["activity_id"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_activity_streams").inputSchema).toMatchObject({
+      properties: {
+        activity_id: { format: "uuid", type: "string" },
+        channels: { type: "array" },
+        downsample_to: { maximum: 2000, minimum: 1, type: "integer" },
+      },
+      required: ["activity_id"],
+      type: "object",
+    });
     expect(findListedTool(tools, "list_providers").inputSchema).toMatchObject({
       properties: {},
       type: "object",
@@ -592,6 +603,7 @@ describe("createMcpRouter", () => {
       "get_sleep_summary",
       "search_activities",
       "get_activity_details",
+      "get_activity_streams",
       "get_activity_summary",
       "get_finger_loading",
       "get_nutrition_summary",
@@ -1430,6 +1442,48 @@ describe("createMcpRouter", () => {
       strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
     });
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
+  });
+
+  it("returns a capped, channel-filtered activity stream", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000001";
+    toolTestMocks.activityGetStream.mockResolvedValue([
+      {
+        toDetail: () => ({
+          altitude: 30,
+          cadence: 90,
+          heartRate: 145,
+          lat: 37.8,
+          lng: -122.4,
+          power: 250,
+          recordedAt: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", {
+        activity_id: activityId,
+        channels: ["heart_rate", "position", "power"],
+        downsample_to: 750,
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      channels: ["heart_rate", "position", "power"],
+      points: [
+        {
+          heart_rate: 145,
+          latitude: 37.8,
+          longitude: -122.4,
+          power: 250,
+          recorded_at: "2026-08-30T10:00:00.000Z",
+        },
+      ],
+    });
+    expect(toolTestMocks.activityGetStream).toHaveBeenCalledWith(activityId, 750);
   });
   it("lists configured providers with connection and reauth state", async () => {
     authorizeMcpToken();
