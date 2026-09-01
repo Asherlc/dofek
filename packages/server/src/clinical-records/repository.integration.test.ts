@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensurePushProvider } from "../repositories/push-provider-repository.ts";
 import type { ClinicalRecordInput } from "./fhir.ts";
@@ -45,6 +45,13 @@ describe("ClinicalRecordsRepository (integration)", () => {
 
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  afterEach(async () => {
+    await context.db.execute(sql`
+      DELETE FROM fitness.clinical_record
+      WHERE user_id IN (${USER_A}, ${USER_B}, ${USER_C})
+    `);
   });
 
   it("isolates list and detail reads by the authenticated user", async () => {

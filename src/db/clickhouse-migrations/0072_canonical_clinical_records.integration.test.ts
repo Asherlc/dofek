@@ -13,6 +13,8 @@ describe("0072_canonical_clinical_records migration", () => {
   const suffix = randomUUID().replaceAll("-", "");
   const analyticsDatabase = `clinical_upgrade_analytics_${suffix}`;
   const rawDatabase = `clinical_upgrade_raw_${suffix}`;
+  const bootstrapAnalyticsDatabase = `clinical_bootstrap_analytics_${suffix}`;
+  const bootstrapRawDatabase = `clinical_bootstrap_raw_${suffix}`;
   let client: ClickHouseClient;
 
   beforeAll(async () => {
@@ -24,11 +26,11 @@ describe("0072_canonical_clinical_records migration", () => {
   afterAll(async () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${analyticsDatabase}` });
     await client?.command({ query: `DROP DATABASE IF EXISTS ${rawDatabase}` });
+    await client?.command({ query: `DROP DATABASE IF EXISTS ${bootstrapAnalyticsDatabase}` });
+    await client?.command({ query: `DROP DATABASE IF EXISTS ${bootstrapRawDatabase}` });
   });
 
   it("bootstraps the canonical raw clinical table before querying it", async () => {
-    const bootstrapAnalyticsDatabase = `clinical_bootstrap_analytics_${suffix}`;
-    const bootstrapRawDatabase = `clinical_bootstrap_raw_${suffix}`;
     await client.command({ query: `CREATE DATABASE ${bootstrapAnalyticsDatabase}` });
     await client.command({ query: `CREATE DATABASE ${bootstrapRawDatabase}` });
     await client.command({
@@ -55,9 +57,6 @@ describe("0072_canonical_clinical_records migration", () => {
       format: "JSONEachRow",
     });
     expect(await result.json()).toEqual([{ name: "clinical_record" }]);
-
-    await client.command({ query: `DROP DATABASE IF EXISTS ${bootstrapAnalyticsDatabase}` });
-    await client.command({ query: `DROP DATABASE IF EXISTS ${bootstrapRawDatabase}` });
   });
 
   it("upgrades a deployed legacy provider-stats table and queues canonical recounts", async () => {
