@@ -518,6 +518,7 @@ describe("createMcpRouter", () => {
       properties: {
         from: { format: "date", type: "string" },
         limit: { maximum: 25, minimum: 1, type: "integer" },
+        include: { type: "array" },
         query: { maxLength: 200, type: "string" },
         to: { format: "date", type: "string" },
       },
@@ -782,6 +783,29 @@ describe("createMcpRouter", () => {
       limit: 5,
       query: "cycling",
       startDate: "2026-05-10",
+    });
+  });
+
+  it("omits map previews from activity search unless requested", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activitySearch.mockResolvedValue({
+      items: [
+        {
+          location: { centroidLat: 37.8, centroidLng: -122.4, mapPreview: { tiles: ["tile"] } },
+          name: "Morning Ride",
+        },
+      ],
+      totalCount: 1,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", { to: "2026-05-18" }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      items: [{ location: { centroidLat: 37.8, centroidLng: -122.4 }, name: "Morning Ride" }],
+      totalCount: 1,
     });
   });
 

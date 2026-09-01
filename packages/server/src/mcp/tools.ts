@@ -479,10 +479,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         from: dateSchema.optional(),
         to: dateSchema.optional(),
         query: z.string().max(200).optional(),
+        include: z.array(z.literal("mapPreview")).optional(),
         limit: z.number().int().min(1).max(25).optional(),
       },
     },
-    async ({ from, to, query, limit }) => {
+    async ({ from, to, query, include, limit }) => {
       requireMcpScope(context.scopes, "activity:read");
       const endDate = to ?? localDateString(new Date(), context.timezone);
       const startDate = from ?? dateDaysBefore(endDate, 29);
@@ -500,7 +501,18 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         query,
         limit: limit ?? 10,
       });
-      return jsonContent(result);
+      if (include?.includes("mapPreview")) return jsonContent(result);
+      return jsonContent({
+        ...result,
+        items: result.items.map((item) => {
+          const location = item.location;
+          if (typeof location !== "object" || location === null || !("mapPreview" in location)) {
+            return item;
+          }
+          const { mapPreview: _mapPreview, ...locationWithoutPreview } = location;
+          return { ...item, location: locationWithoutPreview };
+        }),
+      });
     },
   );
 
