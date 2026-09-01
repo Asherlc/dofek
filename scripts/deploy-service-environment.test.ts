@@ -82,7 +82,11 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "ZOHO_DESK_REFRESH_TOKEN",
 ] as const;
 
-const WEB_ONLY_ENVIRONMENT_KEYS = ["GEMINI_API_KEY", "MISTRAL_API_KEY"] as const;
+const WEB_ONLY_ENVIRONMENT_KEYS = [
+  "GEMINI_API_KEY",
+  "MISTRAL_API_KEY",
+  "OPENAI_APPS_CHALLENGE_TOKEN",
+] as const;
 
 const CDC_ENVIRONMENT_KEYS = [
   "PEERDB_CDC_CLICKHOUSE_HOST",
@@ -262,6 +266,18 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     ).toThrow(
       "web deploy environment is missing required keys: METRIC_STREAM_TOPIC, REDPANDA_BROKERS",
     );
+  });
+
+  it("fails before web startup when the OpenAI Apps challenge token is missing", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.OPENAI_APPS_CHALLENGE_TOKEN;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("web deploy environment is missing required keys: OPENAI_APPS_CHALLENGE_TOKEN");
   });
 
   it("fails before web startup when transactional email configuration is incomplete", () => {
