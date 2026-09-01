@@ -24408,10 +24408,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [fresh job](https://github.com/Asherlc/dofek/actions/runs/33522549957/job/99905684606)
   showed the final completion timestamp was earlier than the request's
   real-clock-derived deadline, contrary to the test's fixed-date expectation.
+  With a fixed request timestamp, a second
+  [fresh job](https://github.com/Asherlc/dofek/actions/runs/33524297471/job/99911696271)
+  showed that the earlier status assertion still used the real clock and
+  therefore reported the request overdue.
 - **Fix / mitigation:** The rejection test now uses its own request, the
   lifecycle test explicitly claims the request it processes, and the shared
-  fixture uses an explicit request timestamp. No retry, timeout, or error
-  suppression was added.
+  fixture and pre-deadline status assertion use explicit timestamps. No retry,
+  timeout, or error suppression was added.
 - **Validation:** Biome passes for the revised integration test; confirm the
   fresh hosted integration shard passes before merging.
 - **Remaining risk / follow-up:** None after the hosted check passes.

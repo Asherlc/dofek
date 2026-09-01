@@ -600,7 +600,9 @@ describe("account erasure persistence (integration)", () => {
 
   it("exposes status only with the opaque bearer token", async () => {
     await expect(findAccountErasureStatus(context.db, "wrong-token")).resolves.toBeNull();
-    await expect(findAccountErasureStatus(context.db, statusToken)).resolves.toEqual(
+    await expect(
+      findAccountErasureStatus(context.db, statusToken, new Date("2026-08-02T12:00:00.000Z")),
+    ).resolves.toEqual(
       expect.objectContaining({
         retentionUntil: expect.any(String),
         id: requestId,
