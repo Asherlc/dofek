@@ -582,6 +582,10 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_strength_sessions").inputSchema).toMatchObject({
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_nutrition_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -630,6 +634,7 @@ describe("createMcpRouter", () => {
       "get_activity_summary",
       "get_finger_loading",
       "get_climbing_sessions",
+      "get_strength_sessions",
       "get_nutrition_summary",
       "get_body_metrics",
       "get_subjective_timeline",
@@ -812,6 +817,47 @@ describe("createMcpRouter", () => {
       "2026-07-10",
       ["climbing"],
     );
+  });
+
+  it("returns strength sessions with volume-load by muscle group", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: 110,
+        ended_at: "2026-07-09T20:00:00.000Z",
+        id: "strength-1",
+        name: "Upper Body",
+        started_at: "2026-07-09T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      {
+        toDetail: () => ({
+          exerciseName: "Pull-up",
+          muscleGroups: ["back"],
+          sets: [{ durationSeconds: null, reps: 5, weightKg: 20 }],
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_strength_sessions", {
+        end_date: "2026-07-10",
+        start_date: "2026-07-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      aggregates: { by_muscle_group: [{ muscle_group: "back", volume_load_kg: 100 }], volume_load_kg: 100 },
+      sessions: [
+        expect.objectContaining({
+          activity_id: "strength-1",
+          duration_minutes: 60,
+          volume_load_kg: 100,
+        }),
+      ],
+    });
   });
 
   it("searches activities and applies the query filter", async () => {
