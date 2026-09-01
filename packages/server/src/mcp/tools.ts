@@ -38,6 +38,7 @@ import {
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
+import { SupplementsRepository } from "../repositories/supplements-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
@@ -753,6 +754,22 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       assertDateRange(start_date, end_date);
       const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
       return jsonContent(await repository.timeline(start_date, end_date));
+    },
+  );
+
+  server.registerTool(
+    "get_supplements",
+    {
+      title: "Get Supplements",
+      description: "Return the authenticated user's current supplement definitions and nutrients.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {},
+    },
+    async () => {
+      requireMcpScope(context.scopes, "nutrition:read");
+      return jsonContent(
+        await new SupplementsRepository(context.db, context.userId, context.timezone).list(),
+      );
     },
   );
 

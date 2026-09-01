@@ -30,6 +30,7 @@ const toolTestMocks = vi.hoisted(() => {
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
     strengthExercises: vi.fn(),
+    supplementsList: vi.fn(),
     subjectiveTimeline: vi.fn(),
     withUserWriteFence: vi.fn(),
   };
@@ -101,6 +102,12 @@ vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
 vi.mock("../repositories/strength-repository.ts", () => ({
   StrengthRepository: vi.fn(function vitestConstructor() {
     return { getExercisesForActivity: toolTestMocks.strengthExercises };
+  }),
+}));
+
+vi.mock("../repositories/supplements-repository.ts", () => ({
+  SupplementsRepository: vi.fn(function vitestConstructor() {
+    return { list: toolTestMocks.supplementsList };
   }),
 }));
 
@@ -589,6 +596,10 @@ describe("createMcpRouter", () => {
       properties: {},
       type: "object",
     });
+    expect(findListedTool(tools, "get_supplements").inputSchema).toMatchObject({
+      properties: {},
+      type: "object",
+    });
     expect(findListedTool(tools, "start_provider_sync").inputSchema).toMatchObject({
       properties: {
         providerId: { minLength: 1, type: "string" },
@@ -609,6 +620,7 @@ describe("createMcpRouter", () => {
       "get_nutrition_summary",
       "get_body_metrics",
       "get_subjective_timeline",
+      "get_supplements",
       "list_providers",
       "render_health_explorer",
     ]) {
@@ -1442,6 +1454,22 @@ describe("createMcpRouter", () => {
       strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
     });
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
+  });
+
+  it("returns the authenticated user's supplement definitions", async () => {
+    authorizeMcpToken();
+    toolTestMocks.supplementsList.mockResolvedValue([
+      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_supplements", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
+    ]);
   });
 
   it("returns a capped, channel-filtered activity stream", async () => {
