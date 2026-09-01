@@ -1,5 +1,6 @@
 import type { AddressInfo } from "node:net";
 import express from "express";
+import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
@@ -784,6 +785,35 @@ describe("createMcpRouter", () => {
       query: "cycling",
       startDate: "2026-05-10",
     });
+  });
+
+  it("reports search activity failures with safe tool context", async () => {
+    authorizeMcpToken();
+    const error = new Error("database search failed");
+    toolTestMocks.activitySearch.mockRejectedValue(error);
+
+    await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", {
+        from: "2026-05-10",
+        query: "private activity text",
+        to: "2026-05-18",
+      }),
+    });
+
+    expect(captureException).toHaveBeenCalledWith(error, {
+      extra: {
+        endDate: "2026-05-18",
+        hasQuery: true,
+        limit: 10,
+        startDate: "2026-05-10",
+      },
+      tags: { mcp_tool: "search_activities" },
+    });
+    expect(captureException).not.toHaveBeenCalledWith(
+      error,
+      expect.objectContaining({ extra: expect.objectContaining({ query: expect.anything() }) }),
+    );
   });
 
   it("omits map previews from activity search unless requested", async () => {

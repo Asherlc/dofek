@@ -11,6 +11,7 @@ import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
+import { captureException } from "dofek/lib/error-reporting";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
@@ -495,12 +496,22 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         { kind: "full", paid: true, reason: "paid_grant" },
         context.sensorStore,
       );
-      const result = await repository.search({
-        startDate,
-        endDate,
-        query,
-        limit: limit ?? 10,
-      });
+      const resultLimit = limit ?? 10;
+      let result: Awaited<ReturnType<ActivityRepository["search"]>>;
+      try {
+        result = await repository.search({
+          startDate,
+          endDate,
+          query,
+          limit: resultLimit,
+        });
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { mcp_tool: "search_activities" },
+          extra: { startDate, endDate, hasQuery: query !== undefined, limit: resultLimit },
+        });
+        throw error;
+      }
       if (include?.includes("mapPreview")) return jsonContent(result);
       return jsonContent({
         ...result,
