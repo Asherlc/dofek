@@ -41,7 +41,7 @@ describe("inferImportProviderFromFile", () => {
 });
 
 describe("importSharedFile", () => {
-  it("imports a shared Strong CSV when Expo normalizes its Inbox URI", async () => {
+  it("imports a shared Strong CSV when its resolved URI differs", async () => {
     const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
     const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
     const file: UploadableMobileFile & { text(): Promise<string> } = {
