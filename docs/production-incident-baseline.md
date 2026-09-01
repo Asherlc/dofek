@@ -24472,3 +24472,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   backup into an isolated target, determine whether null-raw legacy records
   need canonical repair, and choose a migration-lineage plan for fresh legacy
   databases that may contain cross-table external-ID collisions.
+
+## 2026-09-01 — ChatGPT CIMD legacy authentication preference rejected
+
+- **Status:** Fixed in source; deployment validation is pending.
+- **Symptoms / user impact:** ChatGPT could not begin the Dofek MCP OAuth flow
+  and received `invalid_client`, preventing users from connecting their Dofek
+  account through ChatGPT.
+- **Evidence / root cause:** The CIMD parser rejected ChatGPT’s legacy singular
+  `token_endpoint_auth_method: "private_key_jwt"` before reading its plural
+  `token_endpoint_auth_methods_supported: ["none", "private_key_jwt"]` list.
+  Dofek advertises and implements only `none`, so the parser rejected a client
+  that offered a supported public-client method. OpenAI documents that its CIMD
+  transition treats the plural field as available capabilities and the singular
+  field as a legacy preference. [OpenAI client registration guidance](https://developers.openai.com/plugins/build/auth/#client-registration)
+- **Direct fix:** Select `none` from the CIMD plural method intersection and
+  normalize the resolved SDK client to that method; retain the pre-existing
+  singular-field behavior when plural metadata is absent. Expected CIMD
+  rejections now emit only the client host and a stable reason, without sending
+  an exception to Sentry. This preserves the IETF CIMD draft’s URL-hosted
+  metadata and client-authentication model. [IETF Client ID Metadata Document](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/)
+- **Validation:** The focused CIMD metadata unit suite passes 30 tests,
+  including the real ChatGPT metadata shape, an unsupported-list rejection,
+  and sanitized rejection logging.
+- **Remaining risk / follow-up:** Deploy the fix and complete a real ChatGPT
+  OAuth connection. Dofek intentionally continues to reject CIMD clients that
+  offer no supported method and does not implement `private_key_jwt`.

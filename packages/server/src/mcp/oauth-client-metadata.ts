@@ -6,6 +6,7 @@ import {
   OAuthClientMetadataSchema,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import ipaddr from "ipaddr.js";
+import { logger } from "../logger.ts";
 import { isAllowedMcpOAuthRedirectUri } from "./oauth-client-store.ts";
 
 const CIMD_CACHE_MAX_AGE_MS = 86_400_000;
@@ -13,11 +14,61 @@ const CIMD_DEFAULT_CACHE_AGE_MS = 300_000;
 const CIMD_FETCH_TIMEOUT_MS = 5_000;
 const CIMD_MAX_RESPONSE_BYTES = 65_536;
 const CIMD_CACHE_MAX_ENTRIES = 100;
+const CIMD_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = ["none"] as const;
 
-class CimdMetadataError extends Error {}
+type CimdTokenEndpointAuthMethod = (typeof CIMD_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS)[number];
+
+class CimdMetadataError extends Error {
+  constructor(
+    message: string,
+    readonly reason = "metadata_rejected",
+  ) {
+    super(message);
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSupportedCimdTokenEndpointAuthMethod(
+  value: unknown,
+): value is CimdTokenEndpointAuthMethod {
+  return CIMD_SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.some((method) => method === value);
+}
+
+function selectCimdTokenEndpointAuthMethod(
+  metadata: Record<string, unknown>,
+): CimdTokenEndpointAuthMethod | undefined {
+  const supportedMethods = metadata.token_endpoint_auth_methods_supported;
+  if (supportedMethods !== undefined) {
+    const selectedMethod = Array.isArray(supportedMethods)
+      ? supportedMethods.find(isSupportedCimdTokenEndpointAuthMethod)
+      : undefined;
+    if (!selectedMethod) {
+      throw new CimdMetadataError(
+        "CIMD client has no supported token endpoint authentication method",
+        "no_supported_token_endpoint_auth_method",
+      );
+    }
+    return selectedMethod;
+  }
+
+  if (
+    metadata.token_endpoint_auth_method !== undefined &&
+    metadata.token_endpoint_auth_method !== "none"
+  ) {
+    throw new CimdMetadataError("CIMD clients must use token_endpoint_auth_method none");
+  }
+  return undefined;
+}
+
+function sanitizeCimdClientHost(clientId: string): string {
+  try {
+    return new URL(clientId).hostname;
+  } catch {
+    return "invalid";
+  }
 }
 
 export function isCimdClientId(clientId: string): boolean {
@@ -146,14 +197,12 @@ export function parseCimdClientMetadata(
     throw new CimdMetadataError("CIMD client_id must exactly match the requested URL");
   }
   if (value.client_secret !== undefined) {
-    throw new CimdMetadataError("CIMD clients must not include a client_secret");
+    throw new CimdMetadataError(
+      "CIMD clients must not include a client_secret",
+      "client_secret_not_allowed",
+    );
   }
-  if (
-    value.token_endpoint_auth_method !== undefined &&
-    value.token_endpoint_auth_method !== "none"
-  ) {
-    throw new CimdMetadataError("CIMD clients must use token_endpoint_auth_method none");
-  }
+  const tokenEndpointAuthMethod = selectCimdTokenEndpointAuthMethod(value);
 
   try {
     const metadata = OAuthClientMetadataSchema.parse(value);
@@ -165,7 +214,11 @@ export function parseCimdClientMetadata(
         throw new CimdMetadataError("CIMD client has an invalid redirect_uri");
       }
     }
-    return OAuthClientInformationFullSchema.parse({ ...metadata, client_id: clientId });
+    return OAuthClientInformationFullSchema.parse({
+      ...metadata,
+      client_id: clientId,
+      ...(tokenEndpointAuthMethod && { token_endpoint_auth_method: tokenEndpointAuthMethod }),
+    });
   } catch {
     throw new CimdMetadataError("CIMD metadata does not match the OAuth client schema");
   }
@@ -192,7 +245,12 @@ export class McpOAuthClientMetadataResolver {
       this.#cache.set(clientId, { client, expiresAt: now + cacheAgeMs });
       return client;
     } catch (error) {
-      if (error instanceof CimdMetadataError) return undefined;
+      if (error instanceof CimdMetadataError) {
+        logger.warn(
+          `[mcp] CIMD metadata rejected clientHost=${sanitizeCimdClientHost(clientId)} reason=${error.reason}`,
+        );
+        return undefined;
+      }
       throw error;
     }
   }
