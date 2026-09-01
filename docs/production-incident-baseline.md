@@ -24297,3 +24297,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The Podfile-plugin regression test passes, as do mobile
   typecheck and Biome.
 - **Remaining risk / follow-up:** Confirm the rerun iOS archive passes.
+
+## 2026-09-01 — Dependabot CodeQL-action upgrades used mixed action releases
+
+- **Status:** Fixed in source; fresh hosted CI validation is pending.
+- **Symptoms / impact:** Dependabot PRs #2564, #2566, and #2569 each failed
+  CodeQL analysis and could not merge. No production impact occurred.
+- **Evidence / root cause:** The failed `github/codeql-action/autobuild` step
+  reported `Loaded a configuration file for version '4.37.7', but running
+  version '4.37.8'`. Each PR had upgraded just one of `init`, `autobuild`, and
+  `analyze`, while CodeQL requires them to share a release version. The failed
+  [CodeQL job](https://github.com/Asherlc/dofek/actions/runs/33315318029/job/99267540113)
+  contains the first fatal diagnostic.
+- **Fix / mitigation:** Updated the three action references atomically to
+  4.37.8 on every affected Dependabot branch. No rerun-only mitigation,
+  timeout, or error suppression was added.
+- **Validation:** `actionlint` validates the workflow locally; confirm each
+  new hosted CodeQL run passes before merging.
+- **Remaining risk / follow-up:** Group coupled CodeQL action updates in
+  Dependabot so future releases remain atomic.
