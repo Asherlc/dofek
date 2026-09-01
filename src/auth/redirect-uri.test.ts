@@ -43,7 +43,6 @@ describe("getOAuthRedirectUri", () => {
 
   it("falls back to default production URI when no host and no env vars", () => {
     delete process.env.OAUTH_REDIRECT_URI;
-    delete process.env.OAUTH_REDIRECT_URI;
     expect(getOAuthRedirectUri()).toBe("https://dofek.fit/callback");
   });
 });
