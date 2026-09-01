@@ -57,9 +57,9 @@ describe("parseCimdClientMetadata", () => {
         "--experimental-strip-types",
         "--input-type=module",
         "--eval",
-        "await import('./packages/server/src/mcp/oauth-client-metadata.ts')",
+        "await import('./oauth-client-metadata.ts')",
       ],
-      { cwd: process.cwd(), encoding: "utf8" },
+      { cwd: new URL(".", import.meta.url), encoding: "utf8" },
     );
 
     expect(result.status, result.stderr).toBe(0);
