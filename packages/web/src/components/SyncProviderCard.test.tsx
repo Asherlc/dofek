@@ -36,7 +36,6 @@ function renderProvider({
     syncFreshness: {
       status: "current",
       label: "Sync current",
-      description: "The last successful sync completed within the expected cadence.",
     },
     authorized: true,
     description: null,
@@ -206,8 +205,8 @@ describe("SyncProviderCard", () => {
 
     expect(screen.getByText("Sync current")).not.toBeNull();
     expect(
-      screen.getByText("The last successful sync completed within the expected cadence."),
-    ).not.toBeNull();
+      screen.queryByText("The last successful sync completed within the expected cadence."),
+    ).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

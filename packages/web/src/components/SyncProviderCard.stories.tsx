@@ -51,7 +51,6 @@ const meta = {
       syncFreshness: {
         status: "current",
         label: "Sync current",
-        description: "The last successful sync completed within the expected cadence.",
       },
       authorized: true,
       description: null,

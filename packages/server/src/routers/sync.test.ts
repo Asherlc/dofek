@@ -546,7 +546,6 @@ describe("syncRouter", () => {
           syncFreshness: {
             status: "current",
             label: "Sync current",
-            description: "The last successful sync completed within the expected cadence.",
           },
         });
       } finally {

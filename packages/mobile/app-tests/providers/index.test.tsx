@@ -1157,7 +1157,6 @@ describe("ProvidersScreen", () => {
           syncFreshness: {
             status: "current",
             label: "Sync current",
-            description: "The last successful sync completed within the expected cadence.",
           },
           importOnly: false,
           pushOnly: false,
@@ -1182,8 +1181,8 @@ describe("ProvidersScreen", () => {
     expect(wahooCard.getByText("Sync current")).toBeTruthy();
     expect(wahooCard.getByText(/Last successful sync:/)).toBeTruthy();
     expect(
-      wahooCard.getByText("The last successful sync completed within the expected cadence."),
-    ).toBeTruthy();
+      wahooCard.queryByText("The last successful sync completed within the expected cadence."),
+    ).toBeNull();
   });
 
   it("does not render Sync link for disconnected providers", async () => {

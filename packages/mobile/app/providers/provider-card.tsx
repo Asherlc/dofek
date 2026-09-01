@@ -11,11 +11,10 @@ import { styles } from "./styles.ts";
 
 export type AuthStatus = "connected" | "not_connected" | "expired";
 
-export interface ProviderSyncFreshness {
-  status: "unknown" | "current" | "overdue";
-  label: string;
-  description: string;
-}
+export type ProviderSyncFreshness =
+  | { status: "unknown"; label: "Sync status unknown"; description: string }
+  | { status: "current"; label: "Sync current" }
+  | { status: "overdue"; label: "Sync overdue"; description: string };
 
 export interface Provider {
   id: string;
@@ -220,7 +219,9 @@ export function ProviderCard({
           {syncFreshness ? (
             <View accessibilityRole={syncFreshness.status === "overdue" ? "alert" : undefined}>
               <Text style={styles.cardMetaText}>{syncFreshness.label}</Text>
-              <Text style={styles.cardMetaText}>{syncFreshness.description}</Text>
+              {syncFreshness.status !== "current" ? (
+                <Text style={styles.cardMetaText}>{syncFreshness.description}</Text>
+              ) : null}
             </View>
           ) : null}
           {canRunManualSync &&
