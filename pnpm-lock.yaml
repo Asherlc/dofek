@@ -413,7 +413,7 @@ importers:
         version: link:../mcp-contracts
       '@modelcontextprotocol/ext-apps':
         specifier: 1.7.5
-        version: 1.7.5(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.3)(react@19.2.3)(zod@4.4.3)
+        version: 1.7.5(@modelcontextprotocol/sdk@1.30.0)(react-dom@19.2.3)(react@19.2.3)(zod@4.4.3)
       '@sentry/react':
         specifier: 10.72.0
         version: 10.72.0(react@19.2.3)
@@ -797,10 +797,10 @@ importers:
         version: link:../zones
       '@modelcontextprotocol/ext-apps':
         specifier: 1.7.5
-        version: 1.7.5(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.3)(react@19.2.3)(zod@4.4.3)
+        version: 1.7.5(@modelcontextprotocol/sdk@1.30.0)(react-dom@19.2.3)(react@19.2.3)(zod@4.4.3)
       '@modelcontextprotocol/sdk':
-        specifier: 1.29.0
-        version: 1.29.0(supports-color@11.0.0)(zod@4.4.3)
+        specifier: 1.30.0
+        version: 1.30.0(supports-color@11.0.0)(zod@4.4.3)
       '@opentelemetry/api':
         specifier: 1.9.1
         version: 1.9.1
@@ -840,6 +840,9 @@ importers:
       express-rate-limit:
         specifier: 8.6.1
         version: 8.6.1(express@5.2.1)(supports-color@11.0.0)
+      ipaddr.js:
+        specifier: 2.5.0
+        version: 2.5.0
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
@@ -3714,8 +3717,8 @@ packages:
       react-dom:
         optional: true
 
-  '@modelcontextprotocol/sdk@1.29.0':
-    resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
+  '@modelcontextprotocol/sdk@1.30.0':
+    resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -10771,10 +10774,6 @@ packages:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
 
-  eventsource-parser@3.0.6:
-    resolution: {integrity: sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==}
-    engines: {node: '>=18.0.0'}
-
   eventsource-parser@3.1.0:
     resolution: {integrity: sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg==}
     engines: {node: '>=18.0.0'}
@@ -11997,6 +11996,10 @@ packages:
   ipaddr.js@1.9.1:
     resolution: {integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==}
     engines: {node: '>= 0.10'}
+
+  ipaddr.js@2.5.0:
+    resolution: {integrity: sha512-aq+t5NAc+cS6rZQQVWC2x98CPqGtKKTMDd4Gaodv0wShnItdKg/51djkGJ1hqH+Oy0ivDftCbSLCQob8zso01w==}
+    engines: {node: '>= 10'}
 
   is-array-buffer@3.0.5:
     resolution: {integrity: sha512-DDfANUiiG2wC1qawP66qlTugJeL5HyzMpfr8lLK+jMQirGzNod0B12cFB/9q838Ru27sBwfw78/rdoU7RERz6A==}
@@ -16728,7 +16731,7 @@ snapshots:
     dependencies:
       '@ai-sdk/provider': 3.0.8
       '@standard-schema/spec': 1.1.0
-      eventsource-parser: 3.0.6
+      eventsource-parser: 3.1.0
       zod: 4.4.3
 
   '@ai-sdk/provider-utils@5.0.18(zod@4.4.3)':
@@ -19651,7 +19654,7 @@ snapshots:
       '@jest/schemas': 29.6.3
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 26.1.1
+      '@types/node': 26.1.2
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -19703,16 +19706,16 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@modelcontextprotocol/ext-apps@1.7.5(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.3)(react@19.2.3)(zod@4.4.3)':
+  '@modelcontextprotocol/ext-apps@1.7.5(@modelcontextprotocol/sdk@1.30.0)(react-dom@19.2.3)(react@19.2.3)(zod@4.4.3)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(supports-color@11.0.0)(zod@4.4.3)
+      '@modelcontextprotocol/sdk': 1.30.0(supports-color@11.0.0)(zod@4.4.3)
       '@standard-schema/spec': 1.1.0
       zod: 4.4.3
     optionalDependencies:
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
 
-  '@modelcontextprotocol/sdk@1.29.0(supports-color@11.0.0)(zod@4.4.3)':
+  '@modelcontextprotocol/sdk@1.30.0(supports-color@11.0.0)(zod@4.4.3)':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.25)
       ajv: 8.20.0
@@ -21901,8 +21904,8 @@ snapshots:
     dependencies:
       '@react-native/js-polyfills': 0.86.3
       '@react-native/metro-babel-transformer': 0.86.3(@babel/core@7.29.7)(supports-color@11.0.0)
-      metro-config: 0.84.4(supports-color@11.0.0)
-      metro-runtime: 0.84.4
+      metro-config: 0.84.5(supports-color@11.0.0)
+      metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
       - bufferutil
@@ -25666,7 +25669,7 @@ snapshots:
   '@types/vinyl@2.0.12':
     dependencies:
       '@types/expect': 1.20.4
-      '@types/node': 26.1.1
+      '@types/node': 26.1.2
 
   '@types/yargs-parser@21.0.3': {}
 
@@ -28025,8 +28028,6 @@ snapshots:
 
   events@3.3.0: {}
 
-  eventsource-parser@3.0.6: {}
-
   eventsource-parser@3.1.0: {}
 
   eventsource@3.0.7:
@@ -29514,6 +29515,8 @@ snapshots:
 
   ipaddr.js@1.9.1: {}
 
+  ipaddr.js@2.5.0: {}
+
   is-array-buffer@3.0.5:
     dependencies:
       call-bind: 1.0.9
@@ -29836,7 +29839,7 @@ snapshots:
   jest-util@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 26.1.1
+      '@types/node': 26.1.2
       chalk: 4.1.2
       ci-info: 3.9.0
       graceful-fs: 4.2.11
@@ -29853,7 +29856,7 @@ snapshots:
 
   jest-worker@29.7.0:
     dependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.1.2
       jest-util: 29.7.0
       merge-stream: 2.0.0
       supports-color: 8.1.1
