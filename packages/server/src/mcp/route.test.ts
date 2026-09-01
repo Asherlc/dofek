@@ -545,7 +545,13 @@ describe("createMcpRouter", () => {
       properties: {
         canonical_types: { type: "array" },
         group_by: {
-          enum: ["canonical_type", "week", "canonical_type_and_week"],
+          enum: [
+            "canonical_type",
+            "week",
+            "canonical_type_and_week",
+            "canonical_type_and_modality",
+            "canonical_type_and_purpose",
+          ],
           type: "string",
         },
       },
@@ -773,24 +779,38 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      {
-        metrics: {
-          hrv: { avg: 40, max: 40, min: 40 },
-          resting_hr: { avg: 57, max: 57, min: 57 },
-          steps: { avg: 6_000, max: 6_000, min: 6_000 },
-        },
-        week: "2026-W20",
+    expect(parseToolCallText(response.text)).toMatchObject({
+      range: {
+        start_date: "2026-05-18",
+        end_date: "2026-05-19",
+        granularity: "weekly",
+        timezone: "UTC",
       },
-      {
-        metrics: {
-          hrv: { avg: 55, max: 60, min: 50 },
-          resting_hr: { avg: 54, max: 55, min: 53 },
-          steps: { avg: 9_000, max: 10_000, min: 8_000 },
-        },
-        week: "2026-W21",
+      requested_metrics: ["hrv", "resting_hr", "steps"],
+      diagnostics: {
+        metrics_with_no_data: [],
+        range_clamped: false,
+        earliest_available: null,
       },
-    ]);
+      series: [
+        {
+          metrics: {
+            hrv: { avg: 40, max: 40, min: 40 },
+            resting_hr: { avg: 57, max: 57, min: 57 },
+            steps: { avg: 6_000, max: 6_000, min: 6_000 },
+          },
+          week: "2026-W20",
+        },
+        {
+          metrics: {
+            hrv: { avg: 55, max: 60, min: 50 },
+            resting_hr: { avg: 54, max: 55, min: 53 },
+            steps: { avg: 9_000, max: 10_000, min: 8_000 },
+          },
+          week: "2026-W21",
+        },
+      ],
+    });
     expect(toolTestMocks.dailyMetricsListRange).toHaveBeenCalledWith(
       "2026-05-18",
       "2026-05-19",
@@ -798,7 +818,7 @@ describe("createMcpRouter", () => {
     );
   });
 
-  it("returns default daily health trends and omits unavailable metrics", async () => {
+  it("returns default daily health trends with diagnostics for unavailable metrics", async () => {
     authorizeMcpToken();
     const sensorStore = makeMockSensorStore();
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([
@@ -815,10 +835,32 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      { date: "2026-05-18", metrics: { hrv: { avg: 50, max: 50, min: 50 } } },
-      { date: "2026-05-19", metrics: { steps: { avg: 10_000, max: 10_000, min: 10_000 } } },
-    ]);
+    expect(parseToolCallText(response.text)).toMatchObject({
+      range: {
+        start_date: "2026-05-18",
+        end_date: "2026-05-19",
+        granularity: "daily",
+        timezone: "America/Los_Angeles",
+      },
+      diagnostics: {
+        metrics_with_no_data: [
+          "resting_hr",
+          "spo2",
+          "respiratory_rate",
+          "sleep_efficiency",
+          "skin_temp",
+          "distance_km",
+          "exercise_minutes",
+          "flights_climbed",
+        ],
+        range_clamped: false,
+        earliest_available: "2026-05-18",
+      },
+      series: [
+        { date: "2026-05-18", metrics: { hrv: { avg: 50, max: 50, min: 50 } } },
+        { date: "2026-05-19", metrics: { steps: { avg: 10_000, max: 10_000, min: 10_000 } } },
+      ],
+    });
     expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
       rhrEndDate: "2026-05-19",
       rhrWindowStart: "2026-05-17",
@@ -946,48 +988,50 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      {
-        date: "2026-05-19",
-        metrics: {
-          hrv: {
-            avg: 72,
-            max: 72,
-            min: 72,
-            baseline_relative: expect.objectContaining({
-              baseline: {
-                coverage: 0.8,
-                mean: 60,
-                sampleCount: 24,
-                standardDeviation: 6,
-                windowDays: 30,
-                zScore: 2,
-              },
-              comparison: expect.objectContaining({
-                delta: 5,
-                direction: "increasing",
+    expect(parseToolCallText(response.text)).toMatchObject({
+      series: [
+        {
+          date: "2026-05-19",
+          metrics: {
+            hrv: {
+              avg: 72,
+              max: 72,
+              min: 72,
+              baseline_relative: expect.objectContaining({
+                baseline: {
+                  coverage: 0.8,
+                  mean: 60,
+                  sampleCount: 24,
+                  standardDeviation: 6,
+                  windowDays: 30,
+                  zScore: 2,
+                },
+                comparison: expect.objectContaining({
+                  delta: 5,
+                  direction: "increasing",
+                }),
               }),
-            }),
-          },
-          resting_hr: {
-            avg: 48,
-            max: 48,
-            min: 48,
-            baseline_relative: expect.objectContaining({
-              baseline: expect.objectContaining({ mean: 52, zScore: -2 }),
-            }),
-          },
-          sleep_efficiency: {
-            avg: 90,
-            max: 90,
-            min: 90,
-            baseline_relative: expect.objectContaining({
-              baseline: expect.objectContaining({ mean: 85, zScore: 2 }),
-            }),
+            },
+            resting_hr: {
+              avg: 48,
+              max: 48,
+              min: 48,
+              baseline_relative: expect.objectContaining({
+                baseline: expect.objectContaining({ mean: 52, zScore: -2 }),
+              }),
+            },
+            sleep_efficiency: {
+              avg: 90,
+              max: 90,
+              min: 90,
+              baseline_relative: expect.objectContaining({
+                baseline: expect.objectContaining({ mean: 85, zScore: 2 }),
+              }),
+            },
           },
         },
-      },
-    ]);
+      ],
+    });
   });
 
   it("rejects reversed longitudinal date ranges", async () => {

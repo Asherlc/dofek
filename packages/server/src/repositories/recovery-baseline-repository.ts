@@ -88,6 +88,15 @@ export const dailyRecoveryBaselineSchema = z.object({
 
 export type DailyRecoveryBaseline = z.infer<typeof dailyRecoveryBaselineSchema>;
 
+const firstObservedDatesSchema = z.object({
+  hrv: dateStringSchema.nullable(),
+  resting_hr: dateStringSchema.nullable(),
+  respiratory_rate: dateStringSchema.nullable(),
+  sleep_efficiency: dateStringSchema.nullable(),
+});
+
+export type RecoveryMetricCoverageKey = keyof z.infer<typeof firstObservedDatesSchema>;
+
 const recoveryMetricOrder = [
   "hrv",
   "resting_heart_rate",
@@ -217,6 +226,23 @@ export class RecoveryBaselineRepository {
         metrics: buildMetrics(row),
       }),
     );
+  }
+
+  /** First observed date for each recovery metric, for explicit no-data diagnostics. */
+  async firstObservedDates(): Promise<Partial<Record<RecoveryMetricCoverageKey, string>>> {
+    const rows = await this.#sensorStore.query(
+      firstObservedDatesSchema,
+      `SELECT
+        nullIf(toString(minIf(date, hrv IS NOT NULL)), '1970-01-01') AS hrv,
+        nullIf(toString(minIf(date, resting_hr IS NOT NULL)), '1970-01-01') AS resting_hr,
+        nullIf(toString(minIf(date, respiratory_rate IS NOT NULL)), '1970-01-01') AS respiratory_rate,
+        nullIf(toString(minIf(date, efficiency_pct IS NOT NULL)), '1970-01-01') AS sleep_efficiency
+      FROM analytics.daily_recovery FINAL
+      WHERE user_id = {userId:UUID}
+        AND is_deleted = 0`,
+      { userId: this.#userId },
+    );
+    return rows[0] ?? {};
   }
 
   async latestMetrics(

@@ -92,6 +92,33 @@ describe("RecoveryBaselineRepository", () => {
     expect(query).toContain("recovery.date <= toDate({endDate:String})");
   });
 
+  it("returns first observed dates for recovery metrics", async () => {
+    const sensorStore = {
+      query: vi.fn().mockResolvedValue([
+        {
+          hrv: "2026-03-09",
+          resting_hr: "2026-03-10",
+          respiratory_rate: null,
+          sleep_efficiency: "2026-03-09",
+        },
+      ]),
+    };
+    const repository = new RecoveryBaselineRepository(
+      "00000000-0000-4000-8000-000000000001",
+      sensorStore,
+    );
+
+    await expect(repository.firstObservedDates()).resolves.toEqual({
+      hrv: "2026-03-09",
+      resting_hr: "2026-03-10",
+      respiratory_rate: null,
+      sleep_efficiency: "2026-03-09",
+    });
+    const query = sensorStore.query.mock.calls[0]?.[1];
+    expect(query).toContain("minIf(date, resting_hr IS NOT NULL)");
+    expect(query).toContain("nullIf");
+  });
+
   it("constrains recovery rows to a limited access window", async () => {
     const sensorStore = { query: vi.fn().mockResolvedValue([]) };
     const repository = new RecoveryBaselineRepository(

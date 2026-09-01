@@ -83,6 +83,15 @@ const recoveryMetricKeys: Partial<
   sleep_efficiency: "sleep_efficiency",
 };
 
+const recoveryCoverageMetricKeys: Partial<
+  Record<HealthMetric, "hrv" | "resting_hr" | "respiratory_rate" | "sleep_efficiency">
+> = {
+  hrv: "hrv",
+  resting_hr: "resting_hr",
+  respiratory_rate: "respiratory_rate",
+  sleep_efficiency: "sleep_efficiency",
+};
+
 const activityMcpRowSchema = z.object({
   canonical_type: z.string(),
   provider_type: z.string().optional().default(""),
@@ -228,6 +237,61 @@ async function listHealthTrends(
   ]);
   const rows = await repository.listRange(input.start_date, input.end_date, restingHeartRateCte);
   return healthTrends(rows, baselineRows, input.metrics, input.granularity);
+}
+
+async function healthTrendsResponse(
+  context: DofekMcpContext,
+  series: HealthTrendRow[],
+  input: HealthExplorerInput,
+  timezone: string,
+): Promise<ReturnType<typeof healthTrendsEnvelope>> {
+  if (!context.sensorStore) {
+    throw new Error("get_health_trends requires the ClickHouse analytics store");
+  }
+  const firstRecoveryDates = await new RecoveryBaselineRepository(
+    context.userId,
+    context.sensorStore,
+  ).firstObservedDates();
+  const firstAvailableDates = input.metrics.flatMap((metric) => {
+    const recoveryMetric = recoveryCoverageMetricKeys[metric];
+    const date = recoveryMetric ? firstRecoveryDates[recoveryMetric] : null;
+    return date ? [date] : [];
+  });
+  return healthTrendsEnvelope(series, input, timezone, firstAvailableDates);
+}
+
+function healthTrendsEnvelope(
+  series: HealthTrendRow[],
+  input: HealthExplorerInput,
+  timezone: string,
+  firstAvailableDates: string[],
+) {
+  const observedMetrics = new Set<HealthMetric>();
+  const availableDates = series.flatMap((row) => {
+    for (const metric of input.metrics) {
+      if (row.metrics[metric] != null) {
+        observedMetrics.add(metric);
+      }
+    }
+    return row.date ? [row.date] : [];
+  });
+  const earliestAvailable = [...availableDates, ...firstAvailableDates].sort()[0] ?? null;
+
+  return {
+    range: {
+      start_date: input.start_date,
+      end_date: input.end_date,
+      granularity: input.granularity,
+      timezone,
+    },
+    requested_metrics: input.metrics,
+    series,
+    diagnostics: {
+      metrics_with_no_data: input.metrics.filter((metric) => !observedMetrics.has(metric)),
+      range_clamped: earliestAvailable != null && input.start_date < earliestAvailable,
+      earliest_available: earliestAvailable,
+    },
+  };
 }
 
 function average(values: Array<number | null | undefined>): number | null {
@@ -378,14 +442,21 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async ({ start_date, end_date, metrics, granularity, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
+      const requestedTimezone = timezone ?? context.timezone;
+      const input = {
+        start_date,
+        end_date,
+        metrics: metrics ?? healthMetricSchema.options,
+        granularity: granularity ?? "daily",
+        timezone,
+      };
       return jsonContent(
-        await listHealthTrends(context, {
-          start_date,
-          end_date,
-          metrics: metrics ?? healthMetricSchema.options,
-          granularity: granularity ?? "daily",
-          timezone,
-        }),
+        await healthTrendsResponse(
+          context,
+          await listHealthTrends(context, input),
+          input,
+          requestedTimezone,
+        ),
       );
     },
   );
