@@ -622,7 +622,7 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
-    expect(screen.getByText(/Resting Heart Rate: 70/)).toBeTruthy();
+    expect(screen.getByText("Resting Heart Rate: 70 (baseline 60 ± 3)")).toBeTruthy();
   });
 
   it("refreshes dashboard and anomaly queries when pull-to-refresh runs", async () => {
