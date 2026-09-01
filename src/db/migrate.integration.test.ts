@@ -293,11 +293,14 @@ describe("runMigrations", () => {
         ],
       );
 
-      await expect(runMigrations(ctx.connectionString, join(import.meta.dirname, "../../drizzle"))).resolves.toBe(0);
+      await expect(
+        runMigrations(ctx.connectionString, join(import.meta.dirname, "../../drizzle")),
+      ).resolves.toBe(0);
     } finally {
-      await client.query("DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1", [
-        1_787_982_000_000,
-      ]);
+      await client.query(
+        "DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1",
+        [1_787_982_000_000],
+      );
       await client.end();
     }
   });
