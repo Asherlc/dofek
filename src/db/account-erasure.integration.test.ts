@@ -825,7 +825,8 @@ describe("account erasure persistence (integration)", () => {
           FROM fitness.account_erasure_request
           WHERE id = ${requestId}::uuid`,
     );
-    const completedAt = new Date(String(completionRows[0]?.completed_at));
+    const completedAt = completionRows[0]?.completed_at as Date;
+    expect(completedAt).toBeInstanceOf(Date);
     await completeAccountErasure(context.db, requestId, leaseOwner, completedAt);
     await expect(findAccountErasureStatus(context.db, statusToken, completedAt)).resolves.toEqual(
       expect.objectContaining({
