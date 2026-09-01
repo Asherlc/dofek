@@ -219,7 +219,7 @@ export function ProviderCard({
           {syncFreshness ? (
             <View accessibilityRole={syncFreshness.status === "overdue" ? "alert" : undefined}>
               <Text style={styles.cardMetaText}>{syncFreshness.label}</Text>
-              {syncFreshness.description ? (
+              {syncFreshness.status !== "current" ? (
                 <Text style={styles.cardMetaText}>{syncFreshness.description}</Text>
               ) : null}
             </View>

@@ -187,7 +187,7 @@ export function SyncProviderCard({
               }}
             >
               <span className="font-medium">{syncFreshness.label}</span>
-              {syncFreshness.description && (
+              {syncFreshness.status !== "current" && (
                 <span className="block">{syncFreshness.description}</span>
               )}
             </div>
