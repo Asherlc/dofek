@@ -49,6 +49,10 @@ async function restoreLegacyClinicalSchema(connectionString: string): Promise<vo
       DROP TABLE IF EXISTS fitness.condition;
       DROP TABLE IF EXISTS fitness.allergy_intolerance;
     `);
+    await client.query("DROP TYPE IF EXISTS fitness.lab_result_status");
+    await client.query(
+      "CREATE TYPE fitness.lab_result_status AS ENUM ('final', 'preliminary', 'corrected', 'cancelled')",
+    );
     await client.query(`
       CREATE TABLE fitness.lab_panel (
         id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
