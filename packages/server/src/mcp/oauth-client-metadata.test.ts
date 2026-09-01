@@ -43,6 +43,7 @@ function mockValidMetadataResponse(cacheControl = "max-age=60") {
 describe("parseCimdClientMetadata", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.resetAllMocks();
   });
   it("accepts a public client whose metadata client ID and callback match", () => {
@@ -151,6 +152,12 @@ describe("parseCimdClientMetadata", () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
+  it("rejects DNS resolution failures without opening a request", async () => {
+    mocks.lookup.mockRejectedValue(new Error("ENOTFOUND"));
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid HTTPS response", async () => {
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(
@@ -209,11 +216,11 @@ describe("parseCimdClientMetadata", () => {
         const request = Object.assign(new EventEmitter(), { end: () => {} });
         request.end = () => {
           const response = Object.assign(new EventEmitter(), {
-            destroy: (error: Error) => request.emit("error", error),
             headers: { "content-type": "application/json" },
             resume: vi.fn(),
             statusCode: 200,
           });
+          response.destroy = (error: Error) => response.emit("error", error);
           callback(response);
           response.emit("data", Buffer.alloc(65_537));
         };

@@ -1,14 +1,9 @@
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { isCimdClientId } from "./oauth-client-metadata.ts";
 
 export interface McpOAuthClientMetadataSource {
   getClient(clientId: string): Promise<OAuthClientInformationFull | undefined>;
-}
-
-function isHostedClientMetadataUrl(clientId: string): boolean {
-  if (!URL.canParse(clientId)) return false;
-  const url = new URL(clientId);
-  return url.protocol === "https:" && url.pathname !== "/";
 }
 
 export class McpOAuthClientResolver implements OAuthRegisteredClientsStore {
@@ -24,7 +19,7 @@ export class McpOAuthClientResolver implements OAuthRegisteredClientsStore {
   }
 
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
-    return isHostedClientMetadataUrl(clientId)
+    return isCimdClientId(clientId)
       ? this.#metadata.getClient(clientId)
       : await this.#registeredClients.getClient(clientId);
   }

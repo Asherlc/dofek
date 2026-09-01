@@ -20,7 +20,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isCimdClientId(clientId: string): boolean {
+export function isCimdClientId(clientId: string): boolean {
   try {
     const url = new URL(clientId);
     return (
@@ -52,7 +52,12 @@ function cacheAge(responseCacheControl: string | undefined): number {
 }
 
 async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: number }> {
-  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  let addresses: Awaited<ReturnType<typeof lookup>>;
+  try {
+    addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  } catch {
+    throw new CimdMetadataError("CIMD host did not resolve");
+  }
   if (addresses.length === 0 || addresses.some(({ address }) => !isPublicAddress(address))) {
     throw new CimdMetadataError("CIMD host must resolve only to public addresses");
   }
@@ -80,6 +85,14 @@ async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: num
         servername: url.hostname,
       },
       (response) => {
+        response.on("error", (error: Error) => {
+          clearTimeout(timeout);
+          reject(
+            error instanceof CimdMetadataError
+              ? error
+              : new CimdMetadataError("CIMD metadata response failed"),
+          );
+        });
         const contentType = response.headers["content-type"];
         if (response.statusCode !== 200 || !contentType?.includes("application/json")) {
           response.resume();

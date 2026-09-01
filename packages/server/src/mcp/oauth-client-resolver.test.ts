@@ -31,6 +31,9 @@ describe("McpOAuthClientResolver", () => {
     "registered-client",
     "https://claude.ai/",
     "http://claude.ai/metadata.json",
+    "https://claude.ai/metadata.json?client=registered",
+    "https://claude.ai/metadata.json#registered",
+    "https://client:secret@claude.ai/metadata.json",
     "not a URL",
   ])("uses dynamic registration for a non-hosted metadata client ID: %s", async (clientId) => {
     const registeredClients = {
