@@ -653,7 +653,7 @@ export class ActivityRepository extends BaseRepository {
             a.perceived_exertion,
             a.provider_id,
             CASE
-              WHEN a.local_time_source IN ('provider_timezone', 'device_timezone')
+              WHEN a.local_time_source IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
               THEN a.timezone
               ELSE NULL
             END AS timezone,

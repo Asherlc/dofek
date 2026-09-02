@@ -11,6 +11,7 @@ import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
+import { captureException } from "dofek/lib/error-reporting";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
@@ -19,11 +20,7 @@ import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { BodyRepository } from "../repositories/body-repository.ts";
-import { ClimbingRepository } from "../repositories/climbing-repository.ts";
-import {
-  readFingerLoadingActivity,
-  readFingerLoadingRange,
-} from "../repositories/climbing-training-log-repository.ts";
+import { readFingerLoadingRange } from "../repositories/climbing-training-log-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
 import { DataCoverageRepository } from "../repositories/data-coverage-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
@@ -37,20 +34,25 @@ import {
   localDateString,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
-import { SyncRepository } from "../repositories/sync-repository.ts";
+import {
+  type ProviderScheduledSyncHealth,
+  SyncRepository,
+} from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
   toJobId,
 } from "../routers/sync-helpers.ts";
+import { registerActivityDetailsTool } from "./activity-details-tool.ts";
 import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
 import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
+import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
+import { registerSupplementsTool } from "./supplements-tool.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { registerTrainingLoadTool } from "./training-load-tool.ts";
@@ -101,6 +103,21 @@ const activityMcpRowSchema = z.object({
   elevation_gain_m: z.coerce.number().nullable().optional(),
   modality: z.string().nullable().optional(),
 });
+const EXPECTED_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+
+function syncHealth(health: ProviderScheduledSyncHealth | undefined) {
+  const lastSuccess = health?.lastSuccess;
+  return {
+    last_success: lastSuccess ?? null,
+    last_attempt: health?.lastAttempt ?? null,
+    last_error: health?.lastError ?? null,
+    consecutive_failures: health?.consecutiveFailures ?? 0,
+    expected_sync_interval_minutes: EXPECTED_SYNC_INTERVAL_MS / 60_000,
+    stale:
+      lastSuccess == null ||
+      Date.now() - new Date(lastSuccess).getTime() > EXPECTED_SYNC_INTERVAL_MS * 3,
+  };
+}
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
 
 function assertDateRange(startDate: string, endDate: string): void {
@@ -494,7 +511,10 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerTrainingLoadTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerActivityStreamsTool(server, context);
+  registerActivityDetailsTool(server, context);
   registerClimbingSessionsTool(server, context);
+  registerStrengthSessionsTool(server, context);
+  registerSupplementsTool(server, context);
 
   server.registerTool(
     "render_health_explorer",
@@ -602,10 +622,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         from: dateSchema.optional(),
         to: dateSchema.optional(),
         query: z.string().max(200).optional(),
+        include: z.array(z.literal("mapPreview")).optional(),
         limit: z.number().int().min(1).max(25).optional(),
       },
     },
-    async ({ from, to, query, limit }) => {
+    async ({ from, to, query, include, limit }) => {
       requireMcpScope(context.scopes, "activity:read");
       const endDate = to ?? localDateString(new Date(), context.timezone);
       const startDate = from ?? dateDaysBefore(endDate, 29);
@@ -617,62 +638,33 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         { kind: "full", paid: true, reason: "paid_grant" },
         context.sensorStore,
       );
-      const result = await repository.search({
-        startDate,
-        endDate,
-        query,
-        limit: limit ?? 10,
-      });
-      return jsonContent(result);
-    },
-  );
-
-  server.registerTool(
-    "get_activity_details",
-    {
-      title: "Get Activity Details",
-      description:
-        "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
-      annotations: { readOnlyHint: true },
-      inputSchema: {
-        activity_id: z.uuid(),
-      },
-    },
-    async ({ activity_id }) => {
-      requireMcpScope(context.scopes, "activity:read");
-      const activityRepository = new ActivityRepository(
-        context.db,
-        context.userId,
-        context.timezone,
-        { kind: "full", paid: true, reason: "paid_grant" },
-        context.sensorStore,
-      );
-      const activity = await activityRepository.findById(activity_id);
-      if (!activity) {
-        throw new Error("Activity not found.");
+      const resultLimit = limit ?? 10;
+      let result: Awaited<ReturnType<ActivityRepository["search"]>>;
+      try {
+        result = await repository.search({
+          startDate,
+          endDate,
+          query,
+          limit: resultLimit,
+        });
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { mcp_tool: "search_activities" },
+          extra: { startDate, endDate, hasQuery: query !== undefined, limit: resultLimit },
+        });
+        throw error;
       }
-      const [strengthExercises, climbingEntries, fingerLoading] = await Promise.all([
-        new StrengthRepository(
-          context.db,
-          context.userId,
-          context.timezone,
-        ).getExercisesForActivity(activity_id),
-        new ClimbingRepository(context.db, context.userId, context.timezone, {
-          kind: "full",
-          paid: true,
-          reason: "paid_grant",
-        }).getActivityEntries(activity_id),
-        readFingerLoadingActivity({
-          activityId: activity_id,
-          database: context.db,
-          userId: context.userId,
-        }),
-      ]);
+      if (include?.includes("mapPreview")) return jsonContent(result);
       return jsonContent({
-        activity,
-        climbing_entries: climbingEntries.map((entry) => entry.toDetail()),
-        finger_loading: fingerLoading,
-        strength_exercises: strengthExercises.map((exercise) => exercise.toDetail()),
+        ...result,
+        items: result.items.map((item) => {
+          const location = item.location;
+          if (typeof location !== "object" || location === null || !("mapPreview" in location)) {
+            return item;
+          }
+          const { mapPreview: _mapPreview, ...locationWithoutPreview } = location;
+          return { ...item, location: locationWithoutPreview };
+        }),
       });
     },
   );
@@ -882,10 +874,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       requireMcpScope(context.scopes, "providers:read");
       await ensureProvidersRegistered();
       const repository = new SyncRepository(context.db, context.userId);
-      const [connectedProviders, lastSyncs, latestErrors] = await Promise.all([
+      const [connectedProviders, lastSyncs, latestErrors, scheduledSyncHealth] = await Promise.all([
         repository.getConnectedProviderIds(),
         repository.getLastSyncTimes(),
         repository.getLatestErrors(),
+        repository.getScheduledSyncHealth(),
       ]);
       const connectedProviderIds = new Set(
         connectedProviders.map((provider) => provider.providerId),
@@ -895,6 +888,9 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
       const lastSyncMap = new Map(
         lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
+      );
+      const scheduledSyncHealthMap = new Map(
+        scheduledSyncHealth.map((health) => [health.providerId, health]),
       );
       const authErrorProviderIds = new Set(
         latestErrors
@@ -925,6 +921,10 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
             lastSyncedAt: model.lastSyncedAt,
             importOnly: model.importOnly,
             needsReauth: model.isConnected && authErrorProviderIds.has(model.id),
+            sync_health:
+              model.isConnected && !model.importOnly
+                ? syncHealth(scheduledSyncHealthMap.get(model.id))
+                : null,
           };
         });
       return jsonContent(providers);

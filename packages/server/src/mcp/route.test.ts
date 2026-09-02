@@ -1,4 +1,5 @@
 import type { AddressInfo } from "node:net";
+import { captureException } from "dofek/lib/error-reporting";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -28,10 +29,12 @@ const toolTestMocks = vi.hoisted(() => {
     getConnectedProviderIds: vi.fn(),
     getLastSyncTimes: vi.fn(),
     getLatestErrors: vi.fn(),
+    getScheduledSyncHealth: vi.fn(),
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
     strengthExercises: vi.fn(),
+    supplementsList: vi.fn(),
     subjectiveTimeline: vi.fn(),
     trainingLoadListRange: vi.fn(),
     withUserWriteFence: vi.fn(),
@@ -125,12 +128,19 @@ vi.mock("../repositories/strength-repository.ts", () => ({
   }),
 }));
 
+vi.mock("../repositories/supplements-repository.ts", () => ({
+  SupplementsRepository: vi.fn(function vitestConstructor() {
+    return { list: toolTestMocks.supplementsList };
+  }),
+}));
+
 vi.mock("../repositories/sync-repository.ts", () => ({
   SyncRepository: vi.fn(function vitestConstructor() {
     return {
       getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
       getLastSyncTimes: toolTestMocks.getLastSyncTimes,
       getLatestErrors: toolTestMocks.getLatestErrors,
+      getScheduledSyncHealth: toolTestMocks.getScheduledSyncHealth,
     };
   }),
 }));
@@ -165,6 +175,11 @@ import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
+
+vi.mock("dofek/lib/error-reporting", async (importOriginal) => {
+  const original = await importOriginal<typeof import("dofek/lib/error-reporting")>();
+  return { ...original, captureException: vi.fn() };
+});
 
 vi.mock("dofek/db/account-erasure", () => ({
   withAccountErasureUserWriteFence: (...args: unknown[]) =>
@@ -358,6 +373,7 @@ describe("createMcpRouter", () => {
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
     toolTestMocks.getLatestErrors.mockResolvedValue([]);
+    toolTestMocks.getScheduledSyncHealth.mockResolvedValue([]);
     toolTestMocks.getProviderSyncQueue.mockReturnValue({
       add: toolTestMocks.queueAdd,
       getJob: vi.fn(),
@@ -527,6 +543,7 @@ describe("createMcpRouter", () => {
       properties: {
         from: { format: "date", type: "string" },
         limit: { maximum: 25, minimum: 1, type: "integer" },
+        include: { type: "array" },
         query: { maxLength: 200, type: "string" },
         to: { format: "date", type: "string" },
       },
@@ -611,6 +628,10 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_strength_sessions").inputSchema).toMatchObject({
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_nutrition_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -637,6 +658,10 @@ describe("createMcpRouter", () => {
       properties: {},
       type: "object",
     });
+    expect(findListedTool(tools, "get_supplements").inputSchema).toMatchObject({
+      properties: {},
+      type: "object",
+    });
     expect(findListedTool(tools, "start_provider_sync").inputSchema).toMatchObject({
       properties: {
         providerId: { minLength: 1, type: "string" },
@@ -658,9 +683,11 @@ describe("createMcpRouter", () => {
       "get_activity_summary",
       "get_finger_loading",
       "get_climbing_sessions",
+      "get_strength_sessions",
       "get_nutrition_summary",
       "get_body_metrics",
       "get_subjective_timeline",
+      "get_supplements",
       "list_providers",
       "render_health_explorer",
     ]) {
@@ -848,6 +875,50 @@ describe("createMcpRouter", () => {
     ]);
   });
 
+  it("returns strength sessions with volume-load by muscle group", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: 110,
+        ended_at: "2026-07-09T20:00:00.000Z",
+        id: "strength-1",
+        name: "Upper Body",
+        started_at: "2026-07-09T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      {
+        toDetail: () => ({
+          exerciseName: "Pull-up",
+          muscleGroups: ["back"],
+          sets: [{ durationSeconds: null, reps: 5, weightKg: 20 }],
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_strength_sessions", {
+        end_date: "2026-07-10",
+        start_date: "2026-07-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      aggregates: {
+        by_muscle_group: [{ muscle_group: "back", volume_load_kg: 100 }],
+        volume_load_kg: 100,
+      },
+      sessions: [
+        expect.objectContaining({
+          activity_id: "strength-1",
+          duration_minutes: 60,
+          volume_load_kg: 100,
+        }),
+      ],
+    });
+  });
+
   it("searches activities and applies the query filter", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
@@ -881,6 +952,58 @@ describe("createMcpRouter", () => {
       limit: 5,
       query: "cycling",
       startDate: "2026-05-10",
+    });
+  });
+
+  it("reports search activity failures with safe tool context", async () => {
+    authorizeMcpToken();
+    const error = new Error("database search failed");
+    toolTestMocks.activitySearch.mockRejectedValue(error);
+
+    await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", {
+        from: "2026-05-10",
+        query: "private activity text",
+        to: "2026-05-18",
+      }),
+    });
+
+    expect(captureException).toHaveBeenCalledWith(error, {
+      extra: {
+        endDate: "2026-05-18",
+        hasQuery: true,
+        limit: 10,
+        startDate: "2026-05-10",
+      },
+      tags: { mcp_tool: "search_activities" },
+    });
+    expect(captureException).not.toHaveBeenCalledWith(
+      error,
+      expect.objectContaining({ extra: expect.objectContaining({ query: expect.anything() }) }),
+    );
+  });
+
+  it("omits map previews from activity search unless requested", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activitySearch.mockResolvedValue({
+      items: [
+        {
+          location: { centroidLat: 37.8, centroidLng: -122.4, mapPreview: { tiles: ["tile"] } },
+          name: "Morning Ride",
+        },
+      ],
+      totalCount: 1,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", { to: "2026-05-18" }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      items: [{ location: { centroidLat: 37.8, centroidLng: -122.4 }, name: "Morning Ride" }],
+      totalCount: 1,
     });
   });
 
@@ -2024,6 +2147,22 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
   });
 
+  it("returns the authenticated user's supplement definitions", async () => {
+    authorizeMcpToken();
+    toolTestMocks.supplementsList.mockResolvedValue([
+      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_supplements", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
+    ]);
+  });
+
   it("returns a capped, channel-filtered activity stream", async () => {
     authorizeMcpToken();
     const activityId = "00000000-0000-4000-8000-000000000001";
@@ -2073,6 +2212,15 @@ describe("createMcpRouter", () => {
     ]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([
       { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
+    ]);
+    toolTestMocks.getScheduledSyncHealth.mockResolvedValue([
+      {
+        providerId: "wahoo",
+        lastSuccess: "2026-05-20T11:00:00.000Z",
+        lastAttempt: "2026-05-20T12:00:00.000Z",
+        lastError: "Wahoo access token expired.",
+        consecutiveFailures: 2,
+      },
     ]);
     toolTestMocks.getLatestErrors.mockResolvedValue([
       {
@@ -2134,6 +2282,14 @@ describe("createMcpRouter", () => {
         lastSyncedAt: null,
         name: "Fitbit",
         needsReauth: false,
+        sync_health: {
+          consecutive_failures: 0,
+          expected_sync_interval_minutes: 30,
+          last_attempt: null,
+          last_error: null,
+          last_success: null,
+          stale: true,
+        },
       },
       {
         authType: "oauth",
@@ -2143,6 +2299,7 @@ describe("createMcpRouter", () => {
         lastSyncedAt: null,
         name: "Strava",
         needsReauth: false,
+        sync_health: null,
       },
       {
         authType: "oauth",
@@ -2152,6 +2309,14 @@ describe("createMcpRouter", () => {
         lastSyncedAt: "2026-05-20T12:00:00.000Z",
         name: "Wahoo",
         needsReauth: true,
+        sync_health: {
+          consecutive_failures: 2,
+          expected_sync_interval_minutes: 30,
+          last_attempt: "2026-05-20T12:00:00.000Z",
+          last_error: "Wahoo access token expired.",
+          last_success: "2026-05-20T11:00:00.000Z",
+          stale: true,
+        },
       },
     ]);
   });
@@ -2195,6 +2360,14 @@ describe("createMcpRouter", () => {
         lastSyncedAt: "2026-05-20T12:00:00.000Z",
         name: "Wahoo",
         needsReauth: false,
+        sync_health: {
+          consecutive_failures: 0,
+          expected_sync_interval_minutes: 30,
+          last_attempt: null,
+          last_error: null,
+          last_success: null,
+          stale: true,
+        },
       },
     ]);
   });

@@ -1,8 +1,9 @@
 import { UnrecoverableError } from "bullmq";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
+import { loadUserHomeTimezone } from "../db/home-timezone.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
+import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
 import { logSync } from "../db/sync-log.ts";
-import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { captureException } from "../lib/error-reporting.ts";
@@ -186,7 +187,8 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         idempotencyKey: "worker-skipped-account-erasure",
       });
     } else {
-      await runWithTokenUser(userId, async () => {
+      const homeTimezone = await loadUserHomeTimezone(db, userId);
+      await runWithProviderUserIngestContext(userId, { homeTimezone }, async () => {
         if (importType === "apple-health") {
           await reportImportProgress(job, 0, "Starting Apple Health import...");
           const { AppleHealthImportValidationError, importAppleHealthFile } = await import(

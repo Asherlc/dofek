@@ -57,6 +57,9 @@ vi.mock("../db/account-erasure.ts", () => ({
 vi.mock("../db/account-erasure-processing.ts", () => ({
   isAccountErasureActive: vi.fn(async () => false),
 }));
+vi.mock("../db/home-timezone.ts", () => ({
+  loadUserHomeTimezone: vi.fn(async () => null),
+}));
 
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();

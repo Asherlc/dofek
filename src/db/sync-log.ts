@@ -1,3 +1,6 @@
+import { sql } from "drizzle-orm";
+import { captureException } from "dofek/lib/error-reporting";
+import { z } from "zod";
 import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
@@ -5,6 +8,7 @@ import {
 import type { SyncDegradation, SyncDegradationKind } from "../sync/sync-degradation.ts";
 import { reportSyncDegradation } from "../sync/sync-degradation-reporting.ts";
 import type { SyncDatabase } from "./index.ts";
+import { executeWithSchema } from "./execute-with-schema.ts";
 import { type SyncLogOrigin, syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
@@ -42,6 +46,65 @@ function resolveUserId(userId?: string): string {
   return scopedUserId;
 }
 
+const consecutiveFailureRowSchema = z.object({
+  consecutive_failures: z.coerce.number().int().nonnegative(),
+});
+
+async function reportConsecutiveScheduledFailures(
+  db: SyncDatabase,
+  entry: SyncLogEntry,
+  userId: string,
+): Promise<void> {
+  if (entry.origin !== "scheduled" || entry.dataType !== "sync" || entry.status !== "error") {
+    return;
+  }
+
+  try {
+    const [row] = await executeWithSchema(
+      db,
+      consecutiveFailureRowSchema,
+      sql`WITH last_success AS (
+            SELECT MAX(synced_at) AS synced_at
+            FROM fitness.sync_log
+            WHERE user_id = ${userId}
+              AND provider_id = ${entry.providerId}
+              AND data_type = 'sync'
+              AND origin = 'scheduled'
+              AND status = 'success'
+          )
+          SELECT COUNT(*)::int AS consecutive_failures
+          FROM fitness.sync_log
+          CROSS JOIN last_success
+          WHERE user_id = ${userId}
+            AND provider_id = ${entry.providerId}
+            AND data_type = 'sync'
+            AND origin = 'scheduled'
+            AND status = 'error'
+            AND synced_at > COALESCE(last_success.synced_at, '-infinity'::timestamptz)`,
+    );
+
+    if (row?.consecutive_failures === 2) {
+      captureException(new Error(`Provider ${entry.providerId} failed two scheduled syncs`), {
+        level: "warning",
+        tags: {
+          provider: entry.providerId,
+          operation: "scheduled-provider-sync",
+          consecutive_failures: "2",
+        },
+        extra: {
+          user_id: userId,
+          error_message: entry.errorMessage,
+        },
+      });
+    }
+  } catch (error) {
+    captureException(error, {
+      tags: { provider: entry.providerId, operation: "scheduled-provider-sync-alert" },
+      extra: { user_id: userId },
+    });
+  }
+}
+
 /**
  * Record a sync attempt for a specific provider + data type.
  */
@@ -59,6 +122,7 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     userId: scopedUserId,
     origin: entry.origin ?? "unknown",
   });
+  await reportConsecutiveScheduledFailures(db, entry, scopedUserId);
 }
 
 /**

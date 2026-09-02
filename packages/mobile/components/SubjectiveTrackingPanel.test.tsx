@@ -3,53 +3,34 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-type MutationOptions = { onSuccess?: () => void };
-
 const mocks = vi.hoisted(() => {
-  const regionsResult: {
-    data: Array<{ id: string; label: string }> | undefined;
+  const injuriesResult: {
+    data:
+      | Array<{ id: string; kind: string; description: string; severity: number | null }>
+      | undefined;
     error: Error | null;
     isLoading: boolean;
-  } = {
-    data: [{ id: "left_hand", label: "Left hand" }],
-    error: null,
-    isLoading: false,
-  };
+  } = { data: [], error: null, isLoading: false };
 
   return {
-    captureException: vi.fn(),
     createInjury: vi.fn(),
-    invokeMutationSuccess: false,
-    injuriesResult: { data: [], error: null, isLoading: false },
-    injuriesInvalidate: vi.fn(),
-    timelineInvalidate: vi.fn(),
-    regionsResult,
+    injuriesResult,
+    regionsResult: { data: [{ id: "left-finger", label: "Left finger" }] },
+    saveCheckIn: vi.fn(),
   };
 });
 
-vi.mock("../lib/telemetry", () => ({ captureException: mocks.captureException }));
-vi.mock("../lib/useTodayQueryDate", () => ({ useTodayQueryDate: () => "2026-08-02" }));
 vi.mock("../lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({
-      subjective: {
-        injuries: { invalidate: mocks.injuriesInvalidate },
-        timeline: { invalidate: mocks.timelineInvalidate },
-      },
-    }),
     subjective: {
       createInjury: {
-        useMutation: (options: MutationOptions) => ({
-          error: null,
-          isPending: false,
-          mutate: (input: unknown) => {
-            mocks.createInjury(input);
-            if (mocks.invokeMutationSuccess) options.onSuccess?.();
-          },
-        }),
+        useMutation: () => ({ error: null, isPending: false, mutate: mocks.createInjury }),
       },
       injuries: { useQuery: () => mocks.injuriesResult },
       regions: { useQuery: () => mocks.regionsResult },
+      saveCheckIn: {
+        useMutation: () => ({ error: null, isPending: false, mutate: mocks.saveCheckIn }),
+      },
     },
   },
 }));
@@ -58,102 +39,75 @@ import { SubjectiveTrackingPanel } from "./SubjectiveTrackingPanel";
 
 describe("SubjectiveTrackingPanel", () => {
   beforeEach(() => {
-    mocks.captureException.mockReset();
-    mocks.createInjury.mockReset();
-    mocks.invokeMutationSuccess = false;
-    mocks.injuriesInvalidate.mockReset();
-    mocks.timelineInvalidate.mockReset();
-    mocks.regionsResult.data = [{ id: "left_hand", label: "Left hand" }];
-    mocks.regionsResult.error = null;
-    mocks.regionsResult.isLoading = false;
     mocks.injuriesResult.data = [];
     mocks.injuriesResult.error = null;
     mocks.injuriesResult.isLoading = false;
+    mocks.saveCheckIn.mockReset();
+    mocks.createInjury.mockReset();
   });
 
-  it("creates an injury with an explicit zero severity", () => {
+  it("renders recorded injury history", () => {
+    mocks.injuriesResult.data = [
+      { id: "injury-1", kind: "niggle", description: "Morning tenderness", severity: 3 },
+    ];
+
     render(<SubjectiveTrackingPanel />);
 
-    fireEvent.click(screen.getByLabelText("Choose injury body region"));
-    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
-    fireEvent.change(screen.getByLabelText("Injury description"), {
-      target: { value: "No pain at rest" },
+    expect(screen.getByText("niggle: Morning tenderness (3/10)")).toBeTruthy();
+  });
+
+  it("renders the empty injury history state", () => {
+    render(<SubjectiveTrackingPanel />);
+
+    expect(screen.getByText("No injury events logged.")).toBeTruthy();
+  });
+
+  it("records an all-clear check-in with one tap", () => {
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "All clear today" }));
+
+    expect(mocks.saveCheckIn).toHaveBeenCalledWith({
+      date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      symptoms: [],
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
+  });
+
+  it("records a free-text injury note with a body-region tag", () => {
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Body region Left finger" }));
+    fireEvent.change(screen.getByLabelText("Injury note"), {
+      target: { value: "A2 tenderness after climbing" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Log injury note" }));
 
     expect(mocks.createInjury).toHaveBeenCalledWith({
-      bodyRegionId: "left_hand",
-      description: "No pain at rest",
+      bodyRegionId: "left-finger",
+      description: "A2 tenderness after climbing",
       kind: "niggle",
-      onsetDate: "2026-08-02",
+      onsetDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       resolvedDate: null,
-      severity: 0,
+      severity: null,
     });
   });
 
-  it("uses editable injury dates", () => {
+  it("renders the injury history loading state", () => {
+    mocks.injuriesResult.data = undefined;
+    mocks.injuriesResult.isLoading = true;
+
     render(<SubjectiveTrackingPanel />);
 
-    fireEvent.click(screen.getByLabelText("Choose injury body region"));
-    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
-    fireEvent.change(screen.getByLabelText("Injury onset date"), {
-      target: { value: "2026-07-31" },
-    });
-    fireEvent.change(screen.getByLabelText("Injury resolution date"), {
-      target: { value: "2026-08-01" },
-    });
-    fireEvent.change(screen.getByLabelText("Injury description"), {
-      target: { value: "Resolved soreness" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
-
-    expect(mocks.createInjury).toHaveBeenCalledWith(
-      expect.objectContaining({
-        onsetDate: "2026-07-31",
-        resolvedDate: "2026-08-01",
-      }),
-    );
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
   });
 
-  it("invalidates injury data after a successful mutation", () => {
-    mocks.invokeMutationSuccess = true;
-    render(<SubjectiveTrackingPanel />);
-
-    fireEvent.click(screen.getByLabelText("Choose injury body region"));
-    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
-    fireEvent.change(screen.getByLabelText("Injury description"), {
-      target: { value: "Morning pain" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add injury" }));
-
-    expect(mocks.injuriesInvalidate).toHaveBeenCalledTimes(1);
-    expect(mocks.timelineInvalidate).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not submit an injury without an onset date", () => {
-    render(<SubjectiveTrackingPanel />);
-
-    fireEvent.click(screen.getByLabelText("Choose injury body region"));
-    fireEvent.click(screen.getByRole("button", { name: "Left hand" }));
-    fireEvent.change(screen.getByLabelText("Injury onset date"), { target: { value: "" } });
-    fireEvent.change(screen.getByLabelText("Injury description"), {
-      target: { value: "Missing onset" },
-    });
-
-    const addButton = screen.getByRole("button", { name: "Add injury" });
-    expect(addButton).toHaveProperty("disabled", true);
-    fireEvent.click(addButton);
-    expect(mocks.createInjury).not.toHaveBeenCalled();
-  });
-
-  it("shows a region query error instead of enabling an empty selector", () => {
-    mocks.regionsResult.data = undefined;
-    mocks.regionsResult.error = new Error("Regions unavailable");
+  it("renders the injury history error state", () => {
+    mocks.injuriesResult.data = undefined;
+    mocks.injuriesResult.error = new Error("Injury history unavailable");
 
     render(<SubjectiveTrackingPanel />);
 
-    expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
-    expect(screen.getByText("Regions unavailable")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add injury" })).toHaveProperty("disabled", true);
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    expect(screen.getByText("Injury history unavailable")).toBeTruthy();
   });
 });
