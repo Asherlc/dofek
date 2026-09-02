@@ -376,7 +376,7 @@ describe("fileUploadRouter", () => {
     }
   });
 
-  it("uses epoch for full Apple Health imports and defaults Strong weight units", async () => {
+  it("uses epoch for full Apple Health imports and preserves an absent Strong weight unit", async () => {
     const apple = upload({
       importType: "apple-health",
       originalFilename: "export.zip",
@@ -418,7 +418,7 @@ describe("fileUploadRouter", () => {
     });
     expect(strongSetup.repository.create).toHaveBeenCalledWith(
       strongSetup.transaction,
-      expect.objectContaining({ weightUnit: "kg" }),
+      expect.objectContaining({ weightUnit: undefined }),
     );
   });
 

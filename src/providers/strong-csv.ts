@@ -280,9 +280,7 @@ export function parseStrongTextDate(dateStr: string): Date {
  * calendar values (for example, February 30) into a different workout day.
  */
 export function parseStrongWallClockTimestamp(value: string): Date {
-  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(
-    value.trim(),
-  );
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(value.trim());
   if (!match) return new Date(Number.NaN);
   const [, yearText, monthText, dayText, hourText = "00", minuteText = "00", secondText = "00"] =
     match;
@@ -428,14 +426,19 @@ export async function importStrongCsv(
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
   let effectiveWeightUnit: "kg" | "lbs";
-  const parsed = ([parseStrongText, parseStrongCsv][Number(isStrongCsvFormat(csvText))] ?? parseStrongText)(
-    csvText,
-  );
+  const parsed = (
+    [parseStrongText, parseStrongCsv][Number(isStrongCsvFormat(csvText))] ?? parseStrongText
+  )(csvText);
   groups = Array.isArray(parsed) ? parsed : parsed.groups;
   if (Array.isArray(parsed)) {
-    effectiveWeightUnit = strongCsvWeightUnit(csvText) ?? weightUnit ?? (() => {
-      throw new Error("Strong CSV has no Weight Unit declaration; choose kg or lbs before importing");
-    })();
+    effectiveWeightUnit =
+      strongCsvWeightUnit(csvText) ??
+      weightUnit ??
+      (() => {
+        throw new Error(
+          "Strong CSV has no Weight Unit declaration; choose kg or lbs before importing",
+        );
+      })();
   } else {
     effectiveWeightUnit = parsed.weightUnit;
   }

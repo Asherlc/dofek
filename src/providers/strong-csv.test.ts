@@ -10,9 +10,9 @@ import {
   parseStrongText,
   parseStrongTextDate,
   parseStrongWallClockTimestamp,
-  strongCsvWeightUnit,
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
+  strongCsvWeightUnit,
 } from "./strong-csv.ts";
 
 vi.mock("../db/tokens.ts", () => ({
@@ -747,9 +747,7 @@ describe("parseStrongWallClockTimestamp", () => {
   });
 
   it("rejects invalid calendar values instead of normalizing them", () => {
-    expect(Number.isNaN(parseStrongWallClockTimestamp("2026-02-30 10:00:00").getTime())).toBe(
-      true,
-    );
+    expect(Number.isNaN(parseStrongWallClockTimestamp("2026-02-30 10:00:00").getTime())).toBe(true);
   });
 });
 
