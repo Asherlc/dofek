@@ -163,7 +163,7 @@ describe("importStrongCsv", () => {
         "kg",
         "Fake/Zone",
       ]),
-    ).rejects.toThrow("Invalid Strong timezone: Fake/Zone");
+    ).rejects.toThrow(StrongCsvValidationError);
   });
 
   it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
