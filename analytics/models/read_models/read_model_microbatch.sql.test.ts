@@ -246,10 +246,15 @@ describe("production analytics read-model build", () => {
     expect(groupsSql).toContain("materialized='incremental'");
     expect(groupsSql).toContain("ref('activity_source_records')");
     expect(groupsSql).toContain("ref('activity_duplicate_matches')");
-    expect(groupsSql).toContain("duplicate_links AS");
-    expect(groupsSql).toContain("duplicate_walk AS");
+    expect(groupsSql).toContain("current_edges AS");
+    expect(groupsSql).toContain("propagation_16 AS");
+    expect(groupsSql).toContain("labels AS labels_16");
+    expect(groupsSql).toContain("labels_17");
+    expect(groupsSql).toContain("convergence_check AS");
+    expect(groupsSql).toContain("did not converge within 16 rounds");
+    expect(groupsSql).toContain("UNION ALL");
     expect(groupsSql).toContain("current_duplicate_groups AS");
-    expect(groupsSql).toContain("GROUP BY activity_id");
+    expect(groupsSql).toContain("arrayFold(");
   });
 
   it("fails closed instead of tombstoning all activity source records from an empty source scan", () => {

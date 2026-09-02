@@ -8,15 +8,19 @@
     }
 ) }}
 
-WITH source_records AS (
+WITH
+
+current_activities AS (
     SELECT activity_id
     FROM {{ ref('activity_source_records') }} FINAL
     WHERE is_deleted = 0
 ),
 
-duplicate_links AS (
+-- These current undirected raw edges remain immutable through every
+-- bounded label-propagation round.
+current_edges AS (
     SELECT
-        duplicate_matches.activity_id AS activity_id,
+        duplicate_matches.activity_id,
         duplicate_matches.duplicate_activity_id AS linked_activity_id
     FROM {{ ref('activity_duplicate_matches') }} AS duplicate_matches FINAL
     WHERE duplicate_matches.is_deleted = 0
@@ -30,48 +34,99 @@ duplicate_links AS (
     WHERE duplicate_matches.is_deleted = 0
 ),
 
-duplicate_walk_rows AS (
-    -- One bridge collapses provider chains such as Apple Health -> WHOOP -> Strava
-    -- into a single real-world activity group without path enumeration.
+graph AS (
     SELECT
-        activity_id,
-        activity_id AS connected_activity_id
-    FROM source_records
-
-    UNION ALL
-
-    SELECT
-        source_records.activity_id,
-        duplicate_links.linked_activity_id AS connected_activity_id
-    FROM source_records
-    INNER JOIN duplicate_links
-        ON duplicate_links.activity_id = source_records.activity_id
-
-    UNION ALL
-
-    SELECT
-        source_records.activity_id,
-        second_link.linked_activity_id AS connected_activity_id
-    FROM source_records
-    INNER JOIN duplicate_links AS first_link
-        ON first_link.activity_id = source_records.activity_id
-    INNER JOIN duplicate_links AS second_link
-        ON second_link.activity_id = first_link.linked_activity_id
+        groupArray(current_activities.activity_id) AS activity_ids,
+        groupArray((
+            current_edges.activity_id,
+            current_edges.linked_activity_id
+        )) AS edges,
+        mapFromArrays(
+            groupArray(current_activities.activity_id),
+            groupArray(toString(current_activities.activity_id))
+        ) AS initial_labels
+    FROM current_activities
+    LEFT JOIN current_edges
+        ON current_edges.activity_id = current_activities.activity_id
 ),
 
-duplicate_walk AS (
-    SELECT DISTINCT
-        activity_id,
-        connected_activity_id
-    FROM duplicate_walk_rows
+propagation_16 AS (
+    SELECT
+        activity_ids,
+        edges,
+        arrayFold(
+            (labels, _) -> mapFromArrays(
+                activity_ids,
+                arrayMap(
+                    activity_id -> arrayMin(arrayConcat(
+                        [labels[activity_id]],
+                        arrayMap(
+                            edge -> labels[tupleElement(edge, 2)],
+                            arrayFilter(
+                                edge -> tupleElement(edge, 1) = activity_id,
+                                edges
+                            )
+                        )
+                    )),
+                    activity_ids
+                )
+            ),
+            range(16),
+            initial_labels
+        ) AS labels
+    FROM graph
+),
+
+propagation_17 AS (
+    SELECT
+        activity_ids,
+        edges,
+        labels AS labels_16,
+        arrayFold(
+            (labels, _) -> mapFromArrays(
+                activity_ids,
+                arrayMap(
+                    activity_id -> arrayMin(arrayConcat(
+                        [labels[activity_id]],
+                        arrayMap(
+                            edge -> labels[tupleElement(edge, 2)],
+                            arrayFilter(
+                                edge -> tupleElement(edge, 1) = activity_id,
+                                edges
+                            )
+                        )
+                    )),
+                    activity_ids
+                )
+            ),
+            range(1),
+            labels
+        ) AS labels_17
+    FROM propagation_16
+),
+
+convergence_check AS (
+    SELECT throwIf(
+        NOT arrayAll(
+            activity_id -> labels_16[activity_id] = labels_17[activity_id],
+            activity_ids
+        ),
+        'Activity duplicate component propagation did not converge within 16 rounds'
+    ) AS converged
+    FROM propagation_17
 ),
 
 current_duplicate_groups AS (
     SELECT
         activity_id,
-        min(toString(connected_activity_id)) AS group_id
-    FROM duplicate_walk
-    GROUP BY activity_id
+        if(
+            convergence_check.converged = 0,
+            labels_16[activity_id],
+            labels_16[activity_id]
+        ) AS group_id
+    FROM propagation_17
+    ARRAY JOIN activity_ids AS activity_id
+    CROSS JOIN convergence_check
 ),
 
 existing_duplicate_groups AS (
