@@ -12,6 +12,7 @@ import {
   parseStrongWallClockTimestamp,
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
+  StrongCsvValidationError,
   strongCsvWeightUnit,
 } from "./strong-csv.ts";
 
@@ -643,6 +644,11 @@ describe("isStrongCsvFormat", () => {
     expect(isStrongCsvFormat(csv)).toBe(true);
   });
 
+  it("returns true for reordered Strong CSV headers", () => {
+    const csv = "Exercise Name,Set Order,Date,Workout Name\nSquat,0,2026-09-01,Leg Day";
+    expect(isStrongCsvFormat(csv)).toBe(true);
+  });
+
   it("returns false for single-workout text format", () => {
     const text =
       "Home\nFriday, April 10, 2026 at 16:39\n\nBench Press (Dumbbell)\nSet 1: 50 lb × 13";
@@ -758,8 +764,12 @@ describe("strongCsvWeightUnit", () => {
 
   it("rejects mixed unit declarations", () => {
     expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,kg\n2026-09-02,lbs")).toThrow(
-      "one consistent weight unit",
+      StrongCsvValidationError,
     );
+  });
+
+  it("allows upload metadata to supply a blank declaration column", () => {
+    expect(strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,")).toBeNull();
   });
 });
 

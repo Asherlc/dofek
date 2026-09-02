@@ -16,6 +16,8 @@ import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 export const STRONG_PROVIDER_ID = "strong-csv";
 
+export class StrongCsvValidationError extends Error {}
+
 // ============================================================
 // Types
 // ============================================================
@@ -218,11 +220,14 @@ export function strongCsvWeightUnit(csvText: string): "kg" | "lbs" | null {
       .map((line) => parseCsvLine(line)[index]?.trim().toLowerCase())
       .filter((value): value is string => value !== undefined && value !== ""),
   );
-  if (values.size !== 1) throw new Error("Strong CSV must declare one consistent weight unit");
+  if (values.size === 0) return null;
+  if (values.size !== 1) {
+    throw new StrongCsvValidationError("Strong CSV must declare one consistent weight unit");
+  }
   const [value] = values;
   if (value === "kg" || value === "kgs" || value === "kilograms") return "kg";
   if (value === "lb" || value === "lbs" || value === "pounds") return "lbs";
-  throw new Error(`Unsupported Strong CSV weight unit: ${value}`);
+  throw new StrongCsvValidationError(`Unsupported Strong CSV weight unit: ${value}`);
 }
 
 // ============================================================
@@ -244,14 +249,16 @@ const MONTH_NAMES: Record<string, number> = {
   December: 11,
 };
 
-const STRONG_CSV_HEADER_PREFIX = "Date,Workout Name,Duration,Exercise Name,Set Order";
-
 /**
  * Detect whether the input is Strong's CSV export (vs the single-workout text share format).
  */
 export function isStrongCsvFormat(text: string): boolean {
-  const cleaned = text.replace(/^\uFEFF/, "");
-  return cleaned.startsWith(STRONG_CSV_HEADER_PREFIX);
+  const header = parseCsvLine(text.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "").map((field) =>
+    field.trim().toLowerCase(),
+  );
+  return ["date", "workout name", "exercise name", "set order"].every((column) =>
+    header.includes(column),
+  );
 }
 
 /**
@@ -435,7 +442,7 @@ export async function importStrongCsv(
       strongCsvWeightUnit(csvText) ??
       weightUnit ??
       (() => {
-        throw new Error(
+        throw new StrongCsvValidationError(
           "Strong CSV has no Weight Unit declaration; choose kg or lbs before importing",
         );
       })();

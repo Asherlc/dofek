@@ -249,7 +249,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           const csvText = await readFile(filePath, "utf-8");
           const { importStrongCsv } = await import("../providers/strong-csv.ts");
           await reportImportProgress(job, 25, "Importing Strong CSV workouts...");
-          const result = await importStrongCsv(db, csvText, userId, weightUnit, timezone);
+          let result: Awaited<ReturnType<typeof importStrongCsv>>;
+          try {
+            result = await importStrongCsv(db, csvText, userId, weightUnit, timezone);
+          } catch (error) {
+            if (error instanceof Error && error.name === "StrongCsvValidationError")
+              throw new UnrecoverableError(error.message);
+            throw error;
+          }
           importedRecordCount = result.recordsSynced;
           await reportImportProgress(job, 90, "Strong CSV import complete.");
 
