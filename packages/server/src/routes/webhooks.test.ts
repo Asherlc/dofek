@@ -1032,10 +1032,14 @@ describe("registerWebhookForProvider", () => {
 
     await registerWebhookForProvider(db, provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalled();
-    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
-    expect(query.sql).toContain("status = 'active'");
-    expect(query.params).toContain("user-1");
-    expect(query.params).toContain("test-provider");
+    const pendingQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]?.[0]);
+    expect(pendingQuery.sql).toContain("'pending'");
+    expect(pendingQuery.params).toContain("user-1");
+    expect(pendingQuery.params).toContain("test-provider");
+
+    const activationQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    expect(activationQuery.sql).toContain("status = 'active'");
+    expect(activationQuery.params).toContain("user-sub");
   });
 
   it("uses PUBLIC_URL env var for callback URL", async () => {
