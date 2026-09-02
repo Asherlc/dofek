@@ -5,7 +5,9 @@ import type { ClickHouseMigration } from "./types.ts";
 const addSummarySourceVersion = `ALTER TABLE analytics.activity_sensor_summary_rows
 ADD COLUMN IF NOT EXISTS source_refresh_version UInt64 DEFAULT 0 AFTER climbing_seconds`;
 const enableProjectionRebuild = `ALTER TABLE analytics.activity_sensor_sample
-MODIFY SETTING deduplicate_merge_projection_mode = 'rebuild'`;
+MODIFY SETTING
+  deduplicate_merge_projection_mode = 'rebuild',
+  lightweight_mutation_projection_mode = 'rebuild'`;
 const addSourceVersionProjection = `ALTER TABLE analytics.activity_sensor_sample ADD PROJECTION IF NOT EXISTS by_activity_source_refresh_version (
   SELECT
     activity_id,

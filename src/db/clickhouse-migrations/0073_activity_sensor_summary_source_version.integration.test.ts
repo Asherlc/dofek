@@ -20,7 +20,8 @@ describe("0073_activity_sensor_summary_source_version", () => {
     await client.close?.();
   });
 
-  it("serves each activity's exact latest source version from the aggregate projection", async () => {
+  it("serves exact source versions after incremental lightweight deletes", async () => {
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database}` });
     await client.command({ query: `CREATE DATABASE ${database}` });
     await client.command({
       query: `CREATE TABLE ${database}.activity_sensor_sample (
@@ -77,11 +78,35 @@ describe("0073_activity_sensor_summary_source_version", () => {
       format: "JSONEachRow",
     });
 
-    expect(versionSchema.parse(await result.json())).toEqual(
-      [
+    const versions = versionSchema.parse(await result.json());
+    expect(versions).toHaveLength(2);
+    expect(versions).toEqual(
+      expect.arrayContaining([
         { activity_id: firstActivityId, source_refresh_version: 30 },
         { activity_id: secondActivityId, source_refresh_version: 20 },
-      ].sort((left, right) => left.activity_id.localeCompare(right.activity_id)),
+      ]),
     );
+
+    await client.command({
+      query: `DELETE FROM ${database}.activity_sensor_sample
+        WHERE activity_id = {firstActivityId:UUID}`,
+      query_params: { firstActivityId },
+      clickhouse_settings: { lightweight_deletes_sync: 2 },
+    });
+
+    const afterDelete = await client.query({
+      query: `SELECT
+        activity_id,
+        max(refresh_version) AS source_refresh_version
+      FROM ${database}.activity_sensor_sample
+      GROUP BY activity_id, user_id
+      SETTINGS
+        force_optimize_projection = 1,
+        force_optimize_projection_name = 'by_activity_source_refresh_version'`,
+      format: "JSONEachRow",
+    });
+    expect(versionSchema.parse(await afterDelete.json())).toEqual([
+      { activity_id: secondActivityId, source_refresh_version: 20 },
+    ]);
   });
 });

@@ -14,7 +14,8 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, channel, recorded_at)',
     settings={
-        'deduplicate_merge_projection_mode': 'rebuild'
+        'deduplicate_merge_projection_mode': 'rebuild',
+        'lightweight_mutation_projection_mode': 'rebuild'
     },
     projections=[{
         'name': 'by_activity_source_refresh_version',

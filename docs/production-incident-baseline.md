@@ -23840,7 +23840,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   activity only with the highest source version it consumed; no global timestamp
   can exclude a stale key. The source table maintains ClickHouse's native
   [aggregate projection](https://clickhouse.com/docs/data-modeling/projections)
-  for that exact per-activity maximum, avoiding a repeated raw-sample scan.
+  for that exact per-activity maximum, avoiding a repeated raw-sample scan. Both
+  deduplicating merges and dbt's incremental lightweight deletes rebuild the
+  projection; ClickHouse documents that
+  [`lightweight_mutation_projection_mode`](https://github.com/ClickHouse/clickhouse-docs/blob/main/docs/data-modeling/projections/2_materialized-views-versus-projections.md)
+  is required to make projections compatible with lightweight deletes.
   Historical raw rows were corrected in one append-only pass. No timeout, retry,
   timestamp lookback, or warn-and-continue workaround was added.
 - **Validation:** The pre-fix real-ClickHouse regression returned the stale
@@ -23852,7 +23856,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   pass. The broad changed integration run reached 1,221 passing tests but could
   not complete because parallel unrelated suites exceeded the local ClickHouse
   `1.25 GiB` memory cap and filled disposable test volumes; no product assertion
-  failed before that infrastructure cascade.
+  failed before that infrastructure cascade. Hosted E2E subsequently proved the
+  guarded migration applies on a fresh database, then exposed the default
+  projection policy rejecting dbt's incremental `DELETE`; the model and
+  migration now explicitly select projection rebuild behavior, and the
+  real-ClickHouse regression executes that delete before forcing the projection.
 - **Remaining risk / follow-up:** Merge and deploy the migration/model change,
   materialize the new projection on existing sample parts as a controlled operator
   action, run one analytics worker cycle, and verify all 681 stale summaries
