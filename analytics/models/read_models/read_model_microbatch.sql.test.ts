@@ -310,6 +310,10 @@ describe("production analytics read-model build", () => {
       "activity_sensor_sample_begin = var('activity_sensor_sample_begin', default_microbatch_begin)",
     );
     expect(sql).toContain("begin=activity_sensor_sample_begin");
+    expect(sql).toContain("'name': 'by_activity_source_refresh_version'");
+    expect(sql).toContain(
+      "'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'",
+    );
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
@@ -447,19 +451,19 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("provider_absent_at IS null");
     expect(sql).toContain("deleted_at IS null");
     expect(normalizedSql).toContain(
-      "LEFT JOIN existing_summary ON existing_summary.activity_id = sensor_sample.activity_id",
+      "LEFT JOIN existing_summary_state ON existing_summary_state.activity_id = sample_source_versions.activity_id",
     );
-    expect(normalizedSql).toContain("argMax(refreshed_at, refresh_version) AS refreshed_at");
+    expect(normalizedSql).toContain(
+      "argMax(source_refresh_version, refresh_version) AS source_refresh_version",
+    );
     expect(normalizedSql).toContain("argMax(is_deleted, refresh_version) AS is_deleted");
     expect(normalizedSql).toContain("FROM existing_summary_state WHERE is_deleted = 0");
     expect(normalizedSql).toContain("(SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain(
-      "sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+      "sample_source_versions.source_refresh_version > existing_summary_state.source_refresh_version",
     );
-    expect(normalizedSql).toContain(
-      "sensor_sample.refreshed_at > existing_summary.refreshed_at",
-    );
+    expect(normalizedSql).not.toContain("last_refreshed_at");
     expect(normalizedSql).toContain("FROM missing_summary_dirty_keys");
     expect(normalizedSql).toContain("INNER JOIN current_activity");
     expect(normalizedSql).toContain("WHERE existing_summary_state.activity_id IS null");
