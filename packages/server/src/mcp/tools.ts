@@ -302,6 +302,35 @@ function average(values: Array<number | null | undefined>): number | null {
   return aggregateNumbers(values)?.avg ?? null;
 }
 
+const powerModalities = ["indoor", "outdoor", "unknown"] as const;
+
+function summarizePower(rows: ActivityMcpRow[]) {
+  const poweredRows = rows.filter((row) => row.avg_power != null);
+  const coverage = {
+    activities_with_power: poweredRows.length,
+    activities_total: rows.length,
+    pct: rows.length === 0 ? 0 : (poweredRows.length / rows.length) * 100,
+  };
+  if (poweredRows.length < 3) {
+    return { avg_power: null, max_power_peak: null, ...coverage };
+  }
+  return {
+    avg_power: average(poweredRows.map((row) => row.avg_power)),
+    max_power_peak: aggregateNumbers(poweredRows.map((row) => row.max_power))?.max ?? null,
+    ...coverage,
+  };
+}
+
+function powerByModality(rows: ActivityMcpRow[]) {
+  const rowsFor = (modality: (typeof powerModalities)[number]) =>
+    rows.filter((row) => (row.modality ?? "unknown") === modality);
+  return {
+    indoor: summarizePower(rowsFor("indoor")),
+    outdoor: summarizePower(rowsFor("outdoor")),
+    unknown: summarizePower(rowsFor("unknown")),
+  };
+}
+
 function activityPurpose(row: ActivityMcpRow): "commute" | "training" | null {
   if (row.canonical_type !== "cycling") return null;
   const rawType = row.provider_type.trim().toLowerCase();
@@ -358,7 +387,6 @@ function activitySummaries(
         observedElevations.length === 0
           ? null
           : observedElevations.reduce((total, elevation) => total + elevation, 0);
-      const activitiesWithPower = groupRows.filter((row) => row.avg_power != null).length;
       return {
         ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
         ...(groupBy === "week" ? { week: key } : {}),
@@ -374,13 +402,7 @@ function activitySummaries(
         avg_duration_minutes: average(durations),
         avg_hr: average(groupRows.map((row) => row.avg_hr)),
         max_hr_peak: aggregateNumbers(groupRows.map((row) => row.max_hr))?.max ?? null,
-        avg_power: average(groupRows.map((row) => row.avg_power)),
-        max_power_peak: aggregateNumbers(groupRows.map((row) => row.max_power))?.max ?? null,
-        power_coverage: {
-          activities_with_power: activitiesWithPower,
-          activities_total: groupRows.length,
-          pct: (activitiesWithPower / groupRows.length) * 100,
-        },
+        power_by_modality: powerByModality(groupRows),
         total_elevation_gain_m: totalElevationGain,
         avg_elevation_gain_m: average(elevations),
       };
