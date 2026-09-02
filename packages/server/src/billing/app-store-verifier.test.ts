@@ -12,6 +12,7 @@ const verifierMock = vi.hoisted(() => {
   const verifyAndDecodeNotification = vi.fn();
   const verifyAndDecodeRenewalInfo = vi.fn();
   const verifyAndDecodeTransaction = vi.fn();
+  const captureException = vi.fn();
   const SignedDataVerifier = vi.fn(function SignedDataVerifier() {
     return {
       verifyAndDecodeNotification,
@@ -25,6 +26,7 @@ const verifierMock = vi.hoisted(() => {
     verifyAndDecodeNotification,
     verifyAndDecodeRenewalInfo,
     verifyAndDecodeTransaction,
+    captureException,
   };
 });
 
@@ -49,6 +51,10 @@ vi.mock("@apple/app-store-server-library", () => ({
     VERIFICATION_FAILURE: 1,
     RETRYABLE_VERIFICATION_FAILURE: 2,
   },
+}));
+
+vi.mock("dofek/lib/error-reporting", () => ({
+  captureException: verifierMock.captureException,
 }));
 
 import { getAppStoreBillingConfig } from "./app-store-config.ts";
@@ -79,6 +85,7 @@ describe("App Store transaction verification", () => {
     verifierMock.verifyAndDecodeNotification.mockReset();
     verifierMock.verifyAndDecodeRenewalInfo.mockReset();
     verifierMock.verifyAndDecodeTransaction.mockReset();
+    verifierMock.captureException.mockReset();
   });
 
   it("fails fast by naming a missing App Store configuration key", () => {
@@ -154,13 +161,29 @@ describe("App Store transaction verification", () => {
 
   it("rejects an unverified transaction", async () => {
     setAppStoreEnv();
-    verifierMock.verifyAndDecodeTransaction.mockRejectedValue(new Error("invalid signature"));
+    verifierMock.verifyAndDecodeTransaction.mockRejectedValue(
+      new verifierMock.VerificationException(1),
+    );
 
     await expect(
       verifyAppStoreTransaction("invalid-jws", expectedAccountToken),
     ).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
     });
+  });
+
+  it("reports and preserves unexpected transaction verification failures", async () => {
+    setAppStoreEnv();
+    const failure = new Error("certificate store unavailable");
+    verifierMock.verifyAndDecodeTransaction.mockRejectedValue(failure);
+
+    await expect(verifyAppStoreTransaction("signed-jws", expectedAccountToken)).rejects.toBe(
+      failure,
+    );
+    expect(verifierMock.captureException).toHaveBeenCalledWith(failure, {
+      tags: { source: "app-store-transaction-verifier" },
+    });
+    expect(verifierMock.SignedDataVerifier).toHaveBeenCalledOnce();
   });
 
   it.each([

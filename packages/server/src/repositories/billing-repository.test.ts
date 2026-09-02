@@ -125,7 +125,7 @@ describe("BillingRepository", () => {
       expect(queryText).toContain("<");
     });
 
-    it("permits a same-expiry revocation to replace an active subscription", async () => {
+    it("permits a terminal status to replace an active subscription at the same expiry", async () => {
       const execute = vi.fn(async () => []);
       const repository = new BillingRepository({ execute });
 
@@ -141,7 +141,8 @@ describe("BillingRepository", () => {
       });
 
       const queryText = getQueryText(execute.mock.calls[0]?.[0]);
-      expect(queryText).toContain("app_store_revocation_at IS NULL");
+      expect(queryText).toContain("app_store_subscription_status <> 'revoked'");
+      expect(queryText).toContain("<> 'active'");
     });
 
     it("permits a revocation to replace a subscription with a later expiry", async () => {

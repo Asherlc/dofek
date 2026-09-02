@@ -10,6 +10,7 @@ import {
   VerificationStatus,
 } from "@apple/app-store-server-library";
 import { TRPCError } from "@trpc/server";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { getAppStoreBillingConfig } from "./app-store-config.ts";
 import {
@@ -93,7 +94,15 @@ async function verifySignedTransaction(jws: string): Promise<DecodedTransaction>
     );
     try {
       return await verifier.verifyAndDecodeTransaction(jws);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof VerificationException)) {
+        captureException(error, { tags: { source: "app-store-transaction-verifier" } });
+        throw error;
+      }
+      if (error.status === VerificationStatus.RETRYABLE_VERIFICATION_FAILURE) {
+        captureException(error, { tags: { source: "app-store-transaction-verifier" } });
+        throw error;
+      }
       // SignedDataVerifier validates the claimed environment. Try the other
       // Apple environment without decoding an unverified JWS ourselves.
     }

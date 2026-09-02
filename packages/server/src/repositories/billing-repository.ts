@@ -191,8 +191,8 @@ export class BillingRepository {
               OR ${input.expiresAt} > app_store_expires_at
               OR (
                 ${input.expiresAt} = app_store_expires_at
-                AND app_store_revocation_at IS NULL
-                AND ${input.status} = 'revoked'
+                AND app_store_subscription_status <> 'revoked'
+                AND ${input.status} <> 'active'
               )
             )
           RETURNING user_id`,

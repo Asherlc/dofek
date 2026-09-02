@@ -92,7 +92,7 @@ Expected: TypeScript/test failure because `appStoreSubscription` and the new acc
 
 - [ ] **Step 3: Add the schema migration and minimum resolver input**
 
-Add nullable App Store fields to `fitness.user_billing`: `app_store_account_token uuid unique`, transaction IDs, product ID, status, expiration, revocation, and environment. Create `fitness.app_store_notification` with `notification_uuid` primary key and `signed_date` as the sole notification-idempotency ledger. Extend `resolveAccessWindow` to return `app_store_subscription` only for the configured product, `active` or `grace_period` status, future expiration, and null revocation.
+Add nullable App Store fields to `fitness.user_billing`: `app_store_account_token uuid unique`, transaction IDs, product ID, status, expiration, revocation, and environment. Create `fitness.app_store_notification` with `notification_uuid` primary key and `signed_date` as the sole notification-idempotency ledger. Extend `resolveAccessWindow` to return `app_store_subscription` only for the configured product, an active status with a future transaction expiry or a grace-period status with a future renewal grace-period expiry, and null revocation.
 
 ```ts
 export type AccessWindow =
@@ -288,7 +288,7 @@ Expected: FAIL because the route factory does not exist.
 
 - [ ] **Step 3: Add the raw-body notification router**
 
-Mount `app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }))` before `express.json()`, adjacent to the Stripe raw webhook. Parse a JSON body containing only `signedPayload`; use Apple’s `verifyAndDecodeNotification`; require a notification UUID; insert it once into `fitness.app_store_notification`; then apply the decoded signed transaction/renewal state. Return `200 { received: true }` for a duplicate verified UUID, `400` for an invalid payload, and send unexpected internal errors to the shared Express error handler/Sentry.
+Mount `app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }))` before `express.json()`, adjacent to the Stripe raw webhook. Parse a JSON body containing only `signedPayload`; use Apple’s `verifyAndDecodeNotification`; require a notification UUID; apply the decoded signed transaction/renewal state and record it in `fitness.app_store_notification` within the same transaction. Return `200 { received: true }` for a duplicate verified UUID, `400` for an invalid payload, and send unexpected internal errors to the shared Express error handler/Sentry.
 
 Keep `fitness.app_store_notification` keyed only by Apple notification UUID and without a user foreign key, so account erasure does not delete the global replay-protection ledger.
 
