@@ -95,7 +95,7 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
     });
     const scanCountRows = scanCountRowsSchema.parse(await scanCountResult.json<unknown>());
 
-    expect(scanCountRows).toEqual([{ scan_count: 3 }]);
+    expect(scanCountRows).toEqual([{ scan_count: 2 }]);
   }, 180_000);
 });
 
@@ -212,6 +212,7 @@ async function seedHistoricalBackfillFixture(
     insertCurrentActivitiesSql(targetSchema),
     insertHistoricalPowerSamplesSql(targetSchema),
     insertDeletedPowerSampleSql(targetSchema),
+    insertExistingHistoricalSummarySql(targetSchema),
     insertUnrelatedFreshSummarySql(targetSchema),
     insertExistingTombstoneSql(targetSchema),
   ]);
@@ -278,11 +279,34 @@ function insertDeletedPowerSampleSql(targetSchema: string): string {
   ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), toDate('2026-07-05'), 'power', 180.0, 100, 1, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
 }
 
+function insertExistingHistoricalSummarySql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
+    activity_id,
+    user_id,
+    avg_power,
+    power_sample_count,
+    source_refresh_version,
+    refresh_version,
+    is_deleted,
+    refreshed_at
+  ) VALUES (
+    '${historicalActivityId}',
+    '${testUserId}',
+    100.0,
+    1,
+    50,
+    150,
+    0,
+    toDateTime64('2026-07-10 05:00:00', 9, 'UTC')
+  )`;
+}
+
 function insertUnrelatedFreshSummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
     activity_id,
     user_id,
     sample_count,
+    source_refresh_version,
     refresh_version,
     is_deleted,
     refreshed_at
@@ -290,6 +314,7 @@ function insertUnrelatedFreshSummarySql(targetSchema: string): string {
     '${unrelatedActivityId}',
     '${testUserId}',
     1,
+    200,
     200,
     0,
     toDateTime64('2026-07-10 15:00:00', 9, 'UTC')
@@ -301,6 +326,7 @@ function insertExistingTombstoneSql(targetSchema: string): string {
     activity_id,
     user_id,
     sample_count,
+    source_refresh_version,
     refresh_version,
     is_deleted,
     refreshed_at
@@ -308,6 +334,7 @@ function insertExistingTombstoneSql(targetSchema: string): string {
     '${tombstonedActivityId}',
     '${testUserId}',
     0,
+    100,
     200,
     1,
     toDateTime64('2026-07-10 15:00:00', 9, 'UTC')

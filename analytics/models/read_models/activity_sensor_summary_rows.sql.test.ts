@@ -45,12 +45,13 @@ describe("activity_sensor_summary_rows model", () => {
     );
   });
 
-  it("materializes only the reused dirty, sample, and power stages", () => {
+  it("materializes only the reused version, dirty, sample, and power stages", () => {
     expect(modelSql).toContain("'enable_materialized_cte': 1");
+    expect(modelSql).toContain("sample_source_versions AS materialized (");
     expect(modelSql).toContain("dirty_keys AS materialized (");
     expect(modelSql).toContain("latest_sensor_samples AS materialized (");
     expect(modelSql).toContain("power_cumulative AS materialized (");
-    expect(modelSql.match(/ AS materialized \(/g)).toHaveLength(3);
+    expect(modelSql.match(/ AS materialized \(/g)).toHaveLength(4);
   });
 
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {

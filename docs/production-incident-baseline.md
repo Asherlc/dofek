@@ -23366,3 +23366,49 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-09-01 — RideWithGPS cycling speeds were divided by 3.6 and late repairs were skipped
+
+- **Status:** The raw production speed rows are corrected; the forward extractor,
+  plausibility guard, and durable summary-refresh repair are prepared on
+  `fix/wahoo-speed-conversion`. Deployment is still required to refresh 681 stale
+  activity summaries and make the forward fix active.
+- **Symptoms / impact:** Outdoor rides sourced through RideWithGPS reported
+  average and maximum speeds about 3.3 times too low. Wahoo activities could show
+  the same symptom when provider deduplication selected overlapping RideWithGPS
+  sensor samples. A descent-heavy ride reported a physically implausible
+  `4.594 m/s` maximum instead of approximately `16.54 m/s`.
+- **Evidence / root cause:** RideWithGPS `track_points[].s` already carries meters
+  per second, but the extractor divided it by `3.6` as though it were kilometers
+  per hour. Production sampling found a tight affected-provider ratio near the
+  expected unit factor, while Strava did not share it. An append-only production
+  correction wrote 2,936,162 higher-version physical rows covering 2,935,336
+  logical rows across 753 activities. One target summary remained stale because
+  `activity_sensor_summary_rows` used the table-wide maximum `refreshed_at` as a
+  watermark; a newer unrelated activity could therefore hide an older activity's
+  late correction. The serving table uses ClickHouse
+  [`ReplacingMergeTree`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree),
+  so repairs were appended with higher versions rather than mutating ordering-key
+  columns.
+- **Fix / mitigation:** Removed the erroneous conversion and annotated the source
+  unit explicitly as meters per second. Added cycling rejection thresholds of
+  `20 m/s` average and `30 m/s` maximum. Added a durable
+  `source_refresh_version` to every activity sensor summary and compare each
+  activity only with the highest source version it consumed; no global timestamp
+  can exclude a stale key. Historical raw rows were corrected in one append-only
+  pass. No timeout, retry, timestamp lookback, or warn-and-continue workaround was
+  added.
+- **Validation:** The pre-fix real-ClickHouse regression returned the stale
+  `100 W / 1 sample` summary; the repaired model returns `210 W / 2 samples` even
+  when an unrelated summary has a newer timestamp and source version. The model
+  now needs two sensor-table scans instead of three. Focused RideWithGPS and model
+  unit tests pass 51/51; the watermark and canonical-ID ClickHouse suites pass
+  4/4; the shared power-curve integration suite passes 8/8; TypeScript and lint
+  pass. The broad changed integration run reached 1,221 passing tests but could
+  not complete because parallel unrelated suites exceeded the local ClickHouse
+  `1.25 GiB` memory cap and filled disposable test volumes; no product assertion
+  failed before that infrastructure cascade.
+- **Remaining risk / follow-up:** Merge and deploy the migration/model change, run
+  one analytics worker cycle, and verify all 681 stale summaries converge. Confirm
+  activity `2a7c6fa3` reports a descent-appropriate peak in the 50–65 km/h range
+  and rerun the provider ratio report after new RideWithGPS ingestion.

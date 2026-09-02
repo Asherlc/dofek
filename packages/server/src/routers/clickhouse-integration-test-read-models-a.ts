@@ -224,6 +224,7 @@ SELECT
   CAST(NULL, 'Nullable(Float64)') AS smoothed_avg_power,
   CAST(NULL, 'Nullable(Float64)') AS climbing_elevation_gain_m,
   CAST(NULL, 'Nullable(Int32)') AS climbing_seconds,
+  toUInt64(0) AS source_refresh_version,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   toUInt8(0) AS is_deleted,
   now64(9) AS refreshed_at

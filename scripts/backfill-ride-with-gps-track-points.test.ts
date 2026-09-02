@@ -36,7 +36,7 @@ describe("planRideWithGpsActivityBackfill", () => {
             latitude: 45.5,
             elevationMeters: 150,
             epochSeconds: 1_723_276_200,
-            speedKph: 36,
+            speedMetersPerSecond: 10,
           },
         ],
       },
@@ -82,7 +82,7 @@ describe("planRideWithGpsActivityBackfill", () => {
             y: 45.5,
             e: 150,
             t: 1_723_276_200,
-            s: 36,
+            s: 10,
             h: 145,
             c: 90,
             p: 200,
@@ -98,6 +98,7 @@ describe("planRideWithGpsActivityBackfill", () => {
     });
     expect(plan.shouldUpdateActivityType).toBe(false);
     expect(plan.metricRows[0]).toMatchObject({
+      speed: 10,
       heartRate: 145,
       cadence: 90,
       power: 200,

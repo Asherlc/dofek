@@ -212,6 +212,13 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(
+      migrations.find(
+        (migration) => migration.id === "0072_activity_sensor_summary_source_version",
+      ),
+    ).toMatchObject({
+      statements: [expect.stringContaining("source_refresh_version UInt64 DEFAULT 0")],
+    });
+    expect(
       migrations.find((migration) => migration.id === "0069_canonical_activity_types"),
     ).toMatchObject({
       id: "0069_canonical_activity_types",
