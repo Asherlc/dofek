@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
 import { captureException } from "dofek/lib/error-reporting";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   authFailureReasonFromError,
@@ -7,8 +7,8 @@ import {
 } from "../providers/auth-errors.ts";
 import type { SyncDegradation, SyncDegradationKind } from "../sync/sync-degradation.ts";
 import { reportSyncDegradation } from "../sync/sync-degradation-reporting.ts";
-import type { SyncDatabase } from "./index.ts";
 import { executeWithSchema } from "./execute-with-schema.ts";
+import type { SyncDatabase } from "./index.ts";
 import { type SyncLogOrigin, syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
