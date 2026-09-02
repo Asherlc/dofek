@@ -27,6 +27,13 @@ const mockReadiness = [
 ];
 
 const mockWorkloadRatio = {
+  context: {
+    label: "Recent-to-baseline workload ratio",
+    description:
+      "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+    recentDays: 7,
+    baselineDays: 28,
+  },
   displayedStrain: 12.5,
   displayedDate: today,
   timeSeries: [
@@ -49,6 +56,13 @@ const mockSleepPerformance = {
   efficiency: 88,
   recommendedBedtime: "22:30",
   sleepDate: today,
+  providerId: "whoop",
+  sourceName: null,
+  sourceProviders: ["whoop"],
+  summaryDateContext: {
+    effectiveDate: today,
+    timezone: "America/Los_Angeles",
+  },
 };
 
 /** Find the closest <button> ancestor of an element. */
@@ -92,6 +106,92 @@ describe("DailyOverview", () => {
       />,
     );
     expect(container.innerHTML).toBe("");
+  });
+
+  it.each([
+    ["readiness", "Recovery", { readinessError: new Error("Readiness unavailable") }],
+    ["workload", "Strain", { workloadError: new Error("Workload unavailable") }],
+    [
+      "strain target",
+      "Strain target",
+      { strainTargetError: new Error("Strain target unavailable") },
+    ],
+    ["sleep", "Sleep", { sleepError: new Error("Sleep performance unavailable") }],
+  ])(
+    "shows the exact %s query failure instead of hiding the summary",
+    (_name, label, errorProps) => {
+      render(
+        <DailyOverview
+          readiness={undefined}
+          workloadRatio={undefined}
+          sleepPerformance={undefined}
+          readinessLoading={false}
+          workloadLoading={false}
+          strainTargetLoading={false}
+          sleepLoading={false}
+          {...errorProps}
+        />,
+      );
+
+      expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
+      const contextHeading = `${label}: Could not load this section`;
+      const alert = screen.getByRole("heading", { name: contextHeading }).closest('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert).toHaveTextContent(Object.values(errorProps)[0]?.message ?? "");
+      expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    },
+  );
+
+  it("shows all core query failures together", () => {
+    render(
+      <DailyOverview
+        readiness={undefined}
+        workloadRatio={undefined}
+        sleepPerformance={undefined}
+        readinessError={new Error("Readiness unavailable")}
+        workloadError={new Error("Workload unavailable")}
+        strainTargetError={new Error("Strain target unavailable")}
+        sleepError={new Error("Sleep performance unavailable")}
+      />,
+    );
+
+    expect(screen.getByText("Readiness unavailable")).toBeTruthy();
+    expect(screen.getByText("Workload unavailable")).toBeTruthy();
+    expect(screen.getByText("Strain target unavailable")).toBeTruthy();
+    expect(screen.getByText("Sleep performance unavailable")).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(4);
+    expect(
+      screen.getByRole("heading", { name: "Recovery: Could not load this section" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Strain: Could not load this section" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Strain target: Could not load this section" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Sleep: Could not load this section" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps cached ring data visible during background failures", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessError={new Error("Readiness refresh unavailable")}
+        workloadError={new Error("Workload refresh unavailable")}
+        strainTargetError={new Error("Strain target refresh unavailable")}
+        sleepError={new Error("Sleep refresh unavailable")}
+      />,
+    );
+
+    expect(screen.getByText("75")).toBeTruthy();
+    expect(screen.getByText("Readiness refresh unavailable")).toBeTruthy();
+    expect(screen.getByText("Workload refresh unavailable")).toBeTruthy();
+    expect(screen.getByText("Strain target refresh unavailable")).toBeTruthy();
+    expect(screen.getByText("Sleep refresh unavailable")).toBeTruthy();
   });
 
   it("renders recovery ring with score", () => {
@@ -149,7 +249,7 @@ describe("DailyOverview", () => {
     if (panel instanceof HTMLElement) {
       expect(panel.className).not.toContain("dashboard-hero");
       expect(panel.classList.contains("card")).toBe(false);
-      expect(panel.className).toContain("bg-white/62");
+      expect(panel.className).toContain("bg-surface");
     }
   });
 
@@ -180,6 +280,30 @@ describe("DailyOverview", () => {
     );
     // "Sleep" appears both in the ring label and the always-mounted recovery breakdown
     expect(screen.getAllByText("Sleep").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders the server-authored date and timezone for the daily and sleep summaries", () => {
+    render(
+      <DailyOverview
+        endDate="2026-08-02"
+        summaryDateContext={{
+          effectiveDate: "2026-08-02",
+          timezone: "America/Los_Angeles",
+        }}
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={{ ...mockSleepPerformance, sleepDate: "2026-08-01" }}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    expect(screen.getByText("Sun, Aug 2, 2026 · America/Los_Angeles")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sleep score breakdown" }));
+
+    expect(screen.getByText("Night of Sat, Aug 1, 2026 · America/Los_Angeles")).toBeTruthy();
   });
 
   it("renders contextual descriptions below each score ring", () => {
@@ -257,7 +381,7 @@ describe("DailyOverview", () => {
     fireEvent.click(findButton(screen.getByText("Recovery")));
 
     // Should show an explanation of what data is needed
-    expect(screen.getByText(/Recovery score needs HRV/)).toBeTruthy();
+    expect(screen.getByText(/Recovery score needs heart rate variability/)).toBeTruthy();
   });
 
   it("shows explanation when empty sleep ring is clicked", () => {
@@ -305,6 +429,13 @@ describe("DailyOverview", () => {
         endDate="2026-03-31"
         readiness={mockReadiness}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 10.2,
           displayedDate: "2026-03-30",
           timeSeries: [
@@ -377,7 +508,14 @@ describe("DailyOverview", () => {
     render(
       <DailyOverview
         readiness={mockReadiness}
-        workloadRatio={mockWorkloadRatio}
+        workloadRatio={{
+          ...mockWorkloadRatio,
+          context: {
+            ...mockWorkloadRatio.context,
+            recentDays: 5,
+            baselineDays: 20,
+          },
+        }}
         sleepPerformance={mockSleepPerformance}
         strainTarget={mockStrainTarget}
         readinessLoading={false}
@@ -397,9 +535,14 @@ describe("DailyOverview", () => {
     // Breakdown should show target and load stats
     expect(screen.getByText("14")).toBeTruthy(); // target strain value
     expect(screen.getByText("Push")).toBeTruthy();
-    expect(screen.getByText("Acute (7d)")).toBeTruthy();
-    expect(screen.getByText("Chronic (28d)")).toBeTruthy();
-    expect(screen.getByText("Workload Ratio")).toBeTruthy();
+    expect(screen.getByText("Recent 5-day load")).toBeTruthy();
+    expect(screen.getByText("20-day baseline load")).toBeTruthy();
+    expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+      ),
+    ).toBeTruthy();
   });
 
   it("explains current strain from today's load separately from rolling training load", () => {
@@ -408,8 +551,7 @@ describe("DailyOverview", () => {
       currentStrain: 0,
       progressPercent: 0,
       zone: "Maintain" as const,
-      explanation:
-        "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
+      explanation: "Moderate recovery (50). Aim for a steady training day.",
       dailyLoad: 0,
       acuteLoad: 133,
       chronicLoad: 33,
@@ -421,6 +563,13 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={mockReadiness}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 0,
           displayedDate: today,
           timeSeries: [
@@ -444,10 +593,8 @@ describe("DailyOverview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Strain score breakdown" }));
 
-    expect(screen.getByText("Today")).toBeTruthy();
-    expect(screen.getByText("0")).toBeTruthy();
-    expect(screen.getByText("Training Load Ratio")).toBeTruthy();
-    expect(screen.getAllByText("4.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
+    expect(screen.getByText("4.00")).toBeTruthy();
   });
 
   it("expands sleep breakdown when sleep ring is clicked", () => {
@@ -538,6 +685,13 @@ describe("DailyOverview", () => {
           },
         ]}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 12.5,
           displayedDate: yesterdayStr,
           timeSeries: [
@@ -559,6 +713,13 @@ describe("DailyOverview", () => {
           efficiency: 88,
           recommendedBedtime: "22:30",
           sleepDate: yesterdayStr,
+          providerId: "whoop",
+          sourceName: null,
+          sourceProviders: ["whoop"],
+          summaryDateContext: {
+            effectiveDate: today,
+            timezone: "America/Los_Angeles",
+          },
         }}
         readinessLoading={false}
         workloadLoading={false}
@@ -591,6 +752,13 @@ describe("DailyOverview", () => {
           },
         ]}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 12.5,
           displayedDate: "2026-03-20",
           timeSeries: [
@@ -636,6 +804,13 @@ describe("DailyOverview", () => {
           },
         ]}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 12.5,
           displayedDate: twoDaysAgoStr,
           timeSeries: [

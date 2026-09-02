@@ -29,13 +29,20 @@ const mapPreview = {
 function location(overrides: Partial<ActivityMapLocation> = {}): ActivityMapLocation {
   return {
     mapPreview,
-    distanceMeters: 5000,
-    elevationGainM: 120,
     ...overrides,
   };
 }
 
 describe("ActivityMapTile", () => {
+  it("fills a horizontal activity card map panel", () => {
+    render(<ActivityMapTile location={location()} variant="panel" />);
+
+    const tile = screen.getByTestId("activity-map-tile");
+    expect(tile.className).toContain("h-full");
+    expect(tile.className).toContain("min-h-48");
+    expect(tile.className).not.toContain("aspect-[16/9]");
+  });
+
   it("replaces failed map tiles with a fallback", () => {
     render(<ActivityMapTile location={location()} />);
     fireEvent.error(screen.getAllByTestId("activity-map-preview-tile")[0] ?? document.body);

@@ -16,8 +16,8 @@ export interface ExponentialMovingAverageFitResult {
 
 const CHRONIC_LOAD_CANDIDATES = [21, 28, 35, 42, 49, 56, 63];
 const ACUTE_LOAD_CANDIDATES = [5, 7, 9, 11, 14];
-const MIN_DAYS = 90;
-const MIN_CORRELATION = 0.2;
+export const MINIMUM_EXPONENTIAL_MOVING_AVERAGE_DAYS = 90;
+export const MINIMUM_EXPONENTIAL_MOVING_AVERAGE_ABSOLUTE_CORRELATION = 0.2;
 
 /**
  * Find the EWMA windows (CTL/ATL) that maximize
@@ -29,7 +29,7 @@ const MIN_CORRELATION = 0.2;
 export function fitExponentialMovingAverage(
   data: ExponentialMovingAverageInput[],
 ): ExponentialMovingAverageFitResult | null {
-  if (data.length < MIN_DAYS) return null;
+  if (data.length < MINIMUM_EXPONENTIAL_MOVING_AVERAGE_DAYS) return null;
 
   let bestCorrelation = 0;
   let bestCtl = 42;
@@ -53,7 +53,8 @@ export function fitExponentialMovingAverage(
     }
   }
 
-  if (Math.abs(bestCorrelation) < MIN_CORRELATION) return null;
+  if (Math.abs(bestCorrelation) < MINIMUM_EXPONENTIAL_MOVING_AVERAGE_ABSOLUTE_CORRELATION)
+    return null;
 
   return {
     chronicTrainingLoadDays: bestCtl,

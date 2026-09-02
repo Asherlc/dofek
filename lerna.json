@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/lerna/schemas/lerna-schema.json",
+  "version": "independent",
+  "npmClient": "pnpm",
+  "packages": [
+    "packages/provider-http",
+    "packages/scoring",
+    "packages/zones",
+    "packages/training",
+    "packages/eight-sleep",
+    "packages/garmin-connect",
+    "packages/peloton-client",
+    "packages/trainerroad-client",
+    "packages/trainingpeaks-connect",
+    "packages/velohero-client",
+    "packages/whoop-whoop",
+    "packages/xert-client",
+    "packages/zepp-client",
+    "packages/zwift-client",
+    "packages/mobile/modules/whoop-ble"
+  ],
+  "command": {
+    "version": {
+      "allowBranch": "main",
+      "message": "chore(release): version npm packages"
+    },
+    "publish": {
+      "registry": "https://registry.npmjs.org/"
+    }
+  }
+}

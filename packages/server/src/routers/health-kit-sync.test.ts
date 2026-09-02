@@ -1,15 +1,33 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeTransactionalTestDatabase } from "./test-helpers.ts";
 
-const { mockInvalidateByPrefix, mockMetricStreamPublishRows, mockPublishedMetricStreamRowBatches } =
-  vi.hoisted(() => {
-    const mockPublishedMetricStreamRowBatches: unknown[][] = [];
-    return {
-      mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-      mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
-      mockPublishedMetricStreamRowBatches,
-    };
-  });
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
+const {
+  mockInvalidateByPrefix,
+  mockMetricStreamPublishRows,
+  mockPublishedMetricStreamRowBatches,
+  mockSentryCaptureException,
+} = vi.hoisted(() => {
+  const mockPublishedMetricStreamRowBatches: unknown[][] = [];
+  return {
+    mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+    mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
+    mockPublishedMetricStreamRowBatches,
+    mockSentryCaptureException: vi.fn(),
+  };
+});
+
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
 
 vi.mock("dofek/sync-metrics", () => ({
   healthKitRecordsTotal: { add: vi.fn() },
@@ -17,6 +35,7 @@ vi.mock("dofek/sync-metrics", () => ({
 }));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: (userId: string) => mockInvalidateByPrefix(`${userId}:`),
   queryCache: {
     invalidateByPrefix: mockInvalidateByPrefix,
     get: vi.fn().mockResolvedValue(undefined),
@@ -26,7 +45,7 @@ vi.mock("dofek/lib/cache", () => ({
 }));
 
 vi.mock("@sentry/node", () => ({
-  captureException: vi.fn(),
+  captureException: mockSentryCaptureException,
 }));
 
 vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
@@ -36,6 +55,15 @@ vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
+}));
+
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -52,11 +80,9 @@ vi.mock("../trpc.ts", async () => {
 });
 
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { healthKitSyncRouter } from "./health-kit-sync.ts";
-import {
-  aggregateDailyMetricSamples,
-  computeBoundsFromIsoTimestamps,
-} from "./health-kit-sync-processors.ts";
+import { aggregateDailyMetricSamples } from "./health-kit-sync-processors.ts";
 import type { SleepSample } from "./health-kit-sync-schemas.ts";
 import { deriveSleepSessionsFromStages, isSleepStageValue } from "./health-kit-sync-sleep.ts";
 
@@ -65,6 +91,18 @@ const createCaller = createTestCallerFactory(healthKitSyncRouter);
 function makeExecute() {
   return vi.fn().mockResolvedValue([]);
 }
+
+function makeDatabase(execute = makeExecute()) {
+  return makeTransactionalTestDatabase({ execute });
+}
+
+const WORKOUT_SYNC_WINDOW = {
+  windowStart: "2024-01-01T00:00:00.000Z",
+  windowEnd: "2024-12-31T23:59:59.999Z",
+};
+
+const DELETED_HEART_RATE_UUID = "00000000-0000-4000-8000-000000000101";
+const DELETED_VO2_MAX_UUID = "00000000-0000-4000-8000-000000000102";
 
 function makeSample(overrides: Record<string, unknown> = {}) {
   return {
@@ -95,12 +133,171 @@ describe("healthKitSyncRouter", () => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
     vi.mocked(healthKitPushTotal.add).mockClear();
     mockInvalidateByPrefix.mockClear();
+    mockSentryCaptureException.mockClear();
     mockMetricStreamPublishRows.mockReset();
     mockPublishedMetricStreamRowBatches.length = 0;
+    providerActivitySyncMocks.reconcile.mockClear();
+    providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.upsert.mockResolvedValue({ id: "activity-id" });
     mockMetricStreamPublishRows.mockImplementation(async (rows: readonly unknown[]) => {
       const publishedRows = [...rows];
       mockPublishedMetricStreamRowBatches.push(publishedRows);
       return publishedRows;
+    });
+  });
+
+  describe("deleteQuantitySamples", () => {
+    it("publishes provider-scoped tombstones and invalidates the user's cache", async () => {
+      const execute = makeExecute();
+      const replaceRows = vi.fn(async (scope, rows, operationRevision) => ({
+        deleted: {
+          version: 3 as const,
+          eventType: "metric_stream_deleted" as const,
+          eventId: "00000000-0000-4000-8000-000000000001",
+          operationRevision,
+          scope,
+          partitionKey: "test",
+        },
+        rows,
+      }));
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+          replaceRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      const result = await caller.deleteQuantitySamples({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        deletedUUIDs: [DELETED_HEART_RATE_UUID],
+      });
+
+      expect(result).toEqual({ deleted: 1 });
+      expect(replaceRows).toHaveBeenCalledWith(
+        {
+          externalId: `hk:${DELETED_HEART_RATE_UUID}`,
+          providerId: "apple_health",
+          userId: "00000000-0000-0000-0000-000000000001",
+        },
+        [],
+        "1000000000000000",
+      );
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001:");
+      expect(healthKitPushTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "deleteQuantitySamples",
+        status: "success",
+      });
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "deleteQuantitySamples",
+        category: "deletedQuantitySample",
+      });
+    });
+
+    it("does not invalidate cached queries when there are no deleted UUIDs", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      const result = await caller.deleteQuantitySamples({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        deletedUUIDs: [],
+      });
+
+      expect(result).toEqual({ deleted: 0 });
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+    });
+
+    it("returns an actionable precondition error when tombstones are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteQuantitySamples({
+          typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+          deletedUUIDs: [DELETED_HEART_RATE_UUID],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "HealthKit deletion sync is unavailable because metric deletion publishing is not configured. Please try again later.",
+      });
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Metric stream publisher does not support HealthKit deletion tombstones",
+        }),
+        {
+          extra: {
+            userId: "00000000-0000-0000-0000-000000000001",
+          },
+          tags: {
+            endpoint: "deleteQuantitySamples",
+          },
+        },
+      );
+    });
+
+    it("rejects malformed HealthKit deletion identifiers", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteQuantitySamples({
+          typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+          deletedUUIDs: ["not-a-uuid"],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("preserves unexpected repository failures", async () => {
+      const repositoryError = new Error("database unavailable");
+      const execute = makeExecute();
+      execute.mockResolvedValueOnce([]).mockRejectedValueOnce(repositoryError);
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteQuantitySamples({
+          typeIdentifier: "HKQuantityTypeIdentifierVO2Max",
+          deletedUUIDs: [DELETED_VO2_MAX_UUID],
+        }),
+      ).rejects.toMatchObject({
+        cause: repositoryError,
+        code: "INTERNAL_SERVER_ERROR",
+      });
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(repositoryError, {
+        extra: {
+          userId: "00000000-0000-0000-0000-000000000001",
+        },
+        tags: {
+          endpoint: "deleteQuantitySamples",
+        },
+      });
     });
   });
 
@@ -190,7 +387,7 @@ describe("healthKitSyncRouter", () => {
     it("processes body measurement samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -209,10 +406,47 @@ describe("healthKitSyncRouter", () => {
       expect(result.errors).toEqual([]);
     });
 
+    it("ignores calorie expenditure samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: makeDatabase(execute),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+            value: 450,
+            unit: "kcal",
+            uuid: "active-energy-1",
+          }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierBasalEnergyBurned",
+            value: 1_800,
+            unit: "kcal",
+            uuid: "basal-energy-1",
+          }),
+        ],
+      });
+
+      expect(result).toEqual({ inserted: 0, errors: [] });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(0, {
+        endpoint: "pushQuantitySamples",
+        category: "bodyMeasurement",
+      });
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(0, {
+        endpoint: "pushQuantitySamples",
+        category: "healthEvent",
+      });
+    });
+
     it("applies body fat percentage transform (value * 100)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -227,18 +461,21 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "body_fat_percentage",
-          scalar: 18,
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            channel: "body_fat_percentage",
+            scalar: 18,
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("applies distance transform (value / 1000)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -266,7 +503,7 @@ describe("healthKitSyncRouter", () => {
     it("processes additive daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -274,15 +511,10 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({ type: "HKQuantityTypeIdentifierStepCount", value: 5000, uuid: "s1" }),
-          makeSample({
-            type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-            value: 300,
-            uuid: "s2",
-          }),
         ],
       });
 
-      expect(result.inserted).toBe(2);
+      expect(result.inserted).toBe(1);
       expect(result.errors).toEqual([]);
     });
 
@@ -298,20 +530,12 @@ describe("healthKitSyncRouter", () => {
           endDate: "2024-01-15T12:00:00Z",
           uuid: "stat:steps:2024-01-15",
         }),
-        makeSample({
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          value: 450,
-          startDate: "2024-01-15T12:00:00Z",
-          endDate: "2024-01-15T12:00:00Z",
-          uuid: "stat:energy:2024-01-15",
-        }),
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
       const jan15 = daily.get("2024-01-15\x00iPhone");
 
       expect(jan15?.steps).toBe(8500);
-      expect(jan15?.activeEnergyKcal).toBe(450);
     });
 
     it("does not double-count when raw samples from multiple sources are replaced by statistics", () => {
@@ -337,7 +561,7 @@ describe("healthKitSyncRouter", () => {
     it("rounds float steps to integer before inserting into daily_metrics", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -367,7 +591,7 @@ describe("healthKitSyncRouter", () => {
     it("rounds float heart rate before publishing metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -382,35 +606,16 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "heart_rate",
-          scalar: 81,
-        }),
-      ]);
-    });
-
-    it("does not round real-valued columns (active_energy_kcal, distance_km)", async () => {
-      const samples = [
-        makeSample({
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          value: 385.08851139373337,
-          startDate: "2024-01-15T12:00:00Z",
-          uuid: "energy-float",
-        }),
-      ];
-
-      const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15\x00iPhone");
-
-      // activeEnergyKcal is a real column — should preserve the float value
-      expect(jan15?.activeEnergyKcal).toBeCloseTo(385.089, 2);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [expect.objectContaining({ channel: "heart_rate", scalar: 81 })],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("processes point-in-time daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -432,7 +637,7 @@ describe("healthKitSyncRouter", () => {
     it("processes metric stream samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -444,19 +649,22 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          externalId: "hk:hr1",
-          channel: "heart_rate",
-          scalar: 120,
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            externalId: "hk:hr1",
+            channel: "heart_rate",
+            scalar: 120,
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("does not touch the retired Postgres metric_stream table after inserting heart-rate metrics", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -473,7 +681,7 @@ describe("healthKitSyncRouter", () => {
     it("processes health event samples (catch-all)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -490,7 +698,7 @@ describe("healthKitSyncRouter", () => {
     it("handles empty samples array", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -504,7 +712,7 @@ describe("healthKitSyncRouter", () => {
     it("applies body fat percentage transform", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -525,7 +733,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics materialized view after processing skin temp samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -552,7 +760,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics after processing SpO2 samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -579,7 +787,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics when daily metric samples are inserted", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -605,7 +813,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_daily_metrics when no daily metrics or metric stream samples present", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -635,7 +843,7 @@ describe("healthKitSyncRouter", () => {
       mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("DB connection failed"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -657,7 +865,7 @@ describe("healthKitSyncRouter", () => {
       mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Metric stream Redpanda error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -680,7 +888,7 @@ describe("healthKitSyncRouter", () => {
       execute.mockRejectedValueOnce(new Error("Daily metrics DB error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -703,7 +911,7 @@ describe("healthKitSyncRouter", () => {
       execute.mockRejectedValueOnce(new Error("Health event DB error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -721,7 +929,7 @@ describe("healthKitSyncRouter", () => {
     it("applies distance transform (m to km)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -742,7 +950,7 @@ describe("healthKitSyncRouter", () => {
     it("emits HealthKit metrics with per-category counts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -784,15 +992,48 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushWorkouts", () => {
+    it("rejects inverted sync window bounds", async () => {
+      const caller = createCaller({
+        db: makeDatabase(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.pushWorkouts({
+          windowStart: "2024-12-31T23:59:59.999Z",
+          windowEnd: "2024-01-01T00:00:00.000Z",
+          workouts: [],
+        }),
+      ).rejects.toThrow("windowEnd must be after windowStart");
+    });
+
+    it("rejects equal sync window bounds", async () => {
+      const caller = createCaller({
+        db: makeDatabase(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.pushWorkouts({
+          windowStart: "2024-01-15T10:00:00.000Z",
+          windowEnd: "2024-01-15T10:00:00.000Z",
+          workouts: [],
+        }),
+      ).rejects.toThrow("windowEnd must be after windowStart");
+    });
+
     it("processes workout samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w1",
@@ -800,7 +1041,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -814,12 +1054,13 @@ describe("healthKitSyncRouter", () => {
     it("does not touch the retired Postgres metric_stream table after workout upsert", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-link",
@@ -827,7 +1068,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -841,12 +1081,13 @@ describe("healthKitSyncRouter", () => {
     it("maps unknown workout type to other", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       const result = await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w2",
@@ -854,7 +1095,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T10:30:00Z",
             duration: 1800,
-            totalEnergyBurned: null,
             totalDistance: null,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -868,24 +1108,25 @@ describe("healthKitSyncRouter", () => {
     it("handles empty workouts array", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
-      const result = await caller.pushWorkouts({ workouts: [] });
+      const result = await caller.pushWorkouts({ ...WORKOUT_SYNC_WINDOW, workouts: [] });
       expect(result.inserted).toBe(0);
     });
 
     it("emits HealthKit metrics for workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-metric",
@@ -893,7 +1134,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -916,7 +1156,7 @@ describe("healthKitSyncRouter", () => {
     it("processes sleep session with stages", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -983,7 +1223,7 @@ describe("healthKitSyncRouter", () => {
     it("includes duration_minutes and sleep_type in SQL", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1011,10 +1251,46 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("sleep_type");
     });
 
+    it.each([
+      ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00", [-480, -420, "device_offset"]],
+      ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00", [null, null, "unknown"]],
+    ])(
+      "stores record-local sleep context for %s to %s",
+      async (startDate, endDate, expectedContext) => {
+        const execute = makeExecute();
+        const caller = createCaller({
+          db: { execute },
+          userId: "user-1",
+          timezone: "UTC",
+        });
+
+        await caller.pushSleepSamples({
+          samples: [
+            {
+              uuid: "sleep-local-time",
+              startDate,
+              endDate,
+              value: "inBed",
+              sourceName: "Apple Watch",
+            },
+          ],
+        });
+
+        const sleepCall = execute.mock.calls.find((call: unknown[]) => {
+          const serialized = JSON.stringify(call[0]);
+          return serialized.includes("sleep_session") && serialized.includes("INSERT");
+        });
+        const serialized = JSON.stringify(sleepCall?.[0]);
+        for (const expected of expectedContext) {
+          expect(serialized).toContain(JSON.stringify(expected));
+        }
+      },
+    );
+
     it("stores null sleep_type for short sessions", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1044,7 +1320,7 @@ describe("healthKitSyncRouter", () => {
     it("stores per-source rows for multi-source data (dedup at query time)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -1118,7 +1394,7 @@ describe("healthKitSyncRouter", () => {
     it("derives a sleep session when only stage samples are present", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1155,7 +1431,7 @@ describe("healthKitSyncRouter", () => {
     it("emits HealthKit metrics for sleep samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1185,7 +1461,7 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_sleep materialized view after inserting sleep data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1212,7 +1488,7 @@ describe("healthKitSyncRouter", () => {
     it("does not issue fallback refresh when sleep data is inserted", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1249,7 +1525,7 @@ describe("healthKitSyncRouter", () => {
         return Promise.resolve([]);
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1279,12 +1555,13 @@ describe("healthKitSyncRouter", () => {
     it("does not refresh v_activity after inserting workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-refresh",
@@ -1292,7 +1569,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T09:00:00Z",
             endDate: "2024-01-15T10:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -1320,7 +1596,7 @@ describe("healthKitSyncRouter", () => {
         return [];
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1388,7 +1664,7 @@ describe("healthKitSyncRouter", () => {
     it("skips routes when no matching activity exists", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1414,7 +1690,7 @@ describe("healthKitSyncRouter", () => {
         return [];
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1439,7 +1715,7 @@ describe("healthKitSyncRouter", () => {
     it("skips routes with empty locations array", async () => {
       const execute = vi.fn().mockResolvedValue([{ id: "activity-789" }]);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1460,7 +1736,7 @@ describe("healthKitSyncRouter", () => {
         return [];
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2003,28 +2279,10 @@ describe("healthKitSyncRouter", () => {
           uuid: "steps-1",
         }),
         makeSample({
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          value: 300,
-          startDate: "2024-01-15T11:00:00Z",
-          uuid: "energy-1",
-        }),
-        makeSample({
-          type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-          value: 1500,
-          startDate: "2024-01-15T12:00:00Z",
-          uuid: "basal-1",
-        }),
-        makeSample({
           type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
           value: 5000, // meters, should be transformed to 5 km
           startDate: "2024-01-15T12:00:00Z",
           uuid: "dist-1",
-        }),
-        makeSample({
-          type: "HKQuantityTypeIdentifierDistanceCycling",
-          value: 20000, // meters, should be transformed to 20 km
-          startDate: "2024-01-15T12:00:00Z",
-          uuid: "cycle-1",
         }),
         makeSample({
           type: "HKQuantityTypeIdentifierFlightsClimbed",
@@ -2045,10 +2303,7 @@ describe("healthKitSyncRouter", () => {
 
       expect(jan15).toBeDefined();
       expect(jan15?.steps).toBe(5000);
-      expect(jan15?.activeEnergyKcal).toBe(300);
-      expect(jan15?.basalEnergyKcal).toBe(1500);
       expect(jan15?.distanceKm).toBe(5);
-      expect(jan15?.cyclingDistanceKm).toBe(20);
       expect(jan15?.flightsClimbed).toBe(12);
       expect(jan15?.exerciseMinutes).toBe(45);
     });
@@ -2091,6 +2346,12 @@ describe("healthKitSyncRouter", () => {
           startDate: "2024-01-15T10:00:00Z",
           uuid: "wa-1",
         }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+          value: 0.84,
+          startDate: "2024-01-15T10:00:00Z",
+          uuid: "steadiness-1",
+        }),
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
@@ -2103,6 +2364,7 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.walkingStepLength).toBe(0.72);
       expect(jan15?.walkingDoubleSupportPct).toBe(0.28);
       expect(jan15?.walkingAsymmetryPct).toBe(0.05);
+      expect(jan15?.walkingSteadiness).toBe(0.84);
     });
 
     it("skips non-point, non-additive samples via continue (kills if(false) on !pointMapping continue)", () => {
@@ -2161,7 +2423,7 @@ describe("healthKitSyncRouter", () => {
     it("includes all additive fields in SQL when non-zero (kills ObjectLiteral {} mutations on field entries)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2172,16 +2434,6 @@ describe("healthKitSyncRouter", () => {
             type: "HKQuantityTypeIdentifierStepCount",
             value: 5000,
             uuid: "s1",
-          }),
-          makeSample({
-            type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-            value: 300,
-            uuid: "s2",
-          }),
-          makeSample({
-            type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-            value: 1500,
-            uuid: "s3",
           }),
           makeSample({
             type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
@@ -2209,8 +2461,6 @@ describe("healthKitSyncRouter", () => {
       const serialized = JSON.stringify(dailyInsertCall?.[0]);
       // Verify all additive columns are present in the SQL
       expect(serialized).toContain("steps");
-      expect(serialized).toContain("active_energy_kcal");
-      expect(serialized).toContain("basal_energy_kcal");
       expect(serialized).toContain("distance_km");
       expect(serialized).toContain("flights_climbed");
       expect(serialized).toContain("exercise_minutes");
@@ -2219,7 +2469,7 @@ describe("healthKitSyncRouter", () => {
     it("includes all point-in-time fields in SQL when non-null (kills ObjectLiteral {} mutations on pointFields)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2251,6 +2501,11 @@ describe("healthKitSyncRouter", () => {
             value: 0.05,
             uuid: "wa-insert",
           }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+            value: 0.84,
+            uuid: "steadiness-insert",
+          }),
         ],
       });
 
@@ -2268,11 +2523,47 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("walking_step_length");
       expect(serialized).toContain("walking_double_support_pct");
       expect(serialized).toContain("walking_asymmetry_pct");
+      expect(serialized).toContain("walking_steadiness");
     });
 
-    it("skips additive fields with zero value (kills raw > 0 to true/raw >= 0 mutations)", async () => {
-      // If only zero-value additive fields are sent, the setClauses will be empty
-      // and processDailyMetrics should skip the INSERT (continue on setClauses.length === 0)
+    it("does not write absent additive fields for point-in-time-only samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: makeDatabase(execute),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierWalkingSpeed",
+            value: 1.3,
+            uuid: "walking-speed-only",
+          }),
+        ],
+      });
+
+      const dailyInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics") && serialized.includes("INSERT");
+      });
+      expect(dailyInsertCall).toBeDefined();
+      const serialized = JSON.stringify(dailyInsertCall?.[0]);
+      expect(serialized).toContain("walking_speed");
+      expect(serialized).not.toContain("steps");
+      expect(serialized).not.toContain("distance_km");
+      expect(serialized).not.toContain("flights_climbed");
+      expect(serialized).not.toContain("exercise_minutes");
+    });
+
+    it("writes additive fields with zero value when a zero sample is present", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: makeDatabase(execute),
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierStepCount",
@@ -2287,12 +2578,20 @@ describe("healthKitSyncRouter", () => {
 
       // Steps should be 0 since value is 0
       expect(jan15?.steps).toBe(0);
+
+      await caller.pushQuantitySamples({ samples });
+      const dailyInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics") && serialized.includes("INSERT");
+      });
+      expect(dailyInsertCall).toBeDefined();
+      expect(JSON.stringify(dailyInsertCall?.[0])).toContain("steps");
     });
 
     it("properly categorizes pointInTimeDailyMetric types (kills if(false) mutation on categorize)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2300,9 +2599,9 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({
-            type: "HKQuantityTypeIdentifierWalkingSpeed",
-            value: 1.3,
-            uuid: "speed-categorize",
+            type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+            value: 0.84,
+            uuid: "steadiness-categorize",
           }),
         ],
       });
@@ -2319,7 +2618,7 @@ describe("healthKitSyncRouter", () => {
       execute.mockRejectedValueOnce(new Error("Daily metrics DB error"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2345,7 +2644,7 @@ describe("healthKitSyncRouter", () => {
     it("initializes aggregatedDailyMetrics as false and only refreshes view when aggregation occurs (kills false to true mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2386,7 +2685,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2414,7 +2713,7 @@ describe("healthKitSyncRouter", () => {
     it("correctly filters SpO2 samples using .some() not .every() (kills some to every mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2448,7 +2747,7 @@ describe("healthKitSyncRouter", () => {
     it("correctly filters skin temp samples (kills filter to identity mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2478,12 +2777,13 @@ describe("healthKitSyncRouter", () => {
     it("maps known workout type to correct activity type (kills ?? to && mutation on workoutActivityTypeMap)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-cycling",
@@ -2491,7 +2791,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -2499,25 +2798,28 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Verify the SQL contains "cycling" as the activity type (not "other")
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      expect(serialized).toContain("cycling");
+      // Workouts upsert through ProviderActivityListSync instead of raw SQL inserts.
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+        }),
+        expect.objectContaining({
+          activityType: { providerType: "13", canonicalType: "cycling", modality: null },
+        }),
+        expect.anything(),
+      );
     });
 
     it("includes raw workout data in JSON (kills JSON.stringify({}) mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-raw-data",
@@ -2525,7 +2827,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 10000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -2533,27 +2834,33 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      // Raw data should contain workout properties, not an empty object
-      expect(serialized).toContain("3600"); // duration
-      expect(serialized).toContain("500"); // totalEnergyBurned
-      expect(serialized).toContain("10000"); // totalDistance
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            duration: 3600,
+            totalDistance: 10000,
+          }),
+        }),
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            duration: 3600,
+            totalDistance: 10000,
+          }),
+        }),
+        expect.anything(),
+      );
     });
 
     it("stores workout metadata and workoutActivities in raw JSON column", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-metadata",
@@ -2561,7 +2868,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 350,
             totalDistance: null,
             sourceName: "Strong",
             sourceBundle: "io.strongapp.strong",
@@ -2582,30 +2888,36 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      // Workout metadata should be preserved in raw JSON
-      expect(serialized).toContain("Bench Press");
-      expect(serialized).toContain("HKIndoorWorkout");
-      // Workout activities should be preserved in raw JSON
-      expect(serialized).toContain("activity-1");
-      expect(serialized).toContain("Barbell Bench Press");
-      expect(serialized).toContain("exerciseName");
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            metadata: expect.objectContaining({
+              HKIndoorWorkout: 1,
+              "some-custom-key": "Bench Press",
+            }),
+            workoutActivities: [
+              expect.objectContaining({
+                uuid: "activity-1",
+                metadata: expect.objectContaining({ exerciseName: "Barbell Bench Press" }),
+              }),
+            ],
+          }),
+        }),
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it("does not touch the retired Postgres metric_stream table after processing workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-link-test",
@@ -2613,7 +2925,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: null,
             totalDistance: null,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -2627,18 +2938,73 @@ describe("healthKitSyncRouter", () => {
     it("does not touch the retired Postgres metric_stream table when no workouts are provided", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
 
-      await caller.pushWorkouts({ workouts: [] });
+      await caller.pushWorkouts({ ...WORKOUT_SYNC_WINDOW, workouts: [] });
 
       expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
   });
 
   describe("pushSleepSamples - mutation killers", () => {
+    async function getStoredSleepStageParams(stageValue?: string): Promise<unknown[]> {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const samples: SleepSample[] = [
+        {
+          uuid: "inbed-quality",
+          startDate: "2024-01-15T22:00:00Z",
+          endDate: "2024-01-16T06:00:00Z",
+          value: "inBed",
+          sourceName: "Apple Watch",
+        },
+      ];
+      if (stageValue) {
+        samples.push({
+          uuid: `stage-${stageValue}`,
+          startDate: "2024-01-15T22:00:00Z",
+          endDate: "2024-01-15T23:00:00Z",
+          value: stageValue,
+          sourceName: "Apple Watch",
+        });
+      }
+
+      await caller.pushSleepSamples({ samples });
+      const sleepInsert = execute.mock.calls.find((call) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
+      });
+      if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
+      return new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
+    }
+
+    it.each([
+      ["asleepCore", [0, 0, 60, 0, true]],
+      ["asleepDeep", [60, 0, 0, 0, true]],
+      ["asleepREM", [0, 60, 0, 0, true]],
+    ] as const)("stores %s as an available canonical stage bundle", async (stage, expected) => {
+      expect(await getStoredSleepStageParams(stage)).toEqual(expected);
+    });
+
+    it("does not treat a generic asleep interval as a canonical stage bundle", async () => {
+      expect(await getStoredSleepStageParams("asleep")).toEqual([null, null, null, null, false]);
+    });
+
+    it("preserves an awake-only measurement without claiming a stage bundle", async () => {
+      expect(await getStoredSleepStageParams("awake")).toEqual([null, null, null, 60, false]);
+    });
+
+    it("stores missing stages as null when no stage samples exist", async () => {
+      expect(await getStoredSleepStageParams()).toEqual([null, null, null, null, false]);
+    });
+
     it("filters inBed from stage samples (kills filter identity/true mutations on stageSamples)", async () => {
       const execute = vi.fn().mockImplementation((...args: unknown[]) => {
         const serialized = JSON.stringify(args[0]);
@@ -2649,7 +3015,7 @@ describe("healthKitSyncRouter", () => {
         return Promise.resolve([]);
       });
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2694,7 +3060,7 @@ describe("healthKitSyncRouter", () => {
     it("calculates duration_minutes correctly (kills / to *, + to -, * to / arithmetic mutations)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2721,10 +3087,10 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain(",480,");
     });
 
-    it("handles asleepUnspecified as light sleep (kills break removal and += to -= mutations)", async () => {
+    it("keeps generic asleep intervals out of the canonical stage bundle", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2754,14 +3120,14 @@ describe("healthKitSyncRouter", () => {
       });
       expect(sleepInsert).toBeDefined();
       const serialized = JSON.stringify(sleepInsert?.[0]);
-      // light_minutes should be 120 (from asleepUnspecified), not 0 or -120
-      expect(serialized).toContain(",120,");
+      expect(serialized).toContain("staging_available");
+      expect(serialized).not.toContain(",120,");
     });
 
     it("handles inBed-only session with no stages (kills stagesBySource.size > 0 ArrayDeclaration mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2782,17 +3148,15 @@ describe("healthKitSyncRouter", () => {
         const serialized = JSON.stringify(call[0]);
         return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
-      expect(sleepInsert).toBeDefined();
-      const serialized = JSON.stringify(sleepInsert?.[0]);
-      // All stage minutes should be 0
-      // The pattern should be deep=0, rem=0, light=0, awake=0
-      expect(serialized).toContain(",0,");
+      if (!sleepInsert) throw new Error("Expected a sleep-session INSERT");
+      const stageParams = new PgDialect().sqlToQuery(sleepInsert[0]).params.slice(10, 15);
+      expect(stageParams).toEqual([null, null, null, null, false]);
     });
 
     it("filters out stages outside the inBed session (kills overlap check mutations >= to >, <= to <, && to ||)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2847,7 +3211,7 @@ describe("healthKitSyncRouter", () => {
     it("returns 0 when no inBed and no derivable sessions (kills if(false) on inBedSamples.length === 0)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -2872,7 +3236,7 @@ describe("healthKitSyncRouter", () => {
     it("cleans up legacy external IDs before inserting (verifies DELETE call)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3047,7 +3411,7 @@ describe("healthKitSyncRouter", () => {
     it("stores source metadata in metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3064,12 +3428,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "heart_rate",
-          deviceId: "Apple Watch",
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [expect.objectContaining({ channel: "heart_rate", deviceId: "Apple Watch" })],
+        { operationRevision: "1000000000000000" },
+      );
     });
   });
 
@@ -3077,7 +3439,7 @@ describe("healthKitSyncRouter", () => {
     it("constructs proper external_id for body measurements (kills mapping continue on valid type)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3092,12 +3454,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "body_weight",
-          externalId: "hk:body-ext-id",
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [expect.objectContaining({ channel: "body_weight", externalId: "hk:body-ext-id" })],
+        { operationRevision: "1000000000000000" },
+      );
       const serialized = serializePublishedMetricStreamRows();
       expect(serialized).not.toContain("body_measurement");
     });
@@ -3105,7 +3465,7 @@ describe("healthKitSyncRouter", () => {
     it("processes BMI sample type (kills mapping guard)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3121,13 +3481,16 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "body_mass_index",
-          externalId: "hk:bmi-1",
-          scalar: 23.5,
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            channel: "body_mass_index",
+            externalId: "hk:bmi-1",
+            scalar: 23.5,
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
   });
 
@@ -3138,7 +3501,7 @@ describe("healthKitSyncRouter", () => {
       mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("fail"));
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3160,12 +3523,12 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("handles non-Error objects in catch blocks", async () => {
-      const execute = vi.fn();
+      const execute = vi.fn().mockResolvedValue([]);
       execute.mockResolvedValueOnce([]); // ensureProvider
       mockMetricStreamPublishRows.mockRejectedValueOnce("string error");
 
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -3190,7 +3553,7 @@ describe("healthKitSyncRouter", () => {
     it("invalidates all user caches after pushSleepSamples inserts data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -3212,11 +3575,12 @@ describe("healthKitSyncRouter", () => {
     it("invalidates all user caches after pushWorkouts inserts data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-1",
@@ -3225,7 +3589,6 @@ describe("healthKitSyncRouter", () => {
             endDate: "2026-04-03T09:00:00Z",
             duration: 3600,
             totalDistance: 5000,
-            totalEnergyBurned: 400,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
           },
@@ -3238,7 +3601,7 @@ describe("healthKitSyncRouter", () => {
     it("invalidates all user caches after pushQuantitySamples inserts data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
       });
 
@@ -3258,7 +3621,7 @@ describe("healthKitSyncRouter", () => {
       const execute = makeExecute();
       const refreshBodyMeasurements = vi.fn().mockResolvedValue(undefined);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: { refreshBodyMeasurements },
@@ -3288,7 +3651,7 @@ describe("healthKitSyncRouter", () => {
       const refreshError = new Error("boom");
       const refreshBodyMeasurements = vi.fn().mockRejectedValue(refreshError);
       const caller = createCaller({
-        db: { execute },
+        db: makeDatabase(execute),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: { refreshBodyMeasurements },

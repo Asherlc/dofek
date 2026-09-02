@@ -14,9 +14,42 @@ import {
   buildDedupedSensorBackfillSql,
   buildSensorScalarSampleBackfillSql,
 } from "../../../../src/db/clickhouse-deduped-sensor.ts";
-import { buildActivitySummaryReadModelStatements } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
+import {
+  analyticsBuildOrder,
+  buildTestAnalyticsTableStatement,
+  CLICKHOUSE_TEST_VIEW_REGEX,
+  type IsolatedClickHouseDatabases,
+  rewriteClickHouseDatabaseNames,
+} from "./clickhouse-integration-test-models.ts";
+import {
+  buildTestActivityHeartRateZonesSelectSql,
+  buildTestActivityLocationSampleSelectSql,
+  buildTestActivityLocationSummarySelectSql,
+  buildTestActivitySensorSampleSelectSql,
+  buildTestActivitySensorSummarySelectSql,
+  buildTestActivityStreamPointsSelectSql,
+  buildTestActivitySummarySelectSql,
+  buildTestDailyRecoveryInputsSelectSql,
+  buildTestDedupedActivitiesSelectSql,
+  buildTestHikingActivitySelectSql,
+  buildTestProviderStatsSelectSql,
+  buildTestRestingHeartRateSelectSql,
+} from "./clickhouse-integration-test-read-models-a.ts";
+import {
+  buildTestBodyMeasurementSelectSql,
+  buildTestDailyActivityLoadSelectSql,
+  buildTestDailyBodyMeasurementSelectSql,
+  buildTestDailyEnduranceLoadSelectSql,
+  buildTestDailySleepSelectSql,
+  buildTestHealthspanActivityZoneMinutesSelectSql,
+  buildTestHealthspanReadModelSelectSql,
+  buildTestRecoveryReadModelSelectSql,
+  buildTestStrainReadModelSelectSql,
+  buildTestWeeklyEnduranceRampRateSelectSql,
+  buildTestWeeklyTrainingMonotonySelectSql,
+} from "./clickhouse-integration-test-read-models-b.ts";
 
 interface ClickHouseSyncTestContext {
   addCleanup(cleanup: () => Promise<void>): void;
@@ -37,11 +70,17 @@ export interface ClickHouseMetricStreamSeedRow {
   vector?: readonly number[] | null;
   point?: string;
   metadata?: string;
+  generation?: number;
 }
 
-interface IsolatedClickHouseDatabases {
-  analytics: string;
-  postgresFitness: string;
+export interface ClickHouseActivityPolarizationZoneSeedRow {
+  activityId: string;
+  userId: string;
+  startedAt: string;
+  maxHr: number;
+  z1Seconds: number;
+  z2Seconds: number;
+  z3Seconds: number;
 }
 
 interface ClickHouseTestHandle {
@@ -64,28 +103,15 @@ const clickHouseTestSetupSlotTimeoutMilliseconds = 55_000;
 const clickHouseTestSetupStaleSlotMilliseconds = 300_000;
 const rawTableSyncs: RawTableSync[] = [
   {
-    tableName: "metric_stream",
-    columns: [
-      "id",
-      "activity_id",
-      "user_id",
-      "recorded_at",
-      "channel",
-      "provider_id",
-      "external_id",
-      "device_id",
-      "source_type",
-      "scalar",
-    ],
-  },
-  {
     tableName: "activity",
     columns: [
       "id",
       "provider_id",
       "user_id",
       "external_id",
-      "activity_type",
+      "canonical_type",
+      "provider_type",
+      "modality",
       "started_at",
       "ended_at",
       "name",
@@ -93,6 +119,9 @@ const rawTableSyncs: RawTableSync[] = [
       "perceived_exertion",
       "source_name",
       "timezone",
+      "start_utc_offset_minutes",
+      "end_utc_offset_minutes",
+      "local_time_source",
       "strava_id",
       "raw",
       "created_at",
@@ -113,12 +142,17 @@ const rawTableSyncs: RawTableSync[] = [
       "light_minutes",
       "awake_minutes",
       "efficiency_pct",
+      "staging_available",
       "sleep_type",
       "sleep_need_baseline_minutes",
       "sleep_need_from_debt_minutes",
       "sleep_need_from_strain_minutes",
       "sleep_need_from_nap_minutes",
       "source_name",
+      "timezone",
+      "start_utc_offset_minutes",
+      "end_utc_offset_minutes",
+      "local_time_source",
       "created_at",
     ],
   },
@@ -137,10 +171,7 @@ const rawTableSyncs: RawTableSync[] = [
       "spo2_avg",
       "respiratory_rate_avg",
       "steps",
-      "active_energy_kcal",
-      "basal_energy_kcal",
       "distance_km",
-      "cycling_distance_km",
       "flights_climbed",
       "exercise_minutes",
       "walking_speed",
@@ -205,44 +236,20 @@ const rawTableSyncs: RawTableSync[] = [
     ],
   },
   {
-    tableName: "lab_panel",
+    tableName: "clinical_record",
     columns: [
       "id",
-      "provider_id",
       "user_id",
+      "provider_id",
       "external_id",
-      "name",
-      "loinc_code",
-      "status",
+      "clinical_type",
+      "display_name",
       "source_name",
+      "fhir_version",
+      "fhir",
+      "downloaded_at",
       "recorded_at",
       "issued_at",
-      "raw",
-      "created_at",
-    ],
-  },
-  {
-    tableName: "lab_result",
-    columns: [
-      "id",
-      "provider_id",
-      "user_id",
-      "panel_id",
-      "external_id",
-      "test_name",
-      "loinc_code",
-      "value",
-      "value_text",
-      "unit",
-      "reference_range_low",
-      "reference_range_high",
-      "reference_range_text",
-      "status",
-      "source_name",
-      "recorded_at",
-      "issued_at",
-      "raw",
-      "created_at",
     ],
   },
   {
@@ -302,29 +309,6 @@ const rawTableSyncs: RawTableSync[] = [
     ],
   },
 ];
-const analyticsBuildOrder = [
-  "analytics.v_activity",
-  "analytics.v_activity_members",
-  "analytics.v_sleep",
-  "analytics.v_body_measurement",
-  "analytics.v_daily_metrics",
-  "analytics.provider_stats",
-  "analytics.deduped_activities",
-  "analytics.resting_heart_rate_sleep_window",
-  "analytics.daily_sleep",
-  "analytics.daily_recovery_inputs",
-  "analytics.daily_recovery",
-  "analytics.deduped_location",
-  "analytics.activity_location_sample",
-  "analytics.activity_sensor_sample",
-  "analytics.activity_location_sample",
-  "analytics.activity_summary",
-  "analytics.daily_activity_load",
-  "analytics.daily_strain",
-  "analytics.healthspan_activity_zone_minutes",
-  "analytics.weekly_healthspan",
-  "analytics.activity_trend_daily",
-] as const;
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
@@ -349,1067 +333,13 @@ SELECT
 FROM ${buildPostgresTableFunction(connectionString, sync.tableName)}`;
 }
 
-function rewriteClickHouseDatabaseNames(
-  query: string,
-  databases: IsolatedClickHouseDatabases,
-): string {
-  return query
-    .replace(/\bpostgres_fitness\b/g, databases.postgresFitness)
-    .replace(/\banalytics\b/g, databases.analytics);
-}
-
-function buildTestAnalyticsTableStatement(viewName: "analytics.deduped_activities"): string;
-function buildTestAnalyticsTableStatement(viewName: string): string | null;
-function buildTestAnalyticsTableStatement(viewName: string): string | null {
-  const columnDefinitionsByViewName: Record<string, string> = {
-    v_activity: `id UUID,
-provider_id String,
-user_id UUID,
-primary_activity_id UUID,
-activity_type String,
-started_at DateTime64(6, 'UTC'),
-ended_at Nullable(DateTime64(6, 'UTC')),
-source_name Nullable(String),
-name Nullable(String),
-notes Nullable(String),
-timezone Nullable(String),
-raw Nullable(String),
-source_providers Array(String),
-source_external_ids Array(Map(String, Nullable(String))),
-absent_source_external_ids Array(Map(String, Nullable(String))),
-member_activity_ids Array(UUID)`,
-    v_activity_members: `activity_id UUID,
-user_id UUID,
-started_at DateTime64(6, 'UTC'),
-ended_at Nullable(DateTime64(6, 'UTC')),
-member_activity_id UUID`,
-    v_sleep: `id UUID,
-provider_id String,
-user_id UUID,
-started_at DateTime64(6, 'UTC'),
-ended_at Nullable(DateTime64(6, 'UTC')),
-duration_minutes Nullable(Int32),
-deep_minutes Nullable(Int32),
-rem_minutes Nullable(Int32),
-light_minutes Nullable(Int32),
-awake_minutes Nullable(Int32),
-efficiency_pct Nullable(Float64),
-sleep_type Nullable(String),
-is_nap Nullable(Bool),
-source_name Nullable(String),
-source_providers Array(String)`,
-    resting_heart_rate_sleep_window: `sleep_id UUID,
-user_id UUID,
-started_at Nullable(DateTime64(6, 'UTC')),
-ended_at Nullable(DateTime64(6, 'UTC')),
-duration_seconds Nullable(Int64),
-sample_count UInt64,
-resting_hr Nullable(Int32),
-refresh_version UInt64,
-is_deleted UInt8,
-refreshed_at DateTime64(9)`,
-    daily_sleep: `user_id UUID,
-date Date,
-provider_id String,
-started_at DateTime64(6, 'UTC'),
-ended_at Nullable(DateTime64(6, 'UTC')),
-duration_minutes Nullable(Int32),
-deep_minutes Nullable(Int32),
-rem_minutes Nullable(Int32),
-light_minutes Nullable(Int32),
-awake_minutes Nullable(Int32),
-efficiency_pct Nullable(Float64),
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    daily_recovery_inputs: `user_id UUID,
-date Date,
-hrv Nullable(Float32),
-resting_hr Nullable(Float64),
-respiratory_rate Nullable(Float32),
-efficiency_pct Nullable(Float64),
-hrv_mean_30d Nullable(Float64),
-hrv_sd_30d Nullable(Float64),
-rhr_mean_30d Nullable(Float64),
-rhr_sd_30d Nullable(Float64),
-rr_mean_30d Nullable(Float64),
-rr_sd_30d Nullable(Float64),
-hrv_mean_60d Nullable(Float64),
-hrv_sd_60d Nullable(Float64),
-rhr_mean_60d Nullable(Float64),
-rhr_sd_60d Nullable(Float64),
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    daily_recovery: `user_id UUID,
-date Date,
-hrv Nullable(Float64),
-resting_hr Nullable(Float64),
-respiratory_rate Nullable(Float64),
-efficiency_pct Nullable(Float64),
-hrv_mean_30d Nullable(Float64),
-hrv_sd_30d Nullable(Float64),
-rhr_mean_30d Nullable(Float64),
-rhr_sd_30d Nullable(Float64),
-rr_mean_30d Nullable(Float64),
-rr_sd_30d Nullable(Float64),
-hrv_mean_60d Nullable(Float64),
-hrv_sd_60d Nullable(Float64),
-rhr_mean_60d Nullable(Float64),
-rhr_sd_60d Nullable(Float64),
-hrv_score Nullable(Float64),
-resting_hr_score Nullable(Float64),
-sleep_score Nullable(Float64),
-respiratory_rate_score Nullable(Float64),
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    v_body_measurement: `id UUID,
-provider_id String,
-user_id UUID,
-external_id String,
-recorded_at DateTime64(6, 'UTC'),
-created_at DateTime64(9),
-weight_kg Nullable(Float32),
-body_fat_pct Nullable(Float32),
-muscle_mass_kg Nullable(Float32),
-bone_mass_kg Nullable(Float32),
-water_pct Nullable(Float32),
-bmi Nullable(Float32),
-height_cm Nullable(Float32),
-waist_circumference_cm Nullable(Float32),
-systolic_bp Nullable(Int32),
-diastolic_bp Nullable(Int32),
-heart_pulse Nullable(Int32),
-temperature_c Nullable(Float32),
-source_name Nullable(String),
-source_providers Array(String)`,
-    v_daily_metrics: `date Date,
-user_id UUID,
-hrv Nullable(Float32),
-spo2_avg Nullable(Float32),
-respiratory_rate_avg Nullable(Float32),
-skin_temp_c Nullable(Float32),
-steps Nullable(Int32),
-active_energy_kcal Nullable(Float32),
-basal_energy_kcal Nullable(Float32),
-distance_km Nullable(Float32),
-flights_climbed Nullable(Int32),
-exercise_minutes Nullable(Int32),
-stand_hours Nullable(Int32),
-walking_speed Nullable(Float32),
-walking_step_length Nullable(Float32),
-walking_double_support_pct Nullable(Float32),
-walking_asymmetry_pct Nullable(Float32),
-walking_steadiness Nullable(Float32),
-source_providers Array(String)`,
-    provider_stats: `user_id UUID,
-provider_id String,
-activities UInt64,
-daily_metrics UInt64,
-sleep_sessions UInt64,
-body_measurements UInt64,
-food_entries UInt64,
-health_events UInt64,
-metric_stream UInt64,
-nutrition_daily UInt64,
-lab_panels UInt64,
-lab_results UInt64,
-journal_entries UInt64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    deduped_sensor: `user_id UUID,
-recorded_at DateTime64(6, 'UTC'),
-recorded_date Date,
-channel String,
-scalar Nullable(Float32),
-provider_id Nullable(String),
-source_metric_stream_id Nullable(UUID),
-provider_priority UInt16,
-refresh_version UInt64,
-is_deleted UInt8,
-refreshed_at DateTime64(9)`,
-    deduped_location: `activity_id UUID,
-user_id UUID,
-recorded_at DateTime64(6, 'UTC'),
-lat Nullable(Float32),
-lng Nullable(Float32)`,
-    deduped_activities: `activity_id UUID,
-provider_id String,
-user_id UUID,
-activity_type String,
-started_at DateTime64(6, 'UTC'),
-ended_at Nullable(DateTime64(6, 'UTC')),
-source_name Nullable(String),
-name Nullable(String),
-notes Nullable(String),
-timezone Nullable(String),
-raw Nullable(String),
-source_synced_at DateTime64(9, 'UTC'),
-source_providers Array(String),
-source_external_ids Array(Map(String, Nullable(String))),
-absent_source_external_ids Array(Map(String, Nullable(String))),
-member_activity_ids Array(UUID),
-refresh_version UInt64,
-is_deleted UInt8,
-refreshed_at DateTime64(9, 'UTC')`,
-    activity_sensor_sample: `activity_id UUID,
-user_id UUID,
-recorded_at DateTime64(6, 'UTC'),
-recorded_date Date,
-channel String,
-scalar Nullable(Float32),
-refresh_version UInt64,
-is_deleted UInt8,
-refreshed_at DateTime64(9)`,
-    activity_location_sample: `activity_id UUID,
-user_id UUID,
-recorded_at DateTime64(6, 'UTC'),
-recorded_date Date,
-source_metric_stream_id UUID,
-lat Nullable(Float32),
-lng Nullable(Float32),
-refresh_version UInt64,
-is_deleted UInt8,
-refreshed_at Nullable(DateTime64(6, 'UTC'))`,
-    activity_summary: `activity_id UUID,
-user_id UUID,
-activity_type String,
-name Nullable(String),
-started_at DateTime64(6, 'UTC'),
-ended_at Nullable(DateTime64(6, 'UTC')),
-avg_hr Nullable(Float64),
-max_hr Nullable(Int16),
-min_hr Nullable(Int16),
-avg_power Nullable(Float64),
-max_power Nullable(Int16),
-avg_speed Nullable(Float64),
-max_speed Nullable(Float64),
-avg_cadence Nullable(Float64),
-elevation_gain_legacy Nullable(Float64),
-total_distance Nullable(Float64),
-centroid_lat Nullable(Float64),
-centroid_lng Nullable(Float64),
-avg_left_balance Nullable(Float64),
-avg_left_torque_eff Nullable(Float64),
-avg_right_torque_eff Nullable(Float64),
-avg_left_pedal_smooth Nullable(Float64),
-avg_right_pedal_smooth Nullable(Float64),
-elevation_gain_m Nullable(Float64),
-elevation_loss_m Nullable(Float64),
-avg_stance_time Nullable(Float64),
-avg_vertical_osc Nullable(Float64),
-avg_ground_contact_time Nullable(Float64),
-avg_stride_length Nullable(Float64),
-sample_count UInt64,
-hr_sample_count UInt64,
-power_sample_count UInt64,
-first_sample_at DateTime64(6, 'UTC'),
-last_sample_at DateTime64(6, 'UTC')`,
-    daily_activity_load: `activity_id UUID,
-user_id UUID,
-started_at DateTime64(6, 'UTC'),
-ended_at DateTime64(6, 'UTC'),
-daily_load Nullable(Float64),
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    daily_strain: `user_id UUID,
-date Date,
-daily_load Float64,
-strain Float64,
-acute_load_7d Float64,
-chronic_load_28d Float64,
-workload_ratio Nullable(Float64),
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    healthspan_activity_zone_minutes: `activity_id UUID,
-user_id UUID,
-started_at DateTime64(6, 'UTC'),
-ended_at DateTime64(6, 'UTC'),
-aerobic_minutes Float64,
-high_intensity_minutes Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    weekly_healthspan: `user_id UUID,
-week_start Date,
-avg_sleep_min Nullable(Float64),
-bedtime_stddev_min Nullable(Float64),
-avg_resting_hr Nullable(Float64),
-avg_steps Nullable(Float64),
-latest_vo2max Nullable(Float64),
-weekly_aerobic_min Float64,
-weekly_high_intensity_min Float64,
-sessions_per_week Nullable(Float64),
-weight_kg Nullable(Float64),
-body_fat_pct Nullable(Float64),
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    activity_trend_daily: `user_id UUID,
-bucket_date Date,
-avg_hr Nullable(Float64),
-max_hr Nullable(Int16),
-avg_power Nullable(Float64),
-max_power Nullable(Int16),
-avg_cadence Nullable(Float64),
-avg_speed Nullable(Float64),
-total_samples UInt64,
-hr_samples UInt64,
-power_samples UInt64,
-cadence_samples UInt64,
-speed_samples UInt64,
-activity_count UInt64`,
-  };
-  const shortViewName = viewName.split(".").at(-1);
-  if (!shortViewName) {
-    return null;
-  }
-  const columnDefinitions = columnDefinitionsByViewName[shortViewName];
-  if (!columnDefinitions) {
-    return null;
-  }
-  const engine =
-    shortViewName === "deduped_activities" ||
-    shortViewName === "activity_sensor_sample" ||
-    shortViewName === "activity_location_sample" ||
-    shortViewName === "daily_sleep" ||
-    shortViewName === "daily_recovery_inputs" ||
-    shortViewName === "daily_recovery" ||
-    shortViewName === "daily_activity_load" ||
-    shortViewName === "daily_strain" ||
-    shortViewName === "healthspan_activity_zone_minutes" ||
-    shortViewName === "weekly_healthspan" ||
-    shortViewName === "provider_stats"
-      ? "ReplacingMergeTree(refresh_version)"
-      : "MergeTree";
-  const orderBy =
-    shortViewName === "deduped_activities"
-      ? "(user_id, activity_id)"
-      : shortViewName === "activity_sensor_sample"
-        ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
-        : shortViewName === "activity_location_sample"
-          ? "(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)"
-          : shortViewName === "daily_sleep" || shortViewName === "daily_recovery_inputs"
-            ? "(user_id, date)"
-            : shortViewName === "daily_recovery"
-              ? "(user_id, date)"
-              : shortViewName === "daily_activity_load" ||
-                  shortViewName === "healthspan_activity_zone_minutes"
-                ? "(user_id, activity_id)"
-                : shortViewName === "daily_strain"
-                  ? "(user_id, date)"
-                  : shortViewName === "weekly_healthspan"
-                    ? "(user_id, week_start)"
-                    : shortViewName === "provider_stats"
-                      ? "(user_id, provider_id)"
-                      : "tuple()";
-  return `CREATE TABLE IF NOT EXISTS ${viewName} (
-${columnDefinitions}
-)
-ENGINE = ${engine}
-ORDER BY ${orderBy}`;
-}
-
-function buildTestDedupedActivitiesSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `SELECT
-  id AS activity_id,
-  provider_id,
-  user_id,
-  activity_type,
-  started_at,
-  ended_at,
-  source_name,
-  name,
-  notes,
-  timezone,
-  raw,
-  now64(9, 'UTC') AS source_synced_at,
-  source_providers,
-  source_external_ids,
-  absent_source_external_ids,
-  member_activity_ids,
-  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-  toUInt8(0) AS is_deleted,
-  now64(9, 'UTC') AS refreshed_at
-FROM ${databases.analytics}.v_activity`;
-}
-
-function buildTestActivitySensorSampleSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH current_activity AS (
-  SELECT
-    activity_id,
-    user_id,
-    started_at,
-    ended_at
-  FROM ${databases.analytics}.deduped_activities FINAL
-  WHERE is_deleted = 0
-)
-SELECT
-  current_activity.activity_id AS activity_id,
-  samples.user_id AS user_id,
-  samples.recorded_at AS recorded_at,
-  samples.recorded_date AS recorded_date,
-  samples.channel AS channel,
-  samples.scalar AS scalar,
-  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-  samples.is_deleted AS is_deleted,
-  now64(9) AS refreshed_at
-FROM ${databases.analytics}.deduped_sensor AS samples
-INNER JOIN current_activity
-  ON current_activity.user_id = samples.user_id
- AND samples.recorded_at >= current_activity.started_at
- AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)`;
-}
-
-function buildTestActivityLocationSampleSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `SELECT
-  activity_id,
-  user_id,
-  recorded_at,
-  toDate(recorded_at) AS recorded_date,
-  generateUUIDv4() AS source_metric_stream_id,
-  lat,
-  lng,
-  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-  toUInt8(0) AS is_deleted,
-  now64(6, 'UTC') AS refreshed_at
-FROM ${databases.analytics}.deduped_location`;
-}
-
-function buildTestProviderStatsSelectSql(selectSql: string): string {
-  return selectSql;
-}
-
-function buildTestRestingHeartRateSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH
-active_sleep AS (
-  SELECT
-    id AS sleep_id,
-    user_id,
-    started_at,
-    assumeNotNull(ended_at) AS ended_at,
-    dateDiff('second', started_at, assumeNotNull(ended_at)) AS duration_seconds,
-    multiIf(
-      sleep_type IN ('nap', 'late_nap', 'rest'), true,
-      sleep_type IN ('sleep', 'long_sleep', 'main'), false,
-      sleep_type = 'not_main', coalesce(duration_minutes < 120, true),
-      duration_minutes IS NOT NULL, duration_minutes < 120,
-      false
-    ) AS is_nap
-  FROM ${databases.postgresFitness}.sleep_session FINAL
-  WHERE _peerdb_is_deleted = 0
-    AND ended_at IS NOT NULL
-),
-active_activity AS (
-  SELECT
-    id,
-    user_id,
-    started_at,
-    coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
-  FROM ${databases.postgresFitness}.activity FINAL
-  WHERE _peerdb_is_deleted = 0
-),
-activity_windows AS (
-  SELECT
-    user_id,
-    groupArray(tuple(started_at, ended_at)) AS windows
-  FROM active_activity
-  GROUP BY user_id
-),
-heart_rate_samples AS (
-  SELECT
-    active_sleep.sleep_id AS sleep_id,
-    active_sleep.user_id AS user_id,
-    active_sleep.started_at AS started_at,
-    active_sleep.ended_at AS ended_at,
-    active_sleep.duration_seconds AS duration_seconds,
-    samples.scalar AS heart_rate
-  FROM active_sleep
-  INNER JOIN ${databases.analytics}.deduped_sensor AS samples
-    ON samples.user_id = active_sleep.user_id
-  LEFT JOIN activity_windows
-    ON activity_windows.user_id = samples.user_id
-  WHERE active_sleep.is_nap = false
-    AND samples.recorded_at >= active_sleep.started_at
-    AND samples.recorded_at <= active_sleep.ended_at
-    AND samples.channel = 'heart_rate'
-    AND samples.is_deleted = 0
-    AND samples.scalar IS NOT NULL
-    AND NOT arrayExists(
-      activity_window -> samples.recorded_at >= tupleElement(activity_window, 1)
-        AND samples.recorded_at <= tupleElement(activity_window, 2),
-      activity_windows.windows
-    )
-),
-computed_windows AS (
-  SELECT
-    sleep_id,
-    user_id,
-    any(started_at) AS started_at,
-    any(ended_at) AS ended_at,
-    any(duration_seconds) AS duration_seconds,
-    count() AS sample_count,
-    if(
-      sample_count >= 30,
-      toInt32(round(arrayAvg(arraySlice(
-        arraySort(groupArray(toFloat64(heart_rate))),
-        1,
-        greatest(toInt32(ceil(sample_count * 0.10)), 1)
-      )))),
-      CAST(NULL, 'Nullable(Int32)')
-    ) AS resting_hr
-  FROM heart_rate_samples
-  GROUP BY sleep_id, user_id
-)
-SELECT
-  active_sleep.sleep_id AS sleep_id,
-  active_sleep.user_id AS user_id,
-  CAST(computed_windows.started_at, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
-  CAST(computed_windows.ended_at, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at,
-  CAST(computed_windows.duration_seconds, 'Nullable(Int64)') AS duration_seconds,
-  coalesce(computed_windows.sample_count, 0) AS sample_count,
-  CAST(computed_windows.resting_hr, 'Nullable(Int32)') AS resting_hr,
-  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-  if(computed_windows.resting_hr IS NULL, 1, 0) AS is_deleted,
-  now64(9, 'UTC') AS refreshed_at
-FROM active_sleep
-LEFT JOIN computed_windows
-  ON computed_windows.user_id = active_sleep.user_id
- AND computed_windows.sleep_id = active_sleep.sleep_id
-WHERE active_sleep.is_nap = false`;
-}
-
-function buildTestActivitySummarySelectSql(databases: IsolatedClickHouseDatabases): string {
-  const statement = rewriteClickHouseDatabaseNames(
-    buildActivitySummaryReadModelStatements()[0] ?? "",
-    databases,
-  );
-  const viewMatch = statement.match(
-    /^CREATE VIEW IF NOT EXISTS [A-Za-z0-9_]+\.[A-Za-z0-9_]+\nAS\n?([\s\S]*)$/,
-  );
-  const selectSql = viewMatch?.[1]?.trim();
-  if (!selectSql) {
-    throw new Error("Could not parse ClickHouse activity summary test SELECT");
-  }
-  return selectSql;
-}
-
-function buildTestDailyRecoveryInputsSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH daily_metrics AS (
-  SELECT
-    user_id,
-    date,
-    hrv,
-    respiratory_rate_avg AS respiratory_rate
-  FROM ${databases.analytics}.v_daily_metrics
-),
-resting_by_date AS (
-  SELECT
-    user_id,
-    toDate(ended_at - INTERVAL 6 HOUR) AS date,
-    argMax(resting_hr, tuple(duration_seconds, ended_at)) AS selected_resting_hr
-  FROM ${databases.analytics}.resting_heart_rate_sleep_window FINAL
-  WHERE is_deleted = 0
-    AND ended_at IS NOT NULL
-    AND resting_hr IS NOT NULL
-  GROUP BY user_id, date
-),
-sleep_by_date AS (
-  SELECT
-    user_id,
-    toDate(started_at - INTERVAL 6 HOUR) AS date,
-    argMax(efficiency_pct, tuple(duration_minutes, started_at)) AS efficiency_pct
-  FROM ${databases.analytics}.v_sleep
-  WHERE is_nap = false
-  GROUP BY user_id, date
-),
-input_dates AS (
-  SELECT user_id, date FROM daily_metrics
-  UNION DISTINCT
-  SELECT user_id, date FROM resting_by_date
-  UNION DISTINCT
-  SELECT user_id, date FROM sleep_by_date
-),
-daily_inputs AS (
-  SELECT
-    input_dates.user_id AS user_id,
-    input_dates.date AS date,
-    daily_metrics.hrv AS hrv,
-    resting_by_date.selected_resting_hr AS resting_hr,
-    daily_metrics.respiratory_rate AS respiratory_rate,
-    sleep_by_date.efficiency_pct AS efficiency_pct
-  FROM input_dates
-  LEFT JOIN daily_metrics
-    ON daily_metrics.user_id = input_dates.user_id
-   AND daily_metrics.date = input_dates.date
-  LEFT JOIN resting_by_date
-    ON resting_by_date.user_id = input_dates.user_id
-   AND resting_by_date.date = input_dates.date
-  LEFT JOIN sleep_by_date
-    ON sleep_by_date.user_id = input_dates.user_id
-   AND sleep_by_date.date = input_dates.date
-),
-inputs_with_baselines AS (
-  SELECT
-    user_id,
-    date,
-    hrv,
-    resting_hr,
-    respiratory_rate,
-    efficiency_pct,
-    avg(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS hrv_mean_30d,
-    stddevPop(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS hrv_sd_30d,
-    avg(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rhr_mean_30d,
-    stddevPop(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rhr_sd_30d,
-    avg(respiratory_rate) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rr_mean_30d,
-    stddevPop(respiratory_rate) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-    ) AS rr_sd_30d,
-    avg(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-    ) AS hrv_mean_60d,
-    stddevPop(hrv) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-    ) AS hrv_sd_60d,
-    avg(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-    ) AS rhr_mean_60d,
-    stddevPop(resting_hr) OVER (
-      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-    ) AS rhr_sd_60d
-  FROM daily_inputs
-),
-refresh_clock AS (
-  SELECT
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    now64(9) AS refreshed_at
-)
-SELECT
-  CAST(inputs_with_baselines.user_id, 'UUID') AS user_id,
-  CAST(inputs_with_baselines.date, 'Date') AS date,
-  inputs_with_baselines.hrv AS hrv,
-  inputs_with_baselines.resting_hr AS resting_hr,
-  inputs_with_baselines.respiratory_rate AS respiratory_rate,
-  inputs_with_baselines.efficiency_pct AS efficiency_pct,
-  inputs_with_baselines.hrv_mean_30d AS hrv_mean_30d,
-  inputs_with_baselines.hrv_sd_30d AS hrv_sd_30d,
-  inputs_with_baselines.rhr_mean_30d AS rhr_mean_30d,
-  inputs_with_baselines.rhr_sd_30d AS rhr_sd_30d,
-  inputs_with_baselines.rr_mean_30d AS rr_mean_30d,
-  inputs_with_baselines.rr_sd_30d AS rr_sd_30d,
-  inputs_with_baselines.hrv_mean_60d AS hrv_mean_60d,
-  inputs_with_baselines.hrv_sd_60d AS hrv_sd_60d,
-  inputs_with_baselines.rhr_mean_60d AS rhr_mean_60d,
-  inputs_with_baselines.rhr_sd_60d AS rhr_sd_60d,
-  refresh_clock.refresh_version AS refresh_version,
-  refresh_clock.refreshed_at AS refreshed_at
-FROM inputs_with_baselines
-CROSS JOIN refresh_clock`;
-}
-
-function buildTestDailySleepSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH ranked_sleep AS (
-  SELECT
-    user_id,
-    toDate(started_at - INTERVAL 6 HOUR) AS date,
-    provider_id,
-    started_at,
-    ended_at,
-    duration_minutes,
-    deep_minutes,
-    rem_minutes,
-    light_minutes,
-    awake_minutes,
-    efficiency_pct,
-    row_number() OVER (
-      PARTITION BY user_id, toDate(started_at - INTERVAL 6 HOUR)
-      ORDER BY duration_minutes DESC NULLS LAST, started_at DESC
-    ) AS row_number
-  FROM ${databases.analytics}.v_sleep
-  WHERE is_nap = false
-),
-refresh_clock AS (
-  SELECT
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    now64(9) AS refreshed_at
-)
-SELECT
-  CAST(ranked_sleep.user_id, 'UUID') AS user_id,
-  CAST(ranked_sleep.date, 'Date') AS date,
-  ranked_sleep.provider_id AS provider_id,
-  ranked_sleep.started_at AS started_at,
-  ranked_sleep.ended_at AS ended_at,
-  ranked_sleep.duration_minutes AS duration_minutes,
-  ranked_sleep.deep_minutes AS deep_minutes,
-  ranked_sleep.rem_minutes AS rem_minutes,
-  ranked_sleep.light_minutes AS light_minutes,
-  ranked_sleep.awake_minutes AS awake_minutes,
-  ranked_sleep.efficiency_pct AS efficiency_pct,
-  refresh_clock.refresh_version AS refresh_version,
-  refresh_clock.refreshed_at AS refreshed_at
-FROM ranked_sleep
-CROSS JOIN refresh_clock
-WHERE ranked_sleep.row_number = 1`;
-}
-
-function buildTestDailyActivityLoadSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH activity_load AS (
-  SELECT
-    activity_id,
-    user_id,
-    started_at,
-    assumeNotNull(ended_at) AS ended_at,
-    dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0
-      * avg_hr / nullIf(toFloat64(max_hr), 0) AS daily_load
-  FROM ${databases.analytics}.activity_summary
-  WHERE ended_at IS NOT NULL
-    AND avg_hr IS NOT NULL
-),
-refresh_clock AS (
-  SELECT
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    now64(9) AS refreshed_at
-)
-SELECT
-  activity_load.activity_id AS activity_id,
-  activity_load.user_id AS user_id,
-  activity_load.started_at AS started_at,
-  activity_load.ended_at AS ended_at,
-  activity_load.daily_load AS daily_load,
-  refresh_clock.refresh_version AS refresh_version,
-  refresh_clock.refreshed_at AS refreshed_at
-FROM activity_load
-CROSS JOIN refresh_clock`;
-}
-
-function buildTestRecoveryReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `SELECT
-  user_id,
-  date,
-  hrv,
-  resting_hr,
-  respiratory_rate,
-  efficiency_pct,
-  hrv_mean_30d,
-  hrv_sd_30d,
-  rhr_mean_30d,
-  rhr_sd_30d,
-  rr_mean_30d,
-  rr_sd_30d,
-  hrv_mean_60d,
-  hrv_sd_60d,
-  rhr_mean_60d,
-  rhr_sd_60d,
-  CAST(NULL, 'Nullable(Float64)') AS hrv_score,
-  CAST(NULL, 'Nullable(Float64)') AS resting_hr_score,
-  CAST(NULL, 'Nullable(Float64)') AS sleep_score,
-  CAST(NULL, 'Nullable(Float64)') AS respiratory_rate_score,
-  refresh_version,
-  refreshed_at
-FROM ${databases.analytics}.daily_recovery_inputs`;
-}
-
-function buildTestStrainReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH activity_load AS (
-  SELECT
-    user_id,
-    toDate(started_at) AS date,
-    coalesce(sum(daily_load), 0) AS daily_load
-  FROM ${databases.analytics}.daily_activity_load
-  GROUP BY user_id, toDate(started_at)
-),
-date_bounds AS (
-  SELECT
-    user_id,
-    min(date) AS min_date,
-    greatest(max(date), today()) AS max_date
-  FROM activity_load
-  GROUP BY user_id
-),
-date_series AS (
-  SELECT
-    date_bounds.user_id AS user_id,
-    date_bounds.min_date + INTERVAL number DAY AS date
-  FROM date_bounds
-  ARRAY JOIN range(toUInt32(dateDiff('day', min_date, max_date) + 1)) AS number
-),
-daily AS (
-  SELECT
-    date_series.user_id AS user_id,
-    date_series.date AS date,
-    coalesce(activity_load.daily_load, 0) AS daily_load
-  FROM date_series
-  LEFT JOIN activity_load
-    ON activity_load.user_id = date_series.user_id
-   AND activity_load.date = date_series.date
-),
-with_windows AS (
-  SELECT
-    user_id,
-    date,
-    daily_load,
-    sum(daily_load) OVER (PARTITION BY user_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load_7d,
-    avg(daily_load) OVER (PARTITION BY user_id ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7 AS chronic_load_28d,
-    count() OVER (PARTITION BY user_id ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
-  FROM daily
-),
-refresh_clock AS (
-  SELECT
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    now64(9) AS refreshed_at
-)
-SELECT
-  user_id,
-  date,
-  daily_load,
-  least(21, round(2.775 * log(1 + greatest(daily_load, 0)), 1)) AS strain,
-  acute_load_7d,
-  chronic_load_28d,
-  if(chronic_load_28d > 0 AND chronic_count = 28, acute_load_7d / chronic_load_28d, NULL) AS workload_ratio,
-  refresh_clock.refresh_version AS refresh_version,
-  refresh_clock.refreshed_at AS refreshed_at
-FROM with_windows
-CROSS JOIN refresh_clock`;
-}
-
-function buildTestHealthspanReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH week_keys AS (
-  SELECT
-    user_id,
-    toMonday(date) AS week_start
-  FROM ${databases.analytics}.v_daily_metrics
-  GROUP BY user_id, toMonday(date)
-  UNION DISTINCT
-  SELECT
-    user_id,
-    toMonday(toDate(started_at)) AS week_start
-  FROM ${databases.analytics}.healthspan_activity_zone_minutes FINAL
-  WHERE is_deleted = 0
-    AND started_at IS NOT NULL
-  GROUP BY user_id, toMonday(toDate(started_at))
-  UNION DISTINCT
-  SELECT
-    user_id,
-    toMonday(toDate(recorded_at)) AS week_start
-  FROM ${databases.analytics}.v_body_measurement
-  GROUP BY user_id, toMonday(toDate(recorded_at))
-),
-metrics AS (
-  SELECT
-    user_id,
-    toMonday(date) AS week_start,
-    avg(steps) AS avg_steps,
-    CAST(coalesce(sum(exercise_minutes), 0), 'Float64') AS weekly_aerobic_min
-  FROM ${databases.analytics}.v_daily_metrics
-  GROUP BY user_id, toMonday(date)
-),
-zone_minutes AS (
-  SELECT
-    user_id,
-    toMonday(toDate(started_at)) AS week_start,
-    CAST(sum(aerobic_minutes), 'Float64') AS weekly_aerobic_min,
-    CAST(sum(high_intensity_minutes), 'Float64') AS weekly_high_intensity_min
-  FROM ${databases.analytics}.healthspan_activity_zone_minutes FINAL
-  WHERE is_deleted = 0
-    AND started_at IS NOT NULL
-  GROUP BY user_id, toMonday(toDate(started_at))
-),
-body_by_week AS (
-  SELECT
-    user_id,
-    toMonday(toDate(recorded_at)) AS week_start,
-    argMax(weight_kg, recorded_at) AS weight_kg,
-    argMax(body_fat_pct, recorded_at) AS body_fat_pct
-  FROM ${databases.analytics}.v_body_measurement
-  GROUP BY user_id, toMonday(toDate(recorded_at))
-),
-refresh_clock AS (
-  SELECT
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    now64(9) AS refreshed_at
-)
-SELECT
-  week_keys.user_id AS user_id,
-  week_keys.week_start AS week_start,
-  CAST(NULL, 'Nullable(Float64)') AS avg_sleep_min,
-  CAST(NULL, 'Nullable(Float64)') AS bedtime_stddev_min,
-  CAST(NULL, 'Nullable(Float64)') AS avg_resting_hr,
-  metrics.avg_steps AS avg_steps,
-  CAST(NULL, 'Nullable(Float64)') AS latest_vo2max,
-  greatest(
-    coalesce(metrics.weekly_aerobic_min, toFloat64(0)),
-    coalesce(zone_minutes.weekly_aerobic_min, toFloat64(0))
-  ) AS weekly_aerobic_min,
-  coalesce(zone_minutes.weekly_high_intensity_min, toFloat64(0)) AS weekly_high_intensity_min,
-  CAST(NULL, 'Nullable(Float64)') AS sessions_per_week,
-  body_by_week.weight_kg AS weight_kg,
-  body_by_week.body_fat_pct AS body_fat_pct,
-  refresh_clock.refresh_version AS refresh_version,
-  refresh_clock.refreshed_at AS refreshed_at
-FROM week_keys
-LEFT JOIN metrics
-  ON metrics.user_id = week_keys.user_id
- AND metrics.week_start = week_keys.week_start
-LEFT JOIN zone_minutes
-  ON zone_minutes.user_id = week_keys.user_id
- AND zone_minutes.week_start = week_keys.week_start
-LEFT JOIN body_by_week
-  ON body_by_week.user_id = week_keys.user_id
- AND body_by_week.week_start = week_keys.week_start
-CROSS JOIN refresh_clock`;
-}
-
-function buildTestHealthspanActivityZoneMinutesSelectSql(
-  databases: IsolatedClickHouseDatabases,
-): string {
-  return `WITH activity_bounds AS (
-  SELECT
-    activity_id,
-    user_id,
-    started_at,
-    assumeNotNull(ended_at) AS ended_at,
-    dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0 AS duration_minutes
-  FROM ${databases.analytics}.activity_summary
-  WHERE ended_at IS NOT NULL
-),
-resting_by_activity AS (
-  SELECT
-    activity_bounds.activity_id AS activity_id,
-    argMax(resting.resting_hr, toDate(resting.ended_at)) AS resting_hr
-  FROM activity_bounds
-  INNER JOIN ${databases.analytics}.resting_heart_rate_sleep_window AS resting FINAL
-    ON resting.user_id = activity_bounds.user_id
-   AND toDate(resting.ended_at) <= toDate(activity_bounds.started_at)
-  WHERE resting.is_deleted = 0
-    AND resting.ended_at IS NOT NULL
-    AND resting.resting_hr IS NOT NULL
-  GROUP BY activity_bounds.activity_id
-),
-activity_metadata AS (
-  SELECT
-    activity_bounds.activity_id AS activity_id,
-    activity_bounds.user_id AS user_id,
-    activity_bounds.started_at AS started_at,
-    activity_bounds.ended_at AS ended_at,
-    activity_bounds.duration_minutes AS duration_minutes,
-    user_profile.max_hr AS max_hr,
-    user_profile.ftp AS ftp,
-    coalesce(resting_by_activity.resting_hr, user_profile.resting_hr) AS resting_hr
-  FROM activity_bounds
-  INNER JOIN ${databases.postgresFitness}.user_profile_current AS user_profile
-    ON user_profile.id = activity_bounds.user_id
-  LEFT JOIN resting_by_activity
-    ON resting_by_activity.activity_id = activity_bounds.activity_id
-  WHERE user_profile.max_hr IS NOT NULL OR user_profile.ftp IS NOT NULL
-),
-sensor_counts AS (
-  SELECT
-    activity_metadata.activity_id AS activity_id,
-    activity_metadata.user_id AS user_id,
-    any(activity_metadata.started_at) AS started_at,
-    any(activity_metadata.ended_at) AS ended_at,
-    any(activity_metadata.duration_minutes) AS duration_minutes,
-    any(activity_metadata.max_hr) AS max_hr,
-    any(activity_metadata.ftp) AS ftp,
-    any(activity_metadata.resting_hr) AS resting_hr,
-    countIf(sensor_samples.channel = 'heart_rate') AS heart_rate_sample_count,
-    countIf(sensor_samples.channel = 'power') AS power_sample_count,
-    countIf(
-      sensor_samples.channel = 'heart_rate'
-      AND activity_metadata.resting_hr IS NOT NULL
-      AND sensor_samples.scalar
-        < activity_metadata.resting_hr
-        + (activity_metadata.max_hr - activity_metadata.resting_hr) * 0.8
-    ) AS aerobic_sample_count,
-    countIf(
-      sensor_samples.channel = 'heart_rate'
-      AND activity_metadata.resting_hr IS NOT NULL
-      AND sensor_samples.scalar
-        >= activity_metadata.resting_hr
-        + (activity_metadata.max_hr - activity_metadata.resting_hr) * 0.8
-    ) AS heart_rate_high_intensity_sample_count,
-    countIf(
-      sensor_samples.channel = 'power'
-      AND activity_metadata.ftp IS NOT NULL
-      AND sensor_samples.scalar >= activity_metadata.ftp * 0.9
-    ) AS power_high_intensity_sample_count
-  FROM activity_metadata
-  INNER JOIN ${databases.analytics}.activity_sensor_sample AS sensor_samples
-    ON sensor_samples.activity_id = activity_metadata.activity_id
-   AND sensor_samples.user_id = activity_metadata.user_id
-  WHERE sensor_samples.channel IN ('heart_rate', 'power')
-    AND sensor_samples.scalar IS NOT NULL
-    AND sensor_samples.is_deleted = 0
-  GROUP BY activity_metadata.activity_id, activity_metadata.user_id
-),
-zone_minutes AS (
-  SELECT
-    activity_id,
-    user_id,
-    started_at,
-    ended_at,
-    if(
-      max_hr IS NOT NULL
-      AND resting_hr IS NOT NULL
-      AND heart_rate_sample_count > 0,
-      toFloat64(aerobic_sample_count) / toFloat64(heart_rate_sample_count) * duration_minutes,
-      0
-    ) AS aerobic_minutes,
-    greatest(
-      if(
-        max_hr IS NOT NULL
-        AND resting_hr IS NOT NULL
-        AND heart_rate_sample_count > 0,
-        toFloat64(heart_rate_high_intensity_sample_count)
-          / toFloat64(heart_rate_sample_count) * duration_minutes,
-        0
-      ),
-      if(
-        ftp IS NOT NULL
-        AND power_sample_count > 0,
-        toFloat64(power_high_intensity_sample_count)
-          / toFloat64(power_sample_count) * duration_minutes,
-        0
-      )
-    ) AS high_intensity_minutes
-  FROM sensor_counts
-),
-refresh_clock AS (
-  SELECT
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    now64(9) AS refreshed_at
-)
-SELECT
-  zone_minutes.activity_id AS activity_id,
-  zone_minutes.user_id AS user_id,
-  zone_minutes.started_at AS started_at,
-  zone_minutes.ended_at AS ended_at,
-  zone_minutes.aerobic_minutes AS aerobic_minutes,
-  zone_minutes.high_intensity_minutes AS high_intensity_minutes,
-  toUInt8(0) AS is_deleted,
-  refresh_clock.refresh_version AS refresh_version,
-  refresh_clock.refreshed_at AS refreshed_at
-FROM zone_minutes
-CROSS JOIN refresh_clock`;
-}
-
 function rewriteClickHouseTestCommand(
   query: string,
   databases: IsolatedClickHouseDatabases,
   precomputedAnalyticsSelectByName: Map<string, string>,
 ): string[] {
   const rewrittenQuery = rewriteClickHouseDatabaseNames(query, databases).trim();
-  const viewMatch = rewrittenQuery.match(
-    /^CREATE VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nAS\n?([\s\S]*)$/,
-  );
+  const viewMatch = rewrittenQuery.match(CLICKHOUSE_TEST_VIEW_REGEX);
 
   if (viewMatch) {
     const viewName = viewMatch[1];
@@ -1422,11 +352,7 @@ function rewriteClickHouseTestCommand(
       viewName,
       buildTestAnalyticsSelectSql(viewName, trimmedSelectSql, databases),
     );
-    const tableStatement = buildTestAnalyticsTableStatement(viewName);
-    if (!tableStatement) {
-      throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
-    }
-    return [tableStatement];
+    return [buildTestAnalyticsTableStatement(viewName)];
   }
 
   if (
@@ -1504,11 +430,32 @@ function createIsolatedClickHouseClient(
       query: string;
       format: "JSONEachRow";
       query_params?: Record<string, unknown>;
-    }) =>
-      client.query<TRow>({
+    }) => {
+      const queryParams = options.query_params ? { ...options.query_params } : undefined;
+      if (queryParams?.database_name === "ingest") {
+        queryParams.database_name = databases.ingest;
+      }
+      if (queryParams?.database_name === "analytics") {
+        queryParams.database_name = databases.analytics;
+      }
+      if (queryParams?.database_name === "postgres_fitness") {
+        queryParams.database_name = databases.postgresFitness;
+      }
+      return client.query<TRow>({
         ...options,
         query: rewriteClickHouseDatabaseNames(options.query, databases),
-      }),
+        query_params: queryParams,
+      });
+    },
+    insert: async (options) => {
+      if (!client.insert) {
+        throw new Error("ClickHouse integration test client does not support inserts");
+      }
+      return client.insert({
+        ...options,
+        table: rewriteClickHouseDatabaseNames(options.table, databases),
+      });
+    },
     close: () => client.close?.() ?? Promise.resolve(),
   };
 }
@@ -1563,6 +510,7 @@ export async function createClickHouseTestActivitySensorStore(
   const suffix = randomBytes(6).toString("hex");
   const databases = {
     analytics: `analytics_test_${suffix}`,
+    ingest: `ingest_test_${suffix}`,
     postgresFitness: `postgres_fitness_test_${suffix}`,
   };
   const rawClient = createClickHouseClientFromEnv();
@@ -1573,6 +521,7 @@ export async function createClickHouseTestActivitySensorStore(
   testContext.addCleanup(async () => {
     handlesByContext.delete(testContext);
     await rawClient.command({ query: `DROP DATABASE IF EXISTS ${databases.analytics} SYNC` });
+    await rawClient.command({ query: `DROP DATABASE IF EXISTS ${databases.ingest} SYNC` });
     await rawClient.command({ query: `DROP DATABASE IF EXISTS ${databases.postgresFitness} SYNC` });
     await rawClient.close?.();
   });
@@ -1591,94 +540,189 @@ export async function createClickHouseTestActivitySensorStore(
   return new ClickHouseActivitySensorStore(client);
 }
 
+export function getClickHouseTestClient(testContext: ClickHouseSyncTestContext): ClickHouseClient {
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+  return handle.client;
+}
+
+export async function seedClickHouseActivityPolarizationZone(
+  testContext: ClickHouseSyncTestContext,
+  row: ClickHouseActivityPolarizationZoneSeedRow,
+): Promise<void> {
+  await getClickHouseTestClient(testContext).command({
+    query: `INSERT INTO analytics.activity_polarization_zones (
+        activity_id,
+        user_id,
+        canonical_type,
+        started_at,
+        max_hr,
+        z1_seconds,
+        z2_seconds,
+        z3_seconds,
+        is_deleted,
+        refresh_version,
+        refreshed_at
+      )
+      SELECT
+        {activityId:UUID},
+        {userId:UUID},
+        'cycling',
+        parseDateTime64BestEffort({startedAt:String}, 6),
+        toNullable(toInt16({maxHr:Int16})),
+        toInt32({z1Seconds:Int32}),
+        toInt32({z2Seconds:Int32}),
+        toInt32({z3Seconds:Int32}),
+        toUInt8(0),
+        toUInt64(1),
+        now64(9)`,
+    query_params: {
+      activityId: row.activityId,
+      userId: row.userId,
+      startedAt: row.startedAt,
+      maxHr: row.maxHr,
+      z1Seconds: row.z1Seconds,
+      z2Seconds: row.z2Seconds,
+      z3Seconds: row.z3Seconds,
+    },
+  });
+}
+
 async function bootstrapClickHouseTestSchema(
   client: ClickHouseClient,
   connectionString: string,
 ): Promise<void> {
+  const defaultTestDatabases: IsolatedClickHouseDatabases = {
+    analytics: "analytics",
+    ingest: "ingest",
+    postgresFitness: "postgres_fitness",
+  };
+
   for (const statement of buildClickHouseBootstrapStatements(connectionString)) {
     await client.command({ query: statement });
   }
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.deduped_activities
 AS
-${buildTestDedupedActivitiesSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDedupedActivitiesSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_sample
 AS
-${buildTestActivitySensorSampleSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestActivitySensorSampleSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_sample
 AS
-${buildTestActivityLocationSampleSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestActivityLocationSampleSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_summary_rows
+AS
+${buildTestActivityLocationSummarySelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_summary_rows
+AS
+${buildTestActivitySensorSummarySelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_stream_points
+AS
+${buildTestActivityStreamPointsSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_heart_rate_zones
+AS
+${buildTestActivityHeartRateZonesSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.hiking_activity
+AS
+${buildTestHikingActivitySelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery_inputs
 AS
-${buildTestDailyRecoveryInputsSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDailyRecoveryInputsSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_sleep
 AS
-${buildTestDailySleepSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDailySleepSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery
 AS
-${buildTestRecoveryReadModelSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestRecoveryReadModelSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_endurance_load
+AS
+${buildTestDailyEnduranceLoadSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_endurance_ramp_rate
+AS
+${buildTestWeeklyEnduranceRampRateSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_training_monotony
+AS
+${buildTestWeeklyTrainingMonotonySelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_activity_load
 AS
-${buildTestDailyActivityLoadSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDailyActivityLoadSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_strain
 AS
-${buildTestStrainReadModelSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestStrainReadModelSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.v_body_measurement
+AS
+${buildTestBodyMeasurementSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_body_measurement
+AS
+${buildTestDailyBodyMeasurementSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_activity_zone_minutes
 AS
-${buildTestHealthspanActivityZoneMinutesSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestHealthspanActivityZoneMinutesSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.weekly_healthspan
 AS
-${buildTestHealthspanReadModelSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
+
+  // Dbt read model tables — created here as empty ReplacingMergeTree tables so
+  // repositories can query them without errors. Tests that exercise these
+  // serving paths seed the minimal final rows they need.
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_power_curve"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_aerobic_efficiency"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_polarization_zones"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.cycling_activity"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.daily_cycling"),
+  });
 }
 
 export async function syncClickHouseTestActivitySensorStore(
@@ -1711,9 +755,6 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
   connectionString: string,
 ): Promise<void> {
   for (const rawTableSync of rawTableSyncs) {
-    if (rawTableSync.tableName === "metric_stream") {
-      continue;
-    }
     await client.command({
       query: `TRUNCATE TABLE postgres_fitness.${rawTableSync.tableName}`,
     });
@@ -1771,7 +812,8 @@ function formatClickHouseMetricStreamSeedValue(row: ClickHouseMetricStreamSeedRo
     ${formatNullableClickHouseString(row.metadata ?? "")},
     now64(9),
     0,
-    1
+    1,
+    ${row.generation ?? 0}
   )`;
 }
 
@@ -1789,7 +831,7 @@ export async function insertClickHouseMetricStreamRows(
   }
 
   await handle.setupClient.command({
-    query: `INSERT INTO postgres_fitness.metric_stream (
+    query: `INSERT INTO ingest.metric_stream (
       id,
       activity_id,
       user_id,
@@ -1803,9 +845,10 @@ export async function insertClickHouseMetricStreamRows(
       vector,
       point,
       metadata,
-      _peerdb_synced_at,
-      _peerdb_is_deleted,
-      _peerdb_version
+      ingested_at,
+      is_deleted,
+      version,
+      generation
     ) VALUES ${rows.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
   });
 }
@@ -1819,6 +862,18 @@ export async function rebuildClickHouseSensorAnalytics(
   }
 
   await rebuildClickHouseSensorAnalyticsWithClient(handle.setupClient);
+}
+
+export async function executeClickHouseTestCommand(
+  testContext: ClickHouseSyncTestContext,
+  query: string,
+): Promise<void> {
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+
+  await handle.setupClient.command({ query });
 }
 
 export async function seedClickHouseMetricStreamRows(

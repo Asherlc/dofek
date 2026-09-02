@@ -4,8 +4,25 @@ sources:
   - name: analytics
     schema: analytics
     tables:
+      - name: body_measurement_sample
+      - name: heart_rate_day_change
+      - name: metric_stream_day_change
+      - name: provider_change_state
+      - name: sleep_heart_rate_cutover
       - name: v_activity
       - name: v_activity_members
+  - name: ingest
+    schema: ingest
+    tables:
+      - name: metric_stream
+        config:
+          event_time: recorded_at
+      - name: metric_stream_current
+        identifier: metric_stream
+      - name: metric_stream_freshness
+        identifier: metric_stream
+        config:
+          event_time: ingested_at
   - name: postgres_fitness
     schema: postgres_fitness
     tables:
@@ -14,17 +31,10 @@ sources:
       - name: daily_metrics
       - name: food_entry
       - name: health_event
+      - name: clinical_record
       - name: journal_entry
-      - name: lab_panel
-      - name: lab_result
-      - name: metric_stream
-        config:
-          event_time: recorded_at
-      - name: metric_stream_freshness
-        identifier: metric_stream
-        config:
-          event_time: _peerdb_synced_at
       - name: provider
+      - name: provider_connection
       - name: provider_priority
       - name: sensor_device_priority
       - name: sensor_provider_priority

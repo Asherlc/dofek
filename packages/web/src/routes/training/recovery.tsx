@@ -1,13 +1,16 @@
-import { formatDateYmd } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { HrvBaselineChart } from "../../components/HrvBaselineChart.tsx";
 import { HrvVariabilityChart } from "../../components/HrvVariabilityChart.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
+import { TodayPlanCard } from "../../components/TodayPlanCard.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
+import { useTodayQueryDate } from "../../hooks/useTodayQueryDate.ts";
+import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/recovery")({
@@ -16,32 +19,58 @@ export const Route = createFileRoute("/training/recovery")({
 
 function RecoveryTab() {
   const { days } = useTrainingDays();
-  const endDate = useMemo(() => formatDateYmd(new Date()), []);
+  const endDate = useTodayQueryDate();
 
-  const hrvVariability = trpc.recovery.hrvVariability.useQuery({ days, endDate });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
-  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
-  const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days });
-  const readiness = trpc.recovery.readinessScore.useQuery({ days, endDate });
+  const hrvVariability = trpc.recovery.hrvVariability.useQuery(
+    { ...selectedRangeQueryInput(days), endDate },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery(
+    { ...selectedRangeQueryInput(days), endDate },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const workloadRatio = trpc.recovery.workloadRatio.useQuery(
+    { ...selectedRangeQueryInput(days), endDate },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const sleepData = trpc.recovery.sleepAnalytics.useQuery(
+    { ...selectedRangeQueryInput(days), endDate },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const readiness = trpc.recovery.readinessScore.useQuery(
+    { ...selectedRangeQueryInput(days), endDate },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const todayPlan = trpc.todayPlan.get.useQuery({ days: 30, endDate }, TRAINING_SLOW_QUERY_OPTIONS);
 
   return (
     <>
+      <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section
           title="Readiness Score"
-          subtitle="Composite score from HRV, resting HR, sleep, load balance"
+          subtitle="Composite score from heart rate variability, resting heart rate, sleep, and load balance"
         >
-          <ReadinessScoreCard data={readiness.data ?? []} loading={readiness.isLoading} />
+          {readiness.error && !readiness.data ? (
+            <QueryStatePanel error={readiness.error} />
+          ) : (
+            <ReadinessScoreCard data={readiness.data ?? []} loading={readiness.isLoading} />
+          )}
         </Section>
 
         <Section
-          title="Acute:Chronic Workload Ratio"
-          subtitle="7-day vs 28-day training load ratio — stay between 0.8 and 1.3"
+          title={workloadRatio.data?.context.label ?? "Training load comparison"}
+          subtitle={workloadRatio.data?.context.description}
         >
-          <WorkloadRatioChart
-            data={workloadRatio.data?.timeSeries ?? []}
-            loading={workloadRatio.isLoading}
-          />
+          {workloadRatio.error && !workloadRatio.data ? (
+            <QueryStatePanel error={workloadRatio.error} />
+          ) : (
+            <WorkloadRatioChart
+              data={workloadRatio.data?.timeSeries ?? []}
+              context={workloadRatio.data?.context}
+              loading={workloadRatio.isLoading}
+            />
+          )}
         </Section>
       </div>
 
@@ -50,25 +79,40 @@ function RecoveryTab() {
           title="Heart Rate Variability & Resting Heart Rate"
           subtitle="Daily recovery vitals with 7-day averages"
         >
-          <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+          {hrvBaseline.error && !hrvBaseline.data ? (
+            <QueryStatePanel error={hrvBaseline.error} />
+          ) : (
+            <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+          )}
         </Section>
 
-        <Section title="HRV Coefficient of Variation" subtitle="7-day rolling HRV variability">
-          <HrvVariabilityChart
-            data={hrvVariability.data ?? []}
-            loading={hrvVariability.isLoading}
-          />
+        <Section
+          title="Heart Rate Variability Coefficient of Variation"
+          subtitle="7-day rolling heart rate variability"
+        >
+          {hrvVariability.error && !hrvVariability.data ? (
+            <QueryStatePanel error={hrvVariability.error} />
+          ) : (
+            <HrvVariabilityChart
+              data={hrvVariability.data ?? []}
+              loading={hrvVariability.isLoading}
+            />
+          )}
         </Section>
 
         <Section
           title="Sleep Analytics"
           subtitle="Nightly sleep stages, efficiency, and sleep debt"
         >
-          <SleepAnalyticsChart
-            nightly={sleepData.data?.nightly ?? []}
-            sleepDebt={sleepData.data?.sleepDebt ?? 0}
-            loading={sleepData.isLoading}
-          />
+          {sleepData.error && !sleepData.data ? (
+            <QueryStatePanel error={sleepData.error} />
+          ) : (
+            <SleepAnalyticsChart
+              nightly={sleepData.data?.nightly ?? []}
+              sleepDebt={sleepData.data?.sleepDebt ?? null}
+              loading={sleepData.isLoading}
+            />
+          )}
         </Section>
       </div>
     </>

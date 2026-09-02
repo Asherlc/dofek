@@ -1,4 +1,8 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import type {
   ConnectActivityDetail,
   ConnectActivitySummary,
@@ -15,7 +19,7 @@ import type {
 // Activity type mapping (internal typeKey → normalized)
 // ============================================================
 
-const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
+const GARMIN_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType> = {
   running: "running",
   trail_running: "running",
   treadmill_running: "running",
@@ -52,8 +56,9 @@ const GARMIN_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   meditation: "meditation",
 };
 
-export function mapConnectActivityType(typeKey: string): CanonicalActivityType {
-  return GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other";
+export function mapConnectActivityType(typeKey: string): ProviderActivityType {
+  const providerType = typeKey.trim() || "other";
+  return resolveProviderActivityType(providerType, GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other");
 }
 
 // ============================================================
@@ -62,7 +67,7 @@ export function mapConnectActivityType(typeKey: string): CanonicalActivityType {
 
 export interface ParsedConnectActivity {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -73,11 +78,12 @@ export interface ParsedConnectSleep {
   externalId: string;
   startedAt: Date;
   endedAt: Date;
-  durationMinutes: number;
-  deepMinutes: number;
-  lightMinutes: number;
-  remMinutes: number;
-  awakeMinutes: number;
+  durationMinutes: number | undefined;
+  deepMinutes: number | undefined;
+  lightMinutes: number | undefined;
+  remMinutes: number | undefined;
+  awakeMinutes: number | undefined;
+  stagingAvailable: boolean;
   sleepScore: number | undefined;
   awakeningCount: number | undefined;
   averageSpO2: number | undefined;
@@ -94,8 +100,6 @@ export interface ParsedDailyMetrics {
   date: string;
   steps: number;
   distanceKm: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
   restingHr: number | undefined;
   spo2Avg: number | undefined;
   respiratoryRateAvg: number | undefined;
@@ -174,9 +178,8 @@ export function parseConnectActivity(raw: ConnectActivitySummary): ParsedConnect
   // Garmin labels times as "GMT" but doesn't include a Z suffix,
   // so new Date() would parse them as local time. Append Z to force UTC.
   const startedAt = new Date(ensureUtcSuffix(raw.startTimeGMT));
-  // duration is in milliseconds from the internal API
-  const durationMs = raw.duration;
-  const endedAt = new Date(startedAt.getTime() + durationMs);
+  const durationMilliseconds = raw.duration * 1000;
+  const endedAt = new Date(startedAt.getTime() + durationMilliseconds);
 
   return {
     externalId: String(raw.activityId),
@@ -194,15 +197,25 @@ export function parseConnectSleep(data: ConnectSleepData): ParsedConnectSleep | 
     return null;
   }
 
+  const stagingAvailable =
+    dto.deepSleepSeconds != null &&
+    dto.lightSleepSeconds != null &&
+    dto.remSleepSeconds != null &&
+    dto.awakeSleepSeconds != null;
+
   return {
     externalId: String(dto.id),
     startedAt: new Date(dto.sleepStartTimestampGMT),
     endedAt: new Date(dto.sleepEndTimestampGMT),
-    durationMinutes: Math.round((dto.sleepTimeSeconds ?? 0) / 60),
-    deepMinutes: Math.round((dto.deepSleepSeconds ?? 0) / 60),
-    lightMinutes: Math.round((dto.lightSleepSeconds ?? 0) / 60),
-    remMinutes: Math.round((dto.remSleepSeconds ?? 0) / 60),
-    awakeMinutes: Math.round((dto.awakeSleepSeconds ?? 0) / 60),
+    durationMinutes:
+      dto.sleepTimeSeconds == null ? undefined : Math.round(dto.sleepTimeSeconds / 60),
+    deepMinutes: dto.deepSleepSeconds == null ? undefined : Math.round(dto.deepSleepSeconds / 60),
+    lightMinutes:
+      dto.lightSleepSeconds == null ? undefined : Math.round(dto.lightSleepSeconds / 60),
+    remMinutes: dto.remSleepSeconds == null ? undefined : Math.round(dto.remSleepSeconds / 60),
+    awakeMinutes:
+      dto.awakeSleepSeconds == null ? undefined : Math.round(dto.awakeSleepSeconds / 60),
+    stagingAvailable,
     sleepScore: dto.sleepScores?.overall?.value,
     awakeningCount: dto.awakeningCount,
     averageSpO2: dto.averageSpO2Value,
@@ -269,8 +282,6 @@ export function parseConnectDailySummary(summary: ConnectDailySummary): ParsedDa
     date: summary.calendarDate,
     steps: summary.totalSteps,
     distanceKm: summary.totalDistanceMeters / 1000,
-    activeEnergyKcal: summary.activeKilocalories,
-    basalEnergyKcal: summary.bmrKilocalories,
     restingHr: summary.restingHeartRate,
     spo2Avg: summary.averageSpo2,
     respiratoryRateAvg: undefined, // not in daily summary, use respiration endpoint

@@ -1,8 +1,9 @@
-import * as Sentry from "@sentry/node";
+import { WhoopClient } from "@dofek/whoop/client";
 import { TRPCError } from "@trpc/server";
-import { ensureProvider, saveTokens } from "dofek/db/tokens";
+import { ensureProvider } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
-import { WhoopClient } from "whoop-whoop/client";
+import { captureException } from "dofek/lib/error-reporting";
+import { saveWhoopAuthTokens } from "dofek/providers/whoop/resolve-tokens";
 import { z } from "zod";
 import {
   DEFAULT_CHALLENGE_TTL_MS,
@@ -55,13 +56,14 @@ export const whoopAuthRouter = router({
             accessToken: token.accessToken,
             refreshToken: token.refreshToken,
             userId: token.userId,
+            expiresInSeconds: token.expiresInSeconds,
           },
         };
       } catch (error) {
         logger.error(
           `[whoopAuth] signIn failed userId=${ctx.userId} message=${error instanceof Error ? error.message : String(error)}`,
         );
-        Sentry.captureException(error);
+        captureException(error);
         throw error;
       }
     }),
@@ -117,13 +119,14 @@ export const whoopAuthRouter = router({
             accessToken: token.accessToken,
             refreshToken: token.refreshToken,
             userId: token.userId,
+            expiresInSeconds: token.expiresInSeconds,
           },
         };
       } catch (error) {
         logger.error(
           `[whoopAuth] verifyCode failed userId=${ctx.userId} challengeId=${input.challengeId} method=${challenge.method} message=${error instanceof Error ? error.message : String(error)}`,
         );
-        Sentry.captureException(error);
+        captureException(error);
         throw error;
       }
     }),
@@ -132,21 +135,21 @@ export const whoopAuthRouter = router({
   saveTokens: protectedProcedure
     .input(
       z.object({
-        accessToken: z.string(),
-        refreshToken: z.string(),
+        accessToken: z.string().min(1, "WHOOP access token is required"),
+        refreshToken: z.string().min(1, "WHOOP refresh token is required"),
         userId: z.number(),
+        expiresInSeconds: z.number().positive("WHOOP token expiry is required"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, "whoop", "WHOOP", undefined, ctx.userId);
-      await saveTokens(
+      await saveWhoopAuthTokens(
         ctx.db,
-        "whoop",
         {
           accessToken: input.accessToken,
           refreshToken: input.refreshToken,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          scopes: `userId:${input.userId}`,
+          userId: input.userId,
+          expiresInSeconds: input.expiresInSeconds,
         },
         ctx.userId,
       );

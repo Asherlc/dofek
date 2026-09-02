@@ -1,59 +1,42 @@
-import {
-  GET_STARTED_GOALS,
-  GET_STARTED_STEPS,
-  type GetStartedGoalId,
-} from "@dofek/onboarding/get-started-flow";
+import { GET_STARTED_STEPS } from "@dofek/onboarding/get-started-flow";
 import { useRouter } from "expo-router";
-import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { colors } from "../theme";
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const [selectedGoalId, setSelectedGoalId] = useState<GetStartedGoalId>(GET_STARTED_GOALS[0].id);
-  const selectedGoal = GET_STARTED_GOALS.find((goal) => goal.id === selectedGoalId);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.kicker}>Get started</Text>
-        <Text style={styles.title}>Set up Dofek</Text>
+        <Text style={styles.kicker}>First-run setup</Text>
+        <Text style={styles.title}>Set up Dofek with your real data</Text>
         <Text style={styles.subtitle}>
-          Choose the first question you want to answer, connect the sources that matter, then open
-          the dashboard when the first useful signal is ready.
+          Dofek is useful after it has data to work with. Start by choosing a primary goal,
+          connecting the sources you already use, then open the dashboard when sync has something to
+          show.
         </Text>
-        {selectedGoal ? (
-          <Text style={styles.selectedText}>Selected: {selectedGoal.title}</Text>
-        ) : null}
       </View>
 
-      <View style={styles.goalGrid}>
-        {GET_STARTED_GOALS.map((goal) => {
-          const selected = goal.id === selectedGoalId;
-          return (
-            <TouchableOpacity
-              key={goal.id}
-              style={[styles.goalCard, selected ? styles.selectedGoalCard : null]}
-              onPress={() => setSelectedGoalId(goal.id)}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.goalTitle}>{goal.title}</Text>
-              <Text style={styles.goalDescription}>{goal.description}</Text>
-            </TouchableOpacity>
-          );
-        })}
+      <View style={styles.goalCard}>
+        <PrimaryGoalSelector />
       </View>
 
       <View style={styles.stepList}>
         {GET_STARTED_STEPS.map((step, stepIndex) => (
           <View key={step.id} style={styles.stepCard}>
-            <Text style={styles.stepNumber}>Step {stepIndex + 1}</Text>
+            <View style={styles.stepBadge}>
+              <Text style={styles.stepBadgeText}>{stepIndex + 1}</Text>
+            </View>
             <Text style={styles.stepTitle}>{step.title}</Text>
             <Text style={styles.stepDescription}>{step.description}</Text>
             <TouchableOpacity
               style={styles.stepButton}
               onPress={() => router.push(step.mobilePath)}
               activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel={step.actionLabel}
             >
               <Text style={styles.stepButtonText}>{step.actionLabel}</Text>
             </TouchableOpacity>
@@ -71,13 +54,13 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    gap: 14,
+    gap: 16,
   },
   header: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 20,
-    gap: 10,
+    borderRadius: 14,
+    padding: 22,
+    gap: 12,
   },
   kicker: {
     color: colors.accent,
@@ -88,77 +71,61 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 30,
     fontWeight: "700",
+    lineHeight: 36,
   },
   subtitle: {
     color: colors.textSecondary,
     fontSize: 15,
     lineHeight: 22,
   },
-  selectedText: {
-    color: colors.text,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 12,
-    overflow: "hidden",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  goalGrid: {
-    gap: 10,
-  },
   goalCard: {
     backgroundColor: colors.surface,
+    borderColor: colors.surfaceSecondary,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-    padding: 16,
-    gap: 7,
-  },
-  selectedGoalCard: {
-    borderColor: colors.accent,
-  },
-  goalTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  goalDescription: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
+    padding: 18,
   },
   stepList: {
-    gap: 10,
+    gap: 12,
   },
   stepCard: {
     backgroundColor: colors.surface,
+    borderColor: colors.surfaceSecondary,
     borderRadius: 14,
-    padding: 16,
-    gap: 8,
+    borderWidth: 1,
+    gap: 10,
+    minHeight: 220,
+    padding: 18,
   },
-  stepNumber: {
-    color: colors.textTertiary,
-    fontSize: 11,
+  stepBadge: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  stepBadgeText: {
+    color: colors.accent,
+    fontSize: 14,
     fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
   stepTitle: {
     color: colors.text,
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: "700",
   },
   stepDescription: {
     color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
   },
   stepButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
     borderRadius: 12,
-    marginTop: 4,
+    marginTop: "auto",
+    minHeight: 46,
     padding: 12,
   },
   stepButtonText: {

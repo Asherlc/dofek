@@ -1,19 +1,27 @@
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { isRelationMissingError } from "dofek/db/dedup";
 import {
   enqueueActivityDeleteAnalyticsRefresh,
+  enqueueActivityRecomputeAnalyticsRefresh,
   enqueueActivityRestoreAnalyticsRefresh,
 } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
+import {
+  ChartRange,
+  selectedChartCustomRangeQuery,
+  selectedChartRangeSchema,
+} from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
   ActivityRepository,
   StreamPoint as StreamPointModel,
 } from "../repositories/activity-repository.ts";
+import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -58,6 +66,13 @@ async function scheduleActivityRestoreAnalyticsRefresh(
   }
 }
 
+async function scheduleActivityRecomputeAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+): Promise<void> {
+  await enqueueActivityRecomputeAnalyticsRefresh(userId, activityIds);
+}
+
 export interface StrengthExerciseDetail {
   exerciseIndex: number;
   exerciseName: string;
@@ -86,17 +101,17 @@ export interface ActivityPowerZonesResult {
 }
 
 export const activityRouter = router({
-  list: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: z.number().default(30),
-        endDate: endDateSchema,
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        activityTypes: z.array(z.string()).optional(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
+  list: selectedChartCustomRangeQuery(
+    "activity.list",
+    CacheTTL.MEDIUM,
+    z.object({
+      days: selectedChartRangeSchema("activity.list"),
+      endDate: endDateSchema,
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+      activityTypes: z.array(z.string()).optional(),
+    }),
+    async ({ ctx, input }) => {
       const repo = new ActivityRepository(
         ctx.db,
         ctx.userId,
@@ -116,10 +131,11 @@ export const activityRouter = router({
         }
         throw error;
       }
-    }),
+    },
+  ),
 
-  byId: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  byId: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
       const repo = new ActivityRepository(
         ctx.db,
@@ -138,10 +154,29 @@ export const activityRouter = router({
       return new Activity(row, getProvider).toDetail();
     }),
 
-  stream: cachedProtectedQuery(CacheTTL.MEDIUM)
+  hangboardDetails: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
+    .query(async ({ ctx, input }) => {
+      const repository = new HangboardingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
+      const detail = await repository.getDetail(input.id);
+      if (!detail) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Hangboarding details not found",
+        });
+      }
+      return detail;
+    }),
+
+  stream: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.guid(),
         maxPoints: z.number().int().min(10).max(10000).default(500),
       }),
     )
@@ -164,8 +199,8 @@ export const activityRouter = router({
       return points.map((point) => point.toDetail());
     }),
 
-  hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
@@ -184,8 +219,8 @@ export const activityRouter = router({
       return repo.getHrZones(input.id);
     }),
 
-  powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
@@ -198,7 +233,7 @@ export const activityRouter = router({
       if (!activity) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
-      if (!isCyclingActivity(activity.activity_type)) return null;
+      if (!isCyclingActivity(activity.canonical_type)) return null;
       if (activity.avg_power == null && activity.max_power == null) return null;
       if (!ctx.sensorStore) {
         throw new TRPCError({
@@ -209,15 +244,15 @@ export const activityRouter = router({
       }
 
       const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
-      const { currentEftp } = await powerRepo.getEftpTrend(90);
+      const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
       if (currentEftp == null) return null;
 
       const zones = await activityRepo.getPowerZones(input.id, currentEftp);
       return { zones, ftp: currentEftp };
     }),
 
-  strengthExercises: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+  strengthExercises: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<StrengthExerciseDetail[]> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
@@ -235,16 +270,34 @@ export const activityRouter = router({
       return exercises.map((exercise) => exercise.toDetail());
     }),
 
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+  recompute: protectedProcedure
+    .input(z.object({ id: z.guid() }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {
-        const { memberActivityIds } = await repo.bulkDelete([input.id]);
+        const memberActivityIds = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            const memberActivityIds = await repo.getActivityMemberIds(input.id);
+            if (!memberActivityIds) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+            }
+            return memberActivityIds;
+          },
+        );
+        await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, memberActivityIds);
         await invalidateActivityListCaches(ctx.userId);
-        await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
         return { success: true };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         if (isRelationMissingError(error)) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -256,15 +309,57 @@ export const activityRouter = router({
       }
     }),
 
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    try {
+      const memberActivityIds = await withAccountErasureUserWriteFence(
+        ctx.db,
+        ctx.userId,
+        async (transaction) => {
+          const repo = new ActivityRepository(
+            transaction,
+            ctx.userId,
+            ctx.timezone,
+            ctx.accessWindow,
+          );
+          const { memberActivityIds } = await repo.bulkDelete([input.id]);
+          return memberActivityIds;
+        },
+      );
+      await invalidateActivityListCaches(ctx.userId);
+      await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
+      return { success: true };
+    } catch (error) {
+      if (isRelationMissingError(error)) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+        });
+      }
+      throw error;
+    }
+  }),
+
   bulkDelete: protectedProcedure
-    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {
-        const { deletedCount, memberActivityIds } = await repo.bulkDelete(input.ids);
+        const deletion = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            return repo.bulkDelete(input.ids);
+          },
+        );
         await invalidateActivityListCaches(ctx.userId);
-        await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
-        return { success: true, deletedCount };
+        await scheduleActivityAnalyticsRefresh(ctx.userId, deletion.memberActivityIds);
+        return { success: true, deletedCount: deletion.deletedCount };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({
@@ -278,11 +373,23 @@ export const activityRouter = router({
     }),
 
   restoreProviderAbsent: protectedProcedure
-    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {
-        const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
+        const restoredCount = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
+            return restoredCount;
+          },
+        );
         await invalidateActivityListCaches(ctx.userId);
         await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
         return { success: true, restoredCount };

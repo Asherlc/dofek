@@ -1,54 +1,67 @@
-import { formatCalories, formatGrams } from "@dofek/format/format";
+import { formatGrams, formatNutritionNumber } from "@dofek/format/format";
+import type { SelectedDateNutritionSummary } from "@dofek/nutrition/selected-date-summary";
+import { chartColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
 interface MacroSummaryProps {
-  calories: number;
-  caloriesGoal: number;
-  proteinGrams: number;
-  carbsGrams: number;
-  fatGrams: number;
+  macros: SelectedDateNutritionSummary["macros"];
 }
 
-function MacroBar({ label, grams, color }: { label: string; grams: number; color: string }) {
+function MacroBar({
+  label,
+  grams,
+  energySharePercentage,
+  color,
+}: {
+  label: string;
+  grams: number;
+  energySharePercentage: number;
+  color: string;
+}) {
+  const formattedGrams = formatNutritionNumber(grams);
+
   return (
-    <View style={styles.macroItem}>
+    <View
+      style={styles.macroItem}
+      accessible
+      accessibilityLabel={`${label}: ${formatNutritionNumber(energySharePercentage)}% share of energy; ${formattedGrams} grams logged`}
+    >
       <View style={[styles.macroDot, { backgroundColor: color }]} />
       <Text style={styles.macroLabel}>{label}</Text>
-      <Text style={styles.macroValue}>{formatGrams(grams)}</Text>
+      <Text style={styles.macroValue}>{formatNutritionNumber(energySharePercentage)}%</Text>
+      <Text style={styles.macroGrams}>{formatGrams(grams)} logged</Text>
     </View>
   );
 }
 
-export function MacroSummary({
-  calories,
-  caloriesGoal,
-  proteinGrams,
-  carbsGrams,
-  fatGrams,
-}: MacroSummaryProps) {
-  const caloriesRemaining = caloriesGoal - calories;
-  const progressFraction = Math.min(calories / caloriesGoal, 1);
-
+export function MacroSummary({ macros }: MacroSummaryProps) {
   return (
     <View style={styles.container}>
-      <View style={styles.calorieSection}>
-        <Text style={styles.calorieCount}>{formatCalories(calories)}</Text>
-        <Text style={styles.calorieLabel}>of {formatCalories(caloriesGoal)}</Text>
-        <View style={styles.progressBarBackground}>
-          <View style={[styles.progressBarFill, { width: `${progressFraction * 100}%` }]} />
-        </View>
-        <Text style={styles.remainingText}>
-          {caloriesRemaining > 0
-            ? `${formatCalories(caloriesRemaining)} remaining`
-            : "Goal reached"}
-        </Text>
-      </View>
-
       <View style={styles.macroSection}>
-        <MacroBar label="Protein" grams={proteinGrams} color={colors.positive} />
-        <MacroBar label="Carbs" grams={carbsGrams} color={colors.warning} />
-        <MacroBar label="Fat" grams={fatGrams} color={colors.danger} />
+        <Text style={styles.macroSectionEyebrow}>Observed intake composition</Text>
+        <Text style={styles.macroSectionTitle}>Share of energy</Text>
+        <Text style={styles.macroSectionDescription}>Logged grams are shown separately.</Text>
+        <View style={styles.macroItems}>
+          <MacroBar
+            label="Protein"
+            grams={macros.protein.grams}
+            energySharePercentage={macros.protein.energySharePercentage}
+            color={chartColors.blue}
+          />
+          <MacroBar
+            label="Carbs"
+            grams={macros.carbs.grams}
+            energySharePercentage={macros.carbs.energySharePercentage}
+            color={chartColors.purple}
+          />
+          <MacroBar
+            label="Fat"
+            grams={macros.fat.grams}
+            energySharePercentage={macros.fat.energySharePercentage}
+            color={chartColors.teal}
+          />
+        </View>
       </View>
     </View>
   );
@@ -61,38 +74,27 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
   },
-  calorieSection: {
-    alignItems: "center",
-    marginBottom: 16,
+  macroSection: {
+    gap: 2,
   },
-  calorieCount: {
-    fontSize: 36,
-    fontWeight: "700",
+  macroSectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
     color: colors.text,
   },
-  calorieLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
+  macroSectionEyebrow: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
-  progressBarBackground: {
-    width: "100%",
-    height: 8,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: colors.accent,
-    borderRadius: 4,
-  },
-  remainingText: {
+  macroSectionDescription: {
     fontSize: 12,
     color: colors.textTertiary,
-    marginTop: 4,
+    marginBottom: 8,
   },
-  macroSection: {
+  macroItems: {
     flexDirection: "row",
     justifyContent: "space-around",
   },
@@ -113,5 +115,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: colors.text,
+  },
+  macroGrams: {
+    fontSize: 11,
+    color: colors.textTertiary,
   },
 });

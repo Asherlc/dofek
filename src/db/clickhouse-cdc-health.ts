@@ -40,7 +40,7 @@ interface CheckClickHouseCdcHealthOptions {
   mirrorFreshnessChecks?: readonly MirrorFreshnessCheck[];
 }
 
-const expectedSlotNames = [
+export const EXPECTED_PEERDB_REPLICATION_SLOT_NAMES = [
   "peerflow_slot_dofek_fitness_raw_analytics",
   "peerflow_slot_dofek_provider_inventory_raw_analytics",
   "peerflow_slot_dofek_sensor_priority_raw_analytics",
@@ -76,7 +76,7 @@ const postgresReplicationSlotRowsSchema = z.object({
       active: z.boolean(),
       restart_lsn: z.string().nullable(),
       retained_wal_bytes: nullableIntegerLikeSchema,
-      slot_name: z.enum(expectedSlotNames),
+      slot_name: z.enum(EXPECTED_PEERDB_REPLICATION_SLOT_NAMES),
       wal_status: z.string().nullable(),
     }),
   ),
@@ -221,7 +221,7 @@ function addSlotIssues(
 ): void {
   const slotRowsByName = new Map(slotRows.map((slotRow) => [slotRow.slot_name, slotRow]));
 
-  for (const expectedSlotName of expectedSlotNames) {
+  for (const expectedSlotName of EXPECTED_PEERDB_REPLICATION_SLOT_NAMES) {
     const slotRow = slotRowsByName.get(expectedSlotName);
     if (!slotRow) {
       issues.push({
@@ -395,7 +395,7 @@ export async function checkClickHouseCdcHealth(
         ELSE pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)
       END AS retained_wal_bytes
     FROM pg_replication_slots
-    WHERE slot_name = ANY (ARRAY[${expectedSlotNames.map((slotName) => `'${slotName}'`).join(", ")}])
+    WHERE slot_name = ANY (ARRAY[${EXPECTED_PEERDB_REPLICATION_SLOT_NAMES.map((slotName) => `'${slotName}'`).join(", ")}])
     ORDER BY slot_name
   `);
   const parsedSlotRows = postgresReplicationSlotRowsSchema.parse(slotQueryResult).rows;

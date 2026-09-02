@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
 import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
+import { writeTestMigrationFiles } from "./test-helpers.ts";
 
 // cspell:ignore conrelid contype pgcrypto pkey relnamespace segmentby
 
@@ -97,7 +98,13 @@ describe("metric_stream replica identity migration", () => {
         join(import.meta.dirname, "../../drizzle/0007_metric_stream_primary_key.sql"),
         "utf-8",
       );
-      writeFileSync(join(tmpDir, "0007_metric_stream_primary_key.sql"), migrationContent);
+      writeTestMigrationFiles(tmpDir, [
+        {
+          content: migrationContent,
+          file: "0007_metric_stream_primary_key.sql",
+          when: 2_100_000_000_000,
+        },
+      ]);
 
       const migrationCount = await runMigrations(connectionString, tmpDir);
       expect(migrationCount).toBe(1);
@@ -173,10 +180,18 @@ describe("metric_stream replica identity migration", () => {
         join(import.meta.dirname, "../../drizzle/0009_metric_stream_id_not_null_primary_key.sql"),
         "utf-8",
       );
-      writeFileSync(
-        join(tmpDir, "0009_metric_stream_id_not_null_primary_key.sql"),
-        primaryKeyMigrationContent,
-      );
+      writeTestMigrationFiles(tmpDir, [
+        {
+          content: migrationContent,
+          file: "0007_metric_stream_primary_key.sql",
+          when: 2_100_000_000_000,
+        },
+        {
+          content: primaryKeyMigrationContent,
+          file: "0009_metric_stream_id_not_null_primary_key.sql",
+          when: 2_100_000_000_001,
+        },
+      ]);
 
       const primaryKeyMigrationCount = await runMigrations(connectionString, tmpDir);
       expect(primaryKeyMigrationCount).toBe(1);

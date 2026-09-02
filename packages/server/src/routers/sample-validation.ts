@@ -1,4 +1,4 @@
-import { TRPCError } from "@trpc/server";
+import { logger } from "../logger.ts";
 
 export const MAX_FUTURE_SAMPLE_SKEW_MS = 5 * 60 * 1000;
 
@@ -6,31 +6,31 @@ type TimestampedSample = {
   readonly timestamp: string;
 };
 
-export function rejectFutureSamples(
-  samples: readonly TimestampedSample[],
+export function filterFutureSamples<T extends TimestampedSample>(
+  samples: readonly T[],
   now: Date,
   source: string,
-) {
+): T[] {
   const futureLimitMs = now.getTime() + MAX_FUTURE_SAMPLE_SKEW_MS;
 
-  const invalidSample = samples.find((sample) => {
+  return samples.filter((sample) => {
     const sampleTimeMs = Date.parse(sample.timestamp);
+
     if (!Number.isFinite(sampleTimeMs)) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `${source} sample timestamp is invalid: ${sample.timestamp}`,
+      logger.warn(`${source} sample has invalid timestamp, dropping`, {
+        timestamp: sample.timestamp,
       });
+      return false;
     }
 
-    return sampleTimeMs > futureLimitMs;
-  });
+    if (sampleTimeMs > futureLimitMs) {
+      logger.warn(`${source} sample timestamp is too far in the future, dropping`, {
+        timestamp: sample.timestamp,
+        nowIso: now.toISOString(),
+      });
+      return false;
+    }
 
-  if (!invalidSample) {
-    return;
-  }
-
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: `${source} sample timestamp is too far in the future: ${invalidSample.timestamp}`,
+    return true;
   });
 }

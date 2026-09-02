@@ -26,33 +26,33 @@ import type {
 
 describe("mapConnectActivityType", () => {
   it("maps running types", () => {
-    expect(mapConnectActivityType("running")).toBe("running");
-    expect(mapConnectActivityType("trail_running")).toBe("running");
-    expect(mapConnectActivityType("treadmill_running")).toBe("running");
+    expect(mapConnectActivityType("running").canonicalType).toBe("running");
+    expect(mapConnectActivityType("trail_running").canonicalType).toBe("running");
+    expect(mapConnectActivityType("treadmill_running").canonicalType).toBe("running");
   });
 
   it("maps cycling types", () => {
-    expect(mapConnectActivityType("cycling")).toBe("cycling");
-    expect(mapConnectActivityType("mountain_biking")).toBe("mountain_biking");
-    expect(mapConnectActivityType("indoor_cycling")).toBe("indoor_cycling");
-    expect(mapConnectActivityType("gravel_cycling")).toBe("gravel_cycling");
+    expect(mapConnectActivityType("cycling").canonicalType).toBe("cycling");
+    expect(mapConnectActivityType("mountain_biking").canonicalType).toBe("cycling");
+    expect(mapConnectActivityType("indoor_cycling").canonicalType).toBe("cycling");
+    expect(mapConnectActivityType("gravel_cycling").canonicalType).toBe("cycling");
   });
 
   it("maps swimming types", () => {
-    expect(mapConnectActivityType("swimming")).toBe("swimming");
-    expect(mapConnectActivityType("lap_swimming")).toBe("swimming");
-    expect(mapConnectActivityType("open_water_swimming")).toBe("swimming");
+    expect(mapConnectActivityType("swimming").canonicalType).toBe("swimming");
+    expect(mapConnectActivityType("lap_swimming").canonicalType).toBe("swimming");
+    expect(mapConnectActivityType("open_water_swimming").canonicalType).toBe("swimming");
   });
 
   it("maps strength and cardio", () => {
-    expect(mapConnectActivityType("strength_training")).toBe("strength");
-    expect(mapConnectActivityType("indoor_cardio")).toBe("cardio");
-    expect(mapConnectActivityType("yoga")).toBe("yoga");
+    expect(mapConnectActivityType("strength_training").canonicalType).toBe("strength");
+    expect(mapConnectActivityType("indoor_cardio").canonicalType).toBe("cardio");
+    expect(mapConnectActivityType("yoga").canonicalType).toBe("yoga");
   });
 
   it("returns 'other' for unknown types", () => {
-    expect(mapConnectActivityType("unknown_sport")).toBe("other");
-    expect(mapConnectActivityType("")).toBe("other");
+    expect(mapConnectActivityType("unknown_sport").canonicalType).toBe("other");
+    expect(mapConnectActivityType("").canonicalType).toBe("other");
   });
 });
 
@@ -67,7 +67,7 @@ describe("parseConnectActivity", () => {
     startTimeGMT: "2024-01-15T07:30:00.000",
     startTimeLocal: "2024-01-15T09:30:00.000",
     distance: 10500.5,
-    duration: 3600000, // 1 hour in ms
+    duration: 3600, // 1 hour in seconds
     averageHR: 145,
     maxHR: 172,
     averageSpeed: 2.917,
@@ -84,7 +84,7 @@ describe("parseConnectActivity", () => {
 
   it("maps activity type from typeKey", () => {
     const parsed = parseConnectActivity(sampleActivity);
-    expect(parsed.activityType).toBe("running");
+    expect(parsed.activityType.canonicalType).toBe("running");
   });
 
   it("preserves activity name", () => {
@@ -99,7 +99,7 @@ describe("parseConnectActivity", () => {
     expect(parsed.startedAt.getUTCMinutes()).toBe(30);
   });
 
-  it("calculates end time from start + duration (ms)", () => {
+  it("calculates end time from Garmin's duration in seconds", () => {
     const parsed = parseConnectActivity(sampleActivity);
     const durationMs = parsed.endedAt.getTime() - parsed.startedAt.getTime();
     expect(durationMs).toBe(3600000);
@@ -148,6 +148,59 @@ describe("parseConnectSleep", () => {
     expect(parsed?.lightMinutes).toBe(240);
     expect(parsed?.remMinutes).toBe(120);
     expect(parsed?.awakeMinutes).toBe(30);
+    expect(parsed?.stagingAvailable).toBe(true);
+  });
+
+  it("preserves absent stage summaries as missing values", () => {
+    const parsed = parseConnectSleep({
+      dailySleepDTO: {
+        id: 98766,
+        userProfilePK: 111,
+        calendarDate: "2024-01-16",
+        sleepStartTimestampGMT: 1705363200000,
+        sleepEndTimestampGMT: 1705392000000,
+        sleepTimeSeconds: 28800,
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      durationMinutes: 480,
+      deepMinutes: undefined,
+      lightMinutes: undefined,
+      remMinutes: undefined,
+      awakeMinutes: undefined,
+      stagingAvailable: false,
+    });
+  });
+
+  it.each([
+    "deepSleepSeconds",
+    "lightSleepSeconds",
+    "remSleepSeconds",
+    "awakeSleepSeconds",
+  ] as const)("marks staging unavailable when %s is absent", (missingStage) => {
+    const parsed = parseConnectSleep({
+      dailySleepDTO: {
+        ...sampleSleep.dailySleepDTO,
+        [missingStage]: undefined,
+      },
+    });
+
+    expect(parsed?.stagingAvailable).toBe(false);
+  });
+
+  it("preserves an absent sleep duration as missing", () => {
+    const parsed = parseConnectSleep({
+      dailySleepDTO: {
+        id: 98767,
+        userProfilePK: 111,
+        calendarDate: "2024-01-17",
+        sleepStartTimestampGMT: 1705449600000,
+        sleepEndTimestampGMT: 1705478400000,
+      },
+    });
+
+    expect(parsed?.durationMinutes).toBeUndefined();
   });
 
   it("parses sleep score from sleepScores.overall", () => {
@@ -457,9 +510,9 @@ describe("parseConnectSleepStages", () => {
     };
     const stages = parseConnectSleepStages(data);
     expect(stages).toHaveLength(3);
-    expect(stages[0].stage).toBe("deep");
-    expect(stages[1].stage).toBe("light");
-    expect(stages[2].stage).toBe("awake");
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[1]?.stage).toBe("light");
+    expect(stages[2]?.stage).toBe("awake");
   });
 
   it("maps remSleepData entries to rem stages", () => {
@@ -472,8 +525,8 @@ describe("parseConnectSleepStages", () => {
     };
     const stages = parseConnectSleepStages(data);
     expect(stages).toHaveLength(2);
-    expect(stages[0].stage).toBe("rem");
-    expect(stages[1].stage).toBe("rem");
+    expect(stages[0]?.stage).toBe("rem");
+    expect(stages[1]?.stage).toBe("rem");
   });
 
   it("combines sleepLevels and remSleepData sorted by startedAt", () => {
@@ -487,9 +540,9 @@ describe("parseConnectSleepStages", () => {
     };
     const stages = parseConnectSleepStages(data);
     expect(stages).toHaveLength(3);
-    expect(stages[0].stage).toBe("deep");
-    expect(stages[1].stage).toBe("rem");
-    expect(stages[2].stage).toBe("light");
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[1]?.stage).toBe("rem");
+    expect(stages[2]?.stage).toBe("light");
   });
 
   it("returns empty array when no sleep level data", () => {
@@ -536,7 +589,7 @@ describe("parseConnectSleepStages", () => {
       ],
     };
     const stages = parseConnectSleepStages(data);
-    expect(stages[0].startedAt).toEqual(new Date("2024-01-15T00:00:00Z"));
-    expect(stages[0].endedAt).toEqual(new Date("2024-01-15T00:30:00Z"));
+    expect(stages[0]?.startedAt).toEqual(new Date("2024-01-15T00:00:00Z"));
+    expect(stages[0]?.endedAt).toEqual(new Date("2024-01-15T00:30:00Z"));
   });
 });

@@ -104,8 +104,7 @@ describe("buildClickHouseBootstrapStatements", () => {
       "daily_metrics",
       "food_entry",
       "health_event",
-      "lab_panel",
-      "lab_result",
+      "clinical_record",
       "journal_entry",
       "provider",
       "provider_priority",
@@ -118,19 +117,15 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS analytics");
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("CREATE DATABASE IF NOT EXISTS ingest");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS ingest.metric_stream");
+    expect(sql).toContain("PROJECTION by_provider_current_state");
     expect(sql).toContain("vector Array(Float32)");
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
-    );
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted Int8 DEFAULT 0",
-    );
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version Int64 DEFAULT 0",
-    );
-    expect(sql.indexOf("ADD COLUMN IF NOT EXISTS _peerdb_synced_at")).toBeLessThan(
-      sql.indexOf("FROM postgres_fitness.metric_stream"),
+    expect(sql).toContain("ingested_at DateTime64(9) DEFAULT now()");
+    expect(sql).toContain("is_deleted Int8 DEFAULT 0");
+    expect(sql).toContain("version Int64 DEFAULT 0");
+    expect(sql).not.toContain(
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at",
     );
     expect(sql).toContain("point String");
     expect(sql).toContain("metadata String");
@@ -155,12 +150,11 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
-    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
+    expect(sql).toContain("FROM ingest.metric_stream FINAL");
     expect(sql).toContain("ENGINE = ReplacingMergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
-    expect(sql).not.toContain("REFRESH EVERY");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW");
     expect(sql).not.toContain("SYSTEM WAIT VIEW");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
@@ -184,7 +178,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_summary");
     expect(sql).not.toContain("DROP TABLE IF EXISTS");
     expect(sql).not.toContain("DROP VIEW IF EXISTS");
-    expect(sql).toContain("FROM postgres_fitness.metric_stream");
+    expect(sql).toContain("FROM ingest.metric_stream");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
@@ -195,9 +189,6 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.deduped_location");
-    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
-    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.v_body_measurement");
-    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.v_body_measurement");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
@@ -219,23 +210,21 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_trend_daily");
     expect(sql).toContain("countIf(distinct_samples.channel = 'speed') AS speed_samples");
     expect(sql).toContain("uniqExact(activity_id) AS activity_count");
-    expect(sql).toContain("FROM postgres_fitness.provider FINAL");
+    expect(sql).toContain("FROM postgres_fitness.provider_connection FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
-    expect(sql).toContain("FROM postgres_fitness.lab_panel FINAL");
-    expect(sql).toContain("FROM postgres_fitness.lab_result FINAL");
+    expect(sql).toContain("FROM postgres_fitness.clinical_record FINAL");
     expect(sql).toContain("FROM postgres_fitness.journal_entry FINAL");
     expect(sql).toContain("uniqExact(date) AS count");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS food_entries");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS health_events");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS nutrition_daily");
-    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_panels");
-    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_results");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS clinical_records");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS journal_entries");
     expect(sql).not.toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );
-    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
+    expect(sql).toContain("FROM ingest.metric_stream FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("FROM analytics.v_activity");
     expect(sql).toContain("FROM analytics.v_activity_members");
@@ -245,17 +234,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("connected_components AS");
     expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
-    expect(sql).toContain("min(toString(connected_measurement_id)) AS group_id");
-    expect(sql).toContain(
-      "concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))",
-    );
-    expect(sql).not.toContain("uniqExact(ifNull(external_id, toString(id))");
-    expect(sql).toContain("body_measurement_samples AS");
-    expect(sql).toContain("measurement_key AS external_id");
-    expect(sql).toContain("_peerdb_synced_at AS created_at");
-    expect(sql).toContain("best.created_at AS created_at");
-    expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
-    expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
+    expect(sql).not.toContain("connected_measurement_id");
     expect(sql).toContain("JOIN analytics.deduped_sensor AS");
   });
 });
@@ -277,7 +256,7 @@ describe("bootstrapClickHouseFromEnv", () => {
     expect(command).not.toHaveBeenCalled();
     expect(query).toHaveBeenCalledWith({
       query:
-        "SELECT count() AS table_count FROM system.tables WHERE database = 'postgres_fitness' AND name = 'metric_stream'",
+        "SELECT count() AS table_count FROM system.tables WHERE database = 'ingest' AND name = 'metric_stream'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
@@ -302,7 +281,7 @@ describe("bootstrapClickHouseFromEnv", () => {
     });
     expect(query).toHaveBeenCalledWith({
       query:
-        "SELECT count() AS column_count FROM system.columns WHERE database = 'postgres_fitness' AND table = 'metric_stream'",
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'ingest' AND table = 'metric_stream'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({

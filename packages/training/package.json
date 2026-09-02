@@ -1,21 +1,56 @@
 {
   "name": "@dofek/training",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.23",
+  "description": "Training-science calculations for power, load, performance, and workout planning",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/training"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/training#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "training",
+    "cycling",
+    "running",
+    "power",
+    "tss",
+    "trimp",
+    "fitness"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
-    "./training": "./src/training.ts",
-    "./workout-recommendation": "./src/workout-recommendation.ts",
-    "./training-load": "./src/training-load.ts",
-    "./endurance-types": "./src/endurance-types.ts",
-    "./power-analysis": "./src/power-analysis.ts",
-    "./pmc": "./src/pmc.ts",
-    "./derived-cardio": "./src/derived-cardio.ts",
-    "./grade-adjusted-pace": "./src/grade-adjusted-pace.ts",
-    "./muscle-groups": "./src/muscle-groups.ts"
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*",
-    "@dofek/zones": "workspace:*"
+    "@dofek/zones": "workspace:*",
+    "@openbeta/sandbag": "0.0.55",
+    "zod": "4.4.3"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit"
   }
 }

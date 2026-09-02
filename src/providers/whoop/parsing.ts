@@ -1,5 +1,9 @@
-import type { CanonicalActivityType } from "@dofek/training/training";
-import { mapSportId, mapV2ActivityType } from "whoop-whoop/sports";
+import {
+  type NormalizedActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
+import { mapSportId, mapV2ActivityType } from "@dofek/whoop/sports";
 import type {
   WhoopCycle,
   WhoopHrValue,
@@ -8,8 +12,8 @@ import type {
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
-import { parseDuringRange } from "whoop-whoop/utils";
+} from "@dofek/whoop/types";
+import { parseDuringRange } from "@dofek/whoop/utils";
 import { z } from "zod";
 
 // ============================================================
@@ -80,11 +84,12 @@ export interface ParsedSleep {
   externalId: string;
   startedAt: Date;
   endedAt: Date;
-  durationMinutes: number;
-  deepMinutes: number;
-  remMinutes: number;
-  lightMinutes: number;
-  awakeMinutes: number;
+  durationMinutes?: number;
+  deepMinutes?: number;
+  remMinutes?: number;
+  lightMinutes?: number;
+  awakeMinutes?: number;
+  stagingAvailable: boolean;
   efficiencyPct?: number;
   sleepType: "sleep" | "nap";
   isNap: boolean;
@@ -153,9 +158,36 @@ export type InlineSleepRecord = z.infer<typeof inlineSleepSchema>;
  * This is the primary sleep parsing path since the sleep-service endpoint
  * changed to return raw stage arrays instead of summary objects.
  */
+/**
+ * Prefer the WHOOP sleep activity id for main sleeps so stage sync can match
+ * sessions without a separate lookup key. Naps and cycles without ids keep the
+ * inline fallback external id.
+ */
+export function resolveInlineSleepExternalId(
+  cycle: WhoopCycle,
+  record: InlineSleepRecord,
+  sleepIndex: number,
+): string {
+  if (record.significant !== false) {
+    const numericId = cycle.recovery?.sleep_id ?? cycle.sleep?.id;
+    if (numericId != null) {
+      return String(numericId);
+    }
+  }
+
+  let range: { start: Date };
+  try {
+    range = parseDuringRange(record.during);
+  } catch {
+    return `inline-unknown-${sleepIndex}`;
+  }
+  return `inline-${range.start.toISOString()}-${sleepIndex}`;
+}
+
 export function parseInlineSleep(
   record: InlineSleepRecord,
   sleepIndex: number,
+  externalId?: string,
 ): ParsedSleep | null {
   let range: { start: Date; end: Date };
   try {
@@ -170,7 +202,7 @@ export function parseInlineSleep(
   const durationMilli = record.time_in_bed - record.wake_duration;
 
   return {
-    externalId: `inline-${range.start.toISOString()}-${sleepIndex}`,
+    externalId: externalId ?? `inline-${range.start.toISOString()}-${sleepIndex}`,
     startedAt: range.start,
     endedAt: range.end,
     durationMinutes: milliToMinutes(durationMilli),
@@ -178,6 +210,7 @@ export function parseInlineSleep(
     remMinutes: milliToMinutes(record.rem_sleep_duration),
     lightMinutes: milliToMinutes(record.light_sleep_duration),
     awakeMinutes: milliToMinutes(record.wake_duration),
+    stagingAvailable: true,
     efficiencyPct: normalizeEfficiencyPct(record.in_sleep_efficiency),
     sleepType: record.significant === false ? "nap" : "sleep",
     isNap: record.significant === false,
@@ -211,19 +244,21 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
   }
 
   const stages = record.score?.stage_summary;
-  const totalSleepMilli =
-    (stages?.total_in_bed_time_milli ?? 0) - (stages?.total_awake_time_milli ?? 0);
+  const totalSleepMilli = stages
+    ? stages.total_in_bed_time_milli - stages.total_awake_time_milli
+    : undefined;
   const sleepNeeded = record.score?.sleep_needed;
 
   return {
     externalId: String(record.id),
     startedAt,
     endedAt,
-    durationMinutes: milliToMinutes(totalSleepMilli),
-    deepMinutes: milliToMinutes(stages?.total_slow_wave_sleep_time_milli ?? 0),
-    remMinutes: milliToMinutes(stages?.total_rem_sleep_time_milli ?? 0),
-    lightMinutes: milliToMinutes(stages?.total_light_sleep_time_milli ?? 0),
-    awakeMinutes: milliToMinutes(stages?.total_awake_time_milli ?? 0),
+    durationMinutes: totalSleepMilli == null ? undefined : milliToMinutes(totalSleepMilli),
+    deepMinutes: stages ? milliToMinutes(stages.total_slow_wave_sleep_time_milli) : undefined,
+    remMinutes: stages ? milliToMinutes(stages.total_rem_sleep_time_milli) : undefined,
+    lightMinutes: stages ? milliToMinutes(stages.total_light_sleep_time_milli) : undefined,
+    awakeMinutes: stages ? milliToMinutes(stages.total_awake_time_milli) : undefined,
+    stagingAvailable: stages != null,
     efficiencyPct: normalizeEfficiencyPct(record.score?.sleep_efficiency_percentage),
     sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,
@@ -242,12 +277,11 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
 
 export interface ParsedWorkout {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   startedAt: Date;
   endedAt: Date;
   durationSeconds: number;
   distanceMeters?: number;
-  calories?: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
   totalElevationGain?: number;
@@ -277,16 +311,13 @@ export function resolveWhoopWorkoutExternalId(record: WhoopWorkoutRecord): strin
 export function resolveActivityType(
   sportId: number,
   v2ActivityTypeName?: string,
-): CanonicalActivityType {
+): ProviderActivityType {
   const fromSportId = mapSportId(sportId);
-  if (fromSportId !== "other") return fromSportId;
-
-  if (v2ActivityTypeName) {
-    const fromTypeName = mapV2ActivityType(v2ActivityTypeName);
-    if (fromTypeName) return fromTypeName;
+  let normalizedType: NormalizedActivityType = fromSportId;
+  if (fromSportId === "other" && v2ActivityTypeName) {
+    normalizedType = mapV2ActivityType(v2ActivityTypeName) ?? "other";
   }
-
-  return "other";
+  return resolveProviderActivityType(v2ActivityTypeName ?? sportId, normalizedType);
 }
 
 export function parseWorkout(
@@ -321,7 +352,6 @@ export function parseWorkout(
     endedAt,
     durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000),
     distanceMeters: undefined, // BFF v0 doesn't include distance at top level
-    calories: record.kilojoules ? Math.round(record.kilojoules / 4.184) : undefined,
     avgHeartRate: record.average_heart_rate,
     maxHeartRate: record.max_heart_rate,
     totalElevationGain: undefined,

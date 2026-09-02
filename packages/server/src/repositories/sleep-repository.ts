@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchLatestSleepNight, fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 
@@ -53,7 +54,7 @@ export class SleepRepository extends BaseRepository {
   }
 
   /** All sleep sessions within the given day window, deduplicated per calendar date, oldest first. */
-  async list(days: number, endDate: string) {
+  async list(days: RangeDays, endDate: string) {
     return fetchSleepNights({
       sensorStore: this.#requireSensorStore(),
       userId: this.userId,
@@ -63,6 +64,14 @@ export class SleepRepository extends BaseRepository {
       accessWindow: this.accessWindow,
       order: "asc",
     });
+  }
+
+  /** Sleep sessions inside an exact inclusive date range. */
+  async listRange(startDate: string, endDate: string) {
+    const start = new Date(`${startDate}T00:00:00Z`);
+    const end = new Date(`${endDate}T00:00:00Z`);
+    const days = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+    return this.list(days, endDate);
   }
 
   /** Sleep stages for a specific session. */

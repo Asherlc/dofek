@@ -16,35 +16,46 @@ export const DEFAULT_DAY_OPTIONS: DayOption[] = [
 
 export function DaySelector({
   days,
+  description,
   onChange,
   options = DEFAULT_DAY_OPTIONS,
 }: {
   days: number;
+  description: string;
   onChange: (days: number) => void;
   options?: DayOption[];
 }) {
   const haptic = useHaptic();
 
   return (
-    <View style={styles.row}>
-      {options.map((opt) => (
-        <TouchableOpacity
-          key={opt.value}
-          style={[styles.button, days === opt.value && styles.buttonActive]}
-          onPress={() => {
-            haptic.selection();
-            onChange(opt.value);
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.text, days === opt.value && styles.textActive]}>{opt.label}</Text>
-        </TouchableOpacity>
-      ))}
+    <View style={styles.container}>
+      <View accessibilityLabel="Time range" accessibilityRole="radiogroup" style={styles.row}>
+        {options.map((opt) => (
+          <TouchableOpacity
+            key={opt.value}
+            style={[styles.button, days === opt.value && styles.buttonActive]}
+            onPress={() => {
+              haptic.selection();
+              onChange(opt.value);
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="radio"
+            accessibilityLabel={opt.label}
+            accessibilityState={{ checked: days === opt.value }}
+          >
+            <Text style={[styles.text, days === opt.value && styles.textActive]}>{opt.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.description}>{description}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    gap: 6,
+  },
   row: {
     flexDirection: "row",
     gap: 8,
@@ -65,5 +76,10 @@ const styles = StyleSheet.create({
   },
   textActive: {
     color: colors.text,
+  },
+  description: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

@@ -1,14 +1,5 @@
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import CoreMotionModule from "./src/CoreMotionModule";
-
-export interface InertialMeasurementUnitSample {
-  timestamp: string; // ISO 8601 with milliseconds
-  x: number; // acceleration in g
-  y: number; // acceleration in g
-  z: number; // acceleration in g
-  gyroscopeX?: number; // rotation rate in rad/s
-  gyroscopeY?: number; // rotation rate in rad/s
-  gyroscopeZ?: number; // rotation rate in rad/s
-}
 
 export type MotionAuthorizationStatus = "authorized" | "denied" | "restricted" | "notDetermined";
 
@@ -65,4 +56,10 @@ export function getLastSyncTimestamp(): string | null {
 /** Update the last sync timestamp after a successful upload. */
 export function setLastSyncTimestamp(timestamp: string): void {
   CoreMotionModule.setLastSyncTimestamp(timestamp);
+}
+
+/** Clear Dofek's Core Motion cursor and recording flags.
+ * CMSensorRecorder source history remains managed by iOS. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return CoreMotionModule.purgeAccountState(deviceErasureCutoff);
 }

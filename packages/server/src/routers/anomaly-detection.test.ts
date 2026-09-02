@@ -14,7 +14,7 @@ vi.mock("../logger.ts", () => ({
   logger: { debug: vi.fn(), info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
-import { checkAnomalies, sendAnomalyAlertToSlack } from "./anomaly-detection.ts";
+import { checkAnomalies } from "./anomaly-detection.ts";
 
 function makeDb(rows: Record<string, unknown>[]) {
   mockExecuteWithSchema.mockReset();
@@ -23,9 +23,18 @@ function makeDb(rows: Record<string, unknown>[]) {
 }
 
 function makeSensorStore(sleepRows: Record<string, unknown>[] = []) {
+  const sleepRowsWithLocalTimeContext = sleepRows.map((row) => ({
+    timezone: null,
+    start_utc_offset_minutes: null,
+    end_utc_offset_minutes: null,
+    local_time_source: "unknown",
+    ...row,
+  }));
   return {
     query: vi.fn(async (_schema: unknown, query: string) =>
-      query.includes("analytics.v_sleep") ? sleepRows : [{ date: "2024-01-14", resting_hr: 52 }],
+      query.includes("analytics.daily_sleep") || query.includes("analytics.v_sleep")
+        ? sleepRowsWithLocalTimeContext
+        : [{ date: "2024-01-14", resting_hr: 52 }],
     ),
   };
 }
@@ -51,6 +60,9 @@ function sleepRowsForBaseline({
 }) {
   const baselineRows = Array.from({ length: baselineCount }, (_unused, index) => ({
     date: dateDaysBefore(targetDate, baselineCount - index),
+    provider_id: "whoop",
+    source_name: null,
+    source_providers: ["whoop"],
     started_at: `${dateDaysBefore(targetDate, baselineCount - index)}T23:00:00Z`,
     ended_at: `${dateDaysBefore(targetDate, baselineCount - index - 1)}T07:00:00Z`,
     duration_minutes:
@@ -60,11 +72,15 @@ function sleepRowsForBaseline({
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: null,
+    staging_available: false,
   }));
   return [
     ...baselineRows,
     {
       date: targetDate,
+      provider_id: "whoop",
+      source_name: null,
+      source_providers: ["whoop"],
       started_at: `${targetDate}T23:00:00Z`,
       ended_at: `${dateDaysBefore(targetDate, -1)}T07:00:00Z`,
       duration_minutes: targetDuration,
@@ -73,6 +89,7 @@ function sleepRowsForBaseline({
       light_minutes: null,
       awake_minutes: null,
       efficiency_pct: null,
+      staging_available: false,
     },
   ];
 }
@@ -579,367 +596,5 @@ describe("checkAnomalies", () => {
     ]);
     const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15", makeSensorStore());
     expect(result.checkedMetrics).not.toContain("resting_hr");
-  });
-});
-
-describe("sendAnomalyAlertToSlack", () => {
-  it("returns false when no anomalies", async () => {
-    const db = makeDb([]);
-    const result = await sendAnomalyAlertToSlack(db, "user-1", []);
-    expect(result).toBe(false);
-  });
-
-  it("returns false when no Slack installation", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValue([]);
-    const db = {};
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(false);
-  });
-
-  it("returns false when no Slack account linked", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([]);
-    const db = {};
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(false);
-  });
-
-  it("sends Slack message and returns true on success", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    fetchSpy.mockRestore();
-  });
-
-  it("includes illness warning when both HR and HRV are anomalous", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-      {
-        date: "2024-01-15",
-        metric: "Heart Rate Variability",
-        value: 20,
-        baselineMean: 50,
-        baselineStddev: 10,
-        zScore: -3.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(true);
-
-    // Check the body of the fetch call includes the illness pattern message
-    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
-    const blockTexts = callBody.blocks.map((b: { text?: { text: string } }) => b.text?.text);
-    expect(blockTexts.some((t: string) => t?.includes("fighting something"))).toBe(true);
-    fetchSpy.mockRestore();
-  });
-
-  it("returns false when Slack API returns non-ok HTTP", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: false,
-      status: 500,
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(false);
-    fetchSpy.mockRestore();
-  });
-
-  it("returns false when Slack API returns ok:false", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: false, error: "channel_not_found" }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(false);
-    fetchSpy.mockRestore();
-  });
-
-  it("uses 'Health Alert' header when any anomaly has alert severity", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 80,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 4.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(true);
-
-    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
-    expect(callBody.blocks[0].text.text).toBe("Health Alert");
-    expect(callBody.text).toContain("alert");
-    fetchSpy.mockRestore();
-  });
-
-  it("uses 'Health Warning' header when all anomalies are warning severity", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 71,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 2.2,
-        severity: "warning" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(true);
-
-    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
-    expect(callBody.blocks[0].text.text).toBe("Health Warning");
-    expect(callBody.text).toContain("warning");
-    fetchSpy.mockRestore();
-  });
-
-  it("formats anomaly details in Slack message blocks", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-
-    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
-    // header + intro + 1 anomaly = 3 blocks
-    expect(callBody.blocks).toHaveLength(3);
-    // Anomaly block should contain metric details
-    expect(callBody.blocks[2].text.text).toContain("*Resting Heart Rate*");
-    expect(callBody.blocks[2].text.text).toContain("75");
-    expect(callBody.blocks[2].text.text).toContain("60");
-    expect(callBody.blocks[2].text.text).toContain("5");
-    expect(callBody.blocks[2].text.text).toContain("3");
-    fetchSpy.mockRestore();
-  });
-
-  it("does not include illness warning when only HR is anomalous", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-
-    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
-    // No illness warning block
-    expect(callBody.blocks).toHaveLength(3); // header + intro + 1 anomaly
-    const allText = callBody.blocks.map((b: { text?: { text: string } }) => b.text?.text).join("");
-    expect(allText).not.toContain("fighting something");
-    fetchSpy.mockRestore();
-  });
-
-  it("sends to correct Slack channel (user's provider_account_id)", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-test-token" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U99999" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ok: true }),
-    });
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Sleep Duration",
-        value: 280,
-        baselineMean: 480,
-        baselineStddev: 60,
-        zScore: -3.33,
-        severity: "alert" as const,
-      },
-    ];
-    await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-
-    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
-    expect(callBody.channel).toBe("U99999");
-
-    // Check Authorization header
-    const callArgs = fetchSpy.mock.calls[0]?.[1];
-    const callHeaders =
-      callArgs && typeof callArgs === "object" && "headers" in callArgs
-        ? (callArgs.headers ?? {})
-        : {};
-    expect(callHeaders).toHaveProperty("Authorization", "Bearer xoxb-test-token");
-    fetchSpy.mockRestore();
-  });
-
-  it("returns false when fetch throws", async () => {
-    mockExecuteWithSchema.mockReset();
-    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
-    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {};
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network error"));
-
-    const anomalies = [
-      {
-        date: "2024-01-15",
-        metric: "Resting Heart Rate",
-        value: 75,
-        baselineMean: 60,
-        baselineStddev: 5,
-        zScore: 3.0,
-        severity: "alert" as const,
-      },
-    ];
-    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
-    expect(result).toBe(false);
-    fetchSpy.mockRestore();
   });
 });

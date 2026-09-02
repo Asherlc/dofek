@@ -1,5 +1,5 @@
+import { WHOOP_BLE_PROVIDER_ID } from "@dofek/providers/push-providers";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
@@ -8,8 +8,8 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
-const PROVIDER_ID = "whoop_ble";
 const INSERT_BATCH_SIZE = 2000;
 
 export interface WhoopBleRealtimeDataSample {
@@ -41,11 +41,11 @@ export class WhoopBleSyncRepository {
   }
 
   async ensureProvider(): Promise<void> {
-    await this.#database.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'WHOOP BLE', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#database,
+      providerId: WHOOP_BLE_PROVIDER_ID,
+      userId: this.#userId,
+    });
   }
 
   async insertRealtimeDataBatch(
@@ -63,11 +63,11 @@ export class WhoopBleSyncRepository {
       const beatIntervalSamples = batch.filter((sample) => sample.rrIntervalMs > 0);
       for (const sample of beatIntervalSamples) {
         const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
-        const externalId = `${PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${recordedAt}`;
+        const externalId = `${WHOOP_BLE_PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${recordedAt}`;
         rows.push({
           recordedAt: sample.timestamp,
           userId: this.#userId,
-          providerId: PROVIDER_ID,
+          providerId: WHOOP_BLE_PROVIDER_ID,
           externalId,
           deviceId,
           sourceType: "ble",
@@ -85,11 +85,11 @@ export class WhoopBleSyncRepository {
       );
       for (const sample of orientationSamples) {
         const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
-        const externalId = `${PROVIDER_ID}:${deviceId}:orientation:${recordedAt}`;
+        const externalId = `${WHOOP_BLE_PROVIDER_ID}:${deviceId}:orientation:${recordedAt}`;
         rows.push({
           recordedAt: sample.timestamp,
           userId: this.#userId,
-          providerId: PROVIDER_ID,
+          providerId: WHOOP_BLE_PROVIDER_ID,
           externalId,
           deviceId,
           sourceType: "ble",
@@ -100,7 +100,7 @@ export class WhoopBleSyncRepository {
 
       if (rows.length > 0) {
         const publisher = await this.#publisher();
-        const result = await writeMetricStreamRows({ publisher, rows });
+        const result = await writeMetricStreamRows({ database: this.#database, publisher, rows });
         totalInserted += result.published;
       }
     }

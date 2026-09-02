@@ -33,6 +33,7 @@ class BullJobTransport extends Transport {
 export const logger = winston.createLogger({
   level: "debug",
   format: winston.format.combine(
+    winston.format.splat(),
     winston.format.timestamp(),
     winston.format.printf(({ timestamp, level, message }) => `${timestamp} [${level}] ${message}`),
   ),
@@ -52,7 +53,12 @@ export const logger = winston.createLogger({
 const hasOtelLogExport =
   process.env.OTEL_EXPORTER_OTLP_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
 if (hasOtelLogExport) {
-  import("@opentelemetry/winston-transport").then(({ OpenTelemetryTransportV3 }) => {
-    logger.add(new OpenTelemetryTransportV3());
-  });
+  import("@opentelemetry/winston-transport")
+    .then(({ OpenTelemetryTransportV3 }) => {
+      logger.add(new OpenTelemetryTransportV3());
+    })
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to initialize Winston OTel transport: ${message}`);
+    });
 }

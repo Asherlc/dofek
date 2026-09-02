@@ -9,6 +9,11 @@ describe("UnitConverter", () => {
   const metric = new UnitConverter("metric");
   const imperial = new UnitConverter("imperial");
 
+  it("sets the unit system", () => {
+    expect(new UnitConverter("metric").system).toBe("metric");
+    expect(new UnitConverter("imperial").system).toBe("imperial");
+  });
+
   describe("weight (kg input)", () => {
     it("returns kg unchanged for metric", () => {
       expect(metric.convertWeight(80)).toBeCloseTo(80);
@@ -107,6 +112,9 @@ describe("unit labels", () => {
     expect(metric.distanceLabel).toBe("km");
     expect(metric.elevationLabel).toBe("m");
     expect(metric.temperatureLabel).toBe("°C");
+    expect(metric.percentageLabel).toBe("%");
+    expect(metric.calorieLabel).toBe("kcal");
+    expect(metric.caloriesPerDayLabel).toBe("kcal/day");
     expect(metric.speedLabel).toBe("km/h");
     expect(metric.heightLabel).toBe("cm");
     expect(metric.paceLabel).toBe("/km");
@@ -165,6 +173,11 @@ describe("format functions", () => {
     });
   });
 
+  it("formats temperature deltas without applying the absolute-temperature offset", () => {
+    expect(formatMeasurementText(metric.formatTemperatureDelta(1))).toBe("1.0°C");
+    expect(formatMeasurementText(imperial.formatTemperatureDelta(1))).toBe("1.8°F");
+  });
+
   it("formats speed with 1 decimal", () => {
     expect(formatMeasurementText(metric.formatSpeed(5.5))).toBe("5.5 km/h");
     expect(formatMeasurementText(imperial.formatSpeed(5.5))).toBe("3.4 mph");
@@ -180,10 +193,23 @@ describe("format functions", () => {
     expect(formatMeasurementText(imperial.formatHeight(170))).toBe("66.9 in");
   });
 
+  it("uses the placeholder for missing and non-finite measurements", () => {
+    for (const value of [null, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(formatMeasurementText(metric.formatWeight(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatDistance(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatElevation(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatTemperature(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatTemperatureDelta(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatSpeed(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatHeight(value))).toBe("--");
+      expect(formatMeasurementText(metric.formatHeartRate(value))).toBe("--");
+    }
+  });
+
   it("falls back to numeric label formatting when Intl unit formatting is unsupported", async () => {
     vi.resetModules();
     const OriginalNumberFormat = Intl.NumberFormat;
-    vi.spyOn(Intl, "NumberFormat").mockImplementation((locale, options) => {
+    vi.spyOn(Intl, "NumberFormat").mockImplementation(function vitestConstructor(locale, options) {
       if (options?.style === "unit") {
         throw new RangeError("unit formatting unsupported");
       }

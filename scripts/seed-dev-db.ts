@@ -11,8 +11,8 @@
  *   - 90 WHOOP nights plus 30 Apple Health overlap sessions
  *   - 120 days of deterministic activity history and strength work
  *   - 90 days of nutrition, recent meals, and supplements
- *   - Body composition, labs, DEXA, clinical records, and cycle data
- *   - Journal, life event, and breathwork context for reports/correlation
+ *   - Body composition, labs, DEXA, and clinical records
+ *   - Journal and life-event context for reports/correlation
  *
  * The data is designed to exercise reviewer-facing product surfaces:
  *   - Multi-provider sleep dedup (overlapping but <80% threshold)
@@ -20,16 +20,16 @@
  *   - Web and mobile dashboard, recovery, strain, nutrition, body, and provider screens
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { runMigrations } from "../src/db/migrate.ts";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { seedBodyHealth } from "./seed/body-health.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
-import { SeedRandom, USER_ID } from "./seed/helpers.ts";
+import { SeedRandom } from "./seed/helpers.ts";
 import { seedNutrition } from "./seed/nutrition.ts";
 import { seedRecovery } from "./seed/recovery.ts";
 import { seedReviewSurfaces } from "./seed/review-surfaces.ts";
 import { seedTraining } from "./seed/training.ts";
+import { verifySeed } from "./seed/verification.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -38,37 +38,13 @@ if (!databaseUrl) {
 }
 
 const sql = createTaggedQueryClient(databaseUrl);
-const drizzleDir = resolve(import.meta.dirname, "../drizzle");
-
-interface CountRow {
-  count: number;
-}
 
 // ---------------------------------------------------------------------------
 // Step 1: Apply all migrations
 // ---------------------------------------------------------------------------
 
 async function applyMigrations() {
-  const migrationFiles = readdirSync(drizzleDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .sort();
-
-  let applied = 0;
-  for (const fileName of migrationFiles) {
-    const content = readFileSync(resolve(drizzleDir, fileName), "utf-8");
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    for (const statement of statements) {
-      try {
-        await sql.unsafe(statement);
-      } catch {
-        // Ignore duplicate object errors on re-runs
-      }
-    }
-    applied++;
-  }
+  const applied = await runMigrations(databaseUrl);
   console.log(`Migrations: ${applied} files applied`);
 }
 
@@ -87,78 +63,6 @@ async function seedData() {
   await seedReviewSurfaces(sql, random);
 }
 
-async function verifySeed() {
-  const minimums = [
-    [
-      "providers",
-      5,
-      `SELECT COUNT(*)::int AS count FROM fitness.provider WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "daily metrics",
-      170,
-      `SELECT COUNT(*)::int AS count FROM fitness.daily_metrics WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "sleep sessions",
-      100,
-      `SELECT COUNT(*)::int AS count FROM fitness.sleep_session WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "activities",
-      90,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "nutrition days",
-      85,
-      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "food entries",
-      20,
-      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "lab results",
-      8,
-      `SELECT COUNT(*)::int AS count FROM fitness.lab_result WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "journal entries",
-      30,
-      `SELECT COUNT(*)::int AS count FROM fitness.journal_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "breathwork sessions",
-      10,
-      `SELECT COUNT(*)::int AS count FROM fitness.breathwork_session WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "cycle periods",
-      4,
-      `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${USER_ID}'`,
-    ],
-  ] as const;
-
-  console.log("\nVerification:");
-  for (const [label, minimum, query] of minimums) {
-    const count = await readCount(query);
-    if (count < minimum) {
-      throw new Error(
-        `Seed verification failed for ${label}: expected at least ${minimum}, got ${count}`,
-      );
-    }
-    console.log(`  ${label}: ${count}`);
-  }
-}
-
-async function readCount(query: string): Promise<number> {
-  const [row] = await sql.unsafe<CountRow[]>(query);
-  if (!row) throw new Error(`Count query returned no rows: ${query}`);
-  return row.count;
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -166,20 +70,9 @@ async function readCount(query: string): Promise<number> {
 async function main() {
   console.log("Seeding development database...\n");
 
-  // Skip migrations if the schema already exists (e.g., web container already ran them).
-  // This avoids "relation already exists" errors when seed runs after web in Docker Compose.
-  const [{ exists: schemaExists }] = await sql`
-    SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'fitness' AND table_name = 'activity'
-    ) AS exists`;
-  if (schemaExists) {
-    console.log("Schema already exists — skipping migrations (web already applied them)");
-  } else {
-    await applyMigrations();
-  }
+  await applyMigrations();
   await seedData();
-  await verifySeed();
+  await verifySeed(sql);
   console.log(`\nDone. Start the server with:`);
   console.log(`  DATABASE_URL="${databaseUrl}" cd packages/server && pnpm dev`);
   console.log(`\nBrowser cookie for auth: session=dev-session`);

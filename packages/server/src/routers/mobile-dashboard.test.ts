@@ -1,10 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createTestCallerFactory,
   dateDaysBefore,
   metricRow,
   sleepBaselineRow,
 } from "./test-helpers.ts";
+
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+type ProcessingStatusQuery = { datasets?: readonly ["recovery"] };
+type ProcessingStatus = "ready" | "active" | "failed";
+type ProcessingStatusResult = {
+  overallStatus: ProcessingStatus;
+  datasets: readonly [{ key: "recovery"; status: ProcessingStatus }];
+};
+const processingStatusMock = vi.hoisted(() =>
+  vi.fn(
+    async (_input: ProcessingStatusQuery): Promise<ProcessingStatusResult> => ({
+      overallStatus: "ready" as const,
+      datasets: [{ key: "recovery" as const, status: "ready" as const }],
+    }),
+  ),
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -20,22 +36,38 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
+});
+
+vi.mock("../services/dashboard-overview.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../services/dashboard-overview.ts")>();
+  return {
+    ...original,
+    loadDashboardOverview: vi.fn(original.loadDashboardOverview),
+  };
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
 
 type SleepTestRow = {
   date: string;
-  duration_minutes: number;
+  duration_minutes: number | null;
   hrv?: number | null;
   deep_minutes?: number | null;
   rem_minutes?: number | null;
   light_minutes?: number | null;
   awake_minutes?: number | null;
   efficiency_pct?: number | null;
+  staging_available?: boolean;
 };
 
 type RecoverySummaryTestRow = {
@@ -58,6 +90,7 @@ function sleepRowsForClickHouse(rows: SleepTestRow[]) {
     light_minutes: row.light_minutes ?? row.duration_minutes,
     awake_minutes: row.awake_minutes ?? 0,
     efficiency_pct: row.efficiency_pct ?? 90,
+    staging_available: row.staging_available ?? true,
   }));
 }
 
@@ -76,19 +109,22 @@ function makeSensorStore(
   baselineSleepRows: SleepTestRow[] = [],
   _lastNightSleepRows: SleepTestRow[] = baselineSleepRows,
   recoveryRows: RecoverySummaryTestRow[] = [],
+  queryOverride?: SensorStore["query"],
 ): SensorStore {
-  const query = vi.fn(async (_schema: unknown, queryText: unknown) => {
-    const querySql = String(queryText);
-    if (querySql.includes("analytics.daily_strain") && querySql.includes("coalesce")) {
-      return [{ load: yesterdayLoad }];
-    }
-    if (querySql.includes("analytics.daily_strain")) return dailyLoads;
-    if (querySql.includes("analytics.daily_recovery")) return recoveryRows;
-    if (querySql.includes("analytics.daily_sleep")) {
-      return sleepRowsForClickHouse(baselineSleepRows);
-    }
-    return [];
-  });
+  const query =
+    queryOverride ??
+    vi.fn(async (_schema: unknown, queryText: unknown) => {
+      const querySql = String(queryText);
+      if (querySql.includes("analytics.daily_strain") && querySql.includes(" AS load")) {
+        return [{ load: yesterdayLoad }];
+      }
+      if (querySql.includes("analytics.daily_strain")) return dailyLoads;
+      if (querySql.includes("analytics.daily_recovery")) return recoveryRows;
+      if (querySql.includes("analytics.daily_sleep")) {
+        return sleepRowsForClickHouse(baselineSleepRows);
+      }
+      return [];
+    });
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -140,19 +176,122 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
+vi.mock("../repositories/processing-repository.ts", () => ({
+  ProcessingRepository: class {
+    status(input: ProcessingStatusQuery) {
+      return processingStatusMock(input);
+    }
+  },
+}));
+
+import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { logger } from "../logger.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
+import { isRecent, loadDashboardOverview } from "../services/dashboard-overview.ts";
 import * as mobileRecoveryTab from "../services/mobile-recovery-tab.ts";
 import * as mobileTrainingTab from "../services/mobile-training-tab.ts";
-import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
+import { mobileDashboardRouter } from "./mobile-dashboard.ts";
 
 const createCaller = createTestCallerFactory(mobileDashboardRouter);
 
-const fullAccessWindow = {
-  kind: "full" as const,
-  paid: true as const,
-  reason: "paid_grant" as const,
-};
+describe("mobileDashboard.dashboardV2", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.dashboardV2({ endDate: "2026-03-28" })).rejects.toThrow(
+      "mobileDashboard.dashboardV2 requires the ClickHouse activity analytics store",
+    );
+  });
+
+  it("returns only the unavailable sleep-need variant when the prior night is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-03-28" });
+
+    expect(result.sleepNeed).toEqual({
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result.sleepNeed).not.toHaveProperty("totalNeedMinutes");
+    expect(result.sleepNeed).not.toHaveProperty("recentNights");
+  });
+
+  it("uses full access when the context has no access window", async () => {
+    vi.mocked(loadDashboardOverview).mockClear();
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.dashboardV2({ endDate: "2026-03-28" });
+
+    expect(loadDashboardOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accessWindow: { kind: "full" },
+      }),
+    );
+  });
+
+  it("logs the elapsed dashboardV2 time", async () => {
+    vi.mocked(logger.info).mockClear();
+    const performanceNow = vi
+      .spyOn(performance, "now")
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1246);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    try {
+      await caller.dashboardV2({ endDate: "2026-03-28" });
+
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        "[mobile-dashboard] dashboardV2 timings userId=user-1 endDate=2026-03-28 total=246ms",
+      );
+    } finally {
+      performanceNow.mockRestore();
+    }
+  });
+
+  it("returns the insufficient-data projection when baseline history is short", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore([], 0, [
+        {
+          date: "2026-03-27",
+          duration_minutes: 420,
+        },
+      ]),
+    });
+
+    const result = await caller.dashboardV2({ endDate: "2026-03-28" });
+
+    expect(result.sleepNeed).toEqual({
+      availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    });
+  });
+});
 
 describe("mobileDashboard.dashboard", () => {
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
@@ -218,6 +357,36 @@ describe("mobileDashboard.dashboard", () => {
         },
       }),
     );
+  });
+
+  it("loads personalized readiness parameters for dashboard scoring", async () => {
+    vi.mocked(loadPersonalizedParams).mockClear();
+    const db = { execute: vi.fn() };
+    const caller = createCaller({
+      db,
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(
+        [],
+        0,
+        [],
+        [],
+        [
+          {
+            date: "2026-03-28",
+            hrv: 64,
+            hrv_score: 72,
+            resting_hr_score: 68,
+            sleep_score: 80,
+            respiratory_rate_score: 74,
+          },
+        ],
+      ),
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(loadPersonalizedParams).toHaveBeenCalledWith(db, "user-1");
   });
 
   it("does not compute daily strain from rolling acute load when today is a rest day", async () => {
@@ -298,6 +467,37 @@ describe("mobileDashboard.dashboard", () => {
         accessStartDate: "2026-03-20",
         accessEndDateExclusive: "2026-03-29",
       });
+    }
+  });
+
+  it("prioritizes dashboard read-model queries for latency-sensitive overview loading", async () => {
+    const execute = vi.fn();
+    const sensorStore = makeSensorStore(
+      [{ metric_date: "2026-03-28", daily_load: 50 }],
+      0,
+      [sleepBaselineRow("2026-03-28", 480, 80)],
+      [],
+      [metricRow({ date: "2026-03-28" })],
+    );
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    const dashboardQueryCalls = vi
+      .mocked(sensorStore.query)
+      .mock.calls.filter((call) =>
+        ["analytics.daily_recovery", "analytics.daily_sleep", "analytics.daily_strain"].some(
+          (readModelName) => String(call[1]).includes(readModelName),
+        ),
+      );
+    expect(dashboardQueryCalls.length).toBeGreaterThan(0);
+    for (const queryCall of dashboardQueryCalls) {
+      expect(queryCall[3]).toEqual({ priority: "dashboard" });
     }
   });
 
@@ -392,6 +592,7 @@ describe("mobileDashboard.dashboard", () => {
       remPct: 20,
       lightPct: 50,
       awakePct: 5,
+      stagingAvailable: true,
     });
     expect(result.sleep?.sleepDebt).toBe(285);
     expect(result.sleepNeed).toEqual(
@@ -409,12 +610,18 @@ describe("mobileDashboard.dashboard", () => {
       actualMinutes: 600,
       neededMinutes: 525,
       debtMinutes: 0,
+      providerId: null,
+      sourceName: null,
+      sourceProviders: [],
     });
     expect(result.sleepNeed?.recentNights[6]).toEqual({
       date: "2026-03-27",
       actualMinutes: 420,
       neededMinutes: 525,
       debtMinutes: 105,
+      providerId: null,
+      sourceName: null,
+      sourceProviders: [],
     });
   });
 
@@ -511,6 +718,10 @@ describe("mobileDashboard.dashboard", () => {
 
   it("logs dashboard timing breakdowns for performance diagnosis", async () => {
     vi.mocked(logger.info).mockClear();
+    const performanceNow = vi
+      .spyOn(performance, "now")
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1246);
     const execute = vi.fn();
     execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
     execute.mockResolvedValueOnce([]);
@@ -522,11 +733,15 @@ describe("mobileDashboard.dashboard", () => {
       sensorStore: makeSensorStore(),
     });
 
-    await caller.dashboard({ endDate: "2026-03-28" });
+    try {
+      await caller.dashboard({ endDate: "2026-03-28" });
 
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.stringContaining("[mobile-dashboard] dashboard timings"),
-    );
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        "[mobile-dashboard] dashboard timings userId=user-1 endDate=2026-03-28 total=246ms",
+      );
+    } finally {
+      performanceNow.mockRestore();
+    }
   });
 
   it("builds sleep need from exactly seven high-HRV nights", async () => {
@@ -585,7 +800,15 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.readiness).toBeNull();
     expect(result.sleep?.lastNight).toBeNull();
-    expect(result.sleepNeed).toBeNull();
+    expect(result.sleepNeed).toEqual(
+      expect.objectContaining({
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 0,
+        totalNeedMinutes: 480,
+        canRecommend: false,
+      }),
+    );
     expect(result.strain).toEqual({
       dailyStrain: 0,
       acuteLoad: 0,
@@ -596,6 +819,76 @@ describe("mobileDashboard.dashboard", () => {
     expect(result.latestDate).toBeNull();
   });
 });
+
+const fullAccessWindow = {
+  kind: "full" as const,
+  paid: true as const,
+  reason: "paid_grant" as const,
+};
+
+const emptyTrainingChartAvailability = {
+  strainTrend: {
+    status: "insufficient_data",
+    sourceLabel: "Daily strain model",
+    observedCount: 0,
+    minimumCount: 2,
+    message: "No daily strain trend is available from the daily strain model.",
+  },
+  verticalAscent: {
+    status: "insufficient_data",
+    sourceLabel: "Cycling activity altitude sensor summaries",
+    observedCount: 0,
+    minimumCount: 1,
+    message:
+      "No vertical ascent data is available from cycling activity altitude sensor summaries.",
+  },
+} as const;
+
+function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").MobileRecoveryTabResult {
+  return {
+    hrvVariability: [],
+    hrvBaseline: [],
+    readinessScore: [],
+    stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+    trends: null,
+    dailyMetrics: [],
+    baselineRelative: [],
+    weight: [],
+    bodyFatTrend: [],
+    bodyFatPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      projectionLine: [],
+    },
+    decisionContext: null,
+    weightPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      impliedDailyCalories: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      goal: null,
+      projectionLine: [],
+    },
+    healthStatus: [],
+    healthspan: {
+      healthspanScore: null,
+      yearsDelta: null,
+      availability: {
+        status: "insufficient_data",
+        availableMetricCount: 0,
+        requiredMetricCount: 3,
+        missingMetricLabels: [],
+        summary: "0 of 3 required Healthspan metrics are available.",
+        nextCondition:
+          "The score becomes available after 3 more supported metrics sync successfully.",
+      },
+      metrics: [],
+      history: [],
+      trend: null,
+    },
+  };
+}
 
 function parseTimingTotalMs(logMessage: unknown): number {
   const match = String(logMessage).match(/total=(\d+)ms/);
@@ -618,6 +911,54 @@ describe("mobileDashboard.recovery", () => {
     });
   });
 
+  it("requests processing status for the recovery dataset", async () => {
+    processingStatusMock.mockClear();
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(processingStatusMock).toHaveBeenCalledWith({ datasets: ["recovery"] });
+  });
+
+  it.each([
+    { rawStatus: "active" as const, normalizedStatus: "syncing" as const },
+    { rawStatus: "failed" as const, normalizedStatus: "sync_error" as const },
+  ])(
+    "passes the normalized $normalizedStatus status to the recovery tab loader",
+    async ({ rawStatus, normalizedStatus }) => {
+      processingStatusMock.mockResolvedValueOnce({
+        overallStatus: rawStatus,
+        datasets: [{ key: "recovery", status: rawStatus }],
+      });
+      const loadSpy = vi
+        .spyOn(mobileRecoveryTab, "loadMobileRecoveryTab")
+        .mockResolvedValue(emptyRecoveryTabResult());
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: fullAccessWindow,
+        sensorStore: makeSensorStore(),
+      });
+
+      await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+      expect(loadSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ processingStatus: normalizedStatus }),
+        30,
+        "2026-03-28",
+      );
+    },
+  );
+
   it("returns consolidated recovery tab data", async () => {
     const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
       if (String(sqlText).includes("analytics.daily_recovery")) {
@@ -633,11 +974,29 @@ describe("mobileDashboard.recovery", () => {
             rhr_sd_30d: 2,
             rr_mean_30d: 14,
             rr_sd_30d: 1,
-            hrv_mean_60d: 50,
-            hrv_sd_60d: 5,
-            rhr_mean_60d: 54,
-            rhr_sd_60d: 2,
+            hrv_z_score: 1,
+            hrv_baseline_sample_count: 30,
+            hrv_baseline_coverage: 1,
+            hrv_mean_7d: 55,
+            hrv_mean_previous_28d: 50,
+            resting_hr_z_score: -1,
+            rhr_baseline_sample_count: 30,
+            rhr_baseline_coverage: 1,
+            rhr_mean_7d: 52,
+            rhr_mean_previous_28d: 54,
+            respiratory_rate_z_score: 0,
+            rr_baseline_sample_count: 30,
+            rr_baseline_coverage: 1,
+            rr_mean_7d: 14,
+            rr_mean_previous_28d: 14,
             efficiency_pct: 90,
+            efficiency_mean_30d: 85,
+            efficiency_sd_30d: 5,
+            efficiency_z_score: 1,
+            efficiency_baseline_sample_count: 30,
+            efficiency_baseline_coverage: 1,
+            efficiency_mean_7d: 90,
+            efficiency_mean_previous_28d: 85,
           },
         ];
       }
@@ -669,6 +1028,7 @@ describe("mobileDashboard.recovery", () => {
 
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
+    expect(result.bodyFatTrend).toEqual([]);
     const timingCall = vi
       .mocked(logger.info)
       .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] recovery timings"));
@@ -684,7 +1044,16 @@ describe("mobileDashboard.recovery", () => {
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
+      baselineRelative: [],
       weight: [],
+      bodyFatTrend: [],
+      bodyFatPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        projectionLine: [],
+      },
+      decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
         rateConfidence: null,
@@ -693,9 +1062,19 @@ describe("mobileDashboard.recovery", () => {
         goal: null,
         projectionLine: [],
       },
+      healthStatus: [],
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 0,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "0 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 3 more supported metrics sync successfully.",
+        },
         metrics: [],
         history: [],
         trend: null,
@@ -718,12 +1097,11 @@ describe("mobileDashboard.recovery", () => {
         timezone: "UTC",
         accessWindow: fullAccessWindow,
         sensorStore: expect.anything(),
+        processingStatus: null,
       },
       30,
       "2026-03-28",
     );
-
-    loadSpy.mockRestore();
   });
 
   it("fails when entitlement access window is missing", async () => {
@@ -748,7 +1126,16 @@ describe("mobileDashboard.recovery", () => {
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
+      baselineRelative: [],
       weight: [],
+      bodyFatTrend: [],
+      bodyFatPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        projectionLine: [],
+      },
+      decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
         rateConfidence: null,
@@ -757,9 +1144,19 @@ describe("mobileDashboard.recovery", () => {
         goal: null,
         projectionLine: [],
       },
+      healthStatus: [],
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,
+        availability: {
+          status: "insufficient_data",
+          availableMetricCount: 0,
+          requiredMetricCount: 3,
+          missingMetricLabels: [],
+          summary: "0 of 3 required Healthspan metrics are available.",
+          nextCondition:
+            "The score becomes available after 3 more supported metrics sync successfully.",
+        },
         metrics: [],
         history: [],
         trend: null,
@@ -781,12 +1178,17 @@ describe("mobileDashboard.recovery", () => {
       30,
       "2026-03-28",
     );
-
-    loadSpy.mockRestore();
   });
 });
 
 describe("mobileDashboard.training", () => {
+  it("uses a versioned cache key for its progressive-overload contract", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 600_000,
+      keyVersion: "training-activity-states-v2",
+    });
+  });
+
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -832,7 +1234,7 @@ describe("mobileDashboard.training", () => {
       }
       return [];
     });
-    const execute = vi.fn(async () => [{ raw_activity_count: 0 }]);
+    const execute = vi.fn(async () => []);
 
     const caller = createCaller({
       db: { execute },
@@ -860,6 +1262,23 @@ describe("mobileDashboard.training", () => {
     expect(result.strainTarget.dailyLoad).toBe(50);
     expect(result.activities).toEqual([]);
     expect(result.weeklyVolume).toEqual([]);
+    expect(result.climbing).toEqual({
+      gradeProgression: [],
+      volumeByGrade: [],
+      sessionSummary: [],
+      hangboarding: {
+        sessionCount: 0,
+        totalDurationSeconds: 0,
+        averageDurationSeconds: null,
+        totalWorkDurationSeconds: null,
+        totalRestDurationSeconds: null,
+        workIntervalCount: null,
+        averageHeartRate: null,
+        peakHeartRate: null,
+        latestSession: null,
+        daily: [],
+      },
+    });
     const timingCall = vi
       .mocked(logger.info)
       .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] training timings"));
@@ -871,6 +1290,13 @@ describe("mobileDashboard.training", () => {
     const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
       workloadRatio: {
         timeSeries: [],
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 7,
+          baselineDays: 28,
+        },
         displayedStrain: 0,
         displayedDate: null,
       },
@@ -890,7 +1316,26 @@ describe("mobileDashboard.training", () => {
       },
       activities: [],
       weeklyVolume: [],
+      progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: emptyTrainingChartAvailability,
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [],
+        sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
+      },
     });
 
     const caller = createCaller({
@@ -913,8 +1358,6 @@ describe("mobileDashboard.training", () => {
       30,
       "2026-03-28",
     );
-
-    loadSpy.mockRestore();
   });
 
   it("fails when entitlement access window is missing", async () => {
@@ -935,6 +1378,13 @@ describe("mobileDashboard.training", () => {
     const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
       workloadRatio: {
         timeSeries: [],
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 7,
+          baselineDays: 28,
+        },
         displayedStrain: 0,
         displayedDate: null,
       },
@@ -954,7 +1404,26 @@ describe("mobileDashboard.training", () => {
       },
       activities: [],
       weeklyVolume: [],
+      progressiveOverload: [],
       verticalAscent: [],
+      chartAvailability: emptyTrainingChartAvailability,
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [],
+        sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
+      },
     });
 
     const caller = createCaller({
@@ -972,7 +1441,5 @@ describe("mobileDashboard.training", () => {
       30,
       "2026-03-28",
     );
-
-    loadSpy.mockRestore();
   });
 });

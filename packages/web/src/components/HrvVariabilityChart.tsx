@@ -7,6 +7,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -47,7 +48,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         const firstParam = params[0];
         if (!firstParam) return "";
         const date = formatDateShort(firstParam.data[0]);
-        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(date)}</div>`;
         for (const p of params) {
           if (p.data[1] == null) continue;
           const value =
@@ -55,8 +56,8 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
               ? formatIntensity(p.data[1])
               : formatHRV(p.data[1]);
           html += `<div style="display:flex;align-items:center;gap:6px">`;
-          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${p.seriesName}: <b>${value}</b></span>`;
+          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escapeTooltipHtml(p.color)}"></span>`;
+          html += `<span>${escapeTooltipHtml(p.seriesName)}: <b>${escapeTooltipHtml(value)}</b></span>`;
           html += `</div>`;
         }
         return html;

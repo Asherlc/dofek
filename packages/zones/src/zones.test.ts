@@ -344,17 +344,29 @@ describe("POLARIZATION_ZONES", () => {
 });
 
 describe("computePolarizationIndex", () => {
-  it("computes PI = log10((f1/(f2*f3))*100) for valid inputs", () => {
+  it("computes Treff PI = log10((f1/f2)*f3*100) for valid inputs", () => {
     // 80/10/10 split → f1=0.8, f2=0.1, f3=0.1
-    // PI = log10((0.8 / (0.1 * 0.1)) * 100) = log10(8000) ≈ 3.903
+    // PI = log10((0.8 / 0.1) * 0.1 * 100) = log10(80) ≈ 1.903
     const result = computePolarizationIndex(800, 100, 100);
-    expect(result).toBeCloseTo(3.903, 2);
+    expect(result).toBe(1.903);
+  });
+
+  it("returns exactly 2.00 for Treff's 60/15/25 boundary distribution", () => {
+    expect(computePolarizationIndex(600, 150, 250)).toBe(2);
   });
 
   it("returns null when any zone has zero time", () => {
     expect(computePolarizationIndex(0, 100, 100)).toBeNull();
     expect(computePolarizationIndex(800, 0, 100)).toBeNull();
     expect(computePolarizationIndex(800, 100, 0)).toBeNull();
+  });
+
+  it("returns null when Zone 3 exceeds Zone 1 because Treff defines the index as invalid", () => {
+    expect(computePolarizationIndex(200, 100, 700)).toBeNull();
+  });
+
+  it("calculates the index when Zone 3 equals Zone 1", () => {
+    expect(computePolarizationIndex(400, 200, 400)).toBe(1.903);
   });
 
   it("returns higher values for more polarized distributions", () => {

@@ -1,13 +1,15 @@
+import { SpanStatusCode, trace } from "@opentelemetry/api";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { logger } from "../logger.ts";
 import { InertialMeasurementUnitSyncRepository } from "../repositories/inertial-measurement-unit-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
-import { rejectFutureSamples } from "./sample-validation.ts";
+import { filterFutureSamples } from "./sample-validation.ts";
 
-// ── Zod schemas ──
+const tracer = trace.getTracer("dofek-server");
 
 const inertialMeasurementUnitSampleSchema = z.object({
-  timestamp: z.string(), // ISO 8601 with millisecond precision
+  timestamp: z.string(),
   x: z.number(),
   y: z.number(),
   z: z.number(),
@@ -21,8 +23,6 @@ const pushSamplesInput = z.object({
   deviceType: z.string().min(1),
   samples: z.array(inertialMeasurementUnitSampleSchema),
 });
-
-// ── Router ──
 
 export const inertialMeasurementUnitSyncRouter = router({
   pushSamples: protectedProcedure.input(pushSamplesInput).mutation(async ({ ctx, input }) => {
@@ -42,27 +42,74 @@ export const inertialMeasurementUnitSyncRouter = router({
       return { inserted: 0 };
     }
 
-    const now = new Date();
-    rejectFutureSamples(input.samples, now, "IMU");
-    await repository.ensureProvider();
+    return tracer.startActiveSpan(
+      "imu.pushSamples",
+      {
+        attributes: {
+          "imu.sampleCount": input.samples.length,
+          "imu.deviceId": input.deviceId,
+        },
+      },
+      async (span) => {
+        const now = new Date();
+        const validSamples = filterFutureSamples(input.samples, now, "IMU");
 
-    // Log timestamp range to detect stale/future data
-    const firstTimestamp = input.samples[0]?.timestamp;
-    const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
-    const nowIso = now.toISOString();
+        const firstTimestamp = validSamples[0]?.timestamp;
+        const lastTimestamp = validSamples[validSamples.length - 1]?.timestamp;
+        const nowIso = now.toISOString();
 
-    const inserted = await repository.insertBatch(input.deviceId, input.deviceType, input.samples);
+        try {
+          const t0 = performance.now();
+          await repository.ensureProvider();
+          const ensureProviderMs = performance.now() - t0;
 
-    logger.info("IMU samples pushed", {
-      userId: ctx.userId,
-      deviceId: input.deviceId,
-      deviceType: input.deviceType,
-      sampleCount: inserted,
-      firstTimestamp,
-      lastTimestamp,
-      serverTime: nowIso,
-    });
+          const t1 = performance.now();
+          const inserted = await repository.insertBatch(
+            input.deviceId,
+            input.deviceType,
+            validSamples,
+          );
+          const insertBatchMs = performance.now() - t1;
+          const totalMs = ensureProviderMs + insertBatchMs;
 
-    return { inserted };
+          span.setAttributes({
+            "imu.ensureProviderMs": ensureProviderMs,
+            "imu.insertBatchMs": insertBatchMs,
+            "imu.totalMs": totalMs,
+            "imu.sampleCount": inserted,
+            "imu.filteredCount": input.samples.length - validSamples.length,
+          });
+
+          logger.info("IMU samples pushed", {
+            userId: ctx.userId,
+            deviceId: input.deviceId,
+            deviceType: input.deviceType,
+            sampleCount: inserted,
+            filteredCount: input.samples.length - validSamples.length,
+            firstTimestamp,
+            lastTimestamp,
+            serverTime: nowIso,
+            ensureProviderMs,
+            insertBatchMs,
+            totalMs,
+          });
+
+          span.setStatus({ code: SpanStatusCode.OK });
+          return { inserted };
+        } catch (error) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          if (error instanceof Error) {
+            span.recordException(error);
+          }
+          captureException(error, { tags: { source: "imu-push-samples" } });
+          throw error;
+        } finally {
+          span.end();
+        }
+      },
+    );
   }),
 });

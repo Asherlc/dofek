@@ -19,7 +19,6 @@ This directory contains OAuth 2.0 implementation and identity management.
 
 ## Key Files
 
-- `oauth.ts`: Main OAuth 2.0 implementation (authorize, exchange, refresh, revoke).
+- `oauth.ts`: Main OAuth 2.0 implementation (authorize, exchange, refresh, revoke), including environment-aware redirect URI calculation in `getOAuthRedirectUri()`.
 - `callback-server.ts`: Local server for OAuth flow completion.
 - `resolve-tokens.ts`: High-level utility to resolve tokens for a given provider and user.
-- `redirect-uri.ts`: Environment-aware redirect URI calculation.

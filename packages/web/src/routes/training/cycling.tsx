@@ -1,17 +1,24 @@
-import { formatNumber } from "@dofek/format/format";
-import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
+import { formatDateMedium, formatNumber } from "@dofek/format/format";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { ActivityList } from "../../components/ActivityList.tsx";
 import { ActivityVariabilityTable } from "../../components/ActivityVariabilityTable.tsx";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
+import {
+  formatTimeRangeLabel,
+  formatTimeRangeShortLabel,
+  type TimeRangeDays,
+} from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/cycling")({
@@ -27,20 +34,6 @@ const DURATION_LABELS: Record<number, string> = {
   1200: "20m",
 };
 
-/** Estimate VO2max from 5-minute best power and body weight.
- *  Formula: (MAP_watts / weight_kg × 10.8) + 7  (Hawley & Noakes) */
-function estimateVo2max(mapWatts: number, weightKg: number): number {
-  return (mapWatts / weightKg) * 10.8 + 7;
-}
-
-/** Time to Exhaustion at CP: how long W' lasts above CP.
- *  TTE = W' / (MAP - CP), returns seconds. */
-function estimateTte(wPrime: number, mapWatts: number, cp: number): number | null {
-  const diff = mapWatts - cp;
-  if (diff <= 0) return null;
-  return wPrime / diff;
-}
-
 function formatTte(seconds: number | null): string {
   if (seconds == null) return "--";
   const mins = Math.round(seconds / 60);
@@ -48,155 +41,224 @@ function formatTte(seconds: number | null): string {
 }
 
 const VARIABILITY_PAGE_SIZE = 20;
+const ACTIVITY_PAGE_SIZE = 20;
+
+interface EstimateEvidence {
+  method: string;
+  confidence: "high" | "moderate" | "limited" | "not_available";
+  confidenceLabel: string;
+  confidenceDetail: string;
+  sourceWorkouts: Array<{ id: string; name: string | null; date: string }>;
+  pacingGuidance: string;
+}
+
+interface PeriodEstimateEvidence {
+  threshold: EstimateEvidence;
+  vo2Max: EstimateEvidence;
+}
 
 function CyclingTab() {
   const { days } = useTrainingDays();
+  return <CyclingContent key={days ?? "all"} days={days} />;
+}
+
+function CyclingContent({ days }: { days: TimeRangeDays }) {
   const [variabilityOffset, setVariabilityOffset] = useState(0);
-
-  // Recent period = user-selected range
-  const recentCurve = trpc.power.powerCurve.useQuery({ days });
-  const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 });
-  const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
-  const pmc = trpc.pmc.chart.useQuery({ days });
-  const efficiency = trpc.efficiency.aerobicEfficiency.useQuery({ days });
-  const variability = trpc.cyclingAdvanced.activityVariability.useQuery({
-    days,
-    limit: VARIABILITY_PAGE_SIZE,
-    offset: variabilityOffset,
+  const [activityPage, setActivityPage] = useState(0);
+  const trpcUtils = trpc.useUtils();
+  const performance = trpc.cycling.performance.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
+  const activityAnalytics = trpc.cycling.activities.useQuery(
+    {
+      days,
+      activityLimit: ACTIVITY_PAGE_SIZE,
+      activityOffset: activityPage * ACTIVITY_PAGE_SIZE,
+      variabilityLimit: VARIABILITY_PAGE_SIZE,
+      variabilityOffset,
+    },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const bulkDelete = trpc.activity.bulkDelete.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        trpcUtils.cycling.activities.invalidate(),
+        trpcUtils.cycling.performance.invalidate(),
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+      ]);
+    },
   });
-  const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
-  const bodyData = trpc.body.list.useQuery({ days: 365 });
-
-  // Extract latest weight for w/kg calculations
-  const rawWeight = bodyData.data?.[0]?.weightKg;
-  const latestWeight = typeof rawWeight === "number" ? rawWeight : undefined;
 
   // Build lookup: duration → best power for each period
   const recentByDuration = new Map(
-    (recentCurve.data?.points ?? []).map((p) => [p.durationSeconds, p.bestPower]),
+    (performance.data?.powerSummary.recent.efforts ?? []).map((effort) => [
+      effort.durationSeconds,
+      effort,
+    ]),
   );
   const seasonByDuration = new Map(
-    (seasonCurve.data?.points ?? []).map((p) => [p.durationSeconds, p.bestPower]),
+    (performance.data?.powerSummary.season.efforts ?? []).map((effort) => [
+      effort.durationSeconds,
+      effort,
+    ]),
   );
 
-  const recentModel = recentCurve.data?.model ?? null;
-  const seasonModel = seasonCurve.data?.model ?? null;
-
-  // Derived metrics
-  const recentMap = recentByDuration.get(300) ?? null; // 5m best = MAP proxy
-  const seasonMap = seasonByDuration.get(300) ?? null;
-
-  const recentVo2max =
-    recentMap && latestWeight
-      ? Math.round(estimateVo2max(recentMap, latestWeight) * 10) / 10
-      : null;
-  const seasonVo2max =
-    seasonMap && latestWeight
-      ? Math.round(estimateVo2max(seasonMap, latestWeight) * 10) / 10
-      : null;
-
-  const recentTte =
-    recentModel && recentMap ? estimateTte(recentModel.wPrime, recentMap, recentModel.cp) : null;
-  const seasonTte =
-    seasonModel && seasonMap ? estimateTte(seasonModel.wPrime, seasonMap, seasonModel.cp) : null;
-
-  const loading = recentCurve.isLoading || seasonCurve.isLoading;
+  const recentModel = performance.data?.powerCurve.recent.model ?? null;
+  const seasonModel = performance.data?.powerCurve.season.model ?? null;
+  const recentSummary = performance.data?.powerSummary.recent;
+  const seasonSummary = performance.data?.powerSummary.season;
+  const loading = performance.isLoading;
+  const estimateEvidence = performance.data?.estimateEvidence;
+  const performanceUnavailable = performance.data == null && performance.error != null;
+  const activityAnalyticsUnavailable =
+    activityAnalytics.data == null && activityAnalytics.error != null;
 
   return (
     <>
-      {/* Power Duration Curve with comparison */}
-      <Section title="Power Duration Curve" subtitle="Best power at each duration">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
-          <PowerCurveChart
-            data={recentCurve.data?.points ?? []}
-            comparisonData={seasonCurve.data?.points ?? []}
-            model={recentModel}
-            loading={loading}
-          />
-          <PowerSummaryTable
-            recentByDuration={recentByDuration}
-            seasonByDuration={seasonByDuration}
-            recentModel={recentModel}
-            seasonModel={seasonModel}
-            recentMap={recentMap}
-            seasonMap={seasonMap}
-            recentVo2max={recentVo2max}
-            seasonVo2max={seasonVo2max}
-            recentTte={recentTte}
-            seasonTte={seasonTte}
-            weightKg={latestWeight ?? null}
-            loading={loading}
-            recentDays={days}
-          />
-        </div>
-        {/* Period labels */}
-        <div className="mt-3 flex flex-wrap gap-4 text-xs">
-          <PeriodLabel color={chartColors.purple} label={`${days} days`} model={recentModel} />
-          <PeriodLabel color={chartThemeColors.axisLabel} label="This season" model={seasonModel} />
-        </div>
-      </Section>
+      {performanceUnavailable ? (
+        <QueryStatePanel contextLabel="Cycling performance" error={performance.error} />
+      ) : (
+        <>
+          {/* Power Duration Curve with comparison */}
+          <Section title="Power Duration Curve" subtitle="Best power at each duration">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
+              <PowerCurveChart
+                data={performance.data?.powerCurve.recent.points ?? []}
+                comparisonData={performance.data?.powerCurve.season.points ?? []}
+                model={recentModel}
+                availability={performance.data?.availability?.powerCurve}
+                loading={loading}
+              />
+              <PowerSummaryTable
+                recentByDuration={recentByDuration}
+                seasonByDuration={seasonByDuration}
+                recentModel={recentModel}
+                seasonModel={seasonModel}
+                recentMap={recentSummary?.maximalAerobicPower ?? null}
+                seasonMap={seasonSummary?.maximalAerobicPower ?? null}
+                recentVo2max={recentSummary?.vo2Max ?? null}
+                seasonVo2max={seasonSummary?.vo2Max ?? null}
+                recentTte={recentSummary?.timeToExhaustionSeconds ?? null}
+                seasonTte={seasonSummary?.timeToExhaustionSeconds ?? null}
+                loading={loading}
+                recentDays={days}
+              />
+            </div>
+            {/* Period labels */}
+            <div className="mt-3 flex flex-wrap gap-4 text-xs">
+              <PeriodLabel
+                color={chartColors.purple}
+                label={formatTimeRangeLabel(days)}
+                model={recentModel}
+              />
+              <PeriodLabel
+                color={chartThemeColors.axisLabel}
+                label="This season"
+                model={seasonModel}
+              />
+            </div>
+          </Section>
 
-      {/* Fitness / Fatigue / Form */}
-      <Section
-        title="Fitness, Fatigue & Form"
-        subtitle="42-day fitness (blue), 7-day fatigue (purple), form = fitness − fatigue"
-      >
-        <PmcChart data={pmc.data?.data ?? []} model={pmc.data?.model} loading={pmc.isLoading} />
-      </Section>
+          {estimateEvidence && (
+            <EstimateEvidencePanel
+              recent={estimateEvidence.recent}
+              season={estimateEvidence.season}
+              eftp={estimateEvidence.eftp}
+              recentDays={days}
+            />
+          )}
 
-      {/* eFTP Trend */}
-      <Section
-        title="Estimated Threshold Power Trend"
-        subtitle="Per-activity normalized power × 0.95"
-      >
-        <EftpTrendChart
-          data={eftpTrend.data?.trend ?? []}
-          currentEftp={eftpTrend.data?.currentEftp ?? null}
-          loading={eftpTrend.isLoading}
-        />
-      </Section>
+          {/* Fitness / Fatigue / Form */}
+          <Section
+            title="Fitness, Fatigue & Form"
+            subtitle="42-day fitness (blue), 7-day fatigue (purple), form = fitness − fatigue"
+          >
+            <PmcChart
+              data={performance.data?.pmc.data ?? []}
+              model={performance.data?.pmc.model}
+              availability={performance.data?.availability?.pmc}
+              loading={performance.isLoading}
+            />
+          </Section>
 
-      {/* Aerobic Efficiency + Activity Variability */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section
-          title="Aerobic Efficiency"
-          subtitle="Power output per heartbeat at easy effort — higher means fitter"
-        >
-          <AerobicEfficiencyChart
-            activities={efficiency.data?.activities ?? []}
-            maxHr={efficiency.data?.maxHr ?? null}
-            loading={efficiency.isLoading}
-          />
-        </Section>
+          {/* eFTP Trend */}
+          <Section
+            title="Estimated Threshold Power Trend"
+            subtitle={
+              estimateEvidence
+                ? "Estimate evidence from observed cycling workouts"
+                : "Server-authored cycling threshold estimate"
+            }
+          >
+            <EftpTrendChart
+              data={performance.data?.eftpTrend.trend ?? []}
+              currentEftp={performance.data?.eftpTrend.currentEftp ?? null}
+              availability={performance.data?.availability?.eftpTrend}
+              loading={performance.isLoading}
+            />
+          </Section>
+        </>
+      )}
 
-        <Section
-          title="Vertical Ascent Rate"
-          subtitle="Climbing speed — meters gained per hour while ascending"
-        >
-          <VerticalAscentChart
-            data={verticalAscent.data ?? []}
-            loading={verticalAscent.isLoading}
-          />
-        </Section>
-      </div>
+      {activityAnalyticsUnavailable ? (
+        <QueryStatePanel contextLabel="Cycling activities" error={activityAnalytics.error} />
+      ) : (
+        <>
+          {/* Aerobic Efficiency + Activity Variability */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Section
+              title="Aerobic Efficiency"
+              subtitle="Power output per heartbeat at easy effort — higher means fitter"
+            >
+              <AerobicEfficiencyChart
+                activities={activityAnalytics.data?.aerobicEfficiency.activities ?? []}
+                maxHr={activityAnalytics.data?.aerobicEfficiency.maxHr ?? null}
+                availability={activityAnalytics.data?.availability?.aerobicEfficiency}
+                loading={activityAnalytics.isLoading}
+              />
+            </Section>
 
-      <Section
-        title="Activity Variability Index"
-        subtitle="Normalized power vs average power ratio per activity"
-      >
-        <ActivityVariabilityTable
-          data={variability.data?.rows ?? []}
-          totalCount={variability.data?.totalCount ?? 0}
-          offset={variabilityOffset}
-          limit={VARIABILITY_PAGE_SIZE}
-          onPageChange={setVariabilityOffset}
-          loading={variability.isLoading}
-        />
-      </Section>
+            <Section
+              title="Vertical Ascent Rate"
+              subtitle="Climbing speed — meters gained per hour while ascending"
+            >
+              <VerticalAscentChart
+                data={activityAnalytics.data?.verticalAscent ?? []}
+                availability={activityAnalytics.data?.availability?.verticalAscent}
+                loading={activityAnalytics.isLoading}
+              />
+            </Section>
+          </div>
 
-      <Section title="Recent Cycling Activities" subtitle="Recent rides and cycling workouts">
-        <RecentActivitiesSection activityTypes={CYCLING_ACTIVITY_TYPES} />
-      </Section>
+          <Section
+            title="Activity Variability Index"
+            subtitle="Effort-adjusted power versus average power for each activity"
+          >
+            <ActivityVariabilityTable
+              data={activityAnalytics.data?.variability.rows ?? []}
+              totalCount={activityAnalytics.data?.variability.totalCount ?? 0}
+              offset={variabilityOffset}
+              limit={VARIABILITY_PAGE_SIZE}
+              onPageChange={setVariabilityOffset}
+              loading={activityAnalytics.isLoading}
+              emptyReason={activityAnalytics.data?.variability.emptyReason ?? undefined}
+            />
+          </Section>
+
+          <Section title="Recent Cycling Activities" subtitle="Recent rides and cycling workouts">
+            <ActivityList
+              activities={activityAnalytics.data?.activities.items ?? []}
+              loading={activityAnalytics.isLoading}
+              totalCount={activityAnalytics.data?.activities.totalCount}
+              page={activityPage}
+              pageSize={ACTIVITY_PAGE_SIZE}
+              onPageChange={setActivityPage}
+              onBulkDelete={(ids) => bulkDelete.mutate({ ids })}
+              bulkDeletePending={bulkDelete.isPending}
+              bulkDeleteError={bulkDelete.error?.message}
+            />
+          </Section>
+        </>
+      )}
     </>
   );
 }
@@ -204,8 +266,8 @@ function CyclingTab() {
 // ── Power Summary Table ──
 
 interface PowerSummaryTableProps {
-  recentByDuration: Map<number, number>;
-  seasonByDuration: Map<number, number>;
+  recentByDuration: Map<number, { watts: number; wattsPerKg: number | null }>;
+  seasonByDuration: Map<number, { watts: number; wattsPerKg: number | null }>;
   recentModel: { cp: number; wPrime: number; r2: number } | null;
   seasonModel: { cp: number; wPrime: number; r2: number } | null;
   recentMap: number | null;
@@ -214,9 +276,8 @@ interface PowerSummaryTableProps {
   seasonVo2max: number | null;
   recentTte: number | null;
   seasonTte: number | null;
-  weightKg: number | null;
   loading: boolean;
-  recentDays: number;
+  recentDays: TimeRangeDays;
 }
 
 function PowerSummaryTable({
@@ -230,17 +291,11 @@ function PowerSummaryTable({
   seasonVo2max,
   recentTte,
   seasonTte,
-  weightKg,
   loading,
   recentDays,
 }: PowerSummaryTableProps) {
   if (loading) {
     return <div className="w-[260px] animate-pulse bg-skeleton rounded h-[280px]" />;
-  }
-
-  function wkg(watts: number | null): string {
-    if (watts == null || !weightKg) return "--";
-    return formatNumber(watts / weightKg, 2);
   }
 
   return (
@@ -250,7 +305,7 @@ function PowerSummaryTable({
           <tr className="border-b border-border-strong text-subtle">
             <th className="text-left py-1 pr-3">Time</th>
             <th className="text-right px-2" colSpan={2}>
-              <span className="text-violet-400">{recentDays}d</span>
+              <span className="text-violet-400">{formatTimeRangeShortLabel(recentDays)}</span>
             </th>
             <th className="text-right pl-2" colSpan={2}>
               <span className="text-muted">Season</span>
@@ -266,15 +321,19 @@ function PowerSummaryTable({
         </thead>
         <tbody>
           {KEY_DURATIONS.map((dur) => {
-            const recent = recentByDuration.get(dur) ?? null;
-            const season = seasonByDuration.get(dur) ?? null;
+            const recent = recentByDuration.get(dur);
+            const season = seasonByDuration.get(dur);
             return (
               <tr key={dur} className="border-b border-border/50">
                 <td className="py-1.5 pr-3 text-muted">{DURATION_LABELS[dur]}</td>
-                <td className="text-right px-2 text-violet-300">{recent ?? "--"}</td>
-                <td className="text-right px-2 text-violet-300">{wkg(recent)}</td>
-                <td className="text-right px-2">{season ?? "--"}</td>
-                <td className="text-right px-2">{wkg(season)}</td>
+                <td className="text-right px-2 text-violet-300">{recent?.watts ?? "--"}</td>
+                <td className="text-right px-2 text-violet-300">
+                  {recent?.wattsPerKg == null ? "--" : formatNumber(recent.wattsPerKg, 2)}
+                </td>
+                <td className="text-right px-2">{season?.watts ?? "--"}</td>
+                <td className="text-right px-2">
+                  {season?.wattsPerKg == null ? "--" : formatNumber(season.wattsPerKg, 2)}
+                </td>
               </tr>
             );
           })}
@@ -289,15 +348,20 @@ function PowerSummaryTable({
           recentStr={formatTte(recentTte)}
           seasonStr={formatTte(seasonTte)}
         />
-        <DerivedRow label="VO2max (est.)" recent={recentVo2max} season={seasonVo2max} unit="" />
         <DerivedRow
-          label="Critical Power"
+          label="Estimated aerobic capacity (VO₂ max)"
+          recent={recentVo2max}
+          season={seasonVo2max}
+          unit=""
+        />
+        <DerivedRow
+          label={TRAINING_TERMINOLOGY.criticalPower.plainLabel}
           recent={recentModel?.cp ?? null}
           season={seasonModel?.cp ?? null}
           unit="W"
         />
         <DerivedRow
-          label="Anaerobic Reserve (W')"
+          label={TRAINING_TERMINOLOGY.anaerobicWorkCapacity.plainLabel}
           recentStr={recentModel ? `${Math.round(recentModel.wPrime / 1000)}kJ` : "--"}
           seasonStr={seasonModel ? `${Math.round(seasonModel.wPrime / 1000)}kJ` : "--"}
         />
@@ -350,11 +414,91 @@ function PeriodLabel({
       <span style={{ color }}>{label}</span>
       {model && (
         <span className="text-dim">
-          Estimated Threshold Power {model.cp}w · Anaerobic Reserve (W'){" "}
+          Estimated sustainable power {model.cp}W · Short-burst power reserve{" "}
           {Math.round(model.wPrime / 1000)}kJ
         </span>
       )}
     </span>
+  );
+}
+
+function EstimateEvidencePanel({
+  recent,
+  season,
+  eftp,
+  recentDays,
+}: {
+  recent: PeriodEstimateEvidence;
+  season: PeriodEstimateEvidence;
+  eftp: EstimateEvidence;
+  recentDays: TimeRangeDays;
+}) {
+  return (
+    <section aria-labelledby="cycling-estimate-evidence-heading">
+      <div className="mb-1 flex items-center gap-2">
+        <h2
+          id="cycling-estimate-evidence-heading"
+          className="text-sm font-medium text-muted uppercase tracking-wider"
+        >
+          Estimate method and confidence
+        </h2>
+        <ChartDescriptionTooltip description="How the cycling estimates were calculated, how much evidence supports them, and which workouts supplied the inputs." />
+      </div>
+      <p className="text-xs text-dim mb-4">
+        These are training estimates. Do not use them as a tested threshold or pacing prescription
+        when the evidence is limited.
+      </p>
+      <div className="card p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <EstimateEvidenceBlock
+          title={`Cycling power estimate · ${formatTimeRangeShortLabel(recentDays)}`}
+          evidence={recent.threshold}
+        />
+        <EstimateEvidenceBlock
+          title="Cycling power estimate · Season"
+          evidence={season.threshold}
+        />
+        <EstimateEvidenceBlock
+          title={`Estimated aerobic capacity · ${formatTimeRangeShortLabel(recentDays)}`}
+          evidence={recent.vo2Max}
+        />
+        <EstimateEvidenceBlock
+          title="Estimated aerobic capacity · Season"
+          evidence={season.vo2Max}
+        />
+        <EstimateEvidenceBlock title="Estimated Threshold Power trend" evidence={eftp} />
+      </div>
+    </section>
+  );
+}
+
+function EstimateEvidenceBlock({ title, evidence }: { title: string; evidence: EstimateEvidence }) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-surface/30 p-3 text-xs">
+      <h3 className="font-medium text-foreground">{title}</h3>
+      <p className="mt-1 text-muted">{evidence.confidenceLabel}</p>
+      <details className="mt-2 text-dim">
+        <summary className="cursor-pointer font-medium text-muted underline-offset-2 hover:underline">
+          How this estimate is calculated
+        </summary>
+        <div className="mt-2 space-y-1">
+          <p>Method: {evidence.method}</p>
+          <p>{evidence.confidenceDetail}</p>
+          <p>Source workouts:</p>
+          {evidence.sourceWorkouts.length > 0 ? (
+            <ul className="list-disc space-y-0.5 pl-4 text-muted">
+              {evidence.sourceWorkouts.map((workout) => (
+                <li key={workout.id}>
+                  {workout.name ?? "Cycling workout"} · {formatDateMedium(workout.date)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted">No source workouts in this period.</p>
+          )}
+          <p>Pacing guidance: {evidence.pacingGuidance}</p>
+        </div>
+      </details>
+    </div>
   );
 }
 

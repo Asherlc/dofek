@@ -8,33 +8,61 @@ import { ActivityHeader } from "./ActivityDetailPage.tsx";
 const baseActivity: ActivityDetail = {
   id: "abc-123",
   activityType: "cycling",
+  modality: null,
   startedAt: "2026-03-31T08:00:00Z",
   endedAt: "2026-03-31T09:30:00Z",
+  localTimeContext: {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -420,
+    endUtcOffsetMinutes: -420,
+    source: "provider_timezone",
+  },
   name: "Morning Ride",
   notes: null,
+  perceivedExertion: null,
   providerId: "wahoo",
   subsource: null,
   sourceProviders: ["wahoo", "apple_health"],
   sourceLinks: [
     {
       providerId: "wahoo",
+      externalId: "42",
+      subsource: null,
       label: "Wahoo",
       url: "https://systm.wahoofitness.com/history/activity-details/42",
+      providerAbsentAt: null,
     },
   ],
   avgHr: 145,
+  avgHrState: { status: "available" },
   maxHr: 175,
+  maxHrState: { status: "available" },
   avgPower: 220,
+  avgPowerState: { status: "available" },
   maxPower: 450,
+  maxPowerState: { status: "available" },
   avgSpeed: 8.5,
+  avgSpeedState: { status: "available" },
   maxSpeed: 15.2,
+  maxSpeedState: { status: "available" },
   avgCadence: 85,
+  avgCadenceState: { status: "available" },
   totalDistance: 42000,
+  totalDistanceState: { status: "available" },
   elevationGain: 350,
+  elevationGainState: { status: "available" },
   elevationLoss: 340,
+  elevationLossState: { status: "available" },
   sampleCount: 5400,
+  sampleCountState: { status: "available" },
   providerAbsentAt: null,
+  sourceDecision: null,
 };
+
+const missingMetricState = (label: string) => ({
+  status: "missing" as const,
+  reason: `${label} not recorded`,
+});
 
 const headerMeta = {
   title: "Pages/ActivityDetail/ActivityHeader",
@@ -43,7 +71,6 @@ const headerMeta = {
   args: {
     activity: baseActivity,
     units: new UnitConverter("metric"),
-    hasGps: true,
   },
 } satisfies Meta<typeof ActivityHeader>;
 
@@ -52,27 +79,25 @@ export default headerMeta;
 type HeaderStory = StoryObj<typeof headerMeta>;
 
 export const CyclingMetric: HeaderStory = {
-  args: {
-    hasGps: true,
-  },
+  args: {},
 };
 
 export const CyclingImperial: HeaderStory = {
   args: {
     units: new UnitConverter("imperial"),
-    hasGps: true,
   },
 };
 
 export const Running: HeaderStory = {
   args: {
-    hasGps: true,
     activity: {
       ...baseActivity,
       activityType: "running",
       name: "Easy Run",
       avgPower: null,
+      avgPowerState: missingMetricState("Average power"),
       maxPower: null,
+      maxPowerState: missingMetricState("Maximum power"),
       totalDistance: 8000,
       elevationGain: 50,
       elevationLoss: 45,
@@ -82,23 +107,41 @@ export const Running: HeaderStory = {
   },
 };
 
+export const WithSessionEffort: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      perceivedExertion: 7,
+    },
+  },
+};
+
 export const Minimal: HeaderStory = {
   args: {
-    hasGps: false,
     activity: {
       ...baseActivity,
       name: null,
       endedAt: null,
       avgHr: null,
+      avgHrState: missingMetricState("Average heart rate"),
       maxHr: null,
+      maxHrState: missingMetricState("Maximum heart rate"),
       avgPower: null,
+      avgPowerState: missingMetricState("Average power"),
       maxPower: null,
+      maxPowerState: missingMetricState("Maximum power"),
       avgSpeed: null,
+      avgSpeedState: missingMetricState("Average speed"),
       maxSpeed: null,
+      maxSpeedState: missingMetricState("Maximum speed"),
       avgCadence: null,
+      avgCadenceState: missingMetricState("Average cadence"),
       totalDistance: null,
+      totalDistanceState: missingMetricState("Distance"),
       elevationGain: null,
+      elevationGainState: missingMetricState("Elevation gain"),
       elevationLoss: null,
+      elevationLossState: missingMetricState("Elevation loss"),
       sourceProviders: [],
       sourceLinks: [],
     },

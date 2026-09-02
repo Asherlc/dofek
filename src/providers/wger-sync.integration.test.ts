@@ -2,13 +2,14 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
+import { createCapturingMetricStreamPublisher, fakeJwt } from "./test-helpers.ts";
 import { WgerProvider } from "./wger.ts";
 
 // ============================================================
@@ -53,6 +54,8 @@ function fakeWeightEntry(overrides: Partial<FakeWgerWeightEntry> = {}): FakeWger
   };
 }
 
+const refreshedAccessToken = fakeJwt(1_893_456_000);
+
 function wgerHandlers(
   sessions: FakeWgerWorkoutSession[],
   weightEntries: FakeWgerWeightEntry[],
@@ -60,16 +63,13 @@ function wgerHandlers(
 ) {
   return [
     // Token refresh
-    http.post("https://wger.de/api/v2/token", () => {
+    http.post("https://wger.de/api/v2/token/refresh", () => {
       if (opts?.refreshError) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
       return HttpResponse.json({
-        access_token: "refreshed-token",
-        refresh_token: "new-refresh",
-        expires_in: 7200,
-        scope: "read",
-        token_type: "Bearer",
+        access: refreshedAccessToken,
+        refresh: "new-refresh",
       });
     }),
 
@@ -164,7 +164,7 @@ describe("WgerProvider.sync() (integration)", () => {
 
     const session1 = activityRows.find((r) => r.externalId === "101");
     if (!session1) throw new Error("expected session 101");
-    expect(session1.activityType).toBe("strength");
+    expect(session1.canonicalType).toBe("strength");
     expect(session1.name).toBe("Morning strength session");
 
     const session2 = activityRows.find((r) => r.externalId === "102");
@@ -257,7 +257,8 @@ describe("WgerProvider.sync() (integration)", () => {
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "wger");
-    expect(tokens?.accessToken).toBe("refreshed-token");
+    expect(tokens?.accessToken).toBe(refreshedAccessToken);
+    expect(tokens?.refreshToken).toBe("new-refresh");
   });
 
   it("handles pagination across multiple pages", async () => {
@@ -420,6 +421,58 @@ describe("WgerProvider.sync() (integration)", () => {
     expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(0);
   });
 
+  it("stops weight pagination when a page includes an entry before the sync window", async () => {
+    await saveTokens(ctx.db, "wger", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read",
+    });
+
+    let weightCalls = 0;
+
+    server.use(
+      http.get("https://wger.de/api/v2/workoutsession/*", () => {
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+      http.get("https://wger.de/api/v2/weightentry/*", () => {
+        weightCalls += 1;
+        if (weightCalls === 1) {
+          return HttpResponse.json({
+            count: 2,
+            next: "https://wger.de/api/v2/weightentry/?format=json&ordering=-date&offset=50&limit=50",
+            previous: null,
+            results: [
+              fakeWeightEntry({ id: 501, date: "2026-03-05", weight: "81.0" }),
+              fakeWeightEntry({ id: 502, date: "2026-01-15", weight: "80.0" }),
+            ],
+          });
+        }
+        return HttpResponse.json({
+          count: 1,
+          next: null,
+          previous: null,
+          results: [fakeWeightEntry({ id: 503, date: "2026-03-04", weight: "79.0" })],
+        });
+      }),
+    );
+
+    const provider = new WgerProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(weightCalls).toBe(1);
+    expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(1);
+    expect(metricStreamCapture.publishedMetricStreamRows[0]?.externalId).toBe("501");
+  });
+
   it("stops pagination when session date is before since", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",
@@ -461,7 +514,9 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No OAuth tokens");
+    expect(result.errors[0]?.message).toBe(
+      "No tokens found for Wger. Connect Wger in Data Sources.",
+    );
     expect(result.recordsSynced).toBe(0);
   });
 });

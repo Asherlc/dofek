@@ -4,21 +4,17 @@
 # PeerDB CDC + ClickHouse + Postgres fit comfortably and we do NOT need to
 # tighten CPU the way staging does on its 4 GB box.
 #
-# What we do disable: the operator/admin UIs that aren't needed for a
-# single-user free-tier deployment and that would otherwise demand extra
-# secrets (Authentik) or memory (Netdata). Disabling them mirrors the
-# staging override pattern (replicas: 0) so the services stay defined and
-# can be re-enabled by dropping this override. The PeerDB CDC pipeline
-# itself stays running — only its management UI is turned off.
+# What we do disable: operator/admin UIs that perform no background operational
+# work and aren't needed for a single-user free-tier deployment. Databasus
+# remains enabled because it owns the database backup schedule. Netdata is also
+# disabled to preserve memory. The services stay defined and can be re-enabled
+# by dropping this override. The PeerDB CDC pipeline itself stays running —
+# only its management UI is turned off.
 #
 # Apply with:
 #   docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
 services:
   cloudbeaver:
-    deploy:
-      replicas: 0
-
-  databasus:
     deploy:
       replicas: 0
 
@@ -35,9 +31,5 @@ services:
       replicas: 0
 
   peerdb-ui:
-    deploy:
-      replicas: 0
-
-  authentik-proxy:
     deploy:
       replicas: 0

@@ -7,6 +7,7 @@ export interface CorrelationPair {
   id: string;
   xName: string;
   yName: string;
+  scope?: "month";
   xFn: (day: JoinedDay, allDays: JoinedDay[], idx: number) => number | null;
   yFn: (day: JoinedDay, allDays: JoinedDay[], idx: number) => number | null;
 }
@@ -29,13 +30,6 @@ export function getCorrelationPairs(): CorrelationPair[] {
       yFn: (_d, all, i) => all[i + 1]?.hrv ?? null,
     },
     {
-      id: "active-kcal-sleep",
-      xName: "active calories",
-      yName: "sleep duration that night",
-      xFn: (d) => d.active_energy_kcal,
-      yFn: (_d, all, i) => all[i + 1]?.sleep_duration_min ?? null,
-    },
-    {
       id: "deep-sleep-hrv",
       xName: "deep sleep",
       yName: "next-day HRV",
@@ -54,6 +48,7 @@ export function getCorrelationPairs(): CorrelationPair[] {
       id: "calories-30d-weight-delta",
       xName: "30-day avg calories",
       yName: "monthly weight change",
+      scope: "month",
       xFn: (_d, all, i) => rollingAvg(all, i, 30, (r) => r.calories),
       yFn: (d) => d.weight_30d_delta,
     },
@@ -61,6 +56,7 @@ export function getCorrelationPairs(): CorrelationPair[] {
       id: "protein-pct-30d-weight-delta",
       xName: "30-day avg protein %",
       yName: "monthly weight change",
+      scope: "month",
       xFn: (_d, all, i) =>
         rollingAvg(all, i, 30, (r) =>
           r.protein_g != null && r.calories ? ((r.protein_g * 4) / r.calories) * 100 : null,
@@ -71,6 +67,7 @@ export function getCorrelationPairs(): CorrelationPair[] {
       id: "protein-pct-30d-bf-delta",
       xName: "30-day avg protein %",
       yName: "monthly body fat change",
+      scope: "month",
       xFn: (_d, all, i) =>
         rollingAvg(all, i, 30, (r) =>
           r.protein_g != null && r.calories ? ((r.protein_g * 4) / r.calories) * 100 : null,
@@ -81,6 +78,7 @@ export function getCorrelationPairs(): CorrelationPair[] {
       id: "carb-pct-30d-weight-delta",
       xName: "30-day avg carb %",
       yName: "monthly weight change",
+      scope: "month",
       xFn: (_d, all, i) =>
         rollingAvg(all, i, 30, (r) =>
           r.carbs_g != null && r.calories ? ((r.carbs_g * 4) / r.calories) * 100 : null,
@@ -91,6 +89,7 @@ export function getCorrelationPairs(): CorrelationPair[] {
       id: "fat-pct-30d-bf-delta",
       xName: "30-day avg fat %",
       yName: "monthly body fat change",
+      scope: "month",
       xFn: (_d, all, i) =>
         rollingAvg(all, i, 30, (r) =>
           r.fat_g != null && r.calories ? ((r.fat_g * 9) / r.calories) * 100 : null,
@@ -102,6 +101,7 @@ export function getCorrelationPairs(): CorrelationPair[] {
       id: "exercise-30d-weight-delta",
       xName: "monthly exercise volume",
       yName: "monthly weight change",
+      scope: "month",
       xFn: (_d: JoinedDay, all: JoinedDay[], i: number) => {
         if (i < 29) return null;
         const month = all.slice(i - 29, i + 1);
@@ -114,6 +114,7 @@ export function getCorrelationPairs(): CorrelationPair[] {
       id: "exercise-30d-bf-delta",
       xName: "monthly exercise volume",
       yName: "monthly body fat change",
+      scope: "month",
       xFn: (_d: JoinedDay, all: JoinedDay[], i: number) => {
         if (i < 29) return null;
         const month = all.slice(i - 29, i + 1);

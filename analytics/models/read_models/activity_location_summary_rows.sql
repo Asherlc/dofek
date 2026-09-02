@@ -153,23 +153,51 @@ active_dirty_keys AS (
         AND user_id IS NOT null
 ),
 
+current_dirty_keys AS (
+    SELECT
+        active_dirty_keys.activity_id AS activity_id,
+        active_dirty_keys.user_id AS user_id
+    FROM active_dirty_keys
+    INNER JOIN current_activity
+        ON current_activity.activity_id = active_dirty_keys.activity_id
+        AND current_activity.user_id = active_dirty_keys.user_id
+),
+
+affected_location_sample_ids AS (
+    SELECT DISTINCT location_samples.source_metric_stream_id AS source_metric_stream_id
+    FROM {{ ref('activity_location_sample') }} AS location_samples
+    INNER JOIN current_dirty_keys
+        ON current_dirty_keys.activity_id = location_samples.activity_id
+        AND current_dirty_keys.user_id = location_samples.user_id
+),
+
+latest_location_samples AS (
+    SELECT *
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_location_sample') }}
+        WHERE source_metric_stream_id IN (
+            SELECT source_metric_stream_id
+            FROM affected_location_sample_ids
+        )
+        ORDER BY
+            source_metric_stream_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY source_metric_stream_id
+    )
+    WHERE is_deleted = 0
+),
+
 gps_points AS (
     SELECT
-        location_samples.activity_id AS activity_id,
-        location_samples.user_id AS user_id,
-        location_samples.recorded_at AS recorded_at,
-        location_samples.lat AS lat,
-        location_samples.lng AS lng
-    FROM {{ ref('activity_location_sample') }} AS location_samples
-    WHERE location_samples.is_deleted = 0
-        AND location_samples.lat IS NOT null
-        AND location_samples.lng IS NOT null
-        AND (location_samples.user_id, location_samples.activity_id) IN (
-            SELECT
-                user_id,
-                activity_id
-            FROM active_dirty_keys
-        )
+        activity_id,
+        user_id,
+        recorded_at,
+        lat,
+        lng
+    FROM latest_location_samples
+    WHERE lat IS NOT null
+        AND lng IS NOT null
 ),
 
 gps_deltas AS (
@@ -218,7 +246,7 @@ location_centroids AS (
 SELECT
     assumeNotNull(dirty_keys.activity_id) AS activity_id,
     assumeNotNull(dirty_keys.user_id) AS user_id,
-    coalesce(distance_per_activity.total_distance, CAST(0, 'Nullable(Float64)')) AS total_distance,
+    distance_per_activity.total_distance AS total_distance,
     location_centroids.centroid_lat AS centroid_lat,
     location_centroids.centroid_lng AS centroid_lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,

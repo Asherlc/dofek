@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -234,12 +234,12 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const run = activityRows.find((r) => r.externalId === "ex-1001");
     if (!run) throw new Error("expected exercise ex-1001");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Running");
 
     const ride = activityRows.find((r) => r.externalId === "ex-1002");
     if (!ride) throw new Error("expected exercise ex-1002");
-    expect(ride.activityType).toBe("cycling");
+    expect(ride.canonicalType).toBe("cycling");
 
     // Verify sleep
     const sleepRows = await ctx.db
@@ -253,6 +253,7 @@ describe("PolarProvider.sync() (integration)", () => {
     expect(sleepRecord.deepMinutes).toBe(85);
     expect(sleepRecord.lightMinutes).toBe(220);
     expect(sleepRecord.remMinutes).toBe(100);
+    expect(sleepRecord.stagingAvailable).toBe(true);
     expect(sleepRecord.awakeMinutes).toBe(40);
 
     // Verify daily metrics (with nightly recharge data merged)
@@ -265,7 +266,6 @@ describe("PolarProvider.sync() (integration)", () => {
     const daily = dailyRows[0];
     if (!daily) throw new Error("expected daily metrics");
     expect(daily.steps).toBe(11200);
-    expect(daily.activeEnergyKcal).toBe(850);
     expect(daily.hrv).toBeCloseTo(48.5);
     expect(daily.respiratoryRateAvg).toBeCloseTo(14.8);
   });
@@ -498,7 +498,7 @@ describe("PolarProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "polar"));
 
     const provider = new PolarProvider();

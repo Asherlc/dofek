@@ -1,10 +1,10 @@
 import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
+import type { ImportJobData } from "dofek/jobs/queues";
+import { registerProviderSyncRequestResolver } from "dofek/jobs/sync-request-query-registration";
+import { CUSTOM_AUTH_PROVIDERS } from "dofek/lib/custom-auth-providers";
 import { registerProvider } from "dofek/providers/registry";
 
-export const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
-  whoop: "custom:whoop",
-  garmin: "custom:garmin",
-};
+export { CUSTOM_AUTH_PROVIDERS };
 
 export const UPLOAD_IMPORT_PROVIDERS = [
   {
@@ -49,6 +49,7 @@ async function doRegisterProviders() {
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],
     ["whoop", () => import("dofek/providers/whoop").then((m) => new m.WhoopProvider())],
+    ["kaya", () => import("dofek/providers/kaya-sync").then((m) => new m.KayaSyncProvider())],
     [
       "ride-with-gps",
       () => import("dofek/providers/ride-with-gps").then((m) => new m.RideWithGpsProvider()),
@@ -58,8 +59,12 @@ async function doRegisterProviders() {
       () => import("dofek/providers/strong-csv").then((m) => new m.StrongCsvProvider()),
     ],
     ["polar", () => import("dofek/providers/polar").then((m) => new m.PolarProvider())],
-    ["fitbit", () => import("dofek/providers/fitbit").then((m) => new m.FitbitProvider())],
     ["garmin", () => import("dofek/providers/garmin").then((m) => new m.GarminProvider())],
+    [
+      "garmin-dump",
+      () => import("dofek/providers/garmin-dump").then((m) => new m.GarminDumpProvider()),
+    ],
+    ["fit-file", () => import("dofek/providers/fit-file").then((m) => new m.FitFileProvider())],
     ["strava", () => import("dofek/providers/strava").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",
@@ -87,14 +92,7 @@ async function doRegisterProviders() {
           (amazfitZeppModule) => new amazfitZeppModule.AmazfitZeppProvider(),
         ),
     ],
-    [
-      "mapmyfitness",
-      () => import("dofek/providers/mapmyfitness").then((m) => new m.MapMyFitnessProvider()),
-    ],
-    ["suunto", () => import("dofek/providers/suunto").then((m) => new m.SuuntoProvider())],
-    ["coros", () => import("dofek/providers/coros").then((m) => new m.CorosProvider())],
     ["concept2", () => import("dofek/providers/concept2").then((m) => new m.Concept2Provider())],
-    ["komoot", () => import("dofek/providers/komoot").then((m) => new m.KomootProvider())],
     ["xert", () => import("dofek/providers/xert").then((m) => new m.XertProvider())],
     [
       "cycling-analytics",
@@ -102,17 +100,30 @@ async function doRegisterProviders() {
         import("dofek/providers/cycling-analytics").then((m) => new m.CyclingAnalyticsProvider()),
     ],
     ["wger", () => import("dofek/providers/wger").then((m) => new m.WgerProvider())],
-    ["decathlon", () => import("dofek/providers/decathlon").then((m) => new m.DecathlonProvider())],
     ["velohero", () => import("dofek/providers/velohero").then((m) => new m.VeloHeroProvider())],
+    [
+      "mountain-project",
+      () => import("dofek/providers/mountain-project").then((m) => new m.MountainProjectProvider()),
+    ],
     [
       "auto-supplements",
       () => import("dofek/providers/auto-supplements").then((m) => new m.AutoSupplementsProvider()),
+    ],
+    [
+      "kaya-export",
+      () => import("dofek/providers/kaya/provider").then((m) => new m.KayaProvider()),
+    ],
+    [
+      "zos-app",
+      () => import("dofek/providers/zos-app/provider").then((m) => new m.ZosAppProvider()),
     ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {
     try {
-      registerProvider(await loadProvider());
+      const provider = await loadProvider();
+      registerProvider(provider);
+      await registerProviderSyncRequestResolver(provider);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to register ${name} provider: ${message}`);
@@ -120,17 +131,66 @@ async function doRegisterProviders() {
   }
 }
 
-export function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
-  switch (state) {
-    case "completed":
-      return "done";
-    case "failed":
-      return "error";
-    default:
-      return "running";
-  }
-}
-
 export function getAllConfiguredProviderIds(): Set<string> {
   return new Set(getConfiguredProviderIds());
+}
+
+const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
+  "apple-health": "apple_health",
+  "strong-csv": "strong-csv",
+  "cronometer-csv": "cronometer-csv",
+  "kaya-export": "kaya-export",
+  "zos-app": "zos-app",
+  "garmin-dump": "garmin-dump",
+  "fit-file": "fit-file",
+};
+
+function isKnownImportType(importType: string): importType is ImportJobData["importType"] {
+  return Object.hasOwn(importTypeToProviderId, importType);
+}
+
+export function providerIdForImportType(importType: string): string | undefined {
+  if (!isKnownImportType(importType)) {
+    return undefined;
+  }
+  return importTypeToProviderId[importType];
+}
+
+export function isJobDataForUser(data: unknown, userId: string): data is object {
+  if (typeof data !== "object" || data === null) {
+    return false;
+  }
+  if (!("userId" in data)) {
+    return false;
+  }
+  return Reflect.get(data, "userId") === userId;
+}
+
+export function importTypeFromJobData(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null || !("importType" in data)) {
+    return undefined;
+  }
+  const importType = Reflect.get(data, "importType");
+  if (typeof importType !== "string") {
+    return undefined;
+  }
+  return importType;
+}
+
+export function providerIdFromSyncJobData(
+  data: object,
+  queueProviderId: string,
+  knownProviderIds: ReadonlySet<string>,
+): string | undefined {
+  if (!("providerId" in data)) {
+    return knownProviderIds.has(queueProviderId) ? queueProviderId : undefined;
+  }
+  const providerId = Reflect.get(data, "providerId");
+  if (typeof providerId !== "string" || providerId.length === 0) {
+    return knownProviderIds.has(queueProviderId) ? queueProviderId : undefined;
+  }
+  if (knownProviderIds.has(providerId)) {
+    return providerId;
+  }
+  return knownProviderIds.has(queueProviderId) ? queueProviderId : undefined;
 }

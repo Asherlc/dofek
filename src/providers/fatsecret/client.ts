@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import {
   buildOAuth1FormBody,
   buildOAuth1Header,
@@ -22,7 +22,7 @@ export async function fatsecretApi(
   creds: OAuth1Credentials,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<unknown> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
+  const rateLimitFetchFn = createProviderRateLimitFetch("fatsecret", fetchFn);
   const allParams = { ...params, method, format: "json" };
   const authHeader = buildOAuth1Header("GET", API_BASE, allParams, creds);
 
@@ -58,7 +58,7 @@ export async function getRequestToken(
   callbackUrl: string,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<RequestTokenResult> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
+  const rateLimitFetchFn = createProviderRateLimitFetch("fatsecret", fetchFn);
 
   // FatSecret expects the signed OAuth params as the POST body.
   const bodyString = buildOAuth1FormBody(
@@ -107,7 +107,7 @@ export async function exchangeForAccessToken(
   oauthVerifier: string,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<{ token: string; tokenSecret: string }> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
+  const rateLimitFetchFn = createProviderRateLimitFetch("fatsecret", fetchFn);
 
   // FatSecret expects the signed OAuth params as the POST body, not a header.
   const bodyString = buildOAuth1FormBody(

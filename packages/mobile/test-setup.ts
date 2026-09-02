@@ -1,5 +1,14 @@
 import { createElement, type ReactNode } from "react";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
+
+const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
+const secureStoreValues = vi.hoisted(() => new Map<string, string>());
+
+// __DEV__ is a Metro compile-time global in React Native. Vitest cannot
+// statically define it per-test, so expose it as a runtime global instead.
+// Default to true (matching the React Native dev environment); tests that
+// need to exercise production-only branches override it with vi.stubGlobal.
+vi.stubGlobal("__DEV__", true);
 
 // Suppress React DOM warnings about unknown elements (View, Text, etc.)
 // since we render RN component names as HTML tags in the mock.
@@ -30,6 +39,51 @@ vi.mock("@sentry/react-native", () => ({
   setExtra: vi.fn(),
 }));
 
+vi.mock("expo-crypto", () => ({
+  randomUUID: vi.fn(() => crypto.randomUUID()),
+}));
+
+vi.mock("posthog-react-native", () => ({
+  __esModule: true,
+  default: vi.fn().mockImplementation(() => ({
+    captureException: vi.fn(),
+    flush: vi.fn(() => Promise.resolve()),
+    register: vi.fn(),
+  })),
+}));
+
+// Shared in-memory AsyncStorage mock for all mobile tests. Do not redeclare this
+// mock in individual test files — rely on test-setup.ts and the beforeEach reset.
+vi.mock("@react-native-async-storage/async-storage", () => {
+  return {
+    default: {
+      getItem: vi.fn((key: string) => Promise.resolve(asyncStorageValues.get(key) ?? null)),
+      setItem: vi.fn((key: string, value: string) => {
+        asyncStorageValues.set(key, value);
+        return Promise.resolve();
+      }),
+      removeItem: vi.fn((key: string) => {
+        asyncStorageValues.delete(key);
+        return Promise.resolve();
+      }),
+      clear: vi.fn(() => {
+        asyncStorageValues.clear();
+        return Promise.resolve();
+      }),
+      getAllKeys: vi.fn(() => Promise.resolve([...asyncStorageValues.keys()])),
+      multiRemove: vi.fn((keys: string[]) => {
+        for (const key of keys) asyncStorageValues.delete(key);
+        return Promise.resolve();
+      }),
+    },
+  };
+});
+
+beforeEach(() => {
+  asyncStorageValues.clear();
+  secureStoreValues.clear();
+});
+
 // ── React Native mock ────────────────────────────────────────────────
 // react-native uses Flow syntax that Vitest can't parse. Provide minimal
 // component implementations backed by plain React elements.
@@ -51,12 +105,26 @@ vi.mock("react-native", () => {
     return React.createElement(tag, props, ...(children != null ? [children] : []));
   }
 
+  function ariaPropsFromAccessibilityState(accessibilityState: unknown): Record<string, unknown> {
+    if (typeof accessibilityState !== "object" || accessibilityState === null) {
+      return {};
+    }
+    return {
+      "aria-busy": "busy" in accessibilityState ? accessibilityState.busy : undefined,
+      "aria-checked": "checked" in accessibilityState ? accessibilityState.checked : undefined,
+      "aria-disabled": "disabled" in accessibilityState ? accessibilityState.disabled : undefined,
+      "aria-expanded": "expanded" in accessibilityState ? accessibilityState.expanded : undefined,
+      "aria-selected": "selected" in accessibilityState ? accessibilityState.selected : undefined,
+    };
+  }
+
   function createMockComponent(name: string) {
     const component = ({
       accessibilityHint,
       accessibilityLabel,
       accessibilityRole,
       accessible: _accessible,
+      automaticallyAdjustKeyboardInsets,
       children,
       style,
       testID,
@@ -68,6 +136,7 @@ vi.mock("react-native", () => {
           ...props,
           "aria-description": accessibilityHint,
           "aria-label": accessibilityLabel,
+          "data-automatically-adjust-keyboard-insets": automaticallyAdjustKeyboardInsets,
           "data-testid": testID,
           role: accessibilityRole,
           style: flattenStyle(style),
@@ -82,20 +151,46 @@ vi.mock("react-native", () => {
   const Text = createMockComponent("Text");
   const ScrollView = createMockComponent("ScrollView");
   const Pressable = ({
+    accessibilityState,
     children,
     onPress,
+    onPressIn,
+    onPressOut,
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
     style,
     ...props
-  }: Record<string, unknown>) =>
-    React.createElement(
+  }: Record<string, unknown>) => {
+    const pressActiveRef = React.useRef(false);
+
+    const beginPress = (event: unknown) => {
+      pressActiveRef.current = true;
+      if (typeof onPressIn === "function") {
+        onPressIn(event);
+      }
+    };
+    const endPress = (event: unknown) => {
+      if (!pressActiveRef.current) {
+        return;
+      }
+
+      pressActiveRef.current = false;
+      if (typeof onPressOut === "function") {
+        onPressOut(event);
+      }
+    };
+
+    return React.createElement(
       "button",
       {
         ...props,
+        ...ariaPropsFromAccessibilityState(accessibilityState),
         onClick: onPress,
-        role: accessibilityRole,
+        onMouseDown: beginPress,
+        onMouseLeave: endPress,
+        onMouseUp: endPress,
+        role: accessibilityRole ?? "presentation",
         "aria-label": accessibilityLabel,
         "aria-description": accessibilityHint,
         style: flattenStyle(style),
@@ -103,12 +198,16 @@ vi.mock("react-native", () => {
       },
       children,
     );
+  };
   Pressable.displayName = "Pressable";
   const TextInput = ({
+    accessibilityLabel,
+    "aria-label": ariaLabel,
     multiline,
     numberOfLines: _numberOfLines,
     onChangeText,
     placeholderTextColor: _placeholderTextColor,
+    secureTextEntry,
     style,
     textAlignVertical: _textAlignVertical,
     testID,
@@ -118,11 +217,13 @@ vi.mock("react-native", () => {
     const tagName = multiline === true ? "textarea" : "input";
     return React.createElement(tagName, {
       ...props,
+      "aria-label": accessibilityLabel ?? ariaLabel,
       "data-testid": testID,
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (typeof onChangeText === "function") onChangeText(event.target.value);
       },
       style: flattenStyle(style),
+      ...(multiline === true ? {} : { type: secureTextEntry === true ? "password" : "text" }),
       value,
     });
   };
@@ -148,6 +249,7 @@ vi.mock("react-native", () => {
     );
   Image.displayName = "Image";
   const FlatList = createMockComponent("FlatList");
+  const Modal = createMockComponent("Modal");
   const ActivityIndicator = ({ color, style, ...props }: Record<string, unknown>) =>
     React.createElement("activityindicator", {
       ...props,
@@ -157,10 +259,28 @@ vi.mock("react-native", () => {
     });
   ActivityIndicator.displayName = "ActivityIndicator";
 
-  const TouchableOpacity = ({ children, onPress, style, ...props }: Record<string, unknown>) =>
+  const TouchableOpacity = ({
+    accessibilityHint,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityState,
+    children,
+    onPress,
+    style,
+    ...props
+  }: Record<string, unknown>) =>
     el(
       "button",
-      { ...props, onClick: onPress, style: flattenStyle(style), type: "button" },
+      {
+        ...props,
+        ...ariaPropsFromAccessibilityState(accessibilityState),
+        "aria-description": accessibilityHint,
+        "aria-label": accessibilityLabel,
+        onClick: onPress,
+        role: accessibilityRole ?? "presentation",
+        style: flattenStyle(style),
+        type: "button",
+      },
       children,
     );
   TouchableOpacity.displayName = "TouchableOpacity";
@@ -200,7 +320,9 @@ vi.mock("react-native", () => {
   };
 
   const Alert = { alert: vi.fn() };
+  const AccessibilityInfo = { announceForAccessibility: vi.fn() };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
+  const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
   const RefreshControl = createMockComponent("RefreshControl");
 
@@ -235,6 +357,8 @@ vi.mock("react-native", () => {
     setLayoutAnimationEnabledExperimental: vi.fn(),
   };
 
+  const DynamicColorIOS = vi.fn((variants: { light: string; dark: string }) => variants);
+
   return {
     __esModule: true,
     View,
@@ -245,17 +369,26 @@ vi.mock("react-native", () => {
     TextInput,
     Image,
     FlatList,
+    Modal,
     ActivityIndicator,
     RefreshControl,
     Switch,
     StyleSheet,
     Platform,
     Alert,
+    AccessibilityInfo,
     Linking,
+    Share,
     AppState,
     LayoutAnimation,
     UIManager,
-    useWindowDimensions: () => ({ width: 390, height: 844 }),
+    DynamicColorIOS,
+    useWindowDimensions: vi.fn(() => ({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
+    })),
   };
 });
 
@@ -360,9 +493,16 @@ vi.mock("react-native-screens", () => ({}));
 
 // ── Expo module mocks ────────────────────────────────────────────────
 vi.mock("expo-secure-store", () => ({
-  setItemAsync: vi.fn(),
-  getItemAsync: vi.fn(() => Promise.resolve(null)),
-  deleteItemAsync: vi.fn(),
+  setItemAsync: vi.fn((key: string, value: string) => {
+    secureStoreValues.set(key, value);
+    return Promise.resolve();
+  }),
+  getItemAsync: vi.fn((key: string) => Promise.resolve(secureStoreValues.get(key) ?? null)),
+  deleteItemAsync: vi.fn((key: string) => {
+    secureStoreValues.delete(key);
+    return Promise.resolve();
+  }),
+  AFTER_FIRST_UNLOCK: "kSecAttrAccessibleAfterFirstUnlock",
 }));
 
 vi.mock("expo-web-browser", () => ({
@@ -395,11 +535,6 @@ vi.mock("expo-apple-authentication", () => ({
   AppleAuthenticationButtonStyle: { WHITE: 0 },
 }));
 
-vi.mock("expo-camera", () => ({
-  CameraView: () => null,
-  useCameraPermissions: () => [{ granted: false }, vi.fn()],
-}));
-
 vi.mock("expo-haptics", () => ({
   selectionAsync: vi.fn(() => Promise.resolve()),
   impactAsync: vi.fn(() => Promise.resolve()),
@@ -409,16 +544,28 @@ vi.mock("expo-haptics", () => ({
 }));
 
 // ── HealthKit native module mock ─────────────────────────────────────
-vi.mock("./modules/health-kit", () => ({
-  getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
-  hasEverAuthorized: vi.fn(() => false),
-  isBackgroundDeliveryEnabled: vi.fn(() => false),
-  requestAuthorization: vi.fn(() => Promise.resolve(true)),
-  queryWorkouts: vi.fn(() => Promise.resolve([])),
-  queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
-  querySleepSamples: vi.fn(() => Promise.resolve([])),
-  queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
-}));
+vi.mock("./modules/health-kit", async () => {
+  const { createEmptyAnchoredQueryResult } = await import("./modules/health-kit/test-helpers");
+  return {
+    completeAnchoredQuery: vi.fn(() => Promise.resolve(true)),
+    getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
+    hasEverAuthorized: vi.fn(() => false),
+    isAvailable: vi.fn(() => true),
+    isBackgroundDeliveryEnabled: vi.fn(() => false),
+    queryAnchoredSamples: vi.fn(() => Promise.resolve(createEmptyAnchoredQueryResult())),
+    requestPermissions: vi.fn(() => Promise.resolve(true)),
+    requestAuthorization: vi.fn(() => Promise.resolve(true)),
+    queryDailyStatistics: vi.fn(() => Promise.resolve([])),
+    queryCategorySamples: vi.fn(() => Promise.resolve([])),
+    queryQuantitySamples: vi.fn(() => Promise.resolve([])),
+    queryWorkouts: vi.fn(() => Promise.resolve([])),
+    queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
+    querySleepSamples: vi.fn(() => Promise.resolve([])),
+    queryHeartRateSamples: vi.fn(() => Promise.resolve([])),
+    deleteDietarySamples: vi.fn(() => Promise.resolve(0)),
+    purgeAccountState: vi.fn(() => Promise.resolve(true)),
+  };
+});
 
 // ── CoreMotion native module mock ───────────────────────────────────
 vi.mock("./modules/core-motion", () => ({
@@ -430,6 +577,7 @@ vi.mock("./modules/core-motion", () => ({
   queryRecordedData: vi.fn(() => Promise.resolve([])),
   getLastSyncTimestamp: vi.fn(() => null),
   setLastSyncTimestamp: vi.fn(),
+  purgeAccountState: vi.fn(),
 }));
 
 // ── Background Refresh native module mock ──────────────────────────
@@ -448,6 +596,20 @@ vi.mock("expo-updates", () => ({
   isEmbeddedLaunch: true,
 }));
 
+vi.mock("expo-notifications", () => ({
+  SchedulableTriggerInputTypes: {
+    DAILY: "daily",
+  },
+  addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
+  cancelScheduledNotificationAsync: vi.fn(async () => undefined),
+  getAllScheduledNotificationsAsync: vi.fn(async () => []),
+  getLastNotificationResponse: vi.fn(() => null),
+  getPermissionsAsync: vi.fn(async () => ({ status: "undetermined" })),
+  requestPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
+  scheduleNotificationAsync: vi.fn(async () => "notification-id"),
+  setNotificationHandler: vi.fn(),
+}));
+
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
   isBluetoothAvailable: vi.fn(() => false),
@@ -463,6 +625,23 @@ vi.mock("./modules/whoop-ble", () => ({
   getBufferedRealtimeData: vi.fn(() => Promise.resolve([])),
   addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
   disconnect: vi.fn(),
+  purgeAccountState: vi.fn(),
+}));
+
+// ── BLE heart-rate native module mock ──────────────────────────────
+vi.mock("./modules/ble-heart-rate", () => ({
+  isBluetoothAvailable: vi.fn(() => false),
+  scanAndConnect: vi.fn(() => Promise.resolve({ id: "mock-device", name: "Mock HR" })),
+  connect: vi.fn(() => Promise.resolve({ id: "mock-device", name: "Mock HR" })),
+  getConnectionState: vi.fn(() => "idle"),
+  getBufferedSampleCount: vi.fn(() => 0),
+  peekBufferedSamples: vi.fn(() => Promise.resolve([])),
+  confirmSamplesDrain: vi.fn(),
+  disconnectAndClearBufferedSamples: vi.fn(() => Promise.resolve()),
+  disconnect: vi.fn(),
+  addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
+  addHeartRateListener: vi.fn(() => ({ remove: vi.fn() })),
+  purgeAccountState: vi.fn(),
 }));
 
 // ── React Native Maps mock ──────────────────────────────────────────
@@ -499,8 +678,10 @@ vi.mock("./modules/watch-motion", () => ({
   })),
   requestWatchSync: vi.fn(() => Promise.resolve(false)),
   requestWatchRecording: vi.fn(() => Promise.resolve(false)),
-  getPendingWatchSamples: vi.fn(() => Promise.resolve([])),
-  acknowledgeWatchSamples: vi.fn(),
-  getLastWatchSyncTimestamp: vi.fn(() => null),
-  setLastWatchSyncTimestamp: vi.fn(),
+  getPendingWatchFileNames: vi.fn(() => []),
+  getPendingWatchAltitudeFileNames: vi.fn(() => []),
+  readWatchFile: vi.fn(() => Promise.resolve([])),
+  readWatchAltitudeFile: vi.fn(() => Promise.resolve([])),
+  deleteWatchFile: vi.fn(),
+  purgeAccountState: vi.fn(() => Promise.resolve(true)),
 }));

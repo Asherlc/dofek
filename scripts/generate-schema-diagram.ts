@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pgGenerate } from "drizzle-dbml-generator";
 import plantumlEncoder from "plantuml-encoder";
-import * as schema from "../src/db/schema.ts";
+import { drizzleSchema as schema } from "../src/db/drizzle-schema.ts";
 
 const dbmlPath = "docs/schema.dbml";
 const pumlPath = "docs/schema.puml";
@@ -24,6 +24,14 @@ export interface Ref {
   fromCol: string;
   toTable: string;
   toCol: string;
+}
+
+export function normalizeGeneratedDbml(dbml: string): string {
+  return `${dbml
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trimEnd()}\n`;
 }
 
 /** Extract table blocks from DBML by tracking brace depth */
@@ -143,7 +151,8 @@ export function buildPlantUml(tables: Table[], refs: Ref[]): string {
 function main() {
   // Generate DBML from Drizzle schema (also writes the .dbml file)
   pgGenerate({ schema, out: dbmlPath, relational: false });
-  const dbml = readFileSync(dbmlPath, "utf-8");
+  const dbml = normalizeGeneratedDbml(readFileSync(dbmlPath, "utf-8"));
+  writeFileSync(dbmlPath, dbml);
 
   const tables = parseTables(dbml);
   const refs = parseRefs(dbml, tables);

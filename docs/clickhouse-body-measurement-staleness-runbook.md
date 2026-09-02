@@ -1,209 +1,186 @@
 # ClickHouse Body Measurement Staleness Runbook
 
-Use this when recent body weight or other body measurements exist in Postgres
-but are missing from ClickHouse-backed reads.
+Use this when a recent body weight or other body measurement is absent from a
+ClickHouse-backed API response.
 
-## Symptoms
+The current path is:
 
-- The UI does not show yesterday's or today's body weight.
-- Postgres `fitness.metric_stream` has recent `body_weight` rows.
-- ClickHouse `postgres_fitness.metric_stream`,
-  `analytics.body_measurement_sample`, or `analytics.v_body_measurement` is
-  stale.
-
-## 1. Verify Source and Read Model Freshness
-
-Check Postgres, the PeerDB slot, and the three ClickHouse layers before making
-changes:
-
-```bash
-ssh dofek-server 'bash -s' <<'REMOTE'
-set -euo pipefail
-db=$(docker ps --format '{{.Names}}' | grep -E 'dofek[_-]db' | head -1)
-docker exec -i "$db" sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
-SELECT channel, max(recorded_at) AS postgres_latest,
-       count(*) FILTER (WHERE recorded_at >= now() - interval '3 days') AS rows_last_3d
-FROM fitness.metric_stream
-WHERE channel = 'body_weight'
-GROUP BY channel;
-
-SELECT slot_name, active, wal_status,
-       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)) AS flush_lag,
-       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS retained_lag
-FROM pg_replication_slots
-WHERE slot_name LIKE 'peerflow_slot_dofek_%'
-ORDER BY slot_name;
-SQL
-REMOTE
+```text
+provider/mobile writer
+  -> Redpanda metric-stream-v1
+  -> metric-stream-clickhouse-sink
+  -> ClickHouse ingest.metric_stream
+  -> analytics.body_measurement_sample_ingest
+  -> analytics.body_measurement_sample
+  -> dbt analytics.body_measurement
+  -> analytics.v_body_measurement / analytics.daily_body_measurement
 ```
+
+Postgres `fitness.metric_stream` and the PeerDB metric-stream mirror are
+retired. Do not query or repair either one.
+
+## 1. Capture the Failure
+
+Before changing state, record:
+
+1. The missing measurement's user, provider, channel, and expected timestamp.
+2. The first fatal log line from the sink or analytics worker.
+3. Freshness at every ClickHouse layer below.
+
+Use a narrow time range and user/provider filter when available. The broad
+query below is an initial freshness check, not proof that one user's row
+exists:
 
 ```bash
 ssh dofek-server 'bash -s' <<'REMOTE'
 set -euo pipefail
 clickhouse=$(docker ps --format '{{.Names}}' | grep dofek_clickhouse | head -1)
 docker exec -i "$clickhouse" sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD"' <<'SQL'
-SELECT database, view, status, last_refresh_time, last_success_time, exception
-FROM system.view_refreshes
-WHERE database = 'analytics'
-  AND view = 'deduped_sensor'
-ORDER BY view;
-
-SELECT source, latest, rows FROM
+SELECT source, latest, rows
+FROM
 (
-  SELECT 'postgres_fitness.metric_stream' AS source, max(recorded_at) AS latest, count() AS rows
-  FROM postgres_fitness.metric_stream FINAL
-  WHERE channel = 'body_weight'
+  SELECT 'ingest.metric_stream' AS source, max(recorded_at) AS latest, count() AS rows
+  FROM ingest.metric_stream FINAL
+  WHERE is_deleted = 0 AND channel = 'body_weight'
+
   UNION ALL
-  SELECT 'analytics.body_measurement_sample' AS source, max(recorded_at) AS latest, count() AS rows
+
+  SELECT 'analytics.body_measurement_sample', max(recorded_at), count()
   FROM analytics.body_measurement_sample FINAL
+  WHERE _peerdb_is_deleted = 0 AND channel = 'body_weight'
+
   UNION ALL
-  SELECT 'analytics.v_body_measurement' AS source, max(recorded_at) AS latest, count() AS rows
+
+  SELECT 'analytics.v_body_measurement', max(recorded_at), count()
   FROM analytics.v_body_measurement
+
+  UNION ALL
+
+  SELECT 'analytics.daily_body_measurement', max(toDate(date)), count()
+  FROM analytics.daily_body_measurement FINAL
+  WHERE is_deleted = 0
 )
 ORDER BY source;
 SQL
 REMOTE
 ```
 
-## 2. Check for Host-Saturating Refreshes
-
-If production is timing out, check active ClickHouse work:
+Also capture service state and recent errors:
 
 ```bash
-ssh dofek-server 'bash -s' <<'REMOTE'
-set -euo pipefail
-clickhouse=$(docker ps --format '{{.Names}}' | grep dofek_clickhouse | head -1)
-docker exec -i "$clickhouse" sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD"' <<'SQL'
-SELECT query_id, elapsed, formatReadableSize(read_bytes) AS read_bytes,
-       formatReadableSize(memory_usage) AS memory, left(query, 220) AS query
+ssh dofek-server 'docker service ps dofek_metric-stream-clickhouse-sink --no-trunc'
+ssh dofek-server 'docker service ps dofek_analytics-worker --no-trunc'
+ssh dofek-server 'docker service logs --since 30m dofek_metric-stream-clickhouse-sink 2>&1'
+ssh dofek-server 'docker service logs --since 30m dofek_analytics-worker 2>&1'
+```
+
+## 2. Classify the Broken Layer
+
+### Raw row missing from `ingest.metric_stream`
+
+Check Redpanda sink consumer lag and the R2 archive freshness using
+[metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md).
+
+- If the required offsets remain in Redpanda, fix the evidenced sink failure
+  and let the existing consumer group catch up.
+- If the offsets have expired, stop. Bounded R2 replay automation is not
+  currently shipped; implement and validate that recovery path rather than
+  copying from retired Postgres storage.
+
+### Raw row present, projection row missing
+
+First confirm that `analytics.body_measurement_sample_ingest` exists and points
+at `ingest.metric_stream`:
+
+```sql
+SHOW CREATE TABLE analytics.body_measurement_sample_ingest;
+```
+
+Current migrations recreate that materialized view. After the view is healthy,
+use the checked-in bounded repair script to count only missing projection rows:
+
+```bash
+pnpm backfill:body-measurements -- \
+  --start "<start>" \
+  --end "<end>"
+```
+
+Copy `<start>` and `<end>` from the incident evidence captured above. The
+command is a dry run unless `--execute` is supplied. Verify the incident-specific
+window and missing-row count before executing:
+
+```bash
+pnpm backfill:body-measurements -- \
+  --start "<start>" \
+  --end "<end>" \
+  --execute
+```
+
+Run the command only in an approved environment whose `CLICKHOUSE_URL` targets
+the intended deployment. Keep the interval as small as the evidence allows.
+The script anti-joins on row ID and version, so it inserts only missing or
+outdated projection rows.
+
+### Projection row present, serving model missing
+
+Inspect the analytics worker's first failing dbt step. Fix that model or
+prerequisite before rebuilding. For local validation, the canonical command is:
+
+```bash
+pnpm analytics:build
+```
+
+That command uses the local `dev` dbt target; it is not a production repair
+command. In production, confirm the deployed `analytics-worker` completes its
+next scheduled cycle after the source repair. Do not add retries, refresh loops,
+or request-time fallback queries. The `body_measurement` and
+`daily_body_measurement` models are incremental and must advance through the
+normal analytics worker/release path.
+
+## 3. Check Active ClickHouse Work
+
+If the host is saturated, record active work before cancelling anything:
+
+```sql
+SELECT
+  query_id,
+  elapsed,
+  formatReadableSize(read_bytes) AS read_bytes,
+  formatReadableSize(memory_usage) AS memory,
+  left(query, 220) AS query
 FROM system.processes
 WHERE query NOT LIKE '%system.processes%'
 ORDER BY elapsed DESC
 LIMIT 20;
-SQL
-REMOTE
 ```
 
-If a ClickHouse query is scanning all of `postgres_fitness.metric_stream FINAL`
-and the host is unhealthy, stop the active query after recording the query ID.
-The current sensor pipeline is incremental; do not pause or depend on a
-refreshable sensor view.
+Cancel a query only after identifying it as the failing or runaway operation
+and preserving its ID and first fatal evidence:
 
 ```sql
-KILL QUERY WHERE query_id IN ('<query-id-1>', '<query-id-2>') SYNC;
+KILL QUERY WHERE query_id = '<query-id>' SYNC;
 ```
 
-Then inspect `analytics.sensor_dirty_key` backlog and the latest
-`analytics.sensor_scalar_sample._peerdb_synced_at` to confirm the incremental
-pipeline is advancing. Document the incident in
-`docs/production-incident-baseline.md`.
+Cancelling work is containment, not the root-cause fix.
 
-## 3. Decide Whether CDC Missed a Gap
+## 4. Verify
 
-If the PeerDB metric-stream slot is active and `wal_status = 'reserved'`, but
-ClickHouse is still behind Postgres, CDC may have been recreated after the
-missing rows were written. Do not force a full PeerDB resnapshot unless the slot
-is lost or the user explicitly approves the heavier recovery.
+Rerun the layer-freshness query and the user/provider/time-bounded query that
+reproduced the missing row. Healthy means:
 
-For a narrow body-measurement gap, copy only missing body-measurement channels
-after the last ClickHouse body timestamp.
+- the expected live row exists in `ingest.metric_stream`;
+- the same ID/version exists in `analytics.body_measurement_sample`;
+- `analytics.v_body_measurement` contains the canonical measurement;
+- any affected daily consumer contains the expected date;
+- the API response and both clients show the same server-computed value.
 
-First set the gap lower bound from the stale ClickHouse result, then count the
-bounded source rows:
+Finally check service and application health:
 
 ```bash
-GAP_START='2026-05-20 14:09:23+00'
-ssh dofek-server 'bash -s' <<REMOTE
-set -euo pipefail
-db=\$(docker ps --format '{{.Names}}' | grep -E 'dofek[_-]db' | head -1)
-docker exec -i "\$db" sh -lc 'psql -v ON_ERROR_STOP=1 -U "\$POSTGRES_USER" -d "\$POSTGRES_DB"' <<SQL
-SELECT channel, count(*) AS rows, min(recorded_at), max(recorded_at)
-FROM fitness.metric_stream
-WHERE channel IN (
-  'body_weight', 'body_fat_percentage', 'muscle_mass', 'bone_mass',
-  'body_water_percentage', 'body_mass_index', 'height', 'waist_circumference',
-  'systolic_blood_pressure', 'diastolic_blood_pressure', 'heart_pulse',
-  'body_temperature'
-)
-  AND recorded_at > '$GAP_START'
-GROUP BY channel
-ORDER BY channel;
-SQL
-REMOTE
-```
-
-If the row count is small and matches the symptom, copy the bounded rows:
-
-```bash
-GAP_START='2026-05-20 14:09:23+00'
-ssh dofek-server 'bash -s' <<REMOTE
-set -euo pipefail
-db=\$(docker ps --format '{{.Names}}' | grep -E 'dofek[_-]db' | head -1)
-clickhouse=\$(docker ps --format '{{.Names}}' | grep dofek_clickhouse | head -1)
-body_channels="'body_weight','body_fat_percentage','muscle_mass','bone_mass','body_water_percentage','body_mass_index','height','waist_circumference','systolic_blood_pressure','diastolic_blood_pressure','heart_pulse','body_temperature'"
-
-docker exec -i "\$db" sh -lc 'psql -v ON_ERROR_STOP=1 -U "\$POSTGRES_USER" -d "\$POSTGRES_DB"' <<SQL \
-  | docker exec -i "\$clickhouse" sh -lc 'clickhouse-client --password "\$CLICKHOUSE_PASSWORD" --query "INSERT INTO postgres_fitness.metric_stream (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, activity_id, scalar, id) FORMAT TSV"'
-COPY (
-  SELECT
-    to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') AS recorded_at,
-    user_id,
-    provider_id,
-    external_id,
-    device_id,
-    source_type,
-    channel,
-    activity_id,
-    scalar,
-    id
-  FROM fitness.metric_stream
-  WHERE channel IN (\$body_channels)
-    AND recorded_at > '$GAP_START'
-  ORDER BY recorded_at, id
-) TO STDOUT;
-SQL
-REMOTE
-```
-
-The ClickHouse materialized view
-`analytics.body_measurement_sample_ingest` should ingest these inserted raw rows
-into `analytics.body_measurement_sample`.
-
-## 4. Verify the Body Read Model
-
-```bash
-ssh dofek-server 'bash -s' <<'REMOTE'
-set -euo pipefail
-clickhouse=$(docker ps --format '{{.Names}}' | grep dofek_clickhouse | head -1)
-docker exec -i "$clickhouse" sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD"' <<'SQL'
-SELECT source, latest, rows FROM
-(
-  SELECT 'postgres_fitness.metric_stream' AS source, max(recorded_at) AS latest, count() AS rows
-  FROM postgres_fitness.metric_stream FINAL
-  WHERE channel = 'body_weight'
-  UNION ALL
-  SELECT 'analytics.body_measurement_sample' AS source, max(recorded_at) AS latest, count() AS rows
-  FROM analytics.body_measurement_sample FINAL
-  UNION ALL
-  SELECT 'analytics.v_body_measurement' AS source, max(recorded_at) AS latest, count() AS rows
-  FROM analytics.v_body_measurement
-)
-ORDER BY source;
-SQL
-REMOTE
-```
-
-Healthy for this incident means all three ClickHouse layers show the same
-latest body-weight timestamp as Postgres.
-
-## 5. Final Health Checks
-
-```bash
-curl -fsS -w '\nhttp_code=%{http_code} total_time=%{time_total}\n' https://dofek.asherlc.com/healthz
+curl -fsS https://dofek.fit/healthz
 ssh dofek-server 'docker service ls --format "{{.Name}} {{.Replicas}}" | sort'
-ssh dofek-server 'uptime'
 ```
 
-After any mitigation or backfill, append the incident to
-`docs/production-incident-baseline.md` with symptoms, evidence, root cause, fix,
-remaining risk, and follow-up work.
+Append production incidents to
+`docs/production-incident-baseline.md` with symptoms, user impact, exact
+evidence, root cause, fix, validation, remaining risk, and follow-up work.

@@ -1,234 +1,304 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { MenstrualCycleRepository } from "./menstrual-cycle-repository.ts";
 
+function eventRow(
+  localDate: string,
+  providerId = "apple_health",
+  sourceName: string | null = "Cycle Source",
+  sourceBundle: string | null = "com.example.cycle",
+) {
+  return {
+    local_date: localDate,
+    provider_id: providerId,
+    source_name: sourceName,
+    source_bundle: sourceBundle,
+  };
+}
+
+function makeRepository(rows: Record<string, unknown>[]) {
+  const execute = vi.fn().mockResolvedValue(rows);
+  return {
+    execute,
+    repository: new MenstrualCycleRepository(
+      { execute },
+      "00000000-0000-0000-0000-000000000001",
+      "America/Los_Angeles",
+    ),
+  };
+}
+
 describe("MenstrualCycleRepository", () => {
-  function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new MenstrualCycleRepository({ execute }, "user-1");
-    return { repo, execute };
-  }
+  it("groups exact-date provider records and sorts their source attribution", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-07-29"),
+      eventRow("2026-07-01", "z-provider", null, "a.bundle"),
+      eventRow("2026-07-01", "a-provider", "Alpha", "z.bundle"),
+      eventRow("2026-07-01", "a-provider", "Zulu", "z.bundle"),
+    ]);
 
-  describe("getCurrentPhase", () => {
-    it("returns nulls when no period data exists", async () => {
-      const { repo } = makeRepository([]);
+    await expect(repository.getHistory(6, new Date("2026-08-14T12:00:00Z"))).resolves.toEqual([
+      {
+        id: "cycle-start:2026-07-01",
+        startDate: "2026-07-01",
+        sources: [
+          {
+            providerId: "a-provider",
+            sourceName: "Alpha",
+            sourceBundle: "z.bundle",
+          },
+          {
+            providerId: "a-provider",
+            sourceName: "Zulu",
+            sourceBundle: "z.bundle",
+          },
+          {
+            providerId: "z-provider",
+            sourceName: null,
+            sourceBundle: "a.bundle",
+          },
+        ],
+      },
+      {
+        id: "cycle-start:2026-07-29",
+        startDate: "2026-07-29",
+        sources: [
+          {
+            providerId: "apple_health",
+            sourceName: "Cycle Source",
+            sourceBundle: "com.example.cycle",
+          },
+        ],
+      },
+    ]);
+  });
 
-      const result = await repo.getCurrentPhase();
+  it("sorts null source fields before populated fields in either input order", async () => {
+    const nullSource = eventRow("2026-07-01", "apple_health", null, null);
+    const populatedSource = eventRow(
+      "2026-07-01",
+      "apple_health",
+      "Cycle Source",
+      "com.example.cycle",
+    );
+    const expectedSources = [
+      { providerId: "apple_health", sourceName: null, sourceBundle: null },
+      {
+        providerId: "apple_health",
+        sourceName: "Cycle Source",
+        sourceBundle: "com.example.cycle",
+      },
+    ];
 
-      expect(result).toEqual({ phase: null, dayOfCycle: null, cycleLength: null });
-    });
+    for (const rows of [
+      [nullSource, populatedSource],
+      [populatedSource, nullSource],
+    ]) {
+      const { repository } = makeRepository(rows);
+      const history = await repository.getHistory(6, new Date("2026-08-14T12:00:00Z"));
+      expect(history[0]?.sources).toEqual(expectedSources);
+    }
+  });
 
-    it("computes menstrual phase for day 1 of cycle", async () => {
-      const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
+  it("sorts populated source names in either input order", async () => {
+    const alpha = eventRow("2026-07-01", "apple_health", "Alpha", "com.example.cycle");
+    const zulu = eventRow("2026-07-01", "apple_health", "Zulu", "com.example.cycle");
 
-      const result = await repo.getCurrentPhase(today);
+    for (const rows of [
+      [alpha, zulu],
+      [zulu, alpha],
+    ]) {
+      const { repository } = makeRepository(rows);
+      const history = await repository.getHistory(6, new Date("2026-08-14T12:00:00Z"));
+      expect(history[0]?.sources.map((source) => source.sourceName)).toEqual(["Alpha", "Zulu"]);
+    }
+  });
 
-      expect(result.phase).toBe("menstrual");
-      expect(result.dayOfCycle).toBe(1);
-      expect(result.cycleLength).toBe(28);
-    });
+  it("uses local calendar boundaries and clamps month-end history ranges", async () => {
+    const { repository, execute } = makeRepository([]);
 
-    it("computes follicular phase for day 8 of 28-day cycle", async () => {
-      const today = new Date("2025-01-22T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
+    await repository.getHistory(1, new Date("2025-04-01T06:30:00Z"));
 
-      const result = await repo.getCurrentPhase(today);
+    const statement = execute.mock.calls[0]?.[0];
+    expect(statement).toBeDefined();
+    const query = new PgDialect().sqlToQuery(statement);
+    expect(query.params).toContain("2025-02-28");
+    expect(query.params).toContain("2025-04-01");
+  });
 
-      expect(result.phase).toBe("follicular");
-      expect(result.dayOfCycle).toBe(8);
-    });
+  it("returns a provider-record no-history state", async () => {
+    const { repository } = makeRepository([]);
+    const result = await repository.getCurrentPhase(new Date("2026-08-14T12:00:00Z"));
 
-    it("computes ovulatory phase around ovulation day", async () => {
-      // Ovulation for 28-day cycle: day 14 (28-14=14), window is 13-15
-      const today = new Date("2025-01-28T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
-
-      const result = await repo.getCurrentPhase(today);
-
-      expect(result.phase).toBe("ovulatory");
-      expect(result.dayOfCycle).toBe(14);
-    });
-
-    it("computes luteal phase after ovulatory window", async () => {
-      // Day 20 of 28-day cycle is luteal
-      const today = new Date("2025-02-03T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
-
-      const result = await repo.getCurrentPhase(today);
-
-      expect(result.phase).toBe("luteal");
-      expect(result.dayOfCycle).toBe(20);
-    });
-
-    it("uses default 28-day cycle when no average available", async () => {
-      const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: null }]);
-
-      const result = await repo.getCurrentPhase(today);
-
-      expect(result.cycleLength).toBe(28);
-      expect(result.phase).toBe("menstrual");
-    });
-
-    it("returns null phase when past cycle length + 7 days", async () => {
-      // Day 40 of a 28-day cycle (40 > 28+7=35)
-      const today = new Date("2025-02-23T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
-
-      const result = await repo.getCurrentPhase(today);
-
-      expect(result.phase).toBeNull();
-      expect(result.dayOfCycle).toBeNull();
-      expect(result.cycleLength).toBe(28);
-    });
-
-    it("rounds average cycle length to nearest integer", async () => {
-      const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "29.7" }]);
-
-      const result = await repo.getCurrentPhase(today);
-
-      expect(result.cycleLength).toBe(30);
-    });
-
-    it("handles Date objects from postgres driver", async () => {
-      const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: new Date("2025-01-15"), avg_cycle_length: "28" },
-      ]);
-
-      const result = await repo.getCurrentPhase(today);
-
-      expect(result.phase).toBe("menstrual");
-      expect(result.dayOfCycle).toBe(1);
+    expect(result).toMatchObject({
+      phase: null,
+      latestCycleStart: null,
+      availability: { status: "no-history", label: expect.stringContaining("provider records") },
     });
   });
 
-  describe("logPeriod", () => {
-    it("returns the inserted period with camelCase fields", async () => {
-      const { repo } = makeRepository([
-        {
-          id: "period-1",
-          start_date: "2025-01-15",
-          end_date: "2025-01-19",
-          notes: "Light flow",
-        },
-      ]);
+  it("estimates from three completed regular cycles", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-05-13"),
+      eventRow("2026-06-10"),
+      eventRow("2026-07-08"),
+      eventRow("2026-08-05"),
+    ]);
 
-      const result = await repo.logPeriod("2025-01-15", "2025-01-19", "Light flow");
+    const result = await repository.getCurrentPhase(new Date("2026-08-14T12:00:00Z"));
 
-      expect(result).toEqual({
-        id: "period-1",
-        startDate: "2025-01-15",
-        endDate: "2025-01-19",
-        notes: "Light flow",
-      });
-    });
-
-    it("returns null when insert returns no rows", async () => {
-      const { repo } = makeRepository([]);
-
-      const result = await repo.logPeriod("2025-01-15", null, null);
-
-      expect(result).toBeNull();
-    });
-
-    it("handles null end date and notes", async () => {
-      const { repo } = makeRepository([
-        {
-          id: "period-2",
-          start_date: "2025-01-15",
-          end_date: null,
-          notes: null,
-        },
-      ]);
-
-      const result = await repo.logPeriod("2025-01-15", null, null);
-
-      expect(result).toEqual({
-        id: "period-2",
-        startDate: "2025-01-15",
-        endDate: null,
-        notes: null,
-      });
-    });
-
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([
-        { id: "period-1", start_date: "2025-01-15", end_date: null, notes: null },
-      ]);
-
-      await repo.logPeriod("2025-01-15", null, null);
-
-      expect(execute).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      phase: "follicular",
+      dayOfCycle: 10,
+      cycleLength: 28,
+      latestCycleStart: { id: "cycle-start:2026-08-05" },
+      estimate: {
+        completedCycleCount: 3,
+        observedCycleLengthRange: { minimumDays: 28, maximumDays: 28 },
+        uncertaintyLabel: "All 3 recorded cycles were 28 days long.",
+      },
+      availability: { status: "estimated" },
     });
   });
 
-  describe("getHistory", () => {
-    it("returns empty array when no periods exist", async () => {
-      const { repo } = makeRepository([]);
+  it("reports the observed range for varying regular cycles", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-05-01"),
+      eventRow("2026-05-28"),
+      eventRow("2026-06-27"),
+      eventRow("2026-07-26"),
+    ]);
 
-      const result = await repo.getHistory(6);
+    const result = await repository.getCurrentPhase(new Date("2026-08-01T12:00:00Z"));
 
-      expect(result).toEqual([]);
+    expect(result).toMatchObject({
+      cycleLength: 29,
+      estimate: {
+        observedCycleLengthRange: { minimumDays: 27, maximumDays: 30 },
+        uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 30 days.",
+      },
+      availability: { status: "estimated" },
     });
+  });
 
-    it("maps DB rows to MenstrualPeriod objects", async () => {
-      const { repo } = makeRepository([
-        {
-          id: "period-1",
-          start_date: "2025-01-01",
-          end_date: "2025-01-05",
-          notes: "Normal flow",
-        },
-        {
-          id: "period-2",
-          start_date: "2025-01-29",
-          end_date: null,
-          notes: null,
-        },
-      ]);
+  it("accepts the 21-day minimum and nine-day variation boundary", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-01-01"),
+      eventRow("2026-01-22"),
+      eventRow("2026-02-21"),
+      eventRow("2026-03-17"),
+    ]);
 
-      const result = await repo.getHistory(6);
+    const result = await repository.getCurrentPhase(new Date("2026-03-20T12:00:00Z"));
 
-      expect(result).toEqual([
-        {
-          id: "period-1",
-          startDate: "2025-01-01",
-          endDate: "2025-01-05",
-          notes: "Normal flow",
-        },
-        {
-          id: "period-2",
-          startDate: "2025-01-29",
-          endDate: null,
-          notes: null,
-        },
-      ]);
+    expect(result.availability.status).toBe("estimated");
+    expect(result.estimate?.observedCycleLengthRange).toEqual({
+      minimumDays: 21,
+      maximumDays: 30,
     });
+  });
 
-    it("handles Date objects from postgres driver", async () => {
-      const { repo } = makeRepository([
-        {
-          id: "period-1",
-          start_date: new Date("2025-01-01"),
-          end_date: new Date("2025-01-05"),
-          notes: "Normal",
-        },
-      ]);
+  it("accepts the 35-day maximum boundary", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-03-01"),
+      eventRow("2026-04-05"),
+      eventRow("2026-05-10"),
+      eventRow("2026-06-14"),
+    ]);
 
-      const result = await repo.getHistory(6);
+    const result = await repository.getCurrentPhase(new Date("2026-06-18T12:00:00Z"));
 
-      expect(result[0]?.startDate).toBe("2025-01-01");
-      expect(result[0]?.endDate).toBe("2025-01-05");
+    expect(result.availability.status).toBe("estimated");
+    expect(result.cycleLength).toBe(35);
+  });
+
+  it("withholds an estimate for sparse history", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-07-01"),
+      eventRow("2026-07-29"),
+      eventRow("2026-08-26"),
+    ]);
+
+    const result = await repository.getCurrentPhase(new Date("2026-08-30T12:00:00Z"));
+    expect(result.availability.status).toBe("sparse-history");
+    expect(result.phase).toBeNull();
+  });
+
+  it("withholds an estimate for irregular intervals", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-04-01"),
+      eventRow("2026-05-07"),
+      eventRow("2026-06-12"),
+      eventRow("2026-07-18"),
+    ]);
+
+    const result = await repository.getCurrentPhase(new Date("2026-07-20T12:00:00Z"));
+    expect(result.availability.status).toBe("irregular-history");
+    expect(result.phase).toBeNull();
+  });
+
+  it("withholds an estimate when regular-length cycles vary by ten days", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-01-01"),
+      eventRow("2026-01-22"),
+      eventRow("2026-02-22"),
+      eventRow("2026-03-18"),
+    ]);
+
+    const result = await repository.getCurrentPhase(new Date("2026-03-20T12:00:00Z"));
+
+    expect(result.availability.status).toBe("irregular-history");
+    expect(result.availability.label).toContain("21 to 31 days");
+  });
+
+  it("reports conflicting distinct starts fewer than 21 days apart", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-06-01"),
+      eventRow("2026-06-20", "garmin"),
+      eventRow("2026-07-15"),
+    ]);
+
+    const result = await repository.getCurrentPhase(new Date("2026-06-25T12:00:00Z"));
+    expect(result.availability).toEqual({
+      status: "conflicting-history",
+      label: expect.stringContaining("2026-06-01 and 2026-06-20"),
     });
+    expect(result.availability.label).not.toContain("2026-07-15");
+    expect(result.phase).toBeNull();
+  });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
+  it("withholds a stale estimate and directs correction to the source", async () => {
+    const { repository } = makeRepository([
+      eventRow("2026-03-01"),
+      eventRow("2026-03-29"),
+      eventRow("2026-04-26"),
+      eventRow("2026-05-24"),
+    ]);
 
-      await repo.getHistory(12);
-
-      expect(execute).toHaveBeenCalledTimes(1);
+    const result = await repository.getCurrentPhase(new Date("2026-07-10T12:00:00Z"));
+    expect(result.availability).toEqual({
+      status: "stale-history",
+      label: expect.stringContaining("source and sync again"),
     });
+    expect(result.phase).toBeNull();
+  });
+
+  it("keeps an estimate through the stale-window boundary", async () => {
+    const rows = [
+      eventRow("2026-03-01"),
+      eventRow("2026-03-29"),
+      eventRow("2026-04-26"),
+      eventRow("2026-05-24"),
+    ];
+    const boundary = await makeRepository(rows).repository.getCurrentPhase(
+      new Date("2026-06-27T12:00:00Z"),
+    );
+    const stale = await makeRepository(rows).repository.getCurrentPhase(
+      new Date("2026-06-28T12:00:00Z"),
+    );
+
+    expect(boundary.dayOfCycle).toBe(35);
+    expect(boundary.availability.status).toBe("estimated");
+    expect(stale.availability.status).toBe("stale-history");
   });
 });

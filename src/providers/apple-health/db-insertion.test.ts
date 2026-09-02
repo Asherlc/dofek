@@ -1,6 +1,10 @@
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import type { SQLWrapper } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
   ALL_ROUTED_TYPES,
   BODY_MEASUREMENT_TYPES,
@@ -17,9 +21,16 @@ import {
   upsertSleepBatch,
   upsertWorkoutBatch,
 } from "./db-insertion.ts";
+import * as hangTenIntervals from "./hang-ten-intervals.ts";
 import { type HealthRecord, parseRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
+
+vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
 
 const { metricStreamCapture } = vi.hoisted<{
   metricStreamCapture: {
@@ -34,11 +45,18 @@ const { metricStreamCapture } = vi.hoisted<{
   },
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  upsertProviderActivity: vi.fn(),
+}));
+
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[], partitionKey?: string) => {
+    publishRows: async (
+      rows: readonly Record<string, unknown>[],
+      options: { partitionKey?: string },
+    ) => {
       metricStreamCapture.current?.values.push([...rows]);
-      metricStreamCapture.current?.partitionKeys.push(partitionKey);
+      metricStreamCapture.current?.partitionKeys.push(options.partitionKey);
       return rows.map((row, index) => ({
         version: 1,
         id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
@@ -70,21 +88,65 @@ vi.mock("../../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+vi.mock("../../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Mock DB helper
 // ---------------------------------------------------------------------------
 
 interface MockInsertCapture {
   values: Record<string, unknown>[][];
+  executions: { sql: string; params: unknown[] }[];
   partitionKeys: Array<string | undefined>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSqlWrapper(value: unknown): value is SQLWrapper {
+  return isRecord(value) && typeof value.getSQL === "function";
+}
+
+function findActivityUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    if (isRecord(values) && predicate(values)) return values;
+  }
+  return undefined;
+}
+
+type TransactionalMockDatabase = SyncDatabase & {
+  transaction<TResult>(work: (transaction: SyncDatabase) => Promise<TResult>): Promise<TResult>;
+};
+
 function createMockDb(returningData: Record<string, unknown>[] = []): {
-  db: SyncDatabase;
+  db: TransactionalMockDatabase;
   capture: MockInsertCapture;
 } {
-  const capture: MockInsertCapture = { values: [], partitionKeys: [] };
+  const capture: MockInsertCapture = { values: [], executions: [], partitionKeys: [] };
+  const dialect = new PgDialect();
   metricStreamCapture.current = capture;
+
+  let returnIndex = 0;
+  providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockImplementation(async () => {
+    const template = returningData[returnIndex] ??
+      returningData[returningData.length - 1] ?? {
+        id: "10000000-0000-4000-8000-000000000001",
+      };
+    returnIndex += 1;
+    if (template.id === undefined) return undefined;
+    return { id: String(template.id) };
+  });
 
   function makeChainable(): Promise<undefined> {
     return Object.assign(Promise.resolve(undefined), {
@@ -111,12 +173,17 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
     where: vi.fn().mockResolvedValue(undefined),
   };
 
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase<SyncDatabase>({
     select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
     delete: vi.fn().mockReturnValue(deleteChain),
-    execute: vi.fn(),
-  };
+    execute: vi.fn((query: SQLWrapper | string) => {
+      const compiled =
+        typeof query === "string" ? { sql: query, params: [] } : dialect.sqlToQuery(query.getSQL());
+      capture.executions.push({ sql: compiled.sql, params: compiled.params });
+      return Promise.resolve([]);
+    }),
+  });
 
   return { db, capture };
 }
@@ -144,7 +211,7 @@ function makeRecord(overrides: Partial<HealthRecord> & { type: string }): Health
 
 function makeWorkout(overrides: Partial<HealthWorkout> = {}): HealthWorkout {
   return {
-    activityType: "running",
+    activityType: resolveProviderActivityType("HKWorkoutActivityTypeRunning", "running"),
     sourceName: "Apple Watch",
     durationSeconds: 1800,
     startDate: new Date("2024-03-01T18:00:00Z"),
@@ -717,39 +784,6 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ steps: 2050, date: "2024-03-01" });
   });
 
-  it("sums active energy across records on the same day", async () => {
-    const { db, capture } = createMockDb();
-    const records = [
-      makeRecord({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 200,
-        startDate: new Date("2024-03-01T10:00:00Z"),
-      }),
-      makeRecord({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 150,
-        startDate: new Date("2024-03-01T15:00:00Z"),
-      }),
-    ];
-
-    await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ activeEnergyKcal: 350 });
-  });
-
-  it("sums basal energy", async () => {
-    const { db, capture } = createMockDb();
-    const records = [
-      makeRecord({
-        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-        value: 1500,
-        startDate: new Date("2024-03-01T00:00:00Z"),
-      }),
-    ];
-
-    await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ basalEnergyKcal: 1500 });
-  });
-
   it("ignores provider resting HR as a daily metric", async () => {
     const { db, capture } = createMockDb();
     const records = [
@@ -782,20 +816,6 @@ describe("upsertDailyMetricsBatch", () => {
 
     await upsertDailyMetricsBatch(db, "p1", records);
     expect(capture.values[0]?.[0]).toMatchObject({ distanceKm: 5.2 });
-  });
-
-  it("converts cycling distance from meters to km", async () => {
-    const { db, capture } = createMockDb();
-    const records = [
-      makeRecord({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 25000,
-        startDate: new Date("2024-03-01T10:00:00Z"),
-      }),
-    ];
-
-    await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ cyclingDistanceKm: 25 });
   });
 
   it("rounds flights climbed to integer", async () => {
@@ -1380,6 +1400,39 @@ describe("upsertHealthEventBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertWorkoutBatch", () => {
+  it("requires a transactional database", async () => {
+    const { db } = createMockDb();
+    const nonTransactionalDb: SyncDatabase = {
+      select: db.select,
+      insert: db.insert,
+      delete: db.delete,
+      execute: db.execute,
+    };
+
+    await expect(upsertWorkoutBatch(nonTransactionalDb, "p1", [makeWorkout()])).rejects.toThrow(
+      "Apple Health workout upsert requires a transactional database",
+    );
+  });
+
+  it("rejects a database with a non-callable transaction member", async () => {
+    const { db } = createMockDb();
+    const invalidTransactionDb = { ...db, transaction: undefined };
+
+    await expect(upsertWorkoutBatch(invalidTransactionDb, "p1", [makeWorkout()])).rejects.toThrow(
+      "Apple Health workout upsert requires a transactional database",
+    );
+  });
+
+  it("runs workout upserts inside one transaction", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const transactionSpy = vi.spyOn(db, "transaction");
+
+    await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+
+    expect(transactionSpy).toHaveBeenCalledOnce();
+    expect(transactionSpy).toHaveBeenCalledWith(expect.any(Function));
+  });
+
   it("deduplicates workouts with the same startDate", async () => {
     const sharedStart = new Date("2024-06-01T08:00:00Z");
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
@@ -1402,7 +1455,10 @@ describe("upsertWorkoutBatch", () => {
     const workouts = [
       makeWorkout({ startDate: new Date("2024-06-01T08:00:00Z") }),
       makeWorkout({ startDate: new Date("2024-06-01T08:00:00Z"), sourceName: "iPhone" }),
-      makeWorkout({ startDate: new Date("2024-06-01T10:00:00Z"), activityType: "cycling" }),
+      makeWorkout({
+        startDate: new Date("2024-06-01T10:00:00Z"),
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
+      }),
     ];
 
     const count = await upsertWorkoutBatch(db, "p1", workouts);
@@ -1412,20 +1468,213 @@ describe("upsertWorkoutBatch", () => {
   it("builds correct insert row fields", async () => {
     const start = new Date("2024-06-01T08:00:00Z");
     const end = new Date("2024-06-01T08:30:00Z");
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
-      makeWorkout({ startDate: start, endDate: end, activityType: "cycling", sourceName: "Wahoo" }),
+      makeWorkout({
+        startDate: start,
+        endDate: end,
+        activityType: resolveProviderActivityType("HKWorkoutActivityTypeCycling", "cycling"),
+        sourceName: "Wahoo",
+      }),
     ]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({
+    expect(
+      findActivityUpsertValues((row) => row.externalId === `ah:workout:${start.toISOString()}`),
+    ).toMatchObject({
       providerId: "p1",
       externalId: `ah:workout:${start.toISOString()}`,
-      activityType: "cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "HKWorkoutActivityTypeCycling",
+        modality: null,
+      },
       startedAt: start,
       endedAt: end,
       sourceName: "Wahoo",
     });
+  });
+
+  it("uses Hang Ten session metadata for hangboard activity rows", async () => {
+    const start = new Date("2026-08-07T14:00:00Z");
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        startDate: start,
+        hangTen: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          planName: "7/3 Repeaters",
+          boardId: "metolius-compact-ii",
+          boardName: "Metolius Compact II",
+          rawActivitySegments: '{"segments":[],"version":1}',
+          activitySegments: [],
+        },
+      }),
+    ]);
+
+    expect(
+      findActivityUpsertValues(
+        (row) => row.externalId === "ah:workout:11111111-1111-4111-8111-111111111111",
+      ),
+    ).toMatchObject({
+      providerId: "apple_health",
+      externalId: "ah:workout:11111111-1111-4111-8111-111111111111",
+      activityType: {
+        canonicalType: "hangboard",
+        providerType: "Hang Ten",
+        modality: null,
+      },
+      name: "7/3 Repeaters",
+      sourceName: "Hang Ten",
+      raw: {
+        durationSeconds: 1800,
+        hangTen: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          planName: "7/3 Repeaters",
+          boardId: "metolius-compact-ii",
+          boardName: "Metolius Compact II",
+          rawActivitySegments: '{"segments":[],"version":1}',
+          activitySegments: [],
+        },
+      },
+    });
+  });
+
+  it("updates the activity name from a reimported Hang Ten plan", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        hangTen: { planName: "Updated Repeaters" },
+      }),
+    ]);
+
+    const update = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls[0]?.[2];
+    const nameExpression = isRecord(update) ? update.name : undefined;
+    expect(nameExpression).toBeDefined();
+    if (!isSqlWrapper(nameExpression)) throw new Error("Expected a SQL name expression");
+
+    const compiled = new PgDialect().sqlToQuery(nameExpression.getSQL());
+    expect(compiled.sql).toContain("excluded.canonical_type = 'hangboard'");
+    expect(compiled.sql).toContain("excluded.name");
+  });
+
+  it("preserves a Hang Ten segment parse error without inserting intervals", async () => {
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        hangTen: {
+          planName: "Repeaters",
+          rawActivitySegments: "{not-json}",
+          activitySegmentsError: "Unexpected token n in JSON at position 1",
+        },
+      }),
+    ]);
+
+    expect(capture.executions).toHaveLength(0);
+    expect(findActivityUpsertValues(() => true)).toMatchObject({
+      raw: {
+        hangTen: {
+          rawActivitySegments: "{not-json}",
+          activitySegmentsError: "Unexpected token n in JSON at position 1",
+        },
+      },
+    });
+  });
+
+  it("uses returned activity IDs for Hang Ten interval replacement", async () => {
+    const firstStart = new Date("2026-08-07T14:00:00Z");
+    const secondStart = new Date("2026-08-07T15:00:00Z");
+    const firstActivityId = "10000000-0000-4000-8000-000000000001";
+    const secondActivityId = "10000000-0000-4000-8000-000000000002";
+    const { db, capture } = createMockDb([{ id: firstActivityId }, { id: secondActivityId }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        startDate: firstStart,
+        hangTen: {
+          sessionId: "session-first",
+          planName: "First Plan",
+          activitySegments: [
+            {
+              stepID: "first-step",
+              stepNumber: 1,
+              kind: "work",
+              holdIDs: [],
+              holdType: "first-hold",
+              durationSeconds: 7,
+            },
+          ],
+        },
+        routeLocations: [{ date: firstStart, lat: 11, lng: 12 }],
+      }),
+      makeWorkout({
+        activityType: resolveProviderActivityType("Hang Ten", "hangboard"),
+        sourceName: "Hang Ten",
+        startDate: secondStart,
+        hangTen: {
+          sessionId: "session-second",
+          planName: "Second Plan",
+          activitySegments: [
+            {
+              stepID: "second-step",
+              stepNumber: 2,
+              kind: "work",
+              holdIDs: [],
+              holdType: "second-hold",
+              durationSeconds: 8,
+            },
+          ],
+        },
+        routeLocations: [{ date: secondStart, lat: 21, lng: 22 }],
+      }),
+    ]);
+
+    const intervalReplacements = capture.executions.filter((execution) =>
+      execution.sql.includes("activity_interval"),
+    );
+    expect(intervalReplacements).toHaveLength(2);
+    expect(intervalReplacements[0]?.sql).toMatch(
+      /INSERT INTO "fitness"\."activity_interval" \(activity_id, interval_index, label, interval_type, started_at, ended_at\)/,
+    );
+    expect(intervalReplacements.map((replacement) => replacement.params)).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining([firstActivityId, "Step 1: first-hold"]),
+        expect.arrayContaining([secondActivityId, "Step 2: second-hold"]),
+      ]),
+    );
+  });
+
+  it("does not replace Hang Ten intervals for a non-Hang-Ten workout", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const replacementSpy = vi.spyOn(hangTenIntervals, "replaceHangTenIntervals");
+
+    try {
+      await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+      expect(replacementSpy).not.toHaveBeenCalled();
+    } finally {
+      replacementSpy.mockRestore();
+    }
+  });
+
+  it("does not process Hang Ten intervals when the activity upsert returns no row", async () => {
+    const { db, capture } = createMockDb([{ id: undefined }]);
+    const count = await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+
+    expect(count).toBe(0);
+    expect(
+      capture.executions.some((execution) => execution.sql.includes("activity_interval")),
+    ).toBe(false);
   });
 
   it("inserts GPS route locations for workouts", async () => {
@@ -1444,9 +1693,9 @@ describe("upsertWorkoutBatch", () => {
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })]),
     );
 
-    // First insert is the activity, second is metric_stream rows.
-    expect(capture.values).toHaveLength(2);
-    expect(capture.values[1]).toContainEqual(
+    // Activity upsert goes through upsertProviderActivity; capture only has metric_stream rows.
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId,
@@ -1455,7 +1704,7 @@ describe("upsertWorkoutBatch", () => {
         metadata: { horizontal_accuracy_m: 5.2 },
       }),
     );
-    expect(capture.values[1]).toContainEqual(
+    expect(capture.values[0]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId,
@@ -1463,7 +1712,7 @@ describe("upsertWorkoutBatch", () => {
         scalar: 10.5,
       }),
     );
-    expect(capture.values[1]).toContainEqual(
+    expect(capture.values[0]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId,
@@ -1478,8 +1727,7 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [] })]);
 
-    // Only the activity insert, no GPS insert
-    expect(capture.values).toHaveLength(1);
+    expect(capture.values).toHaveLength(0);
   });
 
   it("handles undefined horizontalAccuracy in GPS", async () => {
@@ -1494,47 +1742,83 @@ describe("upsertWorkoutBatch", () => {
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]),
     );
 
-    const locationRow = capture.values[1]?.find((row) => row.channel === "location");
+    const locationRow = capture.values[0]?.find((row) => row.channel === "location");
     expect(locationRow?.metadata).toBeNull();
   });
 
   it("populates raw JSONB with workout metrics", async () => {
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({
         distanceMeters: 5200,
-        calories: 320,
         avgHeartRate: 148,
         maxHeartRate: 182,
         durationSeconds: 1830,
       }),
     ]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({
-      raw: {
-        distanceMeters: 5200,
-        calories: 320,
-        avgHeartRate: 148,
-        maxHeartRate: 182,
-        durationSeconds: 1830,
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      distanceMeters: 5200,
+      avgHeartRate: 148,
+      maxHeartRate: 182,
+      durationSeconds: 1830,
+    });
+  });
+
+  it("preserves the original Apple Health workout classification input in raw JSONB", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType(
+          "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          "strength",
+        ),
+        sourceName: null,
+        metadata: {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "7/3 Repeaters",
+        },
+      }),
+    ]);
+
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      appleHealth: {
+        workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+        sourceName: null,
+        metadata: {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "7/3 Repeaters",
+        },
       },
     });
   });
 
   it("omits undefined optional fields from raw JSONB", async () => {
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
 
-    const row = capture.values[0]?.[0];
-    expect(row?.raw).toBeDefined();
-    const raw = row?.raw;
+    const raw = findActivityUpsertValues(() => true)?.raw;
     expect(raw).toMatchObject({ durationSeconds: 1800 });
     expect(raw).not.toHaveProperty("distanceMeters");
-    expect(raw).not.toHaveProperty("calories");
     expect(raw).not.toHaveProperty("avgHeartRate");
     expect(raw).not.toHaveProperty("maxHeartRate");
+  });
+
+  it("omits an empty Apple Health metadata map from raw JSONB", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [makeWorkout({ metadata: {} })]);
+
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      appleHealth: {
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        sourceName: "Apple Watch",
+      },
+    });
+    expect(findActivityUpsertValues(() => true)?.raw).not.toHaveProperty("appleHealth.metadata");
   });
 
   it("does not update existing heart-rate metric_stream rows after workout insert", async () => {
@@ -1656,6 +1940,7 @@ describe("upsertSleepBatch", () => {
       remMinutes: 90,
       lightMinutes: 120,
       awakeMinutes: 15,
+      stagingAvailable: true,
     });
   });
 
@@ -1711,16 +1996,66 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it("stores 0 for zero stage durations instead of undefined", async () => {
+  it("stores null stage values and marks staging unavailable when no stages were reported", async () => {
     const { db, capture } = createMockDb();
-    // No stage records — all durations are 0
     const records = [makeSleep()];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toHaveProperty("deepMinutes", 0);
-    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
-    expect(capture.values[0]?.[0]).toHaveProperty("lightMinutes", 0);
-    expect(capture.values[0]?.[0]).toHaveProperty("awakeMinutes", 0);
+    expect(capture.values[0]?.[0]).toMatchObject({
+      deepMinutes: null,
+      remMinutes: null,
+      lightMinutes: null,
+      awakeMinutes: null,
+      stagingAvailable: false,
+    });
+  });
+
+  it.each(["deep", "rem", "core"] as const)(
+    "marks staging available when Apple Health reports a %s stage",
+    async (stage) => {
+      const { db, capture } = createMockDb();
+      const bedStart = new Date("2024-03-01T23:00:00Z");
+      const bedEnd = new Date("2024-03-02T07:00:00Z");
+
+      await upsertSleepBatch(db, "p1", [
+        makeSleep({ startDate: bedStart, endDate: bedEnd }),
+        makeSleep({
+          stage,
+          startDate: new Date("2024-03-02T00:00:00Z"),
+          endDate: new Date("2024-03-02T01:00:00Z"),
+          durationMinutes: 60,
+        }),
+      ]);
+
+      expect(capture.values[0]?.[0]).toMatchObject({
+        awakeMinutes: 0,
+        stagingAvailable: true,
+      });
+    },
+  );
+
+  it("preserves an awake-only measurement without claiming a stage bundle", async () => {
+    const { db, capture } = createMockDb();
+    const bedStart = new Date("2024-03-01T23:00:00Z");
+    const bedEnd = new Date("2024-03-02T07:00:00Z");
+
+    await upsertSleepBatch(db, "p1", [
+      makeSleep({ startDate: bedStart, endDate: bedEnd }),
+      makeSleep({
+        stage: "awake",
+        startDate: new Date("2024-03-02T00:00:00Z"),
+        endDate: new Date("2024-03-02T00:15:00Z"),
+        durationMinutes: 15,
+      }),
+    ]);
+
+    expect(capture.values[0]?.[0]).toMatchObject({
+      deepMinutes: null,
+      remMinutes: null,
+      lightMinutes: null,
+      awakeMinutes: 15,
+      stagingAvailable: false,
+    });
   });
 
   it("only includes stage records within the inBed time window", async () => {
@@ -1755,7 +2090,7 @@ describe("upsertSleepBatch", () => {
 
     await upsertSleepBatch(db, "p1", records);
     // Only the 60min deep inside the window should be counted
-    expect(capture.values[0]?.[0]).toMatchObject({ deepMinutes: 60 });
+    expect(capture.values[0]?.[0]).toMatchObject({ deepMinutes: 60, stagingAvailable: true });
     expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
   });
 

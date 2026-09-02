@@ -1,16 +1,16 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import { EightSleepClient } from "eight-sleep-client/client";
+import { EightSleepClient } from "@dofek/eight-sleep/client";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
-} from "eight-sleep-client/parsing";
-import type { EightSleepTrendDay } from "eight-sleep-client/types";
+} from "@dofek/eight-sleep/parsing";
+import type { EightSleepTrendDay } from "@dofek/eight-sleep/types";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { AccessTokenExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -33,7 +33,7 @@ export class EightSleepProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "eight-sleep" });
+    this.#fetchFn = createProviderRateLimitFetch("eight-sleep", fetchFn);
   }
 
   validate(): string | null {
@@ -131,6 +131,7 @@ export class EightSleepProvider implements SyncProvider {
                   remMinutes: parsed.remMinutes,
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
+                  stagingAvailable: parsed.stagingAvailable,
                   sleepType: parsed.sleepType,
                 })
                 .onConflictDoUpdate({
@@ -143,6 +144,7 @@ export class EightSleepProvider implements SyncProvider {
                     remMinutes: parsed.remMinutes,
                     lightMinutes: parsed.lightMinutes,
                     awakeMinutes: parsed.awakeMinutes,
+                    stagingAvailable: parsed.stagingAvailable,
                     sleepType: parsed.sleepType,
                   },
                 });

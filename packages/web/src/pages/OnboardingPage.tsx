@@ -1,77 +1,61 @@
-import {
-  GET_STARTED_GOALS,
-  GET_STARTED_STEPS,
-  type GetStartedGoalId,
-} from "@dofek/onboarding/get-started-flow";
+import { GET_STARTED_STEPS, IOS_TESTFLIGHT_INVITE } from "@dofek/onboarding/get-started-flow";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
 
 export function OnboardingPage() {
-  const [selectedGoalId, setSelectedGoalId] = useState<GetStartedGoalId>(GET_STARTED_GOALS[0].id);
-  const selectedGoal = GET_STARTED_GOALS.find((goal) => goal.id === selectedGoalId);
-
   return (
     <PageLayout headerChildren={undefined}>
-      <section className="card p-5 sm:p-8">
-        <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr]">
-          <div>
-            <p className="text-sm font-semibold text-accent">Get started</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-              Set up Dofek
-            </h1>
-            <p className="mt-4 max-w-xl text-sm leading-6 text-muted sm:text-base">
-              Choose the first question you want to answer, connect the sources that matter, then
-              open the dashboard when the first useful signal is ready.
-            </p>
-            {selectedGoal && (
-              <p className="mt-4 rounded-lg border border-border bg-surface-solid px-4 py-3 text-sm font-medium text-foreground">
-                Selected: {selectedGoal.title}
-              </p>
-            )}
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {GET_STARTED_GOALS.map((goal) => {
-              const selected = goal.id === selectedGoalId;
-              return (
-                <button
-                  key={goal.id}
-                  type="button"
-                  onClick={() => setSelectedGoalId(goal.id)}
-                  className={`rounded-lg border p-4 text-left transition-colors ${
-                    selected
-                      ? "border-accent bg-accent/10 text-foreground"
-                      : "border-border bg-white/70 text-foreground hover:border-border-strong"
-                  }`}
-                >
-                  <span className="block text-sm font-semibold">{goal.title}</span>
-                  <span className="mt-2 block text-sm leading-5 text-muted">
-                    {goal.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      <section className="rounded-lg border border-border bg-surface-solid p-5 sm:p-8">
+        <p className="text-sm font-semibold text-accent">First-run setup</p>
+        <h1 className="mt-2 max-w-3xl text-3xl font-bold text-foreground sm:text-4xl">
+          Set up Dofek with your real data
+        </h1>
+        <p className="mt-4 max-w-2xl text-sm leading-6 text-muted sm:text-base">
+          Dofek is useful after it has data to work with. Start by choosing a primary goal,
+          connecting the sources you already use, then open the dashboard when sync has something to
+          show.
+        </p>
       </section>
 
-      <section className="mt-4 grid gap-3 lg:grid-cols-4">
+      <section className="mt-4 rounded-lg border border-border bg-surface p-5 shadow-sm sm:p-6">
+        <PrimaryGoalSelector />
+      </section>
+
+      <section className="mt-4 grid gap-4 lg:grid-cols-3">
         {GET_STARTED_STEPS.map((step, stepIndex) => (
-          <div key={step.id} className="rounded-lg border border-border bg-white/70 p-5">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">
-              Step {stepIndex + 1}
-            </p>
-            <h2 className="mt-3 text-base font-semibold text-foreground">{step.title}</h2>
-            <p className="mt-2 min-h-16 text-sm leading-5 text-muted">{step.description}</p>
+          <div
+            key={step.id}
+            className="flex min-h-56 flex-col rounded-lg border border-border bg-surface p-5 shadow-sm sm:p-6"
+          >
+            <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-md bg-accent/10 text-sm font-bold text-accent">
+              {stepIndex + 1}
+            </div>
+            <h2 className="text-xl font-semibold text-foreground">{step.title}</h2>
+            <p className="mt-3 text-sm leading-6 text-muted">{step.description}</p>
             <Link
               to={step.webPath}
-              className="mt-4 inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/90"
+              className="mt-auto inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent transition-colors hover:bg-accent/90"
             >
               {step.actionLabel}
             </Link>
           </div>
         ))}
+        <div className="flex min-h-56 flex-col rounded-lg border border-border bg-surface p-5 shadow-sm sm:p-6">
+          <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-md bg-accent/10 text-sm font-bold text-accent">
+            {GET_STARTED_STEPS.length + 1}
+          </div>
+          <h2 className="text-xl font-semibold text-foreground">{IOS_TESTFLIGHT_INVITE.title}</h2>
+          <p className="mt-3 text-sm leading-6 text-muted">{IOS_TESTFLIGHT_INVITE.description}</p>
+          <a
+            href={IOS_TESTFLIGHT_INVITE.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-auto inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent transition-colors hover:bg-accent/90"
+          >
+            {IOS_TESTFLIGHT_INVITE.actionLabel}
+          </a>
+        </div>
       </section>
     </PageLayout>
   );

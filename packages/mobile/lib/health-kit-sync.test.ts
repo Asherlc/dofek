@@ -1,16 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ADDITIVE_QUANTITY_TYPES,
+  BACKGROUND_HEALTH_KIT_TYPES,
+  MENSTRUAL_FLOW_TYPE_IDENTIFIER,
   NON_ADDITIVE_QUANTITY_TYPES,
+  syncHealthKitObserverChanges,
   syncHealthKitToServer,
 } from "./health-kit-sync";
+import { captureException } from "./telemetry";
+
+vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
 
 describe("syncHealthKitToServer", () => {
   function createMockClient() {
     return {
+      clinicalRecords: {
+        push: {
+          mutate: vi.fn().mockResolvedValue({ upserted: 0 }),
+        },
+      },
       healthKitSync: {
         pushQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ inserted: 5, errors: [] }),
+        },
+        deleteQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ deleted: 1 }),
         },
         pushWorkouts: {
           mutate: vi.fn().mockResolvedValue({ inserted: 2 }),
@@ -27,6 +41,7 @@ describe("syncHealthKitToServer", () => {
 
   function createMockHealthKit() {
     return {
+      queryClinicalRecords: vi.fn().mockResolvedValue([]),
       queryDailyStatistics: vi.fn().mockResolvedValue([{ date: "2026-03-21", value: 5000 }]),
       queryQuantitySamples: vi.fn().mockResolvedValue([
         {
@@ -40,6 +55,13 @@ describe("syncHealthKitToServer", () => {
           uuid: "sample-1",
         },
       ]),
+      queryCategorySamples: vi.fn().mockResolvedValue([]),
+      queryAnchoredSamples: vi.fn().mockResolvedValue({
+        queryId: "query-1",
+        samples: [],
+        deletedUUIDs: [],
+      }),
+      completeAnchoredQuery: vi.fn().mockResolvedValue(true),
       queryWorkouts: vi.fn().mockResolvedValue([
         {
           uuid: "workout-1",
@@ -47,7 +69,6 @@ describe("syncHealthKitToServer", () => {
           startDate: "2026-03-21T07:00:00Z",
           endDate: "2026-03-21T08:00:00Z",
           duration: 3600,
-          totalEnergyBurned: 500,
           totalDistance: 10000,
           sourceName: "Apple Watch",
           sourceBundle: "com.apple.health",
@@ -83,6 +104,217 @@ describe("syncHealthKitToServer", () => {
     );
     expect(healthKit.queryWorkouts).toHaveBeenCalledTimes(1);
     expect(healthKit.querySleepSamples).toHaveBeenCalledTimes(1);
+    expect(healthKit.queryCategorySamples).toHaveBeenCalledWith(
+      MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(BACKGROUND_HEALTH_KIT_TYPES).toContain(MENSTRUAL_FLOW_TYPE_IDENTIFIER);
+  });
+
+  it("pushes mapped clinical records only during an explicit sync", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const clinicalRecord = {
+      uuid: "659ee585-b399-4c21-841f-97fe49fdc465",
+      clinicalType: "condition" as const,
+      displayName: "Migraine",
+      sourceName: "Example Health System",
+      fhirVersion: "4.0.1",
+      fhir: { resourceType: "Condition", id: "condition-1" },
+      downloadedAt: "2026-04-25T17:15:30.000Z",
+    };
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryCategorySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([]);
+    healthKit.querySleepSamples.mockResolvedValue([]);
+    client.healthKitSync.pushWorkouts.mutate.mockResolvedValue({ inserted: 0 });
+    healthKit.queryClinicalRecords.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKClinicalTypeIdentifierConditionRecord" ? [clinicalRecord] : [],
+    );
+    client.clinicalRecords.push.mutate.mockResolvedValue({ upserted: 1 });
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+    });
+
+    expect(healthKit.queryClinicalRecords).toHaveBeenCalledTimes(9);
+    expect(healthKit.queryClinicalRecords).toHaveBeenCalledWith(
+      "HKClinicalTypeIdentifierConditionRecord",
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(client.clinicalRecords.push.mutate).toHaveBeenCalledWith({
+      records: [
+        {
+          externalId: clinicalRecord.uuid,
+          clinicalType: clinicalRecord.clinicalType,
+          displayName: clinicalRecord.displayName,
+          sourceName: clinicalRecord.sourceName,
+          fhirVersion: clinicalRecord.fhirVersion,
+          fhir: clinicalRecord.fhir,
+          downloadedAt: clinicalRecord.downloadedAt,
+        },
+      ],
+    });
+    expect(result).toEqual({ deleted: 0, inserted: 1, errors: [] });
+  });
+
+  it("batches clinical records at the server endpoint limit", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryCategorySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([]);
+    healthKit.querySleepSamples.mockResolvedValue([]);
+    client.healthKitSync.pushWorkouts.mutate.mockResolvedValue({ inserted: 0 });
+    healthKit.queryClinicalRecords.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKClinicalTypeIdentifierConditionRecord"
+        ? Array.from({ length: 101 }, (_, index) => ({
+            uuid: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            clinicalType: "condition" as const,
+            displayName: `Condition ${index}`,
+            sourceName: "Example Health System",
+            fhirVersion: "4.0.1",
+            fhir: { resourceType: "Condition", id: `condition-${index}` },
+            downloadedAt: "2026-04-25T17:15:30.000Z",
+          }))
+        : [],
+    );
+    client.clinicalRecords.push.mutate.mockImplementation(async ({ records }) => ({
+      upserted: records.length,
+    }));
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+    });
+
+    expect(
+      client.clinicalRecords.push.mutate.mock.calls.map(([input]) => input.records.length),
+    ).toEqual([100, 1]);
+    expect(result.inserted).toBe(101);
+  });
+
+  it("reports specific clinical-record progress and structured stages", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const onProgress = vi.fn();
+    const onStage = vi.fn();
+    healthKit.queryClinicalRecords.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKClinicalTypeIdentifierLabResultRecord"
+        ? [
+            {
+              uuid: "659ee585-b399-4c21-841f-97fe49fdc465",
+              clinicalType: "labResult",
+              displayName: "CBC",
+              sourceName: "Example Health System",
+              fhirVersion: "4.0.1",
+              fhir: { resourceType: "DiagnosticReport" },
+              downloadedAt: "2026-04-25T17:15:30.000Z",
+            },
+          ]
+        : [],
+    );
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      onProgress,
+      onStage,
+    });
+
+    expect(onProgress).toHaveBeenCalledWith("Querying clinical Lab Result records...");
+    expect(onProgress).toHaveBeenCalledWith("Pushing 1 clinical Lab Result record...");
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "queryClinicalRecords",
+      typeIdentifier: "HKClinicalTypeIdentifierLabResultRecord",
+    });
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "pushClinicalRecords",
+      typeIdentifier: "HKClinicalTypeIdentifierLabResultRecord",
+      batchIndex: 1,
+      batchCount: 1,
+      itemCount: 1,
+    });
+  });
+
+  it("does not add clinical records to observer sync", () => {
+    expect(BACKGROUND_HEALTH_KIT_TYPES).not.toContain("HKClinicalTypeIdentifierLabResultRecord");
+  });
+
+  it("uploads menstrual flow with cycle-start metadata and source identity", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cycleStart = {
+      type: "HKCategoryTypeIdentifierMenstrualFlow",
+      value: 2,
+      unit: "category",
+      startDate: "2026-08-01T08:00:00-07:00",
+      endDate: "2026-08-01T08:05:00-07:00",
+      sourceName: "Cycle Source",
+      sourceBundle: "com.example.cycle-source",
+      uuid: "cycle-start-1",
+      metadata: { HKMetadataKeyMenstrualCycleStart: true },
+    };
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryCategorySamples.mockResolvedValue([cycleStart]);
+    healthKit.queryWorkouts.mockResolvedValue([]);
+    healthKit.querySleepSamples.mockResolvedValue([]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 30,
+    });
+
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [cycleStart],
+    });
+  });
+
+  it("continues full sync when menstrual flow permission is not determined", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryCategorySamples.mockRejectedValue({
+      code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+    });
+
+    await expect(
+      syncHealthKitToServer({ trpcClient: client, healthKit, syncRangeDays: 1 }),
+    ).resolves.toEqual(expect.objectContaining({ inserted: expect.any(Number) }));
+  });
+
+  it("queries walking biomechanics quantity samples", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    const queriedTypes = healthKit.queryQuantitySamples.mock.calls.map(
+      ([typeId]: [string, string, string]) => typeId,
+    );
+
+    expect(queriedTypes).toEqual(
+      expect.arrayContaining([
+        "HKQuantityTypeIdentifierWalkingSpeed",
+        "HKQuantityTypeIdentifierWalkingStepLength",
+        "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
+        "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
+        "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+      ]),
+    );
   });
 
   it("reports progress via callback", async () => {
@@ -118,6 +350,106 @@ describe("syncHealthKitToServer", () => {
     expect(startDate.getFullYear()).toBeLessThanOrEqual(1970);
   });
 
+  it("never uploads HealthKit history from before a deleted account cutoff", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cutoff = "2026-03-21T12:00:00.000Z";
+    const sample = (uuid: string, startDate: string) => ({
+      type: "HKQuantityTypeIdentifierHeartRate",
+      value: 72,
+      unit: "count/min",
+      startDate,
+      endDate: startDate,
+      sourceName: "Apple Watch",
+      sourceBundle: "com.apple.health",
+      uuid,
+    });
+    healthKit.queryDailyStatistics.mockResolvedValue([
+      { date: "2026-03-21", value: 100 },
+      { date: "2026-03-22", value: 200 },
+    ]);
+    healthKit.queryQuantitySamples.mockResolvedValue([
+      sample("old", "2026-03-21T11:59:59.000Z"),
+      sample("equal", cutoff),
+      sample("new", "2026-03-21T12:00:00.001Z"),
+    ]);
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "old-workout",
+        workoutType: "running",
+        startDate: cutoff,
+        endDate: "2026-03-21T13:00:00.000Z",
+        duration: 3600,
+        totalDistance: 1000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+      {
+        uuid: "new-workout",
+        workoutType: "running",
+        startDate: "2026-03-21T12:00:00.001Z",
+        endDate: "2026-03-21T13:00:00.000Z",
+        duration: 3600,
+        totalDistance: 1000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.querySleepSamples.mockResolvedValue([
+      {
+        uuid: "old-sleep",
+        startDate: cutoff,
+        endDate: "2026-03-21T13:00:00.000Z",
+        value: "asleepCore",
+        sourceName: "Apple Watch",
+      },
+      {
+        uuid: "new-sleep",
+        startDate: "2026-03-21T12:00:00.001Z",
+        endDate: "2026-03-21T13:00:00.000Z",
+        value: "asleepCore",
+        sourceName: "Apple Watch",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: cutoff, lat: 1, lng: 1 },
+      { date: "2026-03-21T12:00:00.001Z", lat: 2, lng: 2 },
+    ]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      minimumSampleDate: cutoff,
+      syncRangeDays: null,
+    });
+
+    const quantitySamples = client.healthKitSync.pushQuantitySamples.mutate.mock.calls.flatMap(
+      ([input]) => input.samples,
+    );
+    expect(quantitySamples.every((value) => value.startDate > cutoff)).toBe(true);
+    expect(quantitySamples.some((value) => value.uuid === "new")).toBe(true);
+    expect(quantitySamples.some((value) => value.startDate.startsWith("2026-03-21"))).toBe(true);
+    expect(quantitySamples.some((value) => value.startDate.startsWith("2026-03-22"))).toBe(true);
+
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith({
+      workouts: [expect.objectContaining({ uuid: "new-workout" })],
+      windowStart: cutoff,
+      windowEnd: expect.any(String),
+    });
+    expect(client.healthKitSync.pushSleepSamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "new-sleep" })],
+    });
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledWith({
+      routes: [
+        {
+          workoutUuid: "new-workout",
+          sourceName: "Apple Watch",
+          locations: [{ date: "2026-03-21T12:00:00.001Z", lat: 2, lng: 2 }],
+        },
+      ],
+    });
+  });
+
   it("starts incremental daily statistics at the local day boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-26T15:30:00-07:00"));
@@ -139,6 +471,48 @@ describe("syncHealthKitToServer", () => {
 
     const firstCall = healthKit.queryDailyStatistics.mock.calls[0];
     expect(firstCall[1]).toBe(expectedStartDate.toISOString());
+  });
+
+  it("continues to workout sync when daily statistics authorization is not determined", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockRejectedValue(
+      Object.assign(new Error("localized system message"), {
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    );
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(result.inserted).toBeGreaterThan(0);
+    expect(healthKit.queryWorkouts).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workouts: expect.arrayContaining([expect.objectContaining({ uuid: "workout-1" })]),
+      }),
+    );
+  });
+
+  it("throws daily statistics errors without the stable not-determined code", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const dailyStatisticsError = Object.assign(new Error("Authorization not determined"), {
+      code: "QUERY_ERROR",
+    });
+    healthKit.queryDailyStatistics.mockRejectedValue(dailyStatisticsError);
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 1,
+      }),
+    ).rejects.toThrow(dailyStatisticsError);
+    expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
   });
 
   it("batches large sample sets into groups of 500", async () => {
@@ -169,6 +543,50 @@ describe("syncHealthKitToServer", () => {
     expect(
       client.healthKitSync.pushQuantitySamples.mutate.mock.calls.length,
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("reports structured sync stages with quantity batch sizes", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const samples = Array.from({ length: 750 }, (_, sampleIndex) => ({
+      type: "HKQuantityTypeIdentifierHeartRate",
+      value: 72,
+      unit: "count/min",
+      startDate: `2026-03-21T${String(sampleIndex % 24).padStart(2, "0")}:00:00Z`,
+      endDate: `2026-03-21T${String(sampleIndex % 24).padStart(2, "0")}:00:00Z`,
+      sourceName: "Apple Watch",
+      sourceBundle: "com.apple.health",
+      uuid: `sample-${sampleIndex}`,
+    }));
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKQuantityTypeIdentifierHeartRate" ? samples : [],
+    );
+    const onStage = vi.fn();
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+      onStage,
+    });
+
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "queryDailyStatistics",
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+    });
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "pushQuantitySamples",
+      batchIndex: 1,
+      batchCount: 2,
+      itemCount: 500,
+    });
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "pushQuantitySamples",
+      batchIndex: 2,
+      batchCount: 2,
+      itemCount: 250,
+    });
   });
 
   it("returns errors from the server", async () => {
@@ -235,7 +653,8 @@ describe("syncHealthKitToServer", () => {
   it("records route query errors as non-fatal without aborting sync", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();
-    healthKit.queryWorkoutRoutes.mockRejectedValue(new Error("Route permission denied"));
+    const routeQueryError = new Error("Route permission denied");
+    healthKit.queryWorkoutRoutes.mockRejectedValue(routeQueryError);
 
     const result = await syncHealthKitToServer({
       trpcClient: client,
@@ -248,6 +667,55 @@ describe("syncHealthKitToServer", () => {
     expect(result.errors.some((error) => error.includes("Route query"))).toBe(true);
     // Route push should not have been attempted
     expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledWith(routeQueryError, {
+      source: "health-kit-workout-route-query",
+      workoutUuid: "workout-1",
+    });
+  });
+
+  it("propagates locked-device route errors without reporting them", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const lockedDeviceError = Object.assign(
+      new Error("HealthKit data is unavailable while the device is locked"),
+      {
+        code: "HEALTHKIT_DATABASE_INACCESSIBLE",
+      },
+    );
+    healthKit.queryWorkoutRoutes.mockRejectedValue(lockedDeviceError);
+    vi.mocked(captureException).mockClear();
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 1,
+      }),
+    ).rejects.toBe(lockedDeviceError);
+
+    expect(captureException).not.toHaveBeenCalled();
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
+  });
+
+  it("does not report transient TRPC timeout wrappers during route push", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:00:00Z", lat: 40.7128, lng: -74.006 },
+    ]);
+    const timeoutCause = new Error("fetch failed: UnexpectedException: The request timed out.");
+    const trpcTimeoutError = new Error("TRPCClientError", { cause: timeoutCause });
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(trpcTimeoutError);
+    vi.mocked(captureException).mockClear();
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(result.errors.some((error) => error.includes("Push workout routes"))).toBe(true);
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("records route push errors as non-fatal", async () => {
@@ -256,7 +724,8 @@ describe("syncHealthKitToServer", () => {
     healthKit.queryWorkoutRoutes.mockResolvedValue([
       { date: "2026-03-21T07:00:00Z", lat: 40.7128, lng: -74.006 },
     ]);
-    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(new Error("Server error"));
+    const routePushError = new Error("Server error");
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(routePushError);
 
     const result = await syncHealthKitToServer({
       trpcClient: client,
@@ -266,6 +735,10 @@ describe("syncHealthKitToServer", () => {
 
     expect(result.inserted).toBeGreaterThan(0);
     expect(result.errors.some((error) => error.includes("Push workout routes"))).toBe(true);
+    expect(captureException).toHaveBeenCalledWith(routePushError, {
+      source: "health-kit-workout-route-push",
+      routeCount: 1,
+    });
   });
 
   it("does not query routes when there are no workouts", async () => {
@@ -293,7 +766,6 @@ describe("syncHealthKitToServer", () => {
         startDate: "2026-03-21T07:00:00Z",
         endDate: "2026-03-21T08:00:00Z",
         duration: 3600,
-        totalEnergyBurned: undefined,
         totalDistance: undefined,
         sourceName: "Apple Watch",
         sourceBundle: "com.apple.health",
@@ -307,8 +779,9 @@ describe("syncHealthKitToServer", () => {
     });
 
     const workoutCall = client.healthKitSync.pushWorkouts.mutate.mock.calls[0];
-    expect(workoutCall[0].workouts[0].totalEnergyBurned).toBeNull();
     expect(workoutCall[0].workouts[0].totalDistance).toBeNull();
+    expect(workoutCall[0].windowStart).toEqual(expect.any(String));
+    expect(workoutCall[0].windowEnd).toEqual(expect.any(String));
   });
 
   it("passes through workout metadata and workoutActivities to server", async () => {
@@ -321,7 +794,6 @@ describe("syncHealthKitToServer", () => {
         startDate: "2026-03-21T10:00:00Z",
         endDate: "2026-03-21T11:00:00Z",
         duration: 3600,
-        totalEnergyBurned: 350,
         totalDistance: null,
         sourceName: "Strong",
         sourceBundle: "io.strongapp.strong",
@@ -359,10 +831,433 @@ describe("syncHealthKitToServer", () => {
   });
 });
 
+describe("syncHealthKitObserverChanges", () => {
+  function createMockClient() {
+    return {
+      clinicalRecords: {
+        push: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+      },
+      healthKitSync: {
+        pushQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 1, errors: [] }),
+        },
+        deleteQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ deleted: 1 }),
+        },
+        pushWorkouts: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+        pushWorkoutRoutes: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+        pushSleepSamples: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+      },
+    };
+  }
+
+  function createMockHealthKit() {
+    return {
+      queryClinicalRecords: vi.fn().mockResolvedValue([]),
+      queryDailyStatistics: vi.fn().mockResolvedValue([]),
+      queryQuantitySamples: vi.fn().mockResolvedValue([]),
+      queryCategorySamples: vi.fn().mockResolvedValue([]),
+      queryAnchoredSamples: vi.fn().mockResolvedValue({
+        queryId: "query-1",
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierHeartRate",
+            value: 72,
+            unit: "count/min",
+            startDate: "2026-07-27T10:00:00Z",
+            endDate: "2026-07-27T10:00:05Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "heart-rate-new",
+          },
+        ],
+        deletedUUIDs: ["heart-rate-deleted"],
+      }),
+      completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+      queryWorkouts: vi.fn().mockResolvedValue([]),
+      querySleepSamples: vi.fn().mockResolvedValue([]),
+      queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
+    };
+  }
+
+  it("uploads only anchored changes for the observed raw quantity type", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+
+    const result = await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+    });
+
+    expect(result).toEqual({ deleted: 1, errors: [], inserted: 1 });
+    expect(healthKit.queryAnchoredSamples).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      expect.any(String),
+    );
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "heart-rate-new" })],
+    });
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledWith({
+      deletedUUIDs: ["heart-rate-deleted"],
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+    });
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-1",
+      true,
+    );
+    expect(
+      client.healthKitSync.deleteQuantitySamples.mutate.mock.invocationCallOrder[0],
+    ).toBeLessThan(healthKit.completeAnchoredQuery.mock.invocationCallOrder[0]);
+    expect(healthKit.queryDailyStatistics).not.toHaveBeenCalled();
+    expect(healthKit.queryQuantitySamples).not.toHaveBeenCalled();
+    expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
+    expect(healthKit.querySleepSamples).not.toHaveBeenCalled();
+  });
+
+  it("uploads and deletes menstrual flow through the anchored observer path", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cycleStart = {
+      type: MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      value: 2,
+      unit: "category",
+      startDate: "2026-08-01T08:00:00-07:00",
+      endDate: "2026-08-01T08:05:00-07:00",
+      sourceName: "Cycle Source",
+      sourceBundle: "com.example.cycle-source",
+      uuid: "cycle-start-new",
+      metadata: { HKMetadataKeyMenstrualCycleStart: true },
+    };
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "query-cycle",
+      samples: [cycleStart],
+      deletedUUIDs: ["cycle-start-deleted"],
+    });
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: [MENSTRUAL_FLOW_TYPE_IDENTIFIER],
+    });
+
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [cycleStart],
+    });
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledWith({
+      deletedUUIDs: ["cycle-start-deleted"],
+      typeIdentifier: MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+    });
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      "query-cycle",
+      true,
+    );
+  });
+
+  it("never uploads observer samples at or before the device erasure cutoff", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cutoff = "2026-07-27T10:00:00.000Z";
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "query-cutoff",
+      samples: [
+        {
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 70,
+          unit: "count/min",
+          startDate: cutoff,
+          endDate: "2026-07-27T10:00:05.000Z",
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+          uuid: "heart-rate-at-cutoff",
+        },
+        {
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 72,
+          unit: "count/min",
+          startDate: "2026-07-27T10:00:01.000Z",
+          endDate: "2026-07-27T10:00:06.000Z",
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+          uuid: "heart-rate-after-cutoff",
+        },
+      ],
+      deletedUUIDs: [],
+    });
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      minimumSampleDate: cutoff,
+      typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+    });
+
+    expect(healthKit.queryAnchoredSamples).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      cutoff,
+    );
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "heart-rate-after-cutoff" })],
+    });
+    expect(client.healthKitSync.pushQuantitySamples.mutate).not.toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "heart-rate-at-cutoff" })],
+    });
+  });
+
+  it("batches anchored deletions to the server endpoint limit before committing", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "query-many-deletions",
+      samples: [],
+      deletedUUIDs: Array.from({ length: 501 }, (_, index) => `deleted-${index}`),
+    });
+    client.healthKitSync.deleteQuantitySamples.mutate.mockImplementation(
+      async ({ deletedUUIDs }) => ({ deleted: deletedUUIDs.length }),
+    );
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+    });
+
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledTimes(2);
+    expect(
+      client.healthKitSync.deleteQuantitySamples.mutate.mock.calls.map(
+        ([input]) => input.deletedUUIDs.length,
+      ),
+    ).toEqual([500, 1]);
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-many-deletions",
+      true,
+    );
+  });
+
+  it("fails the observer sync when the native anchor commit is rejected", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.completeAnchoredQuery.mockResolvedValue(false);
+
+    await expect(
+      syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+      }),
+    ).rejects.toThrow(
+      "HealthKit anchor commit rejected for HKQuantityTypeIdentifierHeartRate (query query-1)",
+    );
+
+    expect(healthKit.completeAnchoredQuery).toHaveBeenNthCalledWith(
+      1,
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-1",
+      true,
+    );
+    expect(healthKit.completeAnchoredQuery).toHaveBeenNthCalledWith(
+      2,
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-1",
+      false,
+    );
+  });
+
+  it("batches observer workout routes into one server mutation", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "workout-1",
+        workoutType: "running",
+        startDate: "2026-07-27T10:00:00Z",
+        endDate: "2026-07-27T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+      {
+        uuid: "workout-2",
+        workoutType: "cycling",
+        startDate: "2026-07-27T12:00:00Z",
+        endDate: "2026-07-27T13:00:00Z",
+        duration: 3600,
+        totalDistance: 20000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockImplementation(async (workoutUuid) => [
+      {
+        date: "2026-07-27T10:00:00Z",
+        lat: workoutUuid === "workout-1" ? 1 : 2,
+        lng: 3,
+      },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockResolvedValue({ inserted: 2 });
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKWorkoutTypeIdentifier"],
+    });
+
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledWith({
+      routes: [
+        expect.objectContaining({ workoutUuid: "workout-1" }),
+        expect.objectContaining({ workoutUuid: "workout-2" }),
+      ],
+    });
+  });
+
+  it("keeps per-workout observer route query failures isolated", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const routeError = new Error("route unavailable");
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "workout-failed",
+        workoutType: "running",
+        startDate: "2026-07-27T10:00:00Z",
+        endDate: "2026-07-27T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+      {
+        uuid: "workout-succeeded",
+        workoutType: "cycling",
+        startDate: "2026-07-27T12:00:00Z",
+        endDate: "2026-07-27T13:00:00Z",
+        duration: 3600,
+        totalDistance: 20000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockImplementation(async (workoutUuid) => {
+      if (workoutUuid === "workout-failed") {
+        throw routeError;
+      }
+      return [{ date: "2026-07-27T12:00:00Z", lat: 1, lng: 2 }];
+    });
+
+    const result = await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKWorkoutTypeIdentifier"],
+    });
+
+    expect(result.errors).toEqual(["Route sync for workout workout-failed: route unavailable"]);
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledWith({
+      routes: [expect.objectContaining({ workoutUuid: "workout-succeeded" })],
+    });
+    expect(captureException).toHaveBeenCalledWith(routeError, {
+      source: "health-kit-workout-route-observer-sync",
+      workoutUuid: "workout-failed",
+    });
+  });
+
+  it("reports a failed observer route batch without counting its rows", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const routePushError = new Error("route push failed");
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "workout-1",
+        workoutType: "running",
+        startDate: "2026-07-27T10:00:00Z",
+        endDate: "2026-07-27T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-07-27T10:00:00Z", lat: 1, lng: 2 },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(routePushError);
+
+    const result = await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKWorkoutTypeIdentifier"],
+    });
+
+    expect(result).toEqual({
+      deleted: 0,
+      errors: ["Push workout routes: route push failed"],
+      inserted: 0,
+    });
+    expect(captureException).toHaveBeenCalledWith(routePushError, {
+      routeCount: 1,
+      source: "health-kit-workout-route-observer-push",
+    });
+  });
+
+  it("queries only the observed additive type's bounded daily statistics", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockResolvedValue([{ date: "2026-07-27", value: 1234 }]);
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierStepCount"],
+    });
+
+    expect(healthKit.queryDailyStatistics).toHaveBeenCalledTimes(1);
+    expect(healthKit.queryDailyStatistics).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(healthKit.queryAnchoredSamples).not.toHaveBeenCalled();
+    expect(healthKit.queryQuantitySamples).not.toHaveBeenCalled();
+    expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
+    expect(healthKit.querySleepSamples).not.toHaveBeenCalled();
+  });
+
+  it("does not commit an anchor when the server upload fails", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const uploadError = new Error("network failed");
+    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValue(uploadError);
+
+    await expect(
+      syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+      }),
+    ).rejects.toThrow(uploadError);
+
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-1",
+      false,
+    );
+  });
+});
+
 describe("quantity type constants", () => {
-  it("additive types include steps and active energy", () => {
+  it("additive types include steps", () => {
     expect(ADDITIVE_QUANTITY_TYPES).toContain("HKQuantityTypeIdentifierStepCount");
-    expect(ADDITIVE_QUANTITY_TYPES).toContain("HKQuantityTypeIdentifierActiveEnergyBurned");
   });
 
   it("non-additive types include heart rate and HRV", () => {

@@ -4,17 +4,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("arctic", () => {
   const mockTokens = { idToken: () => "mock-id-token" };
   return {
-    Google: vi.fn().mockImplementation(() => ({
-      createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://accounts.google.com/auth")),
-      validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
-    })),
-    Apple: vi.fn().mockImplementation(() => ({
-      createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://appleid.apple.com/auth")),
-      validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
-    })),
+    Google: vi.fn(function vitestConstructor() {
+      return {
+        createAuthorizationURL: vi
+          .fn()
+          .mockReturnValue(new URL("https://accounts.google.com/auth")),
+        validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
+      };
+    }),
+    Apple: vi.fn(function vitestConstructor() {
+      return {
+        createAuthorizationURL: vi.fn().mockReturnValue(new URL("https://appleid.apple.com/auth")),
+        validateAuthorizationCode: vi.fn().mockResolvedValue(mockTokens),
+      };
+    }),
     decodeIdToken: vi.fn().mockReturnValue({
       sub: "user-123",
       email: "test@example.com",
+      email_verified: true,
       name: "Test User",
     }),
     generateCodeVerifier: vi.fn().mockReturnValue("test-verifier"),
@@ -22,6 +29,7 @@ vi.mock("arctic", () => {
   };
 });
 
+import { decodeIdToken } from "arctic";
 import {
   decodePemToDer,
   getConfiguredProviders,
@@ -208,7 +216,7 @@ describe("auth/providers", () => {
 
       // Verify Apple constructor received DER bytes, not raw PEM text
       const { Apple: AppleMock } = await import("arctic");
-      const appleMock: ReturnType<typeof vi.fn> = vi.mocked(AppleMock);
+      const appleMock: CallableVitestMock = vi.mocked(AppleMock);
       const constructorCall = appleMock.mock.calls[0];
       const keyArg = constructorCall[3];
       // Should be the base64-decoded DER bytes [1, 2, 3], not the UTF-8 encoded PEM string
@@ -381,6 +389,16 @@ describe("auth/providers", () => {
       expect(result.user.email).toBe("test@example.com");
     });
 
+    it("Google callback returns the email verification claim", async () => {
+      process.env.GOOGLE_CLIENT_ID = "id";
+      process.env.GOOGLE_CLIENT_SECRET = "secret";
+      process.env.GOOGLE_REDIRECT_URI = "http://localhost/callback";
+
+      const provider = getIdentityProvider("google");
+      const result = await provider.validateCallback("code", "verifier");
+      expect(result.user.emailVerified).toBe(true);
+    });
+
     it("Google callback returns name from claims", async () => {
       process.env.GOOGLE_CLIENT_ID = "id";
       process.env.GOOGLE_CLIENT_SECRET = "secret";
@@ -450,6 +468,27 @@ describe("auth/providers", () => {
       const provider = getIdentityProvider("apple");
       const result = await provider.validateCallback("code", "verifier");
       expect(result.user.email).toBe("test@example.com");
+    });
+
+    it.each([
+      ["true", true],
+      ["false", false],
+    ] as const)("Apple callback normalizes string email_verified=%s", (emailVerified, expected) => {
+      process.env.APPLE_CLIENT_ID = "id";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY =
+        "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----";
+      process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
+      vi.mocked(decodeIdToken).mockReturnValueOnce({
+        sub: "user-123",
+        email: "test@example.com",
+        email_verified: emailVerified,
+      });
+
+      return getIdentityProvider("apple")
+        .validateCallback("code", "verifier")
+        .then((result) => expect(result.user.emailVerified).toBe(expected));
     });
   });
 

@@ -1,16 +1,55 @@
+import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import type { RangeDays } from "../lib/date-window.ts";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 const nullableNumberSchema = z.preprocess(
   (value) => (value === undefined ? null : value),
   z.coerce.number().nullable(),
 );
 
+const overlappingSleepSessionSchema = z
+  .object({
+    session_id: z.string(),
+    provider_id: z.string(),
+    source_name: z.string().nullable().optional(),
+    source_providers: z
+      .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
+      .optional()
+      .default([]),
+    timezone: z.string().nullable(),
+    start_utc_offset_minutes: nullableNumberSchema,
+    end_utc_offset_minutes: nullableNumberSchema,
+    local_time_source: localTimeSourceSchema,
+    started_at: timestampStringSchema,
+    ended_at: timestampStringSchema.nullable(),
+    duration_minutes: nullableNumberSchema,
+  })
+  .transform((session) => ({
+    ...session,
+    source_name: session.source_name ?? null,
+  }));
+
 const clickHouseSleepNightSchema = z
   .object({
     date: z.string(),
     provider_id: z.string().nullable().optional(),
+    source_name: z.string().nullable().optional(),
+    source_providers: z
+      .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
+      .optional()
+      .default([]),
+    selected_session_id: z.string().nullable().optional().default(null),
+    overlapping_sessions: z
+      .preprocess((value) => (value == null ? [] : value), z.array(overlappingSleepSessionSchema))
+      .optional()
+      .default([]),
+    timezone: z.string().nullable().optional().default(null),
+    start_utc_offset_minutes: nullableNumberSchema,
+    end_utc_offset_minutes: nullableNumberSchema,
+    local_time_source: localTimeSourceSchema.optional().default("unknown"),
     started_at: z.string().optional(),
     ended_at: z.string().nullable().optional(),
     duration_minutes: nullableNumberSchema,
@@ -19,10 +58,14 @@ const clickHouseSleepNightSchema = z
     light_minutes: nullableNumberSchema,
     awake_minutes: nullableNumberSchema,
     efficiency_pct: nullableNumberSchema,
+    staging_available: z.boolean(),
   })
   .transform((row) => ({
     ...row,
     provider_id: row.provider_id ?? null,
+    source_name: row.source_name ?? null,
+    source_providers: row.source_providers ?? [],
+    selected_session_id: row.selected_session_id ?? null,
     started_at: row.started_at ?? `${row.date}T12:00:00`,
     ended_at: row.ended_at ?? null,
   }));
@@ -34,15 +77,22 @@ export interface FetchSleepNightsInput {
   userId: string;
   timezone: string;
   endDate: string;
-  days: number;
+  days: RangeDays;
   accessWindow?: AccessWindow;
   order?: "asc" | "desc";
   limit?: number;
+  queryOptions?: ActivitySensorQueryOptions;
 }
 
 const dailySleepPerformanceRowSchema = z.object({
   date: z.string(),
   provider_id: z.string().nullable(),
+  source_name: z.string().nullable(),
+  source_providers: z.array(z.string()),
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: nullableNumberSchema,
+  end_utc_offset_minutes: nullableNumberSchema,
+  local_time_source: localTimeSourceSchema,
   started_at: z.string(),
   ended_at: z.string().nullable(),
   duration_minutes: nullableNumberSchema,
@@ -51,9 +101,47 @@ const dailySleepPerformanceRowSchema = z.object({
   light_minutes: nullableNumberSchema,
   awake_minutes: nullableNumberSchema,
   efficiency_pct: nullableNumberSchema,
+  staging_available: z.boolean(),
 });
 
 export type DailySleepPerformanceNight = z.infer<typeof dailySleepPerformanceRowSchema>;
+
+const sleepSelectionProjection = `toString(sleep.selected_session_id) AS selected_session_id,
+      arrayMap(
+        session -> CAST(
+          (
+            toString(session.session_id),
+            session.provider_id,
+            session.source_name,
+            session.source_providers,
+            session.timezone,
+            session.start_utc_offset_minutes,
+            session.end_utc_offset_minutes,
+            session.local_time_source,
+            formatDateTime(session.started_at, '%FT%TZ', 'UTC'),
+            if(
+              isNull(session.ended_at),
+              NULL,
+              formatDateTime(session.ended_at, '%FT%TZ', 'UTC')
+            ),
+            session.duration_minutes
+          ),
+          'Tuple(
+            session_id String,
+            provider_id String,
+            source_name Nullable(String),
+            source_providers Array(String),
+            timezone Nullable(String),
+            start_utc_offset_minutes Nullable(Int16),
+            end_utc_offset_minutes Nullable(Int16),
+            local_time_source String,
+            started_at String,
+            ended_at Nullable(String),
+            duration_minutes Nullable(Int32)
+          )'
+        ),
+        sleep.overlapping_sessions
+      ) AS overlapping_sessions`;
 
 export interface FetchDailySleepPerformanceNightsInput {
   sensorStore: Pick<ActivitySensorStore, "query">;
@@ -61,13 +149,7 @@ export interface FetchDailySleepPerformanceNightsInput {
   endDate: string;
   days: number;
   accessWindow?: AccessWindow;
-}
-
-function accessWindowClause(accessWindow: AccessWindow | undefined): string {
-  if (!accessWindow || accessWindow.kind === "full") return "";
-  return `
-    AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) >= toDate({accessStartDate:String})
-    AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) < toDate({accessEndDateExclusive:String})`;
+  queryOptions?: ActivitySensorQueryOptions;
 }
 
 function accessWindowParams(accessWindow: AccessWindow | undefined): Record<string, unknown> {
@@ -89,52 +171,46 @@ export async function fetchSleepNights(
 ): Promise<ClickHouseSleepNight[]> {
   const orderDirection = input.order === "desc" ? "DESC" : "ASC";
   const limitClause = input.limit != null ? "\nLIMIT {limit:UInt32}" : "";
+  const sleepLowerBoundClause =
+    input.days === null
+      ? ""
+      : "AND sleep.date >= subtractDays(toDate({endDate:String}), {days:UInt32})";
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      date,
-      provider_id,
-      formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
-      if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
-      duration_minutes,
-      deep_minutes,
-      rem_minutes,
-      light_minutes,
-      awake_minutes,
-      efficiency_pct
-    FROM (
-      SELECT
-        toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
-        provider_id,
-        started_at AS started_at_dt,
-        ended_at AS ended_at_dt,
-        duration_minutes,
-        deep_minutes,
-        rem_minutes,
-        light_minutes,
-        awake_minutes,
-        efficiency_pct,
-        row_number() OVER (
-          PARTITION BY toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)
-          ORDER BY duration_minutes DESC NULLS LAST
-        ) AS row_number
-      FROM analytics.v_sleep
-      WHERE user_id = {userId:UUID}
-        AND is_nap = false
-        AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) >= subtractDays(toDate({endDate:String}), {days:UInt32})
-        AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) <= toDate({endDate:String})
-        ${accessWindowClause(input.accessWindow)}
-    )
-    WHERE row_number = 1
-    ORDER BY date ${orderDirection}${limitClause}`,
+      toString(sleep.date) AS date,
+      sleep.provider_id AS provider_id,
+      sleep.source_name AS source_name,
+      sleep.source_providers AS source_providers,
+      ${sleepSelectionProjection},
+      sleep.timezone AS timezone,
+      sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+      sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+      sleep.local_time_source AS local_time_source,
+      formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+      sleep.duration_minutes AS duration_minutes,
+      sleep.deep_minutes AS deep_minutes,
+      sleep.rem_minutes AS rem_minutes,
+      sleep.light_minutes AS light_minutes,
+      sleep.awake_minutes AS awake_minutes,
+      sleep.efficiency_pct AS efficiency_pct,
+      sleep.staging_available AS staging_available
+    FROM analytics.daily_sleep AS sleep FINAL
+    WHERE sleep.user_id = {userId:UUID}
+      AND sleep.is_deleted = 0
+      ${sleepLowerBoundClause}
+      AND sleep.date <= toDate({endDate:String})
+      ${dateAccessWindowClause(input.accessWindow)}
+    ORDER BY sleep.date ${orderDirection}${limitClause}`,
     {
       userId: input.userId,
-      timezone: input.timezone,
       endDate: input.endDate,
-      days: input.days,
+      ...(input.days === null ? {} : { days: input.days }),
       ...(input.limit != null ? { limit: input.limit } : {}),
       ...accessWindowParams(input.accessWindow),
     },
+    input.queryOptions,
   );
   return rows.map((row) => clickHouseSleepNightSchema.parse(row));
 }
@@ -147,6 +223,12 @@ export async function fetchDailySleepPerformanceNights(
     `SELECT
       toString(sleep.date) AS date,
       sleep.provider_id AS provider_id,
+      sleep.source_name AS source_name,
+      sleep.source_providers AS source_providers,
+      sleep.timezone AS timezone,
+      sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+      sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+      sleep.local_time_source AS local_time_source,
       formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
       sleep.duration_minutes AS duration_minutes,
@@ -154,9 +236,11 @@ export async function fetchDailySleepPerformanceNights(
       sleep.rem_minutes AS rem_minutes,
       sleep.light_minutes AS light_minutes,
       sleep.awake_minutes AS awake_minutes,
-      sleep.efficiency_pct AS efficiency_pct
+      sleep.efficiency_pct AS efficiency_pct,
+      sleep.staging_available AS staging_available
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
+      AND sleep.is_deleted = 0
       AND sleep.date >= toDate({endDate:String}) - {days:UInt32}
       AND sleep.date <= toDate({endDate:String})
       ${dateAccessWindowClause(input.accessWindow)}
@@ -167,6 +251,7 @@ export async function fetchDailySleepPerformanceNights(
       days: input.days,
       ...accessWindowParams(input.accessWindow),
     },
+    input.queryOptions,
   );
   return rows.map((row) => dailySleepPerformanceRowSchema.parse(row));
 }
@@ -179,45 +264,37 @@ export async function fetchLatestSleepNight(input: {
   endDate?: string;
   accessWindow?: AccessWindow;
 }): Promise<ClickHouseSleepNight | null> {
-  const endDateClause = input.endDate
-    ? `AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) <= toDate({endDate:String})`
-    : "";
+  const endDateClause = input.endDate ? "AND sleep.date <= toDate({endDate:String})" : "";
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      date,
-      provider_id,
-      formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
-      if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
-      duration_minutes,
-      deep_minutes,
-      rem_minutes,
-      light_minutes,
-      awake_minutes,
-      efficiency_pct
-    FROM (
-      SELECT
-        toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
-        provider_id,
-        started_at AS started_at_dt,
-        ended_at AS ended_at_dt,
-        duration_minutes,
-        deep_minutes,
-        rem_minutes,
-        light_minutes,
-        awake_minutes,
-        efficiency_pct
-      FROM analytics.v_sleep
-      WHERE user_id = {userId:UUID}
-        AND is_nap = false
-        ${endDateClause}
-        ${accessWindowClause(input.accessWindow)}
-      ORDER BY started_at DESC
-      LIMIT 1
-    )`,
+      toString(sleep.date) AS date,
+      sleep.provider_id AS provider_id,
+      sleep.source_name AS source_name,
+      sleep.source_providers AS source_providers,
+      ${sleepSelectionProjection},
+      sleep.timezone AS timezone,
+      sleep.start_utc_offset_minutes AS start_utc_offset_minutes,
+      sleep.end_utc_offset_minutes AS end_utc_offset_minutes,
+      sleep.local_time_source AS local_time_source,
+      formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+      sleep.duration_minutes AS duration_minutes,
+      sleep.deep_minutes AS deep_minutes,
+      sleep.rem_minutes AS rem_minutes,
+      sleep.light_minutes AS light_minutes,
+      sleep.awake_minutes AS awake_minutes,
+      sleep.efficiency_pct AS efficiency_pct,
+      sleep.staging_available AS staging_available
+    FROM analytics.daily_sleep AS sleep FINAL
+    WHERE sleep.user_id = {userId:UUID}
+      AND sleep.is_deleted = 0
+      ${endDateClause}
+      ${dateAccessWindowClause(input.accessWindow)}
+    ORDER BY sleep.date DESC
+    LIMIT 1`,
     {
       userId: input.userId,
-      timezone: input.timezone,
       ...(input.endDate != null ? { endDate: input.endDate } : {}),
       ...accessWindowParams(input.accessWindow),
     },

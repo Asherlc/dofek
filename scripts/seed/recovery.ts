@@ -29,7 +29,7 @@ async function seedDailyMetrics(sql: Sql, random: SeedRandom, today: Date): Prom
       INSERT INTO fitness.daily_metrics (
         date, provider_id, user_id, hrv, spo2_avg,
         respiratory_rate_avg, skin_temp_c, stress_high_minutes, recovery_high_minutes,
-        steps, active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km,
+        steps, distance_km,
         flights_climbed, exercise_minutes, walking_speed, walking_step_length,
         walking_double_support_pct, walking_asymmetry_pct, walking_steadiness,
         stand_hours, resilience_level, source_name
@@ -38,8 +38,7 @@ async function seedDailyMetrics(sql: Sql, random: SeedRandom, today: Date): Prom
         ${random.float(95.4, 99.1, 1)},
         ${random.float(13.2, 16.8, 1)}, ${random.float(35.8, 36.9, 1)},
         ${highStressDay ? 180 : random.int(20, 85)}, ${highStressDay ? 20 : random.int(70, 180)},
-        ${steps}, ${hardBlock ? random.int(780, 1_150) : random.int(360, 760)}, 1810,
-        ${random.float(4.2, 11.5, 1)}, ${hardBlock ? random.float(18, 55, 1) : random.float(0, 18, 1)},
+        ${steps}, ${random.float(4.2, 11.5, 1)},
         ${random.int(3, 24)}, ${hardBlock ? random.int(55, 125) : random.int(22, 70)},
         ${random.float(1.15, 1.55, 2)}, ${random.float(68, 86, 1)},
         ${random.float(18, 27, 1)}, ${random.float(0, 2.5, 1)},
@@ -50,11 +49,11 @@ async function seedDailyMetrics(sql: Sql, random: SeedRandom, today: Date): Prom
 
     await sql`
       INSERT INTO fitness.daily_metrics (
-        date, provider_id, user_id, steps, active_energy_kcal, basal_energy_kcal,
+        date, provider_id, user_id, steps,
         distance_km, flights_climbed, exercise_minutes, stand_hours, source_name
       ) VALUES (
         ${date}, 'apple_health', ${USER_ID}, ${steps + random.int(-600, 900)},
-        ${random.int(330, 820)}, 1790, ${random.float(3.8, 12.2, 1)},
+        ${random.float(3.8, 12.2, 1)},
         ${random.int(2, 28)}, ${random.int(20, 95)}, ${random.int(8, 15)}, 'iPhone + Apple Watch'
       ) ON CONFLICT DO NOTHING
     `;
@@ -83,13 +82,13 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
       INSERT INTO fitness.sleep_session (
         provider_id, user_id, external_id, started_at, ended_at, duration_minutes,
         deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct,
-        sleep_type, sleep_need_baseline_minutes, sleep_need_from_debt_minutes,
+        staging_available, sleep_type, sleep_need_baseline_minutes, sleep_need_from_debt_minutes,
         sleep_need_from_strain_minutes, sleep_need_from_nap_minutes, source_name
       ) VALUES (
         'whoop', ${USER_ID}, ${`seed-whoop-sleep-${daysAgo}`}, ${startedAt}, ${endedAt},
         ${durationMinutes}, ${deepMinutes}, ${remMinutes}, ${lightMinutes}, ${awakeMinutes},
         ${Math.round(((durationMinutes - awakeMinutes) / durationMinutes) * 1000) / 10},
-        'sleep', 480, ${badSleepWeek ? 45 : 10}, ${daysAgo % 5 === 0 ? 35 : 12}, 0,
+        true, 'sleep', 480, ${badSleepWeek ? 45 : 10}, ${daysAgo % 5 === 0 ? 35 : 12}, 0,
         'WHOOP Review Seed'
       ) RETURNING id
     `;
@@ -114,12 +113,12 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
         INSERT INTO fitness.sleep_session (
           provider_id, user_id, external_id, started_at, ended_at, duration_minutes,
           deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct,
-          sleep_type, source_name
+          staging_available, sleep_type, source_name
         ) VALUES (
           'apple_health', ${USER_ID}, ${`seed-apple-sleep-${daysAgo}`}, ${appleStart}, ${appleEnd},
           ${appleDuration}, ${Math.max(25, deepMinutes - 20)}, ${Math.max(40, remMinutes - 24)},
           ${Math.max(90, lightMinutes - 70)}, ${Math.max(15, awakeMinutes - 8)}, NULL,
-          'sleep', 'Apple Watch Review Seed'
+          true, 'sleep', 'Apple Watch Review Seed'
         )
       `;
     }

@@ -87,7 +87,6 @@ export interface MuscleGroupFreshness {
 export interface RecommendationInput {
   today: string; // ISO date (YYYY-MM-DD)
   readinessScore: number | null; // 0-100, null if insufficient data
-  workloadRatio: number | null; // ACWR
   trainingStressBalance: number | null; // TSB
   sleepDebtMinutes: number;
   recentActivities: RecentActivity[]; // last 14 days, newest first
@@ -187,13 +186,7 @@ export function recommendNextWorkout(input: RecommendationInput): WorkoutRecomme
     return makeActiveRecovery(reasoning);
   }
 
-  // Step 2: Check workload ratio for injury risk
-  if (input.workloadRatio != null && input.workloadRatio > 1.5) {
-    reasoning.push(`Workload ratio is ${input.workloadRatio.toFixed(2)} — high injury risk zone`);
-    return makeActiveRecovery(reasoning);
-  }
-
-  // Step 3: Hard/easy alternation — was yesterday hard?
+  // Step 2: Hard/easy alternation — was yesterday hard?
   const yesterdayWasHard = wasYesterdayHard(input);
   const isModerateReadiness =
     input.readinessScore != null && input.readinessScore < READINESS_MODERATE;
@@ -203,7 +196,7 @@ export function recommendNextWorkout(input: RecommendationInput): WorkoutRecomme
     return makeCardioEasy(input, reasoning);
   }
 
-  // Step 4: Decide between strength and cardio
+  // Step 3: Decide between strength and cardio
   const daysSinceStrength = daysSinceActivityType(input, "strength");
   const daysSinceCardio = daysSinceActivityType(input, "cardio");
   const freshMuscleGroups = getFreshMuscleGroups(input);

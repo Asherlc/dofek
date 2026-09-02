@@ -18,6 +18,11 @@ export const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  fullSyncLink: {
+    fontSize: 13,
+    color: colors.accent,
+    marginTop: 4,
+  },
   // Sync All buttons
   syncAllRow: {
     flexDirection: "row",
@@ -53,11 +58,6 @@ export const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 16,
     fontWeight: "600",
-  },
-  fullSyncLink: {
-    fontSize: 13,
-    color: colors.accent,
-    marginTop: 4,
   },
   shareInfoCard: {
     backgroundColor: colors.surface,
@@ -96,18 +96,6 @@ export const styles = StyleSheet.create({
   shareImportError: {
     color: colors.danger,
   },
-  shareProgressTrack: {
-    marginTop: 8,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
-  },
-  shareProgressFill: {
-    height: "100%",
-    backgroundColor: colors.accent,
-  },
-
   // Section titles
   sectionTitle: {
     fontSize: 13,
@@ -116,6 +104,34 @@ export const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 10,
+  },
+  providerFamilyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  providerFamilyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  providerFamilyMethods: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  providerFamilyMethod: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  providerFamilyMethodSelected: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  providerFamilyMethodText: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
 
   // Provider cards
@@ -134,6 +150,8 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flex: 1,
+    minWidth: 0,
   },
   statusDot: {
     width: 8,
@@ -144,6 +162,11 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: colors.text,
+  },
+  cardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   cardMeta: {
     marginTop: 6,
@@ -176,19 +199,10 @@ export const styles = StyleSheet.create({
     marginTop: 8,
     gap: 4,
   },
-  syncProgressTrack: {
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden" as const,
-  },
-  syncProgressFill: {
-    height: "100%" as const,
-    backgroundColor: colors.accent,
-  },
-  syncProgressMessage: {
+  syncProgressFailedCount: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: colors.warning,
+    marginTop: 2,
   },
 
   // Sync history logs
@@ -266,6 +280,11 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     paddingHorizontal: 4,
   },
+  modalDescription: {
+    fontSize: 13,
+    color: colors.accent,
+    marginBottom: 12,
+  },
   errorBanner: {
     backgroundColor: "rgba(239, 68, 68, 0.1)",
     borderRadius: 8,
@@ -293,12 +312,20 @@ export const styles = StyleSheet.create({
     marginTop: 4,
   },
   signInButtonDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surfaceSecondary,
   },
   signInButtonText: {
     color: colors.text,
     fontSize: 15,
     fontWeight: "600",
+  },
+  signInButtonTextDisabled: {
+    color: colors.textSecondary,
+  },
+  disabledHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
   },
 
   // WHOOP verify step

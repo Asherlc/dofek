@@ -11,3 +11,7 @@ headers = {}
 
 [mcp_servers.sentry]
 url = "https://mcp.sentry.dev/mcp"
+
+[mcp_servers.xcodebuildmcp]
+command = "pnpm"
+args = ["dlx", "xcodebuildmcp@2.6.2", "mcp"]

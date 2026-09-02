@@ -1,9 +1,7 @@
 import type { Insight } from "../components/CorrelationCard.tsx";
 
 export function isTrainingInsight(action: string): boolean {
-  return /exercise|steps|cardio|strength|yoga|flexibility|active kcal|active calories/i.test(
-    action,
-  );
+  return /exercise|steps|cardio|strength|yoga|flexibility/i.test(action);
 }
 
 export function filterTrainingInsights(insights: Insight[]): Insight[] {

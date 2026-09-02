@@ -17,11 +17,9 @@ WITH providers AS (
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.health_event
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_daily
+  SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_provider_daily
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.lab_panel
-  UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.lab_result
+  SELECT DISTINCT user_id, provider_id FROM fitness.clinical_record
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.journal_entry
 )
@@ -36,8 +34,7 @@ SELECT
   COALESCE(he.cnt, 0)::bigint AS health_events,
   0::bigint AS metric_stream,
   COALESCE(nd.cnt, 0)::bigint AS nutrition_daily,
-  COALESCE(lp.cnt, 0)::bigint AS lab_panels,
-  COALESCE(lr.cnt, 0)::bigint AS lab_results,
+  COALESCE(cr.cnt, 0)::bigint AS clinical_records,
   COALESCE(je.cnt, 0)::bigint AS journal_entries
 FROM providers p
 LEFT JOIN (
@@ -70,19 +67,14 @@ LEFT JOIN (
 ) he ON he.user_id = p.user_id AND he.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.v_nutrition_daily
+  FROM fitness.v_nutrition_provider_daily
   GROUP BY user_id, provider_id
 ) nd ON nd.user_id = p.user_id AND nd.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.lab_panel
+  FROM fitness.clinical_record
   GROUP BY user_id, provider_id
-) lp ON lp.user_id = p.user_id AND lp.provider_id = p.provider_id
-LEFT JOIN (
-  SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.lab_result
-  GROUP BY user_id, provider_id
-) lr ON lr.user_id = p.user_id AND lr.provider_id = p.provider_id
+) cr ON cr.user_id = p.user_id AND cr.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
   FROM fitness.journal_entry

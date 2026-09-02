@@ -4,9 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./auth": "./src/auth.ts"
+    "./account-erasure": "./src/account-erasure.ts",
+    "./auth": "./src/auth.ts",
+    "./developer-clients": "./src/developer-clients.ts"
   },
   "dependencies": {
-    "zod": "3.25.76"
+    "zod": "4.4.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }

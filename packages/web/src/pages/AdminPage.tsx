@@ -2,6 +2,7 @@ import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
 import { Link } from "@tanstack/react-router";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
+import { DeveloperClientsAdminPanel } from "../components/DeveloperClientsAdminPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -11,18 +12,21 @@ type Tab =
   | "users"
   | "syncLogs"
   | "syncHealth"
+  | "rateLimits"
   | "activities"
   | "sleep"
   | "sessions"
   | "food"
   | "body"
   | "dailyMetrics"
+  | "developerClients"
   | "tokens";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "users", label: "Users" },
   { id: "syncHealth", label: "Sync Health" },
+  { id: "rateLimits", label: "Rate Limits" },
   { id: "syncLogs", label: "Sync Logs" },
   { id: "activities", label: "Activities" },
   { id: "sleep", label: "Sleep" },
@@ -31,6 +35,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dailyMetrics", label: "Daily Metrics" },
   { id: "sessions", label: "Sessions" },
   { id: "tokens", label: "OAuth Tokens" },
+  { id: "developerClients", label: "Developer Clients" },
 ];
 
 export function AdminPage() {
@@ -69,6 +74,7 @@ export function AdminPage() {
       {activeTab === "overview" && <OverviewTab />}
       {activeTab === "users" && <UsersTab />}
       {activeTab === "syncHealth" && <SyncHealthTab />}
+      {activeTab === "rateLimits" && <RateLimitsTab />}
       {activeTab === "syncLogs" && <SyncLogsTab />}
       {activeTab === "activities" && <ActivitiesTab />}
       {activeTab === "sleep" && <SleepTab />}
@@ -77,6 +83,7 @@ export function AdminPage() {
       {activeTab === "dailyMetrics" && <DailyMetricsTab />}
       {activeTab === "sessions" && <SessionsTab />}
       {activeTab === "tokens" && <TokensTab />}
+      {activeTab === "developerClients" ? <DeveloperClientsAdminPanel /> : null}
     </PageLayout>
   );
 }
@@ -206,6 +213,29 @@ function ErrorState({ message }: { message: string }) {
 function formatTimestamp(timestamp: string | null | undefined): string {
   if (!timestamp) return "\u2014";
   return formatDateTime(timestamp);
+}
+
+function formatDurationMs(ms: number | null | undefined): string {
+  if (ms == null) return "\u2014";
+  if (ms < 1_000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  return `${(ms / 3_600_000).toFixed(1)}h`;
+}
+
+function formatQueueLimiter(max: number | null, durationMs: number | null): string {
+  if (max == null || durationMs == null) return "\u2014";
+  return `${max} / ${formatDurationMs(durationMs)}`;
+}
+
+function formatOptionalNumber(value: number | null | undefined): string {
+  if (value == null) return "\u2014";
+  return value.toLocaleString();
+}
+
+function formatStravaQuota(usage: number | null, limit: number | null): string {
+  if (usage == null || limit == null) return "\u2014";
+  return `${usage.toLocaleString()} / ${limit.toLocaleString()}`;
 }
 
 function ShortId({ id }: { id: string }) {
@@ -378,6 +408,109 @@ function SyncHealthTab() {
   );
 }
 
+// ── Tab: Rate Limits ──
+
+function RateLimitsTab() {
+  const { data, isLoading, error } = trpc.admin.rateLimits.useQuery(undefined, {
+    refetchInterval: 30_000,
+  });
+
+  if (isLoading) return <LoadingState />;
+  if (error) return <ErrorState message={error.message} />;
+
+  const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
+    { accessorKey: "providerId", header: "Provider" },
+    { accessorKey: "scope", header: "Scope" },
+    {
+      id: "userId",
+      header: "User",
+      cell: ({ row }) => {
+        const userId = row.original.userId;
+        if (!userId) return "\u2014";
+        return userId.length > 8 ? `${userId.slice(0, 8)}…` : userId;
+      },
+    },
+    {
+      id: "queueLimiter",
+      header: "Queue Limiter",
+      cell: ({ row }) =>
+        formatQueueLimiter(row.original.queueLimiterMax, row.original.queueLimiterDurationMs),
+    },
+    { accessorKey: "syncTier", header: "Sync Tier" },
+    {
+      id: "throttleMs",
+      header: "Throttle",
+      cell: ({ row }) => {
+        const throttleMs = row.original.throttleMs ?? row.original.defaultThrottleMs;
+        const isAdaptive = row.original.throttleMs != null;
+        return (
+          <span className={isAdaptive ? "text-amber-400" : "text-muted"}>
+            {formatDurationMs(throttleMs)}
+          </span>
+        );
+      },
+    },
+    {
+      id: "inferredBudget",
+      header: "Inferred Budget",
+      cell: ({ row }) => formatOptionalNumber(row.original.inferredBudget),
+    },
+    {
+      id: "requestCount",
+      header: "Requests (5m)",
+      cell: ({ row }) => formatOptionalNumber(row.original.requestCount),
+    },
+    {
+      id: "observedCooldownSeconds",
+      header: "Observed Cooldown",
+      cell: ({ row }) =>
+        row.original.observedCooldownSeconds == null
+          ? "\u2014"
+          : formatDurationSeconds(row.original.observedCooldownSeconds),
+    },
+    {
+      id: "cooldownExpiresAt",
+      header: "Active Cooldown",
+      cell: ({ row }) => {
+        const expiresAt = row.original.cooldownExpiresAt;
+        if (!expiresAt) return "\u2014";
+        return (
+          <span className="text-red-400 font-medium">
+            {formatTimestamp(expiresAt)}
+            {row.original.consecutiveHits != null && row.original.consecutiveHits > 1
+              ? ` (${row.original.consecutiveHits}x)`
+              : ""}
+          </span>
+        );
+      },
+    },
+    {
+      id: "stravaShort",
+      header: "Strava 15m",
+      cell: ({ row }) =>
+        formatStravaQuota(row.original.stravaShortUsage, row.original.stravaShortLimit),
+    },
+    {
+      id: "stravaDaily",
+      header: "Strava Daily",
+      cell: ({ row }) =>
+        formatStravaQuota(row.original.stravaDailyUsage, row.original.stravaDailyLimit),
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <AdminCard title="Provider Rate Limit Estimations">
+        <DataTable columns={columns} data={data ?? []} />
+      </AdminCard>
+      <p className="text-xs text-muted px-1">
+        Shows static queue limits plus live adaptive estimates from Redis. Refreshes every 30
+        seconds. User-scoped rows appear when adaptive state or an active cooldown exists.
+      </p>
+    </div>
+  );
+}
+
 // ── Tab: Sync Logs ──
 
 function SyncLogsTab() {
@@ -457,9 +590,9 @@ function ActivitiesTab() {
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
     {
-      id: "activity_type",
+      id: "canonical_type",
       header: "Type",
-      cell: ({ row }) => row.original.activity_type ?? "\u2014",
+      cell: ({ row }) => row.original.canonical_type ?? "\u2014",
     },
     {
       id: "name",

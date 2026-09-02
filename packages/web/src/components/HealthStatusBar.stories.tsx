@@ -1,24 +1,69 @@
-import { formatCaloriesMeasurement, formatHRVMeasurement } from "@dofek/format/format";
-import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { HealthStatusBar } from "./HealthStatusBar";
 
-const imperialUnits = new UnitConverter("imperial");
+function hrvMetric(overrides: Partial<HealthStatusMetric> = {}): HealthStatusMetric {
+  return {
+    metric: "hrv",
+    label: "Heart Rate Variability (HRV)",
+    value: 65,
+    valueText: "65 ms",
+    baseline: 60,
+    baselineText: "60 ms",
+    sampleDeviation: 8,
+    deviation: 0.625,
+    direction: "above",
+    intent: "higher",
+    statusToken: "moving_as_intended",
+    statusColor: "positive",
+    statusLabel: "Moving as intended",
+    evaluationRule: "Above your baseline, where higher values support this metric",
+    explanation: "Heart Rate Variability (HRV) is above your baseline.",
+    provenance: null,
+    comparison: null,
+    baselineProgress: {
+      requiredObservationDays: 3,
+      observedObservationDays: 3,
+      hasMeasurableVariation: true,
+      blocker: null,
+      requirement: "A current value plus at least 2 more recorded days with measurable variation.",
+      summary: "Heart Rate Variability (HRV) baseline is ready.",
+      action: "No action needed.",
+    },
+    ...overrides,
+  };
+}
 
 const meta = {
   title: "Components/HealthStatusBar",
   component: HealthStatusBar,
   tags: ["autodocs"],
   args: {
-    metrics: [
+    baselineRelative: [
       {
-        label: "HRV",
+        metric: "hrv",
+        label: "Heart Rate Variability (HRV)",
         value: 65,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
+        baseline: {
+          windowDays: 30,
+          mean: 60,
+          standardDeviation: 8,
+          zScore: 0.625,
+          sampleCount: 27,
+          coverage: 0.9,
+        },
+        comparison: {
+          recentDays: 7,
+          baselineDays: 28,
+          recentMean: 64,
+          baselineMean: 60,
+          delta: 4,
+          direction: "increasing",
+        },
       },
     ],
+    metrics: [hrvMetric()],
+    units: { hrv: "ms" },
   },
 } satisfies Meta<typeof HealthStatusBar>;
 
@@ -28,16 +73,36 @@ type Story = StoryObj<typeof meta>;
 
 export const Success: Story = {};
 
+export const SourceDisclosure: Story = {
+  args: {
+    metrics: [
+      hrvMetric({
+        provenance: {
+          latestDate: "2026-07-30",
+          sourceProviders: ["whoop"],
+          observedDays: 5,
+          windowDays: 7,
+        },
+      }),
+    ],
+  },
+};
+
 export const Warning: Story = {
   args: {
     metrics: [
-      {
-        label: "HRV",
+      hrvMetric({
         value: 48,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
-      },
+        valueText: "48 ms",
+        deviation: -1.5,
+        direction: "below",
+        statusToken: "notable_deviation",
+        statusColor: "warning",
+        statusLabel: "Notably below baseline",
+        evaluationRule:
+          "Outside your usual range: 1 to less than 2 standard deviations from baseline",
+        explanation: "Heart Rate Variability (HRV) is below your usual range.",
+      }),
     ],
   },
 };
@@ -45,13 +110,18 @@ export const Warning: Story = {
 export const Destructive: Story = {
   args: {
     metrics: [
-      {
-        label: "HRV",
+      hrvMetric({
         value: 38,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
-      },
+        valueText: "38 ms",
+        deviation: -2.75,
+        direction: "below",
+        statusToken: "far_from_baseline",
+        statusColor: "danger",
+        statusLabel: "Far below baseline",
+        evaluationRule:
+          "Well outside your usual range: at least 2 standard deviations from baseline",
+        explanation: "Heart Rate Variability (HRV) is well below your usual range.",
+      }),
     ],
   },
 };
@@ -59,41 +129,72 @@ export const Destructive: Story = {
 export const Unknown: Story = {
   args: {
     metrics: [
-      {
-        label: "HRV",
+      hrvMetric({
         value: null,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
-      },
+        valueText: null,
+        deviation: null,
+        direction: "unknown",
+        statusToken: "insufficient_data",
+        statusColor: "muted",
+        statusLabel: "Not enough data",
+        evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
+        explanation: "Not enough varied data yet to compare this value with your usual range.",
+      }),
     ],
   },
 };
 
-export const FormattedUnits: Story = {
+export const BlockedBaseline: Story = {
   args: {
     metrics: [
-      {
-        label: "Heart Rate Variability (HRV)",
-        value: 57,
-        avg: 51,
-        stddev: 8,
-        formatValue: formatHRVMeasurement,
-      },
-      {
-        label: "Active Energy",
-        value: 302,
-        avg: null,
-        stddev: null,
-        formatValue: formatCaloriesMeasurement,
-      },
-      {
-        label: "Skin Temp",
-        value: 34.4,
-        avg: 34.1,
-        stddev: 0.5,
-        formatValue: (value) => imperialUnits.formatTemperature(value),
-      },
+      hrvMetric({
+        value: null,
+        valueText: null,
+        baseline: null,
+        baselineText: null,
+        sampleDeviation: null,
+        deviation: null,
+        direction: "unknown",
+        statusToken: "insufficient_data",
+        statusColor: "muted",
+        statusLabel: "Not enough data",
+        explanation: "Not enough varied data yet to compare this value with your usual range.",
+        baselineProgress: {
+          requiredObservationDays: 3,
+          observedObservationDays: 1,
+          hasMeasurableVariation: false,
+          blocker: "collecting",
+          requirement:
+            "A current value plus at least 2 more recorded days with measurable variation.",
+          summary:
+            "Heart Rate Variability (HRV) has 1 of 3 required days recorded; the baseline is still collecting observations.",
+          action: "Keep syncing heart rate variability (hrv) data for at least 2 more days.",
+        },
+      }),
     ],
   },
+};
+
+export const NarrowDashboardCards: Story = {
+  args: {
+    metrics: [
+      hrvMetric({ value: 51.5, valueText: "52 ms", baseline: 50.5, baselineText: "51 ms" }),
+      hrvMetric({
+        metric: "steps",
+        label: "Steps",
+        value: 7640,
+        valueText: "7,640",
+        baseline: 7640,
+        baselineText: "7,640",
+        intent: "neutral",
+      }),
+    ],
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 320 }}>
+        <Story />
+      </div>
+    ),
+  ],
 };

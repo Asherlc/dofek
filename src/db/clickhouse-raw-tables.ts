@@ -8,6 +8,11 @@ interface PostgresFitnessActivityRawTableOptions {
   ifNotExists?: boolean;
 }
 
+interface PostgresFitnessProviderRawTableOptions {
+  tableName?: string;
+  ifNotExists?: boolean;
+}
+
 export function buildPostgresFitnessActivityRawTableStatement(
   options: PostgresFitnessActivityRawTableOptions = {},
 ): string {
@@ -18,7 +23,9 @@ export function buildPostgresFitnessActivityRawTableStatement(
   provider_id String,
   user_id UUID,
   external_id Nullable(String),
-  activity_type String,
+  canonical_type String,
+  provider_type String,
+  modality Nullable(String),
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
   name Nullable(String),
@@ -26,6 +33,9 @@ export function buildPostgresFitnessActivityRawTableStatement(
   perceived_exertion Nullable(Float32),
   source_name Nullable(String),
   timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String) DEFAULT 'unknown',
   strava_id Nullable(String),
   raw Nullable(String),
   provider_absent_at Nullable(DateTime64(6, 'UTC')),
@@ -34,6 +44,52 @@ export function buildPostgresFitnessActivityRawTableStatement(
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("id")}`;
+}
+
+export function buildPostgresFitnessProviderRawTableStatement(
+  options: PostgresFitnessProviderRawTableOptions = {},
+): string {
+  const tableName = options.tableName ?? "postgres_fitness.provider";
+  const createTable = options.ifNotExists === false ? "CREATE TABLE" : "CREATE TABLE IF NOT EXISTS";
+  return `${createTable} ${tableName} (
+  id String,
+  name String,
+  api_base_url Nullable(String),
+  user_id Nullable(UUID),
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(id)")}`;
+}
+
+export function buildPostgresFitnessProviderConnectionRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection (
+  user_id UUID,
+  provider_id String,
+  created_at DateTime64(6, 'UTC'),
+  updated_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, provider_id)")}`;
+}
+
+export function buildPostgresFitnessClinicalRecordRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (
+  id UUID,
+  user_id UUID,
+  provider_id String,
+  external_id String,
+  clinical_type String,
+  display_name String,
+  source_name Nullable(String),
+  fhir_version String,
+  fhir String,
+  downloaded_at DateTime64(6, 'UTC'),
+  recorded_at Nullable(DateTime64(6, 'UTC')),
+  issued_at Nullable(DateTime64(6, 'UTC')),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, provider_id, id)")}`;
 }
 
 export function buildPostgresFitnessRawTableStatements(): string[] {
@@ -52,12 +108,18 @@ export function buildPostgresFitnessRawTableStatements(): string[] {
   light_minutes Nullable(Int32),
   awake_minutes Nullable(Int32),
   efficiency_pct Nullable(Float32),
+  staging_available Bool DEFAULT false,
   sleep_type Nullable(String),
+  is_nap Bool DEFAULT false,
   sleep_need_baseline_minutes Nullable(Int32),
   sleep_need_from_debt_minutes Nullable(Int32),
   sleep_need_from_strain_minutes Nullable(Int32),
   sleep_need_from_nap_minutes Nullable(Int32),
   source_name Nullable(String),
+  timezone Nullable(String),
+  start_utc_offset_minutes Nullable(Int16),
+  end_utc_offset_minutes Nullable(Int16),
+  local_time_source LowCardinality(String) DEFAULT 'unknown',
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )
@@ -82,10 +144,7 @@ ${replacingMergeTreeTable("(session_id, started_at, id)")}`,
   spo2_avg Nullable(Float32),
   respiratory_rate_avg Nullable(Float32),
   steps Nullable(Int32),
-  active_energy_kcal Nullable(Float32),
-  basal_energy_kcal Nullable(Float32),
   distance_km Nullable(Float32),
-  cycling_distance_km Nullable(Float32),
   flights_climbed Nullable(Int32),
   exercise_minutes Nullable(Int32),
   walking_speed Nullable(Float32),
@@ -148,45 +207,7 @@ ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, start_date, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.lab_panel (
-  id UUID,
-  provider_id String,
-  user_id UUID,
-  external_id Nullable(String),
-  name String,
-  loinc_code Nullable(String),
-  status Nullable(String),
-  source_name Nullable(String),
-  recorded_at DateTime64(6, 'UTC'),
-  issued_at Nullable(DateTime64(6, 'UTC')),
-  raw Nullable(String),
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, recorded_at, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.lab_result (
-  id UUID,
-  provider_id String,
-  user_id UUID,
-  panel_id Nullable(UUID),
-  external_id Nullable(String),
-  test_name String,
-  loinc_code Nullable(String),
-  value Nullable(Float32),
-  value_text Nullable(String),
-  unit Nullable(String),
-  reference_range_low Nullable(Float32),
-  reference_range_high Nullable(Float32),
-  reference_range_text Nullable(String),
-  status Nullable(String),
-  source_name Nullable(String),
-  recorded_at DateTime64(6, 'UTC'),
-  issued_at Nullable(DateTime64(6, 'UTC')),
-  raw Nullable(String),
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, recorded_at, provider_id, id)")}`,
+    buildPostgresFitnessClinicalRecordRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.journal_entry (
   id UUID,
   date Date,
@@ -200,15 +221,8 @@ ${replacingMergeTreeTable("(user_id, recorded_at, provider_id, id)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.provider (
-  id String,
-  name String,
-  api_base_url Nullable(String),
-  user_id UUID,
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, id)")}`,
+    buildPostgresFitnessProviderRawTableStatement(),
+    buildPostgresFitnessProviderConnectionRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_priority (
   provider_id String,
   priority Int32,
@@ -245,6 +259,28 @@ ${replacingMergeTreeTable("(provider_id, channel)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(provider_id, source_name_pattern, channel)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker (
+  id UUID,
+  operation_id UUID,
+  dataset_key String,
+  flow_name String,
+  batch_key String,
+  source_watermark String,
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_provider_inventory (
+  id UUID,
+  operation_id UUID,
+  dataset_key String,
+  flow_name String,
+  batch_key String,
+  source_watermark String,
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)")}`,
     `CREATE TABLE IF NOT EXISTS postgres_fitness.user_profile (
   id UUID,
   name String,

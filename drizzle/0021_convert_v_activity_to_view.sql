@@ -1,7 +1,3 @@
-BEGIN;
-
---> statement-breakpoint
-
 DROP VIEW IF EXISTS clickhouse.v_activity_members;
 
 --> statement-breakpoint
@@ -235,7 +231,3 @@ SELECT
   ended_at,
   UNNEST(member_activity_ids) AS member_activity_id
 FROM fitness.v_activity;
-
---> statement-breakpoint
-
-COMMIT;

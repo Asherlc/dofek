@@ -25,14 +25,13 @@ or `sensor_fusion`.
 | Source | Ingest path | What we store | What provenance we can know |
 |---|---|---|---|
 | Apple Health workout routes | Health export `Location` elements and mobile HealthKit route sync | Location as `channel = 'location'`; altitude and speed as separate metric rows; `horizontalAccuracy` as location metadata `horizontal_accuracy_m` | Unknown. Apple/Core Location models a location as coordinate plus altitude and accuracy values, but our route payload does not include `CLLocationSourceInformation` or a source-specific altitude origin. Treat as Apple-provided location altitude, not necessarily GNSS. |
-| In-app mobile recording | `expo-location` watch updates | Location as `channel = 'location'`; altitude and speed as separate metric rows; `coords.accuracy` as location metadata `horizontal_accuracy_m` | Unknown. Expo exposes altitude and altitude accuracy but not whether altitude came from GNSS, barometer, network location, or platform fusion. |
 | FIT files: Wahoo, COROS, Suunto | Download provider FIT file, parse `enhanced_altitude ?? altitude`; parse `gps_accuracy` when present | FIT record altitude in meters, preferring `enhanced_altitude`; FIT GPS accuracy as location metadata `gps_accuracy_m` | File-level altitude source unknown. FIT is a transport format for device data; `enhanced_altitude` is a higher-resolution altitude field, not a provenance field. FIT `gps_accuracy` is explicitly a meter-valued `uint8` field in the official profile, but the profile does not define whether it is a horizontal radius, CEP, one-sigma error, or another vendor-specific confidence metric. Device/vendor docs may tell us likely behavior for a given device family, but the record itself does not prove source. |
 | Wahoo ELEMNT FIT files | Same FIT path | Altitude from FIT record | Likely GPS-adjusted barometric for ELEMNT/BOLT/ROAM recordings. Wahoo documents those devices as primarily using a barometric altimeter and using GPS to adjust drift. Still store as unknown unless we add device-aware provenance. |
 | COROS FIT files | Same FIT path | Altitude from FIT record | Likely barometer plus GPS calibration/fusion for COROS devices that support elevation. COROS documents barometer readings with periodic GPS calibration and possible GPS override. The FIT record we ingest does not expose the per-sample decision. |
 | Suunto FIT files | Same FIT path | Altitude from FIT record | Device-dependent. Suunto documents FIT export as containing measured altitude and says some barometric products combine GPS and barometer through FusedAlti. The exported record does not tell us whether a given sample is GPS-only, barometric, or fused. |
 | Strava streams | `altitude` stream from activity streams endpoint | Stream altitude in meters | Mixed and not explicit in API response. Strava documents that activities from known barometric devices use device-recorded barometric elevation, while non-barometric/GPS-source elevation can be cross-referenced to Strava's elevation basemap. The stream payload does not include a provenance flag, and users can request correction on the web. |
 | Garmin Connect detail API | `directElevation` samples from unofficial activity detail | Direct elevation in meters | Device/account-dependent. Garmin documents that devices with barometric altimeters record elevation from air-pressure changes, while devices without barometric altimeters can use Garmin Connect/professional survey/DEM-style elevation. The unofficial sample field does not expose which source was used. |
-| Ride with GPS trips | `track_points[].e` | Track-point elevation in meters | Unknown. The API documents `e` as elevation and says trip track points come from the recording device and may include many attributes. It does not say whether elevation is device-recorded, corrected, planned-route elevation, or imported from another platform. |
+| Ride with GPS trips | `track_points[].e` | Track-point elevation in meters | Unknown/provider-processed. Dofek stores the API value without per-sample provenance. Ride with GPS says activity elevation may originate from barometric or GPS measurements and can be replaced with its elevation dataset, so `e` does not prove the original sensor or processing path. |
 | Fitbit and Polar TCX | Download TCX, parse `AltitudeMeters` | Trackpoint altitude in meters | Unknown from TCX. The TCX schema carries `AltitudeMeters` but no source. Fitbit/Polar device capabilities vary, so any source classification would need device-specific metadata we do not currently store. |
 | Zwift | Fitness data `altitudeInCm` | Virtual altitude in meters | Virtual/course-derived, not real-world GNSS or barometer. Zwift activities are virtual routes; altitude is part of the simulated route/fitness data. |
 | Komoot, Xert, Cycling Analytics, TrainerRoad summaries | Activity summary raw JSON only | Summary elevation gain/loss in `activity.raw`, not canonical altitude stream | Summary provenance is provider-defined and not used as canonical altitude samples. Do not infer per-sample altitude source from these summary values. |
@@ -43,9 +42,6 @@ or `sensor_fusion`.
   location, altitude, accuracy, timestamp, and source information, but our route
   sync does not persist source information:
   <https://developer.apple.com/documentation/CoreLocation/CLLocation>
-- Expo Location: `LocationObjectCoords` exposes `altitude`, `altitudeAccuracy`,
-  `accuracy`, and `speed`, but not altitude-source provenance:
-  <https://docs.expo.dev/versions/latest/sdk/location/>
 - Garmin FIT SDK overview: FIT stores and transfers sport/fitness/health device
   data, and `Profile.xlsx` is the most up-to-date reference for predefined FIT
   messages:
@@ -76,12 +72,17 @@ or `sensor_fusion`.
 - Strava elevation behavior: Strava documents barometric-device elevation,
   corrected elevation from GPS plus its elevation basemap, and different mobile
   live-elevation behavior by platform:
-  <https://support.strava.com/hc/en-us/articles/115001294564-Elevation-on-Strava-FAQs>
+  <https://support.strava.com/en-us/articles/15401909-elevation>
   and
-  <https://support.strava.com/hc/articles/115000024864-Announcing-Strava-s-Elevation-Basemap>
-- Ride with GPS track points: the API documents `e` as elevation and distinguishes
-  route and trip track points:
-  <https://ridewithgps.com/api/v1/doc/reference/track_points>
+  <https://support.strava.com/en-us/articles/15401823-strava-s-elevation-basemap>
+- Ride with GPS track points and elevation processing: the live OpenAPI
+  specification defines trip track points, while current support docs explain
+  device elevation, provider smoothing, and replacement from the provider's
+  elevation dataset:
+  <https://ridewithgps.com/api/v1/openapi.yaml>,
+  <https://support.ridewithgps.com/hc/en-us/articles/4419010957467-Grade-Elevation-and-GPS-Accuracy-FAQ>,
+  and
+  <https://support.ridewithgps.com/hc/en-us/articles/4444266900763-Replace-Elevation>
 - Fitbit GPS/elevation-related behavior: Fitbit documents GPS capture modes and
   barometric altimeters for floor counting, but TCX altitude source is not
   exposed in our ingest:

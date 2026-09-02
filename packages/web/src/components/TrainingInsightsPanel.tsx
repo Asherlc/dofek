@@ -5,11 +5,13 @@ import {
   formatIntensity,
 } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
+import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
   OTHER_ACTIVITY_TYPE,
 } from "@dofek/training/training";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { z } from "zod";
 import {
   chartColors,
@@ -18,11 +20,14 @@ import {
   dofekGrid,
   dofekLegend,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
+import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";
 import { WeeklyHrZonesChart } from "./HeartRateZonesChart.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 // Activity type colors
 const ACTIVITY_COLORS: Record<string, string> = {
@@ -44,7 +49,7 @@ function getActivityColor(type: string): string {
 
 const weeklyVolumeRowSchema = z.object({
   week: z.string(),
-  activity_type: z.string(),
+  canonical_type: z.string(),
   count: z.number(),
   hours: z.number(),
 });
@@ -59,26 +64,45 @@ const hrZoneWeekSchema = z.object({
   zone4: z.number(),
   zone5: z.number(),
 });
-type HrZoneWeek = z.infer<typeof hrZoneWeekSchema>;
+const intensityDistributionSchema = z.object({
+  model: z.literal("karvonen-five-zone"),
+  activityScope: z.literal("endurance"),
+  totalSeconds: z.number(),
+  zones: z.array(
+    z.object({
+      zone: z.number(),
+      label: z.string(),
+      seconds: z.number(),
+      percent: z.number(),
+    }),
+  ),
+  explanation: z.string(),
+});
+type IntensityDistribution = z.infer<typeof intensityDistributionSchema>;
 
 interface TrainingInsightsPanelProps {
-  days: number;
+  days: TimeRangeDays;
 }
 
 export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
-  const volume = trpc.training.weeklyVolume.useQuery({ days });
-  const hrZones = trpc.training.hrZones.useQuery({ days });
+  const volume = trpc.training.weeklyVolume.useQuery(selectedRangeQueryInput(days));
+  const hrZones = trpc.training.hrZones.useQuery(selectedRangeQueryInput(days));
 
   // tRPC infers raw SQL result types as Record<string, unknown>;
   // narrow to known row shapes via typed identity function
-  const volumeRows = z.array(weeklyVolumeRowSchema).parse(volume.data ?? []);
+  const volumeRows = volume.data == null ? [] : z.array(weeklyVolumeRowSchema).parse(volume.data);
   const zoneData = z
-    .object({ maxHr: z.number().nullable(), weeks: z.array(hrZoneWeekSchema) })
+    .object({
+      maxHr: z.number().nullable(),
+      weeks: z.array(hrZoneWeekSchema),
+      intensityDistribution: intensityDistributionSchema,
+    })
     .optional()
     .parse(hrZones.data);
   const zoneWeeks = zoneData?.weeks ?? [];
 
-  const loading = volume.isLoading || hrZones.isLoading;
+  const loading =
+    volume.isLoading && volume.data == null && hrZones.isLoading && hrZones.data == null;
   const hasVolume = volumeRows.length > 0;
   const hasZones = zoneWeeks.length > 0;
 
@@ -90,7 +114,14 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
     );
   }
 
-  if (!hasVolume && !hasZones) {
+  if (
+    !volume.error &&
+    !hrZones.error &&
+    !volume.isLoading &&
+    !hrZones.isLoading &&
+    !hasVolume &&
+    !hasZones
+  ) {
     return (
       <div className="flex items-center justify-center h-[100px]">
         <span className="text-dim text-sm">No training data in this period</span>
@@ -100,12 +131,26 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
 
   return (
     <div className="space-y-6">
-      {hasVolume && <WeeklyVolumeChart data={volumeRows} />}
-      {hasZones && (
-        <>
-          <WeeklyHrZonesChart weeks={zoneWeeks} maxHr={zoneData?.maxHr ?? null} />
-          <IntensityDonut weeks={zoneWeeks} />
-        </>
+      {volume.error && <QueryStatePanel error={volume.error} />}
+      {volume.isLoading && volume.data == null ? (
+        <div className="flex items-center justify-center h-[100px]">
+          <span className="text-dim text-sm">Loading weekly volume...</span>
+        </div>
+      ) : (
+        hasVolume && <WeeklyVolumeChart data={volumeRows} />
+      )}
+      {hrZones.error && <QueryStatePanel error={hrZones.error} />}
+      {hrZones.isLoading && hrZones.data == null ? (
+        <div className="flex items-center justify-center h-[100px]">
+          <span className="text-dim text-sm">Loading heart-rate zones...</span>
+        </div>
+      ) : (
+        hasZones && (
+          <>
+            <WeeklyHrZonesChart weeks={zoneWeeks} maxHr={zoneData?.maxHr ?? null} />
+            {zoneData && <IntensityDonut distribution={zoneData.intensityDistribution} />}
+          </>
+        )
       )}
     </div>
   );
@@ -118,7 +163,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   // Pivot: collect all weeks and activity types
   const weekSet = [...new Set(collapsedRows.map((r) => r.week))].sort();
   const typeTotals = collapsedRows.reduce(
-    (acc, row) => acc.set(row.activity_type, (acc.get(row.activity_type) ?? 0) + row.hours),
+    (acc, row) => acc.set(row.canonical_type, (acc.get(row.canonical_type) ?? 0) + row.hours),
     new Map<string, number>(),
   );
   const typeSet = [...typeTotals.entries()].sort((a, b) => b[1] - a[1]).map(([type]) => type);
@@ -131,7 +176,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
       inner = new Map();
       lookup.set(row.week, inner);
     }
-    inner.set(row.activity_type, Number(row.hours) || 0);
+    inner.set(row.canonical_type, Number(row.hours) || 0);
   }
 
   const series = typeSet.map((type) => ({
@@ -158,9 +203,9 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
           .filter((p) => p.value[1] > 0)
           .map((p) => {
             total += p.value[1];
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatDurationMinutes(p.value[1] * 60)}`;
+            return `<span style="color:${escapeTooltipHtml(p.color)}">\u25CF</span> ${escapeTooltipHtml(p.seriesName)}: ${formatDurationMinutes(p.value[1] * 60)}`;
           });
-        return `<strong>${dateLabel}</strong> (${formatDurationMinutes(total * 60)} total)<br/>${lines.join("<br/>")}`;
+        return `<strong>${escapeTooltipHtml(dateLabel)}</strong> (${formatDurationMinutes(total * 60)} total)<br/>${lines.join("<br/>")}`;
       },
     }),
     xAxis: dofekAxis.time(),
@@ -180,91 +225,53 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   );
 }
 
-/** Donut chart: overall intensity split (low / medium / high) for 80/20 check */
-function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
-  // Aggregate across all weeks
-  const totals = weeks.reduce(
-    (acc, w) => ({
-      low: acc.low + w.zone0 + w.zone1 + w.zone2,
-      medium: acc.medium + w.zone3,
-      high: acc.high + w.zone4 + w.zone5,
-    }),
-    { low: 0, medium: 0, high: 0 },
-  );
-  const grand = totals.low + totals.medium + totals.high;
-  if (grand === 0) return null;
-
-  const lowPct = Math.round((totals.low / grand) * 100);
-  const medPct = Math.round((totals.medium / grand) * 100);
-  const highPct = 100 - lowPct - medPct;
-
+/** Donut chart for the server-computed descriptive Karvonen distribution. */
+function IntensityDonut({ distribution }: { distribution: IntensityDistribution }) {
+  if (distribution.totalSeconds === 0) return null;
   const option = {
     tooltip: dofekTooltip({
       trigger: "item",
-      formatter: ({ name, value, percent }: { name: string; value: number; percent: number }) => {
-        return `${name}: ${formatIntensity(percent)} (${formatDurationSeconds(value)})`;
+      formatter: ({
+        name,
+        value,
+        data,
+      }: {
+        name: string;
+        value: number;
+        data: { serverPercent: number };
+      }) => {
+        return `${escapeTooltipHtml(name)}: ${formatIntensity(data.serverPercent)} (${formatDurationSeconds(value)})`;
       },
     }),
-    legend: {
-      orient: "vertical",
-      right: 20,
-      top: "center",
-      textStyle: { color: chartThemeColors.legendText, fontSize: 12 },
-    },
+    legend: dofekLegend(true, { type: "scroll" }),
     series: [
       {
         type: "pie",
         radius: ["50%", "75%"],
-        center: ["35%", "50%"],
-        avoidLabelOverlap: false,
-        label: {
-          show: true,
-          position: "center",
-          formatter: `{bold|${formatIntensity(lowPct)}}\n{sub|low intensity}`,
-          rich: {
-            bold: {
-              fontSize: 28,
-              fontWeight: "bold",
-              color: chartThemeColors.tooltipText,
-              lineHeight: 36,
-            },
-            sub: { fontSize: 11, color: chartThemeColors.axisLabel, lineHeight: 16 },
-          },
-        },
-        data: [
-          { name: `Low (Z1-Z2)`, value: totals.low, itemStyle: { color: statusColors.positive } },
-          { name: `Medium (Z3)`, value: totals.medium, itemStyle: { color: statusColors.warning } },
-          { name: `High (Z4-Z5)`, value: totals.high, itemStyle: { color: statusColors.danger } },
-        ],
+        avoidLabelOverlap: true,
+        data: distribution.zones.map((zone) => ({
+          name: zone.zone === 0 ? zone.label : `Zone ${zone.zone}: ${zone.label}`,
+          value: zone.seconds,
+          serverPercent: zone.percent,
+          itemStyle: { color: HEART_RATE_ZONE_COLORS[zone.zone] ?? chartThemeColors.axisLabel },
+        })),
       },
     ],
   };
-
-  // Determine if polarized (80/20 guideline)
-  const isPolarized = lowPct >= 75 && medPct <= 10;
-  const status = isPolarized ? "Polarized" : lowPct >= 70 ? "Mostly polarized" : "Not polarized";
-  const intensitySplitLabel = `${formatIntensity(lowPct)}/${formatIntensity(medPct)}/${formatIntensity(highPct)}`;
-  const statusColor = isPolarized
-    ? "text-green-500"
-    : lowPct >= 70
-      ? "text-yellow-500"
-      : "text-red-400";
 
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-medium text-subtle">
-          Intensity Distribution{" "}
-          <span className={`${statusColor} ml-2`}>
-            {status} ({intensitySplitLabel})
-          </span>
+          {TRAINING_TERMINOLOGY.intensityDistribution.plainLabel}
         </h3>
-        <ChartDescriptionTooltip description="This chart summarizes your full time split between low, medium, and high intensity training." />
+        <ChartDescriptionTooltip
+          description={`Technical name: ${TRAINING_TERMINOLOGY.intensityDistribution.technicalName}. ${TRAINING_TERMINOLOGY.intensityDistribution.details} ${distribution.explanation}`}
+        />
       </div>
       <DofekChart option={option} height={200} />
       <p className="text-xs text-dim mt-1">
-        Target: ~{formatIntensity(80)} low (Z1-Z2), minimal medium (Z3), ~{formatIntensity(20)} high
-        (Z4-Z5)
+        {TRAINING_TERMINOLOGY.intensityDistribution.plainDescription}
       </p>
     </div>
   );

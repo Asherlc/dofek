@@ -43,6 +43,12 @@ describe("BodyMeasurement", () => {
     expect(new BodyMeasurement(makeRow({ bodyFatPct: null })).bodyFatPct).toBeNull();
   });
 
+  it("exposes provider and BMI for server-side summaries", () => {
+    const measurement = new BodyMeasurement(makeRow());
+    expect(measurement.providerId).toBe("withings");
+    expect(measurement.bmi).toBe(22.4);
+  });
+
   it("serializes all fields via toDetail()", () => {
     const row = makeRow();
     expect(new BodyMeasurement(row).toDetail()).toEqual(row);
@@ -125,6 +131,51 @@ describe("BodyRepository", () => {
     expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
     expect(queryText).toContain("ORDER BY body_measurements.recorded_at DESC");
     expect(queryText).not.toContain("fitness.v_body_measurement");
+  });
+
+  it("reads an exact local-date range from ClickHouse", async () => {
+    const { repo, query } = makeRepository([
+      {
+        id: "bm-range-1",
+        recorded_at: "2024-01-15T08:00:00Z",
+        provider_id: "withings",
+        user_id: "user-1",
+        external_id: null,
+        weight_kg: "75.5",
+        body_fat_pct: null,
+        muscle_mass_kg: null,
+        bone_mass_kg: null,
+        water_pct: null,
+        bmi: null,
+        height_cm: null,
+        waist_circumference_cm: null,
+        systolic_bp: null,
+        diastolic_bp: null,
+        heart_pulse: null,
+        temperature_c: null,
+        source_name: "Withings Body+",
+        created_at: "2024-01-15T08:01:00Z",
+      },
+    ]);
+
+    const result = await repo.listRange("2024-01-10", "2024-01-15");
+
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("toDate(toTimeZone(recorded_at, {timezone:String}))"),
+      {
+        userId: "user-1",
+        timezone: "UTC",
+        startDate: "2024-01-10",
+        endDate: "2024-01-15",
+      },
+    );
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
+    expect(queryText).toContain(") AS body_measurements");
+    expect(queryText).toContain("ORDER BY body_measurements.recorded_at ASC");
+    expect(result[0]).toBeInstanceOf(BodyMeasurement);
+    expect(result[0]?.id).toBe("bm-range-1");
   });
 
   it("maps all snake_case DB fields to camelCase", async () => {

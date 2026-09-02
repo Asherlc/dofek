@@ -1,0 +1,321 @@
+import { describe, expect, it, vi } from "vitest";
+import type { z } from "zod";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { loadDashboardOverview } from "./dashboard-overview.ts";
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function makeSensorStore({
+  metricDate = "2026-06-29",
+  sleepDurationMinutes = 455,
+  sleepNights,
+  yesterdayLoadRows = [{ load: 0 }],
+}: {
+  metricDate?: string | Date;
+  sleepDurationMinutes?: number | null;
+  sleepNights?: Array<{
+    date: string;
+    durationMinutes: number | null;
+    stagingAvailable?: boolean;
+  }>;
+  yesterdayLoadRows?: Array<{ load: number | null }>;
+} = {}): ActivitySensorStore {
+  return {
+    query: vi.fn(async <TSchema extends z.ZodType>(schema: TSchema, queryText: string) => {
+      expect(queryText).not.toContain("analytics.deduped_sensor");
+      expect(queryText).not.toContain("fitness.metric_stream");
+      let rows: Record<string, unknown>[];
+      if (queryText.includes("analytics.daily_recovery")) {
+        expect(queryText).toContain("recovery.is_deleted = 0");
+        const recoveryDates =
+          sleepNights === undefined
+            ? [{ date: "2026-06-29", hrv: 62 }]
+            : sleepNights.map((night) => ({ date: addDays(night.date, 1), hrv: 62 }));
+        rows = recoveryDates.map((recovery) => ({
+          date: recovery.date,
+          hrv: recovery.hrv,
+          hrv_score: 70,
+          resting_hr_score: 68,
+          sleep_score: 80,
+          respiratory_rate_score: 75,
+        }));
+      } else if (queryText.includes("analytics.daily_sleep")) {
+        expect(queryText).toContain("AND sleep.is_deleted = 0");
+        rows = (sleepNights ?? [{ date: "2026-06-29", durationMinutes: sleepDurationMinutes }]).map(
+          (night) => ({
+            date: night.date,
+            duration_minutes: night.durationMinutes,
+            deep_minutes: 70,
+            rem_minutes: 95,
+            light_minutes: 260,
+            awake_minutes: 30,
+            staging_available: night.stagingAvailable ?? true,
+          }),
+        );
+      } else if (queryText.includes("analytics.daily_strain") && queryText.includes(" AS load")) {
+        expect(queryText).toContain("strain.is_deleted = 0");
+        rows = yesterdayLoadRows;
+      } else if (queryText.includes("analytics.daily_strain")) {
+        expect(queryText).toContain("strain.is_deleted = 0");
+        rows = [{ metric_date: metricDate, daily_load: 120 }];
+      } else {
+        rows = [];
+      }
+      return rows.map((row) => schema.parse(row));
+    }),
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+describe("loadDashboardOverview", () => {
+  it("loads dashboard overview from route-facing read models with dashboard priority", async () => {
+    const sensorStore = makeSensorStore();
+
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-29",
+      sensorStore,
+      userId: "user-1",
+    });
+
+    expect(result.latestDate).toBe("2026-06-29");
+    expect(sensorStore.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("analytics.daily_recovery"),
+      expect.any(Object),
+      { priority: "dashboard" },
+    );
+  });
+
+  it("returns the effective dashboard date and timezone from the server", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-08-02",
+      sensorStore: makeSensorStore(),
+      timezone: "America/Los_Angeles",
+      userId: "user-1",
+    });
+
+    expect(result.summaryDateContext).toEqual({
+      effectiveDate: "2026-08-02",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("normalizes ClickHouse daily strain dates before building load maps", async () => {
+    const sensorStore = makeSensorStore({ metricDate: new Date("2026-06-29T00:00:00.000Z") });
+
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-29",
+      sensorStore,
+      userId: "user-1",
+    });
+
+    expect(result.strain.date).toBe("2026-06-29");
+    expect(result.strain.dailyStrain).toBeGreaterThan(0);
+  });
+
+  it("provides the unavailable V2 state when the dashboard has no prior-night sleep", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore(),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toEqual({
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+  });
+
+  it("returns the non-recommending legacy sleep shape when there are no sleep rows", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore({ sleepNights: [] }),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeed).toEqual({
+      baselineMinutes: 480,
+      strainDebtMinutes: 0,
+      accumulatedDebtMinutes: 0,
+      totalNeedMinutes: 480,
+      recentNights: expect.any(Array),
+      canRecommend: false,
+    });
+    expect(result.sleepNeed?.recentNights).toHaveLength(7);
+    expect(result.sleepNeed?.recentNights.every((night) => night.actualMinutes === null)).toBe(
+      true,
+    );
+    expect(result.sleepNeedV2).toEqual({
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+  });
+
+  it("provides the unavailable V2 state when the prior-night duration is missing", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({ sleepDurationMinutes: null }),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toEqual({
+      availability: "missing_previous_night",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      message: "Sync last night's sleep data to see tonight's sleep need.",
+    });
+    expect(result.sleep.lastNight).toBeNull();
+    expect(result.sleep.sleepDebt).toBe(0);
+  });
+
+  it("distinguishes no previous-day load row from a present zero load", async () => {
+    const noLoadRow = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({ yesterdayLoadRows: [] }),
+      userId: "user-1",
+    });
+    expect(noLoadRow.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      reason: "missing_previous_day_load",
+      message: "Sync yesterday's activity data to include training load in sleep need.",
+      nextAction: "Sync activity data for the previous day.",
+    });
+
+    const zeroLoadRow = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({ yesterdayLoadRows: [{ load: 0 }] }),
+      userId: "user-1",
+    });
+    expect(zeroLoadRow.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    });
+  });
+
+  it("does not manufacture stage percentages when the provider omitted staging", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore({
+        sleepNights: [
+          {
+            date: "2026-06-29",
+            durationMinutes: 480,
+            stagingAvailable: false,
+          },
+        ],
+      }),
+      userId: "user-1",
+    });
+
+    expect(result.sleep.lastNight).toMatchObject({
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stagingAvailable: false,
+    });
+  });
+
+  it("reports insufficient baseline history instead of a generic V2 estimate", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-30",
+      sensorStore: makeSensorStore(),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toEqual({
+      availability: "insufficient_data",
+      epistemicStatus: { kind: "unavailable", label: "Unavailable" },
+      reason: "insufficient_baseline_history",
+      message: "Sync at least 7 qualifying nights to estimate sleep need.",
+      nextAction: "Sync more sleep and recovery data.",
+    });
+  });
+
+  it("excludes older missing durations from dashboard debt and recent-night values", async () => {
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore({
+        sleepNights: [
+          { date: "2026-06-22", durationMinutes: null },
+          ...Array.from({ length: 8 }, (_, index) => ({
+            date: addDays("2026-06-23", index),
+            durationMinutes: 480,
+          })),
+        ],
+      }),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toMatchObject({
+      availability: "available",
+      epistemicStatus: { kind: "estimated", label: "Estimated" },
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 480,
+      estimateMetadata: {
+        baselineQualifyingNightCount: 8,
+        debtObservedNightCount: 8,
+      },
+    });
+  });
+
+  it("reports observed sleep-debt inputs from only the latest 14 nights", async () => {
+    const sleepNights = Array.from({ length: 16 }, (_, index) => {
+      const date = new Date("2026-06-15T12:00:00Z");
+      date.setUTCDate(date.getUTCDate() + index);
+      return {
+        date: date.toISOString().slice(0, 10),
+        durationMinutes: index < 2 ? 100 : index === 5 ? null : 480,
+      };
+    });
+
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-07-01",
+      sensorStore: makeSensorStore({ sleepNights }),
+      userId: "user-1",
+    });
+
+    expect(result.sleepNeedV2).toMatchObject({
+      availability: "available",
+      epistemicStatus: { kind: "estimated", label: "Estimated" },
+      accumulatedDebtMinutes: 0,
+      debtRecoveryMinutes: 0,
+      totalNeedMinutes: 429,
+      estimateMetadata: {
+        baselineQualifyingNightCount: 15,
+        debtObservedNightCount: 13,
+      },
+    });
+  });
+});

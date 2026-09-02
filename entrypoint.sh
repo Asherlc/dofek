@@ -16,15 +16,20 @@ if [ -f .env ]; then
   done < .env
 fi
 
-# Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
-NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
-DBT_ACTIVITY_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate provider_stats"
-DBT_SLEEP_DASHBOARD_MODELS="sleep_heart_rate_sample resting_heart_rate_sleep_window daily_sleep daily_recovery_inputs daily_recovery daily_activity_load daily_strain healthspan_activity_zone_minutes weekly_healthspan"
-DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"
+# Node 22+ supports TypeScript with --experimental-strip-types
+NODE="node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
+DBT_ACTIVITY_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_heart_rate_zones activity_summary_rows hiking_activity body_measurement activity_vo2max_estimate activity_aerobic_efficiency activity_polarization_zones activity_power_curve cycling_activity daily_cycling provider_metric_stream_daily provider_change_watermark provider_stats"
+DBT_SLEEP_DASHBOARD_MODELS="sleep_heart_rate_window sleep_heart_rate_sample resting_heart_rate_sleep_window daily_sleep daily_recovery_inputs daily_recovery daily_endurance_load weekly_endurance_ramp_rate weekly_training_monotony daily_activity_load daily_strain daily_body_measurement healthspan_activity_zone_minutes weekly_healthspan"
+DBT_E2E_MICROBATCH_VARS='{"sensor_scalar_sample_begin":"2026-01-01","deduped_sensor_begin":"2026-01-01","activity_sensor_sample_begin":"2026-01-01","activity_location_sample_begin":"2026-01-01"}'
 
 run_dbt_safe_builds() {
-  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_ACTIVITY_MODELS &&
-  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SLEEP_DASHBOARD_MODELS
+  $NODE scripts/run-analytics-build.ts &&
+  $NODE scripts/warm-query-cache.ts
+}
+
+run_dbt_e2e_builds() {
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --vars "$DBT_E2E_MICROBATCH_VARS" --select "$DBT_ACTIVITY_MODELS" &&
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --vars "$DBT_E2E_MICROBATCH_VARS" --select "$DBT_SLEEP_DASHBOARD_MODELS"
 }
 
 case "${1:-sync}" in
@@ -43,32 +48,17 @@ case "${1:-sync}" in
   migrate)
     exec $NODE src/db/run-migrate.ts
     ;;
+  provider-connection-cutover)
+    exec $NODE scripts/backfill-provider-connections.ts
+    ;;
   analytics)
     run_dbt_safe_builds
     ;;
+  analytics-e2e)
+    run_dbt_e2e_builds
+    ;;
   analytics-worker)
-    interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
-    retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
-    startup_delay_seconds="${ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120}"
-    case "$startup_delay_seconds" in
-      '' | *[!0-9]*)
-        echo "analytics-worker: ANALYTICS_BUILD_STARTUP_DELAY_SECONDS must be a non-negative integer, got '$startup_delay_seconds'" >&2
-        exit 1
-        ;;
-    esac
-    if [ "$startup_delay_seconds" -gt 0 ]; then
-      echo "analytics-worker: waiting ${startup_delay_seconds}s before first dbt build"
-      sleep "$startup_delay_seconds"
-    fi
-    while true; do
-      if run_dbt_safe_builds; then
-        sleep "$interval_seconds"
-      else
-        status="$?"
-        echo "analytics-worker: dbt build failed with exit status $status; retrying in ${retry_delay_seconds}s" >&2
-        sleep "$retry_delay_seconds"
-      fi
-    done
+    exec $NODE scripts/run-analytics-worker.ts
     ;;
   cdc-health)
     interval_seconds="${CDC_HEALTH_INTERVAL_SECONDS:-300}"
@@ -78,14 +68,28 @@ case "${1:-sync}" in
         exit 1
         ;;
     esac
+    $NODE scripts/cdc-health-state.ts initialize
     while true; do
       if $NODE scripts/check-clickhouse-cdc.ts; then
+        $NODE scripts/cdc-health-state.ts success
         sleep "$interval_seconds"
       else
         status="$?"
+        $NODE scripts/cdc-health-state.ts failure
         echo "cdc-health: check failed with exit status $status; retrying in ${interval_seconds}s" >&2
         sleep "$interval_seconds"
       fi
+    done
+    ;;
+  processing-reconciliation)
+    while true; do
+      if $NODE scripts/reconcile-pending-processing.ts; then
+        :
+      else
+        status="$?"
+        echo "processing-reconciliation: reconciliation failed with exit status $status; retrying in 300s" >&2
+      fi
+      sleep 300
     done
     ;;
   metric-stream-clickhouse-sink)
@@ -98,7 +102,7 @@ case "${1:-sync}" in
     exec $NODE scripts/seed-review-clickhouse.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', 'cdc-health', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'provider-connection-cutover', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'processing-reconciliation', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac

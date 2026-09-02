@@ -1,21 +1,21 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import {
+  type SupplementDoseOccurrences,
+  supplementDoseStatusSchema,
+} from "@dofek/format/supplement-dose-events";
 import type { Database } from "dofek/db";
 import {
-  nutrientAmountEntriesFromLegacyFields,
   nutrientColumnsToValues,
   nutrientFieldsSchema,
   nutrientRowSchema,
 } from "dofek/db/nutrient-columns";
-import { supplement, supplementNutrient } from "dofek/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
-// ---------------------------------------------------------------------------
-// Schemas
-// ---------------------------------------------------------------------------
-
 export const supplementSchema = z
   .object({
+    id: z.string().min(1),
     name: z.string().min(1).max(200),
     amount: z.number().positive().optional(),
     unit: z.string().max(10).optional(),
@@ -25,43 +25,56 @@ export const supplementSchema = z
   })
   .merge(nutrientFieldsSchema.partial());
 
+export const supplementListSchema = z.array(supplementSchema);
+
 export type Supplement = z.infer<typeof supplementSchema>;
 
-/** Non-nutrient optional fields on the supplement API shape. */
 const NON_NUTRIENT_OPTIONAL_FIELDS = ["amount", "unit", "form", "description", "meal"] as const;
 
-/** Zod schema for v_supplement_with_nutrition rows */
 const supplementViewRowSchema = z
   .object({
-    id: z.string(),
+    definition_id: z.string(),
+    supplement_id: z.string(),
     user_id: z.string(),
+    schedule_id: z.string(),
+    supersedes_definition_id: z.string().nullable(),
     name: z.string(),
     amount: z.coerce.number().nullable(),
     unit: z.string().nullable(),
     form: z.string().nullable(),
     description: z.string().nullable(),
     meal: z.string().nullable(),
-    sort_order: z.number(),
+    sort_order: z.coerce.number(),
+    effective_from: z.string(),
+    effective_to: z.string().nullable(),
     nutrition_data_id: z.string().nullable(),
     created_at: timestampStringSchema,
     updated_at: timestampStringSchema,
   })
   .merge(nutrientRowSchema);
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const doseEventRowSchema = z.object({
+  id: z.string(),
+  schedule_id: z.string(),
+  supplement_id: z.string(),
+  supplement_name: z.string(),
+  scheduled_date: z.string(),
+  status: supplementDoseStatusSchema,
+  supersedes_event_id: z.string().nullable(),
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
+  recorded_at: timestampStringSchema,
+  created_at: timestampStringSchema,
+  is_current: z.boolean(),
+});
 
-/** Map a DB view row (snake_case) to the API shape (camelCase). */
 export function toApiSupplement(row: Record<string, unknown>): Supplement {
-  const result: Record<string, unknown> = { name: row.name };
+  const result: Record<string, unknown> = { id: row.definition_id, name: row.name };
 
-  // Copy non-nutrient optional fields (same name in view and API)
   for (const key of NON_NUTRIENT_OPTIONAL_FIELDS) {
     if (row[key] != null) result[key] = row[key];
   }
 
-  // Convert snake_case nutrient columns from the view to camelCase for the API
   const nutrients = nutrientColumnsToValues(row);
   for (const [key, value] of Object.entries(nutrients)) {
     if (value != null) result[key] = value;
@@ -70,20 +83,23 @@ export function toApiSupplement(row: Record<string, unknown>): Supplement {
   return supplementSchema.parse(result);
 }
 
-// ---------------------------------------------------------------------------
-// Repository
-// ---------------------------------------------------------------------------
+function startDateForDays(endDate: string, days: number): string {
+  const date = new Date(`${endDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - (days - 1));
+  return date.toISOString().slice(0, 10);
+}
 
 export class SupplementsRepository {
-  readonly #db: Pick<Database, "execute" | "transaction">;
+  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #timezone: string;
 
-  constructor(db: Pick<Database, "execute" | "transaction">, userId: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, timezone = "UTC") {
     this.#db = db;
     this.#userId = userId;
+    this.#timezone = timezone;
   }
 
-  /** List all supplements for this user, ordered by sort_order. */
   async list(): Promise<Supplement[]> {
     const rows = await executeWithSchema(
       this.#db,
@@ -95,44 +111,69 @@ export class SupplementsRepository {
     return rows.map((row) => toApiSupplement(row));
   }
 
-  /** Replace all supplements for this user (transactional). */
-  async save(supplements: Supplement[]): Promise<{ success: boolean; count: number }> {
-    await this.#db.transaction(async (tx) => {
-      // Delete existing supplements; supplement_nutrient cascades automatically.
-      await tx.delete(supplement).where(eq(supplement.userId, this.#userId));
+  async occurrences(days: number): Promise<SupplementDoseOccurrences> {
+    const endDate = formatDateYmdInTimeZone(new Date(), this.#timezone);
+    const startDate = startDateForDays(endDate, days);
+    const rows = await executeWithSchema(
+      this.#db,
+      doseEventRowSchema,
+      sql`SELECT
+            event.id,
+            event.supplement_id AS schedule_id,
+            event.definition_id AS supplement_id,
+            definition.name AS supplement_name,
+            event.scheduled_date,
+            event.status,
+            event.supersedes_event_id,
+            event.provider_id,
+            event.source_name,
+            event.recorded_at,
+            event.created_at,
+            NOT EXISTS (
+              SELECT 1
+              FROM fitness.supplement_dose_event AS successor
+              WHERE successor.supersedes_event_id = event.id
+            ) AS is_current
+          FROM fitness.supplement_dose_event AS event
+          INNER JOIN fitness.supplement_definition AS definition
+            ON definition.id = event.definition_id
+          WHERE event.user_id = ${this.#userId}
+            AND event.scheduled_date >= ${startDate}::date
+            AND event.scheduled_date <= ${endDate}::date
+          ORDER BY event.scheduled_date DESC, event.created_at ASC, event.id ASC`,
+    );
 
-      for (const [index, entry] of supplements.entries()) {
-        const [supplementRow] = await tx
-          .insert(supplement)
-          .values({
-            userId: this.#userId,
-            name: entry.name,
-            amount: entry.amount ?? null,
-            unit: entry.unit ?? null,
-            form: entry.form ?? null,
-            description: entry.description ?? null,
-            meal: entry.meal ?? null,
-            sortOrder: index,
-          })
-          .returning({ id: supplement.id });
+    const histories = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = `${row.schedule_id}:${row.scheduled_date}`;
+      const history = histories.get(key) ?? [];
+      history.push(row);
+      histories.set(key, history);
+    }
 
-        if (!supplementRow?.id) {
-          throw new Error(
-            `Supplement insert did not return an id (name="${entry.name}", index=${index})`,
-          );
-        }
-        const nutrientEntries = nutrientAmountEntriesFromLegacyFields(entry);
-        if (nutrientEntries.length > 0) {
-          await tx.insert(supplementNutrient).values(
-            nutrientEntries.map((nutrientEntry) => ({
-              supplementId: supplementRow.id,
-              nutrientId: nutrientEntry.nutrientId,
-              amount: nutrientEntry.amount,
-            })),
-          );
-        }
-      }
-    });
-    return { success: true, count: supplements.length };
+    const counts = { planned: 0, taken: 0, skipped: 0, unknown: 0 };
+    const occurrences = [];
+    for (const history of histories.values()) {
+      const current = history.find((event) => event.is_current);
+      if (!current) continue;
+      counts[current.status]++;
+      occurrences.push({
+        currentEventId: current.id,
+        scheduleId: current.schedule_id,
+        supplementId: current.supplement_id,
+        supplementName: current.supplement_name,
+        scheduledDate: current.scheduled_date,
+        status: current.status,
+        history: history.map((event) => ({
+          id: event.id,
+          providerId: event.provider_id,
+          status: event.status,
+          recordedAt: event.recorded_at,
+          sourceName: event.source_name,
+        })),
+      });
+    }
+
+    return { occurrences, counts };
   }
 }

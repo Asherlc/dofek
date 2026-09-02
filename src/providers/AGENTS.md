@@ -14,10 +14,11 @@
 
 ### Provider Activity Absence Checklist
 
-When a provider writes activities, follow this contract (see `src/db/provider-activity-absence.ts`):
-- **Authoritative list syncs must reconcile provider absence**: After a completed, authoritative activity-list fetch for the exact sync window, call `reconcileProviderActivityAbsence()`.
+When a provider writes activities, follow this contract (see `src/db/provider-activity-sync.ts` and `src/db/provider-activity-absence.ts`):
+- **Use shared activity sync helpers**: Upsert activities with `upsertProviderActivity()` or `ProviderActivityListSync.upsert()`. Tombstone completed authoritative list fetches with `finishProviderActivityListSync()` or `ProviderActivityListSync.reconcile()`.
+- **Authoritative list syncs must reconcile provider absence**: After a completed, authoritative activity-list fetch for the exact sync window, reconcile through the shared sync helper.
 - **Webhook deletes must tombstone**: Explicit delete/removed events must call `markProviderActivityAbsent()`, not hard-delete rows.
-- **Upserts must clear tombstones**: Activity upserts must clear `providerAbsentAt` so restored provider activities become visible again.
+- **Reconcile restores tombstones; upserts must not undo them**: Shared upsert helpers never set `providerAbsentAt: null`. Reconciliation clears tombstones for activities still present in the authoritative provider list.
 - **Do not reconcile partial fetches**: Never reconcile when the provider response is partial because of rate limits, auth failures, incomplete pagination, checkpoint resumes, or other fetch errors. Absence is not proof of deletion unless the list fetch was complete and successful.
 - **Filter absent and user-deleted activities everywhere else**: Any code that shows activities, totals, stats, exports, or analytics must exclude rows where `provider_absent_at IS NOT NULL` or `deleted_at IS NOT NULL`. Tombstones are soft — they preserve raw history but must not appear in normal user-facing views. Pair both filters; `scanActiveActivityPredicatePairing` in `src/db/activity-visibility.ts` guards this in CI.
 

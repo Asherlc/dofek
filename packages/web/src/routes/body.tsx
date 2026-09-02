@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { useState } from "react";
+import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
 
 const subtabs = [
@@ -13,17 +14,19 @@ export const Route = createFileRoute("/body")({
 });
 
 function BodyLayout() {
-  const [days, setDays] = useState(30);
+  const { days, description, setDays } = useTimeRangePreference("body");
 
   return (
-    <BodyDaysContext.Provider value={{ days, setDays }}>
-      <PageLayout
-        title="Body"
-        subtitle="Recovery metrics, vitals, and body composition"
-        tabs={subtabs}
-      >
-        <Outlet />
-      </PageLayout>
+    <BodyDaysContext.Provider value={{ days, description, setDays }}>
+      <ChartRangeProvider days={days}>
+        <PageLayout
+          title="Body"
+          subtitle="Recovery metrics, vitals, and body composition"
+          tabs={subtabs}
+        >
+          <Outlet />
+        </PageLayout>
+      </ChartRangeProvider>
     </BodyDaysContext.Provider>
   );
 }

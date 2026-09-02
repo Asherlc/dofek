@@ -30,18 +30,20 @@ describe("wahooOAuthConfig", () => {
     expect(config?.tokenUrl).toBe("https://api.wahooligan.com/oauth/token");
   });
 
-  it("includes revokeUrl for Doorkeeper token revocation", () => {
+  it("does not expose Wahoo's undocumented token revocation endpoint", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
     const config = wahooOAuthConfig();
-    expect(config?.revokeUrl).toBe("https://api.wahooligan.com/oauth/revoke");
+    expect(config?.revokeUrl).toBeUndefined();
   });
 
   it("uses dynamic redirect URI based on host", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
-    const config = wahooOAuthConfig("dofek.asherlc.com");
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    const canonicalConfig = wahooOAuthConfig("dofek.fit");
+    expect(canonicalConfig?.redirectUri).toBe("https://dofek.fit/callback");
+    const legacyConfig = wahooOAuthConfig("dofek.asherlc.com");
+    expect(legacyConfig?.redirectUri).toBe("https://dofek.asherlc.com/callback");
   });
 });
 

@@ -8,9 +8,14 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
+
+const { mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -18,12 +23,20 @@ vi.mock("dofek/lib/cache", () => ({
 
 const mockEnqueueActivityDeleteAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueActivityRestoreAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueActivityRecomputeAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockWithUserWriteFence = vi.fn();
+
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mockWithUserWriteFence(...args),
+}));
 
 vi.mock("dofek/jobs/queues", () => ({
   enqueueActivityDeleteAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityDeleteAnalyticsRefresh(...args),
   enqueueActivityRestoreAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityRestoreAnalyticsRefresh(...args),
+  enqueueActivityRecomputeAnalyticsRefresh: (...args: unknown[]) =>
+    mockEnqueueActivityRecomputeAnalyticsRefresh(...args),
 }));
 
 // Mock tRPC infrastructure
@@ -101,6 +114,16 @@ vi.mock("dofek/providers/registry", () => ({
   }),
 }));
 
+beforeEach(() => {
+  mockWithUserWriteFence.mockImplementation(
+    async (
+      database: unknown,
+      _userId: string,
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(database),
+  );
+});
+
 import { activityRouter } from "./activity.ts";
 
 const createCaller = createTestCallerFactory(activityRouter);
@@ -109,20 +132,17 @@ function makeCaller(
   rows: Record<string, unknown>[] = [],
   sensorStore: unknown = makeSensorStoreStub(),
 ) {
-  return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
+  return makeTestCaller(createCaller, [rows], (db) => ({
+    db,
     sensorStore,
     userId: "user-1",
     timezone: "UTC",
-  });
+  })).caller;
 }
 
 function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
-  return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
-    userId: "user-1",
-    timezone: "UTC",
-  });
+  return makeTestCaller(createCaller, [rows], (db) => ({ db, userId: "user-1", timezone: "UTC" }))
+    .caller;
 }
 
 function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
@@ -142,11 +162,12 @@ function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
 function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
   return {
     id: "00000000-0000-0000-0000-000000000001",
-    activity_type: "cycling",
+    canonical_type: "cycling",
     started_at: "2026-04-01T10:00:00Z",
     ended_at: "2026-04-01T11:00:00Z",
     name: "Ride",
     notes: null,
+    perceived_exertion: null,
     provider_id: "wahoo",
     source_providers: ["wahoo"],
     source_external_ids: null,
@@ -166,6 +187,56 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("activityRouter", () => {
+  describe("hangboardDetails", () => {
+    it("returns the Hangboarding detail contract", async () => {
+      const caller = makeCaller([
+        {
+          activity_id: "activity-1",
+          canonical_type: "hangboard",
+          plan_name: "7/3 Repeaters",
+          session_id: "session-1",
+          board_id: "board-1",
+          board_name: "Tension Board",
+          segments_error: null,
+          activity_duration_seconds: 300,
+          interval_id: "interval-1",
+          interval_index: 0,
+          label: "Step 1: 19 mm edge",
+          interval_type: "work",
+          interval_started_at: "2026-08-07T14:00:00.000Z",
+          interval_ended_at: "2026-08-07T14:00:07.000Z",
+          duration_seconds: 7,
+        },
+      ]);
+
+      await expect(
+        caller.hangboardDetails({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).resolves.toEqual({
+        planName: "7/3 Repeaters",
+        boardName: "Tension Board",
+        segmentsError: null,
+        summary: {
+          durationSeconds: 300,
+          workIntervalCount: 1,
+          totalWorkDurationSeconds: 7,
+          totalRestDurationSeconds: null,
+          exercises: [{ label: "19 mm edge", workIntervalCount: 1, workDurationSeconds: 7 }],
+        },
+      });
+    });
+
+    it("returns an actionable not-found error for a non-Hangboarding activity", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.hangboardDetails({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "NOT_FOUND",
+        message: "Hangboarding details not found",
+      });
+    });
+  });
+
   describe("list", () => {
     it("returns paginated items with totalCount", async () => {
       const rows = [
@@ -173,7 +244,7 @@ describe("activityRouter", () => {
           id: "a1",
           started_at: "2024-01-01 10:00:00+00",
           ended_at: "2024-01-01 11:00:00+00",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           name: "Morning Ride",
           provider_id: "wahoo",
           source_providers: ["wahoo"],
@@ -194,7 +265,7 @@ describe("activityRouter", () => {
       expect(item).toMatchObject({
         id: "a1",
         started_at: "2024-01-01 10:00:00+00",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         avg_hr: 150,
         max_hr: 180,
         avg_power: 200,
@@ -208,7 +279,7 @@ describe("activityRouter", () => {
           id: "a1",
           started_at: "2024-01-15 14:30:00+00",
           ended_at: "2024-01-15 15:15:00+00",
-          activity_type: "running",
+          canonical_type: "running",
           name: "Easy Run",
           provider_id: "apple_health",
           source_providers: ["apple_health"],
@@ -317,7 +388,7 @@ describe("activityRouter", () => {
     it("returns mapped activity detail with source links", async () => {
       const row = {
         id: "abc-123",
-        activity_type: "cycling",
+        canonical_type: "cycling",
         started_at: "2024-01-01T10:00:00Z",
         ended_at: "2024-01-01T11:00:00Z",
         name: "Morning Ride",
@@ -353,12 +424,16 @@ describe("activityRouter", () => {
       expect(result.sourceLinks).toEqual([
         {
           providerId: "strava",
+          externalId: "99999",
+          subsource: null,
           label: "Strava",
           url: "https://www.strava.com/activities/99999",
           providerAbsentAt: null,
         },
         {
           providerId: "wahoo",
+          externalId: "42",
+          subsource: null,
           label: "Wahoo",
           url: "https://systm.wahoofitness.com/history/activity-details/42",
           providerAbsentAt: null,
@@ -376,7 +451,7 @@ describe("activityRouter", () => {
     it("handles null optional fields", async () => {
       const row = {
         id: "abc-123",
-        activity_type: "running",
+        canonical_type: "running",
         started_at: "2024-01-01",
         ended_at: null,
         name: null,
@@ -785,6 +860,72 @@ describe("activityRouter", () => {
     });
   });
 
+  describe("recompute", () => {
+    beforeEach(() => {
+      mockEnqueueActivityRecomputeAnalyticsRefresh.mockClear();
+    });
+
+    it("enqueues recompute for all grouped member activities and invalidates caches", async () => {
+      const execute = vi.fn().mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          user_id: "user-1",
+          started_at: "2026-04-01T10:00:00Z",
+          ended_at: "2026-04-01T11:00:00Z",
+          member_activity_ids: [
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000002",
+          ],
+        },
+      ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).resolves.toEqual({ success: true });
+
+      expect(mockEnqueueActivityRecomputeAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ]);
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("throws NOT_FOUND when recomputing a missing activity", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+    });
+
+    it("throws PRECONDITION_FAILED when activity views are missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
+  });
+
   describe("restoreProviderAbsent", () => {
     it("restores hidden activities and returns the restored count", async () => {
       const execute = vi
@@ -1098,7 +1239,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "running", avg_power: null, max_power: null }),
+          makeActivityRow({ canonical_type: "running", avg_power: null, max_power: null }),
         );
       const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
@@ -1138,7 +1279,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 340 }),
+          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 340 }),
         );
       const caller = makeCallerWithoutSensorStore();
 
@@ -1157,7 +1298,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
-          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 360 }),
+          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
         );
       const getEftpTrendSpy = vi
         .spyOn(PowerRepository.prototype, "getEftpTrend")
@@ -1176,7 +1317,8 @@ describe("activityRouter", () => {
       });
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
-      expect(getEftpTrendSpy).toHaveBeenCalledWith(90);
+      const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
+      expect(range?.days).toBe(90);
       expect(getPowerZonesSpy).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 265);
       expect(result).toEqual({ zones, ftp: 265 });
 
@@ -1219,7 +1361,7 @@ describe("Activity model (via router integration)", () => {
 
   const fullRow = {
     id: "abc-123",
-    activity_type: "cycling",
+    canonical_type: "cycling",
     started_at: "2026-03-01T10:00:00+00:00",
     ended_at: "2026-03-01T11:30:00+00:00",
     name: "Morning Ride",
@@ -1256,6 +1398,12 @@ describe("Activity model (via router integration)", () => {
     expect(detail.sourceProviders).toEqual(["strava", "wahoo"]);
     expect(detail.sourceLinks).toHaveLength(2);
     expect(detail.sourceLinks[0]?.label).toBe("Strava");
+    expect(detail.sourceDecision).toEqual({
+      sourceCount: 2,
+      primarySourceLabel: "Wahoo",
+      explanation:
+        "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+    });
     expect(detail.avgHr).toBe(145);
     expect(detail.maxHr).toBe(175);
     expect(detail.avgPower).toBe(220);

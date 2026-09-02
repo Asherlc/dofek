@@ -2,10 +2,28 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
+  isProviderConnectFailure,
+  PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
   parseRetryAfterHeader,
 } from "./rate-limit.ts";
+import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
+
+function createMockAdaptiveStore(): AdaptiveRateLimitStore & {
+  awaitAdmission: CallableVitestMock;
+  recordSuccess: CallableVitestMock;
+  recordRateLimit: CallableVitestMock;
+  getLearnedCooldownSeconds: CallableVitestMock;
+} {
+  return {
+    awaitAdmission: vi.fn().mockResolvedValue(undefined),
+    recordSuccess: vi.fn().mockResolvedValue(undefined),
+    recordRateLimit: vi.fn().mockResolvedValue(undefined),
+    getLearnedCooldownSeconds: vi.fn().mockResolvedValue(null),
+  };
+}
 
 class TestRateLimitError extends ProviderRateLimitError {
   constructor(response: Response, body: string) {
@@ -194,6 +212,72 @@ describe("fetchWithRateLimitHandling", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it("aborts a provider request at the canonical deadline", async () => {
+    const timeoutController = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Expected provider request timeout signal"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-2",
+    });
+
+    const result = rateLimitFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+    const timeoutReason = new DOMException("Timed out", "TimeoutError");
+    timeoutController.abort(timeoutReason);
+    const error = await result;
+
+    expect(timeoutSpy).toHaveBeenCalledWith(PROVIDER_HTTP_REQUEST_TIMEOUT_MS);
+    expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).toHaveProperty("cause", timeoutReason);
+    expect(error).toMatchObject({
+      code: "ETIMEDOUT",
+      providerId: "example",
+      scope: "user",
+      timeoutMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
+      userId: "user-2",
+    });
+  });
+
+  it("preserves caller cancellation instead of reporting a provider timeout", async () => {
+    const timeoutController = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Expected combined provider request signal"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+    });
+    const callerController = new AbortController();
+    const callerError = new DOMException("Caller cancelled", "AbortError");
+
+    const result = rateLimitFetch("https://api.example.com/data", {
+      signal: callerController.signal,
+    }).catch((caughtError: unknown) => caughtError);
+    callerController.abort(callerError);
+
+    await expect(result).resolves.toBe(callerError);
+  });
   it("treats 502, 503, and 504 as service-unavailable responses", async () => {
     for (const statusCode of [502, 503, 504]) {
       const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(statusCode));
@@ -208,6 +292,52 @@ describe("fetchWithRateLimitHandling", () => {
       expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
       expect(error).toHaveProperty("statusCode", statusCode);
     }
+  });
+
+  it("wraps undici connect timeouts as provider request timeouts (DOFEK-SERVER-4A)", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockRejectedValue(fetchError);
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "withings",
+    });
+
+    const error = await rateLimitFetch("https://wbsapi.withings.net/measure").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).toHaveProperty("providerId", "withings");
+    expect(isProviderConnectFailure(error)).toBe(true);
+  });
+
+  it("returns HTTP 500 by default and classifies opted-in HTTP 500 as unavailable", async () => {
+    const defaultFetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(response(500, "server error"));
+    const defaultFetch = createRateLimitAwareFetch(defaultFetchFn, {
+      providerId: "example",
+    });
+
+    const defaultResponse = await defaultFetch("https://api.example.com/data");
+
+    expect(defaultResponse.status).toBe(500);
+    expect(await defaultResponse.text()).toBe("server error");
+
+    const configuredFetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(response(500, "server error"));
+    const configuredFetch = createRateLimitAwareFetch(configuredFetchFn, {
+      providerId: "example",
+      additionalServiceUnavailableStatusCodes: [500],
+    });
+
+    const error = await configuredFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toHaveProperty("statusCode", 500);
   });
 
   it("uses provider scope and null user by default in wrapper errors", async () => {
@@ -370,6 +500,108 @@ describe("fetchWithRateLimitHandling", () => {
     );
     expect(secondError).toHaveProperty("providerId", "second");
     expect(first).not.toBe(second);
+  });
+
+  it("awaits adaptive admission before calling fetch when a store is provided", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(200, "ok"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-9",
+      adaptiveStore,
+    });
+
+    await rateLimitFetch("https://api.example.com/data");
+
+    expect(adaptiveStore.awaitAdmission).toHaveBeenCalledOnce();
+    expect(adaptiveStore.awaitAdmission).toHaveBeenCalledWith("example", "user", "user-9");
+    expect(fetchFn).toHaveBeenCalledOnce();
+  });
+
+  it("records adaptive success with response headers on ok responses", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response("ok", {
+        status: 200,
+        headers: { "X-RateLimit-Limit": "100,1000" },
+      }),
+    );
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "provider",
+      adaptiveStore,
+    });
+
+    await rateLimitFetch("https://api.example.com/data");
+
+    expect(adaptiveStore.recordSuccess).toHaveBeenCalledOnce();
+    expect(adaptiveStore.recordSuccess).toHaveBeenCalledWith(
+      "example",
+      "provider",
+      null,
+      expect.any(Headers),
+    );
+  });
+
+  it("does not record adaptive success when the response is not ok", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(404, "missing"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      adaptiveStore,
+    });
+
+    const result = await rateLimitFetch("https://api.example.com/data");
+
+    expect(result.status).toBe(404);
+    expect(adaptiveStore.recordSuccess).not.toHaveBeenCalled();
+  });
+
+  it("records adaptive rate limits when a provider rate-limit error is thrown", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(429, "limited"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-9",
+      adaptiveStore,
+    });
+
+    const error = await rateLimitFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(adaptiveStore.recordRateLimit).toHaveBeenCalledOnce();
+    expect(adaptiveStore.recordRateLimit).toHaveBeenCalledWith(error);
+  });
+
+  it("does not record adaptive rate limits for service-unavailable responses", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(503, "down"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      adaptiveStore,
+    });
+
+    await rateLimitFetch("https://api.example.com/data").catch(() => undefined);
+
+    expect(adaptiveStore.recordRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("does not record adaptive rate limits for custom non-provider rate-limit errors", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(429, "limited"));
+    const adaptiveStore = createMockAdaptiveStore();
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      adaptiveStore,
+      createRateLimitError: (_response, body) => new Error(`custom ${body}`),
+    });
+
+    await rateLimitFetch("https://api.example.com/data").catch(() => undefined);
+
+    expect(adaptiveStore.recordRateLimit).not.toHaveBeenCalled();
   });
 });
 

@@ -1,0 +1,67 @@
+{
+  "name": "@dofek/peloton",
+  "version": "0.1.23",
+  "description": "Unofficial Peloton API client with reverse-engineered Auth0 authentication",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/peloton-client"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/peloton-client#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "peloton",
+    "fitness",
+    "api-client",
+    "auth0",
+    "oauth",
+    "unofficial",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/client.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
+  },
+  "scripts": {
+    "test": "vitest run src",
+    "test:watch": "vitest --watch src",
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dofek/provider-http": "workspace:*",
+    "@dofek/training": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

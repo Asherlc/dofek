@@ -52,6 +52,8 @@ describe("fitCriticalHeartRate", () => {
 // Router procedure tests (kill delegation mutations in duration-curves.ts)
 // ---------------------------------------------------------------------------
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -60,7 +62,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -105,6 +110,13 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 }
 
 describe("durationCurvesRouter", () => {
+  it("versions the pace curve availability response cache contract", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 3_600_000,
+      keyVersion: "pace-curve-availability-v1",
+    });
+  });
+
   describe("hrCurve", () => {
     it("returns heart rate curve data", async () => {
       const rows = [
@@ -138,12 +150,26 @@ describe("durationCurvesRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.paceCurve({ days: 90 });
       expect(result.points).toHaveLength(2);
+      expect(result.availability).toMatchObject({
+        status: "available",
+        observedCount: 2,
+        minimumCount: 1,
+        message:
+          "Running pace duration data is available from the running pace duration-curve read model.",
+      });
     });
 
     it("uses default days (90) when not specified", async () => {
       const caller = makeCaller([]);
       const result = await caller.paceCurve({});
       expect(result.points).toEqual([]);
+      expect(result.availability).toMatchObject({
+        status: "insufficient_data",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No running pace duration data is available from the running pace duration-curve read model. Record at least 1 running activity with pace data to show this chart.",
+      });
     });
   });
 

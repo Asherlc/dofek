@@ -1,19 +1,21 @@
 import { formatDateTime } from "@dofek/format/format";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 type McpScope =
   | "health:read"
   | "activity:read"
-  | "nutrition:write"
+  | "nutrition:read"
   | "providers:read"
   | "sync:write";
 
 const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:read", label: "Health summaries" },
   { value: "activity:read", label: "Activity history" },
-  { value: "nutrition:write", label: "Log food" },
+  { value: "nutrition:read", label: "Nutrition summaries" },
   { value: "providers:read", label: "Provider status" },
   { value: "sync:write", label: "Start sync jobs" },
 ];
@@ -29,19 +31,29 @@ function formatTimestamp(value: Date | string | null): string {
 export function McpTokensPanel() {
   const trpcUtils = trpc.useUtils();
   const tokens = trpc.mcp.listTokens.useQuery();
-  const createTokenMutation = trpc.mcp.createToken.useMutation();
-  const revokeTokenMutation = trpc.mcp.revokeToken.useMutation();
+  const createTokenMutation = trpc.mcp.createToken.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const revokeTokenMutation = trpc.mcp.revokeToken.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const [name, setName] = useState("Codex");
-  const [expiresAt, setExpiresAt] = useState("");
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
     () => new Set(mcpScopeValues),
   );
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const mcpEndpoint =
-    typeof window === "undefined" ? "/api/mcp" : `${window.location.origin}/api/mcp`;
+  const [mcpEndpoint, setMcpEndpoint] = useState("/api/mcp");
+  const [isSecureOrigin, setIsSecureOrigin] = useState<boolean | null>(null);
   const tokenForInstall = createdToken ?? "dofek_mcp_your_token";
+
+  useEffect(() => {
+    const secure = window.location.protocol === "https:";
+    setIsSecureOrigin(secure);
+    if (secure) setMcpEndpoint(`${window.location.origin}/api/mcp`);
+  }, []);
 
   const activeScopeCount = selectedScopes.size;
   const canCreate =
@@ -68,7 +80,7 @@ export function McpTokensPanel() {
       const result = await createTokenMutation.mutateAsync({
         name: name.trim(),
         scopes,
-        expiresAt: expiresAt ? new Date(`${expiresAt}T00:00:00.000Z`).toISOString() : null,
+        expiresAt: expiresAt ? `${expiresAt}T23:59:59.999Z` : null,
       });
       setCreatedToken(result.token);
       await trpcUtils.mcp.listTokens.invalidate();
@@ -128,11 +140,11 @@ export function McpTokensPanel() {
   };
 
   if (tokens.isLoading) {
-    return <p className="text-sm text-subtle">Loading MCP tokens...</p>;
+    return <QueryStatePanel variant="loading" message="Loading MCP tokens..." height={96} />;
   }
 
   if (tokens.error) {
-    return <p className="text-sm text-red-400">{tokens.error.message}</p>;
+    return <QueryStatePanel error={tokens.error} contextLabel="MCP tokens" height={96} />;
   }
 
   return (
@@ -140,25 +152,38 @@ export function McpTokensPanel() {
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div>
           <p className="text-sm font-medium text-foreground">
-            Install in Model Context Protocol (MCP) client settings
+            Connect with Model Context Protocol (MCP) using OAuth (Open Authorization) (Recommended)
           </p>
           <p className="mt-1 text-sm text-subtle">
-            Create a token, then add this remote server to your Model Context Protocol client
-            settings.
+            For clients that support OAuth auto-discovery (Claude, ChatGPT, and others). Paste the
+            URL and sign in when prompted.
           </p>
         </div>
         <div className="space-y-1">
           <p className="text-xs font-medium text-subtle">Remote URL</p>
-          <code className="block overflow-x-auto rounded bg-white/70 px-3 py-2 text-xs text-foreground">
+          <code className="block overflow-x-auto rounded bg-surface px-3 py-2 text-xs text-foreground">
             {mcpEndpoint}
           </code>
         </div>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-subtle">
-            Client settings JavaScript Object Notation (JSON)
-          </p>
-          <pre className="overflow-x-auto rounded bg-white/70 p-3 text-xs text-foreground">
-            <code>{`{
+        <p className="text-xs text-dim">
+          OAuth clients discover endpoints automatically and handle authentication. No manual token
+          is required.
+        </p>
+      </div>
+
+      {isSecureOrigin !== false ? (
+        <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">Connect with a manual token</p>
+            <p className="mt-1 text-sm text-subtle">
+              For clients that support custom HTTP headers, such as Codex. Create a token below,
+              then configure your client.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-subtle">Client settings JSON</p>
+            <pre className="overflow-x-auto rounded bg-surface p-3 text-xs text-foreground">
+              <code>{`{
   "mcpServers": {
     "dofek": {
       "url": "${mcpEndpoint}",
@@ -168,12 +193,13 @@ export function McpTokensPanel() {
     }
   }
 }`}</code>
-          </pre>
+            </pre>
+          </div>
+          <p className="text-xs text-dim">
+            Some clients call this screen Settings, MCP Servers, or Connectors.
+          </p>
         </div>
-        <p className="text-xs text-dim">
-          Some clients call this file or screen Settings, MCP Servers, or Connectors.
-        </p>
-      </div>
+      ) : null}
 
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
@@ -183,16 +209,16 @@ export function McpTokensPanel() {
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="w-full rounded border border-border-strong bg-white/70 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
           </label>
           <label className="space-y-1">
             <span className="text-xs font-medium text-subtle">Expires</span>
             <input
               type="date"
-              value={expiresAt}
-              onChange={(event) => setExpiresAt(event.target.value)}
-              className="w-full rounded border border-border-strong bg-white/70 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              value={expiresAt ?? ""}
+              onChange={(event) => setExpiresAt(event.target.value || null)}
+              className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
           </label>
         </div>
@@ -203,7 +229,7 @@ export function McpTokensPanel() {
             {mcpScopeOptions.map((option) => (
               <label
                 key={option.value}
-                className="flex items-center gap-2 rounded border border-border bg-white/50 px-3 py-2 text-sm text-foreground"
+                className="flex items-center gap-2 rounded border border-border bg-surface/70 px-3 py-2 text-sm text-foreground"
               >
                 <input
                   type="checkbox"
@@ -221,7 +247,7 @@ export function McpTokensPanel() {
           type="button"
           disabled={!canCreate}
           onClick={createToken}
-          className="rounded bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-accent px-3 py-2 text-sm font-medium text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {createTokenMutation.isPending ? "Creating..." : "Create Token"}
         </button>
@@ -236,7 +262,7 @@ export function McpTokensPanel() {
             <input
               readOnly
               value={createdToken}
-              className="min-w-0 flex-1 rounded border border-border-strong bg-white/80 px-3 py-2 font-mono text-xs text-foreground"
+              className="min-w-0 flex-1 rounded border border-border-strong bg-surface px-3 py-2 font-mono text-xs text-foreground"
             />
             <button
               type="button"
@@ -254,7 +280,7 @@ export function McpTokensPanel() {
 
       <div className="space-y-2">
         {(tokens.data ?? []).length === 0 ? (
-          <p className="text-sm text-subtle">No MCP tokens yet.</p>
+          <QueryStatePanel variant="empty" message="No MCP tokens yet." height={96} />
         ) : (
           <ul className="space-y-2">
             {(tokens.data ?? []).map((token) => {

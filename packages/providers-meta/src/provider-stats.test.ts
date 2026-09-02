@@ -15,8 +15,7 @@ const FULL_STATS: ProviderStats = {
   healthEvents: 10,
   metricStream: 5000,
   nutritionDaily: 150,
-  labPanels: 3,
-  labResults: 5,
+  clinicalRecords: 8,
   journalEntries: 20,
 };
 
@@ -29,8 +28,7 @@ const SPARSE_STATS: ProviderStats = {
   healthEvents: 0,
   metricStream: 0,
   nutritionDaily: 0,
-  labPanels: 0,
-  labResults: 0,
+  clinicalRecords: 0,
   journalEntries: 0,
 };
 
@@ -43,8 +41,7 @@ const EMPTY_STATS: ProviderStats = {
   healthEvents: 0,
   metricStream: 0,
   nutritionDaily: 0,
-  labPanels: 0,
-  labResults: 0,
+  clinicalRecords: 0,
   journalEntries: 0,
 };
 
@@ -59,8 +56,7 @@ describe("DATA_TYPE_LABELS", () => {
       { key: "foodEntries", label: "Food" },
       { key: "nutritionDaily", label: "Nutrition" },
       { key: "healthEvents", label: "Events" },
-      { key: "labPanels", label: "Lab Panels" },
-      { key: "labResults", label: "Lab Results" },
+      { key: "clinicalRecords", label: "Clinical Records" },
       { key: "journalEntries", label: "Journal" },
     ]);
   });
@@ -78,12 +74,27 @@ describe("providerStatsTotal", () => {
   it("returns the single non-zero value for sparse stats", () => {
     expect(providerStatsTotal(SPARSE_STATS)).toBe(42);
   });
+
+  it("uses the API-provided total when present", () => {
+    expect(providerStatsTotal({ ...SPARSE_STATS, totalRecords: 100 })).toBe(100);
+  });
 });
 
 describe("providerStatsBreakdown", () => {
-  it("returns only non-zero entries with labels and counts", () => {
+  it("returns zero-valued entries with labels and counts", () => {
     const breakdown = providerStatsBreakdown(SPARSE_STATS);
-    expect(breakdown).toEqual([{ label: "Activities", count: 42 }]);
+    expect(breakdown).toEqual([
+      { label: "Activities", count: 42 },
+      { label: "Metric Stream", count: 0 },
+      { label: "Daily Metrics", count: 0 },
+      { label: "Sleep", count: 0 },
+      { label: "Body", count: 0 },
+      { label: "Food", count: 0 },
+      { label: "Nutrition", count: 0 },
+      { label: "Events", count: 0 },
+      { label: "Clinical Records", count: 0 },
+      { label: "Journal", count: 0 },
+    ]);
   });
 
   it("returns all entries for full stats in display order", () => {
@@ -97,13 +108,13 @@ describe("providerStatsBreakdown", () => {
       { label: "Food", count: 400 },
       { label: "Nutrition", count: 150 },
       { label: "Events", count: 10 },
-      { label: "Lab Panels", count: 3 },
-      { label: "Lab Results", count: 5 },
+      { label: "Clinical Records", count: 8 },
       { label: "Journal", count: 20 },
     ]);
   });
 
-  it("returns empty array for empty stats", () => {
-    expect(providerStatsBreakdown(EMPTY_STATS)).toEqual([]);
+  it("returns every entry for empty stats", () => {
+    expect(providerStatsBreakdown(EMPTY_STATS)).toHaveLength(DATA_TYPE_LABELS.length);
+    expect(providerStatsBreakdown(EMPTY_STATS).every(({ count }) => count === 0)).toBe(true);
   });
 });

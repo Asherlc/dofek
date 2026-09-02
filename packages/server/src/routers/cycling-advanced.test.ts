@@ -81,10 +81,40 @@ describe("cyclingAdvancedRouter", () => {
   describe("trainingMonotony", () => {
     it("maps repo rows into the wire shape", async () => {
       const caller = makeCaller([
-        [{ week: "2024-01-15", monotony: 1.5, strain: 300, weekly_load: 200 }],
+        [
+          {
+            week: "2024-01-15",
+            monotony: 1.5,
+            strain: 300,
+            weekly_load: 200,
+            daily_mean_load: 28.57,
+            daily_load_standard_deviation: 19.05,
+          },
+        ],
       ]);
       const result = await caller.trainingMonotony({ days: 90 });
-      expect(result).toEqual([{ week: "2024-01-15", monotony: 1.5, strain: 300, weeklyLoad: 200 }]);
+      expect(result).toEqual([
+        {
+          week: "2024-01-15",
+          monotony: 1.5,
+          strain: 300,
+          weeklyLoad: 200,
+          dailyMeanLoad: 28.57,
+          dailyLoadStandardDeviation: 19.05,
+          method: {
+            formula:
+              "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
+            calendar: "Monday–Sunday calendar weeks include zero-load days.",
+            activityScope: "Cycling activities with computed endurance training load.",
+            interpretation:
+              "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+            source: {
+              title: "Foster (1998), Monitoring training in athletes",
+              url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+            },
+          },
+        },
+      ]);
     });
 
     it("returns empty array when no data", async () => {
@@ -100,7 +130,7 @@ describe("cyclingAdvancedRouter", () => {
       // doesn't issue the second query.
       const caller = makeCaller([[]]);
       const result = await caller.activityVariability({ days: 90 });
-      expect(result).toEqual({ rows: [], totalCount: 0 });
+      expect(result).toEqual({ rows: [], totalCount: 0, emptyReason: "no_ftp_estimate" });
     });
 
     it("computes VI and IF from FTP plus per-activity rows", async () => {
@@ -122,6 +152,7 @@ describe("cyclingAdvancedRouter", () => {
 
       expect(result.rows).toHaveLength(1);
       expect(result.totalCount).toBe(1);
+      expect(result.emptyReason).toBeNull();
       expect(result.rows[0]?.normalizedPower).toBe(230);
       expect(result.rows[0]?.activityName).toBe("Ride");
       // VI = NP / avgPower = 230/200 = 1.15.
@@ -132,14 +163,16 @@ describe("cyclingAdvancedRouter", () => {
   });
 
   describe("verticalAscentRate", () => {
-    it("computes VAM (m/h) from elevation gain over climbing seconds", async () => {
+    it("computes VAM (m/h) from elevation gain over elapsed seconds", async () => {
       const caller = makeCaller([
         [
           {
             date: "2024-01-15",
             name: "Mountain Ride",
+            canonical_type: "cycling",
+            modality: "mountain",
             elevation_gain: 500,
-            climbing_seconds: 3600,
+            elapsed_seconds: 3600,
           },
         ],
       ]);
@@ -149,6 +182,8 @@ describe("cyclingAdvancedRouter", () => {
       expect(result[0]?.verticalAscentRate).toBe(500);
       expect(result[0]?.elevationGainMeters).toBe(500);
       expect(result[0]?.activityName).toBe("Mountain Ride");
+      expect(result[0]?.activityType).toBe("cycling");
+      expect(result[0]?.modality).toBe("mountain");
     });
 
     it("returns empty when no climbing data", async () => {

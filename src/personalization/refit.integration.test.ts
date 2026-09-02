@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { dailyMetrics, sleepSession, TEST_USER_ID } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { fitSleepFromDb } from "./refit.ts";

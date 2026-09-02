@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 function parseDotenv(output: string): Record<string, string> {
@@ -45,6 +45,8 @@ describe("compose-env", () => {
 
       const dotenv = parseDotenv(output);
 
+      expect(dotenv.COMPOSE_PROJECT_NAME).toBe(basename(cwd));
+      expect(dotenv.COMPOSE_FILE).toBe(join(realpathSync(cwd), "docker-compose.yml"));
       expect(dotenv.POSTGRES_PASSWORD).toBe(postgresFixtureValue);
       expect(dotenv.CLICKHOUSE_PASSWORD).toBe(clickHouseFixtureValue);
       expect(dotenv.DATABASE_URL).toBe(

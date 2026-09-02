@@ -1,5 +1,17 @@
 import type { EventSubscription } from "expo-modules-core";
+import { z } from "zod";
 import WhoopBleModule from "./src/WhoopBleModule";
+
+/** A timestamped accelerometer and gyroscope sample from a WHOOP strap. */
+export interface WhoopImuSample {
+  timestamp: string;
+  x: number;
+  y: number;
+  z: number;
+  gyroscopeX: number;
+  gyroscopeY: number;
+  gyroscopeZ: number;
+}
 
 /** A discovered WHOOP strap */
 export interface WhoopDevice {
@@ -7,8 +19,20 @@ export interface WhoopDevice {
   name: string | null;
 }
 
+/** A read-only snapshot of the current WHOOP connection and buffer state. */
+export const WhoopDeviceSummarySchema = z.object({
+  id: z.string().nullable(),
+  name: z.string().nullable(),
+  connectionState: z.string().min(1),
+  imuBufferedSamples: z.number().int().nonnegative(),
+  realtimeBufferedSamples: z.number().int().nonnegative(),
+});
+
+export type WhoopDeviceSummary = z.infer<typeof WhoopDeviceSummarySchema>;
+
 /** A single realtime data sample from a 0x28 REALTIME_DATA packet */
 export interface WhoopRealtimeDataSample {
+  deviceId?: string;
   timestamp: string; // ISO 8601
   /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
   rrIntervalMs: number;
@@ -20,15 +44,30 @@ export interface WhoopRealtimeDataSample {
   opticalRawHex: string;
 }
 
-/** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */
-export interface WhoopImuSample {
-  timestamp: string; // ISO 8601
-  accelerometerX: number; // raw i16
-  accelerometerY: number;
-  accelerometerZ: number;
-  gyroscopeX: number; // raw i16
-  gyroscopeY: number;
-  gyroscopeZ: number;
+const NativeWhoopSampleSchema = z.object({
+  deviceId: z.string().min(1),
+  timestamp: z.string().min(1),
+  accelerometerX: z.number(),
+  accelerometerY: z.number(),
+  accelerometerZ: z.number(),
+  gyroscopeX: z.number(),
+  gyroscopeY: z.number(),
+  gyroscopeZ: z.number(),
+});
+
+type NativeWhoopSample = z.infer<typeof NativeWhoopSampleSchema>;
+
+function mapNativeSample(native: NativeWhoopSample): WhoopImuSample & { deviceId: string } {
+  return {
+    deviceId: native.deviceId,
+    timestamp: native.timestamp,
+    x: native.accelerometerX,
+    y: native.accelerometerY,
+    z: native.accelerometerZ,
+    gyroscopeX: native.gyroscopeX,
+    gyroscopeY: native.gyroscopeY,
+    gyroscopeZ: native.gyroscopeZ,
+  };
 }
 
 /** Check whether Bluetooth is powered on and available. */
@@ -66,7 +105,8 @@ export async function connect(peripheralId: string): Promise<boolean> {
  *
  * Sends the TOGGLE_IMU_MODE (0x6A) BLE command to the strap.
  * IMU samples (accelerometer + gyroscope) are buffered internally.
- * Call `getBufferedSamples()` to retrieve them.
+ * Use `peekBufferedSamples()` and call `confirmSamplesDrain()` only after a
+ * successful upload.
  *
  * @returns true on success.
  */
@@ -111,8 +151,13 @@ export async function startOpticalMode(): Promise<boolean> {
  * actually remove them. If the upload fails, the samples remain
  * buffered for retry — no data loss.
  */
-export async function peekBufferedSamples(maxCount?: number): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.peekBufferedSamples(maxCount);
+export async function peekBufferedSamples(
+  maxCount?: number,
+): Promise<Array<WhoopImuSample & { deviceId: string }>> {
+  const natives = NativeWhoopSampleSchema.array().parse(
+    await WhoopBleModule.peekBufferedSamples(maxCount),
+  );
+  return natives.map(mapNativeSample);
 }
 
 /**
@@ -154,8 +199,9 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
  * Retrieve and clear the internal IMU sample buffer.
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
-export async function getBufferedSamples(): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.getBufferedSamples();
+export async function getBufferedSamples(): Promise<Array<WhoopImuSample & { deviceId: string }>> {
+  const natives = NativeWhoopSampleSchema.array().parse(await WhoopBleModule.getBufferedSamples());
+  return natives.map(mapNativeSample);
 }
 
 /** Get the current BLE connection state (idle, scanning, connecting, ready, streaming). */
@@ -171,6 +217,11 @@ export function getBluetoothState(): string {
 /** Get the number of IMU samples currently buffered. */
 export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
+}
+
+/** Get the current WHOOP identity, connection state, and buffer counts without scanning or connecting. */
+export function getDeviceSummary(): WhoopDeviceSummary {
+  return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
 }
 
 /** Get BLE data path statistics for debugging. */
@@ -191,6 +242,10 @@ export function getDataPathStats(): {
   hasCmdResponseCharacteristic: boolean;
   lastWriteError: string;
   watchdogRetryCount: number;
+  malformedFrames: number;
+  malformedCmdFrames: number;
+  coalescedFrames: number;
+  coalescedCmdFrames: number;
 } {
   return WhoopBleModule.getDataPathStats();
 }
@@ -213,6 +268,11 @@ export function disconnect(): void {
   WhoopBleModule.disconnect();
 }
 
+/** Disconnect and clear every account-owned IMU/realtime buffer and parser state. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return WhoopBleModule.purgeAccountState(deviceErasureCutoff);
+}
+
 /** Connection state change event from the native BLE module. */
 export interface ConnectionStateEvent {
   state: string;
@@ -232,6 +292,15 @@ export function addConnectionStateListener(
   callback: (event: ConnectionStateEvent) => void,
 ): EventSubscription {
   return WhoopBleModule.addListener("onConnectionStateChanged", callback);
+}
+
+/** Subscribe to WHOOP identity, connection, streaming, and buffer snapshot changes. */
+export function addDeviceStateListener(
+  callback: (summary: WhoopDeviceSummary) => void,
+): EventSubscription {
+  return WhoopBleModule.addListener("onDeviceStateChanged", (event: unknown) =>
+    callback(WhoopDeviceSummarySchema.parse(event)),
+  );
 }
 
 /** Real-time orientation from the Madgwick AHRS filter (quaternion + Euler angles) */

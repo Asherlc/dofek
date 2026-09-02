@@ -1,5 +1,6 @@
 /** Per-provider record counts across all data types. */
 export interface ProviderStats {
+  totalRecords?: number;
   activities: number;
   dailyMetrics: number;
   sleepSessions: number;
@@ -8,14 +9,13 @@ export interface ProviderStats {
   healthEvents: number;
   metricStream: number;
   nutritionDaily: number;
-  labPanels: number;
-  labResults: number;
+  clinicalRecords: number;
   journalEntries: number;
 }
 
 /** Ordered mapping of stat keys to human-readable labels, used for display. */
 export const DATA_TYPE_LABELS: ReadonlyArray<{
-  key: keyof ProviderStats;
+  key: Exclude<keyof ProviderStats, "totalRecords">;
   label: string;
 }> = [
   { key: "activities", label: "Activities" },
@@ -26,13 +26,16 @@ export const DATA_TYPE_LABELS: ReadonlyArray<{
   { key: "foodEntries", label: "Food" },
   { key: "nutritionDaily", label: "Nutrition" },
   { key: "healthEvents", label: "Events" },
-  { key: "labPanels", label: "Lab Panels" },
-  { key: "labResults", label: "Lab Results" },
+  { key: "clinicalRecords", label: "Clinical Records" },
   { key: "journalEntries", label: "Journal" },
 ] as const;
 
 /** Sum of all record counts for a provider. */
 export function providerStatsTotal(stats: ProviderStats): number {
+  if (stats.totalRecords !== undefined) {
+    return stats.totalRecords;
+  }
+
   let total = 0;
   for (const { key } of DATA_TYPE_LABELS) {
     total += stats[key];
@@ -40,16 +43,9 @@ export function providerStatsTotal(stats: ProviderStats): number {
   return total;
 }
 
-/** Non-zero stat entries with labels, in display order. */
+/** Stat entries with labels, in display order. */
 export function providerStatsBreakdown(
   stats: ProviderStats,
 ): Array<{ label: string; count: number }> {
-  const result: Array<{ label: string; count: number }> = [];
-  for (const { key, label } of DATA_TYPE_LABELS) {
-    const count = stats[key];
-    if (count > 0) {
-      result.push({ label, count });
-    }
-  }
-  return result;
+  return DATA_TYPE_LABELS.map(({ key, label }) => ({ label, count: stats[key] }));
 }

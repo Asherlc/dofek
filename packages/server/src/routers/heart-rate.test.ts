@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
+const { mockCachedProtectedQuery } = vi.hoisted(() => ({
+  mockCachedProtectedQuery: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -12,10 +16,11 @@ vi.mock("../trpc.ts", async () => {
       timezone: string;
     }>()
     .create();
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -23,7 +28,7 @@ vi.mock("../trpc.ts", async () => {
 vi.mock("@dofek/providers/providers", () => ({
   providerLabel: (id: string) => {
     const labels: Record<string, string> = {
-      whoop_ble: "WHOOP BLE",
+      whoop_ble: "WHOOP (Bluetooth)",
       apple_health: "Apple Health",
     };
     return labels[id] ?? id;
@@ -33,6 +38,12 @@ vi.mock("@dofek/providers/providers", () => ({
 describe("heartRateRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("uses a medium cache for daily source queries", async () => {
+    await import("./heart-rate.ts");
+
+    expect(mockCachedProtectedQuery).toHaveBeenCalledWith({ maxAge: 600_000 });
   });
 
   it("exports a dailyBySource procedure", async () => {

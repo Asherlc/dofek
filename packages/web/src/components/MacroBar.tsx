@@ -1,36 +1,45 @@
-import { formatNutritionNumber } from "@dofek/format/format";
+import { formatGrams, formatNutritionNumber } from "@dofek/format/format";
+import { chartColors } from "@dofek/scoring/colors";
 
 interface MacroBarProps {
   label: string;
-  grams: string;
-  caloriesFromMacro: number;
-  totalCalories: number;
-  color: "blue" | "amber" | "red";
+  grams: number;
+  energySharePercentage: number;
+  color: "blue" | "purple" | "teal";
 }
 
 const colorMap = {
-  blue: { bar: "bg-blue-500", text: "text-blue-400" },
-  amber: { bar: "bg-amber-500", text: "text-amber-400" },
-  red: { bar: "bg-red-500", text: "text-red-400" },
+  blue: chartColors.blue,
+  purple: chartColors.purple,
+  teal: chartColors.teal,
 } as const;
 
-export function MacroBar({ label, grams, caloriesFromMacro, totalCalories, color }: MacroBarProps) {
-  const percentage = totalCalories > 0 ? Math.round((caloriesFromMacro / totalCalories) * 100) : 0;
-  const { bar, text } = colorMap[color];
+export function MacroBar({ label, grams, energySharePercentage, color }: MacroBarProps) {
+  const formattedGrams = formatNutritionNumber(grams);
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
-        <span className={`font-medium ${text}`}>{label}</span>
-        <span className="text-muted tabular-nums">
-          {grams}
-          <span className="ml-1.5 text-subtle">({formatNutritionNumber(percentage)}%)</span>
+        <span className="font-medium text-muted">{label}</span>
+        <span className="flex items-baseline gap-2 tabular-nums">
+          <span className="font-medium text-foreground">
+            {formatNutritionNumber(energySharePercentage)}% of energy
+          </span>
+          <span className="text-subtle">{formatGrams(grams)} logged</span>
         </span>
       </div>
-      <div className="h-2 rounded-full bg-accent/10 overflow-hidden">
+      <meter
+        className="sr-only"
+        value={energySharePercentage}
+        min={0}
+        max={100}
+        aria-label={`${label}: ${formatNutritionNumber(energySharePercentage)}% share of energy; ${formattedGrams} grams logged`}
+      />
+      <div className="h-2 rounded-full bg-accent/10 overflow-hidden" aria-hidden="true">
         <div
-          className={`h-full rounded-full ${bar} transition-all duration-300`}
-          style={{ width: `${Math.min(percentage, 100)}%` }}
+          className="h-full rounded-full transition-all duration-300"
+          data-testid="macro-bar-fill"
+          style={{ backgroundColor: colorMap[color], width: `${energySharePercentage}%` }}
         />
       </div>
     </div>

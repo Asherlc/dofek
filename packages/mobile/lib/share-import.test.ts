@@ -1,258 +1,138 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  type ImportProviderId,
-  importSharedFile,
-  inferImportProviderFromFile,
-} from "./share-import";
+import type { FileUploadApi, UploadableMobileFile } from "./resumable-file-upload";
+import { importSharedFile, inferImportProviderFromFile } from "./share-import";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry", () => ({
+  captureException: mockCaptureException,
+}));
 
 describe("inferImportProviderFromFile", () => {
   it("detects Strong CSV by header", () => {
-    const provider = inferImportProviderFromFile({
-      fileName: "export.csv",
-      fileExtension: ".csv",
-      mimeType: "text/csv",
-      csvHeaderLine: "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
-    });
-    expect(provider).toBe("strong-csv");
+    expect(
+      inferImportProviderFromFile({
+        fileName: "export.csv",
+        fileExtension: ".csv",
+        mimeType: "text/csv",
+        csvHeaderLine: "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
+      }),
+    ).toBe("strong-csv");
   });
 
-  it("detects Cronometer CSV by filename when header is missing", () => {
-    const provider = inferImportProviderFromFile({
-      fileName: "Cronometer_Servings.csv",
-      fileExtension: ".csv",
-      mimeType: "text/csv",
-      csvHeaderLine: "",
-    });
-    expect(provider).toBe("cronometer-csv");
-  });
-
-  it("detects Apple Health from zip extension", () => {
-    const provider = inferImportProviderFromFile({
-      fileName: "export.zip",
-      fileExtension: ".zip",
-      mimeType: "application/zip",
-      csvHeaderLine: "",
-    });
-    expect(provider).toBe("apple-health");
+  it("detects Garmin and FIT exports from their file names", () => {
+    expect(
+      inferImportProviderFromFile({
+        fileName: "garmin-export.zip",
+        fileExtension: ".zip",
+        mimeType: "application/zip",
+        csvHeaderLine: "",
+      }),
+    ).toBe("garmin-dump");
+    expect(
+      inferImportProviderFromFile({
+        fileName: "morning-ride.fit",
+        fileExtension: ".fit",
+        mimeType: "application/octet-stream",
+        csvHeaderLine: "",
+      }),
+    ).toBe("fit-file");
   });
 });
 
 describe("importSharedFile", () => {
-  it("uploads a Strong CSV and polls until done", async () => {
-    const fetchImpl = vi.fn<typeof fetch>();
-    const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
+  it("imports a shared Strong CSV when its resolved URI differs", async () => {
+    const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
+    const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
+    const file: UploadableMobileFile & { text(): Promise<string> } = {
+      uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
+      name: "Strong Export.csv",
+      type: "text/csv",
+      size: 80,
+      text: vi.fn(
+        async () => "Date,Workout Name,Duration,Exercise Name\\n2026-03-10,Leg Day,00:45:00,Squat",
+      ),
+      sha256: vi.fn(async () => "a".repeat(64)),
+      uploadPart,
+    };
+    const fileUploadApi: FileUploadApi = {
+      initiate: vi.fn(async () => ({ uploadId, partSizeBytes: 16 * 1024 * 1024 })),
+      authorizeParts: vi.fn(async () => ({
+        parts: [
+          {
+            partNumber: 1,
+            url: "https://r2.example/part-1",
+            expiresAt: "2026-08-27T20:00:00.000Z",
+          },
+        ],
+      })),
+      complete: vi.fn(async () => ({ uploadId, importJobId: `file-import-${uploadId}` })),
+      resume: vi
+        .fn()
+        .mockResolvedValueOnce({ upload: { uploadId, state: "uploading" }, parts: [] })
+        .mockResolvedValueOnce({
+          upload: { uploadId, state: "completed", progressPercent: 100, errorMessage: null },
+          parts: [],
+        }),
+    };
+    const statuses: string[] = [];
 
-    fetchImpl
-      .mockResolvedValueOnce(
-        new Response(fileBody, {
-          status: 200,
-          headers: { "content-type": "text/csv" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "processing", jobId: "job-123" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "processing", progress: 50 }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "done", progress: 100 }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-
-    const seenStatuses: string[] = [];
     const result = await importSharedFile(
       {
-        fileUri: "file:///tmp/Strong%20Export.csv",
-        serverUrl: "https://example.com",
-        sessionToken: "session-token",
-        onProgress: (state) => {
-          seenStatuses.push(state.status);
-        },
+        fileUri:
+          "file:///private/var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
+        onProgress: (progress) => statuses.push(progress.status),
       },
-      {
-        fetchImpl,
-        sleep: async () => {},
-      },
+      { file, fileUploadApi, createUploadId: () => uploadId, sleep: async () => {} },
     );
 
-    expect(result.providerId).toBe<ImportProviderId>("strong-csv");
-    expect(result.jobId).toBe("job-123");
-    expect(seenStatuses).toContain("uploading");
-    expect(seenStatuses).toContain("processing");
-    expect(seenStatuses).toContain("done");
+    expect(fileUploadApi.initiate).toHaveBeenCalledWith(
+      expect.objectContaining({ importType: "strong-csv", filename: "Strong Export.csv" }),
+    );
+    expect(uploadPart).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://r2.example/part-1" }),
+    );
+    expect(result).toEqual({ providerId: "strong-csv", jobId: `file-import-${uploadId}` });
+    expect(statuses).toContain("done");
+  });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
-    expect(fetchImpl).toHaveBeenNthCalledWith(
-      2,
-      "https://example.com/api/upload/strong-csv",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer session-token",
-          "x-timezone": expect.any(String),
-        }),
+  it("reports the server import error", async () => {
+    const file: UploadableMobileFile & { text(): Promise<string> } = {
+      uri: "file:///tmp/export.csv",
+      name: "export.csv",
+      type: "text/csv",
+      size: 10,
+      text: async () => "Date,Workout Name,Duration,Exercise Name",
+      sha256: async () => "b".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    };
+    const uploadId = "dbdfe741-83e3-4a4f-9fdb-a65f9b7c4766";
+    const api: FileUploadApi = {
+      initiate: async () => ({ uploadId, partSizeBytes: 16 * 1024 * 1024 }),
+      authorizeParts: async () => ({
+        parts: [
+          {
+            partNumber: 1,
+            url: "https://r2.example/part-1",
+            expiresAt: "2026-08-27T20:00:00.000Z",
+          },
+        ],
       }),
-    );
-  });
-
-  it("uses custom readBlob dep when provided", async () => {
-    const fetchImpl = vi.fn<typeof fetch>();
-    const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
-    const customReadBlob = vi.fn().mockResolvedValue(new Blob([fileBody], { type: "text/csv" }));
-
-    fetchImpl
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "processing", jobId: "job-456" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
+      complete: async () => ({ uploadId, importJobId: `file-import-${uploadId}` }),
+      resume: vi
+        .fn()
+        .mockResolvedValueOnce({ upload: { uploadId, state: "uploading" }, parts: [] })
+        .mockResolvedValueOnce({
+          upload: { uploadId, state: "failed", errorMessage: "Strong export is invalid" },
+          parts: [],
         }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "done", progress: 100 }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-
-    const result = await importSharedFile(
-      {
-        fileUri: "file:///tmp/Strong%20Export.csv",
-        serverUrl: "https://example.com",
-        sessionToken: "session-token",
-      },
-      {
-        fetchImpl,
-        readBlob: customReadBlob,
-        sleep: async () => {},
-      },
-    );
-
-    expect(result.providerId).toBe<ImportProviderId>("strong-csv");
-    expect(customReadBlob).toHaveBeenCalledWith("file:///tmp/Strong%20Export.csv");
-    // fetchImpl should NOT be called for reading the file — only for upload + status poll
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it("handles csv blobs without text() by falling back to arrayBuffer()", async () => {
-    const fetchImpl = vi.fn<typeof fetch>();
-    const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
-    const customReadBlob = vi.fn().mockImplementation(async () => {
-      const blob = new Blob([fileBody], { type: "text/csv" });
-      Object.defineProperty(blob, "text", { value: undefined });
-      return blob;
-    });
-
-    fetchImpl
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "processing", jobId: "job-789" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "done", progress: 100 }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-
-    const result = await importSharedFile(
-      {
-        fileUri: "file:///tmp/export.csv",
-        serverUrl: "https://example.com",
-        sessionToken: "session-token",
-      },
-      {
-        fetchImpl,
-        readBlob: customReadBlob,
-        sleep: async () => {},
-      },
-    );
-
-    expect(result.providerId).toBe<ImportProviderId>("strong-csv");
-    expect(result.jobId).toBe("job-789");
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it("throws for unsupported file extension", async () => {
-    const fetchImpl = vi.fn<typeof fetch>();
-    fetchImpl.mockResolvedValueOnce(new Response("test", { status: 200 }));
+    };
 
     await expect(
       importSharedFile(
-        {
-          fileUri: "file:///tmp/export.json",
-          serverUrl: "https://example.com",
-          sessionToken: "session-token",
-        },
-        { fetchImpl, sleep: async () => {} },
+        { fileUri: file.uri, providerId: "strong-csv" },
+        { file, fileUploadApi: api, createUploadId: () => uploadId, sleep: async () => {} },
       ),
-    ).rejects.toThrow("Unsupported shared file type");
-  });
-
-  it("falls back to fetch when blob.text and blob.arrayBuffer throw errors", async () => {
-    const fetchImpl = vi.fn<typeof fetch>();
-    const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
-
-    const customReadBlob = vi.fn().mockImplementation(async () => {
-      const blob = new Blob([fileBody], { type: "text/csv" });
-      Object.defineProperty(blob, "text", {
-        value: () => {
-          throw new Error("creating blobs from arraybuffer or arraybufferview are not supported");
-        },
-      });
-      Object.defineProperty(blob, "arrayBuffer", {
-        value: () => {
-          throw new Error("creating blobs from arraybuffer or arraybufferview are not supported");
-        },
-      });
-      return blob;
-    });
-
-    // The fetchImpl needs to handle both the initial file read AND the upload/status polls
-    fetchImpl
-      // 1. Initial file read fallback
-      .mockResolvedValueOnce(new Response(fileBody, { status: 200 }))
-      // 2. Upload request
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "processing", jobId: "job-fallback" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      // 3. Status poll
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "done", progress: 100 }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-
-    const result = await importSharedFile(
-      {
-        fileUri: "file:///tmp/fallback.csv",
-        serverUrl: "https://example.com",
-        sessionToken: "session-token",
-      },
-      {
-        fetchImpl,
-        readBlob: customReadBlob,
-        sleep: async () => {},
-      },
-    );
-
-    expect(result.providerId).toBe<ImportProviderId>("strong-csv");
-    expect(result.jobId).toBe("job-fallback");
-    // fetchImpl called 3 times: fallback read, upload, poll
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(fetchImpl).toHaveBeenNthCalledWith(1, "file:///tmp/fallback.csv");
+    ).rejects.toThrow("Strong export is invalid");
   });
 });

@@ -1,4 +1,4 @@
-import { formatDateYmd } from "@dofek/format/format";
+import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
 import { Stack } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -6,26 +6,11 @@ import {
   MultiSourceHeartRateChart,
   sourceColor,
 } from "../components/charts/MultiSourceHeartRateChart";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
+import { useTodayQueryDate } from "../lib/useTodayQueryDate";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout-options";
-
-/** Parse YYYY-MM-DD as a local date (not UTC) to avoid off-by-one near midnight. */
-function parseLocalDate(dateString: string): Date {
-  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = dateString
-    .split("-")
-    .map(Number);
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day) ||
-    month < 1 ||
-    day < 1
-  ) {
-    return new Date(dateString);
-  }
-  return new Date(year, month - 1, day);
-}
 
 function formatDisplayDate(dateString: string): string {
   const [year, month, day] = dateString.split("-");
@@ -37,27 +22,25 @@ function formatDisplayDate(dateString: string): string {
 
 export default function DailyHeartRateScreen() {
   const [date, setDate] = useState(() => formatDateYmd());
+  const today = useTodayQueryDate();
+  const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const query = trpc.heartRate.dailyBySource.useQuery({ date });
-  const sources = query.data ?? [];
+  const sources = query.data;
+  const hasSources = sources !== undefined && sources.length > 0;
 
   const goBack = () => {
-    const previous = parseLocalDate(date);
-    previous.setDate(previous.getDate() - 1);
-    setDate(formatDateYmd(previous));
+    setDate(shiftDateYmd(date, -1));
   };
 
   const goForward = () => {
-    const next = parseLocalDate(date);
-    next.setDate(next.getDate() + 1);
-    const today = formatDateYmd();
-    const nextDate = formatDateYmd(next);
+    const nextDate = shiftDateYmd(date, 1);
     if (nextDate <= today) {
       setDate(nextDate);
     }
   };
 
-  const isToday = date === formatDateYmd();
+  const isToday = date === today;
 
   return (
     <>
@@ -65,36 +48,79 @@ export default function DailyHeartRateScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Date Navigator */}
         <View style={styles.dateNav}>
-          <Pressable style={styles.dateButton} onPress={goBack}>
-            <Text style={styles.dateButtonText}>{"<"}</Text>
-          </Pressable>
-          <Text style={styles.dateLabel}>{formatDisplayDate(date)}</Text>
+          <View style={styles.dateNavRow}>
+            <Pressable
+              style={styles.dateButton}
+              onPress={goBack}
+              accessibilityRole="button"
+              accessibilityLabel="Previous day"
+            >
+              <Text style={styles.dateButtonText}>Previous</Text>
+            </Pressable>
+            <View style={styles.dateLabelContainer}>
+              <Text style={styles.dateLabel}>{formatDisplayDate(date)}</Text>
+              <Text style={styles.timezoneLabel}>Local day in {localTimezone}</Text>
+            </View>
+            <Pressable
+              style={[styles.dateButton, isToday && styles.dateButtonDisabled]}
+              onPress={goForward}
+              disabled={isToday}
+              accessibilityRole="button"
+              accessibilityLabel="Next day"
+              accessibilityState={{ disabled: isToday }}
+            >
+              <Text style={[styles.dateButtonText, isToday && styles.dateButtonTextDisabled]}>
+                Next
+              </Text>
+            </Pressable>
+          </View>
           <Pressable
-            style={[styles.dateButton, isToday && styles.dateButtonDisabled]}
-            onPress={goForward}
+            style={[styles.todayButton, isToday && styles.dateButtonDisabled]}
+            onPress={() => setDate(today)}
             disabled={isToday}
+            accessibilityRole="button"
+            accessibilityLabel="Today"
+            accessibilityState={{ disabled: isToday }}
           >
-            <Text style={[styles.dateButtonText, isToday && styles.dateButtonTextDisabled]}>
-              {">"}
+            <Text style={[styles.todayButtonText, isToday && styles.dateButtonTextDisabled]}>
+              Today
             </Text>
           </Pressable>
         </View>
 
         {/* Chart */}
         <View style={styles.chartContainer}>
-          {sources.length > 0 ? (
+          {hasSources ? (
             <MultiSourceHeartRateChart sources={sources} height={220} />
+          ) : query.isLoading ? (
+            <QueryStatePanel variant="loading" minHeight={220} />
+          ) : query.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(query.error)}
+              minHeight={220}
+            />
           ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>
-                {query.isLoading ? "Loading..." : "No heart rate data for this day"}
-              </Text>
-            </View>
+            <QueryStatePanel
+              variant="empty"
+              message="No heart rate data for this day"
+              minHeight={220}
+            />
           )}
         </View>
 
+        {hasSources && query.error ? (
+          <View style={styles.queryError}>
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(query.error)}
+              minHeight={72}
+            />
+          </View>
+        ) : null}
+
         {/* Legend */}
-        {sources.length > 1 && (
+        {hasSources && sources.length > 1 && (
           <View style={styles.legend}>
             {sources.map((source, index) => (
               <View key={source.providerId} style={styles.legendItem}>
@@ -106,38 +132,31 @@ export default function DailyHeartRateScreen() {
         )}
 
         {/* Source Summary */}
-        {sources.map((source, index) => {
-          const heartRates = source.samples.map((sample) => sample.heartRate);
-          const min = Math.min(...heartRates);
-          const avg = Math.round(
-            heartRates.reduce((sum, value) => sum + value, 0) / heartRates.length,
-          );
-          const max = Math.max(...heartRates);
-
-          return (
-            <View key={source.providerId} style={styles.sourceCard}>
-              <View style={styles.sourceHeader}>
-                <View style={[styles.sourceDot, { backgroundColor: sourceColor(index) }]} />
-                <Text style={styles.sourceName}>{source.providerLabel}</Text>
-                <Text style={styles.sampleCount}>{source.samples.length} samples</Text>
-              </View>
-              <View style={styles.statsRow}>
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Min</Text>
-                  <Text style={styles.statValue}>{min}</Text>
+        {hasSources
+          ? sources.map((source, index) => (
+              <View key={source.providerId} style={styles.sourceCard}>
+                <View style={styles.sourceHeader}>
+                  <View style={[styles.sourceDot, { backgroundColor: sourceColor(index) }]} />
+                  <Text style={styles.sourceName}>{source.providerLabel}</Text>
+                  <Text style={styles.sampleCount}>{source.sampleCount} samples</Text>
                 </View>
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Avg</Text>
-                  <Text style={styles.statValue}>{avg}</Text>
-                </View>
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Max</Text>
-                  <Text style={styles.statValue}>{max}</Text>
+                <View style={styles.statsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>Min</Text>
+                    <Text style={styles.statValue}>{source.minHeartRate}</Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>Avg</Text>
+                    <Text style={styles.statValue}>{source.avgHeartRate}</Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>Max</Text>
+                    <Text style={styles.statValue}>{source.maxHeartRate}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          );
-        })}
+            ))
+          : null}
       </ScrollView>
     </>
   );
@@ -147,15 +166,20 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { paddingBottom: 40 },
   dateNav: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 16,
+  },
+  dateNavRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 16,
-    paddingVertical: 16,
   },
   dateButton: {
-    width: 36,
-    height: 36,
+    minWidth: 36,
+    minHeight: 36,
+    paddingHorizontal: 10,
     borderRadius: 18,
     backgroundColor: colors.surface,
     alignItems: "center",
@@ -164,7 +188,16 @@ const styles = StyleSheet.create({
   dateButtonDisabled: { opacity: 0.3 },
   dateButtonText: { fontSize: 18, fontWeight: "600", color: colors.text },
   dateButtonTextDisabled: { color: colors.textSecondary },
+  dateLabelContainer: { alignItems: "center" },
   dateLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
+  timezoneLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  todayButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+  },
+  todayButtonText: { fontSize: 14, fontWeight: "600", color: colors.text },
   chartContainer: {
     marginHorizontal: 16,
     backgroundColor: colors.surface,
@@ -172,12 +205,7 @@ const styles = StyleSheet.create({
     padding: 12,
     height: 244,
   },
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyText: { fontSize: 14, color: colors.textSecondary },
+  queryError: { marginHorizontal: 16, marginTop: 12 },
   legend: {
     flexDirection: "row",
     flexWrap: "wrap",

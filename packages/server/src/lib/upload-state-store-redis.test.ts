@@ -5,6 +5,7 @@ const originalEnv = { ...process.env };
 function createFakeRedisClient() {
   const values = new Map<string, string>();
   const sets = new Map<string, Set<string>>();
+  const hashes = new Map<string, Map<string, number>>();
   const ttlSeconds = new Map<string, number>();
 
   return {
@@ -21,6 +22,7 @@ function createFakeRedisClient() {
         for (const key of keys) {
           if (values.delete(key)) deleted++;
           if (sets.delete(key)) deleted++;
+          if (hashes.delete(key)) deleted++;
           ttlSeconds.delete(key);
         }
         return deleted;
@@ -42,9 +44,35 @@ function createFakeRedisClient() {
         ttlSeconds.set(key, seconds);
         return 1;
       },
+      async eval(_script: string, _keyCount: number, ...args: Array<string | number>) {
+        const chunkBytesKey = String(args[0]);
+        const chunksKey = String(args[1]);
+        const chunkIndex = String(args[2]);
+        const byteCount = Number(args[3]);
+        const maxBytes = Number(args[4]);
+        const ttlSecondsValue = Number(args[6]);
+        const chunkBytes = hashes.get(chunkBytesKey) ?? new Map<string, number>();
+        const previousBytes = chunkBytes.get(chunkIndex) ?? 0;
+        let currentBytes = 0;
+        for (const value of chunkBytes.values()) {
+          currentBytes += value;
+        }
+        const nextBytes = currentBytes - previousBytes + byteCount;
+        const chunks = sets.get(chunksKey) ?? new Set<string>();
+        if (nextBytes > maxBytes) {
+          return [0, chunks.size, currentBytes];
+        }
+        chunkBytes.set(chunkIndex, byteCount);
+        hashes.set(chunkBytesKey, chunkBytes);
+        chunks.add(chunkIndex);
+        sets.set(chunksKey, chunks);
+        ttlSeconds.set(chunksKey, ttlSecondsValue);
+        return [1, chunks.size, nextBytes];
+      },
     },
     values,
     sets,
+    hashes,
     ttlSeconds,
   };
 }
@@ -86,6 +114,27 @@ describe("RedisUploadStateStore", () => {
       userId: "user-1",
     });
     expect(fakeRedis.ttlSeconds.get("upload-chunks:upload-1")).toBe(1800);
+    expect(fakeRedis.ttlSeconds.get("upload-chunk-bytes:upload-1")).toBe(1800);
+  });
+
+  it("tracks chunk byte totals atomically in Redis", async () => {
+    const fakeRedis = createFakeRedisClient();
+    const module = await import("./upload-state-store.ts");
+    const store = new module.RedisUploadStateStore(async () => fakeRedis.client);
+
+    await store.saveUploadSession("upload-1", { total: 3, dir: "/tmp/upload-1", userId: "user-1" });
+
+    await expect(store.recordReceivedChunk("upload-1", 0, 4, 10)).resolves.toEqual({
+      accepted: true,
+      receivedCount: 1,
+      receivedBytes: 4,
+    });
+    await expect(store.recordReceivedChunk("upload-1", 1, 7, 10)).resolves.toEqual({
+      accepted: false,
+      receivedCount: 1,
+      receivedBytes: 4,
+    });
+    await expect(store.getReceivedChunks("upload-1")).resolves.toEqual([0]);
   });
 
   it("cleans up invalid upload payloads", async () => {
@@ -130,9 +179,9 @@ describe("RedisUploadStateStore", () => {
 
   it("uses Redis-backed default store outside test env", async () => {
     const fakeRedis = createFakeRedisClient();
-    const redisConnection = vi.fn().mockImplementation(() => ({
-      client: Promise.resolve(fakeRedis.client),
-    }));
+    const redisConnection = vi.fn(function vitestConstructor() {
+      return { client: Promise.resolve(fakeRedis.client) };
+    });
     const getRedisConnection = vi.fn(() => ({ host: "redis" }));
 
     vi.doMock("bullmq", () => ({ RedisConnection: redisConnection }));

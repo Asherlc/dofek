@@ -35,7 +35,7 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: vi.fn() },
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/lib/error-reporting", () => ({
   captureException: vi.fn(),
 }));
 
@@ -48,8 +48,8 @@ vi.mock("@opentelemetry/api", () => ({
   },
 }));
 
-import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import {
   cacheHitsTotal,
   cacheMissesTotal,
@@ -374,7 +374,7 @@ describe("trpc", () => {
         code: "SERVICE_UNAVAILABLE",
         message: analyticsUnavailableMessage,
       });
-      expect(Sentry.captureException).toHaveBeenCalledWith(reportableError, {
+      expect(captureException).toHaveBeenCalledWith(reportableError, {
         tags: { dependency: "clickhouse", trpcPath: "test" },
       });
     }
@@ -383,7 +383,7 @@ describe("trpc", () => {
       const caller = createSanitizerCaller(error);
 
       await expect(caller.test()).rejects.toMatchObject({ message });
-      expect(Sentry.captureException).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalled();
     }
 
     it("hides ClickHouse DNS failures from tRPC callers and reports the original error", async () => {
@@ -411,6 +411,22 @@ describe("trpc", () => {
     it("hides ClickHouse timeout errors detected by error code and message", async () => {
       const internalError = Object.assign(new Error("query failed against clickhouse backend"), {
         code: "ETIMEDOUT",
+      });
+
+      await expectSanitizedClickHouseError(internalError);
+    });
+
+    it("hides ClickHouse timeout errors detected by message text", async () => {
+      const internalError = new Error("ClickHouse timeout error while executing query");
+
+      await expectSanitizedClickHouseError(internalError);
+    });
+
+    it("hides missing analytics-store configuration from tRPC callers", async () => {
+      const internalError = new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
       });
 
       await expectSanitizedClickHouseError(internalError);
@@ -490,7 +506,7 @@ describe("trpc", () => {
   describe("cached middleware", () => {
     function createCachedRouter() {
       const testRouter = router({
-        cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
+        cachedQuery: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(() => "db-result"),
       });
       const trpc = initTRPC.context<Context>().create();
       const createCaller = trpc.createCallerFactory(testRouter);
@@ -566,6 +582,26 @@ describe("trpc", () => {
       );
     });
 
+    it("recomputes and overwrites successful results in cache refresh mode", async () => {
+      vi.mocked(queryCache.get).mockResolvedValue("stale-value");
+      const createCaller = createCachedRouter();
+      const caller = createCaller({
+        db: {},
+        userId: "user-1",
+        timezone: "UTC",
+        cacheMode: "refresh",
+      });
+
+      await expect(caller.cachedQuery()).resolves.toBe("db-result");
+      expect(queryCache.get).not.toHaveBeenCalled();
+      expect(cacheMissesTotal.inc).not.toHaveBeenCalled();
+      expect(queryCache.set).toHaveBeenCalledWith(
+        expect.stringContaining("user-1:cachedQuery:"),
+        "db-result",
+        CacheTTL.SHORT,
+      );
+    });
+
     it("records cache miss lookup and database duration metrics with labels", async () => {
       vi.mocked(queryCache.get).mockResolvedValue(undefined);
       const nowSpy = vi
@@ -616,7 +652,7 @@ describe("trpc", () => {
         .mockReturnValueOnce(1735)
         .mockReturnValueOnce(1750);
       const testRouter = router({
-        cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
+        cachedQuery: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(() => "db-result"),
       });
       const trpc = initTRPC.context<Context>().create();
       const createCaller = trpc.createCallerFactory(testRouter);
@@ -635,8 +671,9 @@ describe("trpc", () => {
         type: "query",
       });
       expect(logger.warn).toHaveBeenCalledWith(
-        "[trpc] Slow query procedure=cachedQuery type=query user_id=user-1 db_duration_ms=705 total_duration_ms=750 cache_hit=false app_version=unknown assets_version=unknown",
+        "[trpc] Slow query procedure=cachedQuery type=query authenticated=true db_duration_ms=705 total_duration_ms=750 cache_hit=false app_version=unknown assets_version=unknown",
       );
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain("user-1");
 
       nowSpy.mockRestore();
     });

@@ -1,6 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { activity, exercise, exerciseAlias, strengthSet, TEST_USER_ID } from "../db/schema.ts";
+import { activity, strengthSet } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import {
+  exercise,
+  exerciseAlias,
+  exerciseAliasSource,
+  exerciseSource,
+} from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { importStrongCsv, STRONG_PROVIDER_ID } from "./strong-csv.ts";
 
@@ -221,6 +228,29 @@ describe("importStrongCsv() (integration)", () => {
     expect(aliases.length).toBeGreaterThanOrEqual(2);
     const benchAlias = aliases.find((a) => a.providerExerciseName === "Bench Press (Barbell)");
     expect(benchAlias).toBeDefined();
+
+    const sources = await ctx.db
+      .select()
+      .from(exerciseSource)
+      .where(
+        and(
+          eq(exerciseSource.userId, TEST_USER_ID),
+          eq(exerciseSource.providerId, STRONG_PROVIDER_ID),
+        ),
+      );
+    expect(sources.length).toBeGreaterThanOrEqual(2);
+
+    const aliasSources = await ctx.db.select().from(exerciseAliasSource);
+    expect(aliasSources).toEqual(
+      expect.arrayContaining(
+        aliases.map((alias) =>
+          expect.objectContaining({
+            aliasId: alias.id,
+            exerciseId: alias.exerciseId,
+          }),
+        ),
+      ),
+    );
   });
 
   it("returns empty result for empty CSV", async () => {
@@ -267,7 +297,7 @@ describe("importStrongCsv() (integration)", () => {
       .where(and(eq(activity.providerId, STRONG_PROVIDER_ID), eq(activity.name, "Push Day")));
 
     expect(activities).toHaveLength(1);
-    expect(activities[0]?.activityType).toBe("strength");
+    expect(activities[0]?.canonicalType).toBe("strength");
     expect(activities[0]?.name).toBe("Push Day");
     expect(activities[0]?.startedAt).toEqual(new Date("2026-03-01T18:00:00.000Z"));
   });

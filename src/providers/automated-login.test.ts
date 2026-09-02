@@ -1,5 +1,5 @@
-import { TrainerRoadClient } from "trainerroad-client/client";
-import { VeloHeroClient } from "velohero-client/client";
+import { TrainerRoadClient } from "@dofek/trainerroad/client";
+import { VeloHeroClient } from "@dofek/velohero/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EightSleepProvider } from "./eight-sleep.ts";
 import { TrainerRoadProvider } from "./trainerroad.ts";
@@ -217,43 +217,15 @@ describe("UltrahumanProvider", () => {
   });
 
   describe("validate()", () => {
-    it("returns error when ULTRAHUMAN_API_TOKEN is missing", () => {
+    it("does not require deployment-wide user credentials", () => {
       delete process.env.ULTRAHUMAN_API_TOKEN;
       delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      expect(provider.validate()).toContain("ULTRAHUMAN_API_TOKEN");
-    });
-
-    it("returns error when ULTRAHUMAN_EMAIL is missing", () => {
-      process.env.ULTRAHUMAN_API_TOKEN = "test-token";
-      delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      expect(provider.validate()).toContain("ULTRAHUMAN_EMAIL");
-    });
-
-    it("returns null when both env vars are set", () => {
-      process.env.ULTRAHUMAN_API_TOKEN = "test-token";
-      process.env.ULTRAHUMAN_EMAIL = "user@example.com";
       const provider = new UltrahumanProvider();
       expect(provider.validate()).toBeNull();
-    });
-
-    it("checks ULTRAHUMAN_API_TOKEN before ULTRAHUMAN_EMAIL", () => {
-      delete process.env.ULTRAHUMAN_API_TOKEN;
-      delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      const result = provider.validate();
-      expect(result).toContain("ULTRAHUMAN_API_TOKEN");
-      expect(result).not.toContain("ULTRAHUMAN_EMAIL");
     });
   });
 
   describe("auth", () => {
-    it("does not have authSetup (uses server-side env var auth)", () => {
-      const provider = new UltrahumanProvider();
-      expect("authSetup" in provider).toBe(false);
-    });
-
     it("accepts custom fetch function", () => {
       const mockFetch: typeof globalThis.fetch = () => Promise.resolve(new Response());
       const provider = new UltrahumanProvider(mockFetch);
@@ -356,33 +328,7 @@ describe("UltrahumanProvider", () => {
   });
 });
 
-// ============================================================
-// UltrahumanClient — error handling
-// ============================================================
-
-describe("UltrahumanClient — error handling", () => {
-  it("throws on non-OK response with status and body", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Forbidden", { status: 403 });
-    };
-
-    const client = new UltrahumanClient("bad-token", "user@example.com", mockFetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
-      "Ultrahuman API error (403)",
-    );
-  });
-
-  it("throws on 401 unauthorized", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Unauthorized", { status: 401 });
-    };
-
-    const client = new UltrahumanClient("expired-token", "user@example.com", mockFetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
-      "Ultrahuman API error (401)",
-    );
-  });
-
+describe("UltrahumanClient", () => {
   it("throws on 500 server error", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Internal Server Error", { status: 500 });
@@ -408,15 +354,6 @@ describe("UltrahumanClient — error handling", () => {
     const result = await client.getDailyMetrics("2026-03-01");
     expect(result.status).toBe(200);
     expect(result.data.metrics["2026-03-01"]).toEqual([]);
-  });
-
-  it("includes error body text in thrown error", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Invalid API key", { status: 403 });
-    };
-
-    const client = new UltrahumanClient("bad-token", "user@example.com", mockFetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow("Invalid API key");
   });
 
   it("returns metrics with data when API returns populated response", async () => {

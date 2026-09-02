@@ -1,4 +1,4 @@
-const { getDefaultConfig } = require("expo/metro-config");
+const { getSentryExpoConfig } = require("@sentry/react-native/metro");
 const { withStorybook } = require("@storybook/react-native/metro/withStorybook");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -6,10 +6,10 @@ const path = require("node:path");
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, "../..");
 
-const config = getDefaultConfig(projectRoot);
+const config = getSentryExpoConfig(projectRoot);
 
 // Watch all files in the monorepo so workspace deps resolve
-config.watchFolders = [monorepoRoot];
+config.watchFolders = Array.from(new Set([...(config.watchFolders || []), monorepoRoot]));
 
 // Resolve modules from both the project and the monorepo root
 config.resolver.nodeModulesPaths = [
@@ -19,9 +19,6 @@ config.resolver.nodeModulesPaths = [
 
 // Enable symlink resolution for pnpm workspace packages
 config.resolver.unstable_enableSymlinks = true;
-
-// Set condition names so Metro can resolve package.json "exports" subpaths
-config.resolver.unstable_conditionNames = ["react-native", "import", "require", "default"];
 
 // Exclude test and story files from the bundle (colocated files in app/
 // would otherwise be picked up as Expo Router routes)

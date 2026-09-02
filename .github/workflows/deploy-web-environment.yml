@@ -46,7 +46,7 @@ on:
         description: "Public app URL"
         required: false
         type: string
-        default: https://dofek.asherlc.com
+        default: ""
       web_host_rule:
         description: "Traefik Host() rule for the app router"
         required: false
@@ -146,7 +146,9 @@ jobs:
           echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Deploying ${ENVIRONMENT_NAME} web stack image tag: $TAG"
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: inputs.ci_run_id != ''
@@ -166,6 +168,7 @@ jobs:
     needs: [check, terraform]
     uses: ./.github/workflows/deploy-web-stack.yml
     with:
+      commit_sha: ${{ inputs.automatic_commit_sha }}
       image_tag: ${{ needs.check.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host }}
       ssh_user: ${{ inputs.ssh_user }}

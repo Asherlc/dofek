@@ -52,4 +52,36 @@ describe("ActivityVariabilityTable", () => {
       params: { id: "activity-1" },
     });
   });
+
+  it("explains when activities have no normalized power data", () => {
+    render(
+      <ActivityVariabilityTable
+        data={[]}
+        totalCount={0}
+        offset={0}
+        limit={20}
+        onPageChange={() => {}}
+        emptyReason="no_normalized_power"
+      />,
+    );
+
+    expect(
+      screen.getByText("No cycling activities with enough power samples for variability yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("uses a plain-language power label in the activity table", () => {
+    render(
+      <ActivityVariabilityTable
+        data={rowsWithIds}
+        totalCount={1}
+        offset={0}
+        limit={20}
+        onPageChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Effort-adjusted power (W)" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Normalized Power (W)" })).toBeNull();
+  });
 });

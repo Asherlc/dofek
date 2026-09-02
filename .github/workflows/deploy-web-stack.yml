@@ -39,7 +39,7 @@ on:
         description: "Public app URL"
         required: false
         type: string
-        default: https://dofek.asherlc.com
+        default: ""
       web_host_rule:
         description: "Traefik Host() rule for the app router"
         required: false
@@ -125,6 +125,11 @@ on:
         required: false
         default: dofek
         type: string
+      public_url:
+        description: "Public app URL"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   # Key on the target host so deploys to different hosts (production vs staging) run in
@@ -148,7 +153,12 @@ jobs:
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+
+      - uses: ./.github/actions/setup-node-pnpm
 
       - name: Resolve image tag
         id: resolve
@@ -178,10 +188,34 @@ jobs:
           template: .github/templates/infisical-dotenv.tmpl
           output_path: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
 
+      - name: Validate required deploy secrets in rendered dotenv
+        env:
+          INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+        run: pnpm tsx scripts/validate-deploy-env.ts "$INFISICAL_ENV_FILE_PATH"
+
+      - name: Render least-privilege service dotenv files
+        env:
+          INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+          SERVICE_ENV_DIRECTORY: ${{ runner.temp }}/dofek-service-env
+        run: |
+          pnpm tsx scripts/render-deploy-service-env.ts \
+            "$INFISICAL_ENV_FILE_PATH" \
+            "$SERVICE_ENV_DIRECTORY"
+          {
+            echo "ANALYTICS_WORKER_ENV_FILE=$SERVICE_ENV_DIRECTORY/analytics-worker.env"
+            echo "CDC_HEALTH_ENV_FILE=$SERVICE_ENV_DIRECTORY/cdc-health.env"
+            echo "CDC_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/cdc-operations.env"
+            echo "COLLECTOR_ENV_FILE=$SERVICE_ENV_DIRECTORY/collector.env"
+            echo "DATABASE_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/database-operations.env"
+            echo "R2_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/r2-operations.env"
+            echo "WEB_ENV_FILE=$SERVICE_ENV_DIRECTORY/web.env"
+            echo "WORKER_ENV_FILE=$SERVICE_ENV_DIRECTORY/worker.env"
+          } >> "$GITHUB_ENV"
+
       - name: Export deploy env for stack interpolation
         env:
           INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
-          PUBLIC_URL_INPUT: ${{ inputs.public_url || 'https://dofek.asherlc.com' }}
+          PUBLIC_URL_INPUT: ${{ inputs.public_url }}
           WEB_HOST_RULE_INPUT: ${{ inputs.web_host_rule }}
           OTA_BASE_URL_INPUT: ${{ inputs.ota_base_url || 'https://ota.dofek.asherlc.com' }}
           OTA_HOST_RULE_INPUT: ${{ inputs.ota_host_rule }}
@@ -194,6 +228,17 @@ jobs:
           PEERDB_HOST_RULE_INPUT: ${{ inputs.peerdb_host_rule }}
           STACK_OVERRIDE_INPUT: ${{ inputs.stack_override }}
         run: |
+          if [ "$DEPLOY_ENVIRONMENT" = "prod" ] || [ "$DEPLOY_ENVIRONMENT" = "production" ]; then
+            PUBLIC_URL_INPUT="${PUBLIC_URL_INPUT:-https://dofek.fit}"
+            if [ "$PUBLIC_URL_INPUT" != "https://dofek.fit" ]; then
+              echo "::error::Production PUBLIC_URL must be https://dofek.fit"
+              exit 1
+            fi
+          elif [ -z "$PUBLIC_URL_INPUT" ]; then
+            echo "::error::Non-production deployments must provide public_url"
+            exit 1
+          fi
+
           STACK_FILE_FLAGS="-c deploy/stack.yml"
 
           # Optional caller-supplied override (e.g. deploy/stack.oracle.yml for
@@ -277,6 +322,20 @@ jobs:
           process.exit(result.status ?? 1);
           NODE
 
+      - name: Create Apple private key Swarm secret
+        run: |
+          set -euo pipefail
+          apple_private_key_secret_name="${STACK_NAME}_apple_private_key_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          if ! node "$RUNNER_TEMP/run-with-dotenv-env.mjs" node -e 'if (!process.env.APPLE_PRIVATE_KEY?.trim()) { throw new Error("APPLE_PRIVATE_KEY is required"); }' ; then
+            echo "::error::APPLE_PRIVATE_KEY is required to create the application Swarm secret"
+            exit 1
+          fi
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" node -e 'process.stdout.write(process.env.APPLE_PRIVATE_KEY ?? "")' \
+            | docker secret create \
+              --label "com.dofek.stack=${STACK_NAME}" \
+              "$apple_private_key_secret_name" -
+          echo "APPLE_PRIVATE_KEY_SECRET_NAME=$apple_private_key_secret_name" >> "$GITHUB_ENV"
+
       - name: Export encoded ClickHouse password
         run: |
           encoded_clickhouse_password="$(
@@ -292,24 +351,73 @@ jobs:
             docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Prune unused images before pull
+      - name: Reclaim Docker root disk before pull
         run: |
+          set -euo pipefail
+
+          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
+
+          ssh_options=(
+            -o ConnectTimeout=30
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+          )
+
+          ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" 'df -h /'
           docker system df || true
+          docker container prune --force
           docker image prune -af
           docker system df || true
 
+          minimum_kb=$((8 * 1024 * 1024))
+          available_kb="$(
+            ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" \
+              'df --output=avail -k / | tail -n 1 | tr -d " "'
+          )"
+          ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" 'df -h /'
+          if ! [[ "$available_kb" =~ ^[0-9]+$ ]]; then
+            echo "::error::Unable to determine free space on the remote Docker root filesystem"
+            exit 1
+          fi
+          if [ "$available_kb" -lt "$minimum_kb" ]; then
+            echo "::error::Remote Docker root filesystem has less than 8 GiB free after container and image cleanup; aborting before image pulls."
+            exit 1
+          fi
+
       - name: Pull deploy images
+        id: pull_images
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+
+          sentry_release="$(
+            docker image inspect "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+              --format '{{range .Config.Env}}{{println .}}{{end}}' \
+              | sed -n 's/^SENTRY_RELEASE=//p' \
+              | head -n 1
+          )"
+          if [ -z "$sentry_release" ]; then
+            echo "::error::Image ghcr.io/asherlc/dofek:${IMAGE_TAG} does not declare SENTRY_RELEASE"
+            exit 1
+          fi
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [ "$sentry_release" != "$checked_out_sha" ]; then
+            echo "::error::Checked-out commit ${checked_out_sha} does not match image SENTRY_RELEASE ${sentry_release}; dispatch the workflow from the image's source commit."
+            exit 1
+          fi
+          echo "sentry_release=$sentry_release" >> "$GITHUB_OUTPUT"
 
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
@@ -340,6 +448,74 @@ jobs:
           pull_if_missing "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
           REMOTE
 
+      - name: Upload web assets to R2
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          WEB_ASSETS_R2_BUCKET: dofek-web-assets
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+
+          env_value() {
+            local key="$1"
+            grep "^${key}=" "$R2_OPERATIONS_ENV_FILE" | head -n 1 | cut -d= -f2-
+          }
+
+          R2_ENDPOINT="$(env_value R2_ENDPOINT)"
+          AWS_ACCESS_KEY_ID="$(env_value R2_ACCESS_KEY_ID)"
+          AWS_SECRET_ACCESS_KEY="$(env_value R2_SECRET_ACCESS_KEY)"
+          export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+          web_dist_dir="$RUNNER_TEMP/web-dist-${IMAGE_TAG}"
+          rm -rf "$web_dist_dir"
+          mkdir -p "$web_dist_dir"
+
+          docker run --rm --entrypoint sh "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'cd /app/packages/web/dist && tar -cf - .' \
+            | tar -xf - -C "$web_dist_dir"
+
+          if [ -z "$(find "$web_dist_dir" -type f ! -name "index.html" -print -quit)" ]; then
+            echo "::error::No built web asset files found in image ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+            exit 1
+          fi
+          if [ ! -f "$web_dist_dir/index.html" ]; then
+            echo "::error::Built web index.html not found in image ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+            exit 1
+          fi
+
+          asset_tags="$(
+            grep -oE 'https://assets\.dofek\.fit/web/[^/?#"]+' "$web_dist_dir/index.html" \
+              | sed -E 's#https://assets\.dofek\.fit/web/([^/?#"]+)#\1#' \
+              | sort -u \
+              || true
+          )"
+          asset_tag_count="$(printf '%s\n' "$asset_tags" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [ "$asset_tag_count" -eq 0 ]; then
+            echo "::error::Built web index.html does not reference https://assets.dofek.fit/web/<tag>/"
+            exit 1
+          fi
+          if [ "$asset_tag_count" -gt 1 ]; then
+            echo "::error::Built web index.html references multiple asset tags: $asset_tags"
+            exit 1
+          fi
+          asset_tag="$asset_tags"
+
+          aws s3 sync "$web_dist_dir/" "s3://${WEB_ASSETS_R2_BUCKET}/web/${asset_tag}/" \
+            --region auto \
+            --endpoint-url "$R2_ENDPOINT" \
+            --exclude "index.html" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Sweep and verify expired database backups
+        if: (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production') && env.STACK_NAME == 'dofek'
+        env:
+          DB_BACKUPS_R2_BUCKET: dofek-db-backups
+        run: >-
+          pnpm tsx scripts/sweep-expired-r2-backups.ts
+          --env-file "$R2_OPERATIONS_ENV_FILE"
+          --bucket "$DB_BACKUPS_R2_BUCKET"
+          --retention-days 21
+
       - name: Validate host bind mount paths
         run: |
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
@@ -358,11 +534,42 @@ jobs:
           done
           REMOTE
 
+      - name: Apply dependency stack before migrations
+        env:
+          REQUESTED_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          pre_migration_image_tag="$REQUESTED_IMAGE_TAG"
+          web_service_name="${STACK_NAME}_web"
+          if docker service inspect "$web_service_name" >/dev/null 2>&1; then
+            deployed_web_image="$(
+              docker service inspect "$web_service_name" \
+                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+            )"
+            deployed_web_image="${deployed_web_image%@*}"
+            case "$deployed_web_image" in
+              ghcr.io/asherlc/dofek:*)
+                pre_migration_image_tag="${deployed_web_image#ghcr.io/asherlc/dofek:}"
+                ;;
+              *)
+                echo "::error::Unable to derive the deployed app image tag from ${deployed_web_image}"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "Applying dependency changes with app image ${pre_migration_image_tag} before migrations."
+          IMAGE_TAG="$pre_migration_image_tag" \
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            docker stack deploy $STACK_FILE_FLAGS \
+              -c deploy/stack.cdc-quiesce.yml \
+              -c deploy/stack.migration-quiesce.yml \
+              --with-registry-auth --detach=true "$STACK_NAME"
+
       - name: Wait for Postgres writable
         run: |
           for attempt in $(seq 1 36); do
             recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$INFISICAL_ENV_FILE" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
               postgres:18-alpine sh -euc \
               "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
               psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
@@ -416,14 +623,14 @@ jobs:
           migration_timeout_seconds=14400
           migration_started_at="$(date +%s)"
           docker run -d --name "$migration_container" --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
+            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/run-migrate.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/run-migrate.ts'
 
-          inspect_failure_count=0
-          max_inspect_failures=10
+           inspect_failure_count=0
+           max_inspect_failures=10
           while true; do
             elapsed_seconds="$(($(date +%s) - migration_started_at))"
             if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
@@ -478,18 +685,18 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
-            echo "::error::docker stack deploy exceeded 20m"
+            echo "::error::docker stack deploy exceeded 35m"
           fi
           if [ "$status" -ne 0 ]; then
             exit "$status"
           fi
 
-          wait_deadline_seconds=$((SECONDS + 1200))
-          for service in web worker analytics-worker metric-stream-clickhouse-sink clickhouse; do
+          wait_deadline_seconds=$((SECONDS + 2100))
+          for service in web worker analytics-worker metric-stream-clickhouse-sink processing-reconciliation clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -508,6 +715,16 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              case "$service" in
+                web|worker|analytics-worker|metric-stream-clickhouse-sink|processing-reconciliation)
+                  expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+                  if [ "${image%@*}" != "$expected_image" ]; then
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::${service_name} is using ${image}, expected ${expected_image}"
+                    exit 1
+                  fi
+                  ;;
+              esac
               case "$update_state" in
                 rollback_*)
                   docker service ps "$service_name" --no-trunc
@@ -515,13 +732,9 @@ jobs:
                   exit 1
                   ;;
                 paused)
-                  running="${replicas%%/*}"
-                  if [ "$running" -eq 0 ]; then
-                    docker service ps "$service_name" --no-trunc
-                    echo "::error::${service_name} update is paused with no running tasks"
-                    exit 1
-                  fi
-                  echo "::warning::${service_name} update is paused but has running tasks; continuing"
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} update is paused"
+                  exit 1
                   ;;
               esac
               if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
@@ -546,7 +759,7 @@ jobs:
           readiness_timeout_seconds=$((readiness_attempts * command_timeout_seconds + (readiness_attempts - 1) * retry_sleep_seconds))
           for attempt in $(seq 1 "$readiness_attempts"); do
             recovery_output=$(timeout "${command_timeout_seconds}s" docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$INFISICAL_ENV_FILE" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
               postgres:18-alpine sh -euc \
               "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
               psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
@@ -563,6 +776,16 @@ jobs:
             echo "Postgres post-stack readiness attempt ${attempt}/${readiness_attempts}: retrying in ${retry_sleep_seconds}s..."
             sleep "$retry_sleep_seconds"
           done
+
+      - name: Backfill and cut over provider connections
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec ./entrypoint.sh provider-connection-cutover'
 
       - name: Wait for ClickHouse after stack deploy
         run: |
@@ -590,7 +813,7 @@ jobs:
         run: |
           for attempt in $(seq 1 36); do
             peerdb_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$INFISICAL_ENV_FILE" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
               postgres:18-alpine sh -euc \
               "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
               psql --host=peerdb --port=9900 --username=peerdb --dbname=peerdb --no-align --tuples-only --quiet \
@@ -690,15 +913,15 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
+            --env-file "$CDC_OPERATIONS_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/setup-clickhouse-cdc.ts'
 
       - name: Deploy ClickHouse consumer services
         id: deploy_stack_full
-        if: always() && steps.deploy_stack_quiesced.conclusion != 'skipped'
+        if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success'
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
@@ -714,8 +937,11 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 1200))
-          for service in analytics-worker metric-stream-clickhouse-sink; do
+          stability_window_seconds=60
+          for service in analytics-worker metric-stream-clickhouse-sink processing-reconciliation; do
             service_name="${STACK_NAME}_${service}"
+            stable_task_id=""
+            stable_since_seconds=0
             while true; do
               update_state="$(
                 docker service inspect "$service_name" \
@@ -732,7 +958,24 @@ jobs:
               replicas="$(
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
-              echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              task_ids="$(
+                docker service ps "$service_name" \
+                  --filter desired-state=running \
+                  --format '{{.ID}}'
+              )"
+              task_id="${task_ids%%$'\n'*}"
+              echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none} task_id=${task_id:-none}"
+              expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+              if [ "${image%@*}" != "$expected_image" ]; then
+                docker service ps "$service_name" --no-trunc
+                echo "::error::${service_name} is using ${image}, expected ${expected_image}"
+                exit 1
+              fi
+              if [ "$desired_replicas" != "1" ]; then
+                docker service ps "$service_name" --no-trunc
+                echo "::error::${service_name} expected one desired replica after the full deploy, found ${desired_replicas}"
+                exit 1
+              fi
               case "$update_state" in
                 rollback_*)
                   docker service ps "$service_name" --no-trunc
@@ -745,10 +988,30 @@ jobs:
                   exit 1
                   ;;
               esac
-              if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
+              if [ "$replicas" = "1/1" ] && {
                 [ -z "$update_state" ] || [ "$update_state" = "completed" ]
-              }; then
-                break
+              } && [ -n "$task_id" ]; then
+                if [ -z "$stable_task_id" ]; then
+                  stable_task_id="$task_id"
+                  stable_since_seconds=$SECONDS
+                  echo "${service_name} task ${task_id} reached convergence; starting ${stability_window_seconds}s stability window"
+                elif [ "$stable_task_id" != "$task_id" ]; then
+                  echo "${service_name} task changed from ${stable_task_id} to ${task_id}; resetting stability window"
+                  stable_task_id="$task_id"
+                  stable_since_seconds=$SECONDS
+                fi
+
+                stable_elapsed_seconds=$((SECONDS - stable_since_seconds))
+                if [ "$stable_elapsed_seconds" -ge "$stability_window_seconds" ]; then
+                  echo "${service_name} task ${task_id} has remained converged for ${stability_window_seconds}s"
+                  break
+                fi
+              else
+                if [ -n "$stable_task_id" ]; then
+                  echo "${service_name} lost convergence; resetting stability window for task ${stable_task_id}"
+                fi
+                stable_task_id=""
+                stable_since_seconds=0
               fi
               if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
                 docker service ps "$service_name" --no-trunc
@@ -758,6 +1021,65 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Remove unused Apple private key Swarm secrets
+        if: steps.deploy_stack_full.outcome == 'success'
+        run: |
+          set -euo pipefail
+          while IFS= read -r secret_name; do
+            [ -n "$secret_name" ] || continue
+            if [ "$secret_name" = "$APPLE_PRIVATE_KEY_SECRET_NAME" ]; then
+              continue
+            fi
+            if docker secret rm "$secret_name"; then
+              echo "Removed unused Apple private key secret ${secret_name}."
+            else
+              echo "Keeping ${secret_name}; Docker still reports it is in use."
+            fi
+          done < <(
+            docker secret ls \
+              --filter "label=com.dofek.stack=${STACK_NAME}" \
+              --format '{{.Name}}'
+          )
+
+      - name: Verify database backup freshness
+        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm \
+            --env-file "$R2_OPERATIONS_ENV_FILE" \
+            --entrypoint node \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            --experimental-strip-types \
+            --enable-source-maps \
+            scripts/check-database-backup-freshness.ts
+
+      - name: Record Sentry production release
+        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: east-bay-software
+        with:
+          environment: production
+          projects: dofek-web dofek-server
+          release: ${{ steps.pull_images.outputs.sentry_release }}
+          set_commits: skip
+
+      - name: Report quiesced processing services
+        if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'
+        run: |
+          message="analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness or CDC setup step, then rerun the deployment."
+          echo "::error::$message"
+          {
+            echo "### Processing services remain quiesced"
+            echo
+            echo "$message"
+            echo
+            echo "analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation remain at zero replicas."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prune obsolete images post-deploy
         if: ${{ steps.deploy_stack_full.outcome == 'success' }}

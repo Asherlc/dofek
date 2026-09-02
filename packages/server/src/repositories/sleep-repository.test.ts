@@ -11,7 +11,9 @@ describe("SleepRepository", () => {
     clickHouseRows?: Record<string, unknown>[];
   } = {}) {
     const execute = vi.fn().mockResolvedValue(postgresRows);
-    const sensorStore = makeMockSensorStore(clickHouseRows);
+    const sensorStore = makeMockSensorStore(
+      clickHouseRows.map((row) => ({ staging_available: false, ...row })),
+    );
     const repo = new SleepRepository(
       { execute },
       "user-1",
@@ -59,7 +61,7 @@ describe("SleepRepository", () => {
       );
       expect(execute).not.toHaveBeenCalled();
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
-      expect(queryText).toContain("analytics.v_sleep");
+      expect(queryText).toContain("analytics.daily_sleep");
       expect(queryText).not.toContain("fitness.v_sleep");
     });
 
@@ -90,6 +92,17 @@ describe("SleepRepository", () => {
       await repo.list(30, "2026-03-28");
       expect(execute).not.toHaveBeenCalled();
       expect(sensorStore.query).toHaveBeenCalledOnce();
+    });
+
+    it("converts an exact inclusive range to the ClickHouse day window", async () => {
+      const { repo, sensorStore } = makeRepository();
+
+      await repo.listRange("2026-03-20", "2026-03-28");
+
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+        days: 8,
+        endDate: "2026-03-28",
+      });
     });
   });
 
@@ -168,7 +181,7 @@ describe("SleepRepository", () => {
       await repo.getLatestStages();
       expect(execute).not.toHaveBeenCalled();
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
-      expect(queryText).toContain("analytics.v_sleep");
+      expect(queryText).toContain("analytics.daily_sleep");
       expect(queryText).not.toContain("fitness.v_sleep");
     });
   });
@@ -209,7 +222,7 @@ describe("SleepRepository", () => {
       );
       expect(execute).not.toHaveBeenCalled();
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
-      expect(queryText).toContain("analytics.v_sleep");
+      expect(queryText).toContain("analytics.daily_sleep");
       expect(queryText).not.toContain("fitness.v_sleep");
     });
 

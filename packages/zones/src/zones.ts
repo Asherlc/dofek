@@ -226,25 +226,24 @@ export const POLARIZATION_ZONES: PolarizationZoneDefinition[] = [
 /**
  * Compute the Treff Polarization Index from zone time distribution.
  *
- * PI = log10((f1 / (f2 * f3)) * 100)
+ * PI = log10((f1 / f2) * f3 * 100)
  * where f = fraction of total training time in each zone.
  *
- * PI > 2.0 indicates a well-polarized training distribution.
- * Returns null if any zone has zero time.
+ * PI > 2.0 matches Treff's descriptive polarized-distribution heuristic.
+ * Returns null if any zone has zero time or Zone 3 exceeds Zone 1.
  */
 export function computePolarizationIndex(
   z1Seconds: number,
   z2Seconds: number,
   z3Seconds: number,
 ): number | null {
-  if (z1Seconds <= 0 || z2Seconds <= 0 || z3Seconds <= 0) return null;
+  if (z2Seconds <= 0 || z3Seconds <= 0 || z3Seconds > z1Seconds) return null;
   const total = z1Seconds + z2Seconds + z3Seconds;
-  if (total <= 0) return null;
 
   const f1 = z1Seconds / total;
   const f2 = z2Seconds / total;
   const f3 = z3Seconds / total;
-  const ratio = (f1 / (f2 * f3)) * 100;
+  const ratio = (f1 / f2) * f3 * 100;
   return Math.round(Math.log10(ratio) * 1000) / 1000;
 }
 

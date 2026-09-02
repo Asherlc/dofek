@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+
+const workspaceDirectory = realpathSync(process.cwd());
+const composeEnvironmentPath = join(workspaceDirectory, ".env.local");
+const composeFilePath = join(workspaceDirectory, "docker-compose.yml");
+const composeProjectName = basename(workspaceDirectory);
 
 interface ComposeServicePort {
   service: string;
@@ -9,8 +14,29 @@ interface ComposeServicePort {
 }
 
 function composePort(input: ComposeServicePort): string {
-  const output = execFileSync("docker", ["compose", "port", input.service, input.privatePort], {
+  const dockerArguments = [
+    "compose",
+    "--project-name",
+    composeProjectName,
+    "--project-directory",
+    workspaceDirectory,
+    "--file",
+    composeFilePath,
+  ];
+  if (existsSync(composeEnvironmentPath)) {
+    dockerArguments.push("--env-file", composeEnvironmentPath);
+  }
+  dockerArguments.push("port", input.service, input.privatePort);
+
+  const output = execFileSync("docker", dockerArguments, {
+    cwd: workspaceDirectory,
     encoding: "utf8",
+    env: {
+      ...process.env,
+      COMPOSE_FILE: composeFilePath,
+      COMPOSE_PROJECT_NAME: composeProjectName,
+      PWD: workspaceDirectory,
+    },
     stdio: ["ignore", "pipe", "ignore"],
   }).trim();
   const match = output.match(/:(\d+)$/);
@@ -81,7 +107,7 @@ const clickHousePassword = process.env.CLICKHOUSE_PASSWORD ?? "health";
 const postgresPasswordUrlEncoded = encodeURIComponent(postgresPassword);
 const clickHousePasswordUrlEncoded = encodeURIComponent(clickHousePassword);
 const existingEnv = {
-  ...readDotenv(join(process.cwd(), ".env.local")),
+  ...readDotenv(composeEnvironmentPath),
   ...process.env,
 };
 const databasePort = await resolvePort({
@@ -116,6 +142,8 @@ const redpandaPort = await resolvePort({
 });
 
 const dotenv = [
+  `COMPOSE_PROJECT_NAME=${dotenvEscape(composeProjectName)}`,
+  `COMPOSE_FILE=${dotenvEscape(composeFilePath)}`,
   `POSTGRES_PASSWORD=${dotenvEscape(postgresPassword)}`,
   `CLICKHOUSE_PASSWORD=${dotenvEscape(clickHousePassword)}`,
   `POSTGRES_PORT=${databasePort}`,
@@ -132,8 +160,43 @@ const dotenv = [
   "",
 ].join("\n");
 
-if (process.argv.includes("--write")) {
-  writeFileSync(join(process.cwd(), ".env.local"), dotenv);
+if (process.argv.includes("--up")) {
+  writeFileSync(composeEnvironmentPath, dotenv);
+  execFileSync(
+    "docker",
+    [
+      "compose",
+      "--project-name",
+      composeProjectName,
+      "--project-directory",
+      workspaceDirectory,
+      "--file",
+      composeFilePath,
+      "--env-file",
+      composeEnvironmentPath,
+      "up",
+      "-d",
+      "--wait",
+      "--wait-timeout",
+      "180",
+      "db",
+      "clickhouse",
+      "redis",
+      "redpanda",
+    ],
+    {
+      cwd: workspaceDirectory,
+      env: {
+        ...process.env,
+        COMPOSE_FILE: composeFilePath,
+        COMPOSE_PROJECT_NAME: composeProjectName,
+        PWD: workspaceDirectory,
+      },
+      stdio: "inherit",
+    },
+  );
+} else if (process.argv.includes("--write")) {
+  writeFileSync(composeEnvironmentPath, dotenv);
 } else {
   process.stdout.write(dotenv);
 }

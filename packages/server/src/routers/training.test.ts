@@ -13,7 +13,6 @@ import {
   pickCardioFocus,
   pickStrengthSplit,
   shouldDoStrengthToday,
-  shouldPreferRest,
   uniqueStrings,
 } from "./training.ts";
 
@@ -838,49 +837,6 @@ describe("computeReadinessScore", () => {
     const result = computeReadinessScore(scores, heavyHrv, true);
     // 80*0.7 + 60*0.1 + 70*0.1 + 50*0.1 = 56 + 6 + 7 + 5 = 74
     expect(result).toBe(74);
-  });
-});
-
-describe("shouldPreferRest", () => {
-  it("returns true for low readiness", () => {
-    expect(shouldPreferRest("low", 0, null)).toBe(true);
-  });
-
-  it("returns true for consecutive training >= 6", () => {
-    expect(shouldPreferRest("high", 6, null)).toBe(true);
-  });
-
-  it("returns false for consecutive training of 5", () => {
-    expect(shouldPreferRest("high", 5, null)).toBe(false);
-  });
-
-  it("returns true for ACWR > 1.5", () => {
-    expect(shouldPreferRest("high", 0, 1.6)).toBe(true);
-  });
-
-  it("returns false for ACWR exactly 1.5 (uses > not >=)", () => {
-    expect(shouldPreferRest("high", 0, 1.5)).toBe(false);
-  });
-
-  it("returns false for ACWR just below threshold", () => {
-    expect(shouldPreferRest("high", 0, 1.4)).toBe(false);
-  });
-
-  it("returns false for null ACWR", () => {
-    expect(shouldPreferRest("high", 0, null)).toBe(false);
-  });
-
-  it("returns false for moderate readiness with no other triggers", () => {
-    expect(shouldPreferRest("moderate", 0, null)).toBe(false);
-  });
-
-  it("uses || not && (any single trigger is enough)", () => {
-    // Low readiness alone should trigger rest
-    expect(shouldPreferRest("low", 0, null)).toBe(true);
-    // High streak alone should trigger rest
-    expect(shouldPreferRest("high", 7, null)).toBe(true);
-    // High ACWR alone should trigger rest
-    expect(shouldPreferRest("high", 0, 2.0)).toBe(true);
   });
 });
 

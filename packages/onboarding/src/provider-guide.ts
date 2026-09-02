@@ -28,9 +28,10 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
       "komoot",
       "mapmyfitness",
       "ride-with-gps",
-      "cycling-analytics",
+      "cycling_analytics",
       "xert",
       "velohero",
+      "mountain-project",
       "decathlon",
       "wger",
     ],
@@ -48,7 +49,7 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
   {
     title: "Body Composition",
     description: "Monitor weight, body fat percentage, and trends over time",
-    providerIds: ["withings", "garmin", "fitbit"],
+    providerIds: ["withings", "garmin", "fitbit", "bodyspec"],
   },
   {
     title: "Health Metrics",

@@ -5,15 +5,53 @@
  * `SyncDatabase` mock — eliminating the need for type suppression
  * comments throughout provider test files.
  */
+import { sql } from "drizzle-orm";
 import { vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import type {
+  ProviderDataGenerationContext,
+  ProviderDataScope,
+} from "../db/provider-data-deletion.ts";
+import type { Database } from "../db/typed-sql.ts";
 import {
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
-  type MetricStreamEventV1,
+  type MetricStreamEventV2,
   type MetricStreamRowInput,
 } from "../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+
+export function fakeJwt(expirationEpochSeconds: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
+    "base64url",
+  );
+  return `${header}.${payload}.signature`;
+}
+
+export async function resolveProviderDataGenerationsForTest(
+  database: Database,
+  scopes: readonly ProviderDataScope[],
+): Promise<ProviderDataGenerationContext> {
+  await database.execute(sql`SELECT 0 AS generation`);
+  return {
+    generations: scopes.map((scope) => ({ ...scope, generation: 0 })),
+    operationRevision: "1000000000000000",
+  };
+}
+
+export function makeTransactionalTestDatabase<TDatabase extends Database>(
+  database: TDatabase,
+): TDatabase & {
+  transaction<TResult>(work: (transaction: TDatabase) => Promise<TResult>): Promise<TResult>;
+} {
+  async function transaction<TResult>(
+    work: (transaction: TDatabase) => Promise<TResult>,
+  ): Promise<TResult> {
+    return work(database);
+  }
+  return Object.assign(database, { transaction });
+}
 
 /**
  * Options for configuring the mock database behavior.
@@ -70,16 +108,16 @@ export function createCapturingMetricStreamPublisher(): CapturingMetricStreamPub
     publishedMetricStreamRows,
     deletedMetricStreamScopes,
     publisher: {
-      async publishRows(rows: readonly MetricStreamRowInput[]): Promise<MetricStreamEventV1[]> {
+      async publishRows(rows, options): Promise<MetricStreamEventV2[]> {
         publishedMetricStreamRows.push(...rows);
-        return rows.map((row) => createMetricStreamEvent(row));
+        return rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
       },
-      async replaceRows(scope, rows) {
+      async replaceRows(scope, rows, operationRevision) {
         publishedMetricStreamRows.push(...rows);
         deletedMetricStreamScopes.push(scope);
         return {
-          deleted: createMetricStreamDeletedEvent(scope),
-          rows: rows.map((row) => createMetricStreamEvent(row)),
+          deleted: createMetricStreamDeletedEvent(scope, operationRevision),
+          rows: rows.map((row) => createMetricStreamEvent(row, operationRevision)),
         };
       },
     },
@@ -155,12 +193,12 @@ export function createMockDatabase(options: MockDatabaseOptions = {}): MockDatab
   // Build the db object that structurally satisfies SyncDatabase.
   // We use a function-typed variable so TypeScript infers the mock
   // return values' chain types without needing type assertions.
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase<SyncDatabase>({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return { db, spies };
 }

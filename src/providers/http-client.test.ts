@@ -54,6 +54,7 @@ describe("ProviderHttpClient", () => {
       expect(result).toEqual({ id: 1, name: "test" });
       expect(mockFetch).toHaveBeenCalledWith("https://api.test.com/v1/items", {
         headers: { Authorization: "Bearer tok" },
+        signal: expect.any(AbortSignal),
       });
     });
 

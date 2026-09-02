@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -179,7 +179,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(
       new SyncRun({
@@ -199,12 +199,12 @@ describe("StravaProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "1001");
     if (!ride) throw new Error("expected activity 1001");
-    expect(ride.activityType).toBe("road_cycling");
+    expect(ride.canonicalType).toBe("cycling");
     expect(ride.name).toBe("Morning Ride");
 
     const run = rows.find((r) => r.externalId === "1002");
     if (!run) throw new Error("expected activity 1002");
-    expect(run.activityType).toBe("running");
+    expect(run.canonicalType).toBe("running");
 
     // Verify metric stream events
     const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
@@ -230,7 +230,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -261,7 +261,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers([]));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -287,7 +287,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities, { streamsError: true }));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -321,7 +321,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities, { rateLimited: true }));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -337,10 +337,10 @@ describe("StravaProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "strava"));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,

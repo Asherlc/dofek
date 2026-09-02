@@ -1,18 +1,24 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type LegacyActivityType,
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import {
+  finishProviderActivityListSync,
   markProviderActivityAbsent,
-  reconcileProviderActivityAbsence,
-} from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -94,7 +100,7 @@ function resolveScopedUserId(userId?: string): string {
 
 export interface ParsedConcept2Result {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -105,17 +111,23 @@ export interface ParsedConcept2Result {
 // Parsing
 // ============================================================
 
-export function mapConcept2Type(type: string): CanonicalActivityType {
+export function mapConcept2Type(type: string): ProviderActivityType {
+  let normalizedType: LegacyActivityType;
   switch (type.toLowerCase()) {
     case "rower":
-      return "rowing";
+      normalizedType = "rowing";
+      break;
     case "skierg":
-      return "skiing";
+      normalizedType = "skiing";
+      break;
     case "bikerg":
-      return "cycling";
+    case "bikeerg":
+      normalizedType = "cycling";
+      break;
     default:
-      return "rowing";
+      normalizedType = "rowing";
   }
+  return resolveProviderActivityType(type, normalizedType);
 }
 
 export function parseConcept2Result(result: Concept2Result): ParsedConcept2Result {
@@ -137,7 +149,6 @@ export function parseConcept2Result(result: Concept2Result): ParsedConcept2Resul
       strokeCount: result.stroke_count,
       avgHeartRate: result.heart_rate?.average,
       maxHeartRate: result.heart_rate?.max,
-      calories: result.calories_total,
       dragFactor: result.drag_factor,
       workoutType: result.workout_type,
       weightClass: result.weight_class,
@@ -200,7 +211,7 @@ export class Concept2Provider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "concept2" });
+    this.#fetchFn = createProviderRateLimitFetch("concept2", fetchFn);
   }
 
   validate(): string | null {
@@ -317,9 +328,9 @@ export class Concept2Provider implements WebhookProvider {
         "activity",
         async () => {
           const parsed = parseConcept2Result(parseResult.data);
-          await db
-            .insert(activity)
-            .values({
+          await upsertProviderActivity(
+            db,
+            {
               providerId: this.id,
               externalId: parsed.externalId,
               activityType: parsed.activityType,
@@ -327,18 +338,15 @@ export class Concept2Provider implements WebhookProvider {
               startedAt: parsed.startedAt,
               endedAt: parsed.endedAt,
               raw: parsed.raw,
-            })
-            .onConflictDoUpdate({
-              target: [activity.userId, activity.providerId, activity.externalId],
-              set: {
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-                providerAbsentAt: null,
-              },
-            });
+            },
+            {
+              activityType: parsed.activityType,
+              name: parsed.name,
+              startedAt: parsed.startedAt,
+              endedAt: parsed.endedAt,
+              raw: parsed.raw,
+            },
+          );
           return { recordCount: 1, result: 1 };
         },
         options?.userId,
@@ -396,6 +404,7 @@ export class Concept2Provider implements WebhookProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
     try {
       const activityCount = await withSyncLog(
         db,
@@ -403,75 +412,93 @@ export class Concept2Provider implements WebhookProvider {
         "activity",
         async () => {
           let count = 0;
-          let page = 1;
-          let totalPages = 1;
           const sinceDate = since.toISOString().slice(0, 10);
 
-          while (page <= totalPages) {
-            const data = await client.getResults(sinceDate, page);
-            totalPages = data.meta.pagination.total_pages;
-
-            for (const raw of data.data) {
-              const parsed = parseConcept2Result(raw);
-              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
-                continue;
-              }
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await db
-                  .insert(activity)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                      providerAbsentAt: null,
-                    },
-                  });
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            page++;
+          try {
+            const pages = await fetchProviderPages<Concept2Result, number>({
+              providerId: this.id,
+              stepName: "activity_list",
+              initialCursor: 1,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 1;
+                const data = await client.getResults(sinceDate, currentPage);
+                const nextPage = currentPage + 1;
+                return {
+                  items: data.data,
+                  nextCursor: nextPage <= data.meta.pagination.total_pages ? nextPage : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const raw of page.items) {
+                  const parsed = parseConcept2Result(raw);
+                  if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                    continue;
+                  }
+                  presentActivityExternalIds.add(parsed.externalId);
+                  try {
+                    await upsertProviderActivity(
+                      db,
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                      {
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                    );
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: parsed.externalId,
+                      cause: err,
+                    });
+                  }
+                }
+              },
+            });
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            throw new PartialSyncError(
+              `activity: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
           }
 
-          await reconcileProviderActivityAbsence(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
       recordsSynced += activityCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 
-    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    return { provider: this.id, recordsSynced, errors, degradations, duration: Date.now() - start };
   }
 }

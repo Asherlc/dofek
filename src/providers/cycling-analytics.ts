@@ -1,14 +1,22 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import {
+  type ProviderActivityType,
+  resolveProviderActivityType,
+} from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import { ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -40,7 +48,6 @@ const cyclingAnalyticsRideSchema = z.object({
   elevation_loss: z.number().optional(),
   average_speed: z.number().optional(),
   max_speed: z.number().optional(),
-  calories: z.number().optional(),
   training_stress_score: z.number().optional(),
   intensity_factor: z.number().optional(),
 });
@@ -57,7 +64,7 @@ const cyclingAnalyticsRidesResponseSchema = z.object({
 
 export interface ParsedCyclingAnalyticsRide {
   externalId: string;
-  activityType: CanonicalActivityType;
+  activityType: ProviderActivityType;
   name: string;
   startedAt: Date;
   endedAt: Date;
@@ -74,7 +81,7 @@ export function parseCyclingAnalyticsRide(ride: CyclingAnalyticsRide): ParsedCyc
 
   return {
     externalId: String(ride.id),
-    activityType: "cycling",
+    activityType: resolveProviderActivityType("cycling", "cycling"),
     name: ride.title,
     startedAt,
     endedAt,
@@ -92,7 +99,6 @@ export function parseCyclingAnalyticsRide(ride: CyclingAnalyticsRide): ParsedCyc
       elevationLoss: ride.elevation_loss,
       averageSpeed: ride.average_speed,
       maxSpeed: ride.max_speed,
-      calories: ride.calories,
       trainingStressScore: ride.training_stress_score,
       intensityFactor: ride.intensity_factor,
     },
@@ -114,7 +120,8 @@ export function cyclingAnalyticsOAuthConfig(host?: string): OAuthConfig | null {
     authorizeUrl: "https://www.cyclinganalytics.com/api/auth",
     tokenUrl: "https://www.cyclinganalytics.com/api/token",
     redirectUri: getOAuthRedirectUri(host),
-    scopes: [],
+    scopes: ["read_rides"],
+    scopeSeparator: ",",
   };
 }
 
@@ -128,13 +135,10 @@ export class CyclingAnalyticsProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "cycling_analytics" });
+    this.#fetchFn = createProviderRateLimitFetch("cycling_analytics", fetchFn);
   }
 
   validate(): string | null {
-    if (!process.env.CYCLING_ANALYTICS_CLIENT_ID) return "CYCLING_ANALYTICS_CLIENT_ID is not set";
-    if (!process.env.CYCLING_ANALYTICS_CLIENT_SECRET)
-      return "CYCLING_ANALYTICS_CLIENT_SECRET is not set";
     return null;
   }
 
@@ -144,11 +148,48 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = cyclingAnalyticsOAuthConfig(options?.host);
-    if (!config) throw new Error("CYCLING_ANALYTICS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
+    const manualToken = {
+      label: "Personal API token",
+      instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
+      exchangeToken: async (token: string): Promise<TokenSet> => {
+        const response = await fetchFn(`${CYCLING_ANALYTICS_API_BASE}/me/rides?limit=1`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+        if (response.status === 401 || response.status === 403) {
+          throw new ProviderTokenRejectedError(
+            this.name,
+            "Create a personal token with read_rides permission and try again.",
+          );
+        }
+        if (!response.ok) {
+          throw new Error(
+            `Cycling Analytics token validation failed (${response.status}). Try again.`,
+          );
+        }
+        return {
+          accessToken: token,
+          refreshToken: null,
+          expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+          scopes: "read_rides",
+        };
+      },
+    } satisfies NonNullable<ProviderAuthSetup["manualToken"]>;
+
+    if (!config) {
+      return {
+        manualToken,
+        apiBaseUrl: CYCLING_ANALYTICS_API_BASE,
+      };
+    }
+
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      manualToken,
       apiBaseUrl: CYCLING_ANALYTICS_API_BASE,
     };
   }
@@ -183,6 +224,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
     try {
       const activityCount = await withSyncLog(
         db,
@@ -190,92 +232,110 @@ export class CyclingAnalyticsProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let page = 0;
-          let hasMore = true;
 
-          while (hasMore) {
-            const url = `${CYCLING_ANALYTICS_API_BASE}/me/rides?start_date=${since.toISOString()}&page=${page}&limit=50`;
-            const response = await this.#fetchFn(url, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
+          try {
+            const pages = await fetchProviderPages<CyclingAnalyticsRide, number>({
+              providerId: this.id,
+              stepName: "activity_list",
+              initialCursor: 0,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 0;
+                const url = `${CYCLING_ANALYTICS_API_BASE}/me/rides?start_date=${since.toISOString()}&page=${currentPage}&limit=50`;
+                const response = await this.#fetchFn(url, {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    Accept: "application/json",
+                  },
+                });
+
+                if (response.status === 401 || response.status === 403) {
+                  throw new ProviderTokenRejectedError(
+                    this.name,
+                    "Create a personal token with read_rides permission and reconnect.",
+                  );
+                }
+                if (!response.ok) {
+                  const text = await response.text();
+                  throw new Error(`Cycling Analytics API error (${response.status}): ${text}`);
+                }
+
+                const data = cyclingAnalyticsRidesResponseSchema.parse(await response.json());
+                return {
+                  items: data.rides,
+                  nextCursor: data.rides.length > 0 ? currentPage + 1 : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const raw of page.items) {
+                  const parsed = parseCyclingAnalyticsRide(raw);
+                  if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                    continue;
+                  }
+                  presentActivityExternalIds.add(parsed.externalId);
+                  try {
+                    await upsertProviderActivity(
+                      db,
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                      {
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                    );
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: parsed.externalId,
+                      cause: err,
+                    });
+                  }
+                }
               },
             });
-
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Cycling Analytics API error (${response.status}): ${text}`);
-            }
-
-            const data = cyclingAnalyticsRidesResponseSchema.parse(await response.json());
-            const rides = data.rides;
-
-            if (rides.length === 0) {
-              hasMore = false;
-              break;
-            }
-
-            for (const raw of rides) {
-              const parsed = parseCyclingAnalyticsRide(raw);
-              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
-                continue;
-              }
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await db
-                  .insert(activity)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                      providerAbsentAt: null,
-                    },
-                  });
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            page++;
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            throw new PartialSyncError(
+              `activity: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
           }
 
-          await reconcileProviderActivityAbsence(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
       recordsSynced += activityCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 
-    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    return { provider: this.id, recordsSynced, errors, degradations, duration: Date.now() - start };
   }
 }

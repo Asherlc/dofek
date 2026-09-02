@@ -1,31 +1,39 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
-import { isIndoorCycling } from "@dofek/training/endurance-types";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
-import type { SyncDatabase } from "../../db/index.ts";
+import type { Database, SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
   writeMetricStreamBatchForScope,
 } from "../../db/metric-stream-writer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
-import {
-  activity,
-  dailyMetrics,
-  foodEntry,
-  foodEntryNutrient,
-  healthEvent,
-  labResult,
-  sleepSession,
-  sleepStage,
-} from "../../db/schema.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
+import { healthEvent } from "../../db/schema/clinical.ts";
+import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
-import type { HealthWorkout } from "./workouts.ts";
+import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
+
+type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
+  return "transaction" in db && typeof db.transaction === "function";
+}
+
+function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
+  if (!hasTransaction(db)) {
+    throw new Error("Apple Health workout upsert requires a transactional database");
+  }
+  return db;
+}
 
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
@@ -91,10 +99,7 @@ export const BODY_MEASUREMENT_TYPES = new Set([
 export const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierDistanceCycling",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
   "HKQuantityTypeIdentifierAppleStandTime",
@@ -111,6 +116,8 @@ export const DAILY_METRIC_TYPES = new Set([
 
 // Provider-computed summaries that are derived from raw streams server-side.
 export const IGNORED_PROVIDER_DERIVED_TYPES = new Set([
+  "HKQuantityTypeIdentifierActiveEnergyBurned",
+  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierVO2Max",
 ]);
@@ -118,10 +125,7 @@ export const IGNORED_PROVIDER_DERIVED_TYPES = new Set([
 // Additive daily metrics (summed across all records in a day)
 const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierDistanceCycling",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
   "HKQuantityTypeIdentifierAppleStandTime",
@@ -164,8 +168,6 @@ export const ALL_ROUTED_TYPES = new Set([
 function dateToString(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
-
-export { labResult };
 
 export async function upsertMetricStreamBatch(
   db: SyncDatabase,
@@ -365,17 +367,8 @@ export async function upsertDailyMetricsBatch(
         case "HKQuantityTypeIdentifierStepCount":
           row.steps = Math.round(value);
           break;
-        case "HKQuantityTypeIdentifierActiveEnergyBurned":
-          row.activeEnergyKcal = value;
-          break;
-        case "HKQuantityTypeIdentifierBasalEnergyBurned":
-          row.basalEnergyKcal = value;
-          break;
         case "HKQuantityTypeIdentifierDistanceWalkingRunning":
           row.distanceKm = value / 1000;
-          break;
-        case "HKQuantityTypeIdentifierDistanceCycling":
-          row.cyclingDistanceKm = value / 1000;
           break;
         case "HKQuantityTypeIdentifierFlightsClimbed":
           row.flightsClimbed = Math.round(value);
@@ -450,10 +443,7 @@ export async function upsertDailyMetricsBatch(
               skinTempC: sql`coalesce(excluded.skin_temp_c, ${dailyMetrics.skinTempC})`,
               // Additive metrics: accumulate across batches (import.ts clears before import)
               steps: sql`coalesce(${dailyMetrics.steps}, 0) + coalesce(excluded.steps, 0)`,
-              activeEnergyKcal: sql`coalesce(${dailyMetrics.activeEnergyKcal}, 0) + coalesce(excluded.active_energy_kcal, 0)`,
-              basalEnergyKcal: sql`coalesce(${dailyMetrics.basalEnergyKcal}, 0) + coalesce(excluded.basal_energy_kcal, 0)`,
               distanceKm: sql`coalesce(${dailyMetrics.distanceKm}, 0) + coalesce(excluded.distance_km, 0)`,
-              cyclingDistanceKm: sql`coalesce(${dailyMetrics.cyclingDistanceKm}, 0) + coalesce(excluded.cycling_distance_km, 0)`,
               flightsClimbed: sql`coalesce(${dailyMetrics.flightsClimbed}, 0) + coalesce(excluded.flights_climbed, 0)`,
               exerciseMinutes: sql`coalesce(${dailyMetrics.exerciseMinutes}, 0) + coalesce(excluded.exercise_minutes, 0)`,
               standHours: sql`coalesce(${dailyMetrics.standHours}, 0) + coalesce(excluded.stand_hours, 0)`,
@@ -603,6 +593,7 @@ export async function upsertNutritionBatch(
           providerId,
           externalId,
           date: dateKey,
+          nutritionGrain: "daily_aggregate",
           foodName: null,
           sourceName: r.sourceName,
           loggedAt: r.creationDate ?? r.startDate,
@@ -616,6 +607,7 @@ export async function upsertNutritionBatch(
         target: [foodEntry.userId, foodEntry.providerId, foodEntry.externalId],
         set: {
           date: dateKey,
+          nutritionGrain: "daily_aggregate",
           foodName: null,
           sourceName: r.sourceName,
           loggedAt: r.creationDate ?? r.startDate,
@@ -698,56 +690,51 @@ export async function upsertWorkoutBatch(
   // in a single INSERT statement.
   const dedupMap = new Map<string, HealthWorkout>();
   for (const w of workouts) {
-    dedupMap.set(`ah:workout:${w.startDate.toISOString()}`, w);
+    dedupMap.set(workoutExternalId(w), w);
   }
   const uniqueWorkouts = [...dedupMap.values()];
 
-  // Multi-row upsert with RETURNING to get all activity IDs in one statement
-  const activityResults: { activityId: string; workout: HealthWorkout }[] = [];
+  const transactionalDb = requireTransactionalDatabase(db);
+  // Keep activity metadata and Hang Ten intervals in the same transaction so a
+  // failed replacement cannot leave the activity row ahead of its intervals.
+  const activityResults = await transactionalDb.transaction(async (transactionDb) => {
+    const results: { activityId: string; workout: HealthWorkout }[] = [];
 
-  for (let i = 0; i < uniqueWorkouts.length; i += 500) {
-    const batch = uniqueWorkouts.slice(i, i + 500);
-    const insertRows = batch.map((w) => {
-      const raw: Record<string, number> = { durationSeconds: w.durationSeconds };
-      if (w.distanceMeters !== undefined) raw.distanceMeters = w.distanceMeters;
-      if (w.calories !== undefined) raw.calories = w.calories;
-      if (w.avgHeartRate !== undefined) raw.avgHeartRate = w.avgHeartRate;
-      if (w.maxHeartRate !== undefined) raw.maxHeartRate = w.maxHeartRate;
-      return {
+    for (const workout of uniqueWorkouts) {
+      const values = {
         providerId,
-        externalId: `ah:workout:${w.startDate.toISOString()}`,
-        activityType: w.activityType,
-        startedAt: w.startDate,
-        endedAt: w.endDate,
-        name: w.activityType,
-        sourceName: w.sourceName,
-        raw,
+        externalId: workoutExternalId(workout),
+        activityType: workout.activityType,
+        startedAt: workout.startDate,
+        endedAt: workout.endDate,
+        name: workoutName(workout),
+        sourceName: workout.sourceName,
+        raw: workoutRawPayload(workout),
       };
-    });
 
-    const returned = await db
-      .insert(activity)
-      .values(insertRows)
-      .onConflictDoUpdate({
-        target: [activity.userId, activity.providerId, activity.externalId],
-        set: {
-          activityType: sql`excluded.activity_type`,
-          endedAt: sql`excluded.ended_at`,
-          sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-          raw: sql`excluded.raw`,
-          providerAbsentAt: null,
-        },
-      })
-      .returning({ id: activity.id });
+      const returned = await upsertProviderActivity(transactionDb, values, {
+        activityType: values.activityType,
+        startedAt: values.startedAt,
+        endedAt: values.endedAt,
+        name: sql`CASE
+            WHEN excluded.canonical_type = 'hangboard' AND excluded.source_name = 'Hang Ten'
+              THEN excluded.name
+            ELSE ${activity.name}
+          END`,
+        sourceName: values.sourceName,
+        raw: values.raw,
+      });
 
-    for (let j = 0; j < returned.length; j++) {
-      const ret = returned[j];
-      const work = batch[j];
-      if (ret && work) {
-        activityResults.push({ activityId: ret.id, workout: work });
+      if (returned) {
+        results.push({ activityId: returned.id, workout });
+        if (workout.hangTen) {
+          await replaceHangTenIntervals(transactionDb, returned.id, workout);
+        }
       }
     }
-  }
+
+    return results;
+  });
 
   // Batch all GPS route locations across all workouts
   const allGpsRows: MetricStreamSourceRow[] = [];
@@ -761,7 +748,7 @@ export async function upsertWorkoutBatch(
           lat: loc.lat,
           lng: loc.lng,
           altitude: loc.altitude,
-          speed: isIndoorCycling(workout.activityType) ? undefined : loc.speed,
+          speed: isIndoorCyclingModality(workout.activityType.modality) ? undefined : loc.speed,
           horizontalAccuracy: loc.horizontalAccuracy,
           sourceName: workout.sourceName,
         });
@@ -782,6 +769,28 @@ export async function upsertWorkoutBatch(
   }
 
   return activityResults.length;
+}
+
+function workoutName(workout: HealthWorkout): string {
+  return workout.hangTen?.planName ?? workout.activityType.canonicalType;
+}
+
+function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
+  const raw: Record<string, unknown> = {
+    durationSeconds: workout.durationSeconds,
+    appleHealth: {
+      workoutActivityType: workout.activityType.providerType,
+      sourceName: workout.sourceName,
+      ...(workout.metadata && Object.keys(workout.metadata).length > 0
+        ? { metadata: workout.metadata }
+        : {}),
+    },
+  };
+  if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
+  if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
+  if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
+  if (workout.hangTen) raw.hangTen = workout.hangTen;
+  return raw;
 }
 
 export async function upsertSleepBatch(
@@ -817,6 +826,9 @@ export async function upsertSleepBatch(
       (s) => s.startDate >= bed.startDate && s.endDate <= bed.endDate,
     );
 
+    const stagingAvailable = stages.some(
+      (stage) => stage.stage === "deep" || stage.stage === "rem" || stage.stage === "core",
+    );
     let deepMinutes = 0;
     let remMinutes = 0;
     let lightMinutes = 0;
@@ -848,6 +860,7 @@ export async function upsertSleepBatch(
       remMinutes,
       lightMinutes,
       awakeMinutes,
+      stagingAvailable,
       externalId,
     };
   });
@@ -859,10 +872,14 @@ export async function upsertSleepBatch(
     startedAt: s.bed.startDate,
     endedAt: s.bed.endDate,
     durationMinutes: s.bed.durationMinutes,
-    deepMinutes: s.deepMinutes,
-    remMinutes: s.remMinutes,
-    lightMinutes: s.lightMinutes,
-    awakeMinutes: s.awakeMinutes,
+    deepMinutes: s.stagingAvailable ? s.deepMinutes : null,
+    remMinutes: s.stagingAvailable ? s.remMinutes : null,
+    lightMinutes: s.stagingAvailable ? s.lightMinutes : null,
+    awakeMinutes:
+      s.stagingAvailable || s.stages.some((stage) => stage.stage === "awake")
+        ? s.awakeMinutes
+        : null,
+    stagingAvailable: s.stagingAvailable,
     sleepType: null,
     sourceName: s.bed.sourceName,
   }));
@@ -886,6 +903,7 @@ export async function upsertSleepBatch(
               remMinutes: sql`excluded.rem_minutes`,
               lightMinutes: sql`excluded.light_minutes`,
               awakeMinutes: sql`excluded.awake_minutes`,
+              stagingAvailable: sql`excluded.staging_available`,
               sleepType: sql`excluded.sleep_type`,
               sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
             },

@@ -1,6 +1,10 @@
 import { trace } from "@opentelemetry/api";
 import type { z } from "zod";
+import { ConcurrencyLimiter, type LimitedOperation } from "../lib/concurrency-limiter.ts";
+import type { RangeDays } from "../lib/date-window.ts";
+import { logger } from "../logger.ts";
 import type {
+  ActivitySensorQueryOptions,
   ActivitySensorStore,
   ActivitySensorWindow,
   StreamPointRow,
@@ -8,79 +12,48 @@ import type {
 
 const WEB_CLICKHOUSE_CONCURRENCY = 2;
 const DASHBOARD_CLICKHOUSE_CONCURRENCY = 2;
-const DASHBOARD_QUERY_MARKERS = [
-  "analytics.daily_recovery",
-  "analytics.daily_strain",
-  "analytics.v_body_measurement",
-  "analytics.v_daily_metrics",
-  "analytics.v_sleep",
-  "analytics.resting_heart_rate_sleep_window",
-];
-
-type LimitedOperation<T> = () => Promise<T>;
 
 const tracer = trace.getTracer("dofek-server");
 
-function isDashboardQuery(query: string): boolean {
-  return DASHBOARD_QUERY_MARKERS.some((marker) => query.includes(marker));
-}
-
+/**
+ * Bounds ClickHouse query concurrency and records how long each query waits for
+ * a running slot as a trace span and log line. The gating itself is delegated
+ * to the shared {@link ConcurrencyLimiter}.
+ */
 class ClickHouseQueueLimiter {
   readonly #name: string;
   readonly #concurrency: number;
-  #active = 0;
-  readonly #queue: Array<() => void> = [];
+  readonly #limiter: ConcurrencyLimiter;
 
   constructor(name: string, concurrency: number) {
     this.#name = name;
     this.#concurrency = concurrency;
+    this.#limiter = new ConcurrencyLimiter(concurrency);
   }
 
   async run<T>(operation: LimitedOperation<T>): Promise<T> {
-    await this.#waitForSlot();
-    try {
-      return await operation();
-    } finally {
-      this.#release();
-    }
-  }
-
-  async #waitForSlot(): Promise<void> {
-    const queuedBeforeAcquire = this.#queue.length;
-    const activeBeforeAcquire = this.#active;
-    const waitStartedAt = Date.now();
-    await tracer.startActiveSpan("clickhouse.queue_wait", async (span) => {
-      try {
-        span.setAttribute("clickhouse.queue.name", this.#name);
-        span.setAttribute("clickhouse.queue.concurrency", this.#concurrency);
-        span.setAttribute("clickhouse.queue.active", activeBeforeAcquire);
-        span.setAttribute("clickhouse.queue.depth", queuedBeforeAcquire);
-        await this.#acquire();
-        span.setAttribute("clickhouse.queue.wait_ms", Date.now() - waitStartedAt);
-      } finally {
+    const activeBeforeAcquire = this.#limiter.active;
+    const queuedBeforeAcquire = this.#limiter.queueDepth;
+    const waitStartedAt = performance.now();
+    return tracer.startActiveSpan("clickhouse.queue_wait", (span) => {
+      span.setAttribute("clickhouse.queue.name", this.#name);
+      span.setAttribute("clickhouse.queue.concurrency", this.#concurrency);
+      span.setAttribute("clickhouse.queue.active", activeBeforeAcquire);
+      span.setAttribute("clickhouse.queue.depth", queuedBeforeAcquire);
+      return this.#limiter.run(() => {
+        const waitMs = performance.now() - waitStartedAt;
+        span.setAttribute("clickhouse.queue.wait_ms", waitMs);
+        logger.info("clickhouse.queue_wait", {
+          active: activeBeforeAcquire,
+          concurrency: this.#concurrency,
+          depth: queuedBeforeAcquire,
+          queue: this.#name,
+          waitMs,
+        });
         span.end();
-      }
+        return operation();
+      });
     });
-  }
-
-  async #acquire(): Promise<void> {
-    if (this.#active < this.#concurrency) {
-      this.#active += 1;
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      this.#queue.push(resolve);
-    });
-  }
-
-  #release(): void {
-    const next = this.#queue.shift();
-    if (next) {
-      next();
-      return;
-    }
-    this.#active -= 1;
   }
 }
 
@@ -104,24 +77,29 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     schema: TSchema,
     query: string,
     params: Record<string, unknown> = {},
+    options: ActivitySensorQueryOptions = {},
   ): Promise<z.infer<TSchema>[]> {
-    const key = JSON.stringify([query, params]);
-    const existing = this.#inFlightQueries.get(key);
-    if (existing) {
-      const rows = await existing;
-      return rows.map((row) => schema.parse(row));
+    const key = JSON.stringify([query, params, options.priority ?? null]);
+    if (!options.abortSignal) {
+      const existing = this.#inFlightQueries.get(key);
+      if (existing) {
+        const rows = await existing;
+        return rows.map((row) => schema.parse(row));
+      }
     }
 
-    const limiter = isDashboardQuery(query) ? this.#dashboardLimiter : this.#regularLimiter;
-    const promise = limiter.run(() => this.#delegate.query(schema, query, params));
-    this.#inFlightQueries.set(
-      key,
-      promise.then((rows): unknown[] => rows),
-    );
+    const limiter =
+      options.priority === "dashboard" ? this.#dashboardLimiter : this.#regularLimiter;
+    const promise = limiter.run(() => this.#delegate.query(schema, query, params, options));
+    if (!options.abortSignal) {
+      this.#inFlightQueries.set(key, promise);
+    }
     try {
       return await promise;
     } finally {
-      this.#inFlightQueries.delete(key);
+      if (!options.abortSignal) {
+        this.#inFlightQueries.delete(key);
+      }
     }
   }
 
@@ -129,15 +107,25 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     return this.#regularLimiter.run(() => this.#delegate.getActivitySummaries(activityIds));
   }
 
-  getPowerCurveSamples(days: number, userId: string, timezone: string) {
+  getPowerCurveSamples(
+    days: number | null,
+    userId: string,
+    timezone: string,
+    activityTypes: readonly string[],
+  ) {
     return this.#regularLimiter.run(() =>
-      this.#delegate.getPowerCurveSamples(days, userId, timezone),
+      this.#delegate.getPowerCurveSamples(days, userId, timezone, activityTypes),
     );
   }
 
-  getNormalizedPowerSamples(days: number, userId: string, timezone: string) {
+  getNormalizedPowerSamples(
+    days: number | null,
+    userId: string,
+    timezone: string,
+    activityTypes: readonly string[],
+  ) {
     return this.#regularLimiter.run(() =>
-      this.#delegate.getNormalizedPowerSamples(days, userId, timezone),
+      this.#delegate.getNormalizedPowerSamples(days, userId, timezone, activityTypes),
     );
   }
 
@@ -147,13 +135,13 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     );
   }
 
-  getHeartRateCurveRows(days: number, userId: string, timezone: string) {
+  getHeartRateCurveRows(days: RangeDays, userId: string, timezone: string) {
     return this.#regularLimiter.run(() =>
       this.#delegate.getHeartRateCurveRows(days, userId, timezone),
     );
   }
 
-  getPaceCurveRows(days: number, userId: string, timezone: string) {
+  getPaceCurveRows(days: RangeDays, userId: string, timezone: string) {
     return this.#regularLimiter.run(() => this.#delegate.getPaceCurveRows(days, userId, timezone));
   }
 
@@ -161,10 +149,8 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     return this.#regularLimiter.run(() => this.#delegate.getStream(window, maxPoints));
   }
 
-  getHeartRateZoneSeconds(window: ActivitySensorWindow, maxHr: number, restingHr: number) {
-    return this.#regularLimiter.run(() =>
-      this.#delegate.getHeartRateZoneSeconds(window, maxHr, restingHr),
-    );
+  getHeartRateZoneSeconds(window: ActivitySensorWindow) {
+    return this.#regularLimiter.run(() => this.#delegate.getHeartRateZoneSeconds(window));
   }
 
   getPowerZoneSeconds(window: ActivitySensorWindow, ftp: number) {

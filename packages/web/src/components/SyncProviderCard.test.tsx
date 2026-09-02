@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -27,12 +28,17 @@ afterEach(cleanup);
 
 function renderProvider({
   onSync = vi.fn(),
-  onFullSync = vi.fn(),
   provider = {
     id: "strava",
     name: "Strava",
     lastSyncedAt: "2026-05-12T10:00:00.000Z",
+    lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+    syncFreshness: {
+      status: "current",
+      label: "Sync current",
+    },
     authorized: true,
+    description: null,
   },
   state = { status: "idle" },
   needsAuth = false,
@@ -40,7 +46,6 @@ function renderProvider({
   recentLogs = [],
 }: {
   onSync?: () => void;
-  onFullSync?: () => void;
   provider?: SyncProviderCardProps["provider"];
   state?: SyncProviderCardProps["state"];
   needsAuth?: boolean;
@@ -56,7 +61,6 @@ function renderProvider({
       stats={undefined}
       recentLogs={recentLogs}
       onSync={onSync}
-      onFullSync={onFullSync}
     />,
   );
 }
@@ -73,15 +77,18 @@ describe("SyncProviderCard", () => {
     expect(onSync).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Full sync as a separate action", () => {
+  it("exposes one primary action and one details link", () => {
     const onSync = vi.fn();
-    const onFullSync = vi.fn();
-    renderProvider({ onSync, onFullSync });
+    renderProvider({ onSync });
 
-    fireEvent.click(screen.getByRole("button", { name: "Sync all available Strava data" }));
+    const primaryAction = screen.getByRole("button", {
+      name: "Sync Strava from the last 7 days",
+    });
+    const detailsLink = screen.getByRole("link", { name: "View Strava details" });
 
-    expect(onFullSync).toHaveBeenCalledTimes(1);
-    expect(onSync).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button")).toEqual([primaryAction]);
+    expect(screen.getAllByRole("link")).toEqual([detailsLink]);
+    expect(detailsLink.getAttribute("href")).toBe("/providers/strava");
   });
 
   it("hides sync actions while syncing", () => {
@@ -99,7 +106,10 @@ describe("SyncProviderCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Strava" }));
 
     expect(onSync).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Sync all available Strava data" })).toBeNull();
+    expect(screen.getAllByText("Connect")).toHaveLength(1);
+    expect(screen.getByText("Not connected")).toHaveStyle({
+      color: operationalStatusColors.info.foreground,
+    });
   });
 
   it("shows Reconnect as the primary action when reauth is needed", () => {
@@ -109,12 +119,184 @@ describe("SyncProviderCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reconnect Strava" }));
 
     expect(onSync).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Sync all available Strava data" })).toBeNull();
+    expect(screen.getAllByText("Reconnect")).toHaveLength(1);
+    expect(screen.getByText("Authorization expired")).toHaveStyle({
+      color: operationalStatusColors.warning.foreground,
+    });
   });
 
-  it("renders an empty sync history state", () => {
-    renderProvider();
+  it("renders server freshness for an authorized provider that needs reauthorization", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-08-12T12:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+      needsReauth: true,
+    });
+
+    expect(screen.getByText("Authorization expired")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Reconnect Strava" })).not.toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("Sync overdue");
+    expect(screen.getByRole("alert")).toHaveTextContent("The last successful sync is overdue.");
+  });
+
+  it("renders an unknown server freshness state for an empty sync history", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: null,
+        lastSuccessfulSyncAt: null,
+        syncFreshness: {
+          status: "unknown",
+          label: "Sync status unknown",
+          description: "No successful sync has been recorded yet.",
+        },
+        authorized: true,
+        description: null,
+      },
+    });
 
     expect(screen.getByText("No sync history")).not.toBeNull();
+    expect(screen.getByText("Sync status unknown")).not.toBeNull();
+    expect(screen.getByText("No successful sync has been recorded yet.")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("renders overdue server freshness as an alert beside the manual Sync action", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-08-12T12:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+    });
+
+    const overdueAlert = screen.getByRole("alert");
+    const syncButton = screen.getByRole("button", {
+      name: "Sync Strava from the last 7 days",
+    });
+
+    expect(overdueAlert).toHaveTextContent("Sync overdue");
+    expect(overdueAlert).toHaveTextContent("The last successful sync is overdue.");
+    expect(overdueAlert.parentElement).toContainElement(syncButton);
+    expect(screen.getByText(/^Last successful sync:/)).not.toBeNull();
+  });
+
+  it("renders current server freshness without raising an alert", () => {
+    renderProvider();
+
+    expect(screen.getByText("Sync current")).not.toBeNull();
+    expect(
+      screen.queryByText("The last successful sync completed within the expected cadence."),
+    ).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("summarizes the latest sync outcome in readable text", () => {
+    renderProvider({
+      recentLogs: [
+        {
+          id: "strava-sync-1",
+          syncedAt: "2026-05-12T10:00:00.000Z",
+          status: "success",
+          dataType: "activities",
+          recordCount: 12,
+          durationMs: 100,
+          errorMessage: null,
+          authFailureReason: null,
+        },
+        {
+          id: "strava-sync-2",
+          syncedAt: "2026-05-12T11:00:00.000Z",
+          status: "error",
+          dataType: "activities",
+          recordCount: 0,
+          durationMs: 50,
+          errorMessage: "Provider unavailable",
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("status", { name: "Sync needs attention" })).toHaveTextContent(
+      "Latest sync failed",
+    );
+    expect(screen.queryByText("✓")).toBeNull();
+    expect(screen.queryByText("!")).toBeNull();
+  });
+
+  it("distinguishes a degraded sync from a failed sync", () => {
+    renderProvider({
+      recentLogs: [
+        {
+          id: "strava-sync-3",
+          syncedAt: "2026-05-12T11:00:00.000Z",
+          status: "degraded",
+          dataType: "activities",
+          recordCount: 8,
+          durationMs: 50,
+          errorMessage: "One source was unavailable",
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("status", { name: "Sync completed with issues" })).toHaveTextContent(
+      "Latest sync completed with issues",
+    );
+    expect(screen.queryByText("Latest sync failed")).toBeNull();
+  });
+
+  it("uses neutral push-only copy and server-provided description", () => {
+    render(
+      <SyncProviderCard
+        provider={{
+          id: "whoop_ble",
+          name: "WHOOP (Bluetooth)",
+          lastSyncedAt: "2026-06-20T12:00:00.000Z",
+          lastSuccessfulSyncAt: null,
+          syncFreshness: null,
+          authorized: true,
+          description: "Synced from the iOS app when your WHOOP strap is nearby.",
+        }}
+        state={{ status: "idle" }}
+        needsAuth={false}
+        needsReauth={false}
+        pushOnly
+        stats={undefined}
+        recentLogs={[]}
+        onSync={vi.fn()}
+      />,
+    );
+
+    const mobileSyncLabel = screen.getByText("Mobile sync");
+    expect(mobileSyncLabel).not.toBeNull();
+    expect(mobileSyncLabel.parentElement?.querySelector("img + span")).toHaveStyle({
+      backgroundColor: operationalStatusColors.success.indicator,
+    });
+    expect(screen.getByText("Synced via iOS app")).not.toBeNull();
+    expect(
+      screen.getByText("Synced from the iOS app when your WHOOP strap is nearby."),
+    ).not.toBeNull();
+    expect(screen.queryByText("Receiving data")).toBeNull();
+    expect(screen.queryByText("Live BLE push")).toBeNull();
   });
 });

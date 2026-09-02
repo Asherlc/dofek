@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "dofek/db";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { deleteProviderAuthorization } from "../../../../src/db/tokens.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
+import {
+  type MetricStreamSeedRow,
+  seedMetricStreamRows,
+} from "./metric-stream-integration-test-helpers.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 // metricStream reads only touch ClickHouse; the repository still requires a
@@ -15,16 +23,6 @@ const noopDb: Pick<Database, "execute" | "transaction"> = {
 };
 
 const testUserId = "00000000-0000-0000-0000-0000000000b2";
-
-interface SeedRow {
-  id: string;
-  recorded_at: string;
-  provider_id: string;
-  channel: string;
-  scalar: number;
-  _peerdb_is_deleted: 0 | 1;
-  _peerdb_version: number;
-}
 
 const client = createClickHouseClientFromEnv();
 
@@ -38,22 +36,14 @@ const clickHouse: BodyClickHouseStore = {
   },
 };
 
-async function seed(rows: SeedRow[]): Promise<void> {
-  await client.insert?.({
-    table: "postgres_fitness.metric_stream",
-    format: "JSONEachRow",
-    values: rows.map((row) => ({
-      id: row.id,
-      user_id: testUserId,
-      recorded_at: row.recorded_at,
-      provider_id: row.provider_id,
-      channel: row.channel,
-      scalar: row.scalar,
-      _peerdb_is_deleted: row._peerdb_is_deleted,
-      _peerdb_synced_at: "2026-04-12 00:00:00.000",
-      _peerdb_version: row._peerdb_version,
-    })),
-  });
+const noRetainedMetricStream: BodyClickHouseStore = {
+  async query(schema) {
+    return [schema.parse({ has_data: 0 })];
+  },
+};
+
+async function seed(rows: MetricStreamSeedRow[]): Promise<void> {
+  await seedMetricStreamRows(client, testUserId, rows);
 }
 
 const rowSchema = z.object({
@@ -64,15 +54,20 @@ const rowSchema = z.object({
   scalar: z.number().nullable(),
 });
 
+const countSchema = z.object({ count: z.coerce.number() });
+
 describe("ProviderDetailRepository metric stream (integration)", () => {
   const supersededId = "11111111-1111-4111-8111-111111111111";
+  const tiedVersionTombstonedId = "33333333-3333-4333-8333-333333333333";
 
   beforeAll(async () => {
     for (const statement of buildClickHouseBootstrapStatementsForNativeMetricStream("")) {
       await client.command({ query: statement });
     }
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
     await seed([
@@ -82,8 +77,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "heart_rate",
         scalar: 60,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: randomUUID(),
@@ -91,8 +86,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 80,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       // version dedup: v1 (90) supersedes v0 (50)
       {
@@ -101,8 +96,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 50,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: supersededId,
@@ -110,8 +105,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 90,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 1,
+        is_deleted: 0,
+        version: 1,
       },
       // excluded: deleted + other provider
       {
@@ -120,8 +115,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "heart_rate",
         scalar: 70,
-        _peerdb_is_deleted: 1,
-        _peerdb_version: 1,
+        is_deleted: 1,
+        version: 1,
       },
       {
         id: randomUUID(),
@@ -129,15 +124,55 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "fitbit",
         channel: "heart_rate",
         scalar: 65,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
+      },
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        recorded_at: "2026-04-12 10:25:00.000",
+        provider_id: "tombstoned-provider",
+        channel: "heart_rate",
+        scalar: 65,
+        is_deleted: 0,
+        version: 0,
+      },
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        recorded_at: "2026-04-12 10:25:00.000",
+        provider_id: "tombstoned-provider",
+        channel: "heart_rate",
+        scalar: 65,
+        is_deleted: 1,
+        version: 1,
+      },
+      {
+        id: tiedVersionTombstonedId,
+        recorded_at: "2026-04-12 10:30:00.000",
+        provider_id: "tied-version-tombstoned-provider",
+        channel: "heart_rate",
+        scalar: 65,
+        is_deleted: 0,
+        ingested_at: "2026-04-12 10:31:00.000",
+        version: 1,
+      },
+      {
+        id: tiedVersionTombstonedId,
+        recorded_at: "2026-04-12 10:30:00.000",
+        provider_id: "tied-version-tombstoned-provider",
+        channel: "heart_rate",
+        scalar: 65,
+        is_deleted: 1,
+        ingested_at: "2026-04-12 10:32:00.000",
+        version: 1,
       },
     ]);
   }, 120_000);
 
   afterAll(async () => {
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
     await client.close?.();
@@ -181,5 +216,245 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
     const repo = new ProviderDetailRepository(noopDb, testUserId, clickHouse);
     const detail = await repo.getRecordDetail("withings", "metricStream", supersededId);
     expect(detail).toMatchObject({ id: supersededId, scalar: 90, channel: "body_weight" });
+  });
+
+  it("uses only active deduplicated metric-stream rows as retained ownership evidence", async () => {
+    const repository = new ProviderDetailRepository(noopDb, testUserId, clickHouse);
+
+    await expect(repository.canDeleteProviderData("withings")).resolves.toBe(true);
+    await expect(repository.canDeleteProviderData("tombstoned-provider")).resolves.toBe(false);
+    await expect(
+      repository.canDeleteProviderData("tied-version-tombstoned-provider"),
+    ).resolves.toBe(false);
+    await expect(repository.canDeleteProviderData("fitbit")).resolves.toBe(true);
+  });
+});
+
+describe("ProviderDetailRepository provider data deletion (integration)", () => {
+  const userId = "00000000-0000-4000-8000-0000000000b3";
+  const secondUserId = "00000000-0000-4000-8000-0000000000b4";
+  const providerId = "provider-delete-integration";
+  const retainedProviderId = "provider-disconnect-retained-integration";
+  let testContext: TestContext;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES
+            (${userId}, 'Provider Delete Integration User'),
+            (${secondUserId}, 'Second Provider Delete Integration User')
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES
+            (${providerId}, 'Provider Delete Integration', ${userId}),
+            (${retainedProviderId}, 'Provider Disconnect Retained Integration', ${userId})`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+          VALUES
+            (${userId}, ${providerId}),
+            (${secondUserId}, ${providerId}),
+            (${userId}, ${retainedProviderId})`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.oauth_token (provider_id, user_id, access_token, expires_at)
+          VALUES
+            (${providerId}, ${userId}, 'encrypted-test-token', now() + interval '1 hour'),
+            (${providerId}, ${secondUserId}, 'encrypted-second-token', now() + interval '1 hour'),
+            (${retainedProviderId}, ${userId}, 'encrypted-retained-token', now() + interval '1 hour')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity
+            (provider_id, user_id, external_id, canonical_type, provider_type, started_at)
+          VALUES
+            (${providerId}, ${userId}, 'activity-1', 'running', 'running', now()),
+            (${providerId}, ${secondUserId}, 'activity-2', 'cycling', 'cycling', now()),
+            (${retainedProviderId}, ${userId}, 'retained-activity', 'running', 'running', now())`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.daily_metrics (provider_id, user_id, date)
+          VALUES (${providerId}, ${userId}, '2026-07-17')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.clinical_record (
+            user_id, provider_id, external_id, clinical_type, display_name,
+            source_name, fhir_version, fhir, downloaded_at
+          ) VALUES
+            (
+              ${userId}, ${providerId}, 'selected-provider-clinical-record',
+              'condition', 'Selected provider condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"selected-provider-clinical-record"}'::jsonb,
+              now()
+            ),
+            (
+              ${userId}, ${retainedProviderId}, 'retained-provider-clinical-record',
+              'condition', 'Retained provider condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"retained-provider-clinical-record"}'::jsonb,
+              now()
+            ),
+            (
+              ${secondUserId}, ${providerId}, 'second-user-clinical-record',
+              'condition', 'Second user condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"second-user-clinical-record"}'::jsonb,
+              now()
+            )`,
+    );
+  }, 120_000);
+
+  afterAll(async () => {
+    await testContext?.cleanup();
+  });
+
+  it("deletes one user's records while preserving both users' connections and tokens", async () => {
+    const repository = new ProviderDetailRepository(testContext.db, userId);
+
+    const request = await repository.requestProviderDataDeletion(providerId);
+
+    expect(request).toMatchObject({
+      generation: 1,
+      providerId,
+      userId,
+    });
+
+    const countSchema = z.object({ count: z.coerce.number() });
+    const [activityCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.activity
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    const [dailyMetricsCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.daily_metrics
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    const [tokenCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.oauth_token
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    const [secondUserActivityCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.activity
+          WHERE provider_id = ${providerId} AND user_id = ${secondUserId}`,
+    );
+    const [connectionCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.provider_connection
+          WHERE provider_id = ${providerId}`,
+    );
+    const [allTokenCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.oauth_token
+          WHERE provider_id = ${providerId}`,
+    );
+    const [selectedClinicalRecordCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.clinical_record
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    const [retainedProviderClinicalRecordCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.clinical_record
+          WHERE provider_id = ${retainedProviderId} AND user_id = ${userId}`,
+    );
+    const [secondUserClinicalRecordCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.clinical_record
+          WHERE provider_id = ${providerId} AND user_id = ${secondUserId}`,
+    );
+
+    expect(activityCount?.count).toBe(0);
+    expect(dailyMetricsCount?.count).toBe(0);
+    expect(tokenCount?.count).toBe(1);
+    expect(secondUserActivityCount?.count).toBe(1);
+    expect(connectionCount?.count).toBe(2);
+    expect(allTokenCount?.count).toBe(2);
+    expect(selectedClinicalRecordCount?.count).toBe(0);
+    expect(retainedProviderClinicalRecordCount?.count).toBe(1);
+    expect(secondUserClinicalRecordCount?.count).toBe(1);
+  });
+
+  it("authorizes canonical deletion from retained rows after disconnect and emits its outbox event", async () => {
+    await deleteProviderAuthorization(testContext.db, retainedProviderId, userId);
+    const repository = new ProviderDetailRepository(testContext.db, userId, noRetainedMetricStream);
+
+    await expect(repository.canDeleteProviderData(retainedProviderId)).resolves.toBe(true);
+    const request = await repository.requestProviderDataDeletion(retainedProviderId);
+
+    const [connectionCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count
+          FROM fitness.provider_connection
+          WHERE user_id = ${userId} AND provider_id = ${retainedProviderId}`,
+    );
+    const [activityCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count
+          FROM fitness.activity
+          WHERE user_id = ${userId} AND provider_id = ${retainedProviderId}`,
+    );
+    const [outboxCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count
+          FROM fitness.provider_data_deletion_outbox
+          WHERE event_id = ${request.eventId}
+            AND user_id = ${userId}
+            AND provider_id = ${retainedProviderId}`,
+    );
+
+    expect(connectionCount?.count).toBe(0);
+    expect(activityCount?.count).toBe(0);
+    expect(outboxCount?.count).toBe(1);
+  });
+
+  it("does not authorize another user from someone else's retained records", async () => {
+    const repository = new ProviderDetailRepository(
+      testContext.db,
+      secondUserId,
+      noRetainedMetricStream,
+    );
+
+    await expect(repository.canDeleteProviderData(retainedProviderId)).resolves.toBe(false);
+  });
+
+  it("fails with the missing-table error before writing another outbox event", async () => {
+    await testContext.db.execute(
+      sql`ALTER TABLE fitness.daily_metrics RENAME TO daily_metrics_unavailable`,
+    );
+    try {
+      const repository = new ProviderDetailRepository(testContext.db, userId);
+
+      await expect(repository.requestProviderDataDeletion(providerId)).rejects.toMatchObject({
+        cause: { code: "42P01" },
+      });
+
+      const [outboxCount] = await executeWithSchema(
+        testContext.db,
+        z.object({ count: z.coerce.number() }),
+        sql`SELECT count(*) AS count
+            FROM fitness.provider_data_deletion_outbox
+            WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+      );
+      expect(outboxCount?.count).toBe(1);
+    } finally {
+      await testContext.db.execute(
+        sql`ALTER TABLE fitness.daily_metrics_unavailable RENAME TO daily_metrics`,
+      );
+    }
   });
 });

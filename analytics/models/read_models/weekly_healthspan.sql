@@ -9,6 +9,15 @@
 ) }}
 
 WITH {% if is_incremental() %}
+target_state AS (
+    SELECT
+        coalesce(
+            max(refreshed_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_refreshed_at
+    FROM {{ this }} FINAL
+),
+
 existing_weeks AS (
     SELECT
         user_id,
@@ -17,6 +26,13 @@ existing_weeks AS (
     GROUP BY user_id
 ),
 {% endif %}
+
+sleep_week_keys AS (
+    SELECT DISTINCT
+        user_id,
+        toMonday(toDate(started_at)) AS week_start
+    FROM {{ ref('daily_sleep') }} FINAL
+),
 
 sleep_by_week AS (
     SELECT
@@ -30,8 +46,8 @@ sleep_by_week AS (
                 toHour(started_at) * 60 + toMinute(started_at)
             )
         ) AS bedtime_stddev_min
-    FROM analytics.v_sleep
-    WHERE is_nap = false
+    FROM {{ ref('daily_sleep') }} FINAL
+    WHERE is_deleted = 0
     GROUP BY user_id, toMonday(toDate(started_at))
 ),
 
@@ -73,7 +89,7 @@ strength_by_week AS (
     SELECT
         user_id,
         toMonday(toDate(started_at)) AS week_start,
-        countIf(activity_type = 'strength') AS strength_sessions
+        countIf(canonical_type = 'strength') AS strength_sessions
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
         AND started_at IS NOT null
@@ -93,18 +109,37 @@ vo2_by_week AS (
 body_by_week AS (
     SELECT
         user_id,
-        toMonday(toDate(recorded_at)) AS week_start,
-        argMax(weight_kg, recorded_at) AS weight_kg,
-        argMax(body_fat_pct, recorded_at) AS body_fat_pct
-    FROM analytics.v_body_measurement
-    GROUP BY user_id, toMonday(toDate(recorded_at))
+        toMonday(date) AS week_start,
+        argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
+        argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
+    FROM {{ ref('daily_body_measurement') }} FINAL
+    WHERE is_deleted = 0
+    GROUP BY user_id, toMonday(date)
 ),
+
+{% if is_incremental() %}
+changed_sleep_weeks AS (
+    SELECT DISTINCT
+        user_id,
+        toMonday(toDate(started_at)) AS week_start
+    FROM {{ ref('daily_sleep') }} FINAL
+    WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
+),
+
+changed_body_weeks AS (
+    SELECT DISTINCT
+        user_id,
+        toMonday(date) AS week_start
+    FROM {{ ref('daily_body_measurement') }} FINAL
+    WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
+),
+{% endif %}
 
 week_keys AS (
     SELECT
         user_id,
         week_start
-    FROM sleep_by_week
+    FROM sleep_week_keys
     UNION DISTINCT
     SELECT
         user_id,
@@ -147,6 +182,16 @@ week_keys_to_materialize AS (
         ON existing_weeks.user_id = week_keys.user_id
     WHERE existing_weeks.user_id IS null
         OR week_keys.week_start >= existing_weeks.latest_materialized_week_start - INTERVAL 26 WEEK
+    UNION DISTINCT
+    SELECT
+        changed_body_weeks.user_id AS user_id,
+        changed_body_weeks.week_start AS week_start
+    FROM changed_body_weeks
+    UNION DISTINCT
+    SELECT
+        changed_sleep_weeks.user_id AS user_id,
+        changed_sleep_weeks.week_start AS week_start
+    FROM changed_sleep_weeks
     {% endif %}
 ),
 

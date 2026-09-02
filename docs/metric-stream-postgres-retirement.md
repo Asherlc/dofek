@@ -10,7 +10,7 @@ R2 archive; Postgres is no longer a metric-stream source or sink.
   Redpanda (`publishRows`/`replaceRows`); the Postgres sink was removed.
 - **`fitness.metric_stream` (Postgres):** retired and dropped. Historical rows
   were exported to R2 before the destructive migration.
-- **ClickHouse serving copy:** `postgres_fitness.metric_stream`, fed by the
+- **ClickHouse serving copy:** `ingest.metric_stream`, fed by the
   Redpanda `metric-stream-clickhouse-sink` (non-IMU only). Source for
   `analytics.deduped_sensor` and all downstream dbt sensor models. **Kept.**
 - **PeerDB PG→CH metric_stream mirror:** retired. The ClickHouse serving table
@@ -49,6 +49,14 @@ now-removed one-time exporter:
   already in the topic/R2) so it never overlaps already-archived data.
 - The `Backfill metric_stream to R2` GitHub Actions workflow and one-time export
   code were removed after the backfill completed.
+
+## Historical implementation plan
+
+> The remaining sections are the original transition plan. They are retained
+> as decision history, not as current instructions. The completed
+> implementation chose `ingest.metric_stream`, not the proposed
+> `metric_stream.events`, and current readers must follow the code and active
+> runbooks.
 
 ## Naming decision
 
@@ -134,8 +142,8 @@ Done:
    services/adapters) — IMU still flows provider/watch → Redpanda → R2 archive.
    Raw IMU remains queryable from R2 if observability is ever rebuilt
    deliberately (on object-content reads or by adding `imu` to the CH sink).
-3. Left the live on-device WHOOP BLE orientation screen (`imu-visualization`)
-   untouched — it reads the native module, not `metric_stream`.
+3. Kept the native WHOOP BLE sync path, which reads its native module rather
+   than `metric_stream`.
 
 ## P3 — Drop Postgres metric_stream + cleanup
 

@@ -1,9 +1,12 @@
+{% set default_microbatch_begin = run_started_at.strftime('%Y-%m-%d') %}
+{% set sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', default_microbatch_begin) %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key='id',
     event_time='_peerdb_synced_at',
-    begin='2026-01-01',
+    begin=sensor_scalar_sample_begin,
     batch_size='day',
     lookback=3,
     full_refresh=false,
@@ -17,8 +20,8 @@
 
 WITH metric_stream_versions AS (
     SELECT *
-    FROM {{ source('postgres_fitness', 'metric_stream_freshness') }}
-    WHERE (scalar IS NOT null OR _peerdb_is_deleted = 1)
+    FROM {{ source('ingest', 'metric_stream_freshness') }}
+    WHERE (scalar IS NOT null OR is_deleted = 1)
         AND channel IN (
             'heart_rate',
             'power',
@@ -41,15 +44,15 @@ WITH metric_stream_versions AS (
 metric_stream_rows AS (
     SELECT
         id,
-        argMax(user_id, _peerdb_version) AS user_id,
-        argMax(recorded_at, _peerdb_version) AS recorded_at,
-        argMax(channel, _peerdb_version) AS channel,
-        argMax(provider_id, _peerdb_version) AS provider_id,
-        argMax(device_id, _peerdb_version) AS device_id,
-        coalesce(argMax(scalar, _peerdb_version), 0) AS scalar,
-        argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
-        argMax(_peerdb_is_deleted, _peerdb_version) AS _peerdb_is_deleted,
-        max(_peerdb_version) AS source_peerdb_version
+        argMax(user_id, version) AS user_id,
+        argMax(recorded_at, version) AS recorded_at,
+        argMax(channel, version) AS channel,
+        argMax(provider_id, version) AS provider_id,
+        argMax(device_id, version) AS device_id,
+        coalesce(argMax(scalar, version), 0) AS scalar,
+        argMax(ingested_at, version) AS ingested_at,
+        argMax(is_deleted, version) AS is_deleted,
+        max(version) AS source_version
     FROM metric_stream_versions
     GROUP BY id
 ),
@@ -113,9 +116,9 @@ SELECT
         active_sensor_provider_priority.priority,
         1000
     ) AS provider_priority,
-    metric_stream_rows._peerdb_synced_at AS _peerdb_synced_at,
-    metric_stream_rows._peerdb_is_deleted AS _peerdb_is_deleted,
-    metric_stream_rows.source_peerdb_version AS _peerdb_version
+    metric_stream_rows.ingested_at AS _peerdb_synced_at,
+    metric_stream_rows.is_deleted AS _peerdb_is_deleted,
+    metric_stream_rows.source_version AS _peerdb_version
 FROM metric_stream_rows
 LEFT JOIN active_sensor_provider_priority
     ON active_sensor_provider_priority.provider_id = metric_stream_rows.provider_id

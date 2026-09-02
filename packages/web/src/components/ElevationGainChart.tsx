@@ -7,6 +7,7 @@ import {
   dofekGrid,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -35,10 +36,10 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
         if (!row) return "";
         const dateLabel = formatDateMedium(row.week);
         return [
-          `<strong>Week of ${dateLabel}</strong>`,
-          `Elevation Gain: ${formatNumber(units.convertElevation(row.elevationGainMeters), 0)} ${units.elevationLabel}`,
+          `<strong>Week of ${escapeTooltipHtml(dateLabel)}</strong>`,
+          `Elevation Gain: ${formatNumber(units.convertElevation(row.elevationGainMeters), 0)} ${escapeTooltipHtml(units.elevationLabel)}`,
           `Activities: ${row.activityCount}`,
-          `Distance: ${formatNumber(units.convertDistance(row.totalDistanceKm))} ${units.distanceLabel}`,
+          `Distance: ${formatNumber(units.convertDistance(row.totalDistanceKm))} ${escapeTooltipHtml(units.distanceLabel)}`,
         ].join("<br/>");
       },
     }),

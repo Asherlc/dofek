@@ -5,7 +5,24 @@
   "type": "module",
   "exports": {
     "./providers": "./src/providers.ts",
+    "./provider-catalog": "./src/provider-catalog.ts",
     "./provider-stats": "./src/provider-stats.ts",
-    "./whoop": "./src/whoop.ts"
+    "./provider-health": "./src/provider-health.ts",
+    "./health-provenance": "./src/health-provenance.ts",
+    "./provider-disconnect": "./src/provider-disconnect.ts",
+    "./sync-log-presentation": "./src/sync-log-presentation.ts",
+    "./whoop": "./src/whoop.ts",
+    "./push-providers": "./src/push-providers.ts",
+    "./processing-alerts": "./src/processing-alerts.ts",
+    "./processing-status": "./src/processing-status.ts",
+    "./sync-actions": "./src/sync-actions.ts",
+    "./auth-provider-grouping": "./src/auth-provider-grouping.ts",
+    "./hangboarding": "./src/hangboarding.ts"
+  },
+  "dependencies": {
+    "@dofek/format": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }

@@ -1,4 +1,9 @@
-import { BRAND_COLORS, PROVIDER_LABELS, providerLogoType } from "@dofek/providers/providers";
+import {
+  BRAND_COLORS,
+  PROVIDER_LABELS,
+  providerLogoId,
+  providerLogoType,
+} from "@dofek/providers/providers";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 interface ProviderLogoProps {
@@ -12,7 +17,7 @@ interface ProviderLogoProps {
 
 function logoUrl(serverUrl: string, provider: string): string | null {
   const type = providerLogoType(provider);
-  if (type === "png") return `${serverUrl}/logos/${provider}.${type}`;
+  if (type === "png") return `${serverUrl}/logos/${providerLogoId(provider)}.${type}`;
   return null;
 }
 

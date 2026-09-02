@@ -30,7 +30,9 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
   const queryMock = isMatrix(rows)
     ? (() => {
         const fn = vi.fn();
-        for (const batch of rows) fn.mockResolvedValueOnce(batch);
+        for (const batch of rows) {
+          fn.mockResolvedValueOnce(batch);
+        }
         fn.mockResolvedValue([]);
         return fn;
       })()
@@ -52,6 +54,31 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
 type SleepNightTestRow = {
   date: string;
   provider_id: string;
+  source_name?: string | null;
+  source_providers?: string[];
+  selected_session_id?: string | null;
+  overlapping_sessions?: {
+    session_id: string;
+    provider_id: string;
+    source_name: string | null;
+    source_providers: string[];
+    timezone: string | null;
+    start_utc_offset_minutes: number | null;
+    end_utc_offset_minutes: number | null;
+    local_time_source: SleepNightTestRow["local_time_source"];
+    started_at: string;
+    ended_at: string | null;
+    duration_minutes: number | null;
+  }[];
+  timezone: string | null;
+  start_utc_offset_minutes: number | null;
+  end_utc_offset_minutes: number | null;
+  local_time_source:
+    | "provider_timezone"
+    | "provider_offset"
+    | "device_timezone"
+    | "device_offset"
+    | "unknown";
   started_at: string;
   ended_at: string | null;
   duration_minutes: number | null;
@@ -60,6 +87,7 @@ type SleepNightTestRow = {
   light_minutes: number | null;
   awake_minutes: number | null;
   efficiency_pct: number | null;
+  staging_available: boolean;
 };
 
 function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTestRow {
@@ -67,6 +95,14 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
   return {
     date,
     provider_id: "apple_health",
+    source_name: null,
+    source_providers: [],
+    selected_session_id: null,
+    overlapping_sessions: [],
+    timezone: null,
+    start_utc_offset_minutes: 0,
+    end_utc_offset_minutes: 0,
+    local_time_source: "device_offset",
     started_at: `${date}T22:00:00Z`,
     ended_at: `${addDays(date, 1)}T06:00:00Z`,
     duration_minutes: 480,
@@ -75,6 +111,7 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
     light_minutes: 255,
     awake_minutes: 30,
     efficiency_pct: 93.75,
+    staging_available: true,
     ...overrides,
   };
 }
@@ -123,8 +160,8 @@ function sleepDebtRow(date: string, sleepMinutes: number, durationMinutes = slee
   return sleepNightRow({
     date,
     duration_minutes: durationMinutes,
-    deep_minutes: null,
-    rem_minutes: null,
+    deep_minutes: 0,
+    rem_minutes: 0,
     light_minutes: sleepMinutes,
     awake_minutes: Math.max(0, durationMinutes - sleepMinutes),
     efficiency_pct: durationMinutes > 0 ? (sleepMinutes / durationMinutes) * 100 : null,
@@ -193,7 +230,7 @@ describe("recoveryRouter.sleepConsistency", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      timezone: "UTC",
+      timezone: "America/Los_Angeles",
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
@@ -205,6 +242,26 @@ describe("recoveryRouter.sleepConsistency", () => {
     expect(result[0]?.waketimeHour).toBe(6.78);
     expect(result[0]?.rollingBedtimeStddev).toBe(0);
     expect(result[0]?.rollingWaketimeStddev).toBe(0);
+  });
+
+  it("omits schedule rows when the record local time is unknown", async () => {
+    const rows = [
+      sleepNightRow({
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    await expect(caller.sleepConsistency({})).resolves.toEqual([]);
   });
 
   it("sets consistencyScore to null when fewer than 7 nights are available", async () => {
@@ -415,8 +472,10 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.displayedDate).toBeNull();
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
     expect(queryText).toContain("toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))");
     expect(queryText).not.toContain("analytics.activity_summary");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("passes the user timezone when reading strain read-model dates", async () => {
@@ -612,7 +671,7 @@ describe("recoveryRouter.workloadRatio", () => {
 // ── sleepAnalytics ──────────────────────────────────────────────
 
 describe("recoveryRouter.sleepAnalytics", () => {
-  it("returns empty nightly and zero sleep debt when no data", async () => {
+  it("returns unavailable summary metrics when no sleep data exists", async () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
@@ -621,7 +680,357 @@ describe("recoveryRouter.sleepAnalytics", () => {
     const result = await caller.sleepAnalytics({});
 
     expect(result.nightly).toEqual([]);
-    expect(result.sleepDebt).toBe(0);
+    expect(result.sleepDebt).toBeNull();
+    expect(result.averageSleepMinutes).toBeNull();
+    expect(result.averageEfficiencyPercent).toBeNull();
+  });
+
+  it("preserves missing sleep values while keeping measured zeroes available", async () => {
+    const rows = [
+      sleepNightRow({
+        date: "2026-03-01",
+        duration_minutes: null,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "whoop",
+        duration_minutes: 0,
+        deep_minutes: 0,
+        rem_minutes: 0,
+        light_minutes: 0,
+        awake_minutes: 0,
+        efficiency_pct: 0,
+        staging_available: true,
+      }),
+      sleepNightRow({
+        date: "2026-03-03",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: true,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: null,
+      sleepMinutes: null,
+      rollingAvgDuration: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+    expect(result.nightly[1]).toMatchObject({
+      durationMinutes: 0,
+      sleepMinutes: 0,
+      rollingAvgDuration: 0,
+      durationState: { status: "available" },
+      sleepState: { status: "available" },
+      stageState: { status: "available" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.nightly[2]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      durationState: { status: "available" },
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+    });
+    expect(result.averageSleepMinutes).toBe(0);
+    expect(result.averageEfficiencyPercent).toBe(0);
+    expect(result.sleepDebt).toBe(480);
+  });
+
+  it.each(["deep_minutes", "rem_minutes", "light_minutes", "awake_minutes"] as const)(
+    "withholds every stage percentage when %s is missing",
+    async (missingStage) => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        sensorStore: makeSensorStore([
+          sleepNightRow({
+            [missingStage]: null,
+          }),
+        ]),
+      });
+      const result = await caller.sleepAnalytics({});
+
+      expect(result.nightly[0]).toMatchObject({
+        deepPct: null,
+        remPct: null,
+        lightPct: null,
+        awakePct: null,
+        stageState: {
+          status: "missing",
+          reason: "Sleep stages were not reported for this night.",
+          nextAction: "Sync sleep data from a source that reports sleep stages.",
+        },
+      });
+    },
+  );
+
+  it("withholds stage percentages when staging is unavailable despite complete stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          staging_available: false,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("derives Apple Health sleep minutes from complete stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: 90,
+          rem_minutes: 105,
+          light_minutes: 255,
+          awake_minutes: 30,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: 450,
+      deepPct: 18.8,
+      remPct: 21.9,
+      lightPct: 53.1,
+      awakePct: 6.3,
+      durationState: { status: "available" },
+      sleepState: { status: "available" },
+      stageState: { status: "available" },
+    });
+  });
+
+  it("preserves recorded duration for a non-Apple provider when staging is unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          provider_id: "whoop",
+          staging_available: false,
+          deep_minutes: 30,
+          rem_minutes: 30,
+          light_minutes: 120,
+          awake_minutes: 120,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]?.durationMinutes).toBe(480);
+    expect(result.nightly[0]?.sleepMinutes).toBe(480);
+  });
+
+  it("keeps Apple Health sleep unavailable when staging is unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          provider_id: "apple_health",
+          staging_available: false,
+          deep_minutes: 30,
+          rem_minutes: 30,
+          light_minutes: 120,
+          awake_minutes: 120,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      durationState: { status: "available" },
+      sleepMinutes: null,
+      sleepState: { status: "missing" },
+      stageState: { status: "missing" },
+    });
+  });
+
+  it("keeps Apple Health sleep unavailable when staging reports no stage minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          deep_minutes: null,
+          rem_minutes: null,
+          light_minutes: null,
+          awake_minutes: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: 480,
+      sleepMinutes: null,
+      durationState: { status: "available" },
+      sleepState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+      stageState: {
+        status: "missing",
+        reason: "Sleep stages were not reported for this night.",
+        nextAction: "Sync sleep data from a source that reports sleep stages.",
+      },
+    });
+  });
+
+  it.each([
+    ["deep_minutes", 90],
+    ["rem_minutes", 105],
+    ["light_minutes", 255],
+    ["awake_minutes", 30],
+  ] as const)(
+    "keeps Apple Health sleep unavailable when only %s is reported",
+    async (presentStage, stageMinutes) => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        sensorStore: makeSensorStore([
+          sleepNightRow({
+            deep_minutes: null,
+            rem_minutes: null,
+            light_minutes: null,
+            awake_minutes: null,
+            [presentStage]: stageMinutes,
+          }),
+        ]),
+      });
+      const result = await caller.sleepAnalytics({});
+
+      expect(result.nightly[0]).toMatchObject({
+        sleepMinutes: null,
+        deepPct: null,
+        remPct: null,
+        lightPct: null,
+        awakePct: null,
+        sleepState: { status: "missing" },
+        stageState: { status: "missing" },
+      });
+    },
+  );
+
+  it("keeps missing duration null when Apple Health stages provide sleep minutes", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        sleepNightRow({
+          duration_minutes: null,
+        }),
+      ]),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      durationMinutes: null,
+      sleepMinutes: 450,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      durationState: {
+        status: "missing",
+        reason: "Sleep duration was not recorded.",
+        nextAction: "Sync sleep data from a source that reports sleep duration.",
+      },
+      sleepState: { status: "available" },
+    });
+  });
+
+  it("filters unavailable nights out of average sleep and debt calculations", async () => {
+    const rows = [
+      sleepNightRow({
+        date: "2026-03-01",
+        provider_id: "whoop",
+        duration_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "whoop",
+        duration_minutes: 0,
+      }),
+      sleepNightRow({
+        date: "2026-03-03",
+        provider_id: "whoop",
+        duration_minutes: 300,
+      }),
+      sleepNightRow({
+        date: "2026-03-04",
+        provider_id: "whoop",
+        duration_minutes: 480,
+      }),
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    // The null night is excluded; the measured values are 0, 300, and 480.
+    expect(result.averageSleepMinutes).toBe(260);
+    expect(result.sleepDebt).toBe(660);
   });
 
   it("maps ClickHouse rows to SleepNightlyRow format with rounding", async () => {
@@ -650,6 +1059,12 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.date).toBe("2026-03-01");
     expect(night?.durationMinutes).toBe(480);
     expect(night?.sleepMinutes).toBeCloseTo(436.97, 1);
+    expect(night?.localTimeContext).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 0,
+      endUtcOffsetMinutes: 0,
+      source: "device_offset",
+    });
     // deepPct rounds to 1 decimal: 18.567 -> 18.6
     expect(night?.deepPct).toBe(18.6);
     // remPct rounds to 1 decimal: 22.345 -> 22.3
@@ -661,6 +1076,67 @@ describe("recoveryRouter.sleepAnalytics", () => {
     // efficiency rounds to 1 decimal: 93.456 -> 93.5
     expect(night?.efficiency).toBeCloseTo(93.5, 1);
     expect(night?.rollingAvgDuration).toBeCloseTo(437, 1);
+    expect(result.averageSleepMinutes).toBeCloseTo(437, 1);
+    expect(result.averageEfficiencyPercent).toBe(93.5);
+  });
+
+  it("maps the server-owned nightly selection and overlap evidence", async () => {
+    const selectedSessionId = "00000000-0000-4000-8000-000000001774";
+    const overlappingSessionId = "00000000-0000-4000-8000-000000001775";
+    const rows = [
+      sleepNightRow({
+        provider_id: "whoop",
+        source_name: "WHOOP 4.0",
+        source_providers: ["apple_health", "whoop"],
+        selected_session_id: selectedSessionId,
+        overlapping_sessions: [
+          {
+            session_id: overlappingSessionId,
+            provider_id: "oura",
+            source_name: "Oura Ring",
+            source_providers: ["oura"],
+            timezone: "America/Los_Angeles",
+            start_utc_offset_minutes: -420,
+            end_utc_offset_minutes: -420,
+            local_time_source: "provider_timezone",
+            started_at: "2026-03-01T23:30:00Z",
+            ended_at: "2026-03-02T05:00:00Z",
+            duration_minutes: 330,
+          },
+        ],
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]).toMatchObject({
+      providerId: "whoop",
+      sourceName: "WHOOP 4.0",
+      sourceProviders: ["apple_health", "whoop"],
+      selectedSessionId,
+      overlappingSessions: [
+        {
+          sessionId: overlappingSessionId,
+          providerId: "oura",
+          sourceName: "Oura Ring",
+          sourceProviders: ["oura"],
+          localTimeContext: {
+            timezone: "America/Los_Angeles",
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_timezone",
+          },
+          startedAt: "2026-03-01T23:30:00.000Z",
+          endedAt: "2026-03-02T05:00:00.000Z",
+          durationMinutes: 330,
+        },
+      ],
+    });
   });
 
   it("computes rolling average duration from available sleep rows", async () => {
@@ -674,6 +1150,81 @@ describe("recoveryRouter.sleepAnalytics", () => {
     const result = await caller.sleepAnalytics({});
 
     expect(result.nightly[0]?.rollingAvgDuration).toBe(450);
+  });
+
+  it("computes summary averages across multiple sleep nights", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 400,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 80,
+      }),
+      sleepAnalyticsRow({
+        date: "2026-03-02",
+        durationMinutes: 500,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 90,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.averageSleepMinutes).toBe(405);
+    expect(result.averageEfficiencyPercent).toBe(85);
+  });
+
+  it("excludes an incomplete provider row from stage and efficiency averages", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 90,
+      }),
+      sleepNightRow({
+        date: "2026-03-02",
+        provider_id: "apple_health",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: null,
+        staging_available: false,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.averageEfficiencyPercent).toBe(90);
+    expect(result.nightly[1]).toMatchObject({
+      stagingAvailable: false,
+      deepPct: null,
+      remPct: null,
+      lightPct: null,
+      awakePct: null,
+      efficiency: null,
+    });
   });
 
   it("computes positive sleep debt when sleep is below target", async () => {
@@ -761,12 +1312,18 @@ describe("recoveryRouter.readinessScore", () => {
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
+    expect(queryText).toContain("recovery_inputs.is_deleted = 0");
+    expect(queryText).toContain("hrv_z_score");
+    expect(queryText).toContain("resting_hr_z_score");
+    expect(queryText).toContain("respiratory_rate_z_score");
+    expect(queryText).not.toContain("hrv_mean_30d");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("accessStartDate");
     expect(queryText).not.toContain("accessEndDateExclusive");
     expect(queryParams).not.toHaveProperty("accessStartDate");
     expect(queryParams).not.toHaveProperty("accessEndDateExclusive");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("computes readiness score from HRV, RHR, sleep efficiency, and respiratory rate", async () => {
@@ -782,12 +1339,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0.5,
+        resting_hr_z_score: -0.4,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 92,
       },
     ];
@@ -801,8 +1355,8 @@ describe("recoveryRouter.readinessScore", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe(dateStr);
-    // HRV: z=(55-50)/10=0.5 → 72, RHR: z=(58-60)/5=-0.4 inverted=0.4 → 70
-    // RR: z=(15-15)/1=0 inverted=0 → 62, Sleep: 92
+    // HRV z=0.5 → 72, RHR z=-0.4 inverted=0.4 → 70
+    // RR z=0 inverted=0 → 62, Sleep: 92
     // Weighted: 72*0.5 + 70*0.2 + 92*0.15 + 62*0.15 = 73.1 → 73
     expect(result[0]?.components.hrvScore).toBe(72);
     expect(result[0]?.components.restingHrScore).toBe(70);
@@ -828,12 +1382,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
       {
@@ -841,12 +1392,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 14,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 90,
       },
     ];
@@ -870,12 +1418,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 58,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
       {
@@ -883,12 +1428,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -904,7 +1446,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.date).toBe("2026-05-21");
   });
 
-  it("defaults to 62 for HRV score when hrv_sd_30d is 0", async () => {
+  it("defaults to 62 for HRV score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -916,12 +1458,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 0, // zero stddev -> skip z-score, use default 62
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -936,7 +1475,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.hrvScore).toBe(62);
   });
 
-  it("defaults to 62 for RHR score when rhr_sd_30d is 0", async () => {
+  it("defaults to 62 for RHR score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -948,12 +1487,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 0, // zero stddev -> skip z-score, use default 62
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -968,7 +1504,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.restingHrScore).toBe(62);
   });
 
-  it("defaults to 62 for respiratory rate score when rr_sd_30d is 0", async () => {
+  it("defaults to 62 for respiratory rate score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -980,12 +1516,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 0, // zero stddev
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1012,12 +1545,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -1049,12 +1579,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 120, // above 100
       },
     ];
@@ -1082,12 +1609,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: -10, // below 0
       },
     ];
@@ -1102,7 +1626,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.sleepScore).toBe(0);
   });
 
-  it("defaults to 62 for HRV score when only hrv is null (mean/sd present)", async () => {
+  it("defaults to 62 for HRV score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1114,12 +1638,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: null, // null hrv but valid stats
         resting_hr: 45, // very low → high score when inverted
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: -3,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1132,11 +1653,11 @@ describe("recoveryRouter.readinessScore", () => {
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.hrvScore).toBe(62);
-    // RHR should compute: z=(45-60)/5=-3, inverted=+3 → high score
+    // RHR z=-3 is inverted to +3, producing a high score.
     expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
   });
 
-  it("defaults to 62 for HRV score when only hrv_mean_30d is null", async () => {
+  it("uses the canonical null HRV z-score even when the raw value is present", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1148,12 +1669,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: null, // null mean
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1168,7 +1686,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.components.hrvScore).toBe(62);
   });
 
-  it("defaults to 62 for RHR score when only resting_hr is null", async () => {
+  it("defaults to 62 for RHR score when its canonical z-score is null", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1180,12 +1698,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 80, // far above mean → high HRV score
         resting_hr: null, // null resting HR
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 3,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1198,11 +1713,11 @@ describe("recoveryRouter.readinessScore", () => {
     const result = await caller.readinessScore({});
 
     expect(result[0]?.components.restingHrScore).toBe(62);
-    // HRV: z=(80-50)/10=+3 → high score
+    // HRV z=+3 produces a high score.
     expect(result[0]?.components.hrvScore).toBeGreaterThan(80);
   });
 
-  it("defaults to 62 for RHR score when only rhr_mean_30d is null", async () => {
+  it("uses the canonical null RHR z-score even when the raw value is present", async () => {
     const today = new Date();
     const recentDate = new Date(today);
     recentDate.setDate(today.getDate() - 5);
@@ -1214,12 +1729,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: null, // null mean
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1246,12 +1758,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 80, // far above mean → high score
         resting_hr: 45, // far below mean → high score (inverted)
         respiratory_rate: null, // null respiratory rate
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 3,
+        resting_hr_z_score: -3,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -1281,12 +1790,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 70, // significantly above mean of 50
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 2,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1298,7 +1804,7 @@ describe("recoveryRouter.readinessScore", () => {
     });
     const result = await caller.readinessScore({});
 
-    // z = (70-50)/10 = +2, zScoreToRecoveryScore(2) = 92
+    // Canonical z=+2 maps to 92.
     expect(result[0]?.components.hrvScore).toBe(92);
   });
 
@@ -1314,12 +1820,9 @@ describe("recoveryRouter.readinessScore", () => {
         hrv: 50,
         resting_hr: 50, // below mean of 60 = good
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: -2,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -1331,7 +1834,7 @@ describe("recoveryRouter.readinessScore", () => {
     });
     const result = await caller.readinessScore({});
 
-    // z_rhr = (50-60)/5 = -2, inverted: -(-2) = +2, should map to ~93
+    // Canonical RHR z=-2 is inverted to +2.
     expect(result[0]?.components.restingHrScore).toBeGreaterThan(80);
   });
 
@@ -1350,10 +1853,19 @@ describe("recoveryRouter.readinessScore", () => {
 // ── strainTarget ────────────────────────────────────────────────
 
 describe("recoveryRouter.strainTarget", () => {
-  // Sets up a strainTarget caller. PG mocks: readinessRows, then optional sleepRows.
-  // CH mock: loads from analytics.daily_strain.
+  const defaultReadinessRows = [
+    {
+      date: "2026-03-22",
+      hrv_score: 62,
+      resting_hr_score: 62,
+      sleep_score: 62,
+      respiratory_rate_score: 62,
+    },
+  ];
+
+  // Sets up a strainTarget caller with recovery and strain read-model rows.
   function setup({
-    readinessRows = [],
+    readinessRows = defaultReadinessRows,
     sleepRows,
     loads = [],
   }: {
@@ -1363,10 +1875,7 @@ describe("recoveryRouter.strainTarget", () => {
   }) {
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce(readinessRows);
-    const sensorRows =
-      readinessRows.length > 0
-        ? [[], loads, (sleepRows ?? []).map((row) => sleepNightRow(row))]
-        : [[], loads];
+    const sensorRows = [readinessRows, loads, (sleepRows ?? []).map((row) => sleepNightRow(row))];
     return createCaller({
       db: { execute: executeMock },
       userId: "user-1",
@@ -1374,16 +1883,11 @@ describe("recoveryRouter.strainTarget", () => {
     });
   }
 
-  it("returns default values when no metric rows exist", async () => {
-    const caller = setup({});
+  it("returns null when no recovery summary exists", async () => {
+    const caller = setup({ readinessRows: [] });
     const result = await caller.strainTarget({});
 
-    expect(result.zone).toBe("Maintain");
-    expect(result.targetStrain).toBeGreaterThanOrEqual(10);
-    expect(result.targetStrain).toBeLessThanOrEqual(14);
-    expect(result.currentStrain).toBe(0);
-    expect(result.progressPercent).toBe(0);
-    expect(result.explanation).toBeTruthy();
+    expect(result).toBeNull();
   });
 
   it("reads daily loads from the compact activity load read model", async () => {
@@ -1399,9 +1903,11 @@ describe("recoveryRouter.strainTarget", () => {
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
     expect(queryText).toContain("toString(strain.date) AS date");
     expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
     expect(queryText).not.toContain("analytics.activity_summary");
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("reads readiness from the daily recovery summary without Postgres metric assembly", async () => {
@@ -1463,6 +1969,7 @@ describe("recoveryRouter.strainTarget", () => {
       windowStart: "2026-02-26",
       endDate: "2026-03-28",
     });
+    expect(String(recoveryQueryCall?.[1])).toContain("recovery.is_deleted = 0");
     expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessStartDate");
     expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessEndDateExclusive");
     expect(queryTexts.some((queryText) => queryText.includes("analytics.daily_recovery"))).toBe(
@@ -1498,6 +2005,7 @@ describe("recoveryRouter.strainTarget", () => {
       accessStartDate: "2026-03-10",
       accessEndDateExclusive: "2026-03-20",
     });
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
 
     const queryText = String(vi.mocked(sensorStore.query).mock.calls[1]?.[1]);
     const queryParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
@@ -1507,6 +2015,7 @@ describe("recoveryRouter.strainTarget", () => {
       accessStartDate: "2026-03-10",
       accessEndDateExclusive: "2026-03-20",
     });
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("computes readiness from daily recovery component scores", async () => {
@@ -1571,7 +2080,7 @@ describe("recoveryRouter.strainTarget", () => {
     expect(result.acuteLoad).toBeCloseTo(930 / 7, 1);
     expect(result.chronicLoad).toBeCloseTo(930 / 28, 1);
     expect(result.workloadRatio).toBe(4);
-    expect(result.readinessScore).toBe(50);
+    expect(result.readinessScore).toBe(62);
   });
 
   it("computes progressPercent as ratio of current to target", async () => {
@@ -2235,6 +2744,23 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
     const result = await callerWith([]).workloadRatio({});
     expect(result.displayedDate).toBeNull();
   });
+
+  it("omits outputWindowStart when workloadRatio requests all history", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ days: null, endDate: "2026-03-31" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).not.toContain("outputWindowStart");
+    expect(queryParams).not.toHaveProperty("outputWindowStart");
+  });
 });
 
 // ── Mutation-killing tests for sleepAnalytics ──────────────────
@@ -2347,6 +2873,21 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
     expect(result.nightly[0]?.rollingAvgDuration).toBe(455.8);
   });
 
+  it("rollingAvgDuration averages multiple available nights", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 400, 430), sleepDebtRow("2026-03-02", 500, 530)];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]?.sleepMinutes).toBe(400);
+    expect(result.nightly[1]?.sleepMinutes).toBe(500);
+    expect(result.nightly[1]?.rollingAvgDuration).toBe(450);
+  });
+
   it("durationMinutes preserves the numeric value", async () => {
     const rows = [sleepDebtRow("2026-03-01", 450, 480)];
     const caller = createCaller({
@@ -2432,12 +2973,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 30, // significantly below mean of 50
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: -2,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -2447,7 +2985,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z = (30-50)/10 = -2, should map to low score
+    // Canonical z=-2 maps to a low score.
     expect(result[0]?.components.hrvScore).toBeLessThan(50);
   });
 
@@ -2459,12 +2997,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 70, // above mean of 60 = bad
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 2,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -2474,7 +3009,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rhr = (70-60)/5 = +2, inverted: -2, should map to low score
+    // Canonical RHR z=+2 is inverted to -2.
     expect(result[0]?.components.restingHrScore).toBeLessThan(50);
   });
 
@@ -2486,12 +3021,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 13, // below mean of 15 = good
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: -2,
         efficiency_pct: 85,
       },
     ];
@@ -2501,7 +3033,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rr = (13-15)/1 = -2, inverted: +2, maps to high score
+    // Canonical respiratory z=-2 is inverted to +2.
     expect(result[0]?.components.respiratoryRateScore).toBeGreaterThan(80);
   });
 
@@ -2513,12 +3045,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: 17, // above mean of 15 = bad
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 2,
         efficiency_pct: 85,
       },
     ];
@@ -2528,7 +3057,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
-    // z_rr = (17-15)/1 = +2, inverted: -2, maps to low score
+    // Canonical respiratory z=+2 is inverted to -2.
     expect(result[0]?.components.respiratoryRateScore).toBeLessThan(50);
   });
 
@@ -2540,12 +3069,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2566,12 +3092,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -2593,12 +3116,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2619,12 +3139,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: null,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2645,12 +3162,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 50,
         resting_hr: 60,
         respiratory_rate: null,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: 85,
       },
     ];
@@ -2671,12 +3185,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: 55,
         resting_hr: 60,
         respiratory_rate: 15,
-        hrv_mean_30d: 50,
-        hrv_sd_30d: 10,
-        rhr_mean_30d: 60,
-        rhr_sd_30d: 5,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
+        hrv_z_score: 0.5,
+        resting_hr_z_score: 0,
+        respiratory_rate_z_score: 0,
         efficiency_pct: 85,
       },
     ];
@@ -2699,12 +3210,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
         hrv: null,
         resting_hr: null,
         respiratory_rate: null,
-        hrv_mean_30d: null,
-        hrv_sd_30d: null,
-        rhr_mean_30d: null,
-        rhr_sd_30d: null,
-        rr_mean_30d: null,
-        rr_sd_30d: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
         efficiency_pct: null,
       },
     ];
@@ -2715,6 +3223,57 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.date).toBe(dateStr);
+  });
+
+  it("excludes the exact selected-range cutoff date after warmup loading", async () => {
+    const rows = [
+      {
+        date: "2026-04-01",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-04-02",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_z_score: null,
+        resting_hr_z_score: null,
+        respiratory_rate_z_score: null,
+        efficiency_pct: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    const result = await caller.readinessScore({ days: 30, endDate: "2026-05-01" });
+
+    expect(result.map((row) => row.date)).toEqual(["2026-04-02"]);
+  });
+
+  it("omits windowStart when readinessScore requests all history", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.readinessScore({ days: null, endDate: "2026-05-01" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).not.toContain("windowStart");
+    expect(queryParams).not.toHaveProperty("windowStart");
   });
 });
 

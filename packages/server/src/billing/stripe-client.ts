@@ -1,7 +1,7 @@
-import Stripe from "stripe";
+import { createStripeClient as createSharedStripeClient } from "dofek/billing/stripe-client";
 import { getStripeBillingConfig } from "./config.ts";
 
-export function createStripeClient(): Stripe {
+export function createStripeClient() {
   const config = getStripeBillingConfig();
-  return new Stripe(config.secretKey);
+  return createSharedStripeClient(config.secretKey);
 }

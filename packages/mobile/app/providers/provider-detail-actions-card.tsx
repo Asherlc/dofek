@@ -1,34 +1,91 @@
+import { formatDateYmd } from "@dofek/format/format";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { colors } from "../../theme";
+import type { ProviderSyncDateRange } from "./use-provider-detail-actions";
+
+function localDateFromYmd(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, 12);
+}
 
 export function ProviderDetailActionsCard({
   primaryActionLabel,
   isSyncing,
   syncMessage,
   syncProgress,
+  syncDateRange,
   shouldShowFullSync,
   shouldShowAppleHealthPermissionBanner,
+  shouldShowAppleHealthClinicalRecords,
+  shouldShowClinicalRecordsLink,
   onPrimaryAction,
   onFullSync,
+  onOpenClinicalRecords,
 }: {
   primaryActionLabel: "Sync" | "Connect" | "Reconnect";
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;
+  syncDateRange: ProviderSyncDateRange | null;
   shouldShowFullSync: boolean;
   shouldShowAppleHealthPermissionBanner: boolean;
+  shouldShowAppleHealthClinicalRecords: boolean;
+  shouldShowClinicalRecordsLink: boolean;
   onPrimaryAction: () => void;
   onFullSync: () => void;
+  onOpenClinicalRecords: () => void;
 }) {
   return (
     <View style={styles.actionCard}>
       <Text style={styles.actionTitle}>Actions</Text>
+      {syncDateRange ? (
+        <View style={styles.dateRange}>
+          <View style={styles.dateField}>
+            <Text style={styles.dateLabel}>From</Text>
+            <DateTimePicker
+              accessibilityLabel="From"
+              disabled={isSyncing}
+              display="compact"
+              maximumDate={localDateFromYmd(syncDateRange.untilDate)}
+              mode="date"
+              onChange={(_event, selectedDate) => {
+                if (selectedDate) {
+                  syncDateRange.onSinceDateChange(formatDateYmd(selectedDate));
+                }
+              }}
+              value={localDateFromYmd(syncDateRange.sinceDate)}
+            />
+          </View>
+          <View style={styles.dateField}>
+            <Text style={styles.dateLabel}>To</Text>
+            <DateTimePicker
+              accessibilityLabel="To"
+              disabled={isSyncing}
+              display="compact"
+              maximumDate={localDateFromYmd(formatDateYmd())}
+              minimumDate={localDateFromYmd(syncDateRange.sinceDate)}
+              mode="date"
+              onChange={(_event, selectedDate) => {
+                if (selectedDate) {
+                  syncDateRange.onUntilDateChange(formatDateYmd(selectedDate));
+                }
+              }}
+              value={localDateFromYmd(syncDateRange.untilDate)}
+            />
+          </View>
+        </View>
+      ) : null}
       <View style={styles.syncButtonRow}>
         <TouchableOpacity
           style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
           onPress={onPrimaryAction}
           activeOpacity={0.7}
           disabled={isSyncing}
+          accessibilityRole="button"
+          accessibilityLabel={primaryActionLabel}
+          accessibilityState={{ busy: isSyncing, disabled: isSyncing }}
         >
           <Text style={styles.syncButtonText}>{primaryActionLabel}</Text>
         </TouchableOpacity>
@@ -38,31 +95,52 @@ export function ProviderDetailActionsCard({
             onPress={onFullSync}
             activeOpacity={0.7}
             disabled={isSyncing}
+            accessibilityRole="button"
+            accessibilityLabel="Full sync"
+            accessibilityState={{ busy: isSyncing, disabled: isSyncing }}
           >
             <Text style={styles.secondaryButtonText}>Full sync</Text>
           </TouchableOpacity>
         )}
       </View>
       {isSyncing && (
-        <View style={styles.syncProgressContainer}>
-          {syncProgress != null && (
-            <View style={styles.syncProgressTrack}>
-              <View style={[styles.syncProgressFill, { width: `${syncProgress}%` }]} />
-            </View>
-          )}
-          {syncMessage != null && <Text style={styles.syncMessageText}>{syncMessage}</Text>}
-        </View>
+        <OperationProgressBar
+          percentage={syncProgress ?? undefined}
+          message={syncMessage ?? undefined}
+        />
       )}
       {!isSyncing && syncMessage != null && (
         <Text style={styles.syncMessageText}>{syncMessage}</Text>
       )}
       {shouldShowAppleHealthPermissionBanner && (
-        <TouchableOpacity onPress={onPrimaryAction} activeOpacity={0.7}>
+        <TouchableOpacity
+          onPress={onPrimaryAction}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Review Apple Health permissions"
+        >
           <Text style={styles.permissionBannerText}>
             Apple Health permissions need updating — tap to review
           </Text>
         </TouchableOpacity>
       )}
+      {shouldShowAppleHealthClinicalRecords ? (
+        <View style={styles.clinicalRecordsSection}>
+          <Text style={styles.clinicalRecordsDescription}>
+            Clinical records are optional, read-only, and sync only during an explicit sync.
+          </Text>
+          {shouldShowClinicalRecordsLink ? (
+            <TouchableOpacity
+              accessibilityLabel="View clinical records"
+              accessibilityRole="link"
+              activeOpacity={0.7}
+              onPress={onOpenClinicalRecords}
+            >
+              <Text style={styles.clinicalRecordsLink}>View clinical records</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -78,6 +156,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: colors.text,
+  },
+  dateRange: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  dateField: {
+    flex: 1,
+    gap: 4,
+  },
+  dateLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   syncButtonRow: {
     flexDirection: "row",
@@ -110,20 +200,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
   },
-  syncProgressContainer: {
-    gap: 4,
-  },
-  syncProgressTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
-  },
-  syncProgressFill: {
-    height: "100%",
-    borderRadius: 2,
-    backgroundColor: colors.accent,
-  },
   syncMessageText: {
     fontSize: 12,
     color: colors.textSecondary,
@@ -131,5 +207,17 @@ const styles = StyleSheet.create({
   permissionBannerText: {
     fontSize: 12,
     color: colors.warning,
+  },
+  clinicalRecordsSection: {
+    gap: 6,
+  },
+  clinicalRecordsDescription: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  clinicalRecordsLink: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

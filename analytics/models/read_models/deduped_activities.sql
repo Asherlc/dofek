@@ -29,7 +29,11 @@ absent_group_members AS (
         absent.id AS activity_id,
         absent.provider_id AS provider_id,
         absent.external_id AS external_id,
-        absent.provider_absent_at AS provider_absent_at
+        absent.provider_absent_at AS provider_absent_at,
+        coalesce(
+            nullIf(trim(BOTH ' ' FROM JSONExtractString(absent.raw, 'sourceName')), ''),
+            nullIf(trim(BOTH ' ' FROM absent.source_name), '')
+        ) AS subsource
     FROM final_groups
     INNER JOIN {{ source('postgres_fitness', 'activity') }} AS absent FINAL
         ON absent.id = final_groups.activity_id
@@ -48,7 +52,8 @@ absent_source_links AS (
                 'providerId', assumeNotNull(provider_id),
                 'externalId', assumeNotNull(external_id),
                 'memberActivityId', toString(activity_id),
-                'providerAbsentAt', toString(assumeNotNull(provider_absent_at))
+                'providerAbsentAt', toString(assumeNotNull(provider_absent_at)),
+                'subsource', coalesce(subsource, '')
             ),
             provider_id IS NOT null
             AND external_id IS NOT null
@@ -56,6 +61,11 @@ absent_source_links AS (
         ) AS absent_source_external_ids
     FROM absent_group_members
     GROUP BY group_id
+),
+
+tombstoned_groups AS (
+    SELECT DISTINCT group_id
+    FROM absent_group_members
 ),
 
 best AS (
@@ -66,7 +76,9 @@ best AS (
             ranked.activity_id AS canonical_id,
             ranked.provider_id AS provider_id,
             ranked.user_id AS user_id,
-            ranked.activity_type AS activity_type,
+            ranked.canonical_type AS canonical_type,
+            ranked.provider_type AS provider_type,
+            ranked.modality AS modality,
             ranked.started_at AS started_at,
             ranked.ended_at AS ended_at,
             ranked.source_name AS source_name,
@@ -88,18 +100,48 @@ merged AS (
         best.canonical_id AS id,
         any(best.provider_id) AS provider_id,
         any(best.user_id) AS user_id,
-        any(best.activity_type) AS activity_type,
+        any(best.canonical_type) AS canonical_type,
+        any(best.provider_type) AS provider_type,
+        any(best.modality) AS modality,
         minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
         maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
         argMinIf(ranked.name, ranked.priority, ranked.name IS NOT null) AS name,
         argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT null) AS notes,
-        argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT null) AS timezone,
+        argMinIf(
+            ranked.timezone,
+            ranked.priority,
+            ranked.local_time_source IN ('provider_timezone', 'device_timezone')
+        ) AS timezone,
+        argMinIf(
+            ranked.start_utc_offset_minutes,
+            ranked.priority,
+            ranked.local_time_source != 'unknown'
+        ) AS start_utc_offset_minutes,
+        argMinIf(
+            ranked.end_utc_offset_minutes,
+            ranked.priority,
+            ranked.local_time_source != 'unknown'
+        ) AS end_utc_offset_minutes,
+        argMinIf(
+            ranked.local_time_source,
+            ranked.priority,
+            ranked.local_time_source != 'unknown'
+        ) AS local_time_source,
         argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT null) AS raw,
         maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at,
         arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT null)) AS source_providers,
         groupArrayIf(
-            map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
+            map(
+                'providerId', ranked.provider_id,
+                'externalId', ranked.external_id,
+                'memberActivityId', toString(ranked.activity_id),
+                'subsource', coalesce(
+                    nullIf(trim(BOTH ' ' FROM JSONExtractString(ranked.raw, 'sourceName')), ''),
+                    nullIf(trim(BOTH ' ' FROM ranked.source_name), ''),
+                    ''
+                )
+            ),
             ranked.activity_id IS NOT null
             AND ranked.external_id IS NOT null
             AND ranked.external_id != ''
@@ -124,13 +166,18 @@ current_deduped_activities AS (
         id AS activity_id,
         provider_id,
         user_id,
-        activity_type,
+        canonical_type,
+        provider_type,
+        modality,
         started_at,
         ended_at,
         source_name,
         name,
         notes,
         timezone,
+        start_utc_offset_minutes,
+        end_utc_offset_minutes,
+        coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
         raw,
         source_synced_at,
         source_providers,
@@ -138,6 +185,7 @@ current_deduped_activities AS (
         absent_source_external_ids,
         member_activity_ids
     FROM merged
+    WHERE group_id NOT IN (SELECT group_id FROM tombstoned_groups)
 )
 
 {% if is_incremental() %}
@@ -147,13 +195,18 @@ existing_deduped_activities AS (
         deduped.activity_id,
         deduped.provider_id,
         deduped.user_id,
-        deduped.activity_type,
+        deduped.canonical_type,
+        deduped.provider_type,
+        deduped.modality,
         deduped.started_at,
         deduped.ended_at,
         deduped.source_name,
         deduped.name,
         deduped.notes,
         deduped.timezone,
+        deduped.start_utc_offset_minutes,
+        deduped.end_utc_offset_minutes,
+        deduped.local_time_source,
         deduped.raw,
         deduped.source_synced_at,
         deduped.source_providers,
@@ -186,13 +239,18 @@ SELECT
     provider_id,
     assumeNotNull(user_id) AS user_id,
     activity_id AS primary_activity_id,
-    activity_type,
+    canonical_type,
+    provider_type,
+    modality,
     started_at,
     ended_at,
     source_name,
     name,
     notes,
     timezone,
+    start_utc_offset_minutes,
+    end_utc_offset_minutes,
+    local_time_source,
     raw,
     source_synced_at,
     source_providers,
@@ -213,13 +271,18 @@ SELECT
     provider_id,
     assumeNotNull(user_id) AS user_id,
     activity_id AS primary_activity_id,
-    activity_type,
+    canonical_type,
+    provider_type,
+    modality,
     started_at,
     ended_at,
     source_name,
     name,
     notes,
     timezone,
+    start_utc_offset_minutes,
+    end_utc_offset_minutes,
+    local_time_source,
     raw,
     source_synced_at,
     source_providers,

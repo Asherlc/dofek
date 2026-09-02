@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccessTokenExpiredError } from "../auth-errors.ts";
+import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import {
   createWahooNumeric,
   createWahooSingleWorkoutResponseSchema,
@@ -7,6 +7,7 @@ import {
   createWahooWorkoutListResponseSchema,
   createWahooWorkoutSchema,
   createWahooWorkoutSummarySchema,
+  WahooApiError,
   WahooClient,
 } from "./client.ts";
 
@@ -41,6 +42,18 @@ const validWorkout = {
   updated_at: "2025-01-01T01:00:00Z",
   workout_summary: validSummary,
 };
+
+async function expectRejectedError(promise: Promise<unknown>): Promise<Error> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(Error);
+    if (error instanceof Error) {
+      return error;
+    }
+  }
+  throw new Error("Expected promise to reject");
+}
 
 describe("Wahoo schemas", () => {
   describe("wahooNumeric", () => {
@@ -187,5 +200,84 @@ describe("WahooClient", () => {
     const client = new WahooClient("expired-token", fetchFn);
 
     await expect(client.getWorkouts()).rejects.toBeInstanceOf(AccessTokenExpiredError);
+  });
+
+  it("throws an authentication failure for Wahoo's empty 401 response", async () => {
+    const fetchFn = async () => new Response("", { status: 401 });
+    const client = new WahooClient("expired-token", fetchFn);
+
+    const error = await expectRejectedError(client.getWorkouts());
+
+    expect(error).toBeInstanceOf(ProviderAuthenticationFailedError);
+    expect(error.cause).toBeInstanceOf(WahooApiError);
+    if (error.cause instanceof WahooApiError) {
+      expect(error.cause.responseBodyExcerpt).toBe("(empty response body)");
+    }
+  });
+
+  it("throws an authentication failure for Wahoo's whitespace-only 401 response", async () => {
+    const fetchFn = async () => new Response(" \n\t ", { status: 401 });
+    const client = new WahooClient("expired-token", fetchFn);
+
+    const error = await expectRejectedError(client.getWorkouts());
+
+    expect(error).toBeInstanceOf(ProviderAuthenticationFailedError);
+    expect(error.cause).toBeInstanceOf(WahooApiError);
+    if (error.cause instanceof WahooApiError) {
+      expect(error.cause.responseBodyExcerpt).toBe("(empty response body)");
+    }
+  });
+
+  it("does not classify empty non-401 Wahoo failures as authentication failures", async () => {
+    const fetchFn = async () => new Response("", { status: 500 });
+    const client = new WahooClient("token", fetchFn);
+
+    const error = await expectRejectedError(client.getWorkouts());
+
+    expect(error).toBeInstanceOf(WahooApiError);
+    expect(error).not.toBeInstanceOf(ProviderAuthenticationFailedError);
+    if (error instanceof WahooApiError) {
+      expect(error.responseBodyExcerpt).toBe("(empty response body)");
+    }
+  });
+
+  it("throws a typed API error for non-auth Wahoo failures", async () => {
+    const fetchFn = async () => new Response("server error", { status: 500 });
+    const client = new WahooClient("token", fetchFn);
+
+    const error = await expectRejectedError(client.getWorkouts());
+
+    expect(error).toMatchObject({
+      statusCode: 500,
+      path: "/v1/workouts",
+      responseBodyExcerpt: "server error",
+    });
+    expect(error).toBeInstanceOf(WahooApiError);
+  });
+
+  it("does not truncate Wahoo API error bodies at the excerpt limit", async () => {
+    const responseBody = "a".repeat(200);
+    const fetchFn = async () => new Response(responseBody, { status: 500 });
+    const client = new WahooClient("token", fetchFn);
+
+    const error = await expectRejectedError(client.getWorkouts());
+
+    expect(error).toBeInstanceOf(WahooApiError);
+    if (error instanceof WahooApiError) {
+      expect(error.responseBodyExcerpt).toBe(responseBody);
+    }
+  });
+
+  it("truncates Wahoo API error bodies over the excerpt limit", async () => {
+    const responseBody = `${"a".repeat(200)}b`;
+    const fetchFn = async () => new Response(responseBody, { status: 500 });
+    const client = new WahooClient("token", fetchFn);
+
+    const error = await expectRejectedError(client.getWorkouts());
+
+    expect(error).toBeInstanceOf(WahooApiError);
+    if (error instanceof WahooApiError) {
+      expect(error.responseBodyExcerpt).toBe(`${"a".repeat(200)}…`);
+    }
   });
 });

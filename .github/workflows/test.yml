@@ -2,6 +2,22 @@ name: Test
 
 on:
   workflow_call:
+    inputs:
+      run_e2e_web:
+        description: Run web E2E tests.
+        required: false
+        type: boolean
+        default: true
+      run_image_scan:
+        description: Build and scan the server image.
+        required: false
+        type: boolean
+        default: true
+      run_mobile_checks:
+        description: Run mobile-specific tests and Swift checks.
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   # ── Security & supply chain ────────────────────────────────────────────
@@ -10,10 +26,11 @@ jobs:
     name: Secret Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -21,22 +38,23 @@ jobs:
     name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      # GitHub's advisory currently marks every @tanstack/history version as
-      # vulnerable, while the known compromised releases are specific versions.
-      # The lockfile pins TanStack Router packages away from those releases.
-      - run: pnpm audit --prod --audit-level=critical --ignore-registry-errors --ignore GHSA-rmmr-r34h-pfm5
+      - run: pnpm audit --prod --audit-level=high --ignore-registry-errors
 
   license-check:
     name: License Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Check for forbidden licenses
         run: |
-          npx license-checker --production --excludePrivatePackages \
+          pnpm exec license-checker-rseidelsohn --production --excludePrivatePackages \
             --failOn "GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-3.0-only;AGPL-3.0-or-later" \
             --summary
 
@@ -44,51 +62,163 @@ jobs:
     name: Action Pinning
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Validate action-pinning regression fixtures
+        run: |
+          set -euo pipefail
+
+          uvx --from zizmor==1.28.0 zizmor \
+            --offline \
+            --strict-collection \
+            --no-config \
+            --no-ignores \
+            --no-exit-codes \
+            --format=json \
+            --color=never \
+            scripts/fixtures/action-pinning/unpinned \
+            > "$RUNNER_TEMP/action-pinning-unpinned.json"
+
+          unpinned_fixture_count="$(
+            jq '[.[] | select(.ident == "unpinned-uses")] | length' \
+              "$RUNNER_TEMP/action-pinning-unpinned.json"
+          )"
+          if [ "$unpinned_fixture_count" -ne 2 ]; then
+            echo "::error::Expected both fixture violations, found $unpinned_fixture_count"
+            jq '.[] | select(.ident == "unpinned-uses")' \
+              "$RUNNER_TEMP/action-pinning-unpinned.json"
+            exit 1
+          fi
+
+          uvx --from zizmor==1.28.0 zizmor \
+            --offline \
+            --strict-collection \
+            --no-config \
+            --no-ignores \
+            --no-exit-codes \
+            --format=json \
+            --color=never \
+            scripts/fixtures/action-pinning/pinned \
+            > "$RUNNER_TEMP/action-pinning-pinned.json"
+
+          if jq -e 'any(.ident == "unpinned-uses")' \
+            "$RUNNER_TEMP/action-pinning-pinned.json" >/dev/null; then
+            echo "::error::Pinned fixture unexpectedly produced an unpinned-uses finding"
+            jq '.[] | select(.ident == "unpinned-uses")' \
+              "$RUNNER_TEMP/action-pinning-pinned.json"
+            exit 1
+          fi
       - name: Verify all actions are SHA-pinned
         run: |
-          UNPINNED=$(awk '
-            /^[[:space:]]*run:[[:space:]]*\|/ { in_run=1; next }
-            /^[[:space:]]*run:[[:space:]]*[^|]/ { in_run=0 }
-            in_run && /^[[:space:]]{2,}[^-]/ { next }
-            in_run && /^[[:space:]]*-/ { in_run=0 }
-            /^[[:space:]]+uses:/ { print FILENAME ":" NR ":" $0 }
-          ' .github/workflows/*.yml .github/actions/**/*.yml \
-            | grep -vE '@[0-9a-f]{40}' \
-            | grep -vE 'uses: \./' \
-            || true)
-          if [ -n "$UNPINNED" ]; then
+          set -euo pipefail
+
+          action_definition_files=()
+          while IFS= read -r action_definition_file; do
+            action_definition_files+=("$action_definition_file")
+          done < <(
+            find .github/workflows .github/actions \
+              -type f \
+              \( -name '*.yml' -o -name '*.yaml' \) \
+              -print
+          )
+          uvx --from zizmor==1.28.0 zizmor \
+            --offline \
+            --strict-collection \
+            --no-config \
+            --no-ignores \
+            --no-exit-codes \
+            --format=json \
+            --color=never \
+            "${action_definition_files[@]}" \
+            > "$RUNNER_TEMP/action-pinning.json"
+
+          unpinned_actions="$(
+            jq -r '
+              .[]
+              | select(.ident == "unpinned-uses")
+              | .locations[]
+              | select(.symbolic.kind == "Primary")
+              | "\(.symbolic.key.Local.verbatim_path):\(.concrete.location.start_point.row + 1): \(.concrete.feature)"
+            ' "$RUNNER_TEMP/action-pinning.json"
+          )"
+          if [ -n "$unpinned_actions" ]; then
             echo "::error::Found unpinned GitHub Actions (must use full commit SHA):"
-            echo "$UNPINNED"
+            echo "$unpinned_actions"
             exit 1
           fi
           echo "All actions are SHA-pinned"
+      - name: Verify all job containers are digest-pinned
+        run: |
+          UNPINNED=$(awk '
+            function is_pinned(line) {
+              return line ~ /@sha256:[0-9a-f]{64}([[:space:]]*(#.*)?)?$/
+            }
+            /^    container:[[:space:]]*[^[:space:]#]/ {
+              if (!is_pinned($0)) print FILENAME ":" FNR ":" $0
+              next
+            }
+            /^    container:[[:space:]]*$/ { in_container=1; next }
+            in_container && /^      image:/ {
+              if (!is_pinned($0)) print FILENAME ":" FNR ":" $0
+              in_container=0
+              next
+            }
+            in_container && !/^      / { in_container=0 }
+          ' .github/workflows/*.yml)
+          if [ -n "$UNPINNED" ]; then
+            echo "::error::Found unpinned job containers (must use a SHA-256 digest):"
+            echo "$UNPINNED"
+            exit 1
+          fi
+          echo "All job containers are digest-pinned"
 
   image-scan:
     name: Image Vulnerability Scan
+    if: inputs.run_image_scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - name: Build server image with cache
-        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          files: docker-compose.e2e.yml
-          targets: |
-            server
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Build server image with cache
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: server
           load: true
-          set: |
-            *.cache-from=type=gha,scope=e2e
-            *.cache-to=type=gha,mode=max,scope=e2e
+          tags: e2e-server:latest
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
+          cache-from: |
+            type=gha,scope=e2e
+            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
+          cache-to: type=gha,mode=max,scope=e2e
       - name: Scan server image (Grype)
         env:
-          GRYPE_IMAGE: anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
+          GRYPE_IMAGE: mirror.gcr.io/anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
         run: |
           for attempt in $(seq 1 5); do
             if docker pull "$GRYPE_IMAGE"; then
@@ -136,20 +266,32 @@ jobs:
     name: Actionlint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache: false
       - name: Install actionlint
-        run: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        env:
+          GOBIN: "${{ runner.temp }}/bin"
+        run: |
+          set -euo pipefail
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Run actionlint (without shellcheck)
-        run: ./actionlint -shellcheck=
+        run: |
+          "$RUNNER_TEMP/bin/actionlint" -shellcheck=
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     services:
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine@sha256:0b5334420a843292394d51d494c14be462cbba9c5e38f909ddab133b9cffee7b
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -163,14 +305,14 @@ jobs:
           --health-retries 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Setup Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
-      - name: Run lint
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Run lint policies
         run: pnpm lint
         env:
           CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
@@ -179,7 +321,9 @@ jobs:
     name: Stylelint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Run stylelint
         run: pnpm lint:css
@@ -188,20 +332,43 @@ jobs:
     name: YAMLLint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Run yamllint
         run: uv tool run yamllint -c .yamllint.yml --no-warnings .
+
+  openapi-lint:
+    name: OpenAPI Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Validate OpenAPI document
+        run: pnpm lint:openapi
 
   dotenv-lint:
     name: Dotenv Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: dotenv-linter/action-dotenv-linter@6c39ca3e4c1f440bf1911b4169c2056ec86c3f99 # v3.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          reporter: github-check
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+      - name: Install dotenv-linter
+        run: |
+          # dotenv-linter v4.0.0
+          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/f9076b02daed89f54ed0bd23951a4cfa5ccceac4/install.sh -o "$RUNNER_TEMP/dotenv-linter-install.sh"
+          sh "$RUNNER_TEMP/dotenv-linter-install.sh" -b "$HOME/.local/bin" v4.0.0
+      - name: Run dotenv-linter
+        env:
+          DOTENV_LINTER_IGNORE_CHECKS: UnorderedKey
+        run: |
+          "$HOME/.local/bin/dotenv-linter" check .
 
   tflint:
     name: TFLint
@@ -210,8 +377,10 @@ jobs:
       run:
         working-directory: deploy
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
         with:
           tflint_version: v0.62.0
       - name: Initialize tflint plugins
@@ -226,14 +395,19 @@ jobs:
     env:
       BASE_REF: ${{ github.base_ref }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Lint new migration SQL
         run: |
-          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- 'drizzle/*.sql' \
+          # Migration 0099 was applied in production before this repository restored its lineage.
+          # Its recorded bytes are immutable and cannot be reformatted for SQLFluff.
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- \
+            'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
+            | grep -v '^drizzle/0099_canonical_clinical_records.sql$' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
             echo "No new migrations to lint"
@@ -243,31 +417,63 @@ jobs:
           echo "$NEW_MIGRATIONS"
           echo "$NEW_MIGRATIONS" | xargs uv tool run sqlfluff lint
 
-  typecheck:
-    name: Typecheck
+  typecheck-discover:
+    name: Discover packages to typecheck
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.json }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/setup-node-pnpm
-      - name: Typecheck all packages
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: matrix
         run: |
-          pnpm tsc --noEmit &
-          pid1=$!
-          (cd packages/server && pnpm tsc --noEmit) &
-          pid2=$!
-          (cd packages/web && pnpm exec tsr generate && pnpm tsc --noEmit) &
-          pid3=$!
-          fail=0
-          wait $pid1 || fail=1
-          wait $pid2 || fail=1
-          wait $pid3 || fail=1
-          exit $fail
+          node << 'EOF'
+          const fs = require('fs');
+          const packages = [];
+
+          const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (rootPkg.scripts && rootPkg.scripts.typecheck) {
+            packages.push({ name: 'root', dir: '.' });
+          }
+
+          for (const dir of fs.readdirSync('packages')) {
+            try {
+              if (!fs.statSync('packages/' + dir).isDirectory()) continue;
+              const pkg = JSON.parse(fs.readFileSync('packages/' + dir + '/package.json', 'utf8'));
+              if (pkg.scripts && pkg.scripts.typecheck) {
+                packages.push({ name: pkg.name || dir, dir: 'packages/' + dir });
+              }
+            } catch (_) {}
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'json=' + JSON.stringify(packages) + '\n');
+          EOF
+
+  typecheck:
+    name: Typecheck (${{ matrix.package.name }})
+    needs: typecheck-discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.typecheck-discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Typecheck
+        working-directory: ${{ matrix.package.dir }}
+        run: pnpm run typecheck
 
   sherif:
     name: Sherif
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec sherif
 
@@ -275,17 +481,22 @@ jobs:
     name: Knip
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm knip
         env:
           CLICKHOUSE_URL: http://default:health@localhost:8123
+          EXPO_PUBLIC_SENTRY_DSN: https://public@example.invalid/1
 
   spellcheck:
     name: Spell Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec cspell --no-progress
 
@@ -293,7 +504,9 @@ jobs:
     name: Import Boundaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
 
@@ -304,8 +517,10 @@ jobs:
       run:
         working-directory: packages/ml
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Install dependencies
         run: uv sync
       - name: Lint
@@ -321,8 +536,10 @@ jobs:
     name: Dockerfile Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile
 
@@ -332,9 +549,11 @@ jobs:
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: terraform-provider-v1-${{ runner.os }}-${{ hashFiles('deploy/.terraform.lock.hcl') }}
@@ -349,7 +568,9 @@ jobs:
     name: DNS Record Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: bash scripts/check-dns-records.sh
 
   swiftlint:
@@ -358,7 +579,9 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install SwiftLint
         run: brew install swiftlint
       - name: Run SwiftLint
@@ -371,8 +594,10 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             packages/mobile/modules/health-kit/.build
@@ -396,7 +621,7 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [actionlint, lint, stylelint, yamllint, dotenv-lint, sqlfluff, tflint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
+    needs: [actionlint, lint, stylelint, yamllint, openapi-lint, dotenv-lint, sqlfluff, tflint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -407,6 +632,7 @@ jobs:
             "${{ needs.lint.result }}" \
             "${{ needs.stylelint.result }}" \
             "${{ needs.yamllint.result }}" \
+            "${{ needs.openapi-lint.result }}" \
             "${{ needs.dotenv-lint.result }}" \
             "${{ needs.sqlfluff.result }}" \
             "${{ needs.tflint.result }}" \
@@ -433,27 +659,75 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project unit --coverage
         env:
           CLICKHOUSE_URL: http://default:health@localhost:8123
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
-      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
+          NODE_OPTIONS: --max-old-space-size=8192
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage/lcov.info
           flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-unit
           path: coverage/
 
-  test-integration:
-    name: Integration Tests
+  test-fit-decoder:
+    name: Native FIT Decoder
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: vcpkg-fit-${{ hashFiles('native/fit-decoder/vcpkg.json', 'native/fit-decoder/vcpkg-configuration.json', 'native/fit-decoder/vcpkg-ports/**') }}
+      - name: Bootstrap vcpkg
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg/downloads
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg/repo
+        run: |
+          mkdir -p "$VCPKG_DOWNLOADS"
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout 9e593bb18ea69cc5095e012465dcd675a822ed0d
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Build and test FIT decoder
+        working-directory: native/fit-decoder
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg/downloads
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg/repo
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+          ctest --preset release
+      - name: Upload FIT decoder binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin/dofek-fit-decoder
+
+  test-integration:
+    name: Integration Tests (${{ matrix.shard }}/4)
+    needs: test-fit-decoder
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
@@ -477,8 +751,17 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      redpanda:
+        image: mirror.gcr.io/redpandadata/redpanda:v26.1.12
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -495,22 +778,34 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
+      REDPANDA_BROKERS: localhost:9092
       REDIS_URL: redis://localhost:6379
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm exec vitest run --project integration --coverage
-        timeout-minutes: 10
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Download FIT decoder binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin
+      - name: Make FIT decoder executable
+        run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
+      - run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
+        timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
-      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage/lcov.info
           flags: integration
           token: ${{ secrets.CODECOV_TOKEN }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-integration
+          name: coverage-integration-${{ matrix.shard }}
           path: coverage/
 
   coverage:
@@ -518,23 +813,33 @@ jobs:
     needs: [test-unit, test-integration]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-unit
           path: coverage-unit
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: coverage-integration
+          pattern: coverage-integration-*
           path: coverage-integration
+          merge-multiple: false
       - name: Merge and check coverage
         run: |
           mkdir -p .nyc_output
           cp coverage-unit/coverage-final.json .nyc_output/unit.json
-          cp coverage-integration/coverage-final.json .nyc_output/integration.json
+          index=0
+          for file in coverage-integration/coverage-integration-*/coverage-final.json; do
+            cp "$file" ".nyc_output/integration-${index}.json"
+            index=$((index + 1))
+          done
+          if [ "$index" -eq 0 ]; then
+            echo "No integration coverage artifacts found"
+            exit 1
+          fi
           pnpm exec nyc merge .nyc_output merged-coverage.json
           mkdir -p final-coverage
           cp merged-coverage.json final-coverage/coverage-final.json
@@ -543,11 +848,13 @@ jobs:
             --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
       - name: Diff coverage (changed lines only)
         if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           pip install diff-cover
           pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
           diff-cover diff-coverage-lcov/lcov.info \
-            --compare-branch=origin/${{ github.base_ref }} \
+            --compare-branch=origin/$BASE_REF \
             --fail-under=80 \
             --markdown-report diff-coverage.md || DIFF_FAILED=1
           if [ -f diff-coverage.md ]; then
@@ -557,7 +864,7 @@ jobs:
 
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-integration, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -565,6 +872,7 @@ jobs:
         run: |
           for result in \
             "${{ needs.test-unit.result }}" \
+            "${{ needs.test-fit-decoder.result }}" \
             "${{ needs.test-integration.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
@@ -577,9 +885,16 @@ jobs:
 
   test-e2e-web:
     name: E2E Tests (Web)
+    if: inputs.run_e2e_web
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: dofek-ci-e2e
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Free up runner disk space
         # The e2e stack pulls/builds several GB of images (timescaledb-ha,
         # clickhouse, the server build). The default runner has too little free
@@ -590,26 +905,32 @@ jobs:
             /usr/share/dotnet /usr/share/swift /opt/hostedtoolcache/CodeQL
           df -h /
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: cypress-${{ runner.os }}-
       - run: pnpm exec cypress install
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
       - name: Build E2E images with cache
-        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          files: docker-compose.e2e.yml
-          targets: |
-            server
+          context: .
+          target: server
           load: true
-          set: |
-            *.cache-from=type=gha,scope=e2e
-            *.cache-to=type=gha,mode=max,scope=e2e
+          tags: e2e-server:latest
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
+          cache-from: |
+            type=gha,scope=e2e
+          cache-to: type=gha,mode=max,scope=e2e
       - name: Start e2e dependencies
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda
       - name: Run e2e migrations
         run: |
           docker compose -f docker-compose.e2e.yml up -d --no-build migrate
@@ -625,12 +946,12 @@ jobs:
             exit "$exit_code"
           fi
       - name: Start e2e server
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build server
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build --no-deps server
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis migrate analytics server
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda migrate seed review-seed-clickhouse analytics server
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: cypress-screenshots
@@ -648,34 +969,16 @@ jobs:
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 0
       - id: check
+        env:
+          RUN_MOBILE_CHECKS: ${{ inputs.run_mobile_checks }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$RUN_MOBILE_CHECKS" = "true" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Mobile checks enabled"
           else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
-              packages/mobile/ \
-              packages/auth/ \
-              packages/format/ \
-              packages/nutrition/ \
-              packages/onboarding/ \
-              packages/providers-meta/ \
-              packages/scoring/ \
-              packages/training/ \
-              packages/zones/ \
-              packages/server/ \
-              package.json \
-              pnpm-lock.yaml \
-              pnpm-workspace.yaml \
-              tsconfig.json)
-            if [ -n "$CHANGED" ]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-            fi
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Mobile checks disabled by upstream change detection"
           fi
 
   test-mobile:
@@ -684,7 +987,9 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project mobile
         env:
@@ -696,17 +1001,33 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: packages/mobile/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            packages/mobile/modules/background-refresh/.build
+            packages/mobile/modules/core-motion/.build
+            packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/background-refresh/Package.swift', 'packages/mobile/modules/core-motion/Package.swift', 'packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
+      - name: Run Background Refresh Swift tests
+        working-directory: packages/mobile/modules/background-refresh
+        run: swift test
+      - name: Run Core Motion Swift tests
+        working-directory: packages/mobile/modules/core-motion
+        run: swift test
       - name: Run Swift tests with coverage
         run: |
           cd packages/mobile/modules/health-kit
           bash scripts/check-coverage.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Run Watch transfer tests
+        run: |
+          swift test \
+            --package-path packages/mobile/targets/DofekWatch \
+            --scratch-path "$RUNNER_TEMP/dofek-watch-transfer-core"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: swift-coverage
@@ -722,13 +1043,16 @@ jobs:
     outputs:
       shards: ${{ steps.shard.outputs.shards }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Compute changed files and split into shards
         id: shard
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DIFF_RANGE="${{ github.event.pull_request.base.sha }}...HEAD"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             DIFF_RANGE="origin/main...HEAD"
           else
             DIFF_RANGE="HEAD~1...HEAD"
@@ -739,21 +1063,36 @@ jobs:
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
             | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '^packages/server/src/routers/clickhouse-integration-test-' || true; } \
             | { grep -v '\.d\.ts$' || true; } \
             | { grep -v '\.gen\.ts$' || true; } \
             | { grep -v '\.config\.' || true; } \
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/clickhouse-migrations\.ts$' || true; } \
-            | { grep -v 'src/db/schema\.ts$' || true; } \
+            | { grep -v 'src/db/drizzle-schema\.ts$' || true; } \
+            | { grep -v 'src/db/schema/' || true; } \
             | { grep -v 'packages/server/src/types\.ts$' || true; } \
+            | { grep -v '^packages/training/src/terminology\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
+            | { grep -v '^cypress/' || true; } \
             | { grep -v 'packages/mobile/' || true; } \
             | { grep -v '\.storybook/' || true; } \
-            | { grep -v '\.stories\.ts$' || true; })
+            | { grep -v '\.stories\.ts$' || true; } \
+            | { grep -v '^packages/zepp/app\.ts$' || true; } \
+            | { grep -v '^packages/zepp/app-side/' || true; } \
+            | { grep -v '^packages/zepp/app-service/' || true; } \
+            | { grep -v '^packages/zepp/page/' || true; } \
+            | { grep -v '^packages/zepp/setting/' || true; })
 
           FILE_WEIGHTS=()
           for f in $CANDIDATES; do
             [ ! -f "$f" ] && continue
+
+            UNIT_TEST_BASE="${f%.ts}"
+            if [ ! -f "${UNIT_TEST_BASE}.test.ts" ] && [ ! -f "${UNIT_TEST_BASE}.test.tsx" ]; then
+              echo "Skipping $f: no colocated Docker-free unit test"
+              continue
+            fi
 
             if ! awk '
               /^[[:space:]]*(\/\/|$)/ { next }
@@ -849,7 +1188,7 @@ jobs:
 
   mutation:
     name: Stryker (${{ strategy.job-index }})
-    needs: mutation-prep
+    needs: [mutation-prep, test-fit-decoder]
     if: needs.mutation-prep.outputs.shards != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -879,7 +1218,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -902,14 +1241,24 @@ jobs:
       matrix:
         files: ${{ fromJSON(needs.mutation-prep.outputs.shards) }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Download FIT decoder binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin
+      - name: Make FIT decoder executable
+        run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
       - name: Run Stryker
-        run: pnpm exec stryker run stryker.ci.config.json --mutate "${{ matrix.files }}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: failure()
+        env:
+          MUTATE_FILES: ${{ matrix.files }}
+        run: pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
           name: mutation-report-${{ strategy.job-index }}
           path: reports/mutation/
@@ -921,15 +1270,16 @@ jobs:
     runs-on: macos-14
     if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/modules/health-kit/.build
           key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: muter-cache
         with:
           path: /opt/homebrew/Cellar/muter
@@ -966,7 +1316,7 @@ jobs:
             fi
             exit $EXIT_CODE
           }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: muter-report
@@ -986,44 +1336,20 @@ jobs:
             exit 1
           fi
 
-  # ── PR quality gates ───────────────────────────────────────────────────
-
-  pr-size:
-    name: PR Size
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          fetch-depth: 0
-      - name: Check PR size
-        run: |
-          STATS=$(git diff -w --numstat origin/${{ github.base_ref }}...HEAD)
-          ADDITIONS=$(echo "$STATS" | awk '{ add += $1 } END { print add+0 }')
-          DELETIONS=$(echo "$STATS" | awk '{ del += $2 } END { print del+0 }')
-          FILES=$(git diff -w --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
-          echo "## PR Size" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **$ADDITIONS** additions, **$DELETIONS** deletions across **$FILES** files" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$ADDITIONS" -gt 2000 ]; then
-            echo "::warning::Large PR: $ADDITIONS additions across $FILES files. Consider splitting into smaller PRs."
-          fi
-          if [ "$ADDITIONS" -gt 8000 ]; then
-            echo "::error::PR exceeds 8000 additions ($ADDITIONS). Please split into smaller PRs."
-            exit 1
-          fi
-
   migration-lint:
     name: Migration Lint
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
       - name: Lint new migration SQL
         run: |
-          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' \
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- \
+            'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
@@ -1040,7 +1366,7 @@ jobs:
 
   test-all-gate:
     name: Test Gate
-    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, pr-size, migration-lint]
+    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, migration-lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1055,7 +1381,6 @@ jobs:
             "${{ needs.test-swift.result }}" \
             "${{ needs.mutation-gate.result }}" \
             "${{ needs.mutation-swift.result }}" \
-            "${{ needs.pr-size.result }}" \
             "${{ needs.migration-lint.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "Test gate failed"

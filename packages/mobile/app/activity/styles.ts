@@ -144,6 +144,67 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text,
   },
+  providerAbsentExplanation: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
+  },
+  sourceDecisionCard: {
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 12,
+    gap: 10,
+  },
+  sourceDecisionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  sourceDecisionDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  sourceDecisionDetail: {
+    minWidth: 90,
+    gap: 2,
+  },
+  sourceDecisionLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.textTertiary,
+    textTransform: "uppercase",
+  },
+  sourceDecisionValue: {
+    fontSize: 12,
+    color: colors.text,
+  },
+  sourceDecisionExplanation: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
+  },
+  recomputeButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  recomputeButtonPressed: {
+    opacity: 0.7,
+  },
+  recomputeButtonDisabled: {
+    opacity: 0.5,
+  },
+  recomputeButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
   deleteButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

@@ -47,7 +47,7 @@ variable "ssh_source_cidr" {
   }
 }
 
-# --- Instance sizing (Always Free A1 ceiling is 4 OCPU / 24 GB total) ---
+# --- Instance sizing ---
 
 variable "instance_display_name" {
   description = "Display name for the compute instance"
@@ -62,18 +62,18 @@ variable "availability_domain_index" {
 }
 
 variable "instance_ocpus" {
-  description = "Ampere A1 OCPUs (Always Free max 4)"
+  description = "Ampere A1 OCPUs requested by this deployment; verify tenancy limits and cost before applying"
   type        = number
   default     = 4
 }
 
 variable "instance_memory_gb" {
-  description = "Memory in GB (A1 is fixed at 6 GB per OCPU; Always Free max 24)"
+  description = "Ampere A1 memory requested by this deployment; verify tenancy limits and cost before applying"
   type        = number
   default     = 24
 }
 
-# --- Storage (Always Free block pool is 200 GB total, boot + data combined) ---
+# --- Storage (defaults total 200 GB across boot and data volumes) ---
 
 variable "boot_volume_size_gb" {
   description = "Boot volume size in GB"

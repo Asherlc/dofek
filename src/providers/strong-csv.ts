@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import { eq } from "drizzle-orm";
+import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
+import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import { strengthSet } from "../db/schema/activity.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -48,11 +51,13 @@ export function parseStrongExerciseName(rawName: string): {
   equipment: string | null;
 } {
   const trimmed = rawName.trim();
-  const match = trimmed.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
-  if (match) {
-    const name = match[1];
-    const equip = match[2];
-    return { exerciseName: (name ?? trimmed).trim(), equipment: (equip ?? "").trim() || null };
+  if (trimmed.endsWith(")")) {
+    const openingParen = trimmed.lastIndexOf("(");
+    const exerciseName = trimmed.slice(0, openingParen).trim();
+    const equipment = trimmed.slice(openingParen + 1, -1).trim();
+    if (openingParen > 0 && exerciseName && equipment) {
+      return { exerciseName, equipment };
+    }
   }
   return { exerciseName: trimmed, equipment: null };
 }
@@ -74,111 +79,6 @@ export function parseDurationString(duration: string): number {
   const hours = match[1] ? Number.parseInt(match[1], 10) : 0;
   const minutes = match[2] ? Number.parseInt(match[2], 10) : 0;
   return hours * 3600 + minutes * 60;
-}
-
-function offsetMinutesAt(instant: Date, timezone: string): number {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(instant);
-    const values = Object.fromEntries(
-      parts
-        .filter((part) => ["year", "month", "day", "hour", "minute", "second"].includes(part.type))
-        .map((part) => [part.type, Number(part.value)]),
-    );
-    const localEpoch = Date.UTC(
-      values.year ?? 0,
-      (values.month ?? 1) - 1,
-      values.day ?? 1,
-      values.hour ?? 0,
-      values.minute ?? 0,
-      values.second ?? 0,
-    );
-    return Math.round((localEpoch - instant.getTime()) / 60_000);
-  } catch {
-    return Number.NaN;
-  }
-}
-
-/**
- * Strong exports a local wall-clock timestamp without an offset. Resolve it in
- * the importing user's IANA timezone instead of treating it as UTC.
- */
-export function parseStrongLocalTimestamp(date: string, timezone: string): Date {
-  const match = date.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
-  if (!match) return new Date(Number.NaN);
-
-  const [, year, month, day, hour, minute, second] = match;
-  const wallClockEpoch = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
-  );
-
-  try {
-    const firstPass = new Date(
-      wallClockEpoch - offsetMinutesAt(new Date(wallClockEpoch), timezone) * 60_000,
-    );
-    return new Date(wallClockEpoch - offsetMinutesAt(firstPass, timezone) * 60_000);
-  } catch {
-    return new Date(Number.NaN);
-  }
-}
-
-function normalizeStrongWeightUnit(value: string): "kg" | "lbs" | null {
-  const normalized = value.trim().toLowerCase();
-  if (["kg", "kgs", "kilogram", "kilograms"].includes(normalized)) return "kg";
-  if (["lb", "lbs", "pound", "pounds"].includes(normalized)) return "lbs";
-  return null;
-}
-
-/**
- * Resolve a Strong CSV's weight unit from its explicit export column. The
- * upload-supplied value is accepted only for legacy exports that omit it.
- */
-export function resolveStrongWeightUnit(
-  csvText: string,
-  uploadWeightUnit: "kg" | "lbs" | undefined,
-): "kg" | "lbs" {
-  const lines = csvText
-    .replace(/^\uFEFF/, "")
-    .split(/\r?\n/)
-    .filter((line) => line.trim() !== "");
-  const header = lines[0] ? parseCsvLine(lines[0]).map((field) => field.trim().toLowerCase()) : [];
-  const unitIndex = header.findIndex((field) =>
-    ["weight unit", "weight units", "units"].includes(field),
-  );
-  const declaredUnits = new Set<"kg" | "lbs">();
-  if (unitIndex >= 0) {
-    for (const line of lines.slice(1)) {
-      const value = parseCsvLine(line)[unitIndex];
-      if (value === undefined || value.trim() === "") continue;
-      const unit = normalizeStrongWeightUnit(value);
-      if (!unit) throw new Error(`Strong CSV has an unrecognized weight unit: ${value}`);
-      declaredUnits.add(unit);
-    }
-  }
-
-  if (declaredUnits.size > 1) {
-    throw new Error("Strong CSV declares conflicting weight units");
-  }
-  const declaredUnit = [...declaredUnits][0];
-  if (declaredUnit && uploadWeightUnit && declaredUnit !== uploadWeightUnit) {
-    throw new Error("Strong CSV declared weight unit disagrees with the upload metadata");
-  }
-  if (declaredUnit) return declaredUnit;
-  if (uploadWeightUnit) return uploadWeightUnit;
-  throw new Error("Strong CSV does not declare a weight unit; select kg or lbs before importing");
 }
 
 /**
@@ -301,13 +201,6 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
   }
 
   return Array.from(groupMap.values());
-}
-
-function textArrayExpression(values: readonly string[]) {
-  return sql`ARRAY[${sql.join(
-    values.map((value) => sql`${value}`),
-    sql`, `,
-  )}]::text[]`;
 }
 
 // ============================================================
@@ -473,8 +366,7 @@ export async function importStrongCsv(
   db: SyncDatabase,
   csvText: string,
   userId: string,
-  weightUnit: "kg" | "lbs" | undefined,
-  timezone: string,
+  weightUnit: "kg" | "lbs",
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
@@ -484,10 +376,9 @@ export async function importStrongCsv(
 
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
-  let effectiveWeightUnit: "kg" | "lbs";
+  let effectiveWeightUnit = weightUnit;
   if (isStrongCsvFormat(csvText)) {
     groups = parseStrongCsv(csvText);
-    effectiveWeightUnit = resolveStrongWeightUnit(csvText, weightUnit);
   } else {
     const textResult = parseStrongText(csvText);
     groups = textResult.groups;
@@ -499,47 +390,31 @@ export async function importStrongCsv(
     try {
       const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
-      const startedAt = parseStrongLocalTimestamp(group.date, timezone);
-      if (Number.isNaN(startedAt.getTime())) {
-        throw new Error(`Invalid Strong timestamp: ${group.date}`);
-      }
+      const startedAt = new Date(group.date);
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
 
-      // Upsert activity (so it shows up in the main list)
-      const [activityRow] = await db
-        .insert(activity)
-        .values({
+      const activityRow = await upsertProviderActivity(
+        db,
+        {
           providerId: STRONG_PROVIDER_ID,
           userId,
           externalId,
-          activityType: "strength",
+          activityType: resolveProviderActivityType("strength", "strength"),
           startedAt,
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
-          timezone,
-          startUtcOffsetMinutes: offsetMinutesAt(startedAt, timezone),
-          endUtcOffsetMinutes: endedAt ? offsetMinutesAt(endedAt, timezone) : null,
-          localTimeSource: "user_home_timezone",
-        })
-        .onConflictDoUpdate({
-          target: [activity.userId, activity.providerId, activity.externalId],
-          set: {
-            activityType: "strength",
-            startedAt,
-            endedAt,
-            name: group.workoutName,
-            notes: group.workoutNotes,
-            timezone,
-            startUtcOffsetMinutes: offsetMinutesAt(startedAt, timezone),
-            endUtcOffsetMinutes: endedAt ? offsetMinutesAt(endedAt, timezone) : null,
-            localTimeSource: "user_home_timezone",
-            providerAbsentAt: null,
-          },
-        })
-        .returning({ id: activity.id });
+        },
+        {
+          activityType: resolveProviderActivityType("strength", "strength"),
+          startedAt,
+          endedAt,
+          name: group.workoutName,
+          notes: group.workoutNotes,
+        },
+      );
 
       const activityId = activityRow?.id;
       if (!activityId) continue;
@@ -558,58 +433,20 @@ export async function importStrongCsv(
         const { exerciseName, equipment } = parseStrongExerciseName(csvRow.exerciseName);
         const cacheKey = `${exerciseName}|${equipment ?? ""}`;
         const inferredMuscleGroups = lookupExerciseMuscleGroups(exerciseName);
-        const exerciseValues: typeof exercise.$inferInsert = {
-          name: exerciseName,
-          equipment,
-          ...(inferredMuscleGroups
-            ? { muscleGroups: inferredMuscleGroups, exerciseType: "STRENGTH" }
-            : {}),
-        };
 
         let exerciseId = exerciseCache.get(cacheKey);
         if (!exerciseId) {
-          // Upsert exercise
-          await db.insert(exercise).values(exerciseValues).onConflictDoNothing();
-
-          const whereClause = equipment
-            ? and(eq(exercise.name, exerciseName), eq(exercise.equipment, equipment))
-            : and(eq(exercise.name, exerciseName));
-
-          const exerciseRows = await db
-            .select({ id: exercise.id })
-            .from(exercise)
-            .where(whereClause)
-            .limit(1);
-
-          exerciseId = exerciseRows[0]?.id;
-          if (exerciseId) {
-            if (inferredMuscleGroups) {
-              const inferredMuscleGroupsExpression = textArrayExpression(inferredMuscleGroups);
-              await db.execute(
-                sql`UPDATE fitness.exercise
-                    SET muscle_groups = COALESCE(muscle_groups, ${inferredMuscleGroupsExpression}),
-                        exercise_type = COALESCE(exercise_type, 'STRENGTH')
-                    WHERE id = ${exerciseId}`,
-              );
-            }
-
-            exerciseCache.set(cacheKey, exerciseId);
-
-            // Upsert alias
-            await db
-              .insert(exerciseAlias)
-              .values({
-                exerciseId,
-                providerId: STRONG_PROVIDER_ID,
-                providerExerciseName: csvRow.exerciseName,
-              })
-              .onConflictDoNothing();
-          }
-        }
-
-        if (!exerciseId) {
-          errors.push({ message: `Could not resolve exercise: ${csvRow.exerciseName}` });
-          continue;
+          exerciseId = await resolveUserExerciseWithProvenance(db, {
+            equipment,
+            exerciseType: inferredMuscleGroups ? "STRENGTH" : null,
+            muscleGroups: inferredMuscleGroups,
+            name: exerciseName,
+            providerExerciseId: null,
+            providerExerciseName: csvRow.exerciseName,
+            providerId: STRONG_PROVIDER_ID,
+            userId,
+          });
+          exerciseCache.set(cacheKey, exerciseId);
         }
 
         // Compute exercise index (order of first appearance within workout)

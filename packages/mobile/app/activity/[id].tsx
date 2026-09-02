@@ -1,15 +1,26 @@
 import {
+  type ActivityMetric,
+  activityDataStateLabel,
+  formatActivityMetric,
+} from "@dofek/format/activity-data-state";
+import {
+  formatClimbingAttemptResult,
   formatDateLong,
   formatDurationRange,
   formatDurationSeconds,
   formatNumber,
-  formatTimeOnly,
 } from "@dofek/format/format";
+import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
-import { activityMetricColors } from "@dofek/scoring/colors";
+import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
-import { cadenceUnit, formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
+import {
+  cadenceUnit,
+  formatActivityTypeLabel,
+  isActivityDetailType,
+  isCyclingActivity,
+} from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -23,17 +34,9 @@ import {
   Text,
   View,
 } from "react-native";
-import Svg, {
-  Circle,
-  Defs,
-  Line,
-  LinearGradient,
-  Path,
-  Polyline,
-  Stop,
-  Text as SvgText,
-} from "react-native-svg";
+import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { RouteMap } from "../../components/RouteMap";
 import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
@@ -42,372 +45,130 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
-import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
+import { AreaChart, CHART_COLORS, chartStyles, LineChart } from "./ActivityDetailCharts";
+import { ActivitySourceDecisionCard } from "./ActivitySourceDecisionCard";
+import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
 import { styles } from "./styles";
-import { useChartScrub } from "./useChartScrub";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
-const CHART_WIDTH = ACTIVITY_CHART_WIDTH;
-const CHART_HEIGHT = 180;
-const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
-
-const CHART_COLORS = {
-  heartRate: activityMetricColors.heartRate,
-  power: activityMetricColors.power,
-  altitude: "#6b7280",
-};
-
-const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
-
-function isStrengthActivityType(activityType: string): boolean {
-  return STRENGTH_ACTIVITY_TYPES.has(activityType);
-}
-
 function activityIcon(type: string): string {
-  const lower = type.toLowerCase();
-  if (lower.includes("run")) return "\u{1F3C3}";
-  if (lower.includes("cycl") || lower.includes("bike")) return "\u{1F6B4}";
-  if (lower.includes("swim")) return "\u{1F3CA}";
-  if (lower.includes("walk") || lower.includes("hike")) return "\u{1F6B6}";
-  if (lower.includes("strength") || lower.includes("weight")) return "\u{1F3CB}";
-  if (lower.includes("yoga")) return "\u{1F9D8}";
-  return "\u{26A1}";
+  return getActivityIconInfo(type).emoji;
 }
 
-// ── Inline Chart Components ──
-
-interface LineChartProps {
-  data: Array<{ value: number | null }>;
-  color: string;
+interface ActivitySourceLink {
+  providerId: string;
+  externalId: string;
+  subsource: string | null;
   label: string;
-  unit: string;
-  onHoverIndex?: (index: number | null) => void;
-  onScrubStart?: () => void;
-  onScrubEnd?: () => void;
+  url: string | null;
+  providerAbsentAt?: string | null;
+  memberActivityId?: string | null;
 }
 
-function LineChart({
-  data,
-  color,
-  label,
-  unit,
-  onHoverIndex,
-  onScrubStart,
-  onScrubEnd,
-}: LineChartProps) {
-  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const { touchIndex, panResponder } = useChartScrub({
-    plotWidth,
-    totalPoints: data.length,
-    onHoverIndex,
-    onScrubStart,
-    onScrubEnd,
-  });
+interface ActivitySourceSummary {
+  sourceProviders: string[];
+  sourceLinks: ActivitySourceLink[];
+  subsource?: string | null;
+}
 
-  const values = data
-    .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
-    .filter((d): d is { index: number; value: number } => d !== null);
-
-  if (values.length < 2) return null;
-
-  const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const minVal = Math.min(...values.map((v) => v.value));
-  const maxVal = Math.max(...values.map((v) => v.value));
-  const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
-
-  const toX = (index: number) =>
-    CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
-  const toY = (value: number) =>
-    CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
-
-  const chartPoints = values
-    .map((v) => `${toX(v.index).toFixed(1)},${toY(v.value).toFixed(1)}`)
-    .join(" ");
-
-  // Y-axis tick labels (5 ticks)
-  const yTicks = Array.from({ length: 5 }, (_, i) => {
-    const value = minVal + (range * i) / 4;
-    return { value, y: toY(value) };
-  });
-
-  // Find value at the touched index for the crosshair dot
-  const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
+function ActivitySourceLinks({ activity }: { activity: ActivitySourceSummary }) {
+  if (activity.sourceLinks.length > 0) {
+    return (
+      <>
+        {activity.sourceLinks.map((link, index) => (
+          <ActivitySourceLinkLabel
+            key={`${link.providerId}:${link.externalId}:${link.memberActivityId ?? ""}`}
+            link={link}
+            prefix={index > 0 ? ", " : ""}
+          />
+        ))}
+      </>
+    );
+  }
 
   return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title={label}
-        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
-        textStyle={chartStyles.title}
-      />
-      <View {...panResponder.panHandlers}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          {/* Grid lines */}
-          {yTicks.map((tick) => (
-            <Line
-              key={tick.value}
-              x1={CHART_PADDING.left}
-              y1={tick.y}
-              x2={CHART_WIDTH - CHART_PADDING.right}
-              y2={tick.y}
-              stroke={colors.surfaceSecondary}
-              strokeWidth={0.5}
-            />
-          ))}
-          {/* Y-axis labels */}
-          {yTicks.map((tick) => (
-            <SvgText
-              key={`label-${tick.value}`}
-              x={CHART_PADDING.left - 6}
-              y={tick.y + 4}
-              fill={colors.textTertiary}
-              fontSize={10}
-              textAnchor="end"
-            >
-              {Math.round(tick.value)}
-            </SvgText>
-          ))}
-          {/* Unit label */}
-          <SvgText
-            x={CHART_PADDING.left - 6}
-            y={CHART_PADDING.top - 8}
-            fill={colors.textTertiary}
-            fontSize={9}
-            textAnchor="end"
-          >
-            {unit}
-          </SvgText>
-          {/* Data line */}
-          <Polyline
-            points={chartPoints}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {/* Touch crosshair */}
-          {touchIndex != null && (
-            <Line
-              x1={toX(touchIndex)}
-              y1={CHART_PADDING.top}
-              x2={toX(touchIndex)}
-              y2={CHART_PADDING.top + plotHeight}
-              stroke={colors.textTertiary}
-              strokeWidth={1}
-              strokeDasharray="4,4"
-            />
-          )}
-          {touchedValue != null && (
-            <Circle
-              cx={toX(touchedValue.index)}
-              cy={toY(touchedValue.value)}
-              r={4}
-              fill={color}
-              stroke="#ffffff"
-              strokeWidth={2}
-            />
-          )}
-        </Svg>
-      </View>
-    </View>
+    <>
+      {activity.sourceProviders.map((providerId, index) => (
+        <Text key={providerId} style={styles.source}>
+          {index > 0 && ", "}
+          {providerSourceLabel(providerId, activity.subsource)}
+        </Text>
+      ))}
+    </>
   );
 }
 
-interface AreaChartProps {
-  data: Array<{ value: number | null }>;
-  color: string;
-  label: string;
-  unit: string;
-  onHoverIndex?: (index: number | null) => void;
-  onScrubStart?: () => void;
-  onScrubEnd?: () => void;
-}
+function ActivitySourceLinkLabel({ link, prefix }: { link: ActivitySourceLink; prefix: string }) {
+  if (link.providerAbsentAt) {
+    return (
+      <Text style={styles.sourceRemoved}>
+        {prefix}
+        {link.label} (removed)
+      </Text>
+    );
+  }
 
-function AreaChart({
-  data,
-  color,
-  label,
-  unit,
-  onHoverIndex,
-  onScrubStart,
-  onScrubEnd,
-}: AreaChartProps) {
-  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const { touchIndex, panResponder } = useChartScrub({
-    plotWidth,
-    totalPoints: data.length,
-    onHoverIndex,
-    onScrubStart,
-    onScrubEnd,
-  });
-
-  const values = data
-    .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
-    .filter((d): d is { index: number; value: number } => d !== null);
-
-  if (values.length < 2) return null;
-
-  const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const minVal = Math.min(...values.map((v) => v.value));
-  const maxVal = Math.max(...values.map((v) => v.value));
-  const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
-
-  const toX = (index: number) =>
-    CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
-  const toY = (value: number) =>
-    CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
-
-  const baselineY = CHART_PADDING.top + plotHeight;
-
-  // Build path for the area fill
-  const linePoints = values.map((v) => ({
-    x: toX(v.index),
-    y: toY(v.value),
-  }));
-  const firstPoint = linePoints[0];
-  const lastPoint = linePoints[linePoints.length - 1];
-
-  if (!firstPoint || !lastPoint) return null;
-
-  const linePath = linePoints
-    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
-    .join(" ");
-
-  const areaPath = `${linePath} L${lastPoint.x.toFixed(1)},${baselineY} L${firstPoint.x.toFixed(1)},${baselineY} Z`;
-
-  // Y-axis ticks
-  const yTicks = Array.from({ length: 5 }, (_, i) => {
-    const value = minVal + (range * i) / 4;
-    return { value, y: toY(value) };
-  });
-
-  // Find value at the touched index for the crosshair dot
-  const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
+  if (link.url) {
+    const sourceUrl = link.url;
+    return (
+      <View style={styles.sourceLinkRow}>
+        {prefix && <Text style={styles.source}>{prefix}</Text>}
+        <Pressable
+          onPress={() => {
+            void Linking.openURL(sourceUrl);
+          }}
+          hitSlop={4}
+          style={styles.sourceLinkPressable}
+          accessibilityRole="link"
+          accessibilityLabel={`Open ${link.label}`}
+        >
+          <Text style={styles.sourceLink}>{link.label} ↗</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title={label}
-        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
-        textStyle={chartStyles.title}
-      />
-      <View {...panResponder.panHandlers}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          <Defs>
-            <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={color} stopOpacity={0.3} />
-              <Stop offset="1" stopColor={color} stopOpacity={0.05} />
-            </LinearGradient>
-          </Defs>
-          {/* Grid lines */}
-          {yTicks.map((tick) => (
-            <Line
-              key={tick.value}
-              x1={CHART_PADDING.left}
-              y1={tick.y}
-              x2={CHART_WIDTH - CHART_PADDING.right}
-              y2={tick.y}
-              stroke={colors.surfaceSecondary}
-              strokeWidth={0.5}
-            />
-          ))}
-          {/* Y-axis labels */}
-          {yTicks.map((tick) => (
-            <SvgText
-              key={`label-${tick.value}`}
-              x={CHART_PADDING.left - 6}
-              y={tick.y + 4}
-              fill={colors.textTertiary}
-              fontSize={10}
-              textAnchor="end"
-            >
-              {Math.round(tick.value)}
-            </SvgText>
-          ))}
-          {/* Unit label */}
-          <SvgText
-            x={CHART_PADDING.left - 6}
-            y={CHART_PADDING.top - 8}
-            fill={colors.textTertiary}
-            fontSize={9}
-            textAnchor="end"
-          >
-            {unit}
-          </SvgText>
-          {/* Area fill */}
-          <Path d={areaPath} fill="url(#areaGrad)" />
-          {/* Data line */}
-          <Path
-            d={linePath}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {/* Touch crosshair */}
-          {touchIndex != null && (
-            <Line
-              x1={toX(touchIndex)}
-              y1={CHART_PADDING.top}
-              x2={toX(touchIndex)}
-              y2={CHART_PADDING.top + plotHeight}
-              stroke={colors.textTertiary}
-              strokeWidth={1}
-              strokeDasharray="4,4"
-            />
-          )}
-          {touchedValue != null && (
-            <Circle
-              cx={toX(touchedValue.index)}
-              cy={toY(touchedValue.value)}
-              r={4}
-              fill={color}
-              stroke="#ffffff"
-              strokeWidth={2}
-            />
-          )}
-        </Svg>
-      </View>
-    </View>
+    <Text style={styles.source}>
+      {prefix}
+      {link.label}
+    </Text>
   );
 }
-
-const chartStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-});
 
 // ── Stats Grid ──
 
-interface StatItem {
-  label: string;
-  value: string;
-}
+type StatItem = ActivityMetric | { label: string; value: string };
 
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
-      {stats.map((stat) => (
-        <View key={stat.label} style={statsStyles.card}>
-          <Text style={statsStyles.label}>{stat.label}</Text>
-          <Text style={statsStyles.value}>{stat.value}</Text>
-        </View>
-      ))}
+      {stats
+        .filter((stat) => !("status" in stat) || stat.status !== "missing")
+        .map((stat) => {
+          const metric = "status" in stat ? stat : null;
+          const unavailableMetric = metric && metric.status !== "available" ? metric : null;
+          const isUnavailable = unavailableMetric !== null;
+          const accessibleLabel = unavailableMetric
+            ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+            : undefined;
+          const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
+          return (
+            <View
+              key={stat.label}
+              style={statsStyles.card}
+              accessible={isUnavailable}
+              accessibilityLabel={accessibleLabel}
+            >
+              <Text style={statsStyles.label}>
+                {unavailableMetric
+                  ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                  : stat.label}
+              </Text>
+              <Text style={statsStyles.value}>{displayedValue}</Text>
+            </View>
+          );
+        })}
     </View>
   );
 }
@@ -614,6 +375,141 @@ const exerciseStyles = StyleSheet.create({
   },
 });
 
+interface ClimbingEntry {
+  id: string;
+  climbType: "boulder" | "route";
+  grade: string;
+  sent: boolean;
+  attemptCount: number;
+  attempts: Array<{
+    attemptIndex: number;
+    failureReason: "fell" | "pumped" | "skin" | "technique" | "fear" | null;
+    notes: string | null;
+    outcome: "sent" | "failed";
+  }>;
+  ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
+  holdType: "crimp" | "sloper" | "pinch" | "pocket" | "jug" | null;
+  routeName: string | null;
+  locationName: string | null;
+  sourceName: string;
+  wallAngleDegrees: number | null;
+}
+
+function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
+  return (
+    <View style={climbingStyles.container}>
+      <ChartTitleWithTooltip
+        title="Climbs"
+        description="The climbs recorded during this session, including grades and send status."
+        textStyle={chartStyles.title}
+      />
+      {entries.map((entry) => (
+        <View key={entry.id} style={climbingStyles.entryRow}>
+          <View style={climbingStyles.gradeBadge}>
+            <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
+          </View>
+          <View style={climbingStyles.entryDetails}>
+            <Text style={climbingStyles.routeName}>
+              {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
+            </Text>
+            {entry.locationName && (
+              <Text style={climbingStyles.locationName}>{entry.locationName}</Text>
+            )}
+            {(entry.wallAngleDegrees !== null || entry.holdType !== null) && (
+              <Text style={climbingStyles.locationName}>
+                {[
+                  entry.wallAngleDegrees === null ? null : `${entry.wallAngleDegrees}°`,
+                  entry.holdType === null
+                    ? null
+                    : `${entry.holdType[0]?.toUpperCase()}${entry.holdType.slice(1)}`,
+                ]
+                  .filter((value) => value !== null)
+                  .join(" · ")}
+              </Text>
+            )}
+            {entry.attempts.map((attempt) => (
+              <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
+                {attempt.attemptIndex}:{" "}
+                {attempt.outcome === "sent"
+                  ? "Sent"
+                  : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
+              </Text>
+            ))}
+          </View>
+          <View style={climbingStyles.resultDetails}>
+            {entry.ascentType && <Text style={climbingStyles.sent}>{entry.ascentType}</Text>}
+            <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
+              {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
+            </Text>
+            <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const climbingStyles = StyleSheet.create({
+  container: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
+  entryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 4,
+  },
+  gradeBadge: {
+    minWidth: 48,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  gradeText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  entryDetails: {
+    flex: 1,
+  },
+  routeName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  locationName: {
+    color: colors.textTertiary,
+    fontSize: 11,
+  },
+  resultDetails: {
+    alignItems: "flex-end",
+  },
+  sent: {
+    color: colors.positive,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  attempted: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  attemptDetail: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  sourceName: {
+    color: colors.textTertiary,
+    fontSize: 10,
+  },
+});
+
 // ── Main Screen ──
 
 export default function ActivityDetailScreen() {
@@ -624,10 +520,45 @@ export default function ActivityDetailScreen() {
   const trpcUtils = trpc.useUtils();
   const [exportingFormat, setExportingFormat] = useState<ActivityExportFormat | null>(null);
   const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [isRecomputing, setIsRecomputing] = useState(false);
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
+      if (id) {
+        await trpcUtils.activity.hangboardDetails.invalidate({ id });
+      }
       await trpcUtils.activity.list.invalidate();
       router.back();
+    },
+  });
+  const recomputeMutation = trpc.activity.recompute.useMutation({
+    onSuccess: async () => {
+      if (!id) {
+        return;
+      }
+      setIsRecomputing(true);
+      try {
+        await Promise.all([
+          trpcUtils.activity.byId.invalidate({ id }),
+          trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
+          trpcUtils.activity.hrZones.invalidate({ id }),
+          trpcUtils.activity.powerZones.invalidate({ id }),
+          trpcUtils.activity.strengthExercises.invalidate({ id }),
+          trpcUtils.activity.hangboardDetails.invalidate({ id }),
+          trpcUtils.activity.list.invalidate(),
+          trpcUtils.calendar.weekList.invalidate(),
+          trpcUtils.calendar.activityOverview.invalidate(),
+        ]);
+      } finally {
+        setIsRecomputing(false);
+      }
+    },
+    onError: (error) => {
+      setIsRecomputing(false);
+      captureException(error);
+      Alert.alert(
+        "Recompute Failed",
+        error instanceof Error ? error.message : "Unable to recompute activity.",
+      );
     },
   });
 
@@ -649,20 +580,41 @@ export default function ActivityDetailScreen() {
   };
 
   const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
-  const stream = trpc.activity.stream.useQuery({ id: id ?? "", maxPoints: 200 }, { enabled: !!id });
-  const hrZones = trpc.activity.hrZones.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const stream = trpc.activity.stream.useQuery(
+    { id: id ?? "", maxPoints: 200 },
+    { enabled: !!id, placeholderData: (previousData) => previousData },
+  );
+  const hrZones = trpc.activity.hrZones.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id, placeholderData: (previousData) => previousData },
+  );
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
   const powerZones = trpc.activity.powerZones.useQuery(
     { id: id ?? "" },
-    { enabled: !!id && isCycling && hasPower },
+    {
+      enabled: !!id && isCycling && hasPower,
+      placeholderData: (previousData) => previousData,
+    },
   );
   const isStrengthActivity =
-    detail.data != null && isStrengthActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
+  );
+  const isClimbingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const climbingEntries = trpc.climbing.activityEntries.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id && isClimbingActivity },
+  );
+  const isHangboardingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
+  const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id && isHangboardingActivity },
   );
 
   const [hoveredPosition, setHoveredPosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -697,29 +649,63 @@ export default function ActivityDetailScreen() {
   if (detail.error || !detail.data) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Activity not found</Text>
+        <Text style={styles.errorText}>{detail.error?.message ?? "Activity not found"}</Text>
       </View>
     );
   }
 
   const activity = detail.data;
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   const zones = hrZones.data ?? [];
 
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
   const hasHr = points.some((p) => p.heartRate != null);
   const hasAltitude = points.some((p) => p.altitude != null);
 
-  const exportOptions: Array<{ label: string; format: ActivityExportFormat; disabled?: boolean }> =
-    [
-      { label: "GPX", format: "gpx", disabled: !hasGps },
-      { label: "TCX", format: "tcx", disabled: !hasGps },
-      { label: "CSV", format: "csv" },
-      { label: "FIT", format: "fit" },
-    ];
+  const exportOptions: Array<{
+    accessibilityLabel: string;
+    label: string;
+    format: ActivityExportFormat;
+    disabled?: boolean;
+  }> = [
+    {
+      accessibilityLabel: "GPS track (GPX)",
+      label: "GPX",
+      format: "gpx",
+      disabled: !hasGps,
+    },
+    {
+      accessibilityLabel: "Training Center data (TCX)",
+      label: "TCX",
+      format: "tcx",
+      disabled: !hasGps,
+    },
+    {
+      accessibilityLabel: "comma-separated values (CSV)",
+      label: "CSV",
+      format: "csv",
+    },
+    {
+      accessibilityLabel: "fitness activity file (FIT)",
+      label: "FIT",
+      format: "fit",
+    },
+  ];
 
   const handleExport = () => {
     if (!id || !sessionToken) return;
     setExportModalVisible(true);
+  };
+
+  const handleRecompute = () => {
+    if (!id) return;
+    recomputeMutation.mutate({ id });
   };
 
   const handleExportFormatSelect = (format: ActivityExportFormat) => {
@@ -756,54 +742,58 @@ export default function ActivityDetailScreen() {
       value: formatDurationRange(activity.startedAt, activity.endedAt),
     });
   }
-  if (hasGps && activity.totalDistance != null) {
-    stats.push({
-      label: "Distance",
-      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
-    });
-  }
-  if (hasGps && activity.elevationGain != null) {
-    stats.push({
-      label: "Elevation Gain",
-      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
-    });
-  }
-  if (activity.avgHr != null) {
-    stats.push({
-      label: "Avg Heart Rate",
-      value: `${Math.round(activity.avgHr)} bpm`,
-    });
-  }
-  if (activity.maxHr != null) {
-    stats.push({
-      label: "Max Heart Rate",
-      value: `${Math.round(activity.maxHr)} bpm`,
-    });
-  }
-  if (activity.avgPower != null) {
-    stats.push({
-      label: "Avg Power",
-      value: `${Math.round(activity.avgPower)} W`,
-    });
-  }
-  if (activity.maxPower != null) {
-    stats.push({
-      label: "Max Power",
-      value: `${Math.round(activity.maxPower)} W`,
-    });
-  }
-  if (hasGps && activity.avgSpeed != null) {
-    stats.push({
-      label: "Avg Speed",
-      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
-    });
-  }
-  if (activity.avgCadence != null) {
-    stats.push({
-      label: "Avg Cadence",
-      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
-    });
-  }
+  stats.push(
+    formatActivityMetric(
+      "Distance",
+      activity.totalDistance,
+      activity.totalDistanceState,
+      (distanceMeters) =>
+        `${formatNumber(units.convertDistance(distanceMeters / 1000))} ${units.distanceLabel}`,
+    ),
+    formatActivityMetric(
+      "Elevation Gain",
+      activity.elevationGain,
+      activity.elevationGainState,
+      (elevationMeters) =>
+        `${Math.round(units.convertElevation(elevationMeters))} ${units.elevationLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Heart Rate",
+      activity.avgHr,
+      activity.avgHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Max Heart Rate",
+      activity.maxHr,
+      activity.maxHrState,
+      (value) => `${Math.round(value)} bpm`,
+    ),
+    formatActivityMetric(
+      "Avg Power",
+      activity.avgPower,
+      activity.avgPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Max Power",
+      activity.maxPower,
+      activity.maxPowerState,
+      (value) => `${Math.round(value)} W`,
+    ),
+    formatActivityMetric(
+      "Avg Speed",
+      activity.avgSpeed,
+      activity.avgSpeedState,
+      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+    ),
+    formatActivityMetric(
+      "Avg Cadence",
+      activity.avgCadence,
+      activity.avgCadenceState,
+      (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
+    ),
+  );
 
   return (
     <ScrollView
@@ -829,73 +819,34 @@ export default function ActivityDetailScreen() {
         <Text style={styles.dateTime}>
           {formatDateLong(activity.startedAt)}
           {" at "}
-          {formatTimeOnly(activity.startedAt)}
+          {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
           <View style={styles.sourceRow}>
             <Text style={styles.source}>Source: </Text>
-            {activity.sourceProviders.map((providerId: string, index: number) => {
-              const link = activity.sourceLinks.find(
-                (sourceLink) => sourceLink.providerId === providerId,
-              );
-              if (link?.providerAbsentAt) {
-                return (
-                  <Text key={providerId} style={styles.sourceRemoved}>
-                    {index > 0 && ", "}
-                    {link.label} (removed)
-                  </Text>
-                );
-              }
-              if (link?.url) {
-                return (
-                  <View key={providerId} style={styles.sourceLinkRow}>
-                    {index > 0 && <Text style={styles.source}>, </Text>}
-                    <Pressable
-                      onPress={() => Linking.openURL(link.url)}
-                      hitSlop={4}
-                      style={styles.sourceLinkPressable}
-                    >
-                      <Text style={styles.sourceLink}>{link.label} ↗</Text>
-                    </Pressable>
-                  </View>
-                );
-              }
-              return (
-                <Text key={providerId} style={styles.source}>
-                  {index > 0 && ", "}
-                  {providerSourceLabel(providerId, activity.subsource)}
-                </Text>
-              );
-            })}
+            <ActivitySourceLinks activity={activity} />
           </View>
         )}
-        {activity.providerAbsentAt && (
-          <View style={styles.providerAbsentBanner}>
-            <Text style={styles.providerAbsentTitle}>Removed from provider sync</Text>
-            <View style={styles.providerAbsentDetails}>
-              <View style={styles.providerAbsentDetail}>
-                <Text style={styles.providerAbsentLabel}>Status</Text>
-                <Text style={styles.providerAbsentValue}>Removed</Text>
-              </View>
-              <View style={styles.providerAbsentDetail}>
-                <Text style={styles.providerAbsentLabel}>Provider</Text>
-                <Text style={styles.providerAbsentValue}>
-                  {providerSourceLabel(activity.providerId, activity.subsource)}
-                </Text>
-              </View>
-              <View style={styles.providerAbsentDetail}>
-                <Text style={styles.providerAbsentLabel}>Removed at</Text>
-                <Text style={styles.providerAbsentValue}>
-                  {formatDateLong(activity.providerAbsentAt)}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
+        {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
+        {activity.sourceDecision ? (
+          <ActivitySourceDecisionCard decision={activity.sourceDecision} />
+        ) : null}
       </View>
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
+      <ActivityPerceivedExertion value={activity.perceivedExertion} />
+
+      {isHangboardingActivity && (
+        <View style={hangboardingStyles.container}>
+          <Text style={hangboardingStyles.title}>Hangboarding</Text>
+          <HangboardingDetail
+            data={hangboardDetails.data}
+            loading={hangboardDetails.isLoading}
+            error={hangboardDetails.error ?? null}
+          />
+        </View>
+      )}
 
       {/* Route Map */}
       {hasGps && <RouteMap points={points} hoveredPosition={hoveredPosition} />}
@@ -903,6 +854,15 @@ export default function ActivityDetailScreen() {
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (
         <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
+      )}
+
+      {isClimbingActivity && climbingEntries.error && (
+        <View style={climbingStyles.container}>
+          <Text style={styles.errorText}>{climbingEntries.error.message}</Text>
+        </View>
+      )}
+      {(climbingEntries.data?.length ?? 0) > 0 && (
+        <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
       )}
 
       {/* Time-series charts (load progressively) */}
@@ -972,8 +932,34 @@ export default function ActivityDetailScreen() {
 
       {/* Export Activity */}
       <Pressable
+        onPress={handleRecompute}
+        disabled={recomputeMutation.isPending || isRecomputing}
+        accessibilityRole="button"
+        accessibilityLabel="Recompute activity"
+        accessibilityState={{
+          busy: recomputeMutation.isPending || isRecomputing,
+          disabled: recomputeMutation.isPending || isRecomputing,
+        }}
+        style={({ pressed }) => [
+          styles.recomputeButton,
+          pressed && styles.recomputeButtonPressed,
+          (recomputeMutation.isPending || isRecomputing) && styles.recomputeButtonDisabled,
+        ]}
+      >
+        <Text style={styles.recomputeButtonText}>
+          {recomputeMutation.isPending || isRecomputing ? "Recomputing..." : "Recompute"}
+        </Text>
+      </Pressable>
+
+      <Pressable
         onPress={handleExport}
         disabled={exportingFormat != null || !sessionToken}
+        accessibilityRole="button"
+        accessibilityLabel="Export Activity"
+        accessibilityState={{
+          busy: exportingFormat != null,
+          disabled: exportingFormat != null || !sessionToken,
+        }}
         style={({ pressed }) => [
           styles.exportButton,
           pressed && styles.exportButtonPressed,
@@ -993,15 +979,25 @@ export default function ActivityDetailScreen() {
         animationType="fade"
         onRequestClose={() => setExportModalVisible(false)}
       >
-        <Pressable style={styles.exportModalBackdrop} onPress={() => setExportModalVisible(false)}>
-          <Pressable style={styles.exportModalCard} onPress={() => undefined}>
+        <Pressable
+          style={styles.exportModalBackdrop}
+          onPress={() => setExportModalVisible(false)}
+          accessible={false}
+        >
+          <Pressable style={styles.exportModalCard} onPress={() => undefined} accessible={false}>
             <Text style={styles.exportModalTitle}>Export Activity</Text>
             <Text style={styles.exportModalSubtitle}>Choose a file format</Text>
-            {exportOptions.map(({ label, format, disabled }) => (
+            {exportOptions.map(({ accessibilityLabel, label, format, disabled }) => (
               <Pressable
                 key={format}
                 disabled={disabled || exportingFormat != null}
                 onPress={() => handleExportFormatSelect(format)}
+                accessibilityRole="button"
+                accessibilityLabel={`Export as ${accessibilityLabel}`}
+                accessibilityState={{
+                  busy: exportingFormat === format,
+                  disabled: disabled || exportingFormat != null,
+                }}
                 style={({ pressed }) => [
                   styles.exportModalOption,
                   pressed && !disabled && styles.exportModalOptionPressed,
@@ -1015,6 +1011,8 @@ export default function ActivityDetailScreen() {
             ))}
             <Pressable
               onPress={() => setExportModalVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel export"
               style={({ pressed }) => [
                 styles.exportModalCancel,
                 pressed && styles.exportModalOptionPressed,
@@ -1030,6 +1028,12 @@ export default function ActivityDetailScreen() {
       <Pressable
         onPress={handleDelete}
         disabled={deleteMutation.isPending}
+        accessibilityRole="button"
+        accessibilityLabel="Delete Activity"
+        accessibilityState={{
+          busy: deleteMutation.isPending,
+          disabled: deleteMutation.isPending,
+        }}
         style={({ pressed }) => [
           styles.deleteButton,
           pressed && styles.deleteButtonPressed,
@@ -1043,3 +1047,8 @@ export default function ActivityDetailScreen() {
     </ScrollView>
   );
 }
+
+const hangboardingStyles = StyleSheet.create({
+  container: { gap: 12 },
+  title: { color: colors.text, fontSize: 18, fontWeight: "700" },
+});

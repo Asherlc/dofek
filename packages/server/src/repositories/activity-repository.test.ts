@@ -79,15 +79,30 @@ describe("StreamPoint", () => {
 describe("ActivityRepository", () => {
   const dialect = new PgDialect();
 
+  function withUnknownLocalTimeContext(rows: Record<string, unknown>[]) {
+    return rows.map((row) =>
+      "canonical_type" in row || "activity_type" in row
+        ? {
+            timezone: null,
+            start_utc_offset_minutes: null,
+            end_utc_offset_minutes: null,
+            local_time_source: "unknown",
+            perceived_exertion: null,
+            ...row,
+          }
+        : row,
+    );
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
+    const execute = vi.fn().mockResolvedValue(withUnknownLocalTimeContext(rows));
     const database = { execute };
     const repo = new ActivityRepository(database, "user-1", "UTC");
     return { repo, execute };
   }
 
   function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(postgresRows);
+    const execute = vi.fn().mockResolvedValue(withUnknownLocalTimeContext(postgresRows));
     const database = { execute };
     const sensorStore = {
       query: vi.fn().mockResolvedValue([]),
@@ -123,6 +138,87 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.params).toContain("user-1");
     });
 
+    it("resolveVisibleActivityIds applies the repository access window", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "UTC", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-17",
+      });
+
+      await repo.resolveVisibleActivityIds(["activity-1", "activity-2"]);
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain(
+        "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "started_at < (CAST($6::date AS timestamp without time zone) AT TIME ZONE $7)",
+      );
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "activity-1",
+        "activity-2",
+        "2026-03-10",
+        "UTC",
+        "2026-03-17",
+        "UTC",
+      ]);
+    });
+
+    it("listVisibleActivityIdsSince applies the local-date and access windows", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "America/Los_Angeles", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-17",
+      });
+
+      await expect(repo.listVisibleActivityIdsSince("2026-02-01")).resolves.toEqual(["activity-1"]);
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
+      expect(compiledQuery.sql).toContain(
+        "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "started_at < (CAST($6::date AS timestamp without time zone) AT TIME ZONE $7)",
+      );
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "2026-02-01",
+        "America/Los_Angeles",
+        "2026-03-10",
+        "America/Los_Angeles",
+        "2026-03-17",
+        "America/Los_Angeles",
+      ]);
+    });
+
+    it("listVisibleActivityIdsInRange applies an exclusive local-date end", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "America/Los_Angeles");
+
+      await expect(repo.listVisibleActivityIdsInRange("2026-02-01", "2026-03-01")).resolves.toEqual(
+        ["activity-1"],
+      );
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
+      expect(compiledQuery.sql).toContain("started_at < ($4::date AT TIME ZONE $5)");
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "2026-02-01",
+        "America/Los_Angeles",
+        "2026-03-01",
+        "America/Los_Angeles",
+      ]);
+    });
+
     it("countVisibleInWindow counts rows in v_activity", async () => {
       const { repo, execute } = makeRepository([{ activity_count: 4 }]);
 
@@ -131,6 +227,55 @@ describe("ActivityRepository", () => {
       expect(count).toBe(4);
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).toContain("FROM fitness.v_activity");
+    });
+
+    it("countVisibleInWindow applies finite lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([{ activity_count: 4 }]);
+
+      await repo.countVisibleInWindow({ days: 30 });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain(
+        "started_at > CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day'",
+      );
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["user-1", 30]));
+    });
+
+    it("countVisibleInWindow omits lower-bound filters for unbounded ranges", async () => {
+      const { repo, execute } = makeRepository([{ activity_count: 4 }]);
+
+      await repo.countVisibleInWindow({
+        days: null,
+        activityTypes: ["cycling"],
+        requireEndedAt: true,
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "trial",
+          startDate: "2024-01-01",
+          endDateExclusive: "2024-02-01",
+        },
+      });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity");
+      expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
+      expect(compiledQuery.sql).toContain("AND ended_at IS NOT NULL");
+      expect(compiledQuery.sql).toContain("AND canonical_type IN");
+      expect(compiledQuery.sql).toContain(
+        "AND started_at >= (CAST($3::date AS timestamp without time zone) AT TIME ZONE $4)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "AND started_at < (CAST($5::date AS timestamp without time zone) AT TIME ZONE $6)",
+      );
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "cycling",
+        "2024-01-01",
+        "UTC",
+        "2024-02-01",
+        "UTC",
+      ]);
     });
 
     it("resolveVisibleActivityIds skips the query when no ids are provided", async () => {
@@ -152,6 +297,22 @@ describe("ActivityRepository", () => {
 
       expect(filtered).toEqual([{ id: "activity-1", name: "Run" }]);
     });
+
+    it("filters already-canonical activity rows without expanding v_activity", async () => {
+      const { repo, execute } = makeRepository([{ id: "activity-1" }]);
+
+      const filtered = await repo.filterToVisibleCanonicalActivities([
+        { id: "activity-1", name: "Run" },
+        { id: "activity-2", name: "Ride" },
+      ]);
+
+      expect(filtered).toEqual([{ id: "activity-1", name: "Run" }]);
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.activity");
+      expect(compiledQuery.sql).not.toContain("FROM fitness.v_activity");
+      expect(compiledQuery.sql).toContain("provider_absent_at IS NULL");
+      expect(compiledQuery.sql).toContain("deleted_at IS NULL");
+    });
   });
 
   describe("list", () => {
@@ -166,7 +327,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepository([
         {
           id: "abc-123",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -183,13 +344,17 @@ describe("ActivityRepository", () => {
       expect(result.totalCount).toBe(1);
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toHaveProperty("id", "abc-123");
+      expect(result.items[0]).toHaveProperty("distance_state", {
+        status: "missing",
+        reason: "Distance not recorded",
+      });
     });
 
     it("returns items and totalCount", async () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "abc-123",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -213,7 +378,7 @@ describe("ActivityRepository", () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
           id: "provider-row-id",
-          activity_type: "cycling",
+          canonical_type: "cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -256,6 +421,8 @@ describe("ActivityRepository", () => {
         max_hr: 171,
         avg_power: 220,
         distance_meters: 42000,
+        elevation_gain_m: 610,
+        elevation_state: { status: "available" },
       });
       expect(result.items[0]).not.toHaveProperty("member_activity_ids");
     });
@@ -264,7 +431,7 @@ describe("ActivityRepository", () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
           id: "provider-row-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Run",
@@ -304,9 +471,59 @@ describe("ActivityRepository", () => {
           centroidLat: 37.7749,
           centroidLng: -122.4194,
           mapPreview: osmTilePreview([{ lat: 37.7749, lng: -122.4194 }]),
-          distanceMeters: 5000,
-          elevationGainM: 120,
         },
+        distance_meters: 5000,
+        distance_state: { status: "available" },
+        elevation_gain_m: 120,
+        elevation_state: { status: "available" },
+      });
+    });
+
+    it("keeps elevation value and state when a summary has no centroid", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        {
+          id: "route-less-activity",
+          canonical_type: "strength",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Strength Session",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          member_activity_ids: [],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "route-less-activity",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_speed: null,
+          max_speed: null,
+          avg_cadence: null,
+          total_distance: 0,
+          elevation_gain_m: 0,
+          elevation_loss_m: null,
+          sample_count: 0,
+          centroid_lat: null,
+          centroid_lng: null,
+        },
+      ]);
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(result.items[0]).toMatchObject({
+        location: null,
+        distance_meters: 0,
+        distance_state: { status: "available" },
+        elevation_gain_m: 0,
+        elevation_state: { status: "available" },
       });
     });
 
@@ -314,7 +531,7 @@ describe("ActivityRepository", () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
           id: "provider-row-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Run",
@@ -373,6 +590,27 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
     });
 
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([]);
+
+      await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("a.started_at > ($2::date - $3::int)::timestamp");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["2024-02-01", 30]));
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([]);
+
+      await repo.list({ days: null, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
+      expect(compiledQuery.sql).not.toContain("a.started_at >");
+      expect(compiledQuery.params).not.toContain(null);
+    });
+
     it("returns empty first pages without stale-view self-healing", async () => {
       const { repo, execute } = makeRepositoryWithSensorStore([]);
       await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
@@ -397,7 +635,7 @@ describe("ActivityRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("a.activity_type IN (");
+      expect(compiledQuery.sql).toContain("a.canonical_type IN (");
       expect(compiledQuery.sql).not.toContain("ANY(($");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["cycling", "running"]));
     });
@@ -418,7 +656,7 @@ describe("ActivityRepository", () => {
       });
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("a.activity_type IN (");
+      expect(compiledQuery.sql).toContain("a.canonical_type IN (");
       expect(compiledQuery.sql).not.toContain("ANY(($");
       expect(compiledQuery.params).toEqual(
         expect.arrayContaining([
@@ -442,7 +680,7 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "abc-1",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Run",
@@ -461,6 +699,79 @@ describe("ActivityRepository", () => {
     });
   });
 
+  describe("search and listRange", () => {
+    it("search returns the public distance state for a missing measurement", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "search-activity",
+          canonical_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Morning Run",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+
+      const result = await repo.search({
+        startDate: "2024-01-01",
+        endDate: "2024-01-31",
+        query: "Morning",
+        limit: 20,
+      });
+
+      expect(result).toEqual({
+        totalCount: 1,
+        items: [
+          expect.objectContaining({
+            id: "search-activity",
+            distance_meters: null,
+            distance_state: {
+              status: "missing",
+              reason: "Distance not recorded",
+            },
+          }),
+        ],
+      });
+      expect(result.items[0]).not.toHaveProperty("total_count");
+    });
+
+    it("listRange preserves a recorded zero and emits an available distance state", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "zero-distance-activity",
+          canonical_type: "strength",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Strength Session",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: 0,
+          total_count: 1,
+        },
+      ]);
+
+      const result = await repo.listRange("2024-01-01", "2024-01-31", ["strength"]);
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: "zero-distance-activity",
+          distance_meters: 0,
+          distance_state: { status: "available" },
+        }),
+      ]);
+      expect(result[0]).not.toHaveProperty("total_count");
+    });
+  });
+
   describe("findById", () => {
     it("returns null when not found", async () => {
       const { repo } = makeRepositoryWithSensorStore([]);
@@ -475,11 +786,16 @@ describe("ActivityRepository", () => {
         .mockResolvedValueOnce([
           {
             id: "tombstoned-id",
-            activity_type: "running",
+            canonical_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
             ended_at: "2024-01-15T10:45:00.000Z",
+            timezone: null,
+            start_utc_offset_minutes: null,
+            end_utc_offset_minutes: null,
+            local_time_source: "unknown",
             name: "Deleted Run",
             notes: null,
+            perceived_exertion: null,
             provider_id: "strava",
             subsource: null,
             source_providers: ["strava"],
@@ -524,11 +840,12 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepository([
         {
           id: "abc-123",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],
@@ -556,11 +873,12 @@ describe("ActivityRepository", () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "abc-123",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: "Felt good",
+          perceived_exertion: 7,
           provider_id: "garmin",
           subsource: "Strong",
           source_providers: ["garmin"],
@@ -581,20 +899,22 @@ describe("ActivityRepository", () => {
       const result = await repo.findById("abc-123");
       expect(result).not.toBeNull();
       expect(result?.id).toBe("abc-123");
-      expect(result?.activity_type).toBe("running");
+      expect(result?.canonical_type).toBe("running");
       expect(result?.name).toBe("Easy Run");
       expect(result?.subsource).toBe("Strong");
+      expect(result?.perceived_exertion).toBe(7);
     });
 
     it("keeps member activity aliases internal", async () => {
       const { repo } = makeRepositoryWithSensorStore([
         {
           id: "canonical-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: null,
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin", "strava"],
@@ -623,11 +943,12 @@ describe("ActivityRepository", () => {
       const { repo, execute } = makeRepositoryWithSensorStore([
         {
           id: "some-id",
-          activity_type: "running",
+          canonical_type: "running",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],
@@ -737,17 +1058,15 @@ describe("ActivityRepository", () => {
   describe("getHrZones", () => {
     it("returns mapped HR zones from the configured sensor store", async () => {
       const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2024-01-15T10:00:00.000Z",
-            ended_at: "2024-01-15T11:00:00.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 55 }]);
+      execute.mockResolvedValueOnce([
+        {
+          id: "activity-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["activity-id"],
+        },
+      ]);
       sensorStore.getHeartRateZoneSeconds.mockResolvedValueOnce([
         { zone: 0, seconds: 30 },
         { zone: 1, seconds: 120 },
@@ -771,101 +1090,27 @@ describe("ActivityRepository", () => {
       );
     });
 
-    it("delegates to the configured sensor store after resolving the activity window and HR params", async () => {
+    it("delegates to the configured sensor store after resolving the activity window", async () => {
       const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2024-01-15T10:00:00.000Z",
-            ended_at: "2024-01-15T11:00:00.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 55 }]);
-
-      await repo.getHrZones("activity-id");
-
-      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
+      execute.mockResolvedValueOnce([
         {
-          activityId: "activity-id",
-          userId: "user-1",
-          startedAt: "2024-01-15T10:00:00.000Z",
-          endedAt: "2024-01-15T11:00:00.000Z",
-          memberActivityIds: ["activity-id"],
+          id: "activity-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["activity-id"],
         },
-        190,
-        55,
-      );
-    });
-
-    it("uses the median of recent resting HR readings instead of a single noisy night", async () => {
-      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      // Apr 26-28 stable around 55-57, May 4 spiked to 85. Old code picked 85 (latest),
-      // which pushed every Karvonen boundary above the user's walking-zone HR.
-      sensorStore.query.mockResolvedValueOnce([
-        { date: "2026-04-26", resting_hr: 55 },
-        { date: "2026-04-27", resting_hr: 57 },
-        { date: "2026-04-28", resting_hr: 55 },
-        { date: "2026-05-04", resting_hr: 85 },
       ]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2026-05-18T19:40:00.000Z",
-            ended_at: "2026-05-18T20:08:59.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 194, resting_hr: 56 }]);
 
       await repo.getHrZones("activity-id");
 
-      const sqlObject = execute.mock.calls[1]?.[0];
-      const compiledQuery = dialect.sqlToQuery(sqlObject);
-      // The median of [55, 55, 57, 85] is (55 + 57) / 2 = 56, not 85.
-      expect(compiledQuery.params).toContain(56);
-      expect(compiledQuery.params).not.toContain(85);
-      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
-        expect.objectContaining({ activityId: "activity-id" }),
-        194,
-        56,
-      );
-    });
-
-    it("queries a default resting HR when params are invalid", async () => {
-      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2024-01-15T10:00:00.000Z",
-            ended_at: "2024-01-15T11:00:00.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]);
-
-      await repo.getHrZones("activity-id");
-
-      const sqlObject = execute.mock.calls[1]?.[0];
-      const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("ELSE LEAST(60, up.max_hr - 1)");
-      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
-        {
-          activityId: "activity-id",
-          userId: "user-1",
-          startedAt: "2024-01-15T10:00:00.000Z",
-          endedAt: "2024-01-15T11:00:00.000Z",
-          memberActivityIds: ["activity-id"],
-        },
-        190,
-        60,
-      );
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith({
+        activityId: "activity-id",
+        userId: "user-1",
+        startedAt: "2024-01-15T10:00:00.000Z",
+        endedAt: "2024-01-15T11:00:00.000Z",
+        memberActivityIds: ["activity-id"],
+      });
     });
   });
 

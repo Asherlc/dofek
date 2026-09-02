@@ -23,7 +23,15 @@ type SensorStore = import("../repositories/activity-repository.ts").ActivitySens
 
 function makeSensorStore(rows: unknown[] = []): SensorStore {
   return {
-    query: vi.fn().mockResolvedValue(rows),
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (
+        query.includes("analytics.daily_sleep") ||
+        query.includes("analytics.v_body_measurement")
+      ) {
+        return [];
+      }
+      return rows;
+    }),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -99,7 +107,7 @@ describe("hikingRouter", () => {
           activity_id: "hike-1",
           date: "2024-01-15",
           activity_name: "Morning Hike",
-          activity_type: "hiking",
+          canonical_type: "hiking",
           distance_m: 5000,
           duration_seconds: 3600,
           elevation_gain_m: 300,
@@ -126,7 +134,7 @@ describe("hikingRouter", () => {
           activity_id: "hike-2",
           date: "2024-01-15",
           activity_name: "Downhill Walk",
-          activity_type: "walking",
+          canonical_type: "walking",
           distance_m: 5000,
           duration_seconds: 3000,
           elevation_gain_m: 50,

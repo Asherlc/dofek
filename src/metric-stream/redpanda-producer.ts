@@ -1,10 +1,13 @@
 import { Kafka } from "kafkajs";
 import {
+  createMetricStreamBatchCompletedEvent,
+  createMetricStreamBatchPartitionKey,
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
-  type MetricStreamDeletedEventV1,
+  type MetricStreamDeletedEventV3,
   type MetricStreamDeleteScopeInput,
-  type MetricStreamEventV1,
+  type MetricStreamEventV2,
+  type MetricStreamProcessingContext,
   type MetricStreamRowInput,
 } from "./events.ts";
 
@@ -35,17 +38,25 @@ export interface KafkaProducerLike {
 export interface MetricStreamEventPublisher {
   publishRows(
     rows: readonly MetricStreamRowInput[],
-    partitionKey?: string,
-  ): Promise<MetricStreamEventV1[]>;
+    options: MetricStreamPublishOptions,
+  ): Promise<MetricStreamEventV2[]>;
   replaceRows?(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
+    processing?: MetricStreamProcessingContext,
   ): Promise<MetricStreamReplacementPublishResult>;
 }
 
+export interface MetricStreamPublishOptions {
+  operationRevision: string;
+  partitionKey?: string;
+  processing?: MetricStreamProcessingContext;
+}
+
 export interface MetricStreamReplacementPublishResult {
-  deleted: MetricStreamDeletedEventV1;
-  rows: MetricStreamEventV1[];
+  deleted: MetricStreamDeletedEventV3;
+  rows: MetricStreamEventV2[];
 }
 
 export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublisher {
@@ -98,19 +109,29 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
 
   async publishRows(
     rows: readonly MetricStreamRowInput[],
-    partitionKey?: string,
-  ): Promise<MetricStreamEventV1[]> {
-    const events = rows.map((row) => createMetricStreamEvent(row));
+    options: MetricStreamPublishOptions,
+  ): Promise<MetricStreamEventV2[]> {
+    const events = rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
     if (events.length === 0) {
       return [];
     }
 
-    await this.#sendChunked(
-      events.map((event) => ({
+    const partitionKey = options.processing
+      ? (options.partitionKey ?? createMetricStreamBatchPartitionKey(options.processing))
+      : options.partitionKey;
+    const processingMarker = options.processing
+      ? createMetricStreamBatchCompletedEvent(options.processing, events.length, partitionKey)
+      : undefined;
+
+    await this.#sendChunked([
+      ...events.map((event) => ({
         key: partitionKey ?? event.id,
         value: JSON.stringify(event),
       })),
-    );
+      ...(processingMarker
+        ? [{ key: processingMarker.partitionKey, value: JSON.stringify(processingMarker) }]
+        : []),
+    ]);
 
     return events;
   }
@@ -118,9 +139,14 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   async replaceRows(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
+    processing?: MetricStreamProcessingContext,
   ): Promise<MetricStreamReplacementPublishResult> {
-    const deleted = createMetricStreamDeletedEvent(scope);
-    const events = rows.map((row) => createMetricStreamEvent(row));
+    const deleted = createMetricStreamDeletedEvent(scope, operationRevision);
+    const events = rows.map((row) => createMetricStreamEvent(row, operationRevision));
+    const processingMarker = processing
+      ? createMetricStreamBatchCompletedEvent(processing, events.length + 1, deleted.partitionKey)
+      : undefined;
 
     // Delete event first, then replacements — all on the same partition key, so
     // chunking into multiple ordered requests preserves delete-before-insert.
@@ -130,6 +156,9 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
         key: deleted.partitionKey,
         value: JSON.stringify(event),
       })),
+      ...(processingMarker
+        ? [{ key: deleted.partitionKey, value: JSON.stringify(processingMarker) }]
+        : []),
     ]);
 
     return { deleted, rows: events };

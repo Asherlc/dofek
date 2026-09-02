@@ -5,50 +5,62 @@
   "type": "module",
   "exports": {
     "./router": "./src/router.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./baseline-relative-metrics": "./src/contracts/baseline-relative-metrics.ts",
+    "./report-empty-state": "./src/contracts/report-empty-state.ts",
+    "./health-report-share-expiry": "./src/health-report-share-expiry.ts",
+    "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts",
+    "./sleep-need-contract": "./src/contracts/sleep-need-contract.ts",
+    "./report-empty-state": "./src/contracts/report-empty-state.ts"
   },
   "scripts": {
-    "dev": "../../scripts/with-env.sh tsx src/index.ts"
+    "dev": "tsx ../../scripts/with-env.ts -- tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/google": "3.0.43",
     "@ai-sdk/mistral": "3.0.24",
     "@dofek/auth": "workspace:*",
+    "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
+    "@dofek/imu": "workspace:*",
+    "@dofek/mcp-contracts": "workspace:*",
+    "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",
     "@dofek/recovery": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
     "@dofek/training": "workspace:*",
+    "@dofek/whoop": "workspace:*",
     "@dofek/zones": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@opentelemetry/api": "1.9.1",
     "@sentry/node": "10.45.0",
-    "@slack/bolt": "4.7.2",
-    "@slack/socket-mode": "2.0.7",
     "@stdlib/stats-pcorrtest": "0.2.3",
     "@stdlib/stats-ranks": "0.2.3",
-    "@trpc/server": "11.12.0",
-    "ai": "6.0.116",
+    "@trpc/server": "11.18.0",
+    "ai": "7.0.47",
     "arctic": "3.7.0",
     "compression": "1.8.1",
     "cookie-parser": "1.4.7",
     "dofek": "workspace:*",
     "entities": "6.0.1",
     "express": "5.2.1",
-    "express-rate-limit": "8.5.2",
-    "simple-statistics": "7.8.9",
-    "stripe": "22.1.0",
-    "whoop-whoop": "workspace:*",
-    "zod": "3.25.76"
+    "express-rate-limit": "8.6.1",
+    "ipaddr.js": "2.5.0",
+    "qrcode": "1.5.4",
+    "simple-statistics": "7.10.2",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/compression": "1.8.1",
     "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
-    "tsx": "4.21.0",
-    "typescript": "5.9.3"
+    "@types/qrcode": "1.5.6",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3"
   }
 }

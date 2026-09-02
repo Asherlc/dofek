@@ -4,7 +4,9 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, oauthToken } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -161,12 +163,12 @@ describe("SuuntoProvider.sync() (integration)", () => {
 
     const cycling = rows.find((r) => r.externalId === "suunto-w1");
     if (!cycling) throw new Error("expected workout suunto-w1");
-    expect(cycling.activityType).toBe("cycling");
+    expect(cycling.canonicalType).toBe("cycling");
     expect(cycling.name).toBe("Morning Cycle");
 
     const running = rows.find((r) => r.externalId === "suunto-w2");
     if (!running) throw new Error("expected workout suunto-w2");
-    expect(running.activityType).toBe("running");
+    expect(running.canonicalType).toBe("running");
   });
 
   it("publishes FIT samples through scoped Redpanda replacement", async () => {
@@ -199,7 +201,10 @@ describe("SuuntoProvider.sync() (integration)", () => {
     const activityId = rows[0]?.id;
     if (!activityId) throw new Error("expected activity id");
     expect(metricStreamCapture.publishedMetricStreamRows.length).toBeGreaterThan(0);
-    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({ activityId });
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      activityId,
+      userId: TEST_USER_ID,
+    });
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -265,16 +270,16 @@ describe("SuuntoProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "suunto"));
 
     const walk = rows.find((r) => r.externalId === "suunto-walk");
-    expect(walk?.activityType).toBe("walking");
+    expect(walk?.canonicalType).toBe("walking");
 
     const hike = rows.find((r) => r.externalId === "suunto-hike");
-    expect(hike?.activityType).toBe("hiking");
+    expect(hike?.canonicalType).toBe("hiking");
 
     const swim = rows.find((r) => r.externalId === "suunto-swim");
-    expect(swim?.activityType).toBe("swimming");
+    expect(swim?.canonicalType).toBe("swimming");
 
     const unknown = rows.find((r) => r.externalId === "suunto-unknown");
-    expect(unknown?.activityType).toBe("other");
+    expect(unknown?.canonicalType).toBe("other");
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

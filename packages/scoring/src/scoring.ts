@@ -12,7 +12,10 @@ export class StrainScore {
   static readonly #MAX = 21;
   static readonly #ACUTE_LOAD_DAYS = 7;
 
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value > 17) return statusColors.danger;
@@ -92,45 +95,6 @@ export function scoreDescription(score: number): string {
   return "Recovery is low. Focus on rest and keep today's effort light.";
 }
 
-/** Strain zone classification with display properties. */
-export class StrainZone {
-  constructor(readonly zone: string) {}
-
-  get color(): string {
-    if (this.zone === "optimal") return statusColors.positive;
-    if (this.zone === "overreaching") return statusColors.danger;
-    if (this.zone === "restoring") return statusColors.info;
-    return textColors.secondary;
-  }
-
-  get label(): string {
-    if (this.zone === "optimal") return "Optimal";
-    if (this.zone === "overreaching") return "Overreaching";
-    if (this.zone === "restoring") return "Restoring";
-    return this.zone;
-  }
-}
-
-/** Workload ratio (ACWR) with display classification. */
-export class WorkloadRatio {
-  constructor(readonly value: number | null) {}
-
-  get color(): string {
-    if (this.value == null) return textColors.secondary;
-    if (this.value >= 0.8 && this.value <= 1.3) return statusColors.positive;
-    if (this.value >= 0.5 && this.value <= 1.5) return statusColors.warning;
-    return statusColors.danger;
-  }
-
-  get hint(): string | null {
-    if (this.value == null) return null;
-    if (this.value >= 0.8 && this.value <= 1.3) return "Optimal training zone";
-    if (this.value < 0.8) return "Detraining risk - increase load gradually";
-    if (this.value <= 1.5) return "High load - monitor recovery closely";
-    return "Injury risk zone - consider rest";
-  }
-}
-
 export interface WeekSummary {
   week: string;
   hours: number;
@@ -163,7 +127,10 @@ export function trendDirection(current: number, previous: number): "up" | "down"
 
 /** Stress score (0-3 Whoop-like scale) with display classification. */
 export class StressScore {
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value <= 0.5) return statusColors.positive;
@@ -232,6 +199,45 @@ export function zScoreToRecoveryScore(zScore: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+export const DEFAULT_READINESS_COMPONENT_SCORE = 62;
+
+export interface BaselineReadinessInputs {
+  hrvZScore: number | null;
+  respiratoryRateZScore: number | null;
+  restingHeartRateZScore: number | null;
+  sleepEfficiency: number | null;
+}
+
+export interface BaselineReadinessComponents {
+  hrvScore: number;
+  respiratoryRateScore: number;
+  restingHrScore: number;
+  sleepScore: number;
+}
+
+export function baselineReadinessComponents(
+  inputs: BaselineReadinessInputs,
+): BaselineReadinessComponents {
+  return {
+    hrvScore:
+      inputs.hrvZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(inputs.hrvZScore),
+    restingHrScore:
+      inputs.restingHeartRateZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(-inputs.restingHeartRateZScore),
+    sleepScore:
+      inputs.sleepEfficiency == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : Math.max(0, Math.min(100, Math.round(inputs.sleepEfficiency))),
+    respiratoryRateScore:
+      inputs.respiratoryRateZScore == null
+        ? DEFAULT_READINESS_COMPONENT_SCORE
+        : zScoreToRecoveryScore(-inputs.respiratoryRateZScore),
+  };
+}
+
 /** Get the color for a sleep performance tier */
 export function sleepTierColor(tier: "Excellent" | "Good" | "Fair" | "Poor"): string {
   if (tier === "Excellent") return statusColors.positive;
@@ -279,7 +285,10 @@ export const FORM_ZONE_COLORS = {
 
 /** Form zone (training stress balance) classification with display properties. */
 export class FormZone {
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value > FORM_ZONE_TRANSITION) return FORM_ZONE_COLORS.transition;

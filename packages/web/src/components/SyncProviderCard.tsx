@@ -1,7 +1,9 @@
-import { formatRelativeTime, formatTime } from "@dofek/format/format";
+import { formatRelativeTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
-import type { ProviderState, SyncLogEntry } from "./DataSourcesSyncTypes.ts";
+import type { ProviderState, SyncLogEntry, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
+import { OperationProgressBar } from "./OperationProgressBar.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
@@ -11,22 +13,34 @@ export function SyncProviderCard({
   state,
   needsAuth,
   needsReauth,
+  pushOnly = false,
   stats,
   recentLogs,
   onSync,
-  onFullSync,
 }: {
-  provider: { id: string; name: string; lastSyncedAt: string | null; authorized: boolean };
+  provider: Pick<
+    SyncProviderSummary,
+    | "id"
+    | "name"
+    | "lastSyncedAt"
+    | "lastSuccessfulSyncAt"
+    | "syncFreshness"
+    | "authorized"
+    | "description"
+  >;
   state: ProviderState;
   needsAuth: boolean;
   needsReauth: boolean;
+  pushOnly?: boolean;
   stats: ProviderStats | undefined;
   recentLogs: SyncLogEntry[];
   onSync: () => void;
-  onFullSync: () => void;
 }) {
   const lastSyncedRelative = provider.lastSyncedAt
     ? formatRelativeTime(provider.lastSyncedAt)
+    : null;
+  const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
+    ? formatRelativeTime(provider.lastSuccessfulSyncAt)
     : null;
   const primaryActionLabel = needsReauth ? "Reconnect" : needsAuth ? "Connect" : "Sync";
   const primaryActionTitle = needsReauth
@@ -34,67 +48,151 @@ export function SyncProviderCard({
     : needsAuth
       ? `Connect ${provider.name}`
       : `Sync ${provider.name} from the last 7 days`;
-  const fullSyncTitle = `Sync all available ${provider.name} data`;
+  const latestLog = recentLogs.reduce<SyncLogEntry | undefined>((latest, entry) => {
+    if (!latest || entry.syncedAt > latest.syncedAt) return entry;
+    return latest;
+  }, undefined);
+  const latestSync = latestLog
+    ? latestLog.status === "error"
+      ? {
+          label: "Latest sync failed",
+          accessibilityLabel: "Sync needs attention",
+          colors: operationalStatusColors.danger,
+        }
+      : latestLog.status === "degraded"
+        ? {
+            label: "Latest sync completed with issues",
+            accessibilityLabel: "Sync completed with issues",
+            colors: operationalStatusColors.warning,
+          }
+        : {
+            label: "Sync current",
+            accessibilityLabel: "Sync current",
+            colors: operationalStatusColors.success,
+          }
+    : null;
+  const syncFreshness = !pushOnly && !needsAuth ? provider.syncFreshness : null;
+  const syncFreshnessColors =
+    syncFreshness?.status === "overdue"
+      ? operationalStatusColors.warning
+      : syncFreshness?.status === "current"
+        ? operationalStatusColors.success
+        : operationalStatusColors.neutral;
 
   return (
     <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
       <div className="flex items-center gap-2">
         <ProviderLogo provider={provider.id} size={18} />
-        {needsReauth ? (
-          <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
+        {pushOnly ? (
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{
+              backgroundColor: provider.authorized
+                ? operationalStatusColors.success.indicator
+                : operationalStatusColors.neutral.indicator,
+            }}
+          />
+        ) : needsReauth ? (
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ backgroundColor: operationalStatusColors.warning.indicator }}
+          />
         ) : needsAuth ? (
-          <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ backgroundColor: operationalStatusColors.info.indicator }}
+          />
         ) : (
           <StatusDot status={state.status} />
         )}
         <span className="text-sm font-medium text-foreground">{provider.name}</span>
-        {needsReauth && <span className="text-xs text-amber-400">Reconnect</span>}
-        {needsAuth && !needsReauth && <span className="text-xs text-blue-400">Connect</span>}
-        {state.status === "syncing" && <span className="text-xs text-subtle">...</span>}
+        {pushOnly && <span className="text-xs text-subtle">Mobile sync</span>}
+        {!pushOnly && needsReauth && (
+          <span className="text-xs" style={{ color: operationalStatusColors.warning.foreground }}>
+            Authorization expired
+          </span>
+        )}
+        {!pushOnly && needsAuth && !needsReauth && (
+          <span className="text-xs" style={{ color: operationalStatusColors.info.foreground }}>
+            Not connected
+          </span>
+        )}
       </div>
 
-      {/* Progress bar during sync */}
-      {state.status === "syncing" && (
+      {pushOnly && provider.description && (
+        <span className="text-xs text-subtle mt-1">{provider.description}</span>
+      )}
+
+      {!pushOnly && state.status === "syncing" && (
         <div className="mt-2">
-          {state.percentage != null && (
-            <div className="w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                style={{ width: `${state.percentage}%` }}
-              />
-            </div>
-          )}
-          {state.message && <span className="text-xs text-subtle mt-1 block">{state.message}</span>}
+          <OperationProgressBar percentage={state.percentage} message={state.message} />
         </div>
       )}
 
       {/* Status message */}
-      {state.message && state.status !== "syncing" && (
+      {!pushOnly && state.message && state.status !== "syncing" && (
         <span className="text-xs text-subtle mt-1">{state.message}</span>
       )}
       {state.status !== "syncing" && !state.message && lastSyncedRelative && (
-        <span className="text-xs text-dim mt-1">Last sync: {lastSyncedRelative}</span>
+        <span className="text-xs text-dim mt-1">
+          {pushOnly ? "Last received" : "Last sync"}: {lastSyncedRelative}
+        </span>
+      )}
+      {!pushOnly && state.status !== "syncing" && lastSuccessfulSyncRelative && (
+        <span className="text-xs text-dim mt-1">
+          Last successful sync: {lastSuccessfulSyncRelative}
+        </span>
       )}
 
       {/* Stats summary */}
       {stats && <ProviderStatsBreakdown stats={stats} />}
 
-      {/* Recent sync dots + action links */}
+      {/* Latest sync status + action links */}
       <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
-          {recentLogs.map((l) => (
-            <span
-              key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
-              className={`w-1.5 h-1.5 rounded-full ${
-                l.status === "success" ? "bg-emerald-400" : "bg-red-400"
-              }`}
-              title={`${l.status} — ${formatTime(l.syncedAt)}`}
-            />
-          ))}
-          {recentLogs.length === 0 && <span className="text-xs text-dim">No sync history</span>}
+          {pushOnly ? (
+            <span className="text-xs text-dim">
+              {provider.authorized ? "Synced via iOS app" : "Waiting for mobile sync"}
+            </span>
+          ) : latestSync ? (
+            <output
+              aria-label={latestSync.accessibilityLabel}
+              className="inline-flex items-center gap-1.5 text-xs"
+              style={{
+                color: latestSync.colors.foreground,
+              }}
+            >
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-full"
+                style={{
+                  backgroundColor: latestSync.colors.indicator,
+                }}
+              />
+              {latestSync.label}
+            </output>
+          ) : (
+            <span className="text-xs text-dim">No sync history</span>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          {state.status !== "syncing" && (
+          {syncFreshness && (
+            <div
+              role={syncFreshness.status === "overdue" ? "alert" : undefined}
+              className="max-w-56 rounded border px-2 py-1 text-xs"
+              style={{
+                backgroundColor: syncFreshnessColors.surface,
+                borderColor: syncFreshnessColors.border,
+                color: syncFreshnessColors.foreground,
+              }}
+            >
+              <span className="font-medium">{syncFreshness.label}</span>
+              {syncFreshness.status !== "current" && (
+                <span className="block">{syncFreshness.description}</span>
+              )}
+            </div>
+          )}
+          {!pushOnly && state.status !== "syncing" && (
             <button
               type="button"
               onClick={onSync}
@@ -105,20 +203,10 @@ export function SyncProviderCard({
               {primaryActionLabel}
             </button>
           )}
-          {!needsAuth && !needsReauth && state.status !== "syncing" && (
-            <button
-              type="button"
-              onClick={onFullSync}
-              title={fullSyncTitle}
-              aria-label={fullSyncTitle}
-              className="text-xs text-dim hover:text-muted transition-colors"
-            >
-              Full sync
-            </button>
-          )}
           <Link
             to="/providers/$id"
             params={{ id: provider.id }}
+            aria-label={`View ${provider.name} details`}
             className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details

@@ -15,7 +15,7 @@ const createTokenInput = z.object({
 });
 
 const revokeTokenInput = z.object({
-  tokenId: z.string().uuid(),
+  tokenId: z.guid(),
 });
 
 export const mcpRouter = router({

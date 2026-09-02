@@ -2,9 +2,9 @@ import { execSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as schema from "../../db/schema.ts";
+import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
 import type { MetricStreamRowInput } from "../../metric-stream/events.ts";
@@ -146,7 +146,7 @@ describe("streamHealthExport", () => {
 
     expect(result.workoutCount).toBe(1);
     expect(workouts).toHaveLength(1);
-    expect(workouts[0]?.activityType).toBe("running");
+    expect(workouts[0]?.activityType.canonicalType).toBe("running");
     // WorkoutStatistics should have been applied via enrichWorkoutFromStats
     expect(workouts[0]?.avgHeartRate).toBe(150);
     expect(workouts[0]?.maxHeartRate).toBe(180);
@@ -297,7 +297,7 @@ describe("streamHealthExport", () => {
     });
 
     expect(result.workoutCount).toBe(1);
-    expect(workouts[0]?.activityType).toBe("cycling");
+    expect(workouts[0]?.activityType.canonicalType).toBe("cycling");
   });
 });
 
@@ -306,9 +306,13 @@ describe("streamHealthExport", () => {
 // ============================================================
 
 describe("enrichWorkoutFromStats — additional scenarios", () => {
-  it("enriches both HR and calories together", () => {
+  it("enriches heart rate statistics", () => {
     const workout: HealthWorkout = {
-      activityType: "running",
+      activityType: {
+        canonicalType: "running",
+        providerType: "HKWorkoutActivityTypeRunning",
+        modality: null,
+      },
       sourceName: "Watch",
       durationSeconds: 1800,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -322,21 +326,19 @@ describe("enrichWorkoutFromStats — additional scenarios", () => {
         maximum: 185.3,
         unit: "count/min",
       },
-      {
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        sum: 299.6,
-        unit: "kcal",
-      },
     ]);
 
     expect(workout.avgHeartRate).toBe(156);
     expect(workout.maxHeartRate).toBe(185);
-    expect(workout.calories).toBe(300);
   });
 
   it("does not set avgHeartRate without average", () => {
     const workout: HealthWorkout = {
-      activityType: "cycling",
+      activityType: {
+        canonicalType: "cycling",
+        providerType: "HKWorkoutActivityTypeCycling",
+        modality: null,
+      },
       sourceName: "Watch",
       durationSeconds: 3600,
       startDate: new Date("2024-03-01T18:00:00Z"),
@@ -712,7 +714,6 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning"
   duration="30.5" durationUnit="min"
   totalDistance="5200" totalDistanceUnit="m"
-  totalEnergyBurned="320" totalEnergyBurnedUnit="kcal"
   sourceName="Apple Watch"
   creationDate="2024-03-01 18:30:00 -0500"
   startDate="2024-03-01 18:00:00 -0500"
@@ -725,6 +726,19 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
    <Location date="2024-03-01 18:00:00 -0500" latitude="40.712800" longitude="-74.006000" altitude="10.5" horizontalAccuracy="5" verticalAccuracy="3" course="180" speed="3.5"/>
    <Location date="2024-03-01 18:00:05 -0500" latitude="40.712900" longitude="-74.005900" altitude="10.8" horizontalAccuracy="4" verticalAccuracy="3" course="175" speed="3.6"/>
   </WorkoutRoute>
+ </Workout>
+
+ <Workout workoutActivityType="HKWorkoutActivityTypeFunctionalStrengthTraining"
+  duration="10" durationUnit="min"
+  sourceName="Hang Ten"
+  startDate="2026-08-07 07:00:00 -0700"
+  endDate="2026-08-07 07:10:00 -0700">
+  <MetadataEntry key="HKMetadataKeyWorkoutBrandName" value="Hang Ten"/>
+  <MetadataEntry key="HangTen.PlanName" value="7/3 Repeaters"/>
+  <MetadataEntry key="HangTen.SessionID" value="11111111-1111-4111-8111-111111111111"/>
+  <MetadataEntry key="HangTen.BoardID" value="metolius-compact-ii"/>
+  <MetadataEntry key="HangTen.BoardName" value="Metolius Compact II"/>
+  <MetadataEntry key="HangTen.ActivitySegments" value="{&quot;segments&quot;:[{&quot;stepID&quot;:&quot;step-1&quot;,&quot;stepNumber&quot;:1,&quot;kind&quot;:&quot;work&quot;,&quot;holdIDs&quot;:[&quot;edge-19&quot;],&quot;holdType&quot;:&quot;edge&quot;,&quot;sizeMillimeters&quot;:19,&quot;durationSeconds&quot;:7},{&quot;stepID&quot;:&quot;step-1-rest&quot;,&quot;stepNumber&quot;:1,&quot;kind&quot;:&quot;rest&quot;,&quot;holdIDs&quot;:[],&quot;durationSeconds&quot;:3}],&quot;version&quot;:1}"/>
  </Workout>
 
  <ActivitySummary dateComponents="2024-03-01"
@@ -742,6 +756,27 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
   startDate="2024-03-01 07:00:00 -0500"
   endDate="2024-03-01 07:15:00 -0500"
   value="1"/>
+
+ <Record type="HKCategoryTypeIdentifierMenstrualFlow"
+  sourceName="Cycle Source"
+  sourceBundle="com.example.cycle-source"
+  creationDate="2024-03-03 08:05:00 -0500"
+  startDate="2024-03-03 08:00:00 -0500"
+  endDate="2024-03-03 08:05:00 -0500"
+  value="HKCategoryValueMenstrualFlowMedium">
+  <MetadataEntry key="HKMenstrualCycleStart" value="1"/>
+  <MetadataEntry key="CycleSource.Note" value="first day"/>
+ </Record>
+
+ <Record type="HKCategoryTypeIdentifierMenstrualFlow"
+  sourceName="Cycle Source"
+  sourceBundle="com.example.cycle-source"
+  creationDate="2024-03-04 08:05:00 -0500"
+  startDate="2024-03-04 08:00:00 -0500"
+  endDate="2024-03-04 08:05:00 -0500"
+  value="HKCategoryValueMenstrualFlowLight">
+  <MetadataEntry key="HKMenstrualCycleStart" value="0"/>
+ </Record>
 
 </HealthData>`;
 
@@ -839,7 +874,6 @@ describe("importAppleHealthFile — full DB integration", () => {
     // With per-source rows, different sources get separate rows.
     // Find values across all sources for the day.
     const iPhoneRow = dayRows.find((r) => r.sourceName === "iPhone");
-    const watchRow = dayRows.find((r) => r.sourceName === "Apple Watch");
 
     // Steps come from iPhone source in the test fixture: 1250 + 800 = 2050
     expect(iPhoneRow?.steps).toBe(2050);
@@ -847,8 +881,6 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(iPhoneRow?.flightsClimbed).toBe(3);
     // Distance from iPhone: 523.7 m → 0.5237 km
     expect(iPhoneRow?.distanceKm).toBeCloseTo(0.5237);
-    // Active energy from Apple Watch: 300 + 223.4 = 523.4
-    expect(watchRow?.activeEnergyKcal).toBeCloseTo(523.4);
   });
 
   it("derives daily nutrition from food entry nutrition rows", async () => {
@@ -859,7 +891,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     }>(
       sql`
         SELECT date, calories, protein_g
-        FROM fitness.v_nutrition_daily
+        FROM fitness.v_nutrition_provider_daily
         WHERE provider_id = ${APPLE_HEALTH_PROVIDER_ID}
       `,
     );
@@ -887,13 +919,12 @@ describe("importAppleHealthFile — full DB integration", () => {
 
   it("creates activity rows for workouts and publishes GPS metric stream events", async () => {
     const activities = await ctx.db.select().from(schema.activity);
-    const run = activities.find((a) => a.activityType === "running");
+    const run = activities.find((a) => a.canonicalType === "running");
     expect(run).toBeDefined();
     expect(run?.externalId).toContain("ah:workout:");
     expect(run?.raw).toMatchObject({
       durationSeconds: 1830,
       distanceMeters: 5200,
-      calories: 320,
       avgHeartRate: 148,
       maxHeartRate: 175,
     });
@@ -915,6 +946,55 @@ describe("importAppleHealthFile — full DB integration", () => {
     ).toBe(true);
   });
 
+  it("imports Hang Ten workouts with their activity intervals", async () => {
+    const activities = await ctx.db.select().from(schema.activity);
+    const hangboard = activities.find(
+      (activityRow) => activityRow.externalId === "ah:workout:11111111-1111-4111-8111-111111111111",
+    );
+    const intervals = hangboard
+      ? await ctx.db
+          .select()
+          .from(schema.activityInterval)
+          .where(eq(schema.activityInterval.activityId, hangboard.id))
+          .orderBy(asc(schema.activityInterval.intervalIndex))
+      : [];
+
+    expect(hangboard?.canonicalType).toBe("hangboard");
+    expect(hangboard?.name).toBe("7/3 Repeaters");
+    expect(hangboard?.sourceName).toBe("Hang Ten");
+    expect(hangboard?.externalId).toBe("ah:workout:11111111-1111-4111-8111-111111111111");
+    expect(hangboard?.raw).toMatchObject({
+      hangTen: {
+        planName: "7/3 Repeaters",
+        boardId: "metolius-compact-ii",
+        boardName: "Metolius Compact II",
+        rawActivitySegments: expect.stringContaining('"stepID":"step-1"'),
+        activitySegments: [
+          {
+            stepID: "step-1",
+            stepNumber: 1,
+            kind: "work",
+            holdIDs: ["edge-19"],
+            holdType: "edge",
+            sizeMillimeters: 19,
+            durationSeconds: 7,
+          },
+          {
+            stepID: "step-1-rest",
+            stepNumber: 1,
+            kind: "rest",
+            holdIDs: [],
+            durationSeconds: 3,
+          },
+        ],
+      },
+    });
+    expect(intervals.map((interval) => interval.label)).toEqual([
+      "Step 1: 19 mm edge",
+      "Step 1: Rest",
+    ]);
+  });
+
   it("creates health_event rows for category records (mindful session)", async () => {
     const rows = await ctx.db.select().from(schema.healthEvent);
     const mindful = rows.find((r) => r.type === "HKCategoryTypeIdentifierMindfulSession");
@@ -923,12 +1003,43 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(mindful?.sourceName).toBe("Headspace");
   });
 
+  it("stores raw menstrual-flow rows with cycle-start metadata and source identity", async () => {
+    const rows = await ctx.db
+      .select()
+      .from(schema.healthEvent)
+      .where(eq(schema.healthEvent.type, "HKCategoryTypeIdentifierMenstrualFlow"));
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.externalId)).toEqual([
+      expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+    ]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceName: "Cycle Source",
+          sourceBundle: "com.example.cycle-source",
+          metadata: {
+            HKMetadataKeyMenstrualCycleStart: true,
+            "CycleSource.Note": "first day",
+          },
+        }),
+        expect.objectContaining({
+          sourceName: "Cycle Source",
+          sourceBundle: "com.example.cycle-source",
+          metadata: { HKMetadataKeyMenstrualCycleStart: false },
+        }),
+      ]),
+    );
+  });
+
   it("is idempotent — re-import does not duplicate records", async () => {
     const since = new Date("2024-01-01");
 
     // Count before
     const sleepBefore = await ctx.db.select().from(schema.sleepSession);
     const activitiesBefore = await ctx.db.select().from(schema.activity);
+    const healthEventsBefore = await ctx.db.select().from(schema.healthEvent);
 
     // Re-import with an XML file (non-zip path to avoid clinical records branch)
     const xmlPath = join(tmpDir, "export.xml");
@@ -939,9 +1050,11 @@ describe("importAppleHealthFile — full DB integration", () => {
     // Count after — should be same due to upsert/conflict handling
     const sleepAfter = await ctx.db.select().from(schema.sleepSession);
     const activitiesAfter = await ctx.db.select().from(schema.activity);
+    const healthEventsAfter = await ctx.db.select().from(schema.healthEvent);
 
     expect(sleepAfter.length).toBe(sleepBefore.length);
     expect(activitiesAfter.length).toBe(activitiesBefore.length);
+    expect(healthEventsAfter.length).toBe(healthEventsBefore.length);
   }, 60_000);
 });
 
@@ -1009,7 +1122,9 @@ describe("extractExportXml", () => {
     const zipPath = join(tmpDir, "no-export.zip");
     execSync(`cd "${tmpDir}" && zip "${zipPath}" other.txt`);
 
-    await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml");
+    await expect(extractExportXml(zipPath)).rejects.toThrow(
+      "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    );
   });
 });
 
@@ -1136,71 +1251,62 @@ describe("importClinicalRecords — lab panel DB integration", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("inserts lab panels from DiagnosticReports", async () => {
+  it("stores DiagnosticReports as canonical FHIR records", async () => {
     const result = await importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath);
 
     expect(result.errors).toHaveLength(0);
 
-    const panels = await ctx.db.select().from(schema.labPanel);
-    expect(panels).toHaveLength(1);
+    const records = await ctx.db.select().from(schema.clinicalRecord);
+    expect(records).toHaveLength(4);
 
-    const panel = panels[0];
+    const panel = records.find((record) => record.externalId === "dr-lipid-001");
     expect(panel).toBeDefined();
-    expect(panel?.name).toBe("Lipid Panel");
-    expect(panel?.loincCode).toBe("57698-3");
-    expect(panel?.status).toBe("final");
-    expect(panel?.externalId).toBe("dr-lipid-001");
+    expect(panel?.displayName).toBe("Lipid Panel");
+    expect(panel?.clinicalType).toBe("labResult");
+    expect(panel?.fhir).toEqual(expect.objectContaining({ resourceType: "DiagnosticReport" }));
     expect(panel?.providerId).toBe("apple_health");
   }, 60_000);
 
-  it("links lab results to their panel via panel_id FK", async () => {
-    const panels = await ctx.db.select().from(schema.labPanel);
-    const lipidPanel = panels.find((p) => p.externalId === "dr-lipid-001");
-    expect(lipidPanel).toBeDefined();
-
-    const results = await ctx.db.select().from(schema.labResult);
+  it("stores panel observations as independent canonical FHIR records", async () => {
+    const results = await ctx.db.select().from(schema.clinicalRecord);
 
     const chol = results.find((r) => r.externalId === "obs-chol-001");
     expect(chol).toBeDefined();
-    expect(chol?.panelId).toBe(lipidPanel?.id);
+    expect(chol?.clinicalType).toBe("labResult");
 
     const ldl = results.find((r) => r.externalId === "obs-ldl-001");
     expect(ldl).toBeDefined();
-    expect(ldl?.panelId).toBe(lipidPanel?.id);
+    expect(ldl?.clinicalType).toBe("labResult");
   });
 
-  it("leaves panel_id null for observations not in any panel", async () => {
-    const results = await ctx.db.select().from(schema.labResult);
+  it("stores standalone observations without a shadow panel relation", async () => {
+    const results = await ctx.db.select().from(schema.clinicalRecord);
     const glucose = results.find((r) => r.externalId === "obs-glucose-001");
     expect(glucose).toBeDefined();
-    expect(glucose?.panelId).toBeNull();
+    expect(glucose?.fhir).toEqual(expect.objectContaining({ id: "obs-glucose-001" }));
   });
 
   it("resolves source names from ClinicalRecord XML stubs", async () => {
-    const results = await ctx.db.select().from(schema.labResult);
+    const results = await ctx.db.select().from(schema.clinicalRecord);
     const chol = results.find((r) => r.externalId === "obs-chol-001");
     expect(chol?.sourceName).toBe("Quest Diagnostics");
   });
 
-  it("is idempotent — re-import does not duplicate panels or results", async () => {
-    const panelsBefore = await ctx.db.select().from(schema.labPanel);
-    const resultsBefore = await ctx.db.select().from(schema.labResult);
+  it("is idempotent — re-import does not duplicate canonical records", async () => {
+    const recordsBefore = await ctx.db.select().from(schema.clinicalRecord);
 
     await importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath);
 
-    const panelsAfter = await ctx.db.select().from(schema.labPanel);
-    const resultsAfter = await ctx.db.select().from(schema.labResult);
+    const recordsAfter = await ctx.db.select().from(schema.clinicalRecord);
 
-    expect(panelsAfter).toHaveLength(panelsBefore.length);
-    expect(resultsAfter).toHaveLength(resultsBefore.length);
+    expect(recordsAfter.map((record) => [record.externalId, record.fhir]).sort()).toEqual(
+      recordsBefore.map((record) => [record.externalId, record.fhir]).sort(),
+    );
   }, 60_000);
 
-  it("preserves panel FK linkage after re-import", async () => {
-    const panels = await ctx.db.select().from(schema.labPanel);
-    const lipidPanel = panels.find((p) => p.externalId === "dr-lipid-001");
-
-    const results = await ctx.db.select().from(schema.labResult);
-    const chol = results.find((r) => r.externalId === "obs-chol-001");
-    expect(chol?.panelId).toBe(lipidPanel?.id);
+  it("preserves the original FHIR payload after re-import", async () => {
+    const records = await ctx.db.select().from(schema.clinicalRecord);
+    const chol = records.find((r) => r.externalId === "obs-chol-001");
+    expect(chol?.fhir).toEqual(JSON.parse(FHIR_OBS_CHOL));
   });
 });

@@ -5,7 +5,6 @@ import {
   type BodySpecCompositionResponse,
   type BodySpecPercentilesResponse,
   BodySpecProvider,
-  type BodySpecRmrResponse,
   type BodySpecScanInfoResponse,
   type BodySpecVisceralFatResponse,
   catchNotFound,
@@ -13,7 +12,6 @@ import {
   parseComposition,
   parsePercentiles,
   parseRegions,
-  parseRmr,
   parseScanInfo,
   parseVisceralFat,
 } from "./bodyspec.ts";
@@ -31,12 +29,23 @@ vi.mock("../db/tokens.ts", () => ({
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,
       _providerId: string,
       _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: number }>,
+      fn: () => Promise<{ recordCount: number; result: number; degradations?: unknown[] }>,
     ) => {
       const { result } = await fn();
       return result;
@@ -51,7 +60,7 @@ vi.mock("../auth/oauth.ts", () => ({
 }));
 
 // We need to mock the Drizzle schema imports so they don't pull in the real DB
-vi.mock("../db/schema.ts", () => ({
+vi.mock("../db/schema/events.ts", () => ({
   dexaScan: {
     providerId: "provider_id",
     externalId: "external_id",
@@ -63,9 +72,10 @@ vi.mock("../db/schema.ts", () => ({
   },
 }));
 
-import { refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
 
 // ============================================================
 // Fixtures
@@ -176,17 +186,6 @@ const VISCERAL_FAT_RESPONSE: BodySpecVisceralFatResponse = {
   section_name: "visceral-fat",
   vat_mass_kg: 0.45,
   vat_volume_cm3: 480.2,
-};
-
-const RMR_RESPONSE: BodySpecRmrResponse = {
-  result_id: "result-1",
-  section_name: "rmr",
-  estimates: [
-    { formula: "ten Haaf (2014)", kcal_per_day: 1720 },
-    { formula: "Cunningham (1980)", kcal_per_day: 1680 },
-    { formula: "De Lorenzo (1999)", kcal_per_day: 1750 },
-    { formula: "Mifflin-St. Jeor (1990)", kcal_per_day: 1695 },
-  ],
 };
 
 const PERCENTILES_RESPONSE: BodySpecPercentilesResponse = {
@@ -310,32 +309,6 @@ describe("parseVisceralFat", () => {
   });
 });
 
-describe("parseRmr", () => {
-  it("extracts primary RMR estimate and all raw estimates", () => {
-    const result = parseRmr(RMR_RESPONSE);
-    expect(result.restingMetabolicRateKcal).toBe(1720);
-    expect(result.restingMetabolicRateRaw).toEqual(RMR_RESPONSE.estimates);
-  });
-
-  it("uses first estimate when ten Haaf is not present", () => {
-    const response: BodySpecRmrResponse = {
-      ...RMR_RESPONSE,
-      estimates: [{ formula: "Custom (2024)", kcal_per_day: 1800 }],
-    };
-    const result = parseRmr(response);
-    expect(result.restingMetabolicRateKcal).toBe(1800);
-  });
-
-  it("returns null when no estimates available", () => {
-    const response: BodySpecRmrResponse = {
-      ...RMR_RESPONSE,
-      estimates: [],
-    };
-    const result = parseRmr(response);
-    expect(result.restingMetabolicRateKcal).toBeNull();
-  });
-});
-
 describe("parsePercentiles", () => {
   it("returns the full percentiles object", () => {
     const result = parsePercentiles(PERCENTILES_RESPONSE);
@@ -372,23 +345,9 @@ describe("BodySpecProvider", () => {
       process.env = originalEnv;
     });
 
-    it("returns error when BODYSPEC_CLIENT_ID is missing", () => {
+    it("is available without deployment OAuth credentials", () => {
       delete process.env.BODYSPEC_CLIENT_ID;
       delete process.env.BODYSPEC_CLIENT_SECRET;
-      const provider = new BodySpecProvider();
-      expect(provider.validate()).toBe("BODYSPEC_CLIENT_ID is not set");
-    });
-
-    it("returns error when BODYSPEC_CLIENT_SECRET is missing", () => {
-      process.env.BODYSPEC_CLIENT_ID = "test-id";
-      delete process.env.BODYSPEC_CLIENT_SECRET;
-      const provider = new BodySpecProvider();
-      expect(provider.validate()).toBe("BODYSPEC_CLIENT_SECRET is not set");
-    });
-
-    it("returns null when both env vars are set", () => {
-      process.env.BODYSPEC_CLIENT_ID = "test-id";
-      process.env.BODYSPEC_CLIENT_SECRET = "test-secret";
       const provider = new BodySpecProvider();
       expect(provider.validate()).toBeNull();
     });
@@ -439,26 +398,50 @@ describe("BodySpecProvider", () => {
       process.env = originalEnv;
     });
 
-    it("returns undefined when OAuth env vars are missing", () => {
+    it("uses BodySpec's public PKCE client and current Keycloak endpoints", () => {
       delete process.env.BODYSPEC_CLIENT_ID;
       delete process.env.BODYSPEC_CLIENT_SECRET;
       const provider = new BodySpecProvider();
-      expect(provider.authSetup()).toBeUndefined();
+      const setup = provider.authSetup();
+
+      expect(setup).toBeDefined();
+      expect(setup?.oauthConfig).toMatchObject({
+        clientId: "bodyspec-api-ext-v1",
+        authorizeUrl: "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/auth",
+        tokenUrl: "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/token",
+        scopes: ["openid", "profile", "email"],
+        usePkce: true,
+      });
+      expect(setup?.oauthConfig?.clientSecret).toBeUndefined();
     });
 
-    it("returns auth setup with correct OAuth config when env vars are set", () => {
-      process.env.BODYSPEC_CLIENT_ID = "test-id";
-      process.env.BODYSPEC_CLIENT_SECRET = "test-secret";
+    it("exchanges the callback code with the stored PKCE verifier", async () => {
+      vi.mocked(exchangeCodeForTokens).mockResolvedValueOnce({
+        accessToken: "access",
+        refreshToken: "refresh",
+        expiresAt: new Date("2026-08-01T00:00:00Z"),
+        scopes: "openid profile email",
+      });
       const provider = new BodySpecProvider();
       const setup = provider.authSetup();
-      expect(setup).toBeDefined();
-      expect(setup?.oauthConfig?.clientId).toBe("test-id");
-      expect(setup?.oauthConfig?.clientSecret).toBe("test-secret");
-      expect(setup?.oauthConfig?.authorizeUrl).toContain("bodyspec.com/oauth/authorize");
-      expect(setup?.oauthConfig?.tokenUrl).toContain("bodyspec.com/oauth/token");
-      expect(setup?.oauthConfig?.scopes).toEqual(["read:results"]);
+
+      await setup?.exchangeCode?.("authorization-code", "stored-verifier");
+
+      expect(exchangeCodeForTokens).toHaveBeenCalledWith(
+        setup?.oauthConfig,
+        "authorization-code",
+        expect.any(Function),
+        { codeVerifier: "stored-verifier" },
+      );
       expect(setup?.apiBaseUrl).toBe("https://app.bodyspec.com");
-      expect(setup?.exchangeCode).toBeTypeOf("function");
+    });
+
+    it("fails loudly when the callback has no PKCE verifier", async () => {
+      const setup = new BodySpecProvider().authSetup();
+
+      await expect(setup?.exchangeCode?.("authorization-code")).rejects.toThrow(
+        "BodySpec PKCE verifier is missing",
+      );
     });
   });
 
@@ -516,6 +499,8 @@ describe("BodySpecProvider", () => {
     });
 
     it("refreshes expired tokens and saves them", async () => {
+      delete process.env.BODYSPEC_CLIENT_ID;
+      delete process.env.BODYSPEC_CLIENT_SECRET;
       const expiredTokens = {
         accessToken: "expired",
         refreshToken: "refresh-token",
@@ -545,7 +530,14 @@ describe("BodySpecProvider", () => {
         }),
       );
 
-      expect(refreshAccessToken).toHaveBeenCalled();
+      expect(refreshAccessToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: "bodyspec-api-ext-v1",
+          tokenUrl: "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/token",
+        }),
+        "refresh-token",
+        expect.any(Function),
+      );
       expect(saveTokens).toHaveBeenCalled();
       expect(result.errors).toHaveLength(0);
     });
@@ -579,9 +571,6 @@ describe("BodySpecProvider", () => {
         }
         if (url.includes("/visceral-fat")) {
           return Promise.resolve(jsonResponse(VISCERAL_FAT_RESPONSE));
-        }
-        if (url.includes("/rmr")) {
-          return Promise.resolve(jsonResponse(RMR_RESPONSE));
         }
         if (url.includes("/percentiles")) {
           return Promise.resolve(jsonResponse(PERCENTILES_RESPONSE));
@@ -661,7 +650,6 @@ describe("BodySpecProvider", () => {
           if (url.includes("/visceral-fat")) {
             return Promise.resolve(jsonResponse(VISCERAL_FAT_RESPONSE));
           }
-          if (url.includes("/rmr")) return Promise.resolve(jsonResponse(RMR_RESPONSE));
           if (url.includes("/percentiles")) {
             return Promise.resolve(jsonResponse(PERCENTILES_RESPONSE));
           }
@@ -719,7 +707,6 @@ describe("BodySpecProvider", () => {
           if (url.includes("/visceral-fat")) {
             return Promise.resolve(jsonResponse(VISCERAL_FAT_RESPONSE));
           }
-          if (url.includes("/rmr")) return Promise.resolve(jsonResponse(RMR_RESPONSE));
           if (url.includes("/percentiles")) {
             return Promise.resolve(jsonResponse(PERCENTILES_RESPONSE));
           }
@@ -872,6 +859,162 @@ describe("BodySpecProvider", () => {
       expect(listCallCount).toBe(2);
     });
 
+    it("syncs already fetched results before a later page request fails", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          if (listCallCount === 1) {
+            return Promise.resolve(
+              jsonResponse({
+                results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+                pagination: { page: 1, page_size: 1, results: 2, has_more: true },
+              }),
+            );
+          }
+          return Promise.resolve(errorResponse(500, "Internal Server Error"));
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        if (url.includes("/scan-info")) {
+          return Promise.resolve(jsonResponse(SCAN_INFO_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]?.message).toContain("API error 500");
+      expect(result.recordsSynced).toBe(1);
+      expect(listCallCount).toBe(2);
+      expect(fetchFn).toHaveBeenCalledWith(
+        expect.stringContaining("/results/r1/dexa/composition"),
+        expect.any(Object),
+      );
+    });
+
+    it("reports degraded pagination when an empty results page still has more results", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          return Promise.resolve(
+            jsonResponse({
+              results: [],
+              pagination: {
+                page: listCallCount,
+                page_size: 100,
+                results: 101,
+                has_more: listCallCount === 1,
+              },
+            }),
+          );
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.degradations?.[0]?.kind).toBe("pagination_empty_page_with_cursor");
+      expect(listCallCount).toBe(1);
+    });
+
+    it("reports max-page degradation at the exact page guard", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          if (listCallCount > 100) {
+            return Promise.resolve(
+              jsonResponse({
+                results: [],
+                pagination: {
+                  page: listCallCount,
+                  page_size: 1,
+                  results: 100,
+                  has_more: false,
+                },
+              }),
+            );
+          }
+          return Promise.resolve(
+            jsonResponse({
+              results: [
+                {
+                  result_id: `guard-${listCallCount}`,
+                  start_time: "2025-06-15T10:00:00Z",
+                },
+              ],
+              pagination: {
+                page: listCallCount,
+                page_size: 1,
+                results: 101,
+                has_more: true,
+              },
+            }),
+          );
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        if (url.includes("/scan-info")) {
+          return Promise.resolve(jsonResponse(SCAN_INFO_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.recordsSynced).toBe(100);
+      expect(result.degradations?.[0]?.kind).toBe("pagination_max_pages_exceeded");
+      expect(listCallCount).toBe(100);
+    });
+
     it("syncs with only composition (optional endpoints 404)", async () => {
       const validTokens = {
         accessToken: "valid-token",
@@ -953,34 +1096,6 @@ describe("BodySpecProvider", () => {
       expect(result.recordsSynced).toBe(0);
     });
 
-    it("handles token refresh failure when no config available", async () => {
-      process.env = { ...originalEnv };
-      delete process.env.BODYSPEC_CLIENT_ID;
-      delete process.env.BODYSPEC_CLIENT_SECRET;
-
-      const expiredTokens = {
-        accessToken: "expired",
-        refreshToken: "refresh-token",
-        expiresAt: new Date("2020-01-01"),
-        scopes: "read:results",
-      };
-      vi.mocked(loadTokens).mockResolvedValue(expiredTokens);
-
-      const provider = new BodySpecProvider();
-      const result = await provider.sync(
-        new SyncRun({
-          db: mockDb(),
-          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
-        }),
-      );
-
-      expect(result.errors).toHaveLength(1);
-      const err = result.errors[0];
-      expect(err).toBeDefined();
-      if (!err) return;
-      expect(err.message).toContain("OAuth config required to refresh BodySpec tokens");
-    });
-
     it("handles token refresh failure when no refresh token", async () => {
       const expiredTokens = {
         accessToken: "expired",
@@ -1048,6 +1163,33 @@ describe("BodySpecProvider", () => {
         }),
       );
     });
+
+    it.each([401, 403])(
+      "classifies a %i data response as a redacted authentication failure",
+      async (status) => {
+        vi.mocked(loadTokens).mockResolvedValue({
+          accessToken: "revoked-token",
+          refreshToken: "refresh",
+          expiresAt: new Date("2030-01-01"),
+          scopes: "read:results",
+        });
+        const response = errorResponse(status, "upstream-secret-response");
+        const provider = new BodySpecProvider(vi.fn().mockResolvedValue(response));
+
+        const result = await provider.sync(
+          new SyncRun({
+            db: mockDb(),
+            window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(1);
+        const error = result.errors[0];
+        expect(error?.cause).toBeInstanceOf(ProviderAuthenticationFailedError);
+        expect(error?.message).not.toContain("upstream-secret-response");
+        expect(response.bodyUsed).toBe(false);
+      },
+    );
 
     it("truncates long error response bodies", async () => {
       const validTokens = {

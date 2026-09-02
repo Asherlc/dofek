@@ -37,7 +37,7 @@ export const SECTION_LABELS: Record<string, string> = {
   stress: "Stress Monitor",
   healthspan: "Healthspan",
   hrvRhr: "Heart Rate Variability & Resting HR",
-  spo2Temp: "SpO2 & Skin Temperature",
+  spo2Temp: "Blood Oxygen Saturation & Skin Temperature",
   steps: "Daily Steps",
   sleep: "Sleep",
   nutrition: "Nutrition",

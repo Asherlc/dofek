@@ -1,5 +1,4 @@
 import { createHmac } from "node:crypto";
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
@@ -11,9 +10,12 @@ import {
 } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../../sync/pagination.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -24,7 +26,12 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
-import { FITBIT_API_BASE, FitbitClient } from "./client.ts";
+import {
+  FITBIT_API_BASE,
+  type FitbitActivity,
+  FitbitClient,
+  type FitbitSleepLog,
+} from "./client.ts";
 import {
   parseFitbitActivity,
   parseFitbitDailySummary,
@@ -51,6 +58,7 @@ export function fitbitOAuthConfig(host?: string): OAuthConfig | null {
     clientSecret,
     authorizeUrl: "https://www.fitbit.com/oauth2/authorize",
     tokenUrl: `${FITBIT_API_BASE}/oauth2/token`,
+    revokeUrl: `${FITBIT_API_BASE}/oauth2/revoke`,
     redirectUri: getOAuthRedirectUri(host),
     scopes: [
       "activity",
@@ -62,12 +70,85 @@ export function fitbitOAuthConfig(host?: string): OAuthConfig | null {
       "respiratory_rate",
       "temperature",
     ],
+    tokenAuthMethod: "basic",
     usePkce: true,
   };
 }
 
 function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+async function syncFitbitActivitiesWithGuardedPagination(
+  providerId: string,
+  client: FitbitClient,
+  afterDate: string,
+  persist: (raw: FitbitActivity) => Promise<void>,
+  handlePersistError: (err: unknown, externalId: string) => void,
+): Promise<{ count: number; degradations: SyncDegradation[]; completed: boolean }> {
+  let count = 0;
+  const pageResult = await fetchProviderPages<FitbitActivity, number>({
+    providerId,
+    stepName: "activity",
+    initialCursor: 0,
+    fetchPage: async (offset) => {
+      const response = await client.getActivities(afterDate, offset ?? 0);
+      const nextOffset = response.pagination.offset + response.pagination.limit;
+      const hasNext = response.pagination.next !== "";
+      return {
+        items: response.activities,
+        nextCursor: hasNext ? nextOffset : null,
+      };
+    },
+    onPage: async (pageResult) => {
+      for (const raw of pageResult.items) {
+        const parsed = parseFitbitActivity(raw);
+        try {
+          await persist(raw);
+          count++;
+        } catch (err) {
+          handlePersistError(err, parsed.externalId);
+        }
+      }
+    },
+  });
+
+  return { count, degradations: pageResult.degradations, completed: pageResult.completed };
+}
+
+async function syncFitbitSleepWithGuardedPagination(
+  providerId: string,
+  client: FitbitClient,
+  afterDate: string,
+  persist: (raw: FitbitSleepLog) => Promise<void>,
+  handlePersistError: (err: unknown, externalId: string) => void,
+): Promise<{ count: number; degradations: SyncDegradation[] }> {
+  const pageResult = await fetchProviderPages<FitbitSleepLog, number>({
+    providerId,
+    stepName: "sleep",
+    initialCursor: 0,
+    fetchPage: async (offset) => {
+      const response = await client.getSleepLogs(afterDate, offset ?? 0);
+      const nextOffset = response.pagination.offset + response.pagination.limit;
+      const hasNext = response.pagination.next !== "";
+      return {
+        items: response.sleep,
+        nextCursor: hasNext ? nextOffset : null,
+      };
+    },
+  });
+
+  let count = 0;
+  for (const raw of pageResult.items) {
+    try {
+      await persist(raw);
+      count++;
+    } catch (err) {
+      handlePersistError(err, String(raw.logId));
+    }
+  }
+
+  return { count, degradations: pageResult.degradations };
 }
 
 // ============================================================
@@ -81,7 +162,7 @@ export class FitbitProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fitbit" });
+    this.#fetchFn = createProviderRateLimitFetch("fitbit", fetchFn);
   }
 
   validate(): string | null {
@@ -134,7 +215,9 @@ export class FitbitProvider implements WebhookProvider {
 
     return body
       .map((notification: unknown) => itemSchema.safeParse(notification))
-      .filter((result): result is z.SafeParseSuccess<z.infer<typeof itemSchema>> => result.success)
+      .filter(
+        (result): result is z.ZodSafeParseSuccess<z.infer<typeof itemSchema>> => result.success,
+      )
       .map((result) => ({
         ownerExternalId: result.data.ownerId,
         eventType: "update" as const,
@@ -176,6 +259,7 @@ export class FitbitProvider implements WebhookProvider {
         return {
           providerAccountId: data.user.encodedId,
           email: null,
+          emailVerified: false,
           name: data.user.displayName ?? null,
         };
       },
@@ -221,47 +305,46 @@ export class FitbitProvider implements WebhookProvider {
         this.id,
         "activity",
         async () => {
-          let count = 0;
-          let offset = 0;
-          let hasMore = true;
-
-          while (hasMore) {
-            const response = await client.getActivities(sinceDate, offset);
-
-            for (const raw of response.activities) {
+          const activityResult = await syncFitbitActivitiesWithGuardedPagination(
+            this.id,
+            client,
+            sinceDate,
+            async (raw) => {
               const parsed = parseFitbitActivity(raw);
               presentActivityExternalIds.add(parsed.externalId);
-              try {
-                const { errors: activityErrors } = await persistActivity(
-                  db,
-                  parsed,
-                  raw,
-                  client,
-                  options?.metricStreamPublisher,
-                );
-                errors.push(...activityErrors);
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
+              const { errors: activityErrors } = await persistActivity(
+                db,
+                parsed,
+                raw,
+                client,
+                options?.metricStreamPublisher,
+              );
+              errors.push(...activityErrors);
+            },
+            (err, externalId) => {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId,
+                cause: err,
+              });
+            },
+          );
 
-            hasMore = response.pagination.next !== "";
-            offset += response.pagination.limit;
+          if (activityResult.completed) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
           }
 
-          await reconcileProviderActivityAbsence(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          return {
+            recordCount: activityResult.count,
+            result: activityResult.count,
+            degradations: activityResult.degradations,
+          };
         },
         options?.userId,
       );
@@ -280,32 +363,27 @@ export class FitbitProvider implements WebhookProvider {
         this.id,
         "sleep",
         async () => {
-          let count = 0;
-          let offset = 0;
-          let hasMore = true;
+          const sleepResult = await syncFitbitSleepWithGuardedPagination(
+            this.id,
+            client,
+            sinceDate,
+            async (raw) => {
+              await persistSleep(db, parseFitbitSleep(raw));
+            },
+            (err, externalId) => {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId,
+                cause: err,
+              });
+            },
+          );
 
-          while (hasMore) {
-            const response = await client.getSleepLogs(sinceDate, offset);
-
-            for (const raw of response.sleep) {
-              const parsed = parseFitbitSleep(raw);
-              try {
-                await persistSleep(db, parsed);
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            hasMore = response.pagination.next !== "";
-            offset += response.pagination.limit;
-          }
-
-          return { recordCount: count, result: count };
+          return {
+            recordCount: sleepResult.count,
+            result: sleepResult.count,
+            degradations: sleepResult.degradations,
+          };
         },
         options?.userId,
       );
@@ -440,39 +518,35 @@ export class FitbitProvider implements WebhookProvider {
             this.id,
             "activity",
             async () => {
-              let count = 0;
-              let offset = 0;
-              let hasMore = true;
-
-              while (hasMore) {
-                const response = await client.getActivities(eventDate, offset);
-
-                for (const raw of response.activities) {
+              const activityResult = await syncFitbitActivitiesWithGuardedPagination(
+                this.id,
+                client,
+                eventDate,
+                async (raw) => {
                   const parsed = parseFitbitActivity(raw);
-                  try {
-                    const { errors: activityErrors } = await persistActivity(
-                      db,
-                      parsed,
-                      raw,
-                      client,
-                      options?.metricStreamPublisher,
-                    );
-                    errors.push(...activityErrors);
-                    count++;
-                  } catch (err) {
-                    errors.push({
-                      message: err instanceof Error ? err.message : String(err),
-                      externalId: parsed.externalId,
-                      cause: err,
-                    });
-                  }
-                }
+                  const { errors: activityErrors } = await persistActivity(
+                    db,
+                    parsed,
+                    raw,
+                    client,
+                    options?.metricStreamPublisher,
+                  );
+                  errors.push(...activityErrors);
+                },
+                (err, externalId) => {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId,
+                    cause: err,
+                  });
+                },
+              );
 
-                hasMore = response.pagination.next !== "";
-                offset += response.pagination.limit;
-              }
-
-              return { recordCount: count, result: count };
+              return {
+                recordCount: activityResult.count,
+                result: activityResult.count,
+                degradations: activityResult.degradations,
+              };
             },
             options?.userId,
           );
@@ -514,32 +588,27 @@ export class FitbitProvider implements WebhookProvider {
             this.id,
             "sleep",
             async () => {
-              let count = 0;
-              let offset = 0;
-              let hasMore = true;
+              const sleepResult = await syncFitbitSleepWithGuardedPagination(
+                this.id,
+                client,
+                eventDate,
+                async (raw) => {
+                  await persistSleep(db, parseFitbitSleep(raw));
+                },
+                (err, externalId) => {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId,
+                    cause: err,
+                  });
+                },
+              );
 
-              while (hasMore) {
-                const response = await client.getSleepLogs(eventDate, offset);
-
-                for (const raw of response.sleep) {
-                  const parsed = parseFitbitSleep(raw);
-                  try {
-                    await persistSleep(db, parsed);
-                    count++;
-                  } catch (err) {
-                    errors.push({
-                      message: err instanceof Error ? err.message : String(err),
-                      externalId: parsed.externalId,
-                      cause: err,
-                    });
-                  }
-                }
-
-                hasMore = response.pagination.next !== "";
-                offset += response.pagination.limit;
-              }
-
-              return { recordCount: count, result: count };
+              return {
+                recordCount: sleepResult.count,
+                result: sleepResult.count,
+                degradations: sleepResult.degradations,
+              };
             },
             options?.userId,
           );

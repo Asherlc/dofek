@@ -27,14 +27,15 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U health -d health"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.3.3.20-alpine
+    image: clickhouse/clickhouse-server:26.8.2.7-alpine
     restart: unless-stopped
+    mem_limit: 1536m
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
@@ -44,7 +45,7 @@ services:
       - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-0}:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
+      - ./deploy/clickhouse/users.d/default-query-guardrails.xml:/etc/clickhouse-server/users.d/default-query-guardrails.xml:ro
       - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
       - ./deploy/clickhouse/config.d/memory-limits.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     healthcheck:
@@ -58,7 +59,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:${REDIS_PORT:-0}:6379"
@@ -71,7 +72,7 @@ services:
       retries: 5
 
   redpanda:
-    image: redpandadata/redpanda:v26.1.9
+    image: redpandadata/redpanda:v26.2.2
     restart: unless-stopped
     command:
       - redpanda
@@ -147,7 +148,7 @@ services:
         condition: service_healthy
 
   metric-stream-r2-archive:
-    image: docker.redpanda.com/redpandadata/connect:4.94.1
+    image: docker.redpanda.com/redpandadata/connect:4.99.0
     profiles: ["metric-stream"]
     restart: unless-stopped
     command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
@@ -167,7 +168,7 @@ services:
         condition: service_started
 
   collector:
-    image: otel/opentelemetry-collector-contrib:0.149.0
+    image: otel/opentelemetry-collector-contrib:0.159.0
     restart: unless-stopped
     user: "0:0"
     environment:

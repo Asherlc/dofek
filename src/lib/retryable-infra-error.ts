@@ -34,6 +34,10 @@ function errorCode(error: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
+function errorName(error: unknown): string | null {
+  return error instanceof Error ? error.name : null;
+}
+
 function errorCause(error: unknown): unknown {
   if (typeof error !== "object" || error === null || !("cause" in error)) return undefined;
   return error.cause;
@@ -48,6 +52,7 @@ export function isRetryableInfraError(error: unknown): boolean {
 
     const code = errorCode(current);
     if (code && RETRYABLE_INFRA_ERROR_CODES.has(code)) return true;
+    if (errorName(current) === "TimeoutError") return true;
 
     const message = errorMessage(current).toLowerCase();
     if (RETRYABLE_INFRA_ERROR_MESSAGES.some((pattern) => message.includes(pattern))) {

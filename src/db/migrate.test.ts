@@ -1,223 +1,284 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockReaddirSync = vi.fn<(path: string) => string[]>().mockReturnValue([]);
-const mockReadFileSync = vi.fn<(path: string, encoding: string) => string>().mockReturnValue("");
-const mockExistsSync = vi.fn<(path: string) => boolean>().mockReturnValue(false);
-
-vi.mock("node:fs", () => ({
-  readdirSync: mockReaddirSync,
-  readFileSync: mockReadFileSync,
-  existsSync: mockExistsSync,
+const migratorMocks = vi.hoisted(() => ({
+  readBaselineMigration: vi.fn().mockReturnValue({
+    folderMillis: 1_773_118_304_010,
+    hash: "baseline-content-hash",
+  }),
+  runDrizzleMigrations: vi.fn().mockResolvedValue(undefined),
 }));
 
-const mockLoggerWarn = vi.fn();
-const mockLoggerInfo = vi.fn();
+vi.mock("./postgres-migrator.ts", () => migratorMocks);
 
-vi.mock("../logger.ts", () => ({
-  logger: {
-    warn: mockLoggerWarn,
-    info: mockLoggerInfo,
-  },
+const accountErasureCoverageMocks = vi.hoisted(() => ({
+  assert: vi.fn().mockResolvedValue(undefined),
+  database: { execute: vi.fn().mockResolvedValue([{ installed: false }]) },
+  refresh: vi.fn().mockResolvedValue(undefined),
 }));
 
-const { mockClientConnect, mockClientEnd, mockClientQuery, mockClientConstructor } = vi.hoisted(
-  () => {
-    const connect = vi.fn().mockResolvedValue(undefined);
-    const end = vi.fn().mockResolvedValue(undefined);
-    const query = vi.fn().mockResolvedValue({ rows: [] });
-    const clientInstance = {
-      connect,
-      end,
-      query,
-    };
-    return {
-      mockClientConnect: connect,
-      mockClientEnd: end,
-      mockClientQuery: query,
-      mockClientConstructor: vi.fn(() => clientInstance),
-    };
-  },
-);
-
-vi.mock("pg", () => ({
-  Client: mockClientConstructor,
+vi.mock("drizzle-orm/node-postgres", () => ({
+  drizzle: vi.fn(() => accountErasureCoverageMocks.database),
 }));
 
-function buildCallLog(): string[] {
-  return mockClientQuery.mock.calls.flatMap(([text]) => {
-    const sql = String(text);
-    const events: string[] = [];
-    if (sql.includes("pg_advisory_lock") && !sql.includes("unlock")) events.push("lock");
-    if (sql.includes("pg_advisory_unlock")) events.push("unlock");
-    if (sql.includes("CREATE SCHEMA")) events.push("schema");
-    return events;
-  });
+vi.mock("../account-erasure/postgres-erasure.ts", () => ({
+  assertPostgresAccountErasureCoverage: accountErasureCoverageMocks.assert,
+  refreshPostgresAccountErasureWriteFences: accountErasureCoverageMocks.refresh,
+}));
+
+const loggerMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock("../logger.ts", () => ({ logger: loggerMocks }));
+
+const postgresMocks = vi.hoisted(() => {
+  const connect = vi.fn().mockResolvedValue(undefined);
+  const end = vi.fn().mockResolvedValue(undefined);
+  const query = vi.fn().mockResolvedValue({ rows: [] });
+  const client = { connect, end, query };
+  return {
+    client,
+    connect,
+    constructor: vi.fn(function vitestConstructor() {
+      return client;
+    }),
+    end,
+    query,
+  };
+});
+
+vi.mock("pg", () => ({ Client: postgresMocks.constructor }));
+
+function queryTextCalls(): string[] {
+  return postgresMocks.query.mock.calls.map(([query]) => String(query));
 }
 
-function executedQueries(): string[] {
-  return mockClientQuery.mock.calls.map(([text]) => String(text));
+function mockDatabaseState(options?: {
+  migrationCounts?: number[];
+  schemaHasTables?: boolean;
+}): void {
+  const migrationCounts = [...(options?.migrationCounts ?? [0, 0, 0])];
+  postgresMocks.query.mockImplementation((query: string) => {
+    if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+      return Promise.resolve({ rows: [{ count: String(migrationCounts.shift() ?? 0) }] });
+    }
+    if (query.includes("information_schema.tables")) {
+      return Promise.resolve({ rows: [{ has_tables: options?.schemaHasTables ?? false }] });
+    }
+    return Promise.resolve({ rows: [] });
+  });
 }
 
 describe("runMigrations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockClientConnect.mockResolvedValue(undefined);
-    mockClientEnd.mockResolvedValue(undefined);
-    mockClientQuery.mockResolvedValue({ rows: [] });
-  });
-
-  it("creates schemas and migrations table", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-    mockReaddirSync.mockReturnValue([]);
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(mockClientConnect).toHaveBeenCalled();
-    expect(executedQueries()).toContain("CREATE SCHEMA IF NOT EXISTS health");
-    expect(executedQueries()).toContain("CREATE SCHEMA IF NOT EXISTS drizzle");
-    expect(
-      executedQueries().some((query) =>
-        query.includes("CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations"),
-      ),
-    ).toBe(true);
-    expect(mockClientEnd).toHaveBeenCalled();
-  });
-
-  it("applies pending migrations and skips already-applied ones", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0001_init.sql", "0002_add_col.sql", "0003_new.sql"]);
-    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
-        return Promise.resolve({
-          rows: [{ hash: "0001_init.sql" }, { hash: "0002_add_col.sql" }],
-        });
-      }
-      return Promise.resolve({ rows: [] });
+    postgresMocks.connect.mockResolvedValue(undefined);
+    postgresMocks.end.mockResolvedValue(undefined);
+    migratorMocks.runDrizzleMigrations.mockResolvedValue(undefined);
+    migratorMocks.readBaselineMigration.mockReturnValue({
+      folderMillis: 1_773_118_304_010,
+      hash: "baseline-content-hash",
     });
-
-    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(count).toBe(1);
-    expect(mockReadFileSync).toHaveBeenCalledTimes(1);
-    expect(mockReadFileSync).toHaveBeenCalledWith("/tmp/migrations/0003_new.sql", "utf-8");
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applying: 0003_new.sql"));
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applied 1 migration"));
+    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: false }]);
+    mockDatabaseState();
   });
 
-  it("splits migration files on statement breakpoints", async () => {
+  it("marks the baseline before Drizzle migrates an existing untracked schema", async () => {
     const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0001_multi.sql"]);
-    mockReadFileSync.mockReturnValue(
-      "CREATE TABLE a (id INT)--> statement-breakpoint\nCREATE TABLE b (id INT)",
-    );
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(executedQueries()).toContain("CREATE TABLE a (id INT)");
-    expect(executedQueries()).toContain("CREATE TABLE b (id INT)");
-  });
-
-  it("executes migration statements without custom marker hooks", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0007_metric_stream_replica_identity.sql"]);
-    mockReadFileSync.mockReturnValue(
-      "SELECT 1--> statement-breakpoint\n-- dofek:backfill-metric-stream-id",
-    );
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(executedQueries()).toContain("SELECT 1");
-    expect(executedQueries()).toContain("-- dofek:backfill-metric-stream-id");
-    expect(executedQueries().some((query) => query.includes("UPDATE fitness.metric_stream"))).toBe(
-      false,
-    );
-    expect(
-      executedQueries().some((query) => query.includes("timescaledb_information.chunks")),
-    ).toBe(false);
-  });
-
-  it("returns 0 when no pending migrations exist", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
-        return Promise.resolve({ rows: [{ hash: "0001_init.sql" }] });
-      }
-      return Promise.resolve({ rows: [] });
-    });
-
-    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(count).toBe(0);
-    expect(mockReadFileSync).not.toHaveBeenCalled();
-    const infoMessages = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
-    expect(infoMessages.every((message) => !message.includes("Applied"))).toBe(true);
-  });
-
-  it("only considers .sql files", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0001_init.sql", "README.md", "meta.json", "0002_next.sql"]);
-    mockReadFileSync.mockReturnValue("SELECT 1");
+    mockDatabaseState({ migrationCounts: [0, 1, 3], schemaHasTables: true });
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
     expect(count).toBe(2);
-    expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+    expect(migratorMocks.readBaselineMigration).toHaveBeenCalledWith("/tmp/migrations");
+    expect(postgresMocks.query).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO drizzle.__drizzle_migrations"),
+      ["baseline-content-hash", 1_773_118_304_010],
+    );
+    expect(loggerMocks.info).toHaveBeenCalledWith(
+      expect.stringContaining("Marking baseline migration as applied"),
+    );
   });
 
-  it("always closes the connection in finally block", async () => {
+  it("runs Drizzle migrations and returns the number applied", async () => {
     const { runMigrations } = await import("./migrate.ts");
+    mockDatabaseState({ migrationCounts: [0, 0, 2] });
 
-    mockReaddirSync.mockImplementation(() => {
-      throw new Error("fs error");
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(count).toBe(2);
+    expect(migratorMocks.runDrizzleMigrations).toHaveBeenCalledWith(
+      postgresMocks.client,
+      "/tmp/migrations",
+    );
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty migration count result as no applied migrations", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    let migrationCountQueryIndex = 0;
+    postgresMocks.query.mockImplementation((query: string) => {
+      if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+        migrationCountQueryIndex += 1;
+        return Promise.resolve({
+          rows: migrationCountQueryIndex === 1 ? [] : [{ count: "0" }],
+        });
+      }
+      if (query.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [{ has_tables: false }] });
+      }
+      return Promise.resolve({ rows: [] });
     });
 
-    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
-      "fs error",
-    );
-
-    expect(mockClientEnd).toHaveBeenCalled();
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).resolves.toBe(0);
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
   });
 
-  it("acquires advisory lock before schema setup and releases it after", async () => {
+  it("treats an empty schema inspection result as no existing tables", async () => {
     const { runMigrations } = await import("./migrate.ts");
-    mockReaddirSync.mockReturnValue([]);
+    postgresMocks.query.mockImplementation((query: string) => {
+      if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ count: "0" }] });
+      }
+      if (query.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).resolves.toBe(0);
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
+  });
+
+  it("does not mark a baseline when migration history already exists", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockDatabaseState({ migrationCounts: [1, 1, 1], schemaHasTables: true });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).resolves.toBe(0);
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
+  });
+
+  it("holds the advisory lock while Drizzle migrates", async () => {
+    const { runMigrations } = await import("./migrate.ts");
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    const log = buildCallLog();
-    expect(log[0]).toBe("lock");
-    expect(log[log.length - 1]).toBe("unlock");
-    expect(log.indexOf("lock")).toBeLessThan(log.indexOf("schema"));
+    const lockCall = postgresMocks.query.mock.calls.findIndex(
+      ([query]) => String(query) === "SELECT pg_advisory_lock($1)",
+    );
+    const unlockCall = postgresMocks.query.mock.calls.findIndex(([query]) =>
+      String(query).includes("pg_advisory_unlock"),
+    );
+    const migrationCallOrder = migratorMocks.runDrizzleMigrations.mock.invocationCallOrder[0];
+    const lockCallOrder = postgresMocks.query.mock.invocationCallOrder[lockCall];
+    const unlockCallOrder = postgresMocks.query.mock.invocationCallOrder[unlockCall];
+
+    expect(lockCallOrder).toBeLessThan(migrationCallOrder ?? 0);
+    expect(migrationCallOrder).toBeLessThan(unlockCallOrder ?? 0);
   });
 
-  it("releases advisory lock even when migrations fail", async () => {
+  it("refreshes and asserts account-erasure coverage after migrations while holding the lock", async () => {
     const { runMigrations } = await import("./migrate.ts");
-    mockReaddirSync.mockImplementation(() => {
-      throw new Error("fs error");
+    mockDatabaseState();
+    postgresMocks.query.mockImplementation((query: string) => {
+      if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ count: "0" }] });
+      }
+      if (query.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [{ has_tables: false }] });
+      }
+      if (query.includes("to_regprocedure")) {
+        return Promise.resolve({ rows: [{ installed: true }] });
+      }
+      return Promise.resolve({ rows: [] });
     });
+    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: true }]);
 
-    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
-      "fs error",
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(accountErasureCoverageMocks.refresh).toHaveBeenCalledWith(
+      accountErasureCoverageMocks.database,
+    );
+    expect(accountErasureCoverageMocks.assert).toHaveBeenCalledWith(
+      accountErasureCoverageMocks.database,
+    );
+    const migrationCallOrder = migratorMocks.runDrizzleMigrations.mock.invocationCallOrder[0];
+    const refreshCallOrder = accountErasureCoverageMocks.refresh.mock.invocationCallOrder[0];
+    const assertCallOrder = accountErasureCoverageMocks.assert.mock.invocationCallOrder[0];
+    const unlockCall = postgresMocks.query.mock.calls.findIndex(([query]) =>
+      String(query).includes("pg_advisory_unlock"),
+    );
+    const unlockCallOrder = postgresMocks.query.mock.invocationCallOrder[unlockCall];
+    expect(migrationCallOrder).toBeLessThan(refreshCallOrder ?? 0);
+    expect(refreshCallOrder).toBeLessThan(assertCallOrder ?? 0);
+    expect(assertCallOrder).toBeLessThan(unlockCallOrder ?? 0);
+  });
+
+  it("skips the account-erasure coverage hook before its migration is installed", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(accountErasureCoverageMocks.refresh).not.toHaveBeenCalled();
+    expect(accountErasureCoverageMocks.assert).not.toHaveBeenCalled();
+  });
+
+  it("runs a custom migration folder without a baseline against an existing schema", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockDatabaseState({ migrationCounts: [0, 0, 1], schemaHasTables: true });
+    migratorMocks.readBaselineMigration.mockReturnValue(undefined);
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(count).toBe(1);
+    expect(migratorMocks.runDrizzleMigrations).toHaveBeenCalledOnce();
+    expect(
+      queryTextCalls().some((query) => query.includes("INSERT INTO drizzle.__drizzle_migrations")),
+    ).toBe(false);
+  });
+
+  it("fails when the canonical folder has no baseline for an existing untracked schema", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockDatabaseState({ migrationCounts: [0], schemaHasTables: true });
+    migratorMocks.readBaselineMigration.mockReturnValue(undefined);
+
+    await expect(runMigrations("postgres://localhost/test")).rejects.toThrow(
+      "Postgres baseline migration is required",
     );
 
-    const log = buildCallLog();
-    expect(log).toContain("lock");
-    expect(log).toContain("unlock");
+    expect(queryTextCalls()).toContain("SELECT pg_advisory_unlock($1)");
+    expect(postgresMocks.end).toHaveBeenCalledOnce();
+  });
+
+  it("releases the advisory lock when Drizzle migration fails", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    migratorMocks.runDrizzleMigrations.mockRejectedValue(new Error("migration failed"));
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
+      "migration failed",
+    );
+
+    const migrationCallOrder = migratorMocks.runDrizzleMigrations.mock.invocationCallOrder[0];
+    const unlockCall = postgresMocks.query.mock.calls.findIndex(([query]) =>
+      String(query).includes("pg_advisory_unlock"),
+    );
+    const unlockCallOrder = postgresMocks.query.mock.invocationCallOrder[unlockCall];
+    expect(migrationCallOrder).toBeLessThan(unlockCallOrder ?? 0);
+    expect(postgresMocks.end).toHaveBeenCalledOnce();
   });
 
   it("warns when advisory unlock fails", async () => {
     const { runMigrations } = await import("./migrate.ts");
-    mockReaddirSync.mockReturnValue([]);
-
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text.includes("pg_advisory_unlock")) {
+    mockDatabaseState();
+    postgresMocks.query.mockImplementation((query: string) => {
+      if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ count: "0" }] });
+      }
+      if (query.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [{ has_tables: false }] });
+      }
+      if (query.includes("pg_advisory_unlock")) {
         return Promise.reject(new Error("connection lost"));
       }
       return Promise.resolve({ rows: [] });
@@ -225,223 +286,6 @@ describe("runMigrations", () => {
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    expect(mockLoggerWarn).toHaveBeenCalledWith("Advisory unlock failed: %s", expect.any(Error));
-  });
-
-  it("stores content hash when applying a migration", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    const insertCalls = mockClientQuery.mock.calls.filter(([text]) =>
-      String(text).includes("INSERT INTO drizzle.__drizzle_migrations"),
-    );
-    expect(insertCalls.length).toBeGreaterThan(0);
-    const hashArg = insertCalls[0]?.[1]?.[2];
-    expect(hashArg).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it("warns when an applied migration file has been modified", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT) -- modified");
-    mockExistsSync.mockReturnValue(true);
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
-        return Promise.resolve({
-          rows: [
-            {
-              hash: "0001_init.sql",
-              content_hash: "0000000000000000000000000000000000000000000000000000000000000000",
-            },
-          ],
-        });
-      }
-      return Promise.resolve({ rows: [] });
-    });
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.stringContaining("0001_init.sql has been modified"),
-    );
-  });
-
-  it("skips content hash check for migrations without stored hash", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
-        return Promise.resolve({ rows: [{ hash: "0001_init.sql", content_hash: null }] });
-      }
-      return Promise.resolve({ rows: [] });
-    });
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    const warnMessages = mockLoggerWarn.mock.calls.map((call) => String(call[0]));
-    expect(warnMessages.every((message) => !message.includes("modified"))).toBe(true);
-  });
-
-  it("does not warn when content hash matches", async () => {
-    const { runMigrations, computeContentHash } = await import("./migrate.ts");
-
-    const content = "CREATE TABLE foo (id INT)";
-    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockReadFileSync.mockReturnValue(content);
-    mockExistsSync.mockReturnValue(true);
-
-    const expectedHash = computeContentHash(content);
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
-        return Promise.resolve({ rows: [{ hash: "0001_init.sql", content_hash: expectedHash }] });
-      }
-      return Promise.resolve({ rows: [] });
-    });
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    const warnMessages = mockLoggerWarn.mock.calls.map((call) => String(call[0]));
-    expect(warnMessages.every((message) => !message.includes("modified"))).toBe(true);
-  });
-
-  it("warns on duplicate migration prefixes instead of throwing", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
-    mockReadFileSync.mockReturnValue("SELECT 1");
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.stringContaining("Duplicate migration prefixes"),
-    );
-    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049"));
-    expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049_add_timezone.sql"));
-  });
-
-  it("does not rebuild derived read models during Postgres migrations", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue([]);
-    mockExistsSync.mockReturnValue(true);
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    const queries = executedQueries();
-    expect(
-      queries.every(
-        (query) =>
-          !/\bDROP\b/i.test(query) && !/\bCREATE\s+(?:MATERIALIZED\s+)?VIEW\b/i.test(query),
-      ),
-    ).toBe(true);
-  });
-
-  it("applies baseline migrations on fresh databases", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
-    mockReadFileSync.mockImplementation((path: string) => {
-      if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
-      if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
-      return "";
-    });
-
-    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(count).toBe(2);
-    expect(executedQueries()).toContain("CREATE TABLE baseline_table (id INT)");
-    expect(executedQueries()).toContain("CREATE TABLE additional_table (id INT)");
-  });
-
-  it("skips baseline when migration tracking is empty but schema has tables", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
-    mockReadFileSync.mockImplementation((path: string) => {
-      if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
-      if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
-      return "";
-    });
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text.includes("information_schema.tables")) {
-        return Promise.resolve({ rows: [{ has_tables: true }] });
-      }
-      return Promise.resolve({ rows: [] });
-    });
-
-    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(count).toBe(1);
-    expect(executedQueries()).not.toContain("CREATE TABLE baseline_table (id INT)");
-    expect(executedQueries()).toContain("CREATE TABLE additional_table (id INT)");
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Marking baseline migration as applied"),
-    );
-  });
-
-  it("marks baseline migrations as applied on existing databases", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
-    mockReadFileSync.mockImplementation((path: string) => {
-      if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
-      if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
-      return "";
-    });
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
-        return Promise.resolve({ rows: [{ hash: "0059_previous.sql", content_hash: null }] });
-      }
-      return Promise.resolve({ rows: [] });
-    });
-
-    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(count).toBe(1);
-    expect(executedQueries()).not.toContain("CREATE TABLE baseline_table (id INT)");
-    expect(executedQueries()).toContain("CREATE TABLE additional_table (id INT)");
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("Marking baseline migration as applied"),
-    );
-  });
-});
-
-describe("detectDuplicatePrefixes", () => {
-  it("returns empty for unique prefixes", async () => {
-    const { detectDuplicatePrefixes } = await import("./migrate.ts");
-
-    const result = detectDuplicatePrefixes(["0001_init.sql", "0002_add_col.sql", "0003_new.sql"]);
-
-    expect(result).toEqual([]);
-  });
-
-  it("detects duplicate numeric prefixes", async () => {
-    const { detectDuplicatePrefixes } = await import("./migrate.ts");
-
-    const result = detectDuplicatePrefixes([
-      "0001_init.sql",
-      "0049_add_timezone.sql",
-      "0049_source_external_ids.sql",
-    ]);
-
-    expect(result).toHaveLength(1);
-    const [prefix, group] = result[0] ?? [];
-    expect(prefix).toBe("0049");
-    expect(group).toEqual(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
-  });
-
-  it("ignores files without numeric prefixes", async () => {
-    const { detectDuplicatePrefixes } = await import("./migrate.ts");
-
-    const result = detectDuplicatePrefixes(["README.md", "meta.json"]);
-
-    expect(result).toEqual([]);
+    expect(loggerMocks.warn).toHaveBeenCalledWith("Advisory unlock failed: %s", expect.any(Error));
   });
 });

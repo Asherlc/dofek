@@ -31,16 +31,14 @@ services:
       peerdb-catalog:
         condition: service_healthy
     healthcheck:
-      # tctl honors TEMPORAL_CLI_ADDRESS; use the service hostname rather than
-      # 127.0.0.1 since Temporal does not bind loopback inside the container.
-      test: ["CMD", "tctl", "--address", "peerdb-temporal:7233", "workflow", "list"]
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "peerdb-temporal:7233"]
       interval: 10s
       timeout: 10s
       retries: 12
       start_period: 60s
 
   peerdb-temporal-admin-tools:
-    image: temporalio/admin-tools:1.29
+    image: temporalio/admin-tools:1.31
     environment:
       TEMPORAL_ADDRESS: peerdb-temporal:7233
       TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
@@ -49,7 +47,7 @@ services:
   # Registers the MirrorName search attribute that PeerDB workflows require.
   # Runs once after Temporal is healthy, then exits.
   peerdb-temporal-init:
-    image: temporalio/admin-tools:1.29
+    image: temporalio/admin-tools:1.31
     environment:
       TEMPORAL_ADDRESS: peerdb-temporal:7233
       TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
@@ -59,10 +57,29 @@ services:
     restart: "no"
     entrypoint: /bin/sh
     command:
-      - -c
+      - -euc
       - |
-        printf 'Y\n' | tctl admin cluster add-search-attributes \
-          --name MirrorName --type Keyword || true
+        temporal_address=peerdb-temporal:7233
+        search_attributes="$$(temporal operator search-attribute list \
+          --address "$$temporal_address" --namespace default --output json)"
+        if printf '%s\n' "$$search_attributes" | \
+          grep -Eq '"MirrorName"[[:space:]]*:[[:space:]]*"INDEXED_VALUE_TYPE_TEXT"'; then
+          exit 0
+        fi
+        if printf '%s\n' "$$search_attributes" | grep -Eq '"MirrorName"[[:space:]]*:'; then
+          echo "Temporal search attribute MirrorName must have type Text" >&2
+          exit 1
+        fi
+        temporal operator search-attribute create \
+          --address "$$temporal_address" --namespace default \
+          --name MirrorName --type Text
+        search_attributes="$$(temporal operator search-attribute list \
+          --address "$$temporal_address" --namespace default --output json)"
+        if ! printf '%s\n' "$$search_attributes" | \
+          grep -Eq '"MirrorName"[[:space:]]*:[[:space:]]*"INDEXED_VALUE_TYPE_TEXT"'; then
+          echo "Temporal search attribute MirrorName was not registered as Text" >&2
+          exit 1
+        fi
 
   peerdb-minio:
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
@@ -71,7 +88,10 @@ services:
       # MinIO requires a root password of at least 8 characters; do not reuse
       # POSTGRES_PASSWORD here since the local default ("health") is too short.
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-peerdblocaldev}
+      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 15m
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled"}]}'
     volumes:
       - peerdb_minio_data:/data
     restart: unless-stopped
@@ -88,11 +108,13 @@ services:
         sleep 1;
       done;
       mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      printf '%s\n' "$$PEERDB_STAGE_LIFECYCLE_CONFIG" |
+        mc ilm rule import peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
       wait
       "
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.19
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.5
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
@@ -125,7 +147,7 @@ services:
         condition: service_started
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.5
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -133,7 +155,7 @@ services:
         condition: service_started
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.19
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.5
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -141,7 +163,7 @@ services:
         condition: service_started
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.5
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
@@ -163,7 +185,7 @@ services:
         condition: service_started
 
   peerdb-ui:
-    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.5
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"

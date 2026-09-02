@@ -1,16 +1,29 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { InsightEvidence } from "dofek-server/types";
 import { DashboardEvidenceOverview } from "./DashboardEvidenceOverview";
+
+const evidence: InsightEvidence = {
+  relationship: "correlation",
+  label: "Descriptive correlation",
+  method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
+  interpretation:
+    "This correlation describes co-movement in the observed data; it does not establish causation.",
+  limitations:
+    "The displayed n is the number of paired observations; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory correlation.",
+  recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
+};
 
 const meta = {
   title: "Dashboard/DashboardEvidenceOverview",
   component: DashboardEvidenceOverview,
   tags: ["autodocs"],
   args: {
-    days: 30,
+    days: 90,
     endDate: "2026-05-27",
     trend: {
       latestRestingHeartRate: 52,
       averageRestingHeartRate: 56,
+      restingHeartRateTrendLabel: "below average",
       restingHeartRatePoints: [
         { date: "2026-05-23", value: 57 },
         { date: "2026-05-24", value: 56 },
@@ -21,17 +34,17 @@ const meta = {
     },
     healthMonitor: (
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-border bg-white/70 p-3">
+        <div className="rounded-lg border border-border bg-surface p-3">
           <p className="text-xs text-muted">Heart Rate Variability</p>
           <p className="mt-1 text-xl font-semibold text-foreground">68 ms</p>
         </div>
-        <div className="rounded-lg border border-border bg-white/70 p-3">
+        <div className="rounded-lg border border-border bg-surface p-3">
           <p className="text-xs text-muted">Steps</p>
           <p className="mt-1 text-xl font-semibold text-foreground">7,640</p>
         </div>
-        <div className="rounded-lg border border-border bg-white/70 p-3">
-          <p className="text-xs text-muted">Active Energy</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">407 kcal</p>
+        <div className="rounded-lg border border-border bg-surface p-3">
+          <p className="text-xs text-muted">Respiratory Rate</p>
+          <p className="mt-1 text-xl font-semibold text-foreground">14 breaths/min</p>
         </div>
       </div>
     ),
@@ -47,6 +60,7 @@ const meta = {
       whenFalse: { mean: 0, n: 30 },
       effectSize: 0.72,
       pValue: 0.01,
+      evidence,
       dataPoints: [
         { x: 55, y: 65, date: "2026-05-23" },
         { x: 60, y: 70, date: "2026-05-24" },
@@ -87,6 +101,7 @@ export const Loading: Story = {
     trend: {
       latestRestingHeartRate: undefined,
       averageRestingHeartRate: undefined,
+      restingHeartRateTrendLabel: "Waiting for baseline",
       restingHeartRatePoints: null,
     },
     trainingSleepPoints: null,
@@ -95,7 +110,7 @@ export const Loading: Story = {
         {[0, 1, 2].map((placeholder) => (
           <div
             key={placeholder}
-            className="h-20 animate-pulse rounded-lg border border-border bg-white/70"
+            className="h-20 animate-pulse rounded-lg border border-border bg-surface"
           />
         ))}
       </div>
@@ -104,14 +119,40 @@ export const Loading: Story = {
 };
 
 export const Empty: Story = {
+  name: "Empty data",
+  tags: ["review-scenario", "review-scenario-empty-data"],
   args: {
     topInsight: undefined,
     trend: {
       latestRestingHeartRate: null,
       averageRestingHeartRate: null,
+      restingHeartRateTrendLabel: "Waiting for baseline",
       restingHeartRatePoints: null,
     },
     trainingSleepPoints: null,
     healthMonitor: <p className="text-sm text-muted">No recent health metrics yet.</p>,
+  },
+};
+
+export const BlockedBaseline: Story = {
+  args: {
+    trend: {
+      latestRestingHeartRate: null,
+      averageRestingHeartRate: null,
+      restingHeartRateTrendLabel: "Waiting for baseline",
+      restingHeartRateBaselineProgress: {
+        requiredObservationDays: 3,
+        observedObservationDays: 1,
+        hasMeasurableVariation: false,
+        blocker: "collecting",
+        requirement:
+          "A current value plus at least 2 more recorded days with measurable variation.",
+        summary:
+          "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+        action: "Keep syncing resting heart rate data for at least 2 more days.",
+      },
+      restingHeartRatePoints: null,
+    },
+    healthMonitor: <p className="text-sm text-muted">Baseline evidence is collecting.</p>,
   },
 };

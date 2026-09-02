@@ -28,15 +28,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-// Mock drizzle functions used by SupplementsRepository
-vi.mock("drizzle-orm", async (importOriginal) => {
-  const original = await importOriginal<typeof import("drizzle-orm")>();
-  return {
-    ...original,
-    eq: vi.fn(() => true),
-  };
-});
-
 // ---------------------------------------------------------------------------
 // Router procedure tests
 // ---------------------------------------------------------------------------
@@ -44,17 +35,7 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 describe("supplementsRouter", () => {
   async function makeCaller(executeResult: unknown[] = []) {
     const execute = vi.fn().mockResolvedValue(executeResult);
-    // Mock select/from/where for the list query
-    const where = vi.fn().mockResolvedValue(executeResult);
-    const from = vi.fn(() => ({ where }));
-    const select = vi.fn(() => ({ from }));
-    const insert = vi.fn(() => ({ values: vi.fn(() => ({ onConflictDoUpdate: vi.fn() })) }));
-    const deleteFn = vi.fn(() => ({ where: vi.fn() }));
-    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
-      const tx = { execute, select, insert, delete: deleteFn };
-      return callback(tx);
-    });
-    const db = { execute, select, insert, delete: deleteFn, transaction };
+    const db = { execute };
 
     const { supplementsRouter } = await import("./supplements.ts");
     const callerFactory = createTestCallerFactory(supplementsRouter);
@@ -68,47 +49,153 @@ describe("supplementsRouter", () => {
     it("returns result from repository", async () => {
       const { caller } = await makeCaller([]);
       const result = await caller.list();
-      expect(result).toBeDefined();
+      expect(result).toEqual([]);
+    });
+
+    it("preserves installed fields while including the stable definition id", async () => {
+      const { caller } = await makeCaller([
+        {
+          definition_id: "supplement-version-1",
+          supplement_id: "schedule-1",
+          user_id: "user-1",
+          schedule_id: "schedule-1",
+          supersedes_definition_id: null,
+          name: "Vitamin D",
+          amount: 50,
+          unit: "mcg",
+          form: null,
+          description: null,
+          meal: "breakfast",
+          sort_order: 0,
+          effective_from: "2026-01-01",
+          effective_to: null,
+          nutrition_data_id: null,
+          created_at: "2026-01-01T00:00:00.000Z",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+
+      expect(await caller.list()).toEqual([
+        {
+          id: "supplement-version-1",
+          name: "Vitamin D",
+          amount: 50,
+          unit: "mcg",
+          meal: "breakfast",
+        },
+      ]);
     });
   });
 
-  describe("save", () => {
-    it("rejects empty supplement name", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "" }] })).rejects.toThrow();
+  describe("occurrences", () => {
+    it("returns server-computed statuses and counts", async () => {
+      const { caller } = await makeCaller([
+        {
+          id: "event-1",
+          schedule_id: "schedule-1",
+          supplement_id: "supplement-1",
+          supplement_name: "Vitamin D",
+          scheduled_date: "2026-07-27",
+          status: "planned",
+          supersedes_event_id: null,
+          provider_id: "auto-supplements",
+          source_name: "Auto-Supplements",
+          recorded_at: "2026-07-27T08:00:00.000Z",
+          created_at: "2026-07-27T08:00:00.000Z",
+          is_current: true,
+        },
+      ]);
+
+      expect(await caller.occurrences({ days: 7 })).toEqual({
+        counts: { planned: 1, taken: 0, skipped: 0, unknown: 0 },
+        occurrences: [
+          {
+            currentEventId: "event-1",
+            scheduleId: "schedule-1",
+            supplementId: "supplement-1",
+            supplementName: "Vitamin D",
+            scheduledDate: "2026-07-27",
+            status: "planned",
+            history: [
+              {
+                id: "event-1",
+                providerId: "auto-supplements",
+                recordedAt: "2026-07-27T08:00:00.000Z",
+                sourceName: "Auto-Supplements",
+                status: "planned",
+              },
+            ],
+          },
+        ],
+      });
     });
 
-    it("rejects supplement name exceeding 200 chars", async () => {
+    it("rejects unbounded history windows", async () => {
       const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "x".repeat(201) }] })).rejects.toThrow();
+      await expect(caller.occurrences({ days: 31 })).rejects.toThrow();
     });
 
-    it("accepts name at exactly 200 chars (boundary)", async () => {
+    it("applies the default history window when days is omitted", async () => {
+      const occurrences = vi
+        .spyOn(SupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
       const { caller } = await makeCaller([]);
-      // This will fail with DB error, but should NOT fail with validation error
-      try {
-        await caller.save({ supplements: [{ name: "x".repeat(200) }] });
-      } catch (error) {
-        // Should not be a ZodError (input validation should pass)
-        expect(String(error)).not.toContain("String must contain at most 200");
-      }
+
+      await expect(caller.occurrences({})).resolves.toEqual({
+        counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+        occurrences: [],
+      });
+      expect(occurrences).toHaveBeenCalledWith(7);
+      occurrences.mockRestore();
     });
 
-    it("rejects negative amount", async () => {
+    it("accepts both bounded history-window endpoints", async () => {
+      const occurrences = vi
+        .spyOn(SupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
       const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "Test", amount: -1 }] })).rejects.toThrow();
+
+      await expect(caller.occurrences({ days: 1 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 30 })).resolves.toBeDefined();
+      expect(occurrences).toHaveBeenNthCalledWith(1, 1);
+      expect(occurrences).toHaveBeenNthCalledWith(2, 30);
+      occurrences.mockRestore();
     });
 
-    it("rejects zero amount", async () => {
+    it("rejects history windows below the lower bound", async () => {
       const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "Test", amount: 0 }] })).rejects.toThrow();
-    });
 
-    it("rejects unit exceeding 10 chars", async () => {
+      await expect(caller.occurrences({ days: 0 })).rejects.toThrow();
+    });
+  });
+
+  describe("schema initialization", () => {
+    it("enforces the occurrence default and inclusive day bounds after a fresh module load", async () => {
+      vi.resetModules();
+      const { SupplementsRepository: FreshSupplementsRepository } = await import(
+        "../repositories/supplements-repository.ts"
+      );
+      const occurrences = vi
+        .spyOn(FreshSupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
       const { caller } = await makeCaller([]);
-      await expect(
-        caller.save({ supplements: [{ name: "Test", unit: "x".repeat(11) }] }),
-      ).rejects.toThrow();
+
+      await expect(caller.occurrences({})).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 1 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 30 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 0 })).rejects.toThrow();
+      await expect(caller.occurrences({ days: 31 })).rejects.toThrow();
+      expect(occurrences.mock.calls).toEqual([[7], [1], [30]]);
+      occurrences.mockRestore();
     });
   });
 });
@@ -117,16 +204,18 @@ describe("supplementsRouter", () => {
 // toApiSupplement utility tests
 // ---------------------------------------------------------------------------
 
-import { toApiSupplement } from "../repositories/supplements-repository.ts";
+import { SupplementsRepository, toApiSupplement } from "../repositories/supplements-repository.ts";
 
 describe("toApiSupplement()", () => {
   it("maps name from row", () => {
-    const result = toApiSupplement({ name: "Vitamin D" });
+    const result = toApiSupplement({ definition_id: "definition-vitamin-d", name: "Vitamin D" });
+    expect(result.id).toBe("definition-vitamin-d");
     expect(result.name).toBe("Vitamin D");
   });
 
   it("includes non-nutrient optional fields when present", () => {
     const result = toApiSupplement({
+      definition_id: "definition-fish-oil",
       name: "Fish Oil",
       amount: 1000,
       unit: "mg",
@@ -144,6 +233,7 @@ describe("toApiSupplement()", () => {
 
   it("omits null optional fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-magnesium",
       name: "Magnesium",
       amount: null,
       unit: null,
@@ -160,13 +250,14 @@ describe("toApiSupplement()", () => {
   });
 
   it("omits undefined optional fields", () => {
-    const result = toApiSupplement({ name: "Zinc" });
+    const result = toApiSupplement({ definition_id: "definition-zinc", name: "Zinc" });
     expect(result).not.toHaveProperty("amount");
     expect(result).not.toHaveProperty("unit");
   });
 
   it("converts snake_case nutrient columns to camelCase", () => {
     const result = toApiSupplement({
+      definition_id: "definition-multi",
       name: "Multi",
       vitamin_a_mcg: 900,
       vitamin_c_mg: 90,
@@ -181,6 +272,7 @@ describe("toApiSupplement()", () => {
 
   it("omits null nutrient columns from result", () => {
     const result = toApiSupplement({
+      definition_id: "definition-single",
       name: "Single",
       vitamin_a_mcg: null,
       vitamin_c_mg: null,
@@ -191,8 +283,8 @@ describe("toApiSupplement()", () => {
     expect(result.calciumMg).toBe(500);
   });
 
-  it("returns just name when all optional fields and nutrients are null", () => {
-    const row: Record<string, unknown> = { name: "Empty" };
+  it("returns just identity fields when all optional fields and nutrients are null", () => {
+    const row: Record<string, unknown> = { definition_id: "definition-empty", name: "Empty" };
     // Add all nutrient columns as null
     const nutrientCols = [
       "calories",
@@ -243,11 +335,12 @@ describe("toApiSupplement()", () => {
     row.meal = null;
 
     const result = toApiSupplement(row);
-    expect(result).toEqual({ name: "Empty" });
+    expect(result).toEqual({ id: "definition-empty", name: "Empty" });
   });
 
   it("handles mixed nutrients (some present, some null)", () => {
     const result = toApiSupplement({
+      definition_id: "definition-b-complex",
       name: "B-Complex",
       vitamin_b1_mg: 1.2,
       vitamin_b2_mg: 1.3,
@@ -269,6 +362,7 @@ describe("toApiSupplement()", () => {
 
   it("handles macronutrient fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-protein-powder",
       name: "Protein Powder",
       calories: 120,
       protein_g: 25,
@@ -287,6 +381,7 @@ describe("toApiSupplement()", () => {
 
   it("handles fat breakdown and mineral fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-complete",
       name: "Complete",
       saturated_fat_g: 0.5,
       polyunsaturated_fat_g: 0.3,
@@ -311,6 +406,7 @@ describe("toApiSupplement()", () => {
 
   it("handles all mineral fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-mineral-complex",
       name: "Mineral Complex",
       selenium_mcg: 55,
       copper_mg: 0.9,
@@ -331,6 +427,7 @@ describe("toApiSupplement()", () => {
 
   it("ignores non-string nutrient values (treats as null)", () => {
     const result = toApiSupplement({
+      definition_id: "definition-bad-data",
       name: "Bad Data",
       vitamin_a_mcg: "not a number",
       calcium_mg: true,

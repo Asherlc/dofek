@@ -7,7 +7,7 @@ import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 export const mcpScopeSchema = z.enum([
   "health:read",
   "activity:read",
-  "nutrition:write",
+  "nutrition:read",
   "providers:read",
   "sync:write",
 ]);
@@ -29,12 +29,17 @@ export interface CreateMcpTokenInput {
   name: string;
   scopes: McpScope[];
   expiresAt: Date | null;
+  oauthClientId?: string;
+  oauthResource?: string;
 }
 
 export interface ValidMcpToken {
   tokenId: string;
   userId: string;
   scopes: McpScope[];
+  expiresAt: string | null;
+  oauthClientId: string | null;
+  oauthResource: string | null;
 }
 
 export class McpAuthError extends Error {
@@ -65,6 +70,8 @@ const validTokenRowSchema = z.object({
   scopes: z.array(mcpScopeSchema),
   expires_at: timestampStringSchema.nullable(),
   revoked_at: timestampStringSchema.nullable(),
+  oauth_client_id: z.string().nullable(),
+  oauth_resource: z.string().nullable(),
 });
 
 type ExecutableDatabase = Pick<Database, "execute">;
@@ -102,8 +109,13 @@ export async function createMcpToken(
   const rows = await executeWithSchema(
     db,
     tokenMetadataRowSchema,
-    sql`INSERT INTO fitness.mcp_access_token (user_id, name, token_hash, scopes, expires_at)
-        VALUES (${input.userId}, ${input.name}, ${tokenHash}, ${scopesArray}, ${input.expiresAt})
+    sql`INSERT INTO fitness.mcp_access_token (
+          user_id, name, token_hash, scopes, expires_at, oauth_client_id, oauth_resource
+        )
+        VALUES (
+          ${input.userId}, ${input.name}, ${tokenHash}, ${scopesArray}, ${input.expiresAt},
+          ${input.oauthClientId ?? null}, ${input.oauthResource ?? null}
+        )
         RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
   );
   const row = rows[0];
@@ -121,7 +133,7 @@ export async function validateMcpToken(
   const rows = await executeWithSchema(
     db,
     validTokenRowSchema,
-    sql`SELECT id, user_id, scopes, expires_at, revoked_at
+    sql`SELECT id, user_id, scopes, expires_at, revoked_at, oauth_client_id, oauth_resource
         FROM fitness.mcp_access_token
         WHERE token_hash = ${tokenHash}
         LIMIT 1`,
@@ -141,6 +153,9 @@ export async function validateMcpToken(
     tokenId: row.id,
     userId: row.user_id,
     scopes: row.scopes,
+    expiresAt: row.expires_at,
+    oauthClientId: row.oauth_client_id,
+    oauthResource: row.oauth_resource,
   };
 }
 

@@ -1,8 +1,19 @@
-import { captureException } from "@sentry/node";
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { type EpistemicStatus, getEpistemicStatus } from "@dofek/scoring/epistemic-status";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { type BodyClickHouseStore, fetchBodyWeightRows } from "./body-clickhouse.ts";
+import { dateWindowStartString, type RangeDays } from "../lib/date-window.ts";
+import {
+  type BodyDecisionContext,
+  buildBodyDecisionContext,
+} from "../services/body-decision-context.ts";
+import {
+  type BodyClickHouseStore,
+  fetchBodyDecisionMeasurements,
+  fetchBodyWeightRows,
+} from "./body-clickhouse.ts";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -16,7 +27,25 @@ export interface SmoothedWeightRow {
   date: string;
   /** Raw weight measurement in kg. Null for interpolated days. */
   rawWeight: number | null;
+  /** Server-authored epistemic status for the raw measurement, when present. */
+  rawWeightStatus: EpistemicStatus | null;
   smoothedWeight: number;
+  /** Server-authored epistemic status for the smoothed trend value. */
+  smoothedWeightStatus: EpistemicStatus;
+  weeklyChange: number | null;
+  /** True when this day had no actual measurement and was linearly interpolated. */
+  interpolated: boolean;
+}
+
+export interface SmoothedBodyFatRow {
+  date: string;
+  /** Raw body-fat percentage. Null for interpolated days. */
+  rawBodyFatPct: number | null;
+  /** Server-authored epistemic status for the raw measurement, when present. */
+  rawBodyFatStatus: EpistemicStatus | null;
+  smoothedBodyFatPct: number;
+  /** Server-authored epistemic status for the smoothed trend value. */
+  smoothedBodyFatStatus: EpistemicStatus;
   weeklyChange: number | null;
   /** True when this day had no actual measurement and was linearly interpolated. */
   interpolated: boolean;
@@ -60,6 +89,42 @@ export interface WeightPrediction {
   } | null;
   /** Projection line: future smoothed weight points for chart rendering */
   projectionLine: Array<{ date: string; projectedWeight: number }>;
+}
+
+export interface BodyFatPrediction {
+  /** Regression slope: percentage points per week over recent smoothed data. */
+  ratePerWeek: number | null;
+  /** R-squared of the trend regression (0-1, higher = more consistent). */
+  rateConfidence: number | null;
+  /** Period deltas: smoothed body-fat percentage-point change. */
+  periodDeltas: {
+    days7: number | null;
+    days14: number | null;
+    days30: number | null;
+  };
+  /** Projection line: future smoothed body-fat points for chart rendering. */
+  projectionLine: Array<{ date: string; projectedBodyFatPct: number }>;
+}
+
+interface SmoothedMetricPoint {
+  date: string;
+  rawValue: number | null;
+  smoothedValue: number;
+  weeklyChange: number | null;
+  interpolated: boolean;
+}
+
+interface MetricForecast {
+  ratePerWeek: number | null;
+  rateConfidence: number | null;
+  periodDeltas: {
+    days7: number | null;
+    days14: number | null;
+    days30: number | null;
+  };
+  slopePerDay: number;
+  latest: number;
+  lastDate: string | null;
 }
 
 // ── Least-squares slope ─────────────────────────────────────────────
@@ -236,12 +301,11 @@ export class BodyAnalyticsRepository extends BaseRepository {
   }
 
   /**
-   * Smoothed weight trend using exponentially-weighted moving average.
-   * Filters out daily fluctuations (water, food timing) to show the
-   * real trend. Similar to MacroFactor / Happy Scale approach.
+   * TrendWeight-compatible body-weight trend: interpolate missing calendar
+   * days, then move 10% from the prior trend toward each day's weight.
    */
-  async getSmoothedWeight(days: number, endDate: string): Promise<SmoothedWeightRow[]> {
-    const rows = await this.#fetchBodyWeightRows(days, endDate, false);
+  async getSmoothedWeight(days: RangeDays, endDate: string): Promise<SmoothedWeightRow[]> {
+    const rows = await this.#fetchBodyWeightRows(null, endDate, false);
 
     const data = rows
       .map((row) => ({
@@ -250,7 +314,56 @@ export class BodyAnalyticsRepository extends BaseRepository {
       }))
       .filter((row) => isPositiveWeight(row.rawWeight));
 
-    return this.#computeSmoothedWeight(data);
+    const smoothedWeight = this.#computeSmoothedWeight(data);
+    if (days === null) return smoothedWeight;
+
+    const resolvedEndDate =
+      endDate === "now" ? formatDateYmdInTimeZone(new Date(), this.timezone) : endDate;
+    const windowStart = dateWindowStartString(resolvedEndDate, days);
+    return smoothedWeight.filter((row) => row.date > windowStart);
+  }
+
+  /**
+   * Trend body-fat percentage: interpolate missing calendar days, then move
+   * 10% from the prior trend toward each day's body-fat percentage.
+   */
+  async getSmoothedBodyFat(days: RangeDays, endDate: string): Promise<SmoothedBodyFatRow[]> {
+    const rows = await this.#fetchBodyWeightRows(null, endDate, true);
+    const data = rows
+      .map((row) => ({ date: row.date, rawBodyFatPct: Number(row.body_fat_pct) }))
+      .filter((row) => Number.isFinite(row.rawBodyFatPct));
+    const smoothedBodyFat = this.#computeSmoothedBodyFat(data);
+    if (days === null) return smoothedBodyFat;
+
+    const resolvedEndDate =
+      endDate === "now" ? formatDateYmdInTimeZone(new Date(), this.timezone) : endDate;
+    const windowStart = dateWindowStartString(resolvedEndDate, days);
+    return smoothedBodyFat.filter((row) => row.date > windowStart);
+  }
+
+  async getBodyDecisionContext(endDate: string): Promise<BodyDecisionContext> {
+    const [trendRows, provenanceRows] = await Promise.all([
+      this.getSmoothedWeight(null, endDate),
+      fetchBodyDecisionMeasurements(
+        this.#bodyStore,
+        this.userId,
+        this.timezone,
+        endDate,
+        this.accessWindow,
+      ),
+    ]);
+
+    return buildBodyDecisionContext(
+      provenanceRows.map((row) => ({
+        date: row.date,
+        recordedAt: row.recorded_at,
+        recordedAtLocal: row.recorded_at_local,
+        weightKg: row.weight_kg,
+        providerId: row.provider_id,
+        sourceName: row.source_name,
+      })),
+      trendRows.map((row) => ({ date: row.date, smoothedWeight: row.smoothedWeight })),
+    );
   }
 
   /**
@@ -258,7 +371,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * Derives fat mass (weight * body_fat_pct) and lean mass (weight - fat mass)
    * from measurements that have both weight and body fat data.
    */
-  async getRecomposition(days: number, endDate: string): Promise<BodyRecompositionRow[]> {
+  async getRecomposition(days: RangeDays, endDate: string): Promise<BodyRecompositionRow[]> {
     const rows = await this.#fetchBodyWeightRows(days, endDate, true);
 
     const data = rows
@@ -288,11 +401,11 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * and a forward projection line for charting.
    */
   async getWeightPrediction(
-    days: number,
+    _days: RangeDays,
     endDate: string,
     goalWeightKg: number | null,
   ): Promise<WeightPrediction> {
-    const rows = await this.#fetchBodyWeightRows(days, endDate, false);
+    const rows = await this.#fetchBodyWeightRows(null, endDate, false);
 
     const data = rows
       .map((row) => ({
@@ -304,10 +417,20 @@ export class BodyAnalyticsRepository extends BaseRepository {
     return this.#computeWeightPrediction(data, goalWeightKg);
   }
 
+  /** Comprehensive body-fat prediction for the shared body-composition trend. */
+  async getBodyFatPrediction(_days: RangeDays, endDate: string): Promise<BodyFatPrediction> {
+    const rows = await this.#fetchBodyWeightRows(null, endDate, true);
+    const data = rows
+      .map((row) => ({ date: row.date, rawBodyFatPct: Number(row.body_fat_pct) }))
+      .filter((row) => Number.isFinite(row.rawBodyFatPct));
+
+    return this.#computeBodyFatPrediction(data);
+  }
+
   // ── Private computation methods ─────────────────────────────────
 
   #fetchBodyWeightRows(
-    days: number,
+    days: RangeDays,
     endDate: string,
     requireBodyFat: boolean,
   ): Promise<Awaited<ReturnType<typeof fetchBodyWeightRows>>> {
@@ -332,26 +455,50 @@ export class BodyAnalyticsRepository extends BaseRepository {
   }
 
   #computeSmoothedWeight(data: { date: string; rawWeight: number }[]): SmoothedWeightRow[] {
+    return this.#computeSmoothedMetric(
+      data.map(({ date, rawWeight }) => ({ date, rawWeight })),
+    ).map((row) => ({
+      date: row.date,
+      rawWeight: row.rawValue == null ? null : roundWeight(row.rawValue),
+      rawWeightStatus: row.rawValue == null ? null : getEpistemicStatus("observed"),
+      smoothedWeight: roundWeight(row.smoothedValue),
+      smoothedWeightStatus: getEpistemicStatus("estimated"),
+      weeklyChange: row.weeklyChange,
+      interpolated: row.interpolated,
+    }));
+  }
+
+  #computeSmoothedBodyFat(data: { date: string; rawBodyFatPct: number }[]): SmoothedBodyFatRow[] {
+    return this.#computeSmoothedMetric(
+      data.map(({ date, rawBodyFatPct }) => ({ date, rawWeight: rawBodyFatPct })),
+    ).map((row) => ({
+      date: row.date,
+      rawBodyFatPct: row.rawValue == null ? null : roundWeight(row.rawValue),
+      rawBodyFatStatus: row.rawValue == null ? null : getEpistemicStatus("observed"),
+      smoothedBodyFatPct: roundWeight(row.smoothedValue),
+      smoothedBodyFatStatus: getEpistemicStatus("estimated"),
+      weeklyChange: row.weeklyChange,
+      interpolated: row.interpolated,
+    }));
+  }
+
+  #computeSmoothedMetric(data: { date: string; rawWeight: number }[]): SmoothedMetricPoint[] {
     if (data.length === 0) return [];
 
-    // Interpolate missing days to get a dense daily series
     const dense = interpolateMissingDays(
       data.map((day) => ({ date: day.date, value: day.rawWeight })),
     );
-
-    const alpha = 0.1;
     const smoothedValues = ewmaSmooth(
       dense.map((point) => point.value),
-      alpha,
+      0.1,
     );
 
-    const result: SmoothedWeightRow[] = [];
+    const result: SmoothedMetricPoint[] = [];
     for (let index = 0; index < dense.length; index++) {
       const point = dense[index];
       const smoothed = smoothedValues[index];
       if (!point || smoothed === undefined) continue;
 
-      // Weekly rate of change: compare smoothed weight to 7 days ago
       let weeklyChange: number | null = null;
       if (index >= 7) {
         const previousSmoothed = smoothedValues[index - 7];
@@ -366,8 +513,8 @@ export class BodyAnalyticsRepository extends BaseRepository {
 
       result.push({
         date: point.date,
-        rawWeight: point.interpolated ? null : roundWeight(point.value),
-        smoothedWeight: roundWeight(smoothed),
+        rawValue: point.interpolated ? null : point.value,
+        smoothedValue: smoothed,
         weeklyChange,
         interpolated: point.interpolated,
       });
@@ -461,6 +608,87 @@ export class BodyAnalyticsRepository extends BaseRepository {
     return { currentWeekly, current4Week, trend };
   }
 
+  #computeMetricForecast(data: { date: string; rawWeight: number }[]): MetricForecast | null {
+    if (data.length < 7) return null;
+
+    const interpolated = interpolateMissingDays(
+      data.map((day) => ({ date: day.date, value: day.rawWeight })),
+    );
+    const smoothed = ewmaSmooth(
+      interpolated.map((point) => point.value),
+      0.1,
+    );
+    const lastInterpolatedPoint = interpolated.at(-1);
+    const latest = smoothed.at(-1);
+    if (smoothed.length === 0 || latest === undefined || !lastInterpolatedPoint) return null;
+
+    const regressionWindow = Math.min(WEIGHT_RATE_REGRESSION_WINDOW_DAYS, smoothed.length);
+    let ratePerWeek: number | null = null;
+    let rateConfidence: number | null = null;
+    let slopePerDay = 0;
+
+    const regressionWindowPoints = interpolated.slice(-regressionWindow);
+    const regressionWindowValues = smoothed.slice(-regressionWindow);
+    if (
+      smoothed.length >= 7 &&
+      regressionWindowValues.every(Number.isFinite) &&
+      countActualWeightReadings(regressionWindowPoints) >= MIN_ACTUAL_READINGS_FOR_WEIGHT_RATE
+    ) {
+      const regression = leastSquaresSlope(
+        regressionWindowValues.map((value, index) => ({ dayIndex: index, value })),
+      );
+      slopePerDay = regression.slopePerDay;
+      ratePerWeek = Math.round(slopePerDay * 7 * 100) / 100;
+      rateConfidence = Math.round(regression.rSquared * 1000) / 1000;
+    }
+
+    if (ratePerWeek == null && smoothed.length >= 8) {
+      const weeklyWindowPoints = interpolated.slice(-8);
+      if (countActualWeightReadings(weeklyWindowPoints) >= MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA) {
+        const previousSmoothed = smoothed[smoothed.length - 8] ?? 0;
+        ratePerWeek = Math.round((latest - previousSmoothed) * 100) / 100;
+        slopePerDay = ratePerWeek / 7;
+      }
+    }
+
+    const computePeriodDelta = (daysBack: number, minimumActualReadings: number) => {
+      const requiredPointCount = daysBack + 1;
+      if (smoothed.length < requiredPointCount) return null;
+
+      const periodPoints = interpolated.slice(-requiredPointCount);
+      if (countActualWeightReadings(periodPoints) < minimumActualReadings) return null;
+
+      return (
+        Math.round((latest - (smoothed[smoothed.length - requiredPointCount] ?? 0)) * 100) / 100
+      );
+    };
+
+    return {
+      ratePerWeek,
+      rateConfidence,
+      periodDeltas: {
+        days7: computePeriodDelta(7, MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA),
+        days14: computePeriodDelta(14, MIN_ACTUAL_READINGS_FOR_14_DAY_DELTA),
+        days30: computePeriodDelta(30, MIN_ACTUAL_READINGS_FOR_30_DAY_DELTA),
+      },
+      slopePerDay,
+      latest,
+      lastDate: lastInterpolatedPoint.date,
+    };
+  }
+
+  #projectMetric(forecast: MetricForecast, maximumDays: number) {
+    if (forecast.ratePerWeek == null) return [];
+    const lastMs = dateToMs(forecast.lastDate ?? "");
+    return Array.from({ length: maximumDays }, (_, index) => {
+      const day = index + 1;
+      return {
+        date: msToDate(lastMs + day * MS_PER_DAY),
+        projectedValue: roundWeight(forecast.latest + forecast.slopePerDay * day),
+      };
+    });
+  }
+
   #computeWeightPrediction(
     data: { date: string; rawWeight: number }[],
     goalWeightKg: number | null,
@@ -476,106 +704,71 @@ export class BodyAnalyticsRepository extends BaseRepository {
           : null,
       projectionLine: [],
     };
+    const forecast = this.#computeMetricForecast(data);
+    if (!forecast) return emptyResult;
 
-    if (data.length < 7) return emptyResult;
-
-    // Interpolate missing days, then smooth
-    const interpolated = interpolateMissingDays(
-      data.map((day) => ({ date: day.date, value: day.rawWeight })),
-    );
-    const smoothed = ewmaSmooth(
-      interpolated.map((point) => point.value),
-      0.1,
-    );
-    if (smoothed.length === 0) return emptyResult;
-
-    // Rate via regression on recent smoothed values, only when recent data is mostly real.
-    const regressionWindow = Math.min(WEIGHT_RATE_REGRESSION_WINDOW_DAYS, smoothed.length);
-    let ratePerWeek: number | null = null;
-    let rateConfidence: number | null = null;
-    let slopePerDay = 0;
-
-    const regressionWindowPoints = interpolated.slice(-regressionWindow);
-    if (
-      smoothed.length >= 8 &&
-      countActualWeightReadings(regressionWindowPoints) >= MIN_ACTUAL_READINGS_FOR_WEIGHT_RATE
-    ) {
-      const windowValues = smoothed.slice(-regressionWindow).map((value, index) => ({
-        dayIndex: index,
-        value,
-      }));
-      const regression = leastSquaresSlope(windowValues);
-      slopePerDay = regression.slopePerDay;
-      ratePerWeek = Math.round(slopePerDay * 7 * 100) / 100;
-      rateConfidence = Math.round(regression.rSquared * 1000) / 1000;
-    }
-
-    // Implied daily calories: 7700 kcal/kg
     const impliedDailyCalories =
-      ratePerWeek != null ? Math.round(((ratePerWeek / 7) * 7700 * 10) / 10) : null;
+      forecast.ratePerWeek != null && Math.abs(forecast.ratePerWeek) >= 0.01
+        ? Math.round((forecast.ratePerWeek / 7) * 7700)
+        : null;
 
-    // Period deltas from smoothed values
-    const latest = smoothed[smoothed.length - 1] ?? 0;
-    const computePeriodDelta = (daysBack: number, minimumActualReadings: number) => {
-      const requiredPointCount = daysBack + 1;
-      if (smoothed.length < requiredPointCount) return null;
-
-      const periodPoints = interpolated.slice(-requiredPointCount);
-      if (countActualWeightReadings(periodPoints) < minimumActualReadings) return null;
-
-      return (
-        Math.round((latest - (smoothed[smoothed.length - requiredPointCount] ?? 0)) * 100) / 100
-      );
-    };
-
-    const days7 = computePeriodDelta(7, MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA);
-    const days14 = computePeriodDelta(14, MIN_ACTUAL_READINGS_FOR_14_DAY_DELTA);
-    const days30 = computePeriodDelta(30, MIN_ACTUAL_READINGS_FOR_30_DAY_DELTA);
-
-    // Goal projection
     let goal: WeightPrediction["goal"] = null;
     if (goalWeightKg != null) {
-      const remainingKg = roundWeight(goalWeightKg - latest);
-
-      let estimatedDate: string | null = null;
-      let daysRemaining: number | null = null;
-
-      const lastInterpolatedPoint = interpolated[interpolated.length - 1];
+      const remainingKg = roundWeight(goalWeightKg - forecast.latest);
       const trendingTowardGoal =
-        ratePerWeek != null &&
-        ((remainingKg < 0 && slopePerDay < 0) || (remainingKg > 0 && slopePerDay > 0));
-      if (trendingTowardGoal && Math.abs(slopePerDay) > 0.001 && lastInterpolatedPoint) {
-        daysRemaining = Math.ceil(Math.abs(remainingKg / slopePerDay));
-        const lastMs = dateToMs(lastInterpolatedPoint.date);
-        estimatedDate = msToDate(lastMs + daysRemaining * MS_PER_DAY);
-      }
-
-      goal = { goalWeightKg, remainingKg, estimatedDate, daysRemaining };
+        forecast.ratePerWeek != null &&
+        ((remainingKg < 0 && forecast.slopePerDay < 0) ||
+          (remainingKg > 0 && forecast.slopePerDay > 0));
+      const daysRemaining =
+        trendingTowardGoal && Math.abs(forecast.slopePerDay) > 0.001
+          ? Math.ceil(Math.abs(remainingKg / forecast.slopePerDay))
+          : null;
+      goal = {
+        goalWeightKg,
+        remainingKg,
+        daysRemaining,
+        estimatedDate:
+          daysRemaining == null
+            ? null
+            : msToDate(dateToMs(forecast.lastDate ?? "") + daysRemaining * MS_PER_DAY),
+      };
     }
 
-    // Projection line: up to 30 days forward (or until goal)
-    const projectionLine: WeightPrediction["projectionLine"] = [];
-    const lastInterpolatedPoint = interpolated[interpolated.length - 1];
-    if (ratePerWeek != null && lastInterpolatedPoint) {
-      const lastDate = lastInterpolatedPoint.date;
-      const lastMs = dateToMs(lastDate);
-      const maxDays = goal?.daysRemaining != null ? Math.min(goal.daysRemaining, 30) : 30;
+    const maximumProjectionDays =
+      goal?.daysRemaining != null ? Math.min(goal.daysRemaining, 30) : 30;
+    return {
+      ratePerWeek: forecast.ratePerWeek,
+      rateConfidence: forecast.rateConfidence,
+      impliedDailyCalories,
+      periodDeltas: forecast.periodDeltas,
+      goal,
+      projectionLine: this.#projectMetric(forecast, maximumProjectionDays).map((point) => ({
+        date: point.date,
+        projectedWeight: point.projectedValue,
+      })),
+    };
+  }
 
-      for (let day = 1; day <= maxDays; day++) {
-        projectionLine.push({
-          date: msToDate(lastMs + day * MS_PER_DAY),
-          projectedWeight: roundWeight(latest + slopePerDay * day),
-        });
-      }
-    }
+  #computeBodyFatPrediction(data: { date: string; rawBodyFatPct: number }[]): BodyFatPrediction {
+    const emptyResult: BodyFatPrediction = {
+      ratePerWeek: null,
+      rateConfidence: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      projectionLine: [],
+    };
+    const forecast = this.#computeMetricForecast(
+      data.map(({ date, rawBodyFatPct }) => ({ date, rawWeight: rawBodyFatPct })),
+    );
+    if (!forecast) return emptyResult;
 
     return {
-      ratePerWeek,
-      rateConfidence,
-      impliedDailyCalories,
-      periodDeltas: { days7, days14, days30 },
-      goal,
-      projectionLine,
+      ratePerWeek: forecast.ratePerWeek,
+      rateConfidence: forecast.rateConfidence,
+      periodDeltas: forecast.periodDeltas,
+      projectionLine: this.#projectMetric(forecast, 30).map((point) => ({
+        date: point.date,
+        projectedBodyFatPct: point.projectedValue,
+      })),
     };
   }
 }

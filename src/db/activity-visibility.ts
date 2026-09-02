@@ -28,7 +28,7 @@ const SCANNED_RELATIVE_PATHS = [
 ] as const;
 
 const PROVIDER_ABSENT_FILTER =
-  /provider_absent_at\s+IS\s+(?:NULL|null)(?!\s+AND\s+deleted_at\s+IS\s+(?:NULL|null))/i;
+  /provider_absent_at\s+IS\s+(?:NULL|null)(?!\s+AND\s+(?:\w+\.)?deleted_at\s+IS\s+(?:NULL|null))/i;
 
 /**
  * Returns relative paths whose contents mention `provider_absent_at IS NULL`

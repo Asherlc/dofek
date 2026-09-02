@@ -116,6 +116,7 @@ describe("PolarProvider.authSetup", () => {
     const tokens = await exchangeCode("oauth-code");
 
     expect(tokens.accessToken).toBe("new-access-token");
+    expect(tokens.providerAccountId).toBe("99887766");
     // Should register using x_user_id, not by calling GET /v3/users
     expect(calledUrls).toContain("POST https://www.polaraccesslink.com/v3/users");
     expect(calledUrls).not.toContain("GET https://www.polaraccesslink.com/v3/users");
@@ -208,18 +209,25 @@ describe("PolarProvider.authSetup", () => {
       accessToken: "old-access-token",
       refreshToken: null,
       expiresAt: new Date("2027-01-01"),
+      providerAccountId: "12345",
       scopes: "accesslink.read_all",
     });
 
     expect(calledUrls).toContain("DELETE https://www.polaraccesslink.com/v3/users/12345");
+    expect(calledUrls).not.toContain("GET https://www.polaraccesslink.com/v3/users");
   });
 
-  it("revokeExistingTokens does not throw when old token is rejected", async () => {
+  it("does not weaken reconnect semantics when Polar reports an invalid token", async () => {
     process.env.POLAR_CLIENT_ID = "polar-id";
     process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Unauthorized", { status: 401 });
+      return new Response("Unauthorized", {
+        status: 401,
+        headers: {
+          "WWW-Authenticate": 'Bearer realm="polar", error="invalid_token"',
+        },
+      });
     };
 
     const provider = new PolarProvider(mockFetch);
@@ -228,13 +236,15 @@ describe("PolarProvider.authSetup", () => {
       throw new Error("Expected revokeExistingTokens to be defined");
     }
 
-    // Should not throw — revocation is best-effort
-    await setup.revokeExistingTokens({
-      accessToken: "dead-token",
-      refreshToken: null,
-      expiresAt: new Date("2020-01-01"),
-      scopes: null,
-    });
+    await expect(
+      setup.revokeExistingTokens({
+        accessToken: "dead-token",
+        refreshToken: null,
+        expiresAt: new Date("2020-01-01"),
+        providerAccountId: "12345",
+        scopes: null,
+      }),
+    ).rejects.toThrow("deregistration failed (401)");
   });
 });
 
@@ -266,7 +276,7 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
             access_token: "new-token",
             refresh_token: "new-refresh",
             expires_in: 31536000,
-            x_user_id: "polar-user-123",
+            x_user_id: "123",
             scope: "accesslink.read_all",
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -313,7 +323,7 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
         return new Response(
           JSON.stringify({
             access_token: "new-token",
-            x_user_id: "polar-user-123",
+            x_user_id: "123",
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
@@ -345,7 +355,7 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
         return new Response(
           JSON.stringify({
             access_token: "new-token",
-            x_user_id: "polar-user-123",
+            x_user_id: "123",
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
@@ -413,7 +423,7 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
   it("posts a form-encoded body with basic auth and the auth code", async () => {
     const { provider, tokenRequest } = setupProvider({
       access_token: "tok",
-      x_user_id: "user-1",
+      x_user_id: "1",
     });
 
     await provider.authSetup().exchangeCode?.("the-auth-code");
@@ -440,7 +450,7 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
     const before = Date.now();
     const { provider } = setupProvider({
       access_token: "tok",
-      x_user_id: "user-1",
+      x_user_id: "1",
       expires_in: 3600,
       refresh_token: "refresh-tok",
       scope: "accesslink.read_all",
@@ -461,7 +471,7 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
     const before = Date.now();
     const { provider } = setupProvider({
       access_token: "tok",
-      x_user_id: "user-1",
+      x_user_id: "1",
     });
 
     const { exchangeCode } = provider.authSetup();
@@ -524,7 +534,7 @@ describe("PolarProvider — revokeExistingTokens", () => {
     expect(deletedIds).toEqual(["old-user-9"]);
   });
 
-  it("warns and does not deregister when the user id cannot be discovered", async () => {
+  it("rejects and does not deregister when the user id cannot be discovered", async () => {
     process.env.POLAR_CLIENT_ID = "client-id";
     process.env.POLAR_CLIENT_SECRET = "client-secret";
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
@@ -548,14 +558,14 @@ describe("PolarProvider — revokeExistingTokens", () => {
     });
 
     const provider = new PolarProvider(mockFetch);
-    const revoke = provider.authSetup().revokeExistingTokens;
+    const setup = provider.authSetup();
+    expect(setup.reconnectStrategy).toBe("revoke-then-replace");
+    const revoke = setup.revokeExistingTokens;
     if (!revoke) throw new Error("expected revokeExistingTokens");
-    await revoke(oldTokens);
+    await expect(revoke(oldTokens)).rejects.toThrow("not confirmed revoked");
 
     expect(deleteCalled).toBe(false);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Could not discover Polar user ID"),
-    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Token revocation failed"));
   });
 });
 

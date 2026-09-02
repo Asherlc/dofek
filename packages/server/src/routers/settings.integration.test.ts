@@ -1,11 +1,14 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 const SETTINGS_TEST_USER_ID = "00000000-0000-0000-0000-0000000000f1";
+const countRowSchema = z.object({ count: z.coerce.number() });
 
 describe("Settings router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -70,13 +73,86 @@ describe("Settings router", () => {
   }
 
   describe("set and get", () => {
-    it("sets a setting and gets it back", async () => {
-      await mutate("settings.set", { key: "testSetting", value: 42 });
+    it("sets a known setting and gets it back", async () => {
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
 
-      const result = await query("settings.get", { key: "testSetting" });
+      const result = await query("settings.get", { key: "unitSystem" });
       expect(result.result.data).toBeDefined();
-      expect(result.result.data.key).toBe("testSetting");
-      expect(result.result.data.value).toBe(42);
+      expect(result.result.data.key).toBe("unitSystem");
+      expect(result.result.data.value).toBe("imperial");
+    });
+
+    it.each([
+      { key: "unitSystem", value: "kelvin" },
+      { key: "dashboardLayout", value: { order: [], hidden: [], collapsed: "invalid" } },
+      { key: "whoop.wearLocation", value: "ankle" },
+      { key: "primaryGoal", value: "loseWeight" },
+      { key: "unknownSetting", value: true },
+      {
+        key: "medicationReminders",
+        value: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            medicationName: "",
+            localTime: "08:30",
+            enabled: true,
+          },
+        ],
+      },
+      {
+        key: "medicationReminders",
+        value: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            medicationName: "Vitamin D3",
+            localTime: "8:30",
+            enabled: true,
+          },
+        ],
+      },
+    ])("rejects malformed or unknown setting $key", async (input) => {
+      const result = await mutate("settings.set", input);
+
+      expect(result.error.data.code).toBe("BAD_REQUEST");
+    });
+
+    it("sets medication reminders and gets them back", async () => {
+      const reminders = [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          medicationName: "Vitamin D3",
+          localTime: "08:30",
+          enabled: true,
+        },
+      ];
+
+      await mutate("settings.set", { key: "medicationReminders", value: reminders });
+
+      const result = await query("settings.get", { key: "medicationReminders" });
+      expect(result.result.data).toEqual({
+        key: "medicationReminders",
+        value: reminders,
+      });
+    });
+
+    it("sets and gets primaryGoal", async () => {
+      await mutate("settings.set", { key: "primaryGoal", value: "sleepConsistency" });
+
+      const result = await query("settings.get", { key: "primaryGoal" });
+      expect(result.result.data).toEqual({
+        key: "primaryGoal",
+        value: "sleepConsistency",
+      });
+    });
+
+    it("returns the updated primaryGoal after set, not a stale cached value", async () => {
+      await mutate("settings.set", { key: "primaryGoal", value: "racePreparation" });
+      const first = await query("settings.get", { key: "primaryGoal" });
+      expect(first.result.data.value).toBe("racePreparation");
+
+      await mutate("settings.set", { key: "primaryGoal", value: "weightTrend" });
+      const second = await query("settings.get", { key: "primaryGoal" });
+      expect(second.result.data.value).toBe("weightTrend");
     });
   });
 
@@ -89,28 +165,28 @@ describe("Settings router", () => {
 
   describe("upsert", () => {
     it("overwrites an existing value", async () => {
-      await mutate("settings.set", { key: "upsertTest", value: "first" });
-      await mutate("settings.set", { key: "upsertTest", value: "second" });
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
 
-      const result = await query("settings.get", { key: "upsertTest" });
-      expect(result.result.data.value).toBe("second");
+      const result = await query("settings.get", { key: "unitSystem" });
+      expect(result.result.data.value).toBe("imperial");
     });
   });
 
   describe("cache invalidation on set", () => {
     it("returns the updated value after set, not the stale cached value", async () => {
       // 1. Set initial value
-      await mutate("settings.set", { key: "cacheTest", value: "metric" });
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
 
       // 2. Read it — populates the server-side cache
-      const first = await query("settings.get", { key: "cacheTest" });
+      const first = await query("settings.get", { key: "unitSystem" });
       expect(first.result.data.value).toBe("metric");
 
       // 3. Update the value
-      await mutate("settings.set", { key: "cacheTest", value: "imperial" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
 
       // 4. Read again — should return "imperial", not stale "metric"
-      const second = await query("settings.get", { key: "cacheTest" });
+      const second = await query("settings.get", { key: "unitSystem" });
       expect(second.result.data.value).toBe("imperial");
     });
   });
@@ -118,8 +194,8 @@ describe("Settings router", () => {
   describe("getAll", () => {
     it("returns all settings", async () => {
       // Ensure we have at least two settings from previous tests
-      await mutate("settings.set", { key: "allTestA", value: 1 });
-      await mutate("settings.set", { key: "allTestB", value: 2 });
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
+      await mutate("settings.set", { key: "whoop.wearLocation", value: "wrist" });
 
       const result = await query("settings.getAll");
       expect(result.result.data).toBeDefined();
@@ -127,8 +203,8 @@ describe("Settings router", () => {
       expect(settings.length).toBeGreaterThanOrEqual(2);
 
       const keys = settings.map((s) => s.key);
-      expect(keys).toContain("allTestA");
-      expect(keys).toContain("allTestB");
+      expect(keys).toContain("unitSystem");
+      expect(keys).toContain("whoop.wearLocation");
     });
   });
 
@@ -154,16 +230,18 @@ describe("Settings router", () => {
       );
       await Promise.all([
         testCtx.db.execute(
-          sql`INSERT INTO fitness.activity (id, provider_id, user_id, activity_type, started_at, name)
+          sql`INSERT INTO fitness.activity (id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, name)
               VALUES (
                 '22222222-2222-2222-2222-222222222222',
                 'settings-wipe-provider',
                 ${SETTINGS_TEST_USER_ID},
+                'settings-delete-me',
+                'running',
                 'running',
                 '2024-01-15T10:00:00Z',
                 'Delete Me'
               )
-              ON CONFLICT DO NOTHING`,
+              ON CONFLICT (id) DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
@@ -179,14 +257,42 @@ describe("Settings router", () => {
               VALUES (${SETTINGS_TEST_USER_ID}, 'Delete event', '2024-01-15')`,
         ),
         testCtx.db.execute(
+          sql`INSERT INTO fitness.breathwork_session (
+                id, user_id, technique_id, rounds, duration_seconds, started_at
+              ) VALUES (
+                '33333333-3333-3333-3333-333333333333',
+                ${SETTINGS_TEST_USER_ID},
+                'box-breathing',
+                4,
+                240,
+                '2024-01-15T10:00:00Z'
+              )
+              ON CONFLICT (id) DO NOTHING`,
+        ),
+        testCtx.db.execute(
+          sql`INSERT INTO fitness.menstrual_period (id, user_id, start_date, notes)
+              VALUES (
+                '44444444-4444-4444-4444-444444444444',
+                ${SETTINGS_TEST_USER_ID},
+                '2024-01-15',
+                'Delete period'
+              )
+              ON CONFLICT (id) DO NOTHING`,
+        ),
+        testCtx.db.execute(
           sql`INSERT INTO fitness.sport_settings (user_id, sport, effective_from, ftp)
               VALUES (${SETTINGS_TEST_USER_ID}, 'running', '2024-01-15', 260)
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
-          sql`INSERT INTO fitness.supplement (user_id, name)
-              VALUES (${SETTINGS_TEST_USER_ID}, 'Delete supplement')
-              ON CONFLICT DO NOTHING`,
+          sql`WITH schedule AS (
+                INSERT INTO fitness.supplement (user_id)
+                VALUES (${SETTINGS_TEST_USER_ID})
+                RETURNING id
+              )
+              INSERT INTO fitness.supplement_definition (supplement_id, name)
+              SELECT id, 'Delete supplement'
+              FROM schedule`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.user_settings (user_id, key, value)
@@ -203,29 +309,55 @@ describe("Settings router", () => {
         logsAfter,
         tokensAfter,
         eventsAfter,
+        breathworkSessionsAfter,
+        menstrualPeriodsAfter,
         sportSettingsAfter,
         supplementsAfter,
         userSettingsAfter,
       ] = await Promise.all([
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.sync_log WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.oauth_token WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
+          sql`SELECT count(*)::int AS count FROM fitness.breathwork_session WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
+          sql`SELECT count(*)::int AS count FROM fitness.menstrual_period WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
+        ),
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
-        testCtx.db.execute<{ count: number }>(
+        executeWithSchema(
+          testCtx.db,
+          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
       ]);
@@ -234,14 +366,16 @@ describe("Settings router", () => {
       expect(logsAfter[0]?.count).toBe(0);
       expect(tokensAfter[0]?.count).toBe(0);
       expect(eventsAfter[0]?.count).toBe(0);
+      expect(breathworkSessionsAfter[0]?.count).toBe(0);
+      expect(menstrualPeriodsAfter[0]?.count).toBe(0);
       expect(sportSettingsAfter[0]?.count).toBe(0);
       expect(supplementsAfter[0]?.count).toBe(0);
       expect(userSettingsAfter[0]?.count).toBe(0);
 
       // Session should remain usable after data deletion.
-      await mutate("settings.set", { key: "afterDelete", value: true });
-      const settingResult = await query("settings.get", { key: "afterDelete" });
-      expect(settingResult.result.data.value).toBe(true);
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
+      const settingResult = await query("settings.get", { key: "unitSystem" });
+      expect(settingResult.result.data.value).toBe("metric");
     });
   });
 });

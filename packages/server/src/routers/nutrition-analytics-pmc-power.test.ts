@@ -2,6 +2,8 @@ import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -16,7 +18,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -107,6 +112,17 @@ function makeSensorStore(rows: unknown[] = []): SensorStore {
   };
 }
 
+function isPmcActivityChartQuery(queryText: string): boolean {
+  return queryText.includes("CROSS JOIN user_baseline ub");
+}
+
+function isPmcNormalizedPowerQuery(queryText: string): boolean {
+  return (
+    queryText.includes("FROM analytics.activity_summary") &&
+    queryText.includes("normalized_power IS NOT NULL")
+  );
+}
+
 function makePmcSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[] = [],
@@ -114,7 +130,14 @@ function makePmcSensorStore(
   return {
     query: vi.fn(
       async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
-        const rows = queryText.includes("rolling_30s_power") ? normalizedPowerRows : activityRows;
+        let rows: unknown[];
+        if (isPmcNormalizedPowerQuery(queryText)) {
+          rows = normalizedPowerRows;
+        } else if (isPmcActivityChartQuery(queryText)) {
+          rows = activityRows;
+        } else {
+          throw new Error(`Unexpected PMC sensor store query: ${queryText.slice(0, 160)}`);
+        }
         return rows.map((row) => schema.parse(row));
       },
     ),
@@ -179,54 +202,45 @@ describe("nutritionAnalyticsRouter", () => {
     });
   });
 
-  describe("caloricBalance", () => {
-    it("returns caloric balance rows", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          calories_in: 2200,
-          active_energy: 500,
-          basal_energy: 1800,
-          total_expenditure: 2300,
-          balance: -100,
-          rolling_avg_balance: -50,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.caloricBalance({ days: 30 });
-
-      expect(result).toHaveLength(1);
-      expect(result[0]?.caloriesIn).toBe(2200);
-      expect(result[0]?.balance).toBe(-100);
-    });
-  });
-
   describe("adaptiveTdee", () => {
     it("returns null TDEE when insufficient data", async () => {
-      const rows = [{ date: "2024-01-15", calories_in: 2200, weight_kg: 75 }];
+      const rows = [
+        {
+          date: new Date().toISOString().slice(0, 10),
+          calories_in: 2200,
+          resolution_status: "available",
+          excluded_source_labels: [],
+          weight_kg: 75,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.adaptiveTdee({ days: 90 });
 
       expect(result.estimatedTdee).toBeNull();
-      expect(result.confidence).toBe(0);
+      expect(result.status).toBe("unavailable");
+      expect(result.evidence.acceptedWindows).toBe(0);
     });
 
     it("estimates TDEE from calorie and weight data", async () => {
       // Create 35 days of data (enough for 28-day window)
       const rows = [];
       for (let i = 0; i < 35; i++) {
-        const date = new Date("2024-01-01");
-        date.setDate(date.getDate() + i);
+        const date = new Date();
+        date.setDate(date.getDate() - (34 - i));
         rows.push({
           date: date.toISOString().slice(0, 10),
           calories_in: 2200,
+          resolution_status: "available",
+          excluded_source_labels: [],
           weight_kg: i < 10 || i > 25 ? 75 - i * 0.01 : null,
         });
       }
       const caller = makeCaller(rows);
       const result = await caller.adaptiveTdee({ days: 90 });
 
-      expect(result.dailyData).toHaveLength(35);
+      expect(result.dailyData).toHaveLength(90);
+      expect(result.status).toBe("available");
+      expect(result.evidence.acceptedWindows).toBeGreaterThan(0);
     });
   });
 
@@ -269,31 +283,19 @@ describe("nutritionAnalyticsRouter", () => {
       expect(result[0]?.proteinPerKg).toBeNull();
     });
   });
-
-  describe("access window gating", () => {
-    it("caloricBalance passes accessWindow to repository (limited window returns empty)", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-        timezone: "UTC",
-        accessWindow: {
-          kind: "limited",
-          paid: false,
-          reason: "free_signup_week",
-          startDate: "2026-04-10",
-          endDateExclusive: "2026-04-17",
-        },
-      });
-      const result = await caller.caloricBalance({ days: 30 });
-      expect(result).toEqual([]);
-    });
-  });
 });
 
 describe("pmcRouter", () => {
   const createCaller = createTestCallerFactory(pmcRouter);
 
   describe("chart", () => {
+    it("versions the availability response cache contract", () => {
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "pmc-chart-availability-v1",
+      });
+    });
+
     it("returns empty when no globalMaxHr", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -305,6 +307,14 @@ describe("pmcRouter", () => {
 
       expect(result.data).toEqual([]);
       expect(result.model.type).toBe("generic");
+      expect(result.availability).toMatchObject({
+        status: "insufficient_data",
+        sourceLabel: "Training load read model",
+        observedCount: 0,
+        minimumCount: 1,
+        message:
+          "No training load data is available from the training load read model. Record at least 1 activity with heart-rate or power data to show this chart.",
+      });
     });
 
     it("computes PMC data from activities", async () => {
@@ -336,6 +346,13 @@ describe("pmcRouter", () => {
 
       expect(result.data.length).toBeGreaterThan(0);
       expect(result.model).toBeDefined();
+      expect(result.availability).toMatchObject({
+        status: "available",
+        sourceLabel: "Training load read model",
+        observedCount: result.data.length,
+        minimumCount: 1,
+        message: "Training load data is available from the training load read model.",
+      });
     });
 
     it("uses power TSS when power data available", async () => {
@@ -430,7 +447,10 @@ describe("powerRouter", () => {
         db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue(samples) },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+          getPowerCurveSamples: vi.fn().mockResolvedValue(samples),
+        },
       });
       const result = await caller.powerCurve({ days: 90 });
 
@@ -446,7 +466,10 @@ describe("powerRouter", () => {
         db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue([]) },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+          getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        },
       });
       const result = await caller.powerCurve({ days: 90 });
       expect(result.points).toEqual([]);
@@ -469,13 +492,16 @@ describe("powerRouter", () => {
 
   describe("eftpTrend", () => {
     it("returns eFTP trend data", async () => {
-      // First call: Normalized Power samples — 300 samples at 1s with ~260W average
-      const normalizedPowerSamples = makePowerSamples(
-        "act-1",
-        "2024-01-15",
-        Array.from({ length: 300 }, () => 260),
-      ).map((s) => ({ ...s, activity_name: "Ride" }));
-      // Second call: power curve samples — 1200 samples for CP model
+      // First call: query() reads from analytics.activity_summary for NP data
+      const npRows = [
+        {
+          activity_id: "act-1",
+          activity_date: "2024-01-15",
+          activity_name: "Ride",
+          normalized_power: 260,
+        },
+      ];
+      // Second call: power curve samples — 1200 samples for CP model fallback
       const pcSamples = makePowerSamples(
         "act-1",
         "2024-01-15",
@@ -485,7 +511,12 @@ describe("powerRouter", () => {
       const caller = createCaller({
         db: makeRawActivityCountDb(1),
         sensorStore: {
-          getNormalizedPowerSamples: vi.fn().mockResolvedValue(normalizedPowerSamples),
+          query: vi.fn(async (_schema, queryText = "") => {
+            if (queryText.includes("activity_power_curve")) {
+              return [];
+            }
+            return npRows;
+          }),
           getPowerCurveSamples: vi.fn().mockResolvedValue(pcSamples),
         },
         userId: "user-1",

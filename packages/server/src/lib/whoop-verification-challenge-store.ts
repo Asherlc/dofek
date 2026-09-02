@@ -1,6 +1,6 @@
+import type { WhoopVerificationMethod } from "@dofek/whoop/types";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
-import type { WhoopVerificationMethod } from "whoop-whoop/types";
 import { z } from "zod";
 import { logger } from "../logger.ts";
 

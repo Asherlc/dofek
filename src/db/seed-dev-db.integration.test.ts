@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
@@ -7,7 +6,7 @@ import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
-const userId = "00000000-0000-0000-0000-000000000001";
+const userId = "00000000-0000-4000-8000-000000000001";
 
 interface CountRow {
   count: number;
@@ -29,13 +28,10 @@ interface SeedCounts {
   nutritionDaily: number;
   foodEntries: number;
   supplements: number;
-  labPanels: number;
-  labResults: number;
+  clinicalRecords: number;
   dexaScans: number;
   journalEntries: number;
   lifeEvents: number;
-  breathworkSessions: number;
-  menstrualPeriods: number;
   vSleep: number;
   vDailyMetrics: number;
 }
@@ -72,26 +68,6 @@ async function setupBareDatabase(): Promise<BareDatabaseContext> {
       await new Promise((resolveAfterDelay) => setTimeout(resolveAfterDelay, 500));
     }
   }
-
-  const sql = postgres(connectionString, { max: 1 });
-  const drizzleDir = resolve(import.meta.dirname, "../../drizzle");
-  const migrationFiles = readdirSync(drizzleDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .sort();
-
-  for (const fileName of migrationFiles) {
-    const content = readFileSync(resolve(drizzleDir, fileName), "utf-8");
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-
-    for (const statement of statements) {
-      await sql.unsafe(statement);
-    }
-  }
-
-  await sql.end();
 
   return {
     connectionString,
@@ -150,19 +126,50 @@ describe("seed-dev-db", () => {
       expect(firstCounts.nutritionDaily).toBeGreaterThanOrEqual(85);
       expect(firstCounts.foodEntries).toBeGreaterThanOrEqual(20);
       expect(firstCounts.supplements).toBeGreaterThanOrEqual(3);
-      expect(firstCounts.labPanels).toBeGreaterThanOrEqual(2);
-      expect(firstCounts.labResults).toBeGreaterThanOrEqual(8);
+      expect(firstCounts.clinicalRecords).toBeGreaterThanOrEqual(13);
       expect(firstCounts.dexaScans).toBeGreaterThanOrEqual(2);
       expect(firstCounts.journalEntries).toBeGreaterThanOrEqual(30);
       expect(firstCounts.lifeEvents).toBeGreaterThanOrEqual(3);
-      expect(firstCounts.breathworkSessions).toBeGreaterThanOrEqual(10);
-      expect(firstCounts.menstrualPeriods).toBeGreaterThanOrEqual(4);
       expect(firstCounts.vSleep).toBeGreaterThanOrEqual(90);
       expect(firstCounts.vDailyMetrics).toBeGreaterThanOrEqual(170);
     } finally {
       await sql.end();
     }
   }, 420_000);
+
+  it("stops before seeding when a tracked migration fails", async () => {
+    const failingDatabaseName = "seed_migration_failure";
+    const admin = postgres(ctx.connectionString, { max: 1 });
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${failingDatabaseName} WITH (FORCE)`);
+    await admin.unsafe(`CREATE DATABASE ${failingDatabaseName}`);
+    await admin.end();
+
+    const failingDatabaseUrl = new URL(ctx.connectionString);
+    failingDatabaseUrl.pathname = `/${failingDatabaseName}`;
+    const failingConnectionString = failingDatabaseUrl.toString();
+    const sql = postgres(failingConnectionString, { max: 1 });
+    await sql`CREATE SCHEMA fitness`;
+    await sql.end();
+
+    const seedFailure = runSeed(failingConnectionString);
+    await expect(seedFailure).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("0000_baseline.sql"),
+    });
+    await expect(seedFailure).rejects.toMatchObject({
+      stderr: expect.stringContaining("CREATE SCHEMA fitness"),
+    });
+    await expect(seedFailure).rejects.toMatchObject({
+      stderr: expect.stringContaining('schema "fitness" already exists'),
+    });
+
+    const verificationSql = postgres(failingConnectionString, { max: 1 });
+    const [row] = await verificationSql<
+      { userProfileTable: string | null }[]
+    >`SELECT to_regclass('fitness.user_profile')::text AS "userProfileTable"`;
+    await verificationSql.end();
+    expect(row?.userProfileTable).toBeNull();
+  }, 120_000);
 });
 
 async function runSeed(connectionString: string): Promise<void> {
@@ -186,7 +193,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
   return {
     providers: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.provider WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.provider_connection WHERE user_id = '${userId}'`,
     ),
     sessions: await readCount(
       sql,
@@ -194,7 +201,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     ),
     providerPriorities: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.provider_priority pp JOIN fitness.provider p ON p.id = pp.provider_id WHERE p.user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.provider_priority pp JOIN fitness.provider_connection pc ON pc.provider_id = pp.provider_id WHERE pc.user_id = '${userId}'`,
     ),
     userSettings: await readCount(
       sql,
@@ -226,7 +233,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     ),
     strengthWorkouts: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${userId}' AND activity_type = 'strength'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${userId}' AND canonical_type = 'strength'`,
     ),
     strengthSets: await readCount(
       sql,
@@ -245,13 +252,9 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.supplement WHERE user_id = '${userId}'`,
     ),
-    labPanels: await readCount(
+    clinicalRecords: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.lab_panel WHERE user_id = '${userId}'`,
-    ),
-    labResults: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.lab_result WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.clinical_record WHERE user_id = '${userId}'`,
     ),
     dexaScans: await readCount(
       sql,
@@ -264,14 +267,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     lifeEvents: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.life_events WHERE user_id = '${userId}'`,
-    ),
-    breathworkSessions: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.breathwork_session WHERE user_id = '${userId}'`,
-    ),
-    menstrualPeriods: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${userId}'`,
     ),
     vSleep: await readCount(
       sql,

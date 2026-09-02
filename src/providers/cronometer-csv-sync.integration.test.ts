@@ -2,7 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { nutrientRowSchema } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient, TEST_USER_ID } from "../db/schema.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema/nutrition.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { CRONOMETER_PROVIDER_ID, importCronometerCsv } from "./cronometer-csv.ts";
 
@@ -67,7 +68,7 @@ async function queryDailyNutritionFromView(db: TestContext["db"]) {
   return db.execute<z.infer<typeof dailyNutritionRowSchema>>(
     sql`
       SELECT date, calories, protein_g, carbs_g, fat_g
-      FROM fitness.v_nutrition_daily
+      FROM fitness.v_nutrition_provider_daily
       WHERE provider_id = ${CRONOMETER_PROVIDER_ID}
     `,
   );
