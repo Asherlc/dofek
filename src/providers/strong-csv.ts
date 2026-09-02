@@ -379,7 +379,9 @@ export async function importStrongCsv(
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
   let effectiveWeightUnit = weightUnit;
-  const parsed = [parseStrongText, parseStrongCsv][Number(isStrongCsvFormat(csvText))](csvText);
+  const parsed = ([parseStrongText, parseStrongCsv][Number(isStrongCsvFormat(csvText))] ?? parseStrongText)(
+    csvText,
+  );
   groups = Array.isArray(parsed) ? parsed : parsed.groups;
   effectiveWeightUnit = Array.isArray(parsed) ? weightUnit : parsed.weightUnit;
   const exerciseCache = new Map<string, string>();
