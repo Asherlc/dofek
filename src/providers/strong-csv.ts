@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
@@ -367,6 +368,7 @@ export async function importStrongCsv(
   csvText: string,
   userId: string,
   weightUnit: "kg" | "lbs",
+  timezone?: string,
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
@@ -390,10 +392,32 @@ export async function importStrongCsv(
     try {
       const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
-      const startedAt = new Date(group.date);
+      const wallClockDate = new Date(`${group.date.replace(" ", "T")}Z`);
+      if (Number.isNaN(wallClockDate.getTime())) {
+        throw new Error(`Invalid Strong workout timestamp: ${group.date}`);
+      }
+      let startedAt = wallClockDate;
+      if (timezone) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const context = resolveRecordLocalTimeContext({
+            startedAt,
+            timezone,
+            source: "device_timezone",
+          });
+          startedAt = new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
+        }
+      }
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
+      const localTimeContext = timezone
+        ? resolveRecordLocalTimeContext({
+            startedAt,
+            endedAt,
+            timezone,
+            source: "device_timezone",
+          })
+        : null;
 
       const activityRow = await upsertProviderActivity(
         db,
@@ -406,6 +430,10 @@ export async function importStrongCsv(
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
+          timezone: localTimeContext?.timezone,
+          startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
+          endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
+          localTimeSource: localTimeContext?.source,
         },
         {
           activityType: resolveProviderActivityType("strength", "strength"),
@@ -413,6 +441,10 @@ export async function importStrongCsv(
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
+          timezone: localTimeContext?.timezone,
+          startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
+          endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
+          localTimeSource: localTimeContext?.source,
         },
       );
 

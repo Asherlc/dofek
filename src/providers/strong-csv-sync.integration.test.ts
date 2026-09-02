@@ -78,7 +78,7 @@ describe("importStrongCsv() (integration)", () => {
     expect(workout.startedAt).toEqual(new Date("2026-03-01T18:00:00.000Z"));
     expect(workout.timezone).toBe("America/Los_Angeles");
     expect(workout.startUtcOffsetMinutes).toBe(-480);
-    expect(workout.localTimeSource).toBe("user_home_timezone");
+    expect(workout.localTimeSource).toBe("device_timezone");
     expect(workout.notes).toBe("First workout");
 
     // Verify strength_set rows
