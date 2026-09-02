@@ -167,6 +167,7 @@ describe("App Store transaction verification", () => {
     ["a product outside the configured subscription", { productId: "com.dofek.other" }],
     ["a transaction without an account token", { appAccountToken: undefined }],
     ["a transaction without an original transaction ID", { originalTransactionId: "" }],
+    ["a transaction without an expiry", { expiresDate: undefined }],
     ["a transaction with a malformed expiry", { expiresDate: "tomorrow" }],
     ["a transaction with an unsupported environment", { environment: "Xcode" }],
   ])("rejects %s", async (_description, invalidValues) => {

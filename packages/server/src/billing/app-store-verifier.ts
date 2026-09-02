@@ -58,6 +58,8 @@ function requiredUuid(value: unknown, field: string): string {
   return result.data;
 }
 
+function dateFromTimestamp(value: unknown, field: string, required: true): Date;
+function dateFromTimestamp(value: unknown, field: string, required: false): Date | null;
 function dateFromTimestamp(value: unknown, field: string, required: boolean): Date | null {
   if (value === undefined || value === null) {
     if (required) throw precondition(`Verified App Store transaction is missing ${field}`);
