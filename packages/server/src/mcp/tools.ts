@@ -53,7 +53,6 @@ import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange, jsonContent } from "./tool-utils.ts";
 import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
@@ -459,7 +458,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Health Trends",
       description:
-        "Return daily or weekly health metric aggregates with baseline-relative recovery context for an exact date range.",
+        "Show daily HRV and step trends, or other health metrics, for an exact date range with baseline-relative recovery context.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
@@ -526,7 +525,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "render_health_explorer",
     {
       title: "Render Health Explorer",
-      description: "Return a server-computed health analytics snapshot for the Dofek Explorer.",
+      description:
+        "Open the interactive Dofek Analytics Explorer for server-computed health metrics in an exact date range.",
       inputSchema: healthExplorerInputSchema,
       annotations: { readOnlyHint: true },
       _meta: { ui: { resourceUri: healthExplorerResourceUri } },
@@ -534,11 +534,24 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     async (input) => {
       requireMcpScope(context.scopes, "health:read");
       const timezone = input.timezone ?? context.timezone;
-      return jsonToolResult(
-        await new HealthExplorerService({
-          list: (request) => listHealthTrends(context, request),
-        }).snapshot({ ...input, timezone }),
-      );
+      const snapshot = await new HealthExplorerService({
+        list: (request) => listHealthTrends(context, request),
+      }).snapshot({ ...input, timezone });
+      return {
+        structuredContent: snapshot,
+        content: [
+          {
+            type: "text" as const,
+            text: `Dofek Analytics Explorer coverage: ${Object.entries(snapshot.coverage.by_metric)
+              .map(
+                ([metric, coverage]) =>
+                  `${metric} ${coverage.observed_days} of ${snapshot.coverage.requested_days} days`,
+              )
+              .join("; ")}.`,
+          },
+        ],
+        _meta: { ui: { resourceUri: healthExplorerResourceUri } },
+      };
     },
   );
 
@@ -547,7 +560,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Sleep Summary",
       description:
-        "Return nightly sleep duration, efficiency, stages, and timing for a date range.",
+        "Summarize sleep by night, including duration, efficiency, stages, and timing, for an exact date range.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
@@ -622,7 +635,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "search_activities",
     {
       title: "Search Activities",
-      description: "Search authenticated user activity summaries.",
+      description:
+        "Show authenticated user activities in an optional date range (defaulting to the last 30 days), optionally filtered by text.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         from: dateSchema.optional(),
@@ -872,7 +886,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "list_providers",
     {
       title: "List Providers",
-      description: "List configured user-facing providers and connection status.",
+      description:
+        "List configured Dofek providers with connection status and last-sync timestamps.",
       annotations: { readOnlyHint: true },
       inputSchema: {},
     },

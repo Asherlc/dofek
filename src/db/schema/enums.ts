@@ -43,7 +43,13 @@ export const foodCategoryEnum = fitness.enum("food_category", [
   "other",
 ]);
 
-export const setTypeEnum = fitness.enum("set_type", ["working", "warmup", "dropset", "failure"]);
+export const setTypeEnum = fitness.enum("set_type", [
+  "working",
+  "warmup",
+  "dropset",
+  "failure",
+  "rest",
+]);
 
 export const climbingClimbTypeEnum = fitness.enum("climbing_climb_type", ["boulder", "route"]);
 

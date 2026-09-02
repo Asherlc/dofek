@@ -9,6 +9,18 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
   - Automatically applies migrations when needed and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`
+- `seed-openai-reviewer-demo.ts`: Seeds only the existing
+  `asherlc+openai-review@asherlc.com` account with deterministic synthetic
+  daily HRV/steps (August 18–31, 2026), seven sleep records, four activities,
+  and three provider last-sync records. It fails when that exact account is
+  absent, removes only its own source-tagged rows, and never reads or copies
+  another account's health data.
+  - Usage: `pnpm seed:openai-reviewer-demo`
+  - Target database: the command uses `.env.local`'s `DATABASE_URL` when that
+    file is present; otherwise it uses the production database URL exported by
+    Infisical. Do not prefix this command with `DATABASE_URL=...`, because the
+    environment wrapper intentionally applies `.env.local` after shell
+    variables.
 - `seed-review-clickhouse.ts`: Refreshes review-user relational tables in
   ClickHouse and inserts 90 deterministic review body-weight samples directly
   into canonical `ingest.metric_stream`. It tombstones only its own prior

@@ -1,6 +1,6 @@
 {
   "name": "@dofek/eight-sleep",
-  "version": "0.1.26",
+  "version": "0.1.28",
   "description": "Unofficial Eight Sleep API client using reverse-engineered authentication",
   "type": "module",
   "license": "MIT",

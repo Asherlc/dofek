@@ -91,6 +91,7 @@ export const fileUpload = fitness.table(
     importJobId: text("import_job_id"),
     importSince: timestamp("import_since", { withTimezone: true }).notNull(),
     weightUnit: text("weight_unit"),
+    timezone: text("timezone"),
     progressPercent: bigint("progress_percent", { mode: "number" }).notNull().default(0),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),

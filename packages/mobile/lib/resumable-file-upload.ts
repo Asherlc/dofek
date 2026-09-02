@@ -82,7 +82,7 @@ export async function runMobileResumableFileUpload({
     contentType: file.type,
     sizeBytes: file.size,
     sha256: await file.sha256(),
-    weightUnit: importType === "strong-csv" ? "kg" : undefined,
+    weightUnit: undefined,
   });
   const resumed = await api.resume({ uploadId: initiated.uploadId });
   const completedParts = new Map(
