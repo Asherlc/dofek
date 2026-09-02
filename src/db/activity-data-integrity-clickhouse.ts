@@ -427,7 +427,7 @@ export function rowsEqual(left: readonly object[], right: readonly object[]): bo
   return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
 
-export function restoredRowsEqual(
+function restoredRowsEqual(
   current: readonly Record<string, unknown>[],
   captured: readonly Record<string, unknown>[],
   refreshVersion: string,
@@ -447,7 +447,7 @@ function rowKey(row: Record<string, unknown>, columns: readonly string[]): strin
   return columns.map((column) => String(row[column] ?? "")).join("\u0000");
 }
 
-export function capturedRowsWithAfterOnlyTombstones(
+function capturedRowsWithAfterOnlyTombstones(
   before: readonly Record<string, unknown>[],
   after: readonly Record<string, unknown>[],
   keyColumns: readonly string[],

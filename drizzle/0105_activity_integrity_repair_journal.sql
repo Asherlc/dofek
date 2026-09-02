@@ -15,32 +15,32 @@ CREATE TABLE fitness.activity_integrity_repair_journal (
   updated_at timestamptz DEFAULT now() NOT NULL,
   CONSTRAINT activity_integrity_repair_journal_artifact_path_key UNIQUE (artifact_path),
   CONSTRAINT activity_integrity_repair_journal_checksum_valid
-    CHECK (artifact_checksum ~ '^[0-9a-f]{64}$'),
+  CHECK (artifact_checksum ~ '^[0-9a-f]{64}$'),
   CONSTRAINT activity_integrity_repair_journal_phase_valid
-    CHECK (phase IN (
-      'postgres_committed',
-      'rebuild_failed',
-      'executed',
-      'rollback_committed',
-      'rolled_back',
-      'retired'
-    )),
+  CHECK (phase IN (
+    'postgres_committed',
+    'rebuild_failed',
+    'executed',
+    'rollback_committed',
+    'rolled_back',
+    'retired'
+  )),
   CONSTRAINT activity_integrity_repair_journal_disposition_valid
-    CHECK (retirement_disposition IS NULL OR retirement_disposition IN ('accepted', 'superseded')),
+  CHECK (retirement_disposition IS NULL OR retirement_disposition IN ('accepted', 'superseded')),
   CONSTRAINT activity_integrity_repair_journal_receipt_checksum_valid
-    CHECK (retirement_receipt_checksum IS NULL OR retirement_receipt_checksum ~ '^[0-9a-f]{64}$'),
+  CHECK (retirement_receipt_checksum IS NULL OR retirement_receipt_checksum ~ '^[0-9a-f]{64}$'),
   CONSTRAINT activity_integrity_repair_journal_retirement_complete
-    CHECK (
-      (phase = 'retired') = (
-        accepted_by IS NOT NULL
-        AND retirement_disposition IS NOT NULL
-        AND retired_at IS NOT NULL
-        AND retirement_receipt_path IS NOT NULL
-        AND retirement_receipt_checksum IS NOT NULL
-      )
+  CHECK (
+    (phase = 'retired') = (
+      accepted_by IS NOT NULL
+      AND retirement_disposition IS NOT NULL
+      AND retired_at IS NOT NULL
+      AND retirement_receipt_path IS NOT NULL
+      AND retirement_receipt_checksum IS NOT NULL
     )
+  )
 );
 
 CREATE UNIQUE INDEX activity_integrity_repair_journal_single_eligible_idx
-ON fitness.activity_integrity_repair_journal ((true))
+ON fitness.activity_integrity_repair_journal ((TRUE))
 WHERE phase IN ('postgres_committed', 'rebuild_failed', 'executed', 'rollback_committed');
