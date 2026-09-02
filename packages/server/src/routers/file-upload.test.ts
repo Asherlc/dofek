@@ -422,6 +422,33 @@ describe("fileUploadRouter", () => {
     );
   });
 
+  it("persists an explicit Strong weight unit", async () => {
+    const strong = upload({
+      importType: "strong-csv",
+      originalFilename: "strong.csv",
+      contentType: "text/csv",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const { caller, repository, transaction } = setup(strong);
+    repository.find.mockResolvedValueOnce(null);
+
+    await caller.initiate({
+      uploadId: strong.id,
+      importType: "strong-csv",
+      filename: "strong.csv",
+      contentType: "text/csv",
+      sizeBytes: strong.expectedSizeBytes,
+      sha256: strong.expectedSha256,
+      weightUnit: "lbs",
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({ weightUnit: "lbs" }),
+    );
+  });
+
   it("rejects invalid import metadata and initiation rate limits", async () => {
     const extensionSetup = setup();
     await expect(

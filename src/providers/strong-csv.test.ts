@@ -771,11 +771,36 @@ describe("parseStrongWallClockTimestamp", () => {
   it("rejects invalid calendar values instead of normalizing them", () => {
     expect(Number.isNaN(parseStrongWallClockTimestamp("2026-02-30 10:00:00").getTime())).toBe(true);
   });
+
+  it("preserves every supplied wall-clock component and rejects suffixes", () => {
+    expect(parseStrongWallClockTimestamp("2024-02-29 23:59:59").toISOString()).toBe(
+      "2024-02-29T23:59:59.000Z",
+    );
+    expect(Number.isNaN(parseStrongWallClockTimestamp("2024-02-29 24:00:00").getTime())).toBe(true);
+    expect(Number.isNaN(parseStrongWallClockTimestamp("2024-02-29 trailing").getTime())).toBe(true);
+  });
 });
 
 describe("strongCsvWeightUnit", () => {
   it("reads the declared export unit instead of assuming one", () => {
     expect(strongCsvWeightUnit("Date,Weight Unit,Weight\n2026-09-01,lbs,155")).toBe("lbs");
+  });
+
+  it.each([
+    ["kg", "kg"],
+    ["kgs", "kg"],
+    ["kilograms", "kg"],
+    ["lb", "lbs"],
+    ["pounds", "lbs"],
+  ] as const)("normalizes the declared %s unit", (declared, expected) => {
+    expect(strongCsvWeightUnit(`\uFEFFDate,Weight Unit\n2026-09-01,${declared}`)).toBe(expected);
+  });
+
+  it("rejects unsupported units and treats a missing declaration as absent", () => {
+    expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,stone")).toThrow(
+      "Unsupported Strong CSV weight unit: stone",
+    );
+    expect(strongCsvWeightUnit("Date,Weight\n2026-09-01,155")).toBeNull();
   });
 
   it("rejects mixed unit declarations", () => {

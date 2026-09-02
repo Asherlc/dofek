@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WaitingChildrenError } from "bullmq";
+import { UnrecoverableError, WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
@@ -724,6 +724,19 @@ describe("processImportJob", () => {
         undefined,
         undefined,
       );
+    });
+    it("makes Strong validation failures terminal", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const validationError = new Error("Strong CSV has no Weight Unit declaration");
+      validationError.name = "StrongCsvValidationError";
+      mockImportStrongCsv.mockRejectedValueOnce(validationError);
+
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
+      ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(UnrecoverableError), {
+        tags: { phase: "file-import" },
+      });
     });
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
