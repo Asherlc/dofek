@@ -21,10 +21,11 @@ corrected, and make MCP activity summaries explicit about power availability.
 - Hydrate an activity only from a sensor summary for a member compatible with
   the visible group's canonical type and raw/provider identity. An incompatible
   member is not a fallback source.
-- Return power coverage for every activity-summary group, including
-  `indoor`, `outdoor`, and `unknown` modality strata. Return power averages and
-  peaks only when at least three member activities contain power. A missing
-  aggregate is `null`, never omitted.
+- Return a `power_by_modality` object for every activity-summary group, with
+  `indoor`, `outdoor`, and `unknown` strata. Each stratum contains its own
+  `avg_power`, `max_power_peak`, and coverage; no blended power average or peak
+  is emitted. Each aggregate requires at least three power-bearing activities.
+  A missing aggregate is `null`, never omitted.
 - Preserve the existing missing-data representation: unavailable elevation is
   `null`; measured zero remains `0`.
 
@@ -37,9 +38,12 @@ UTC window, default to dry-run, and require `--execute` for writes. It will:
    membership to a JSON audit artifact before any write.
 2. Recompute local-time context from raw/provider facts, including every
    timezone/offset consistency check.
-3. Re-evaluate affected duplicate edges and derived group membership using the
-   forward matching rule; it will not mutate raw source identity, metrics, or
-   provider payloads.
+3. Re-evaluate duplicate edges and derived group membership from the complete,
+   immutable raw activity set using the forward matching rule. The graph's
+   connected components are computed from those edges in one transitive pass;
+   the result is independent of prior group membership, so a second pass cannot
+   discover a newly enabled edge. It will not mutate raw source identity,
+   metrics, or provider payloads.
 4. Mark precisely those Postgres and ClickHouse source keys dirty, then run the
    bounded dbt/read-model rebuild for those keys.
 5. Emit before/after counts, changed IDs, incompatible-member count, and the
@@ -48,13 +52,22 @@ UTC window, default to dry-run, and require `--execute` for writes. It will:
 
 Rollback restores only the captured pre-state, with compare-and-swap predicates
 for the values written by this run. It will reject a stale audit artifact rather
-than overwrite a subsequent provider sync. PostgreSQL `UPDATE ... RETURNING`
-supports recording the rows actually changed; updates will be batched and
-ordered to control lock and replica impact. [PostgreSQL UPDATE documentation](https://www.postgresql.org/docs/current/sql-update.html)
+than overwrite a subsequent provider sync. It writes the old derived values
+with a strictly newer `ReplacingMergeTree` version, never their original
+version. PostgreSQL `UPDATE ... RETURNING` supports recording the rows actually
+changed; updates will be batched and ordered to control lock and replica impact.
+[PostgreSQL UPDATE documentation](https://www.postgresql.org/docs/current/sql-update.html)
 
 The repair writes a newer derived-row version rather than mutating raw sensor
-samples. This conforms to the repository's `ReplacingMergeTree` read-model
-pattern and dbt incremental-model ownership. [ClickHouse ReplacingMergeTree documentation](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replacingmergetree), [dbt incremental-model documentation](https://docs.getdbt.com/docs/build/incremental-models)
+samples. Verification reads the relevant `ReplacingMergeTree` tables with
+`FINAL`, so asynchronous part merging cannot produce false failures. This
+conforms to the repository's read-model pattern and dbt incremental-model
+ownership. [ClickHouse ReplacingMergeTree documentation](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replacingmergetree), [dbt incremental-model documentation](https://docs.getdbt.com/docs/build/incremental-models)
+
+Each audit artifact is retired only after its post-run verification is accepted.
+No subsequent historical repair may begin while an earlier artifact remains
+rollback-eligible. If a later repair is intentionally allowed to supersede it,
+the runbook records that the earlier rollback window has closed.
 
 ## Required diagnosis before implementation
 
@@ -82,9 +95,16 @@ pattern and dbt incremental-model ownership. [ClickHouse ReplacingMergeTree docu
   its group's canonical/provider/raw identity.
 - The operational command is tested for dry-run, idempotence, bounded batches,
   compare-and-swap rejection, and rollback from a captured audit artifact.
+- MCP end-to-end fixtures assert the observed failures: `2a7c6fa3` has no
+  Peloton source and an internally consistent local-time context; `894ce621`
+  has matching zone and offset; low-count `other` power is null with coverage;
+  `running` cannot inherit the 423 W peak; and unavailable kayaking elevation
+  remains null.
 
 ## Out of scope
 
 Unclassified activity-rate reduction is deferred until the repaired grouping
-has been measured. Outdoor Wahoo power remains absent when no raw provider
-field or sensor sample exists.
+has been measured. The unclassified percentage may initially rise because
+incorrectly inherited types become truthful `other` records; that is an
+expected integrity correction, not a classification regression. Outdoor Wahoo
+power remains absent when no raw provider field or sensor sample exists.
