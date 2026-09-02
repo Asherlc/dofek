@@ -8,6 +8,7 @@ import { ActivityHeader } from "./ActivityDetailPage.tsx";
 const baseActivity: ActivityDetail = {
   id: "abc-123",
   activityType: "cycling",
+  rawType: "cycling",
   modality: null,
   startedAt: "2026-03-31T08:00:00Z",
   endedAt: "2026-03-31T09:30:00Z",
