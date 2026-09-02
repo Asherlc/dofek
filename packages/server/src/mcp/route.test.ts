@@ -1832,10 +1832,12 @@ describe("createMcpRouter", () => {
         canonical_type: "other",
         avg_hr: null,
         avg_power: 260,
+        elevation_gain_m: null,
         ended_at: "2026-05-23T13:00:00.000Z",
         max_hr: null,
         max_power: 390,
         modality: null,
+        provider_type: "kayaking",
         started_at: "2026-05-23T12:00:00.000Z",
       },
     ];
@@ -1898,9 +1900,11 @@ describe("createMcpRouter", () => {
         },
       },
     });
-    expect(
-      responseBody.summaries.find((candidate) => candidate.canonical_type === "other"),
-    ).toMatchObject({
+    const kayakingSummary = responseBody.summaries.find(
+      (candidate) => candidate.canonical_type === "other",
+    );
+    expect(kayakingSummary).toMatchObject({
+      total_elevation_gain_m: null,
       power_by_modality: {
         unknown: {
           activities_total: 1,

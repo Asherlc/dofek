@@ -8,6 +8,7 @@ import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-se
 const historicalActivityId = "00000000-0000-0000-0000-000000000901";
 const unrelatedActivityId = "00000000-0000-0000-0000-000000000902";
 const tombstonedActivityId = "00000000-0000-0000-0000-000000000903";
+const singleAltitudeActivityId = "00000000-0000-0000-0000-000000000904";
 const testUserId = "00000000-0000-0000-0000-000000000001";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -96,6 +97,26 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
     const scanCountRows = scanCountRowsSchema.parse(await scanCountResult.json<unknown>());
 
     expect(scanCountRows).toEqual([{ scan_count: 2 }]);
+  }, 180_000);
+
+  it("keeps elevation unavailable when an activity has only one altitude sample", async () => {
+    const activeClient = requireClient(client);
+    await seedHistoricalBackfillFixture(activeClient, targetSchema);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT elevation_gain_m, elevation_loss_m
+        FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+        WHERE is_deleted = 0
+          AND activity_id = '${singleAltitudeActivityId}'`,
+      format: "JSONEachRow",
+    });
+
+    expect(await result.json()).toEqual([{ elevation_gain_m: null, elevation_loss_m: null }]);
   }, 180_000);
 });
 
@@ -211,6 +232,7 @@ async function seedHistoricalBackfillFixture(
     buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     insertCurrentActivitiesSql(targetSchema),
     insertHistoricalPowerSamplesSql(targetSchema),
+    insertSingleAltitudeSampleSql(targetSchema),
     insertDeletedPowerSampleSql(targetSchema),
     insertExistingHistoricalSummarySql(targetSchema),
     insertUnrelatedFreshSummarySql(targetSchema),
@@ -265,13 +287,19 @@ function insertCurrentActivitiesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.source_activity VALUES
   ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), NULL, NULL, 0),
   ('${unrelatedActivityId}', '${testUserId}', toDateTime64('2026-07-04 01:00:00', 6, 'UTC'), NULL, NULL, 0),
-  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), NULL, NULL, 0)`;
+  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), NULL, NULL, 0),
+  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), NULL, NULL, 0)`;
 }
 
 function insertHistoricalPowerSamplesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_sample VALUES
   ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), toDate('2019-07-16'), 'power', 200.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC')),
   ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:38', 6, 'UTC'), toDate('2019-07-16'), 'power', 220.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
+}
+
+function insertSingleAltitudeSampleSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_sample VALUES
+  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), toDate('2026-07-06'), 'altitude', 15.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
 }
 
 function insertDeletedPowerSampleSql(targetSchema: string): string {

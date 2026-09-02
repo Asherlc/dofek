@@ -262,19 +262,27 @@ elevation_per_activity AS (
     SELECT
         activity_id,
         CAST(
-            sum(if(
-                isNotNull(prev_altitude) AND altitude - prev_altitude > 0,
-                altitude - prev_altitude,
-                0
-            )),
+            if(
+                countIf(isNotNull(prev_altitude)) = 0,
+                null,
+                sum(if(
+                    isNotNull(prev_altitude) AND altitude - prev_altitude > 0,
+                    altitude - prev_altitude,
+                    0
+                ))
+            ),
             'Nullable(Float64)'
         ) AS elevation_gain_m,
         CAST(
-            sum(if(
-                isNotNull(prev_altitude) AND altitude - prev_altitude < 0,
-                abs(altitude - prev_altitude),
-                0
-            )),
+            if(
+                countIf(isNotNull(prev_altitude)) = 0,
+                null,
+                sum(if(
+                    isNotNull(prev_altitude) AND altitude - prev_altitude < 0,
+                    abs(altitude - prev_altitude),
+                    0
+                ))
+            ),
             'Nullable(Float64)'
         ) AS elevation_loss_m
     FROM altitude_deltas
