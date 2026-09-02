@@ -492,8 +492,7 @@ export async function importStrongCsv(
       const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
       const startedAt = groupStartTimes[groupIndex];
-      if (!startedAt)
-        throw new Error(`Missing prevalidated Strong workout timestamp: ${group.date}`);
+      if (!startedAt) throw new Error(`Missing validated Strong workout timestamp: ${group.date}`);
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
