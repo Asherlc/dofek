@@ -113,9 +113,7 @@ function normalizeProviderActivityInsert(
     modality: activityType.modality,
     externalId: normalizedExternalId,
   };
-  const normalizedHomeTimezone = (
-    explicitHomeTimezone ?? getProviderIngestContext()?.homeTimezone
-  )?.trim();
+  const normalizedHomeTimezone = explicitHomeTimezone ?? getProviderIngestContext()?.homeTimezone;
   if ((externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
     const timezone = externalIdValues.timezone?.trim();
     if (normalizedHomeTimezone) {

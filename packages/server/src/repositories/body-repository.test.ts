@@ -364,21 +364,21 @@ describe("BodyRepository", () => {
     const { repo, query } = makeRepository([
       {
         date: "2026-05-14",
-        recorded_at: "2026-05-14T15:00:00Z",
-        provider_id: "withings",
-        body_priority: 10,
-        weight_kg: 90,
-        body_fat_pct: 18,
-        bmi: null,
-      },
-      {
-        date: "2026-05-14",
         recorded_at: "2026-05-14T16:00:00Z",
         provider_id: "apple_health",
         body_priority: 20,
         weight_kg: 89.7,
         body_fat_pct: null,
         bmi: 27.2,
+      },
+      {
+        date: "2026-05-14",
+        recorded_at: "2026-05-14T15:00:00Z",
+        provider_id: "withings",
+        body_priority: 10,
+        weight_kg: 90,
+        body_fat_pct: 18,
+        bmi: null,
       },
     ]);
 
