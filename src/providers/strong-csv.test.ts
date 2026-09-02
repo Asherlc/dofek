@@ -169,6 +169,63 @@ describe("importStrongCsv", () => {
       }),
     );
   });
+
+  it("imports text shares when no timezone is available", async () => {
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+      }),
+    });
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({ values: activityValues })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({ values: vi.fn().mockResolvedValue(undefined) });
+    const db = {
+      execute: vi.fn().mockResolvedValue([]),
+      insert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+          }),
+        }),
+      }),
+    };
+
+    await Reflect.apply(importStrongCsv, undefined, [
+      db,
+      [
+        "Home",
+        "Friday, April 10, 2026 at 16:39",
+        "",
+        "Bench Press (Dumbbell)",
+        "Set 1: 50 lb × 13",
+      ].join("\n"),
+      "user-1",
+      "kg",
+    ]);
+
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2026-04-10T16:39:00.000Z"),
+        timezone: undefined,
+        startUtcOffsetMinutes: undefined,
+        endUtcOffsetMinutes: undefined,
+        localTimeSource: undefined,
+      }),
+    );
+  });
 });
 
 describe("parseStrongCsv", () => {
@@ -204,6 +261,22 @@ describe("parseStrongCsv", () => {
     ].join("\n"));
     expect(groups[0]?.workoutName).toBe("Leg Day");
     expect(groups[0]?.sets[0]).toMatchObject({ exerciseName: "Squat (Barbell)", weight: 155, reps: 6 });
+  });
+
+  it("uses Strong's documented column order when header names are unavailable", () => {
+    const groups = parseStrongCsv(
+      [
+        "a,b,c,d,e,f,g,h,i,j,k,l",
+        "2024-11-02 10:00:00,Leg Day,30m,Squat (Barbell),1,155,6,,,,,",
+      ].join("\n"),
+    );
+
+    expect(groups[0]).toMatchObject({
+      date: "2024-11-02 10:00:00",
+      workoutName: "Leg Day",
+      duration: "30m",
+      sets: [expect.objectContaining({ exerciseName: "Squat (Barbell)", weight: 155, reps: 6 })],
+    });
   });
 
   it("groups rows by date and workout name", () => {

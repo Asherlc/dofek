@@ -398,17 +398,18 @@ export async function importStrongCsv(
       }
       let startedAt = wallClockDate;
       if (timezone) {
-        for (let attempt = 0; attempt < 2; attempt++) {
+        const resolveStartedAt = (candidate: Date): Date => {
           const context = resolveRecordLocalTimeContext({
-            startedAt,
+            startedAt: candidate,
             timezone,
             source: "device_timezone",
           });
           if (context.startUtcOffsetMinutes === null) {
             throw new Error("Strong CSV timezone did not resolve a UTC offset");
           }
-          startedAt = new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
-        }
+          return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
+        };
+        startedAt = resolveStartedAt(resolveStartedAt(wallClockDate));
       }
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
