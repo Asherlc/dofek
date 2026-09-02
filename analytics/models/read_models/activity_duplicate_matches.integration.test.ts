@@ -14,6 +14,8 @@ const broadOtherId = "00000000-0000-4000-8000-000000000105";
 const bridgeCyclingId = "00000000-0000-4000-8000-000000000106";
 const bridgeStrengthId = "00000000-0000-4000-8000-000000000107";
 const tombstonedWhoopId = "00000000-0000-4000-8000-000000000108";
+const pelotonMemberId = "00000000-0000-4000-8000-000000000109";
+const wahooOtherId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
 
 describe("activity_duplicate_matches read model", () => {
   let client: ClickHouseClient | undefined;
@@ -51,10 +53,13 @@ ${renderModel(database)}`,
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([
+    const matches = await result.json();
+
+    expect(matches).toEqual([
       { activityId: whoopOtherId, duplicateActivityId: containedCyclingId },
       { activityId: containedCyclingId, duplicateActivityId: tombstonedWhoopId },
     ]);
+    expect(groupsFor(wahooOtherId, matches)).not.toContain(pelotonMemberId);
   }, 180_000);
 
   it("emits a tombstone when an incremental refresh removes a stale match", async () => {
@@ -86,6 +91,28 @@ ${renderModel(database, true)}`,
 function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
   if (!client) throw new Error("ClickHouse client was not initialized");
   return client;
+}
+
+function groupsFor(
+  activityId: string,
+  matches: Array<{ activityId: string; duplicateActivityId: string }>,
+): string[] {
+  const members = new Set([activityId]);
+  let discoveredNewMember = true;
+  while (discoveredNewMember) {
+    discoveredNewMember = false;
+    for (const match of matches) {
+      if (members.has(match.activityId) && !members.has(match.duplicateActivityId)) {
+        members.add(match.duplicateActivityId);
+        discoveredNewMember = true;
+      }
+      if (members.has(match.duplicateActivityId) && !members.has(match.activityId)) {
+        members.add(match.activityId);
+        discoveredNewMember = true;
+      }
+    }
+  }
+  return [...members];
 }
 
 function renderModel(database: string, incremental = false): string {
@@ -138,9 +165,9 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (activity_id, duplicate_activity_id)`,
     `INSERT INTO ${database}.activity_source_records VALUES
-      ('${whoopOtherId}', 'whoop', '${userId}', 'other',
-       toDateTime64('2026-04-01 15:22:30', 6, 'UTC'),
-       toDateTime64('2026-04-01 15:35:59', 6, 'UTC'), 0),
+      ('${whoopOtherId}', 'wahoo', '${userId}', 'other',
+       toDateTime64('2026-04-01 15:22:00', 6, 'UTC'),
+       toDateTime64('2026-04-01 16:05:00', 6, 'UTC'), 0),
       ('${containedCyclingId}', 'wahoo', '${userId}', 'cycling',
        toDateTime64('2026-04-01 15:21:24', 6, 'UTC'),
        toDateTime64('2026-04-01 16:13:42', 6, 'UTC'), 0),
@@ -158,11 +185,17 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
        toDateTime64('2026-06-01 18:20:00', 6, 'UTC'), 0),
       ('${bridgeStrengthId}', 'apple_health', '${userId}', 'strength',
        toDateTime64('2026-06-01 18:40:00', 6, 'UTC'),
-       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0)`,
+       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0),
+      ('${pelotonMemberId}', 'peloton', '${userId}', 'cycling',
+       toDateTime64('2026-07-01 18:00:00', 6, 'UTC'),
+       toDateTime64('2026-07-01 19:00:00', 6, 'UTC'), 0),
+      ('${wahooOtherId}', 'wahoo', '${userId}', 'other',
+       toDateTime64('2026-07-01 18:10:00', 6, 'UTC'),
+       toDateTime64('2026-07-01 18:50:00', 6, 'UTC'), 0)`,
     `INSERT INTO ${database}.source_activity VALUES
-      ('${tombstonedWhoopId}', '${userId}', 'whoop', 'other',
-       toDateTime64('2026-04-01 15:40:00', 6, 'UTC'),
-       toDateTime64('2026-04-01 15:50:00', 6, 'UTC'), 0,
+      ('${tombstonedWhoopId}', '${userId}', 'wahoo', 'other',
+       toDateTime64('2026-04-01 15:30:00', 6, 'UTC'),
+       toDateTime64('2026-04-01 16:13:00', 6, 'UTC'), 0,
        toDateTime64('2026-09-01 00:00:00', 6, 'UTC'), NULL)`,
   ];
   for (const statement of statements) await client.command({ query: statement });
