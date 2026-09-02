@@ -16,6 +16,10 @@ vi.mock("expo-modules-core", () => ({
   requireNativeModule: () => nativeModule,
 }));
 
+const captureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../../lib/telemetry", () => ({ captureException }));
+
 vi.unmock("./index");
 
 import {
@@ -55,5 +59,18 @@ describe("App Store billing native boundary", () => {
     await expect(restoreCurrentEntitlements()).rejects.toThrow();
     startTransactionUpdates(vi.fn());
     expect(() => listener?.({ transactionID: "transaction-1" })).toThrow();
+  });
+
+  it("reports a native transaction-update startup failure", () => {
+    const error = new Error("StoreKit unavailable");
+    nativeModule.addListener.mockReturnValue({ remove: vi.fn() });
+    nativeModule.startTransactionUpdates.mockImplementation(() => {
+      throw error;
+    });
+
+    expect(() => startTransactionUpdates(vi.fn())).toThrow(error);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      source: "app-store-billing-transaction-updates-start",
+    });
   });
 });

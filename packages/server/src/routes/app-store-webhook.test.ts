@@ -9,7 +9,6 @@ const accountToken = "a0000000-0000-4000-8000-000000000001";
 const appStoreMocks = vi.hoisted(() => ({
   invalidateAllUserQueries: vi.fn<(userId: string) => Promise<void>>(async () => undefined),
   verifyAppStoreNotification: vi.fn(),
-  captureException: vi.fn<(error: unknown) => void>(),
 }));
 
 vi.mock("dofek/lib/cache", () => ({
@@ -18,10 +17,6 @@ vi.mock("dofek/lib/cache", () => ({
 
 vi.mock("../billing/app-store-verifier.ts", () => ({
   verifyAppStoreNotification: appStoreMocks.verifyAppStoreNotification,
-}));
-
-vi.mock("dofek/lib/error-reporting", () => ({
-  captureException: appStoreMocks.captureException,
 }));
 
 import { createAppStoreWebhookRouter } from "./app-store-webhook.ts";
@@ -91,14 +86,13 @@ describe("App Store webhook route", () => {
     appStoreMocks.invalidateAllUserQueries.mockResolvedValue(undefined);
     appStoreMocks.verifyAppStoreNotification.mockReset();
     appStoreMocks.verifyAppStoreNotification.mockResolvedValue(verifiedNotification);
-    appStoreMocks.captureException.mockReset();
   });
 
   it("records and applies a verified subscription notification atomically", async () => {
     const execute = vi
       .fn()
-      .mockResolvedValueOnce([{ user_id: "user-1" }])
-      .mockResolvedValueOnce([{ notification_uuid: notificationUuid }]);
+      .mockResolvedValueOnce([{ notification_uuid: notificationUuid }])
+      .mockResolvedValueOnce([{ user_id: "user-1" }]);
     const { app, db } = createTestApp(execute);
 
     const response = await postJson(
@@ -113,17 +107,16 @@ describe("App Store webhook route", () => {
     );
     expect(db.transaction).toHaveBeenCalledOnce();
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("user_billing");
-    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain(accountToken);
-    expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("app_store_notification");
-    expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain(notificationUuid);
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("app_store_notification");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain(notificationUuid);
+    expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("user_billing");
+    expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain(accountToken);
     expect(appStoreMocks.invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
   });
 
   it("acknowledges a duplicate verified notification without applying it again", async () => {
     const execute = vi
       .fn()
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ user_id: "user-1" }]);
     const { app, db } = createTestApp(execute);
@@ -136,7 +129,7 @@ describe("App Store webhook route", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ received: true });
     expect(db.transaction).toHaveBeenCalledOnce();
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(appStoreMocks.invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
   });
 
@@ -207,8 +200,5 @@ describe("App Store webhook route", () => {
 
     expect(response.status).toBe(500);
     expect(unexpectedErrors).toEqual([databaseError]);
-    expect(appStoreMocks.captureException).toHaveBeenCalledWith(databaseError, {
-      tags: { source: "app-store-webhook" },
-    });
   });
 });

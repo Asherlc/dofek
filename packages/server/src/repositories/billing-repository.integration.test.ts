@@ -326,6 +326,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     const revokedUpdate = {
       ...currentUpdate,
       status: "revoked" as const,
+      expiresAt: new Date("2026-09-20T00:00:00.000Z"),
       revokedAt: new Date("2026-09-20T00:00:00.000Z"),
     };
 
@@ -349,7 +350,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     );
     expect(rows[0]).toEqual({
       app_store_subscription_status: "revoked",
-      app_store_expires_at: "2026-10-01T00:00:00.000Z",
+      app_store_expires_at: "2026-09-20T00:00:00.000Z",
       app_store_revocation_at: "2026-09-20T00:00:00.000Z",
     });
   });

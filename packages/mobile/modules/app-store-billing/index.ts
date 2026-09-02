@@ -1,6 +1,7 @@
 import type { EventSubscription } from "expo-modules-core";
 import { NativeModule, requireNativeModule } from "expo-modules-core";
 import { z } from "zod";
+import { captureException } from "../../lib/telemetry";
 
 export const APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID = "com.dofek.premium.monthly";
 
@@ -88,6 +89,7 @@ export function startTransactionUpdates(
   try {
     AppStoreBillingModule.startTransactionUpdates(productID);
   } catch (error) {
+    captureException(error, { source: "app-store-billing-transaction-updates-start" });
     subscription.remove();
     throw error;
   }

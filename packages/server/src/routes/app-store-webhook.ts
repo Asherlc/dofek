@@ -1,7 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
-import { captureException } from "dofek/lib/error-reporting";
 import { Router, raw } from "express";
 import rateLimit from "express-rate-limit";
 import { ZodError, z } from "zod";
@@ -37,6 +36,7 @@ export function createAppStoreWebhookRouter({ db }: AppStoreWebhookRouterDeps): 
     rateLimit({
       windowMs: 15 * 60 * 1000,
       limit: 60,
+      skipSuccessfulRequests: true,
       standardHeaders: "draft-7",
       legacyHeaders: false,
       message: "Too many App Store webhook requests — please try again later",
@@ -57,7 +57,6 @@ export function createAppStoreWebhookRouter({ db }: AppStoreWebhookRouterDeps): 
         res.status(400).json({ error: error instanceof Error ? error.message : "Invalid payload" });
         return;
       }
-      captureException(error, { tags: { source: "app-store-webhook" } });
       next(error);
     }
   });

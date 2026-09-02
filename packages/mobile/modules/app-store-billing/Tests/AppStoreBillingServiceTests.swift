@@ -101,18 +101,22 @@ final class AppStoreBillingServiceTests: XCTestCase {
         XCTAssertEqual(store.finishedTransactionIDs, [])
     }
 
-    func testTransactionUpdatesDeliverVerifiedTargetTransactionsIncludingRevocationsWithoutFinishing() async {
+    func testTransactionUpdatesDeliverVerifiedTargetTransactionsIncludingExpiredAndRevokedWithoutFinishing() async {
         let expected = makeTransaction(transactionID: 61)
         let revoked = makeTransaction(
             transactionID: 63,
             revocationDate: Date(timeIntervalSince1970: 1)
+        )
+        let expired = makeTransaction(
+            transactionID: 64,
+            expirationDate: Date(timeIntervalSince1970: 1)
         )
         let wrongProduct = makeTransaction(transactionID: 62, productID: "other.product")
         let store = FakeStoreKit()
         let service = AppStoreBillingService(store: store)
         let received = TransactionRecorder()
         let allUpdates = expectation(description: "target updates delivered")
-        allUpdates.expectedFulfillmentCount = 2
+        allUpdates.expectedFulfillmentCount = 3
         received.onAppend = { allUpdates.fulfill() }
 
         service.startTransactionUpdates(productID: productID) { transaction in
@@ -120,13 +124,14 @@ final class AppStoreBillingServiceTests: XCTestCase {
         }
         store.sendUpdate(.unverified)
         store.sendUpdate(.verified(wrongProduct))
+        store.sendUpdate(.verified(expired))
         store.sendUpdate(.verified(revoked))
         store.sendUpdate(.verified(expected))
 
         await fulfillment(of: [allUpdates], timeout: 1)
         service.stopTransactionUpdates()
 
-        XCTAssertEqual(received.values, [revoked, expected])
+        XCTAssertEqual(received.values, [expired, revoked, expected])
         XCTAssertEqual(store.finishedTransactionIDs, [])
     }
 
