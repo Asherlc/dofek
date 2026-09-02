@@ -114,6 +114,10 @@
               {
                 "name": "ExpoBleHeartRate",
                 "path": "../modules/ble-heart-rate/ios"
+              },
+              {
+                "name": "ExpoAppStoreBilling",
+                "path": "../modules/app-store-billing/ios"
               }
             ]
           }
