@@ -1454,6 +1454,18 @@ describe("createMcpRouter", () => {
       },
       {
         canonical_type: "cycling",
+        avg_hr: 114,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-30T09:22:00.000Z",
+        max_hr: 130,
+        max_power: null,
+        modality: "outdoor",
+        provider_type: "89",
+        started_at: "2026-08-30T09:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
         avg_hr: 136,
         avg_power: 180,
         elevation_gain_m: 310,
@@ -1493,7 +1505,7 @@ describe("createMcpRouter", () => {
         expect.objectContaining({
           canonical_type: "cycling",
           purpose: "commute",
-          count: 1,
+          count: 2,
           avg_duration_minutes: 22,
           avg_hr: 114,
         }),

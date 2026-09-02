@@ -301,7 +301,10 @@ function average(values: Array<number | null | undefined>): number | null {
 
 function activityPurpose(row: ActivityMcpRow): "commute" | "training" | null {
   if (row.canonical_type !== "cycling") return null;
-  return row.provider_type.toLowerCase() === "commuting" ? "commute" : "training";
+  const rawType = row.provider_type.trim().toLowerCase();
+  return rawType === "89" || rawType === "commute" || rawType === "commuting"
+    ? "commute"
+    : "training";
 }
 
 function activitySummaries(
