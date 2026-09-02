@@ -1,5 +1,4 @@
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
-import { gradeSortValue } from "@dofek/training/climbing-grades";
 import {
   type HealthExplorerInput,
   type HealthMetric,
@@ -46,7 +45,10 @@ import {
   ensureProvidersRegistered,
   toJobId,
 } from "../routers/sync-helpers.ts";
+import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
+import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
+import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
@@ -99,24 +101,6 @@ const activityMcpRowSchema = z.object({
   elevation_gain_m: z.coerce.number().nullable().optional(),
   modality: z.string().nullable().optional(),
 });
-const climbingSessionActivitySchema = z.object({
-  avg_hr: z.coerce.number().nullable(),
-  ended_at: z.string().nullable(),
-  id: z.string(),
-  name: z.string().nullable(),
-  started_at: z.string(),
-});
-
-const activityStreamChannelSchema = z.enum([
-  "power",
-  "heart_rate",
-  "cadence",
-  "altitude",
-  "speed",
-  "position",
-]);
-const DEFAULT_ACTIVITY_STREAM_CHANNELS = activityStreamChannelSchema.options;
-
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
 
 function assertDateRange(startDate: string, endDate: string): void {
@@ -508,6 +492,9 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   );
 
   registerTrainingLoadTool(server, context);
+  registerCyclingPerformanceTool(server, context);
+  registerActivityStreamsTool(server, context);
+  registerClimbingSessionsTool(server, context);
 
   server.registerTool(
     "render_health_explorer",
@@ -691,150 +678,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   );
 
   server.registerTool(
-    "get_climbing_sessions",
-    {
-      title: "Get Climbing Sessions",
-      description:
-        "Return exact-range climbing sessions with route/problem details, heart rate, duration, grade distribution, send rate, maximum grade, and volume.",
-      annotations: { readOnlyHint: true },
-      inputSchema: { start_date: dateSchema, end_date: dateSchema },
-    },
-    async ({ start_date, end_date }) => {
-      requireMcpScope(context.scopes, "activity:read");
-      assertDateRange(start_date, end_date);
-      const activityRepository = new ActivityRepository(
-        context.db,
-        context.userId,
-        context.timezone,
-        { kind: "full", paid: true, reason: "paid_grant" },
-        context.sensorStore,
-      );
-      const climbingRepository = new ClimbingRepository(
-        context.db,
-        context.userId,
-        context.timezone,
-        { kind: "full", paid: true, reason: "paid_grant" },
-      );
-      const activities = (
-        await activityRepository.listRange(start_date, end_date, ["climbing"])
-      ).map((row) => climbingSessionActivitySchema.parse(row));
-      const sessions = await Promise.all(
-        activities.map(async (activity) => {
-          const entries = (await climbingRepository.getActivityEntries(activity.id)).map((entry) =>
-            entry.toDetail(),
-          );
-          return {
-            activity_id: activity.id,
-            started_at: activity.started_at,
-            duration_minutes:
-              activity.ended_at === null
-                ? null
-                : (new Date(activity.ended_at).getTime() -
-                    new Date(activity.started_at).getTime()) /
-                  60_000,
-            avg_hr: activity.avg_hr,
-            name: activity.name,
-            gym_vs_crag: null,
-            location: entries.find((entry) => entry.locationName !== null)?.locationName ?? null,
-            climbs: entries,
-          };
-        }),
-      );
-      const climbs = sessions.flatMap((session) => session.climbs);
-      const gradeDistribution = new Map<
-        string,
-        { discipline: "boulder" | "route"; grade: string; attempts: number; sends: number }
-      >();
-      const maxGrade: Record<"boulder" | "route", { grade: string; sort: number } | null> = {
-        boulder: null,
-        route: null,
-      };
-      for (const climb of climbs) {
-        const key = `${climb.climbType}:${climb.gradeSystem}:${climb.grade}`;
-        const distribution = gradeDistribution.get(key) ?? {
-          discipline: climb.climbType,
-          grade: climb.grade,
-          attempts: 0,
-          sends: 0,
-        };
-        distribution.attempts += climb.attemptCount;
-        if (climb.sent) distribution.sends += 1;
-        gradeDistribution.set(key, distribution);
-        if (climb.sent) {
-          const sort = gradeSortValue(climb.grade, climb.gradeSystem);
-          const current = maxGrade[climb.climbType];
-          if (sort !== null && (current === null || sort > current.sort)) {
-            maxGrade[climb.climbType] = { grade: climb.grade, sort };
-          }
-        }
-      }
-      const sends = climbs.filter((climb) => climb.sent).length;
-      return jsonContent({
-        sessions,
-        aggregates: {
-          grade_distribution: [...gradeDistribution.values()],
-          send_rate: climbs.length === 0 ? null : sends / climbs.length,
-          max_grade_by_discipline: {
-            boulder: maxGrade.boulder?.grade ?? null,
-            route: maxGrade.route?.grade ?? null,
-          },
-          volume: {
-            climbs: climbs.length,
-            attempts: climbs.reduce((sum, climb) => sum + climb.attemptCount, 0),
-            sends,
-          },
-        },
-      });
-    },
-  );
-
-  server.registerTool(
-    "get_activity_streams",
-    {
-      title: "Get Activity Streams",
-      description:
-        "Return a capped, downsampled activity time series. Select only the channels needed for analysis.",
-      annotations: { readOnlyHint: true },
-      inputSchema: {
-        activity_id: z.uuid(),
-        channels: z.array(activityStreamChannelSchema).min(1).optional(),
-        downsample_to: z.number().int().min(1).max(2000).optional(),
-      },
-    },
-    async ({ activity_id, channels, downsample_to }) => {
-      requireMcpScope(context.scopes, "activity:read");
-      if (!context.sensorStore) {
-        throw new Error("get_activity_streams requires the ClickHouse analytics store");
-      }
-      const selectedChannels = channels ?? DEFAULT_ACTIVITY_STREAM_CHANNELS;
-      const rows = await new ActivityRepository(
-        context.db,
-        context.userId,
-        context.timezone,
-        { kind: "full", paid: true, reason: "paid_grant" },
-        context.sensorStore,
-      ).getStream(activity_id, downsample_to ?? 500);
-      return jsonContent({
-        channels: selectedChannels,
-        points: rows.map((streamPoint) => {
-          const point = streamPoint.toDetail();
-          return {
-            recorded_at: point.recordedAt,
-            ...(selectedChannels.includes("power") ? { power: point.power } : {}),
-            ...(selectedChannels.includes("heart_rate") ? { heart_rate: point.heartRate } : {}),
-            ...(selectedChannels.includes("cadence") ? { cadence: point.cadence } : {}),
-            ...(selectedChannels.includes("altitude") ? { altitude: point.altitude } : {}),
-            ...(selectedChannels.includes("speed") ? { speed: point.speed } : {}),
-            ...(selectedChannels.includes("position")
-              ? { latitude: point.lat, longitude: point.lng }
-              : {}),
-          };
-        }),
-      });
-    },
-  );
-
-  server.registerTool(
     "get_activity_summary",
     {
       title: "Get Activity Summary",
@@ -905,6 +748,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           bodyweight_kg: row.bodyweightKg,
           edge_size_mm: row.edgeSizeMm,
           effective_load_kg: row.effectiveLoadKg,
+          effective_load_formula: "bodyweight_kg + external_load_kg",
           exercise: row.exercise,
           external_load_kg: row.externalLoadKg,
           grip_position: row.gripPosition,
@@ -915,6 +759,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           rpe: row.rpe,
           set_count: row.setCount,
           started_at: row.startedAt,
+          total_time_under_tension_seconds: row.holdDurationSeconds * row.setCount,
         })),
       );
     },

@@ -95,9 +95,12 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_sleep_summary` | `health:read` | Returns nightly sleep duration, efficiency, stages, and timing. |
 | `search_activities` | `activity:read` | Searches activities inside exact date boundaries. |
 | `get_activity_details` | `activity:read` | Returns one activity with its strength, climbing, and finger-loading details. |
+| `get_activity_streams` | `activity:read` | Returns a capped, downsampled activity sensor stream with caller-selected channels. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
+| `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read` | Returns daily load, rolling 7-day acute load, rolling 28-day chronic load, and ACWR with window coverage. |
-| `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols and server-derived effective load inside exact date boundaries. |
+| `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
+| `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
 | `get_body_metrics` | `health:read` | Returns one reconciled body-composition record per local date plus all per-source values. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
@@ -132,6 +135,21 @@ provider-level values and timestamps from provider-attributed raw samples. See t
 7-day and 28-day window coverage explicitly. See the
 [daily-strain model](../analytics/models/read_models/daily_strain.sql) and
 [training-load repository](../packages/server/src/repositories/training-load-repository.ts).
+
+`get_cycling_performance` reads the deduped `cycling_activity` and
+`activity_power_curve` models. Per-ride FTP is 95% of the best observed
+20-minute effort in that ride's trailing 90-day window; intensity factor divides
+normalized power by that contemporaneous estimate. Missing power remains
+`null`, and both power and elevation aggregates report activity coverage. See the
+[cycling-performance repository](../packages/server/src/repositories/cycling-performance-repository.ts).
+
+`get_climbing_sessions` exposes the stored Kaya/file-import grade, attempt,
+send, lead/top-rope, and wall-angle fields. Route height is not currently stored,
+so `total_vertical_m` is explicitly `null`. `get_finger_loading` reports
+effective load as `bodyweight_kg + external_load_kg` (a negative external load
+represents assistance) and computes total time under tension as hold duration
+times set count. See the [climbing repository](../packages/server/src/repositories/climbing-repository.ts)
+and [finger-loading reader](../packages/server/src/repositories/climbing-training-log-repository.ts).
 
 ## Connect A Header-Capable Client
 

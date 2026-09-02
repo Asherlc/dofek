@@ -16,6 +16,7 @@ const toolTestMocks = vi.hoisted(() => {
     activityGetStream: vi.fn(),
     bodyListReconciledRange: vi.fn(),
     climbingActivityEntries: vi.fn(),
+    cyclingPerformanceListRange: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
     dataCoverageList: vi.fn(),
@@ -80,6 +81,12 @@ vi.mock("../repositories/daily-metrics-repository.ts", () => ({
 vi.mock("../repositories/data-coverage-repository.ts", () => ({
   DataCoverageRepository: vi.fn(function vitestConstructor() {
     return { list: toolTestMocks.dataCoverageList };
+  }),
+}));
+
+vi.mock("../repositories/cycling-performance-repository.ts", () => ({
+  CyclingPerformanceRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.cyclingPerformanceListRange };
   }),
 }));
 
@@ -548,6 +555,10 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_cycling_performance").inputSchema).toMatchObject({
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -639,6 +650,7 @@ describe("createMcpRouter", () => {
       "get_health_trends",
       "get_data_coverage",
       "get_training_load",
+      "get_cycling_performance",
       "get_sleep_summary",
       "search_activities",
       "get_activity_details",
@@ -759,7 +771,9 @@ describe("createMcpRouter", () => {
       expect.objectContaining({
         activity_id: "activity-1",
         effective_load_kg: 90,
+        effective_load_formula: "bodyweight_kg + external_load_kg",
         exercise: "max_hang",
+        total_time_under_tension_seconds: 50,
       }),
     ]);
     expect(toolTestMocks.fingerLoadingRange).toHaveBeenCalledWith({
@@ -789,9 +803,11 @@ describe("createMcpRouter", () => {
           climbType: "boulder",
           grade: "V5",
           gradeSystem: "v_scale",
+          lead: null,
           locationName: "Pacific Pipe",
           routeName: "Blue Circuit",
           sent: true,
+          wallAngleDegrees: 30,
         }),
       },
     ]);
@@ -806,12 +822,10 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       aggregates: {
-        grade_distribution: [
-          { attempts: 3, discipline: "boulder", grade: "V5", sends: 1 },
-        ],
+        grade_distribution: [{ attempts: 3, discipline: "boulder", grade: "V5", sends: 1 }],
         max_grade_by_discipline: { boulder: "V5", route: null },
         send_rate: 1,
-        volume: { attempts: 3, climbs: 1, sends: 1 },
+        volume: { attempts: 3, climbs: 1, sends: 1, total_vertical_m: null },
       },
       sessions: [
         expect.objectContaining({
@@ -819,14 +833,19 @@ describe("createMcpRouter", () => {
           avg_hr: 126,
           duration_minutes: 90,
           gym_vs_crag: null,
+          climbs: [
+            expect.objectContaining({
+              discipline: "boulder",
+              wall_angle_degrees: 30,
+            }),
+          ],
+          total_vertical_m: null,
         }),
       ],
     });
-    expect(toolTestMocks.activityListRange).toHaveBeenCalledWith(
-      "2026-07-01",
-      "2026-07-10",
-      ["climbing"],
-    );
+    expect(toolTestMocks.activityListRange).toHaveBeenCalledWith("2026-07-01", "2026-07-10", [
+      "climbing",
+    ]);
   });
 
   it("searches activities and applies the query filter", async () => {
@@ -1052,6 +1071,48 @@ describe("createMcpRouter", () => {
       ],
     });
     expect(toolTestMocks.trainingLoadListRange).toHaveBeenCalledWith("2026-08-01", "2026-09-01");
+  });
+
+  it("returns exact-range cycling performance and rolling power coverage", async () => {
+    authorizeMcpToken();
+    toolTestMocks.cyclingPerformanceListRange.mockResolvedValue({
+      activities: [],
+      rolling_90_day_best: { "5s": null, "1m": null, "5m": null, "20m": null },
+      summary: {
+        power_coverage: { activities_with_power: 0, activities_total: 0, pct: 0 },
+        elevation_gain: {
+          total_elevation_gain_m: null,
+          avg_elevation_gain_m: null,
+          coverage: { activities_with_elevation: 0, activities_total: 0, pct: 0 },
+        },
+      },
+    });
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_cycling_performance", {
+        start_date: "2026-08-01",
+        end_date: "2026-09-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      range: { start_date: "2026-08-01", end_date: "2026-09-01", timezone: "UTC" },
+      activities: [],
+      rolling_90_day_best: { "5s": null, "1m": null, "5m": null, "20m": null },
+      summary: {
+        power_coverage: { activities_with_power: 0, activities_total: 0, pct: 0 },
+        elevation_gain: {
+          total_elevation_gain_m: null,
+          avg_elevation_gain_m: null,
+          coverage: { activities_with_elevation: 0, activities_total: 0, pct: 0 },
+        },
+      },
+    });
+    expect(toolTestMocks.cyclingPerformanceListRange).toHaveBeenCalledWith(
+      "2026-08-01",
+      "2026-09-01",
+    );
   });
 
   it("distinguishes an out-of-range metric from a metric with no recorded history", async () => {

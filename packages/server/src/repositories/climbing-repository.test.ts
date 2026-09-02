@@ -652,6 +652,7 @@ describe("ClimbingRepository", () => {
           hold_type: null,
           route_name: "Blue Arete",
           location_name: "Pacific Pipe",
+          lead: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
         },
@@ -673,6 +674,7 @@ describe("ClimbingRepository", () => {
         holdType: null,
         routeName: "Blue Arete",
         locationName: "Pacific Pipe",
+        lead: null,
         sourceName: "Kaya",
         wallAngleDegrees: null,
       });
@@ -689,6 +691,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ce.attempt_count");
       expect(text).toContain("jsonb_agg");
       expect(text).toContain("ce.raw->>'ascentType'");
+      expect(text).toContain("ce.lead");
       expect(text).toContain("ANY(a.member_activity_ids)");
       expect(text).toContain("a.user_id = ");
       expect(text).toContain("ORDER BY");
