@@ -188,8 +188,43 @@ describe("App Store webhook route", () => {
     expect(unexpectedErrors).toEqual([]);
   });
 
+  it("rejects a non-buffer webhook body", async () => {
+    const execute = vi.fn();
+    const { app } = createTestApp(execute);
+    const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+      const listeningServer = app.listen(0, "127.0.0.1", () => resolve(listeningServer));
+    });
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Test server did not bind to a port");
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/webhooks/app-store`, {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: "not-json",
+      });
+      expect(response.status).toBe(400);
+    } finally {
+      server.close();
+    }
+  });
+
   it("forwards unexpected persistence errors to the shared Express error handler", async () => {
     const databaseError = new Error("database unavailable");
+    const execute = vi.fn().mockRejectedValueOnce(databaseError);
+    const { app, unexpectedErrors } = createTestApp(execute);
+
+    const response = await postJson(
+      app,
+      JSON.stringify({ signedPayload: "verified-notification-jws" }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(unexpectedErrors).toEqual([databaseError]);
+  });
+
+  it("forwards unexpected tRPC errors to the shared Express error handler", async () => {
+    const databaseError = new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
     const execute = vi.fn().mockRejectedValueOnce(databaseError);
     const { app, unexpectedErrors } = createTestApp(execute);
 

@@ -22,6 +22,22 @@ describe("BillingRepository", () => {
     expect(queryText).toContain("app_store_account_token");
   });
 
+  it("fails when App Store account token creation returns no row", async () => {
+    const repository = new BillingRepository({ execute: vi.fn(async () => []) });
+
+    await expect(repository.getOrCreateAppStoreAccountToken("user-1")).rejects.toThrow(
+      "Failed to create App Store account token for user user-1",
+    );
+  });
+
+  it("returns no owner when an App Store account token is not found", async () => {
+    const repository = new BillingRepository({ execute: vi.fn(async () => []) });
+
+    await expect(
+      repository.findUserIdByAppStoreAccountToken("a0000000-0000-4000-8000-000000000001"),
+    ).resolves.toBeNull();
+  });
+
   it("returns null when a user has no billing row", async () => {
     const execute = vi.fn(async () => []);
     const repository = new BillingRepository({ execute });
