@@ -154,6 +154,18 @@ describe("importStrongCsv", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
+  it("treats an invalid upload timezone as a terminal validation failure", async () => {
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        undefined,
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-03-07 10:00:00,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "Fake/Zone",
+      ]),
+    ).rejects.toThrow("Invalid Strong timezone: Fake/Zone");
+  });
+
   it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
     const execute = vi.fn().mockResolvedValue([
       {

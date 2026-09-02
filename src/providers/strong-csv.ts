@@ -484,7 +484,13 @@ export async function importStrongCsv(
   } else {
     effectiveWeightUnit = parsed.weightUnit;
   }
-  const groupStartTimes = groups.map((group) => resolveStrongStartedAt(group.date, timezone));
+  let groupStartTimes: Date[];
+  try {
+    groupStartTimes = groups.map((group) => resolveStrongStartedAt(group.date, timezone));
+  } catch (error) {
+    if (error instanceof StrongCsvValidationError) throw error;
+    throw new StrongCsvValidationError(`Invalid Strong timezone: ${timezone ?? "unknown"}`);
+  }
   const exerciseCache = new Map<string, string>();
 
   for (const [groupIndex, group] of groups.entries()) {
