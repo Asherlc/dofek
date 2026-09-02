@@ -1,5 +1,5 @@
-import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "./app-store-subscription.ts";
 import { z } from "zod";
+import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "./app-store-subscription.ts";
 
 export interface AppStoreBillingConfig {
   issuerId: string;

@@ -21,6 +21,7 @@
 - Every catch reports unexpected errors to Sentry; users see the actionable server error message.
 - Follow TDD: write a focused failing test, run it, implement the minimum production code, then re-run it before proceeding.
 - Do not place tests or non-route helpers under `packages/mobile/app/`.
+- Run the commit commands in this plan only after the required user and workflow approvals have been obtained.
 
 ---
 
@@ -288,9 +289,11 @@ Expected: FAIL because the route factory does not exist.
 
 - [ ] **Step 3: Add the raw-body notification router**
 
-Mount `app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }))` before `express.json()`, adjacent to the Stripe raw webhook. Parse a JSON body containing only `signedPayload`; use Apple’s `verifyAndDecodeNotification`; require a notification UUID; apply the decoded signed transaction/renewal state and record it in `fitness.app_store_notification` within the same transaction. Return `200 { received: true }` for a duplicate verified UUID, `400` for an invalid payload, and send unexpected internal errors to the shared Express error handler/Sentry.
+Mount `app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }))` before `express.json()`, adjacent to the Stripe raw webhook. Parse a JSON body containing only `signedPayload`; use Apple’s `verifyAndDecodeNotification`; require a notification UUID; reserve it in `fitness.app_store_notification` and apply the decoded signed transaction/renewal state within the same transaction. A failed state update rolls back the reservation; a duplicate verified UUID does not mutate state and returns `200 { received: true }`. Return `400` for an invalid payload, and send unexpected internal errors to the shared Express error handler/Sentry.
 
 Keep `fitness.app_store_notification` keyed only by Apple notification UUID and without a user foreign key, so account erasure does not delete the global replay-protection ledger.
+
+Account erasure deletes the Dofek billing record but cannot cancel an App Store subscription. Before erasure, iOS directs subscribers to Apple’s Manage Subscription surface; the notification ledger remains without user linkage so verified notification replays continue to be rejected.
 
 - [ ] **Step 4: Run focused tests and verify GREEN**
 

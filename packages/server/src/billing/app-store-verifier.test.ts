@@ -172,6 +172,29 @@ describe("App Store transaction verification", () => {
     });
   });
 
+  it("falls back to Production when Sandbox rejects a transaction", async () => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeTransaction
+      .mockRejectedValueOnce(new verifierMock.VerificationException(1))
+      .mockResolvedValueOnce({
+        appAccountToken: expectedAccountToken,
+        environment: "Production",
+        expiresDate: 1_790_812_800_000,
+        originalTransactionId: "100000000000001",
+        productId: "com.dofek.premium.monthly",
+        transactionId: "100000000000002",
+      });
+
+    await expect(
+      verifyAppStoreTransaction("production-jws", expectedAccountToken),
+    ).resolves.toMatchObject({
+      environment: "Production",
+      status: "active",
+    });
+    expect(verifierMock.SignedDataVerifier).toHaveBeenCalledTimes(2);
+    expect(verifierMock.verifyAndDecodeTransaction).toHaveBeenCalledTimes(2);
+  });
+
   it("reports and preserves unexpected transaction verification failures", async () => {
     setAppStoreEnv();
     const failure = new Error("certificate store unavailable");
@@ -297,6 +320,41 @@ describe("App Store transaction verification", () => {
     );
     expect(verifierMock.verifyAndDecodeTransaction).toHaveBeenCalledWith("signed-transaction-jws");
     expect(verifierMock.verifyAndDecodeRenewalInfo).toHaveBeenCalledWith("signed-renewal-jws");
+  });
+
+  it.each([
+    ["expired", 2],
+    ["billing retry", 3],
+  ])("normalizes a %s notification status as expired", async (_description, status) => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeNotification.mockResolvedValue({
+      notificationType: "DID_FAIL_TO_RENEW",
+      notificationUUID: "20000000-0000-4000-8000-000000000004",
+      signedDate: 1_789_488_000_000,
+      data: {
+        status,
+        signedTransactionInfo: "signed-transaction-jws",
+        signedRenewalInfo: "signed-renewal-jws",
+      },
+    });
+    verifierMock.verifyAndDecodeTransaction.mockResolvedValue({
+      appAccountToken: expectedAccountToken,
+      environment: "Sandbox",
+      expiresDate: 1_790_812_800_000,
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+      transactionId: "100000000000002",
+    });
+    verifierMock.verifyAndDecodeRenewalInfo.mockResolvedValue({
+      appAccountToken: expectedAccountToken,
+      environment: "Sandbox",
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+    });
+
+    await expect(verifyAppStoreNotification("signed-notification-jws")).resolves.toMatchObject({
+      subscription: { status: "expired" },
+    });
   });
 
   it("uses the verified grace-period expiry for billing grace state", async () => {

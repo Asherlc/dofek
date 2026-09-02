@@ -5,6 +5,11 @@ import type {
   AppStoreNotificationUpdate,
   AppStoreSubscriptionUpdate,
 } from "../billing/app-store-subscription.ts";
+import {
+  type AccessWindow,
+  resolveAccessWindow,
+  toAppStoreSubscriptionState,
+} from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 type BillingDatabase = Pick<Database, "execute">;
@@ -36,8 +41,26 @@ const billingCustomerProfileSchema = z.object({
 const updatedBillingUserSchema = z.object({ user_id: z.string() });
 const appStoreAccountTokenSchema = z.object({ app_store_account_token: z.uuid() });
 const recordedAppStoreNotificationSchema = z.object({ notification_uuid: z.uuid() });
+const billingAccessStatusRowSchema = z.object({
+  created_at: timestampStringSchema,
+  paid_grant_reason: z.string().nullable(),
+  stripe_subscription_status: z.string().nullable(),
+  stripe_customer_id: z.string().nullable(),
+  app_store_product_id: z.string().nullable(),
+  app_store_subscription_status: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+  app_store_revocation_at: timestampStringSchema.nullable(),
+});
 
 export type BillingCustomerProfile = z.infer<typeof billingCustomerProfileSchema>;
+
+export interface BillingAccessStatus {
+  access: AccessWindow;
+  stripeSubscriptionStatus: string | null;
+  canManageBilling: boolean;
+  appStoreSubscriptionStatus: string | null;
+  canManageAppStoreSubscription: boolean;
+}
 
 export class BillingRepository {
   readonly #db: BillingDatabase;
@@ -96,6 +119,48 @@ export class BillingRepository {
           LIMIT 1`,
     );
     return rows[0] ?? null;
+  }
+
+  async getAccessStatus(userId: string, timezone: string): Promise<BillingAccessStatus> {
+    const rows = await executeWithSchema(
+      this.#db,
+      billingAccessStatusRowSchema,
+      sql`SELECT
+            profile.created_at::text AS created_at,
+            billing.paid_grant_reason,
+            billing.stripe_subscription_status,
+            billing.stripe_customer_id,
+            billing.app_store_product_id,
+            billing.app_store_subscription_status,
+            billing.app_store_expires_at::text AS app_store_expires_at,
+            billing.app_store_revocation_at::text AS app_store_revocation_at
+          FROM fitness.user_profile profile
+          LEFT JOIN fitness.user_billing billing ON billing.user_id = profile.id
+          WHERE profile.id = ${userId}
+          LIMIT 1`,
+    );
+    const row = rows[0];
+    if (!row) throw new Error("Authenticated user profile not found");
+
+    const appStoreSubscription = toAppStoreSubscriptionState({
+      productId: row.app_store_product_id,
+      status: row.app_store_subscription_status,
+      expiresAt: row.app_store_expires_at,
+      revokedAt: row.app_store_revocation_at,
+    });
+    return {
+      access: resolveAccessWindow({
+        userCreatedAt: row.created_at,
+        timezone,
+        paidGrantReason: row.paid_grant_reason,
+        stripeSubscriptionStatus: row.stripe_subscription_status,
+        appStoreSubscription,
+      }),
+      stripeSubscriptionStatus: row.stripe_subscription_status,
+      canManageBilling: row.stripe_customer_id !== null,
+      appStoreSubscriptionStatus: row.app_store_subscription_status,
+      canManageAppStoreSubscription: row.app_store_subscription_status !== null,
+    };
   }
 
   async upsertStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {
@@ -187,7 +252,10 @@ export class BillingRepository {
             )
             AND (
               app_store_expires_at IS NULL
-              OR ${input.status} = 'revoked'
+              OR (
+                ${input.status} = 'revoked'
+                AND app_store_subscription_status <> 'revoked'
+              )
               OR ${input.expiresAt} > app_store_expires_at
               OR (
                 ${input.expiresAt} = app_store_expires_at
@@ -219,9 +287,6 @@ export async function applyAppStoreNotification(
 ): Promise<string[]> {
   return db.transaction(async (transaction) => {
     const repository = new BillingRepository(transaction);
-    const updatedUserIds = input.subscription
-      ? await repository.applyAppStoreSubscription(input.subscription)
-      : [];
     const recorded = await executeWithSchema(
       transaction,
       recordedAppStoreNotificationSchema,
@@ -230,11 +295,16 @@ export async function applyAppStoreNotification(
           ON CONFLICT (notification_uuid) DO NOTHING
           RETURNING notification_uuid::text AS notification_uuid`,
     );
-    if (recorded.length > 0 || !input.subscription || updatedUserIds.length > 0) {
-      return updatedUserIds;
+    if (recorded.length > 0) {
+      return input.subscription
+        ? await repository.applyAppStoreSubscription(input.subscription)
+        : [];
     }
+    if (!input.subscription) return [];
 
-    const userId = await repository.findUserIdByAppStoreAccountToken(input.subscription.accountToken);
+    const userId = await repository.findUserIdByAppStoreAccountToken(
+      input.subscription.accountToken,
+    );
     return userId ? [userId] : [];
   });
 }

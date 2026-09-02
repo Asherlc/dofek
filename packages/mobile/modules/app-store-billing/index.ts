@@ -1,5 +1,6 @@
 import type { EventSubscription } from "expo-modules-core";
 import { NativeModule, requireNativeModule } from "expo-modules-core";
+import { z } from "zod";
 
 export const APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID = "com.dofek.premium.monthly";
 
@@ -21,6 +22,23 @@ export type AppStorePurchaseResult =
   | { outcome: "cancelled" }
   | { outcome: "pending" };
 
+const appStoreProductSchema = z.object({
+  productID: z.string().min(1),
+  displayName: z.string(),
+  description: z.string(),
+  displayPrice: z.string().min(1),
+});
+const appStoreTransactionSchema = z.object({
+  transactionID: z.string().min(1),
+  productID: z.string().min(1),
+  signedTransaction: z.string().min(1),
+});
+const appStorePurchaseResultSchema = z.discriminatedUnion("outcome", [
+  appStoreTransactionSchema.extend({ outcome: z.literal("verified") }),
+  z.object({ outcome: z.literal("cancelled") }),
+  z.object({ outcome: z.literal("pending") }),
+]);
+
 type AppStoreBillingEvents = {
   onTransactionUpdate: (transaction: AppStoreTransaction) => void;
 };
@@ -40,27 +58,33 @@ const AppStoreBillingModule = requireNativeModule<AppStoreBillingNativeModule>("
 export async function loadProduct(
   productID: string = APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID,
 ): Promise<AppStoreProduct | null> {
-  return AppStoreBillingModule.loadProduct(productID);
+  return appStoreProductSchema.nullable().parse(await AppStoreBillingModule.loadProduct(productID));
 }
 
 export async function purchase(
   productID: string,
   appAccountToken: string,
 ): Promise<AppStorePurchaseResult> {
-  return AppStoreBillingModule.purchase(productID, appAccountToken);
+  return appStorePurchaseResultSchema.parse(
+    await AppStoreBillingModule.purchase(productID, appAccountToken),
+  );
 }
 
 export async function restoreCurrentEntitlements(
   productID: string = APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID,
 ): Promise<AppStoreTransaction[]> {
-  return AppStoreBillingModule.restoreCurrentEntitlements(productID);
+  return z
+    .array(appStoreTransactionSchema)
+    .parse(await AppStoreBillingModule.restoreCurrentEntitlements(productID));
 }
 
 export function startTransactionUpdates(
   onTransaction: (transaction: AppStoreTransaction) => void,
   productID: string = APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID,
 ): EventSubscription {
-  const subscription = AppStoreBillingModule.addListener("onTransactionUpdate", onTransaction);
+  const subscription = AppStoreBillingModule.addListener("onTransactionUpdate", (transaction) => {
+    onTransaction(appStoreTransactionSchema.parse(transaction));
+  });
   try {
     AppStoreBillingModule.startTransactionUpdates(productID);
   } catch (error) {

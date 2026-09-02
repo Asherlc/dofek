@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { applyAppStoreNotification, BillingRepository } from "./billing-repository.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000172";
@@ -11,6 +13,30 @@ const testCustomerId = "cus_billing_webhook_test";
 const firstAccountToken = "a0000000-0000-4000-8000-000000000001";
 const secondAccountToken = "a0000000-0000-4000-8000-000000000002";
 const appStoreNotificationUuid = "30000000-0000-4000-8000-000000000001";
+const stripeSubscriptionSchema = z.object({
+  stripe_subscription_id: z.string(),
+  stripe_subscription_status: z.string(),
+});
+const appStoreNotificationStateSchema = z.object({
+  app_store_transaction_id: z.string().nullable(),
+  notification_count: z.coerce.number(),
+});
+const appStoreSubscriptionSchema = z.object({
+  app_store_transaction_id: z.string().nullable(),
+  app_store_subscription_status: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+});
+const appStoreRevocationSchema = z.object({
+  app_store_subscription_status: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+  app_store_revocation_at: timestampStringSchema.nullable(),
+});
+const appStoreTransactionOwnerSchema = z.object({
+  user_id: z.string(),
+  app_store_original_transaction_id: z.string().nullable(),
+  app_store_transaction_id: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+});
 
 describe("BillingRepository subscription webhook updates (integration)", () => {
   let testContext: TestContext;
@@ -130,10 +156,9 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     expect(firstUpdatedUserIds).toEqual([testUserId]);
     expect(duplicateUpdatedUserIds).toEqual([]);
 
-    const rows = await testContext.db.execute<{
-      stripe_subscription_id: string;
-      stripe_subscription_status: string;
-    }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      stripeSubscriptionSchema,
       sql`SELECT stripe_subscription_id, stripe_subscription_status
           FROM fitness.user_billing
           WHERE user_id = ${testUserId}`,
@@ -164,10 +189,9 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     expect(newerUpdatedUserIds).toEqual([testUserId]);
     expect(olderUpdatedUserIds).toEqual([]);
 
-    const rows = await testContext.db.execute<{
-      stripe_subscription_id: string;
-      stripe_subscription_status: string;
-    }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      stripeSubscriptionSchema,
       sql`SELECT stripe_subscription_id, stripe_subscription_status
           FROM fitness.user_billing
           WHERE user_id = ${testUserId}`,
@@ -224,12 +248,11 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
           expiresAt: new Date("2026-11-01T00:00:00.000Z"),
         },
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual([testUserId]);
 
-    const rows = await testContext.db.execute<{
-      app_store_transaction_id: string | null;
-      notification_count: number;
-    }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      appStoreNotificationStateSchema,
       sql`SELECT
             billing.app_store_transaction_id,
             (
@@ -272,11 +295,9 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       }),
     ).resolves.toEqual([]);
 
-    const rows = await testContext.db.execute<{
-      app_store_transaction_id: string | null;
-      app_store_subscription_status: string | null;
-      app_store_expires_at: string | null;
-    }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      appStoreSubscriptionSchema,
       sql`SELECT
             app_store_transaction_id,
             app_store_subscription_status,
@@ -287,7 +308,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     expect(rows[0]).toEqual({
       app_store_transaction_id: "100000000000002",
       app_store_subscription_status: "active",
-      app_store_expires_at: "2026-10-01 00:00:00+00",
+      app_store_expires_at: "2026-10-01T00:00:00.000Z",
     });
   });
 
@@ -316,11 +337,9 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     ]);
     await expect(repository.applyAppStoreSubscription(revokedUpdate)).resolves.toEqual([]);
 
-    const rows = await testContext.db.execute<{
-      app_store_subscription_status: string | null;
-      app_store_expires_at: string | null;
-      app_store_revocation_at: string | null;
-    }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      appStoreRevocationSchema,
       sql`SELECT
             app_store_subscription_status,
             app_store_expires_at::text AS app_store_expires_at,
@@ -330,8 +349,45 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     );
     expect(rows[0]).toEqual({
       app_store_subscription_status: "revoked",
-      app_store_expires_at: "2026-10-01 00:00:00+00",
-      app_store_revocation_at: "2026-09-20 00:00:00+00",
+      app_store_expires_at: "2026-10-01T00:00:00.000Z",
+      app_store_revocation_at: "2026-09-20T00:00:00.000Z",
+    });
+  });
+
+  it("records an expired state at the same App Store expiry", async () => {
+    const activeUpdate = {
+      accountToken: firstAccountToken,
+      originalTransactionId: "100000000000001",
+      transactionId: "100000000000002",
+      productId: "com.dofek.premium.monthly" as const,
+      status: "active" as const,
+      expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      revokedAt: null,
+      environment: "Sandbox" as const,
+    };
+
+    await expect(repository.applyAppStoreSubscription(activeUpdate)).resolves.toEqual([testUserId]);
+    await expect(
+      repository.applyAppStoreSubscription({
+        ...activeUpdate,
+        status: "expired",
+      }),
+    ).resolves.toEqual([testUserId]);
+
+    const rows = await executeWithSchema(
+      testContext.db,
+      appStoreSubscriptionSchema,
+      sql`SELECT
+            app_store_transaction_id,
+            app_store_subscription_status,
+            app_store_expires_at::text AS app_store_expires_at
+          FROM fitness.user_billing
+          WHERE user_id = ${testUserId}::uuid`,
+    );
+    expect(rows[0]).toEqual({
+      app_store_transaction_id: "100000000000002",
+      app_store_subscription_status: "expired",
+      app_store_expires_at: "2026-10-01T00:00:00.000Z",
     });
   });
 
@@ -357,12 +413,9 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       }),
     ).resolves.toEqual([]);
 
-    const rows = await testContext.db.execute<{
-      user_id: string;
-      app_store_original_transaction_id: string | null;
-      app_store_transaction_id: string | null;
-      app_store_expires_at: string | null;
-    }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      appStoreTransactionOwnerSchema,
       sql`SELECT
             user_id,
             app_store_original_transaction_id,
@@ -377,7 +430,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
         user_id: testUserId,
         app_store_original_transaction_id: "100000000000001",
         app_store_transaction_id: "100000000000002",
-        app_store_expires_at: "2026-10-01 00:00:00+00",
+        app_store_expires_at: "2026-10-01T00:00:00.000Z",
       },
       {
         user_id: secondTestUserId,

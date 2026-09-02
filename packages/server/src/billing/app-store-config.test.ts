@@ -39,7 +39,10 @@ describe("getAppStoreBillingConfig", () => {
   });
 
   it("normalizes escaped PEM line breaks from environment configuration", () => {
-    vi.stubEnv("APP_STORE_PRIVATE_KEY", "-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----");
+    vi.stubEnv(
+      "APP_STORE_PRIVATE_KEY",
+      "-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----",
+    );
     vi.stubEnv(
       "APP_STORE_ROOT_CERTIFICATES_PEM",
       "-----BEGIN CERTIFICATE-----\\ncertificate\\n-----END CERTIFICATE-----",

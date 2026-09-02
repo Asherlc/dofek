@@ -57,6 +57,10 @@ const mockAdminUserDetailQuery = vi.hoisted(() =>
           stripe_subscription_id: "sub_123",
           stripe_subscription_status: "active",
           stripe_current_period_end: "2026-05-01T00:00:00Z",
+          app_store_product_id: null,
+          app_store_subscription_status: null,
+          app_store_expires_at: null,
+          app_store_revocation_at: null,
           paid_grant_reason: null,
           created_at: "2024-01-03T00:00:00Z",
           updated_at: "2024-01-04T00:00:00Z",
@@ -269,7 +273,7 @@ describe("AdminUserDetailPage", () => {
 
     expect(screen.getByText("Limited to 2026-01-01 through 2026-01-08")).toBeTruthy();
     expect(screen.getByText("Dismissed")).toBeTruthy();
-    expect(screen.getAllByText("—")).toHaveLength(7);
+    expect(screen.getAllByText("—")).toHaveLength(10);
     expect(screen.getAllByText("No accounts")).toHaveLength(1);
     expect(screen.getAllByText("No providers")).toHaveLength(1);
     expect(screen.getAllByText("No sessions")).toHaveLength(1);
@@ -306,6 +310,10 @@ describe("AdminUserDetailPage", () => {
           stripe_subscription_id: null,
           stripe_subscription_status: null,
           stripe_current_period_end: null,
+          app_store_product_id: null,
+          app_store_subscription_status: null,
+          app_store_expires_at: null,
+          app_store_revocation_at: null,
           paid_grant_reason: "migration",
           created_at: "2026-01-03T00:00:00Z",
           updated_at: "2026-01-04T00:00:00Z",
@@ -341,14 +349,37 @@ describe("AdminUserDetailPage", () => {
   });
 
   it("identifies App Store subscription access", () => {
-    const detail = mockAdminUserDetailQuery().data;
-    expect(detail).toBeDefined();
-    if (!detail) return;
-
     mockAdminUserDetailQuery.mockReturnValue({
       data: {
-        ...detail,
+        profile: {
+          id: "user-app-store",
+          name: "App Store Subscriber",
+          email: "subscriber@example.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+        },
+        flags: { providerGuideDismissed: false },
+        billing: {
+          user_id: "user-app-store",
+          stripe_customer_id: null,
+          stripe_subscription_id: null,
+          stripe_subscription_status: null,
+          stripe_current_period_end: null,
+          app_store_product_id: "com.dofek.premium.monthly",
+          app_store_subscription_status: "active",
+          app_store_expires_at: "2026-10-01T00:00:00Z",
+          app_store_revocation_at: null,
+          paid_grant_reason: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+        },
         access: { kind: "full", paid: true, reason: "app_store_subscription" },
+        stripeLinks: { customer: null, subscription: null },
+        accounts: [],
+        providers: [],
+        sessions: [],
       },
       isLoading: false,
       error: null,

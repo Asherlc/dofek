@@ -122,7 +122,7 @@ describe("BillingRepository", () => {
 
       const queryText = getQueryText(execute.mock.calls[0]?.[0]);
       expect(queryText).toContain("app_store_expires_at");
-      expect(queryText).toContain("<");
+      expect(queryText).toContain("> app_store_expires_at");
     });
 
     it("permits a terminal status to replace an active subscription at the same expiry", async () => {

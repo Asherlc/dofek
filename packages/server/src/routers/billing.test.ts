@@ -231,6 +231,13 @@ describe("billingRouter", () => {
       "verified-jws",
       accountToken,
     );
+    const persistedSubscriptionQuery = JSON.stringify(
+      stripeMocks.executeWithSchema.mock.calls[1]?.[2],
+    );
+    expect(persistedSubscriptionQuery).toContain("100000000000001");
+    expect(persistedSubscriptionQuery).toContain("100000000000002");
+    expect(persistedSubscriptionQuery).toContain("2099-10-01T00:00:00.000Z");
+    expect(persistedSubscriptionQuery).toContain(accountToken);
     expect(stripeMocks.invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     expect(stripeMocks.withUserWriteFence).toHaveBeenCalledWith(db, "user-1", expect.any(Function));
   });

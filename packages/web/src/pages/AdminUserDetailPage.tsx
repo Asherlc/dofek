@@ -77,6 +77,10 @@ export interface AdminUserDetail {
     stripe_subscription_id: string | null;
     stripe_subscription_status: string | null;
     stripe_current_period_end: string | null;
+    app_store_product_id: string | null;
+    app_store_subscription_status: string | null;
+    app_store_expires_at: string | null;
+    app_store_revocation_at: string | null;
     paid_grant_reason: string | null;
     created_at: string;
     updated_at: string;
@@ -309,6 +313,15 @@ export function AdminUserDetailContent({
               </DetailRow>
               <DetailRow label="Current period end">
                 {formatTimestamp(detail.billing?.stripe_current_period_end)}
+              </DetailRow>
+              <DetailRow label="App Store product">
+                {detail.billing?.app_store_product_id ?? "—"}
+              </DetailRow>
+              <DetailRow label="App Store status">
+                {detail.billing?.app_store_subscription_status ?? "—"}
+              </DetailRow>
+              <DetailRow label="App Store access end">
+                {formatTimestamp(detail.billing?.app_store_expires_at)}
               </DetailRow>
             </dl>
 

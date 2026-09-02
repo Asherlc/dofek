@@ -75,6 +75,16 @@ the server. StoreKit documents `Transaction.currentEntitlements` and
 `Transaction.updates` as the current entitlement and change streams.
 [StoreKit entitlement documentation](https://developer.apple.com/documentation/storekit/transaction/currententitlements)
 
+### Account erasure and subscription management
+
+Erasing a Dofek account deletes its user billing state; it does not cancel an
+Apple-managed auto-renewable subscription. Before erasure, the iOS Settings
+screen directs a subscriber to Apple's Manage Subscription surface. The global
+notification replay ledger intentionally has no user foreign key and remains
+after erasure, so verified App Store notification UUIDs cannot be replayed.
+Apple documents subscription management in
+[StoreKit](https://developer.apple.com/documentation/storekit/appstore/showmanagesubscriptions(in:)).
+
 ### Schema and entitlement model
 
 Extend `fitness.user_billing`, rather than creating a competing entitlement
