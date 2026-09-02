@@ -4,11 +4,28 @@ const expectedAccountToken = "a0000000-0000-4000-8000-000000000001";
 const originalEnv = { ...process.env };
 
 const verifierMock = vi.hoisted(() => {
+  class VerificationException extends Error {
+    constructor(readonly status: number) {
+      super(`verification failed with status ${status}`);
+    }
+  }
+  const verifyAndDecodeNotification = vi.fn();
+  const verifyAndDecodeRenewalInfo = vi.fn();
   const verifyAndDecodeTransaction = vi.fn();
   const SignedDataVerifier = vi.fn(function SignedDataVerifier() {
-    return { verifyAndDecodeTransaction };
+    return {
+      verifyAndDecodeNotification,
+      verifyAndDecodeRenewalInfo,
+      verifyAndDecodeTransaction,
+    };
   });
-  return { SignedDataVerifier, verifyAndDecodeTransaction };
+  return {
+    SignedDataVerifier,
+    VerificationException,
+    verifyAndDecodeNotification,
+    verifyAndDecodeRenewalInfo,
+    verifyAndDecodeTransaction,
+  };
 });
 
 vi.mock("@apple/app-store-server-library", () => ({
@@ -16,11 +33,26 @@ vi.mock("@apple/app-store-server-library", () => ({
     PRODUCTION: "Production",
     SANDBOX: "Sandbox",
   },
+  NotificationTypeV2: {
+    TEST: "TEST",
+  },
+  Status: {
+    ACTIVE: 1,
+    EXPIRED: 2,
+    BILLING_RETRY: 3,
+    BILLING_GRACE_PERIOD: 4,
+    REVOKED: 5,
+  },
   SignedDataVerifier: verifierMock.SignedDataVerifier,
+  VerificationException: verifierMock.VerificationException,
+  VerificationStatus: {
+    VERIFICATION_FAILURE: 1,
+    RETRYABLE_VERIFICATION_FAILURE: 2,
+  },
 }));
 
 import { getAppStoreBillingConfig } from "./app-store-config.ts";
-import { verifyAppStoreTransaction } from "./app-store-verifier.ts";
+import { verifyAppStoreNotification, verifyAppStoreTransaction } from "./app-store-verifier.ts";
 
 function setAppStoreEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
   process.env.APP_STORE_ISSUER_ID = "issuer-id";
@@ -44,6 +76,8 @@ describe("App Store transaction verification", () => {
     vi.useRealTimers();
     process.env = { ...originalEnv };
     verifierMock.SignedDataVerifier.mockClear();
+    verifierMock.verifyAndDecodeNotification.mockReset();
+    verifierMock.verifyAndDecodeRenewalInfo.mockReset();
     verifierMock.verifyAndDecodeTransaction.mockReset();
   });
 
@@ -191,5 +225,195 @@ describe("App Store transaction verification", () => {
       status: "revoked",
       revokedAt: new Date("2026-09-19T00:00:00.000Z"),
     });
+  });
+
+  it("verifies a subscription notification and both nested JWS payloads", async () => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeNotification.mockResolvedValue({
+      notificationType: "DID_RENEW",
+      notificationUUID: "20000000-0000-4000-8000-000000000001",
+      signedDate: 1_789_488_000_000,
+      data: {
+        status: 1,
+        signedTransactionInfo: "signed-transaction-jws",
+        signedRenewalInfo: "signed-renewal-jws",
+      },
+    });
+    verifierMock.verifyAndDecodeTransaction.mockResolvedValue({
+      appAccountToken: expectedAccountToken,
+      environment: "Sandbox",
+      expiresDate: 1_790_812_800_000,
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+      transactionId: "100000000000002",
+    });
+    verifierMock.verifyAndDecodeRenewalInfo.mockResolvedValue({
+      appAccountToken: expectedAccountToken,
+      environment: "Sandbox",
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+    });
+
+    await expect(verifyAppStoreNotification("signed-notification-jws")).resolves.toEqual({
+      notificationUuid: "20000000-0000-4000-8000-000000000001",
+      signedDate: 1_789_488_000_000,
+      subscription: {
+        accountToken: expectedAccountToken,
+        originalTransactionId: "100000000000001",
+        transactionId: "100000000000002",
+        productId: "com.dofek.premium.monthly",
+        status: "active",
+        expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+        revokedAt: null,
+        environment: "Sandbox",
+      },
+    });
+    expect(verifierMock.verifyAndDecodeNotification).toHaveBeenCalledWith(
+      "signed-notification-jws",
+    );
+    expect(verifierMock.verifyAndDecodeTransaction).toHaveBeenCalledWith("signed-transaction-jws");
+    expect(verifierMock.verifyAndDecodeRenewalInfo).toHaveBeenCalledWith("signed-renewal-jws");
+  });
+
+  it("uses the verified grace-period expiry for billing grace state", async () => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeNotification.mockResolvedValue({
+      notificationType: "DID_FAIL_TO_RENEW",
+      notificationUUID: "20000000-0000-4000-8000-000000000002",
+      signedDate: 1_789_488_000_000,
+      data: {
+        status: 4,
+        signedTransactionInfo: "signed-transaction-jws",
+        signedRenewalInfo: "signed-renewal-jws",
+      },
+    });
+    verifierMock.verifyAndDecodeTransaction.mockResolvedValue({
+      appAccountToken: expectedAccountToken,
+      environment: "Production",
+      expiresDate: 1_789_401_600_000,
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+      transactionId: "100000000000002",
+    });
+    verifierMock.verifyAndDecodeRenewalInfo.mockResolvedValue({
+      appAccountToken: expectedAccountToken,
+      environment: "Production",
+      gracePeriodExpiresDate: 1_790_812_800_000,
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+    });
+
+    await expect(verifyAppStoreNotification("signed-notification-jws")).resolves.toMatchObject({
+      subscription: {
+        status: "grace_period",
+        expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      },
+    });
+  });
+
+  it("accepts a verified Apple test notification without changing subscription state", async () => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeNotification.mockResolvedValue({
+      notificationType: "TEST",
+      notificationUUID: "20000000-0000-4000-8000-000000000003",
+      signedDate: 1_789_488_000_000,
+      data: {
+        bundleId: "com.dofek.app",
+        environment: "Sandbox",
+      },
+    });
+
+    await expect(verifyAppStoreNotification("signed-test-notification-jws")).resolves.toEqual({
+      notificationUuid: "20000000-0000-4000-8000-000000000003",
+      signedDate: 1_789_488_000_000,
+      subscription: null,
+    });
+    expect(verifierMock.verifyAndDecodeTransaction).not.toHaveBeenCalled();
+    expect(verifierMock.verifyAndDecodeRenewalInfo).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["notification UUID", { notificationUUID: undefined }],
+    ["signed date", { signedDate: undefined }],
+    ["signed transaction", { data: { status: 1, signedRenewalInfo: "renewal-jws" } }],
+    ["signed renewal info", { data: { status: 1, signedTransactionInfo: "transaction-jws" } }],
+  ])("rejects a verified subscription notification without its %s", async (_field, override) => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeNotification.mockResolvedValue({
+      notificationType: "DID_RENEW",
+      notificationUUID: "20000000-0000-4000-8000-000000000001",
+      signedDate: 1_789_488_000_000,
+      data: {
+        status: 1,
+        signedTransactionInfo: "signed-transaction-jws",
+        signedRenewalInfo: "signed-renewal-jws",
+      },
+      ...override,
+    });
+
+    await expect(verifyAppStoreNotification("incomplete-notification-jws")).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
+  });
+
+  it("rejects an unverified notification", async () => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeNotification.mockRejectedValue(
+      new verifierMock.VerificationException(1),
+    );
+
+    await expect(verifyAppStoreNotification("invalid-jws")).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
+    expect(verifierMock.verifyAndDecodeTransaction).not.toHaveBeenCalled();
+    expect(verifierMock.verifyAndDecodeRenewalInfo).not.toHaveBeenCalled();
+  });
+
+  it("does not classify an unexpected verifier failure as an invalid client payload", async () => {
+    setAppStoreEnv();
+    const unexpectedError = new TypeError("certificate verifier crashed");
+    verifierMock.verifyAndDecodeNotification.mockRejectedValue(unexpectedError);
+
+    await expect(verifyAppStoreNotification("unprocessed-jws")).rejects.toBe(unexpectedError);
+  });
+
+  it("propagates retryable Apple verification failures for server error handling", async () => {
+    setAppStoreEnv();
+    const retryableError = new verifierMock.VerificationException(2);
+    verifierMock.verifyAndDecodeNotification.mockRejectedValue(retryableError);
+
+    await expect(verifyAppStoreNotification("retryable-jws")).rejects.toBe(retryableError);
+  });
+
+  it("rejects inconsistent verified transaction and renewal account state", async () => {
+    setAppStoreEnv();
+    verifierMock.verifyAndDecodeNotification.mockResolvedValue({
+      notificationType: "DID_RENEW",
+      notificationUUID: "20000000-0000-4000-8000-000000000001",
+      signedDate: 1_789_488_000_000,
+      data: {
+        status: 1,
+        signedTransactionInfo: "signed-transaction-jws",
+        signedRenewalInfo: "signed-renewal-jws",
+      },
+    });
+    verifierMock.verifyAndDecodeTransaction.mockResolvedValue({
+      appAccountToken: expectedAccountToken,
+      environment: "Sandbox",
+      expiresDate: 1_790_812_800_000,
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+      transactionId: "100000000000002",
+    });
+    verifierMock.verifyAndDecodeRenewalInfo.mockResolvedValue({
+      appAccountToken: "a0000000-0000-4000-8000-000000000002",
+      environment: "Sandbox",
+      originalTransactionId: "100000000000001",
+      productId: "com.dofek.premium.monthly",
+    });
+
+    await expect(verifyAppStoreNotification("inconsistent-notification-jws")).rejects.toMatchObject(
+      { code: "PRECONDITION_FAILED" },
+    );
   });
 });

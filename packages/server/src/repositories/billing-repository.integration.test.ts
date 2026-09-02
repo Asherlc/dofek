@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { BillingRepository } from "./billing-repository.ts";
+import { applyAppStoreNotification, BillingRepository } from "./billing-repository.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000172";
 const secondTestUserId = "00000000-0000-0000-0000-000000000173";
@@ -10,6 +10,7 @@ const secondTokenTestUserId = "00000000-0000-0000-0000-000000000175";
 const testCustomerId = "cus_billing_webhook_test";
 const firstAccountToken = "a0000000-0000-4000-8000-000000000001";
 const secondAccountToken = "a0000000-0000-4000-8000-000000000002";
+const appStoreNotificationUuid = "30000000-0000-4000-8000-000000000001";
 
 describe("BillingRepository subscription webhook updates (integration)", () => {
   let testContext: TestContext;
@@ -69,10 +70,18 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
   }, 120_000);
 
   afterAll(async () => {
+    await testContext?.db.execute(
+      sql`DELETE FROM fitness.app_store_notification
+          WHERE notification_uuid = ${appStoreNotificationUuid}::uuid`,
+    );
     await testContext?.cleanup();
   });
 
   beforeEach(async () => {
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.app_store_notification
+          WHERE notification_uuid = ${appStoreNotificationUuid}::uuid`,
+    );
     await testContext.db.execute(
       sql`UPDATE fitness.user_billing
           SET app_store_original_transaction_id = NULL,
@@ -185,6 +194,58 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       testUserId,
     ]);
     await expect(repository.applyAppStoreSubscription(currentUpdate)).resolves.toEqual([]);
+  });
+
+  it("records a verified App Store notification and applies its state only once", async () => {
+    const notification = {
+      notificationUuid: appStoreNotificationUuid,
+      signedDate: 1_789_488_000_000,
+      subscription: {
+        accountToken: firstAccountToken,
+        originalTransactionId: "100000000000001",
+        transactionId: "100000000000002",
+        productId: "com.dofek.premium.monthly" as const,
+        status: "active" as const,
+        expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+        revokedAt: null,
+        environment: "Sandbox" as const,
+      },
+    };
+
+    await expect(applyAppStoreNotification(testContext.db, notification)).resolves.toEqual([
+      testUserId,
+    ]);
+    await expect(
+      applyAppStoreNotification(testContext.db, {
+        ...notification,
+        subscription: {
+          ...notification.subscription,
+          transactionId: "100000000000003",
+          expiresAt: new Date("2026-11-01T00:00:00.000Z"),
+        },
+      }),
+    ).resolves.toEqual([]);
+
+    const rows = await testContext.db.execute<{
+      app_store_transaction_id: string | null;
+      notification_count: number;
+    }>(
+      sql`SELECT
+            billing.app_store_transaction_id,
+            (
+              SELECT count(*)::integer
+              FROM fitness.app_store_notification
+              WHERE notification_uuid = ${appStoreNotificationUuid}::uuid
+            ) AS notification_count
+          FROM fitness.user_billing billing
+          WHERE billing.user_id = ${testUserId}::uuid`,
+    );
+    expect(rows).toEqual([
+      {
+        app_store_transaction_id: "100000000000002",
+        notification_count: 1,
+      },
+    ]);
   });
 
   it("does not let an older App Store expiry overwrite the stored subscription", async () => {

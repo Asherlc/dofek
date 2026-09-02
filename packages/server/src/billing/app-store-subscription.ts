@@ -10,3 +10,9 @@ export interface AppStoreSubscriptionUpdate {
   revokedAt: Date | null;
   environment: "Sandbox" | "Production";
 }
+
+export interface AppStoreNotificationUpdate {
+  notificationUuid: string;
+  signedDate: number;
+  subscription: AppStoreSubscriptionUpdate | null;
+}

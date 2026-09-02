@@ -1,7 +1,10 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { AppStoreSubscriptionUpdate } from "../billing/app-store-subscription.ts";
+import type {
+  AppStoreNotificationUpdate,
+  AppStoreSubscriptionUpdate,
+} from "../billing/app-store-subscription.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 type BillingDatabase = Pick<Database, "execute">;
@@ -32,6 +35,7 @@ const billingCustomerProfileSchema = z.object({
 });
 const updatedBillingUserSchema = z.object({ user_id: z.string() });
 const appStoreAccountTokenSchema = z.object({ app_store_account_token: z.uuid() });
+const recordedAppStoreNotificationSchema = z.object({ notification_uuid: z.uuid() });
 
 export type BillingCustomerProfile = z.infer<typeof billingCustomerProfileSchema>;
 
@@ -194,4 +198,24 @@ export class BillingRepository {
     );
     return rows.map((row) => row.user_id);
   }
+}
+
+export async function applyAppStoreNotification(
+  db: Pick<Database, "transaction">,
+  input: AppStoreNotificationUpdate,
+): Promise<string[]> {
+  return db.transaction(async (transaction) => {
+    const recorded = await executeWithSchema(
+      transaction,
+      recordedAppStoreNotificationSchema,
+      sql`INSERT INTO fitness.app_store_notification (notification_uuid, signed_date)
+          VALUES (${input.notificationUuid}::uuid, ${input.signedDate})
+          ON CONFLICT (notification_uuid) DO NOTHING
+          RETURNING notification_uuid::text AS notification_uuid`,
+    );
+    if (recorded.length === 0) return [];
+    if (!input.subscription) return [];
+
+    return new BillingRepository(transaction).applyAppStoreSubscription(input.subscription);
+  });
 }

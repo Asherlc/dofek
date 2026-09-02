@@ -54,6 +54,11 @@ const mockCreateDeveloperClientsRouter = vi.fn(() => {
   router.get("/__test_developer_mount", (_req, res) => res.sendStatus(204));
   return router;
 });
+const mockCreateAppStoreWebhookRouter = vi.fn(() => {
+  const router = express.Router();
+  router.post("/", (_req, res) => res.sendStatus(204));
+  return router;
+});
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(function vitestConstructor() {
@@ -190,6 +195,9 @@ vi.mock("./routes/companion-token.ts", () => ({
 }));
 vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
+}));
+vi.mock("./routes/app-store-webhook.ts", () => ({
+  createAppStoreWebhookRouter: mockCreateAppStoreWebhookRouter,
 }));
 vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
 
@@ -399,6 +407,17 @@ describe("createApp", () => {
     const fakeDb = createDatabaseFromEnv();
     createApp(fakeDb, makeMockSensorStore());
     expect(createIngestZosHealthRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("mounts the App Store webhook at its public path with its database dependency", async () => {
+    const { createAppStoreWebhookRouter } = await import("./routes/app-store-webhook.ts");
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    expect(createAppStoreWebhookRouter).toHaveBeenCalledWith({ db: fakeDb });
+    expect((await request(app, "POST", "/api/webhooks/app-store")).status).toBe(204);
   });
 
   it("passes db to companion route modules", async () => {

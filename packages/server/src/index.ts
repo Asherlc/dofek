@@ -55,6 +55,7 @@ import { LimitedActivitySensorStore } from "./repositories/limited-activity-sens
 import { appRouter } from "./router.ts";
 import { ensureProvidersRegistered } from "./routers/sync-helpers.ts";
 import { createActivityExportRouter } from "./routes/activity-export.ts";
+import { createAppStoreWebhookRouter } from "./routes/app-store-webhook.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { authRateLimiter } from "./routes/auth/shared.ts";
 import { createCompanionPairingRouter } from "./routes/companion-pairing.ts";
@@ -253,7 +254,8 @@ function setupRoutes(
   });
 
   // ── Route modules ──
-  // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
+  // Webhook routes must be mounted before JSON middleware because signature verification uses raw bodies.
+  app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }));
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
