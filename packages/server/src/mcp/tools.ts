@@ -520,7 +520,12 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         content: [
           {
             type: "text" as const,
-            text: "Dofek Analytics Explorer is ready for the requested health metrics.",
+            text: `Dofek Analytics Explorer coverage: ${Object.entries(snapshot.coverage.by_metric)
+              .map(
+                ([metric, coverage]) =>
+                  `${metric} ${coverage.observed_days} of ${snapshot.coverage.requested_days} days`,
+              )
+              .join("; ")}.`,
           },
         ],
         _meta: { ui: { resourceUri: healthExplorerResourceUri } },
@@ -609,7 +614,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Search Activities",
       description:
-        "Show authenticated user activities in an exact date range, optionally filtered by text.",
+        "Show authenticated user activities in an optional date range (defaulting to the last 30 days), optionally filtered by text.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         from: dateSchema.optional(),
@@ -860,7 +865,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "List Providers",
       description:
-        "List connected Dofek providers with connection status and last-sync timestamps.",
+        "List configured Dofek providers with connection status and last-sync timestamps.",
       annotations: { readOnlyHint: true },
       inputSchema: {},
     },

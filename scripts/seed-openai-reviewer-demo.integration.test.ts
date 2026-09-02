@@ -23,6 +23,13 @@ describe("OpenAI reviewer demo seed", () => {
         (${reviewerId}, 'OpenAI Reviewer', ${REVIEWER_EMAIL}),
         (${controlUserId}, 'Control User', 'control@example.test')
     `;
+    await sql`
+      INSERT INTO fitness.provider (id, name, user_id)
+      VALUES
+        ('apple_health', 'Apple Health', NULL),
+        ('strava', 'Strava', NULL),
+        ('whoop', 'WHOOP', NULL)
+    `;
   }, 120_000);
 
   afterAll(async () => {
@@ -60,7 +67,7 @@ describe("OpenAI reviewer demo seed", () => {
     ]);
     expect(
       await sql`
-        SELECT DATE(started_at)::text AS date
+        SELECT (started_at AT TIME ZONE 'UTC')::date::text AS date
         FROM fitness.sleep_session
         WHERE user_id = ${reviewerId}
           AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}
@@ -75,6 +82,16 @@ describe("OpenAI reviewer demo seed", () => {
       { date: "2026-08-30" },
       { date: "2026-08-31" },
     ]);
+    expect(
+      await sql`
+        SELECT (EXTRACT(EPOCH FROM ended_at - started_at) / 60)::int AS elapsed_minutes,
+               duration_minutes
+        FROM fitness.sleep_session
+        WHERE user_id = ${reviewerId}
+          AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}
+        ORDER BY started_at
+      `,
+    ).toEqual(Array.from({ length: 7 }, () => ({ elapsed_minutes: 420, duration_minutes: 420 })));
     expect(
       await sql`
         SELECT external_id

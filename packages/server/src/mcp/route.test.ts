@@ -536,7 +536,12 @@ describe("createMcpRouter", () => {
       "interactive Dofek Analytics Explorer",
     );
     expect(findListedTool(tools, "get_sleep_summary").description).toContain("Summarize sleep");
-    expect(findListedTool(tools, "search_activities").description).toContain("date range");
+    expect(findListedTool(tools, "search_activities").description).toContain(
+      "optional date range (defaulting to the last 30 days)",
+    );
+    expect(findListedTool(tools, "list_providers").description).toContain(
+      "configured Dofek providers",
+    );
     expect(findListedTool(tools, "list_providers").description).toContain("last-sync timestamps");
     expect(findListedTool(tools, "get_daily_health_summary").inputSchema).toMatchObject({
       properties: {
@@ -1507,7 +1512,7 @@ describe("createMcpRouter", () => {
       content: [
         {
           type: "text",
-          text: expect.stringContaining("Dofek Analytics Explorer"),
+          text: "Dofek Analytics Explorer coverage: hrv 2 of 2 days.",
         },
       ],
       _meta: { ui: { resourceUri: "ui://dofek/health-explorer.html" } },

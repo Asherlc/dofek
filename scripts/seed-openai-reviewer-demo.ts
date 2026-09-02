@@ -1,14 +1,13 @@
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 import { createTaggedQueryClient, type TaggedQueryClient } from "../src/db/tagged-query-client.ts";
+import { captureException } from "../src/lib/error-reporting.ts";
 
 export const REVIEWER_EMAIL = "asherlc+openai-review@asherlc.com";
 export const OPENAI_REVIEWER_DEMO_SOURCE = "OpenAI Reviewer Demo (synthetic)";
 
-const providerNames = {
-  apple_health: "Apple Health",
-  strava: "Strava",
-  whoop: "WHOOP",
-} as const;
+const providerIds = ["apple_health", "strava", "whoop"] as const;
+const reviewerRowSchema = z.object({ id: z.uuid() });
 
 const dailyMetrics = [
   ["2026-08-18", 58, 7420],
@@ -44,41 +43,47 @@ const activities = [
 ] as const;
 
 export async function seedOpenAiReviewerDemo(sql: TaggedQueryClient): Promise<void> {
-  const reviewers = await sql<{ id: string }[]>`
-    SELECT id FROM fitness.user_profile WHERE email = ${REVIEWER_EMAIL}
-  `;
-  const reviewer = reviewers[0];
-  if (!reviewer || reviewers.length !== 1) {
-    throw new Error(`Synthetic OpenAI reviewer account ${REVIEWER_EMAIL} must exist exactly once`);
-  }
-  const userId = reviewer.id;
+  await sql.transaction(async (transaction) => {
+    const reviewers = reviewerRowSchema.array().parse(
+      await transaction<{ id: string }>`
+        SELECT id FROM fitness.user_profile WHERE email = ${REVIEWER_EMAIL}
+      `,
+    );
+    const reviewer = reviewers[0];
+    if (!reviewer || reviewers.length !== 1) {
+      throw new Error(
+        `Synthetic OpenAI reviewer account ${REVIEWER_EMAIL} must exist exactly once`,
+      );
+    }
+    const userId = reviewer.id;
 
-  for (const [providerId, name] of Object.entries(providerNames)) {
-    await sql`
-      INSERT INTO fitness.provider (id, name, user_id)
-      VALUES (${providerId}, ${name}, NULL)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-    `;
-    await sql`
-      INSERT INTO fitness.provider_connection (user_id, provider_id)
-      VALUES (${userId}, ${providerId})
-      ON CONFLICT (user_id, provider_id) DO NOTHING
-    `;
-  }
+    for (const providerId of providerIds) {
+      const providers = await transaction<{ id: string }>`
+        SELECT id FROM fitness.provider WHERE id = ${providerId}
+      `;
+      if (providers.length !== 1) {
+        throw new Error(`Required provider ${providerId} must be registered before seeding`);
+      }
+      await transaction`
+        INSERT INTO fitness.provider_connection (user_id, provider_id)
+        VALUES (${userId}, ${providerId})
+        ON CONFLICT (user_id, provider_id) DO NOTHING
+      `;
+    }
 
-  await sql`DELETE FROM fitness.daily_metrics WHERE user_id = ${userId} AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}`;
-  await sql`DELETE FROM fitness.sleep_session WHERE user_id = ${userId} AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}`;
-  await sql`DELETE FROM fitness.activity WHERE user_id = ${userId} AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}`;
-  await sql`DELETE FROM fitness.sync_log WHERE user_id = ${userId} AND data_type = 'openai_reviewer_demo'`;
+    await transaction`DELETE FROM fitness.daily_metrics WHERE user_id = ${userId} AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}`;
+    await transaction`DELETE FROM fitness.sleep_session WHERE user_id = ${userId} AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}`;
+    await transaction`DELETE FROM fitness.activity WHERE user_id = ${userId} AND source_name = ${OPENAI_REVIEWER_DEMO_SOURCE}`;
+    await transaction`DELETE FROM fitness.sync_log WHERE user_id = ${userId} AND data_type = 'openai_reviewer_demo'`;
 
-  for (const [date, hrv, steps] of dailyMetrics) {
-    await sql`
+    for (const [date, hrv, steps] of dailyMetrics) {
+      await transaction`
       INSERT INTO fitness.daily_metrics (date, provider_id, user_id, hrv, steps, source_name)
       VALUES (${date}, 'whoop', ${userId}, ${hrv}, ${steps}, ${OPENAI_REVIEWER_DEMO_SOURCE})
     `;
-  }
-  for (const date of sleepDates) {
-    await sql`
+    }
+    for (const date of sleepDates) {
+      await transaction`
       INSERT INTO fitness.sleep_session (
         provider_id, user_id, external_id, started_at, ended_at, duration_minutes,
         deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct,
@@ -86,14 +91,14 @@ export async function seedOpenAiReviewerDemo(sql: TaggedQueryClient): Promise<vo
         start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
       ) VALUES (
         'whoop', ${userId}, ${`openai-reviewer-demo-sleep-${date}`},
-        ${`${date}T05:30:00.000Z`}, ${`${date}T13:00:00.000Z`}, 420,
+        ${`${date}T05:30:00.000Z`}, ${`${date}T12:30:00.000Z`}, 420,
         78, 102, 210, 30, 92.9, true, 'sleep', ${OPENAI_REVIEWER_DEMO_SOURCE},
         'America/Los_Angeles', -420, -420, 'provider_timezone'
       )
     `;
-  }
-  for (const [date, canonicalType, name, endedAt] of activities) {
-    await sql`
+    }
+    for (const [date, canonicalType, name, endedAt] of activities) {
+      await transaction`
       INSERT INTO fitness.activity (
         provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at,
         name, perceived_exertion, source_name, timezone,
@@ -105,17 +110,18 @@ export async function seedOpenAiReviewerDemo(sql: TaggedQueryClient): Promise<vo
         -420, -420, 'provider_timezone'
       )
     `;
-  }
-  for (const [providerId, syncedAt] of [
-    ["whoop", "2026-08-31T17:00:00.000Z"],
-    ["apple_health", "2026-08-31T17:15:00.000Z"],
-    ["strava", "2026-08-31T16:45:00.000Z"],
-  ] as const) {
-    await sql`
+    }
+    for (const [providerId, syncedAt] of [
+      ["whoop", "2026-08-31T17:00:00.000Z"],
+      ["apple_health", "2026-08-31T17:15:00.000Z"],
+      ["strava", "2026-08-31T16:45:00.000Z"],
+    ] as const) {
+      await transaction`
       INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status, record_count, synced_at)
       VALUES (${providerId}, ${userId}, 'openai_reviewer_demo', 'success', 1, ${syncedAt})
     `;
-  }
+    }
+  });
 }
 
 async function main(): Promise<void> {
@@ -134,6 +140,7 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error: unknown) => {
+    captureException(error, { tags: { operation: "seed-openai-reviewer-demo" } });
     console.error(error);
     process.exit(1);
   });
