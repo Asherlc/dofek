@@ -22,6 +22,12 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   ownership for exercises and provider aliases from historical strength sets,
   in bounded batches, then verifies that no attributable rows were missed.
   - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
+- `repair-activity-data-integrity.ts`: Dry-run-first, user/window-bounded repair
+  for activity local-time context and its dbt-owned ClickHouse grouping and
+  summary read models. It records a private audit artifact and supports
+  compare-and-swap rollback with a monotonic `UInt64` version.
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.ts --user-id=<uuid> --start-at=<utc> --end-at=<utc>`
+  - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
 ## Environment & Secrets
 
 - `dev-environment.ts`: Idempotent bootstrap and verification for the
