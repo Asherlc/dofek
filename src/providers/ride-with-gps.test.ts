@@ -271,7 +271,7 @@ describe("buildRideWithGpsMetricRows", () => {
           longitude: -122.6,
           latitude: 45.5,
           epochSeconds: 1723276200,
-          speedMetersPerSecond: 10,
+          speedMetersPerSecond: 31,
         },
       ],
     });
@@ -279,6 +279,24 @@ describe("buildRideWithGpsMetricRows", () => {
     expect(rows[0]?.speed).toBeUndefined();
     expect(rows[0]?.lat).toBe(45.5);
     expect(rows[0]?.lng).toBe(-122.6);
+  });
+
+  it("does not apply cycling plausibility limits to non-cycling activities", () => {
+    const rows = buildRideWithGpsMetricRows({
+      activityId: "activity-1",
+      externalId: "trip-1",
+      activityType: resolveProviderActivityType("running", "running"),
+      trackPoints: [
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          epochSeconds: 1723276200,
+          speedMetersPerSecond: 31,
+        },
+      ],
+    });
+
+    expect(rows[0]?.speed).toBe(31);
   });
 
   it("rejects an outdoor cycling stream with an implausible average speed", () => {
@@ -302,10 +320,27 @@ describe("buildRideWithGpsMetricRows", () => {
         externalId: "trip-1",
         activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
         trackPoints: [
-          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200, speedMetersPerSecond: 31 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276201, speedMetersPerSecond: 1 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276202, speedMetersPerSecond: 31 },
         ],
       }),
     ).toThrow("RideWithGPS cycling speed is implausible for activity activity-1 (external trip-1)");
+  });
+
+  it("accepts outdoor cycling speeds at the exact plausibility limits", () => {
+    expect(() =>
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints: [
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200, speedMetersPerSecond: 10 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276201, speedMetersPerSecond: 20 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276202, speedMetersPerSecond: 30 },
+        ],
+      }),
+    ).not.toThrow();
   });
 
   it("validates long outdoor cycling streams without spreading every speed as function arguments", () => {
