@@ -441,3 +441,23 @@ describe("RideWithGps — rate-limit aware fetch wiring", () => {
     }
   });
 });
+
+describe("RideWithGpsClient.getTrip", () => {
+  it("accepts a negative raw speed so extraction can omit only that sample", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      Response.json({
+        trip: {
+          id: 12345,
+          name: "Morning Ride",
+          created_at: "2024-08-10T10:00:00Z",
+          updated_at: "2024-08-10T10:00:00Z",
+          track_points: [{ x: -122.6, y: 45.5, t: 1_723_276_200, s: -1 }],
+        },
+      });
+    const client = new RideWithGpsClient("access-token", fetchFn);
+
+    const { trip } = await client.getTrip(12345);
+
+    expect(parseTrackPoints(trip.track_points)[0]?.speed).toBeUndefined();
+  });
+});

@@ -66,7 +66,10 @@ const rideWithGpsTrackPointSchema = z
     d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
-    s: z.number().nonnegative().optional(),
+    // RideWithGPS documents `s` in meters per second. Accept the raw numeric
+    // sample here; parseTrackPoints omits an invalid negative speed without
+    // rejecting the rest of an otherwise valid activity.
+    s: z.number().optional(),
     T: z.number().optional(),
     h: z.number().optional(),
     c: z.number().optional(),

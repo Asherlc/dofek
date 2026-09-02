@@ -46,8 +46,8 @@ const storedTrackPointSchema = z
     distanceMeters: z.number().optional(),
     elevationMeters: z.number().optional(),
     epochSeconds: z.number().optional(),
-    speedMetersPerSecond: z.number().nonnegative().optional(),
-    speedKph: z.number().nonnegative().optional(),
+    speedMetersPerSecond: z.number().optional(),
+    speedKph: z.number().optional(),
     temperatureCelsius: z.number().optional(),
     heartRateBpm: z.number().optional(),
     cadenceRpm: z.number().optional(),
@@ -57,7 +57,9 @@ const storedTrackPointSchema = z
     d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
-    s: z.number().nonnegative().optional(),
+    // Preserve malformed numeric samples long enough for parseTrackPoints to
+    // omit only the speed, rather than aborting the entire activity backfill.
+    s: z.number().optional(),
     T: z.number().optional(),
     h: z.number().optional(),
     c: z.number().optional(),
