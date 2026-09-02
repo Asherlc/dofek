@@ -146,10 +146,12 @@ describe("importStrongCsv", () => {
       db,
       [
         "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE",
+        '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",0,0,0,,300,,',
         '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",1,24,8,,,,',
       ].join("\n"),
       "user-1",
       "kg",
+      "America/Los_Angeles",
     ]);
 
     const exerciseStatement = sqlText(execute.mock.calls[0]?.[0]);
