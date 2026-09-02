@@ -15,7 +15,12 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   and three provider last-sync records. It fails when that exact account is
   absent, removes only its own source-tagged rows, and never reads or copies
   another account's health data.
-  - Usage: `DATABASE_URL=... pnpm seed:openai-reviewer-demo`
+  - Usage: `pnpm seed:openai-reviewer-demo`
+  - Target database: the command uses `.env.local`'s `DATABASE_URL` when that
+    file is present; otherwise it uses the production database URL exported by
+    Infisical. Do not prefix this command with `DATABASE_URL=...`, because the
+    environment wrapper intentionally applies `.env.local` after shell
+    variables.
 - `seed-review-clickhouse.ts`: Refreshes review-user relational tables in
   ClickHouse and inserts 90 deterministic review body-weight samples directly
   into canonical `ingest.metric_stream`. It tombstones only its own prior

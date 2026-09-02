@@ -26,6 +26,9 @@ describe("tagged query client transactions", () => {
           INSERT INTO fitness.user_profile (id, name, email)
           VALUES (${userId}, 'Transaction rollback', 'transaction-rollback@example.test')
         `;
+        await expect(
+          transaction<{ id: string }>`SELECT id FROM fitness.user_profile WHERE id = ${userId}`,
+        ).resolves.toEqual([{ id: userId }]);
         throw new Error("force transaction rollback");
       }),
     ).rejects.toThrow("force transaction rollback");
