@@ -54,15 +54,16 @@ Trip track points use compact keys:
 | `d` | Distance from start | Meters |
 | `e` | Elevation | Meters |
 | `t` | Timestamp | Unix seconds |
-| `s` | Speed | Kilometers per hour |
+| `s` | Speed | Meters per second (verified against production payloads; the live API specification remains the provider contract) |
 | `T` | Temperature | Celsius |
 | `h` | Heart rate | Beats per minute |
 | `c` | Cadence | Revolutions per minute |
 | `p` | Power | Watts |
 
-Dofek skips points without `x`, `y`, or `t`, converts speed to meters per
-second, and publishes location plus available elevation, temperature, heart
-rate, cadence, and power samples to the metric stream.
+Dofek skips points without `x`, `y`, or `t`, preserves the observed m/s speed
+value, and publishes location plus available elevation, temperature, heart
+rate, cadence, and power samples to the metric stream. The provider API
+contract is the [live OpenAPI specification](https://ridewithgps.com/api/v1/openapi.yaml).
 
 ## Historical Authentication Investigation
 

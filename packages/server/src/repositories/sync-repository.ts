@@ -41,6 +41,14 @@ const recentSyncLogRowSchema = z.object({
   auth_failure_reason: z.string().nullable(),
 });
 
+const scheduledSyncHealthRowSchema = z.object({
+  provider_id: z.string(),
+  last_success: timestampStringSchema.nullable(),
+  last_attempt: timestampStringSchema,
+  last_error: z.string().nullable(),
+  consecutive_failures: z.coerce.number().int().nonnegative(),
+});
+
 const clickHouseProviderStatsRowSchema = z.object({
   provider_id: z.string(),
   activities: z.coerce.number(),
@@ -114,6 +122,14 @@ export interface ProviderRecentSyncLog {
   dataType: string;
   errorMessage: string | null;
   authFailureReason: string | null;
+}
+
+export interface ProviderScheduledSyncHealth {
+  providerId: string;
+  lastSuccess: string | null;
+  lastAttempt: string;
+  lastError: string | null;
+  consecutiveFailures: number;
 }
 
 interface ProviderStatsClickHouseStore {
@@ -287,6 +303,63 @@ export class SyncRepository {
       logsByProvider.set(row.provider_id, logs);
     }
     return logsByProvider;
+  }
+
+  /** Exact health of top-level scheduled attempts, excluding provider sub-step logs. */
+  async getScheduledSyncHealth(): Promise<ProviderScheduledSyncHealth[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      scheduledSyncHealthRowSchema,
+      sql`WITH ordered_attempts AS (
+            SELECT
+              id,
+              provider_id,
+              status,
+              synced_at,
+              error_message,
+              ROW_NUMBER() OVER (
+                PARTITION BY provider_id
+                ORDER BY synced_at DESC, id DESC
+              ) AS attempt_number
+            FROM fitness.sync_log
+            WHERE user_id = ${this.#userId}
+              AND data_type = 'sync'
+              AND origin = 'scheduled'
+          ),
+          attempts AS (
+            SELECT
+              *,
+              MAX(synced_at) FILTER (WHERE status = 'success') OVER (
+                PARTITION BY provider_id
+              ) AS last_success,
+              MIN(attempt_number) FILTER (WHERE status = 'success') OVER (
+                PARTITION BY provider_id
+              ) AS latest_success_attempt_number
+            FROM ordered_attempts
+          )
+          SELECT
+            provider_id,
+            MAX(last_success) AS last_success,
+            MAX(synced_at) AS last_attempt,
+            MAX(error_message) FILTER (
+              WHERE attempt_number = 1 AND status = 'error'
+            ) AS last_error,
+            COUNT(*) FILTER (
+              WHERE status = 'error'
+                AND attempt_number < COALESCE(latest_success_attempt_number, 2147483647)
+            )::int AS consecutive_failures
+          FROM attempts
+          GROUP BY provider_id
+          ORDER BY provider_id`,
+    );
+
+    return rows.map((row) => ({
+      providerId: row.provider_id,
+      lastSuccess: row.last_success,
+      lastAttempt: row.last_attempt,
+      lastError: row.last_error,
+      consecutiveFailures: row.consecutive_failures,
+    }));
   }
 
   /** Per-provider record counts broken down by table. */

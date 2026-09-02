@@ -55,6 +55,7 @@ const mockActivity: ActivityDetail = {
   sampleCountState: { status: "missing", reason: "Sample Count not recorded" },
   name: "Morning Run",
   activityType: "running",
+  rawType: "running",
   modality: null,
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
@@ -1651,6 +1652,7 @@ describe("ActivityDetailPage", () => {
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
             wallAngleDegrees: null,
+            lead: null,
           },
           {
             id: "climb-project",
@@ -1673,6 +1675,7 @@ describe("ActivityDetailPage", () => {
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
             wallAngleDegrees: 35,
+            lead: null,
           },
         ],
         error: null,

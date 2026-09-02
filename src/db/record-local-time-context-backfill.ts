@@ -1,11 +1,14 @@
 import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { isGeographicTimezone } from "./home-timezone.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const candidateSchema = z.object({
   id: z.string().uuid(),
   timezone: z.string(),
+  local_time_source: z.enum(["unknown", "provider_timezone"]),
+  home_timezone: z.string().nullable(),
   started_at: z.coerce.date(),
   ended_at: z.coerce.date().nullable(),
 });
@@ -54,18 +57,30 @@ export async function backfillRecordLocalTimeContext(
       db,
       candidateSchema,
       sql`SELECT
-            id::text AS id,
-            timezone,
-            started_at,
-            ended_at
-          FROM fitness.activity
-          WHERE local_time_source = 'unknown'
-            AND timezone IS NOT NULL
-            AND trim(timezone) <> ''
-            AND started_at >= ${options.startAt}
-            AND started_at < ${options.endAt}
-            ${cursor == null ? sql`` : sql`AND id > ${cursor}::uuid`}
-          ORDER BY id
+            activity.id::text AS id,
+            activity.timezone,
+            activity.local_time_source,
+            settings.value #>> '{}' AS home_timezone,
+            activity.started_at,
+            activity.ended_at
+          FROM fitness.activity AS activity
+          LEFT JOIN fitness.user_settings AS settings
+            ON settings.user_id = activity.user_id
+           AND settings.key = 'homeTimezone'
+          WHERE activity.timezone IS NOT NULL
+            AND trim(activity.timezone) <> ''
+            AND activity.started_at >= ${options.startAt}
+            AND activity.started_at < ${options.endAt}
+            AND (
+              activity.local_time_source = 'unknown'
+              OR (
+                activity.local_time_source = 'provider_timezone'
+                AND trim(activity.timezone) ~ '^Etc/GMT([+-][0-9]{1,2})?$'
+                AND settings.value #>> '{}' IS NOT NULL
+              )
+            )
+            ${cursor == null ? sql`` : sql`AND activity.id > ${cursor}::uuid`}
+          ORDER BY activity.id
           LIMIT ${options.batchSize}`,
     );
     if (rows.length === 0) break;
@@ -77,16 +92,50 @@ export async function backfillRecordLocalTimeContext(
       timezone: string | null;
       startUtcOffsetMinutes: number | null;
       endUtcOffsetMinutes: number | null;
-      source: "provider_timezone";
+      source: "provider_timezone" | "user_home_timezone";
+      priorSource: "unknown" | "provider_timezone";
+      priorTimezone: string;
+      priorStartedAt: Date;
+      priorEndedAt: Date | null;
     }> = rows.flatMap((row) => {
       try {
-        const context = resolveRecordLocalTimeContext({
+        resolveRecordLocalTimeContext({
           startedAt: row.started_at,
           endedAt: row.ended_at,
           timezone: row.timezone,
           source: "provider_timezone",
         });
-        return [{ id: row.id, ...context, source: "provider_timezone" as const }];
+        const homeTimezone = row.home_timezone?.trim() || null;
+        const storedTimezone = row.timezone;
+        const priorTimezone = storedTimezone.trim();
+        resolveRecordLocalTimeContext({
+          startedAt: row.started_at,
+          endedAt: row.ended_at,
+          timezone: priorTimezone,
+          source: "provider_timezone",
+        });
+        const useHomeTimezone =
+          isFixedEtcGmtZone(priorTimezone) &&
+          homeTimezone !== null &&
+          isGeographicTimezone(homeTimezone);
+        const source = useHomeTimezone ? "user_home_timezone" : "provider_timezone";
+        const context = resolveRecordLocalTimeContext({
+          startedAt: row.started_at,
+          endedAt: row.ended_at,
+          timezone: useHomeTimezone ? homeTimezone : priorTimezone,
+          source,
+        });
+        return [
+          {
+            id: row.id,
+            ...context,
+            source,
+            priorSource: row.local_time_source,
+            priorTimezone: storedTimezone,
+            priorStartedAt: row.started_at,
+            priorEndedAt: row.ended_at,
+          },
+        ];
       } catch {
         result.skipped += 1;
         return [];
@@ -98,7 +147,7 @@ export async function backfillRecordLocalTimeContext(
     const values = sql.join(
       contexts.map(
         (context) =>
-          sql`(${context.id}::uuid, ${context.timezone}::text, ${context.startUtcOffsetMinutes}::bigint, ${context.endUtcOffsetMinutes}::bigint, ${context.source}::text)`,
+          sql`(${context.id}::uuid, ${context.timezone}::text, ${context.startUtcOffsetMinutes}::bigint, ${context.endUtcOffsetMinutes}::bigint, ${context.source}::text, ${context.priorSource}::text, ${context.priorTimezone}::text, ${context.priorStartedAt}::timestamptz, ${context.priorEndedAt}::timestamptz)`,
       ),
       sql`, `,
     );
@@ -110,7 +159,11 @@ export async function backfillRecordLocalTimeContext(
             timezone,
             start_utc_offset_minutes,
             end_utc_offset_minutes,
-            local_time_source
+            local_time_source,
+            prior_local_time_source,
+            prior_timezone,
+            prior_started_at,
+            prior_ended_at
           ) AS (
             VALUES ${values}
           ),
@@ -123,7 +176,10 @@ export async function backfillRecordLocalTimeContext(
               local_time_source = context_values.local_time_source
             FROM context_values
             WHERE activity.id = context_values.id
-              AND activity.local_time_source = 'unknown'
+              AND activity.local_time_source = context_values.prior_local_time_source
+              AND activity.timezone IS NOT DISTINCT FROM context_values.prior_timezone
+              AND activity.started_at = context_values.prior_started_at
+              AND activity.ended_at IS NOT DISTINCT FROM context_values.prior_ended_at
             RETURNING 1
           )
           SELECT count(*)::int AS count
@@ -133,4 +189,8 @@ export async function backfillRecordLocalTimeContext(
   }
 
   return result;
+}
+
+function isFixedEtcGmtZone(timezone: string): boolean {
+  return /^Etc\/GMT(?:[+-]\d{1,2})?$/.test(timezone);
 }

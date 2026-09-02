@@ -36,7 +36,7 @@ describe("planRideWithGpsActivityBackfill", () => {
             latitude: 45.5,
             elevationMeters: 150,
             epochSeconds: 1_723_276_200,
-            speedKph: 36,
+            speedMetersPerSecond: 10,
           },
         ],
       },
@@ -82,7 +82,7 @@ describe("planRideWithGpsActivityBackfill", () => {
             y: 45.5,
             e: 150,
             t: 1_723_276_200,
-            s: 36,
+            s: 10,
             h: 145,
             c: 90,
             p: 200,
@@ -98,10 +98,35 @@ describe("planRideWithGpsActivityBackfill", () => {
     });
     expect(plan.shouldUpdateActivityType).toBe(false);
     expect(plan.metricRows[0]).toMatchObject({
+      speed: 10,
       heartRate: 145,
       cadence: 90,
       power: 200,
     });
+  });
+
+  it("preserves the legacy descriptive speedKph field as meters per second", () => {
+    const plan = planRideWithGpsActivityBackfill({
+      id: "activity-1",
+      externalId: "trip-1",
+      userId: "user-1",
+      canonicalType: "cycling",
+      providerType: "cycling:road",
+      modality: "road",
+      raw: {
+        activity_type: "cycling:road",
+        track_points: [
+          {
+            longitude: -122.6,
+            latitude: 45.5,
+            epochSeconds: 1_723_276_200,
+            speedKph: 15.25,
+          },
+        ],
+      },
+    });
+
+    expect(plan.metricRows[0]?.speed).toBe(15.25);
   });
 
   it("returns no metric rows for empty RideWithGPS track points", () => {
@@ -202,6 +227,31 @@ describe("planRideWithGpsActivityBackfill", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("omits a negative stored speed without rejecting the activity", () => {
+    const plan = planRideWithGpsActivityBackfill({
+      id: "activity-1",
+      externalId: "trip-1",
+      userId: "user-1",
+      canonicalType: "cycling",
+      providerType: "cycling:generic",
+      modality: null,
+      raw: {
+        activity_type: "cycling:generic",
+        track_points: [
+          {
+            x: -122.6,
+            y: 45.5,
+            t: 1_723_276_200,
+            s: -1,
+          },
+        ],
+      },
+    });
+
+    expect(plan.metricRows).toHaveLength(1);
+    expect(plan.metricRows[0]?.speed).toBeUndefined();
   });
 
   it("publishes an empty replacement for activities with no valid metric rows", async () => {

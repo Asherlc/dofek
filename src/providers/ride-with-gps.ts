@@ -49,7 +49,8 @@ export interface RideWithGpsTrackPoint {
   distanceMeters?: number;
   elevationMeters?: number;
   epochSeconds?: number;
-  speedKph?: number;
+  /** Speed from `track_points[].s`, observed in the live API payload as meters per second. */
+  speedMetersPerSecond?: number;
   temperatureCelsius?: number;
   heartRateBpm?: number;
   cadenceRpm?: number;
@@ -65,6 +66,9 @@ const rideWithGpsTrackPointSchema = z
     d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
+    // RideWithGPS documents `s` in meters per second. Accept the raw numeric
+    // sample here; parseTrackPoints omits an invalid negative speed without
+    // rejecting the rest of an otherwise valid activity.
     s: z.number().optional(),
     T: z.number().optional(),
     h: z.number().optional(),
@@ -78,7 +82,7 @@ const rideWithGpsTrackPointSchema = z
       distanceMeters: raw.d ?? undefined,
       elevationMeters: raw.e,
       epochSeconds: raw.t,
-      speedKph: raw.s,
+      speedMetersPerSecond: raw.s,
       temperatureCelsius: raw.T,
       heartRateBpm: raw.h,
       cadenceRpm: raw.c,
@@ -259,7 +263,7 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
       lat: point.latitude,
       lng: point.longitude,
       altitude: point.elevationMeters,
-      speed: point.speedKph !== undefined ? point.speedKph / 3.6 : undefined,
+      speed: (point.speedMetersPerSecond ?? 0) >= 0 ? point.speedMetersPerSecond : undefined,
       temperature: point.temperatureCelsius,
       heartRate: point.heartRateBpm,
       cadence: point.cadenceRpm,
@@ -277,6 +281,24 @@ export function buildRideWithGpsMetricRows(options: {
 }): MetricStreamSourceRow[] {
   const parsedTrackPoints = parseTrackPoints(options.trackPoints);
   const indoor = isIndoorCyclingModality(options.activityType.modality);
+
+  if (!indoor && options.activityType.canonicalType === "cycling") {
+    let speedCount = 0;
+    let totalSpeed = 0;
+    let maxSpeed = 0;
+    for (const point of parsedTrackPoints) {
+      if (point.speed === undefined) continue;
+      speedCount += 1;
+      totalSpeed += point.speed;
+      maxSpeed = Math.max(maxSpeed, point.speed);
+    }
+    const averageSpeed = totalSpeed / Math.max(speedCount, 1);
+    if (maxSpeed > 30 || averageSpeed > 20) {
+      throw new Error(
+        `RideWithGPS cycling speed is implausible for activity ${options.activityId} (external ${options.externalId}): avg ${averageSpeed.toFixed(2)} m/s, max ${maxSpeed.toFixed(2)} m/s`,
+      );
+    }
+  }
 
   return parsedTrackPoints.map((point) => ({
     recordedAt: point.recordedAt,
