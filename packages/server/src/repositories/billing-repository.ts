@@ -31,6 +31,7 @@ const billingCustomerProfileSchema = z.object({
   stripe_customer_id: z.string().nullable(),
 });
 const updatedBillingUserSchema = z.object({ user_id: z.string() });
+const appStoreAccountTokenSchema = z.object({ app_store_account_token: z.uuid() });
 
 export type BillingCustomerProfile = z.infer<typeof billingCustomerProfileSchema>;
 
@@ -101,6 +102,28 @@ export class BillingRepository {
             stripe_customer_id = EXCLUDED.stripe_customer_id,
             updated_at = now()`,
     );
+  }
+
+  async getOrCreateAppStoreAccountToken(userId: string): Promise<string> {
+    const rows = await executeWithSchema(
+      this.#db,
+      appStoreAccountTokenSchema,
+      sql`INSERT INTO fitness.user_billing AS billing (user_id, app_store_account_token)
+          VALUES (${userId}, gen_random_uuid())
+          ON CONFLICT (user_id) DO UPDATE SET
+            app_store_account_token = COALESCE(
+              billing.app_store_account_token,
+              EXCLUDED.app_store_account_token
+            ),
+            updated_at = CASE
+              WHEN billing.app_store_account_token IS NULL THEN now()
+              ELSE billing.updated_at
+            END
+          RETURNING app_store_account_token::text AS app_store_account_token`,
+    );
+    const row = rows[0];
+    if (!row) throw new Error(`Failed to create App Store account token for user ${userId}`);
+    return row.app_store_account_token;
   }
 
   async updateSubscriptionForStripeCustomer(input: {

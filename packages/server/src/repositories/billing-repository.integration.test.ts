@@ -5,6 +5,8 @@ import { BillingRepository } from "./billing-repository.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000172";
 const secondTestUserId = "00000000-0000-0000-0000-000000000173";
+const tokenTestUserId = "00000000-0000-0000-0000-000000000174";
+const secondTokenTestUserId = "00000000-0000-0000-0000-000000000175";
 const testCustomerId = "cus_billing_webhook_test";
 const firstAccountToken = "a0000000-0000-4000-8000-000000000001";
 const secondAccountToken = "a0000000-0000-4000-8000-000000000002";
@@ -29,6 +31,13 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     await testContext.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name)
           VALUES (${secondTestUserId}, 'Second Billing Webhook Test User')
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES
+            (${tokenTestUserId}, 'App Store Token Test User'),
+            (${secondTokenTestUserId}, 'Second App Store Token Test User')
           ON CONFLICT (id) DO NOTHING`,
     );
     await testContext.db.execute(
@@ -74,6 +83,21 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
               app_store_revocation_at = NULL,
               app_store_environment = NULL
           WHERE user_id IN (${testUserId}::uuid, ${secondTestUserId}::uuid)`,
+    );
+  });
+
+  it("returns a stable token for one user and a distinct token for another", async () => {
+    const firstToken = await repository.getOrCreateAppStoreAccountToken(tokenTestUserId);
+    const repeatedToken = await repository.getOrCreateAppStoreAccountToken(tokenTestUserId);
+    const otherUserToken = await repository.getOrCreateAppStoreAccountToken(secondTokenTestUserId);
+
+    expect(repeatedToken).toBe(firstToken);
+    expect(otherUserToken).not.toBe(firstToken);
+    expect(firstToken).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(otherUserToken).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
   });
 

@@ -6,6 +6,22 @@ function getQueryText(query: unknown): string {
 }
 
 describe("BillingRepository", () => {
+  it("atomically returns one stable App Store account token", async () => {
+    const execute = vi.fn(async () => [
+      { app_store_account_token: "a0000000-0000-4000-8000-000000000001" },
+    ]);
+    const repository = new BillingRepository({ execute });
+
+    await expect(repository.getOrCreateAppStoreAccountToken("user-1")).resolves.toBe(
+      "a0000000-0000-4000-8000-000000000001",
+    );
+
+    const queryText = getQueryText(execute.mock.calls[0]?.[0]);
+    expect(queryText).toContain("gen_random_uuid");
+    expect(queryText).toContain("COALESCE");
+    expect(queryText).toContain("app_store_account_token");
+  });
+
   it("returns null when a user has no billing row", async () => {
     const execute = vi.fn(async () => []);
     const repository = new BillingRepository({ execute });

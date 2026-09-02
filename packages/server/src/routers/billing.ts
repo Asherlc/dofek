@@ -1,9 +1,13 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
+import type { Database } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { recordUserExternalEffect } from "dofek/db/user-external-effect";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "../billing/app-store-subscription.ts";
+import { verifyAppStoreTransaction as verifySignedAppStoreTransaction } from "../billing/app-store-verifier.ts";
 import { getStripeBillingConfig } from "../billing/config.ts";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { createStripeClient } from "../billing/stripe-client.ts";
@@ -17,43 +21,134 @@ const billingStatusRowSchema = z.object({
   paid_grant_reason: z.string().nullable(),
   stripe_subscription_status: z.string().nullable(),
   stripe_customer_id: z.string().nullable(),
+  app_store_product_id: z.string().nullable(),
+  app_store_subscription_status: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+  app_store_revocation_at: timestampStringSchema.nullable(),
+});
+const accessWindowSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("full"),
+    paid: z.literal(true),
+    reason: z.enum(["paid_grant", "stripe_subscription", "app_store_subscription"]),
+  }),
+  z.object({
+    kind: z.literal("limited"),
+    paid: z.literal(false),
+    reason: z.literal("free_signup_week"),
+    startDate: z.string(),
+    endDateExclusive: z.string(),
+  }),
+]);
+const billingStatusSchema = z.object({
+  hasFullAccess: z.boolean(),
+  access: accessWindowSchema,
+  stripeSubscriptionStatus: z.string().nullable(),
+  canManageBilling: z.boolean(),
+  appStoreSubscriptionStatus: z.string().nullable(),
+  canManageAppStoreSubscription: z.boolean(),
+});
+const appStorePurchaseContextSchema = z.object({
+  productId: z.literal(APP_STORE_SUBSCRIPTION_PRODUCT_ID),
+  appAccountToken: z.uuid(),
 });
 
+async function getBillingStatus(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  const rows = await executeWithSchema(
+    db,
+    billingStatusRowSchema,
+    sql`SELECT
+          profile.id,
+          profile.created_at::text AS created_at,
+          billing.paid_grant_reason,
+          billing.stripe_subscription_status,
+          billing.stripe_customer_id,
+          billing.app_store_product_id,
+          billing.app_store_subscription_status,
+          billing.app_store_expires_at::text AS app_store_expires_at,
+          billing.app_store_revocation_at::text AS app_store_revocation_at
+        FROM fitness.user_profile profile
+        LEFT JOIN fitness.user_billing billing ON billing.user_id = profile.id
+        WHERE profile.id = ${userId}
+        LIMIT 1`,
+  );
+  const row = rows[0];
+  if (!row) {
+    throw new Error(`Authenticated user ${userId} does not exist`);
+  }
+
+  const appStoreSubscription =
+    row.app_store_product_id && row.app_store_subscription_status && row.app_store_expires_at
+      ? {
+          productId: row.app_store_product_id,
+          status: row.app_store_subscription_status,
+          expiresAt: row.app_store_expires_at,
+          revokedAt: row.app_store_revocation_at,
+        }
+      : undefined;
+  const access = resolveAccessWindow({
+    userCreatedAt: row.created_at,
+    timezone,
+    paidGrantReason: row.paid_grant_reason,
+    stripeSubscriptionStatus: row.stripe_subscription_status,
+    appStoreSubscription,
+  });
+
+  return {
+    hasFullAccess: access.kind === "full",
+    access,
+    stripeSubscriptionStatus: row.stripe_subscription_status,
+    canManageBilling: row.stripe_customer_id !== null,
+    appStoreSubscriptionStatus: row.app_store_subscription_status,
+    canManageAppStoreSubscription: row.app_store_subscription_status !== null,
+  };
+}
+
 export const billingRouter = router({
-  status: protectedProcedure.query(async ({ ctx }) => {
-    const rows = await executeWithSchema(
-      ctx.db,
-      billingStatusRowSchema,
-      sql`SELECT
-            profile.id,
-            profile.created_at::text AS created_at,
-            billing.paid_grant_reason,
-            billing.stripe_subscription_status,
-            billing.stripe_customer_id
-          FROM fitness.user_profile profile
-          LEFT JOIN fitness.user_billing billing ON billing.user_id = profile.id
-          WHERE profile.id = ${ctx.userId}
-          LIMIT 1`,
-    );
-    const row = rows[0];
-    if (!row) {
-      throw new Error(`Authenticated user ${ctx.userId} does not exist`);
-    }
+  status: protectedProcedure
+    .output(billingStatusSchema)
+    .query(({ ctx }) => getBillingStatus(ctx.db, ctx.userId, ctx.timezone)),
 
-    const access = resolveAccessWindow({
-      userCreatedAt: row.created_at,
-      timezone: ctx.timezone,
-      paidGrantReason: row.paid_grant_reason,
-      stripeSubscriptionStatus: row.stripe_subscription_status,
-    });
+  appStorePurchaseContext: protectedProcedure
+    .output(appStorePurchaseContextSchema)
+    .query(async ({ ctx }) => {
+      const appAccountToken = await withAccountErasureUserWriteFence(
+        ctx.db,
+        ctx.userId,
+        async (transaction) => {
+          const billingRepository = new BillingRepository(transaction);
+          return billingRepository.getOrCreateAppStoreAccountToken(ctx.userId);
+        },
+      );
+      return {
+        productId: APP_STORE_SUBSCRIPTION_PRODUCT_ID,
+        appAccountToken,
+      };
+    }),
 
-    return {
-      hasFullAccess: access.kind === "full",
-      access,
-      stripeSubscriptionStatus: row.stripe_subscription_status,
-      canManageBilling: row.stripe_customer_id !== null,
-    };
-  }),
+  verifyAppStoreTransaction: protectedProcedure
+    .input(z.object({ signedTransaction: z.string().min(1) }))
+    .output(billingStatusSchema)
+    .mutation(async ({ ctx, input }) => {
+      const status = await withAccountErasureUserWriteFence(
+        ctx.db,
+        ctx.userId,
+        async (transaction) => {
+          const billingRepository = new BillingRepository(transaction);
+          const appAccountToken = await billingRepository.getOrCreateAppStoreAccountToken(
+            ctx.userId,
+          );
+          const subscription = await verifySignedAppStoreTransaction(
+            input.signedTransaction,
+            appAccountToken,
+          );
+          await billingRepository.applyAppStoreSubscription(subscription);
+          return getBillingStatus(transaction, ctx.userId, ctx.timezone);
+        },
+      );
+      await invalidateAllUserQueries(ctx.userId);
+      return status;
+    }),
 
   createCheckoutSession: protectedProcedure
     .input(z.object({ operationId: z.uuid() }))

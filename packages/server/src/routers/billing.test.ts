@@ -11,6 +11,8 @@ const stripeMocks = vi.hoisted(() => ({
   transactionExecute: vi.fn(),
   withUserWriteFence: vi.fn(),
   recordUserExternalEffect: vi.fn(),
+  verifyAppStoreTransaction: vi.fn(),
+  invalidateAllUserQueries: vi.fn(),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -73,6 +75,14 @@ vi.mock("dofek/db/user-external-effect", () => ({
   recordUserExternalEffect: stripeMocks.recordUserExternalEffect,
 }));
 
+vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: stripeMocks.invalidateAllUserQueries,
+}));
+
+vi.mock("../billing/app-store-verifier.ts", () => ({
+  verifyAppStoreTransaction: stripeMocks.verifyAppStoreTransaction,
+}));
+
 import { billingRouter } from "./billing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -99,7 +109,10 @@ describe("billingRouter", () => {
     stripeMocks.transactionExecute.mockReset();
     stripeMocks.withUserWriteFence.mockReset();
     stripeMocks.recordUserExternalEffect.mockReset();
+    stripeMocks.verifyAppStoreTransaction.mockReset();
+    stripeMocks.invalidateAllUserQueries.mockReset();
     stripeMocks.recordUserExternalEffect.mockResolvedValue(undefined);
+    stripeMocks.invalidateAllUserQueries.mockResolvedValue(undefined);
     stripeMocks.withUserWriteFence.mockImplementation(
       async (
         _database: unknown,
@@ -117,6 +130,10 @@ describe("billingRouter", () => {
         paid_grant_reason: null,
         stripe_subscription_status: null,
         stripe_customer_id: null,
+        app_store_product_id: null,
+        app_store_subscription_status: null,
+        app_store_expires_at: null,
+        app_store_revocation_at: null,
       },
     ]);
     const caller = createCaller({
@@ -136,7 +153,81 @@ describe("billingRouter", () => {
       },
       stripeSubscriptionStatus: null,
       canManageBilling: false,
+      appStoreSubscriptionStatus: null,
+      canManageAppStoreSubscription: false,
     });
+  });
+
+  it("returns a stable App Store purchase context for the authenticated user", async () => {
+    stripeMocks.executeWithSchema.mockResolvedValue([
+      { app_store_account_token: "a0000000-0000-4000-8000-000000000001" },
+    ]);
+    const db = database();
+    const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.appStorePurchaseContext()).resolves.toEqual({
+      productId: "com.dofek.premium.monthly",
+      appAccountToken: "a0000000-0000-4000-8000-000000000001",
+    });
+    expect(stripeMocks.withUserWriteFence).toHaveBeenCalledWith(db, "user-1", expect.any(Function));
+  });
+
+  it("verifies a signed transaction for the authenticated account and returns full access", async () => {
+    const accountToken = "a0000000-0000-4000-8000-000000000001";
+    stripeMocks.executeWithSchema
+      .mockResolvedValueOnce([{ app_store_account_token: accountToken }])
+      .mockResolvedValueOnce([{ user_id: "user-1" }])
+      .mockResolvedValueOnce([
+        {
+          id: "user-1",
+          created_at: "2026-07-21T01:30:00.000Z",
+          paid_grant_reason: null,
+          stripe_subscription_status: null,
+          stripe_customer_id: null,
+          app_store_product_id: "com.dofek.premium.monthly",
+          app_store_subscription_status: "active",
+          app_store_expires_at: "2099-10-01T00:00:00.000Z",
+          app_store_revocation_at: null,
+        },
+      ]);
+    stripeMocks.verifyAppStoreTransaction.mockResolvedValue({
+      accountToken,
+      originalTransactionId: "100000000000001",
+      transactionId: "100000000000002",
+      productId: "com.dofek.premium.monthly",
+      status: "active",
+      expiresAt: new Date("2099-10-01T00:00:00.000Z"),
+      revokedAt: null,
+      environment: "Sandbox",
+    });
+    const db = database();
+    const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
+
+    await expect(
+      caller.verifyAppStoreTransaction({ signedTransaction: "verified-jws" }),
+    ).resolves.toEqual({
+      hasFullAccess: true,
+      access: { kind: "full", paid: true, reason: "app_store_subscription" },
+      stripeSubscriptionStatus: null,
+      canManageBilling: false,
+      appStoreSubscriptionStatus: "active",
+      canManageAppStoreSubscription: true,
+    });
+    expect(stripeMocks.verifyAppStoreTransaction).toHaveBeenCalledWith(
+      "verified-jws",
+      accountToken,
+    );
+    expect(stripeMocks.invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(stripeMocks.withUserWriteFence).toHaveBeenCalledWith(db, "user-1", expect.any(Function));
+  });
+
+  it("rejects an empty signed App Store transaction before verification", async () => {
+    const caller = createCaller({ db: database(), userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.verifyAppStoreTransaction({ signedTransaction: "" })).rejects.toMatchObject(
+      { code: "BAD_REQUEST" },
+    );
+    expect(stripeMocks.verifyAppStoreTransaction).not.toHaveBeenCalled();
   });
 
   it("creates a checkout session for the configured subscription price", async () => {
