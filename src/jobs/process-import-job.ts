@@ -392,7 +392,6 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       });
     }
   } catch (error) {
-    captureException(error, { tags: { phase: "file-import" } });
     importFailed = true;
     importError = error;
   }
@@ -433,6 +432,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       idempotencyKey: "worker-failed",
     });
     await invalidateAllUserQueries(userId);
+    try {
+      captureException(importError, { tags: { phase: "file-import" } });
+    } catch (telemetryError) {
+      throw new AggregateError(
+        [importError, telemetryError],
+        "File import and telemetry reporting both failed",
+      );
+    }
     throw importError;
   }
   if (importSkipped) return;

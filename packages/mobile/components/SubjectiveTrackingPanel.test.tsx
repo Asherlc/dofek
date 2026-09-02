@@ -155,6 +155,7 @@ describe("SubjectiveTrackingPanel", () => {
 
     render(<SubjectiveTrackingPanel />);
 
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
     expect(screen.getByText("Body regions unavailable")).toBeTruthy();
   });
 
@@ -189,12 +190,13 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.regionsResult.data = undefined;
     mocks.regionsResult.isLoading = true;
     const { rerender } = render(<SubjectiveTrackingPanel />);
-    expect(screen.getByText("Loading body regions…")).toBeTruthy();
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
     expect(screen.queryByLabelText("Injury note")).toBeNull();
 
     mocks.regionsResult.data = [];
     mocks.regionsResult.isLoading = false;
     rerender(<SubjectiveTrackingPanel />);
+    expect(screen.getByTestId("query-state-empty")).toBeTruthy();
     expect(screen.getByText("No body regions are available.")).toBeTruthy();
   });
 });

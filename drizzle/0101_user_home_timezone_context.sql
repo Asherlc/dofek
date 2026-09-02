@@ -3,7 +3,6 @@ DROP CONSTRAINT activity_local_time_context_check,
 ADD CONSTRAINT activity_local_time_context_check CHECK (
   (
     local_time_source = 'unknown'
-    AND timezone IS NULL
     AND start_utc_offset_minutes IS NULL
     AND end_utc_offset_minutes IS NULL
   ) OR (

@@ -35,9 +35,9 @@ export function SubjectiveTrackingPanel() {
       </Pressable>
       {saveCheckIn.error ? <Text style={styles.error}>{saveCheckIn.error.message}</Text> : null}
       {regions.isLoading && regions.data === undefined ? (
-        <Text style={styles.emptyState}>Loading body regions…</Text>
+        <QueryStatePanel variant="loading" minHeight={72} />
       ) : regions.error && regions.data === undefined ? (
-        <Text style={styles.error}>{regions.error.message}</Text>
+        <QueryStatePanel variant="error" message={regions.error.message} minHeight={96} />
       ) : regions.data?.length ? (
         <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -86,7 +86,7 @@ export function SubjectiveTrackingPanel() {
           </Pressable>
         </>
       ) : (
-        <Text style={styles.emptyState}>No body regions are available.</Text>
+        <QueryStatePanel variant="empty" message="No body regions are available." minHeight={96} />
       )}
       {regions.error && regions.data !== undefined ? (
         <Text style={styles.error}>{regions.error.message}</Text>

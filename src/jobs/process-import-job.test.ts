@@ -1213,6 +1213,29 @@ describe("processImportJob", () => {
         idempotencyKey: "worker-failed",
       });
     });
+    it("records the failed stage and cache invalidation before surfacing telemetry failure", async () => {
+      const importError = new Error("parse error");
+      const telemetryError = new Error("telemetry unavailable");
+      mockImportAppleHealthFile.mockRejectedValueOnce(importError);
+      mockCaptureException.mockImplementationOnce(() => {
+        throw telemetryError;
+      });
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toMatchObject({
+        name: "AggregateError",
+        errors: [importError, telemetryError],
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_import_failed",
+        errorMessage: "The file could not be imported. Check the file and try again.",
+        idempotencyKey: "worker-failed",
+      });
+      expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    });
     it("turns an invalid Apple Health archive into an unrecoverable import failure", async () => {
       const message =
         "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive";
