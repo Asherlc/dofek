@@ -25,7 +25,12 @@ export function toAppStoreSubscriptionState(
   if (columns.productId === null || columns.status === null || columns.expiresAt === null) {
     return undefined;
   }
-  return columns;
+  return {
+    productId: columns.productId,
+    status: columns.status,
+    expiresAt: columns.expiresAt,
+    revokedAt: columns.revokedAt,
+  };
 }
 
 export type AccessWindow =
