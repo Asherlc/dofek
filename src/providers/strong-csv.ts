@@ -204,6 +204,27 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
   return Array.from(groupMap.values());
 }
 
+/** Return the explicit weight unit in a Strong CSV export, if present. */
+export function strongCsvWeightUnit(csvText: string): "kg" | "lbs" | null {
+  const [headerLine, ...dataLines] = csvText.replace(/^\uFEFF/, "").split(/\r?\n/);
+  if (!headerLine) return null;
+  const index = parseCsvLine(headerLine)
+    .map((field) => field.trim().toLowerCase())
+    .indexOf("weight unit");
+  if (index < 0) return null;
+  const values = new Set(
+    dataLines
+      .filter((line) => line.trim() !== "")
+      .map((line) => parseCsvLine(line)[index]?.trim().toLowerCase())
+      .filter((value): value is string => value !== undefined && value !== ""),
+  );
+  if (values.size !== 1) throw new Error("Strong CSV must declare one consistent weight unit");
+  const [value] = values;
+  if (value === "kg" || value === "kgs" || value === "kilograms") return "kg";
+  if (value === "lb" || value === "lbs" || value === "pounds") return "lbs";
+  throw new Error(`Unsupported Strong CSV weight unit: ${value}`);
+}
+
 // ============================================================
 // Single-workout text format parsing
 // ============================================================
@@ -395,7 +416,7 @@ export async function importStrongCsv(
   db: SyncDatabase,
   csvText: string,
   userId: string,
-  weightUnit: "kg" | "lbs",
+  weightUnit?: "kg" | "lbs",
   timezone?: string,
 ): Promise<SyncResult> {
   const start = Date.now();
@@ -406,12 +427,18 @@ export async function importStrongCsv(
 
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
-  let effectiveWeightUnit = weightUnit;
+  let effectiveWeightUnit: "kg" | "lbs";
   const parsed = ([parseStrongText, parseStrongCsv][Number(isStrongCsvFormat(csvText))] ?? parseStrongText)(
     csvText,
   );
   groups = Array.isArray(parsed) ? parsed : parsed.groups;
-  effectiveWeightUnit = Array.isArray(parsed) ? weightUnit : parsed.weightUnit;
+  if (Array.isArray(parsed)) {
+    effectiveWeightUnit = strongCsvWeightUnit(csvText) ?? weightUnit ?? (() => {
+      throw new Error("Strong CSV has no Weight Unit declaration; choose kg or lbs before importing");
+    })();
+  } else {
+    effectiveWeightUnit = parsed.weightUnit;
+  }
   const exerciseCache = new Map<string, string>();
 
   for (const group of groups) {

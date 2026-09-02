@@ -10,6 +10,7 @@ import {
   parseStrongText,
   parseStrongTextDate,
   parseStrongWallClockTimestamp,
+  strongCsvWeightUnit,
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
 } from "./strong-csv.ts";
@@ -748,6 +749,18 @@ describe("parseStrongWallClockTimestamp", () => {
   it("rejects invalid calendar values instead of normalizing them", () => {
     expect(Number.isNaN(parseStrongWallClockTimestamp("2026-02-30 10:00:00").getTime())).toBe(
       true,
+    );
+  });
+});
+
+describe("strongCsvWeightUnit", () => {
+  it("reads the declared export unit instead of assuming one", () => {
+    expect(strongCsvWeightUnit("Date,Weight Unit,Weight\n2026-09-01,lbs,155")).toBe("lbs");
+  });
+
+  it("rejects mixed unit declarations", () => {
+    expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,kg\n2026-09-02,lbs")).toThrow(
+      "one consistent weight unit",
     );
   });
 });

@@ -341,7 +341,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
               expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
               since,
               weightUnit:
-                input.importType === "strong-csv" ? (input.weightUnit ?? "kg") : undefined,
+                input.importType === "strong-csv" ? input.weightUnit : undefined,
               timezone: ctx.timezone,
             });
             if (!existingUpload) {
