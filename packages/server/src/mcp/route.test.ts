@@ -1490,10 +1490,19 @@ describe("createMcpRouter", () => {
               series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
             })
             .passthrough(),
-        }),
+        }).passthrough(),
       })
       .parse(parseJsonRpcEvent(response.text));
 
+    expect(parsedResponse.result).toMatchObject({
+      content: [
+        {
+          type: "text",
+          text: expect.stringContaining("Dofek Analytics Explorer"),
+        },
+      ],
+      _meta: { ui: { resourceUri: "ui://dofek/health-explorer.html" } },
+    });
     expect(parsedResponse.result.structuredContent).toEqual({
       coverage: {
         requested_days: 2,

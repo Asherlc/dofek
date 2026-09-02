@@ -53,7 +53,6 @@ import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange, jsonContent } from "./tool-utils.ts";
 import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
@@ -512,11 +511,19 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     async (input) => {
       requireMcpScope(context.scopes, "health:read");
       const timezone = input.timezone ?? context.timezone;
-      return jsonToolResult(
-        await new HealthExplorerService({
-          list: (request) => listHealthTrends(context, request),
-        }).snapshot({ ...input, timezone }),
-      );
+      const snapshot = await new HealthExplorerService({
+        list: (request) => listHealthTrends(context, request),
+      }).snapshot({ ...input, timezone });
+      return {
+        structuredContent: snapshot,
+        content: [
+          {
+            type: "text" as const,
+            text: "Dofek Analytics Explorer is ready for the requested health metrics.",
+          },
+        ],
+        _meta: { ui: { resourceUri: healthExplorerResourceUri } },
+      };
     },
   );
 
