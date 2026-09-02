@@ -63,6 +63,12 @@ let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {}
 const mockLogout = vi.fn();
 const mockBillingStatusInvalidate = vi.fn();
 const mockAppStoreBilling = vi.hoisted(() => ({
+  loadProduct: vi.fn().mockResolvedValue({
+    productID: "com.dofek.premium.monthly",
+    displayName: "Dofek Premium",
+    description: "Full access",
+    displayPrice: "$4.99",
+  }),
   restore: vi.fn().mockResolvedValue(0),
   showManageSubscriptions: vi.fn().mockResolvedValue(undefined),
   subscribe: vi.fn().mockResolvedValue({ outcome: "cancelled" }),
@@ -94,6 +100,7 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../lib/app-store-billing", () => ({
   AppStoreBillingService: class AppStoreBillingService {
+    readonly loadProduct = mockAppStoreBilling.loadProduct;
     readonly restore = mockAppStoreBilling.restore;
     readonly showManageSubscriptions = mockAppStoreBilling.showManageSubscriptions;
     readonly subscribe = mockAppStoreBilling.subscribe;
@@ -307,6 +314,12 @@ beforeEach(() => {
   mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
   mockUnitSettingQuery.error = null;
   vi.clearAllMocks();
+  mockAppStoreBilling.loadProduct.mockResolvedValue({
+    productID: "com.dofek.premium.monthly",
+    displayName: "Dofek Premium",
+    description: "Full access",
+    displayPrice: "$4.99",
+  });
 });
 
 describe("SettingsScreen categories", () => {
@@ -805,7 +818,7 @@ describe("SettingsScreen billing", () => {
 
     expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
     expect(screen.getByText(/Access limited to your signup week/)).toBeTruthy();
-    expect(screen.getByText("Subscribe for $4.99/month")).toBeTruthy();
+    expect(screen.getByText("Subscribe for Premium/month")).toBeTruthy();
     expect(screen.getByText("Restore Purchases")).toBeTruthy();
   });
 
@@ -814,7 +827,7 @@ describe("SettingsScreen billing", () => {
 
     render(<SettingsScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe for $4.99/month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
 
     await waitFor(() => expect(mockAppStoreBilling.subscribe).toHaveBeenCalledOnce());
     expect(Linking.openURL).not.toHaveBeenCalled();
@@ -860,7 +873,7 @@ describe("SettingsScreen billing", () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe for $4.99/month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
 
     await waitFor(() =>
       expect(screen.getByText("Transaction belongs to another Dofek account.")).toBeTruthy(),
@@ -876,7 +889,7 @@ describe("SettingsScreen billing", () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe for $4.99/month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
 
     expect(screen.getByRole("button", { name: "Subscribing..." })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Restore Purchases" })).toHaveProperty(

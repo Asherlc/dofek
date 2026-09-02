@@ -98,6 +98,7 @@ protocol AppStoreKitProviding: Sendable {
         productID: String,
         appAccountToken: UUID
     ) async throws -> AppStoreKitPurchaseResult
+    func sync() async throws
     func currentEntitlements() async throws -> [AppStoreKitVerificationResult]
     func transactionUpdates() async -> AsyncStream<AppStoreKitVerificationResult>
     func finishTransaction(transactionID: UInt64) async throws
@@ -151,6 +152,7 @@ final class AppStoreBillingService: @unchecked Sendable {
         productID: String
     ) async throws -> [AppStoreTransactionInfo] {
         try requireTargetProduct(productID)
+        try await store.sync()
         let entitlements = try await store.currentEntitlements()
         return entitlements.compactMap { result in
             guard case .verified(let transaction) = result else {
@@ -178,7 +180,7 @@ final class AppStoreBillingService: @unchecked Sendable {
                     return
                 }
                 guard case .verified(let transaction) = result,
-                      let exported = exportedIfActive(transaction, for: productID) else {
+                      let exported = exportedForUpdate(transaction, for: productID) else {
                     continue
                 }
                 onTransaction(exported)
@@ -229,6 +231,13 @@ final class AppStoreBillingService: @unchecked Sendable {
             return nil
         }
         return transaction
+    }
+
+    private func exportedForUpdate(
+        _ transaction: AppStoreTransactionInfo,
+        for productID: String
+    ) -> AppStoreTransactionInfo? {
+        transaction.productID == productID ? transaction : nil
     }
 }
 
@@ -291,6 +300,10 @@ actor StoreKitAdapter: AppStoreKitProviding {
             results.append(record(verification))
         }
         return results
+    }
+
+    func sync() async throws {
+        try await AppStore.sync()
     }
 
     func transactionUpdates() async -> AsyncStream<AppStoreKitVerificationResult> {

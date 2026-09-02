@@ -1,7 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { Router, raw } from "express";
+import rateLimit from "express-rate-limit";
 import { ZodError, z } from "zod";
 import { verifyAppStoreNotification } from "../billing/app-store-verifier.ts";
 import { applyAppStoreNotification } from "../repositories/billing-repository.ts";
@@ -31,6 +33,16 @@ function isInvalidWebhook(error: unknown): boolean {
 export function createAppStoreWebhookRouter({ db }: AppStoreWebhookRouterDeps): Router {
   const router = Router();
 
+  router.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 60,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      message: "Too many App Store webhook requests — please try again later",
+    }),
+  );
+
   router.post("/", raw({ type: "application/json", limit: "1mb" }), async (req, res, next) => {
     try {
       const { signedPayload } = parseWebhookBody(req.body);
@@ -45,6 +57,7 @@ export function createAppStoreWebhookRouter({ db }: AppStoreWebhookRouterDeps): 
         res.status(400).json({ error: error instanceof Error ? error.message : "Invalid payload" });
         return;
       }
+      captureException(error, { tags: { source: "app-store-webhook" } });
       next(error);
     }
   });

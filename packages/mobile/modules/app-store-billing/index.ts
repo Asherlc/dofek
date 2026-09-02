@@ -61,7 +61,12 @@ export function startTransactionUpdates(
   productID: string = APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID,
 ): EventSubscription {
   const subscription = AppStoreBillingModule.addListener("onTransactionUpdate", onTransaction);
-  AppStoreBillingModule.startTransactionUpdates(productID);
+  try {
+    AppStoreBillingModule.startTransactionUpdates(productID);
+  } catch (error) {
+    subscription.remove();
+    throw error;
+  }
   return subscription;
 }
 

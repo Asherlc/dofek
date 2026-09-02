@@ -111,7 +111,7 @@ the one canonical access decision.
 - `billing.verifyAppStoreTransaction` accepts one transaction JWS, verifies it,
   applies an idempotent state update, and returns the resulting server-derived
   access state.
-- `POST /webhooks/app-store` accepts App Store Server Notifications V2. It
+- `POST /api/webhooks/app-store` accepts App Store Server Notifications V2. It
   verifies the signed notification and its signed transaction/renewal payloads,
   deduplicates by notification UUID, and applies the same idempotent state
   transition as client verification.

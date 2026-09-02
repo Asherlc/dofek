@@ -143,5 +143,24 @@ describe("BillingRepository", () => {
       const queryText = getQueryText(execute.mock.calls[0]?.[0]);
       expect(queryText).toContain("app_store_revocation_at IS NULL");
     });
+
+    it("permits a revocation to replace a subscription with a later expiry", async () => {
+      const execute = vi.fn(async () => []);
+      const repository = new BillingRepository({ execute });
+
+      await repository.applyAppStoreSubscription({
+        accountToken: "a0000000-0000-4000-8000-000000000001",
+        originalTransactionId: "100000000000001",
+        transactionId: "100000000000002",
+        productId: "com.dofek.premium.monthly",
+        status: "revoked",
+        expiresAt: new Date("2026-09-01T00:00:00.000Z"),
+        revokedAt: new Date("2026-09-20T00:00:00.000Z"),
+        environment: "Sandbox",
+      });
+
+      const queryText = getQueryText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("= 'revoked'");
+    });
   });
 });

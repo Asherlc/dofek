@@ -1,7 +1,10 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
-import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { recordUserExternalEffect } from "dofek/db/user-external-effect";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
@@ -109,42 +112,56 @@ export const billingRouter = router({
   appStorePurchaseContext: protectedProcedure
     .output(appStorePurchaseContextSchema)
     .query(async ({ ctx }) => {
-      const appAccountToken = await withAccountErasureUserWriteFence(
-        ctx.db,
-        ctx.userId,
-        async (transaction) => {
-          const billingRepository = new BillingRepository(transaction);
-          return billingRepository.getOrCreateAppStoreAccountToken(ctx.userId);
-        },
-      );
-      return {
-        productId: APP_STORE_SUBSCRIPTION_PRODUCT_ID,
-        appAccountToken,
-      };
+      try {
+        const appAccountToken = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const billingRepository = new BillingRepository(transaction);
+            return billingRepository.getOrCreateAppStoreAccountToken(ctx.userId);
+          },
+        );
+        return {
+          productId: APP_STORE_SUBSCRIPTION_PRODUCT_ID,
+          appAccountToken,
+        };
+      } catch (error) {
+        if (error instanceof AccountErasureUserFencedError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      }
     }),
 
   verifyAppStoreTransaction: protectedProcedure
     .input(z.object({ signedTransaction: z.string().min(1) }))
     .output(billingStatusSchema)
     .mutation(async ({ ctx, input }) => {
-      const status = await withAccountErasureUserWriteFence(
-        ctx.db,
-        ctx.userId,
-        async (transaction) => {
-          const billingRepository = new BillingRepository(transaction);
-          const appAccountToken = await billingRepository.getOrCreateAppStoreAccountToken(
-            ctx.userId,
-          );
-          const subscription = await verifySignedAppStoreTransaction(
-            input.signedTransaction,
-            appAccountToken,
-          );
-          await billingRepository.applyAppStoreSubscription(subscription);
-          return getBillingStatus(transaction, ctx.userId, ctx.timezone);
-        },
-      );
-      await invalidateAllUserQueries(ctx.userId);
-      return status;
+      try {
+        const status = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const billingRepository = new BillingRepository(transaction);
+            const appAccountToken = await billingRepository.getOrCreateAppStoreAccountToken(
+              ctx.userId,
+            );
+            const subscription = await verifySignedAppStoreTransaction(
+              input.signedTransaction,
+              appAccountToken,
+            );
+            await billingRepository.applyAppStoreSubscription(subscription);
+            return getBillingStatus(transaction, ctx.userId, ctx.timezone);
+          },
+        );
+        await invalidateAllUserQueries(ctx.userId);
+        return status;
+      } catch (error) {
+        if (error instanceof AccountErasureUserFencedError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      }
     }),
 
   createCheckoutSession: protectedProcedure

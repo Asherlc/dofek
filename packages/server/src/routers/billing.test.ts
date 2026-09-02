@@ -13,6 +13,7 @@ const stripeMocks = vi.hoisted(() => ({
   recordUserExternalEffect: vi.fn(),
   verifyAppStoreTransaction: vi.fn(),
   invalidateAllUserQueries: vi.fn(),
+  AccountErasureUserFencedError: class AccountErasureUserFencedError extends Error {},
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -68,6 +69,7 @@ vi.mock("../billing/stripe-client.ts", () => ({
 }));
 
 vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureUserFencedError: stripeMocks.AccountErasureUserFencedError,
   withAccountErasureUserWriteFence: stripeMocks.withUserWriteFence,
 }));
 
@@ -172,6 +174,18 @@ describe("billingRouter", () => {
     expect(stripeMocks.withUserWriteFence).toHaveBeenCalledWith(db, "user-1", expect.any(Function));
   });
 
+  it("reports an account-erasure fence as a conflict when creating an App Store purchase context", async () => {
+    stripeMocks.withUserWriteFence.mockRejectedValueOnce(
+      new stripeMocks.AccountErasureUserFencedError("Account erasure is in progress"),
+    );
+    const caller = createCaller({ db: database(), userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.appStorePurchaseContext()).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Account erasure is in progress",
+    });
+  });
+
   it("verifies a signed transaction for the authenticated account and returns full access", async () => {
     const accountToken = "a0000000-0000-4000-8000-000000000001";
     stripeMocks.executeWithSchema
@@ -228,6 +242,20 @@ describe("billingRouter", () => {
       { code: "BAD_REQUEST" },
     );
     expect(stripeMocks.verifyAppStoreTransaction).not.toHaveBeenCalled();
+  });
+
+  it("reports an account-erasure fence as a conflict when verifying an App Store transaction", async () => {
+    stripeMocks.withUserWriteFence.mockRejectedValueOnce(
+      new stripeMocks.AccountErasureUserFencedError("Account erasure is in progress"),
+    );
+    const caller = createCaller({ db: database(), userId: "user-1", timezone: "UTC" });
+
+    await expect(
+      caller.verifyAppStoreTransaction({ signedTransaction: "verified-jws" }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Account erasure is in progress",
+    });
   });
 
   it("creates a checkout session for the configured subscription price", async () => {

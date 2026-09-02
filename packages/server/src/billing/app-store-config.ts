@@ -1,4 +1,5 @@
 import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "./app-store-subscription.ts";
+import { z } from "zod";
 
 export interface AppStoreBillingConfig {
   issuerId: string;
@@ -10,36 +11,42 @@ export interface AppStoreBillingConfig {
   rootCertificatesPem: string;
 }
 
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} environment variable is required`);
-  return value;
+function requiredEnvironmentValue(name: string) {
+  return z
+    .string({ error: `${name} environment variable is required` })
+    .min(1, { error: `${name} environment variable is required` });
 }
 
-function requiredPositiveIntegerEnv(name: string): number {
-  const value = requiredEnv(name);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error(`${name} environment variable must be a positive integer`);
-  }
-  return parsed;
+const appStoreBillingConfigSchema = z.object({
+  APP_STORE_ISSUER_ID: requiredEnvironmentValue("APP_STORE_ISSUER_ID"),
+  APP_STORE_KEY_ID: requiredEnvironmentValue("APP_STORE_KEY_ID"),
+  APP_STORE_PRIVATE_KEY: requiredEnvironmentValue("APP_STORE_PRIVATE_KEY"),
+  APP_STORE_APP_ID: requiredEnvironmentValue("APP_STORE_APP_ID")
+    .refine((value) => Number.isSafeInteger(Number(value)) && Number(value) > 0, {
+      error: "APP_STORE_APP_ID environment variable must be a positive integer",
+    })
+    .transform(Number),
+  APP_STORE_BUNDLE_ID: requiredEnvironmentValue("APP_STORE_BUNDLE_ID"),
+  APP_STORE_SUBSCRIPTION_PRODUCT_ID: z.literal(APP_STORE_SUBSCRIPTION_PRODUCT_ID, {
+    error: `APP_STORE_SUBSCRIPTION_PRODUCT_ID must be ${APP_STORE_SUBSCRIPTION_PRODUCT_ID}`,
+  }),
+  APP_STORE_ROOT_CERTIFICATES_PEM: requiredEnvironmentValue("APP_STORE_ROOT_CERTIFICATES_PEM"),
+});
+
+function normalizePem(value: string): string {
+  return value.replaceAll("\\n", "\n");
 }
 
 export function getAppStoreBillingConfig(): AppStoreBillingConfig {
-  const subscriptionProductId = requiredEnv("APP_STORE_SUBSCRIPTION_PRODUCT_ID");
-  if (subscriptionProductId !== APP_STORE_SUBSCRIPTION_PRODUCT_ID) {
-    throw new Error(
-      `APP_STORE_SUBSCRIPTION_PRODUCT_ID must be ${APP_STORE_SUBSCRIPTION_PRODUCT_ID}`,
-    );
-  }
+  const config = appStoreBillingConfigSchema.parse(process.env);
 
   return {
-    issuerId: requiredEnv("APP_STORE_ISSUER_ID"),
-    keyId: requiredEnv("APP_STORE_KEY_ID"),
-    privateKey: requiredEnv("APP_STORE_PRIVATE_KEY"),
-    appId: requiredPositiveIntegerEnv("APP_STORE_APP_ID"),
-    bundleId: requiredEnv("APP_STORE_BUNDLE_ID"),
-    subscriptionProductId,
-    rootCertificatesPem: requiredEnv("APP_STORE_ROOT_CERTIFICATES_PEM"),
+    issuerId: config.APP_STORE_ISSUER_ID,
+    keyId: config.APP_STORE_KEY_ID,
+    privateKey: normalizePem(config.APP_STORE_PRIVATE_KEY),
+    appId: config.APP_STORE_APP_ID,
+    bundleId: config.APP_STORE_BUNDLE_ID,
+    subscriptionProductId: config.APP_STORE_SUBSCRIPTION_PRODUCT_ID,
+    rootCertificatesPem: normalizePem(config.APP_STORE_ROOT_CERTIFICATES_PEM),
   };
 }

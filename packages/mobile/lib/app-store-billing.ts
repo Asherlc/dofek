@@ -1,6 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { AppStorePurchaseResult, AppStoreTransaction } from "../modules/app-store-billing";
+import type {
+  AppStoreProduct,
+  AppStorePurchaseResult,
+  AppStoreTransaction,
+} from "../modules/app-store-billing";
 import * as defaultNative from "../modules/app-store-billing";
 import { APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID } from "../modules/app-store-billing";
 import { captureException } from "./telemetry";
@@ -10,6 +14,7 @@ interface AppStoreTransactionSubscription {
 }
 
 export interface AppStoreBillingNative {
+  loadProduct(productID?: string): Promise<AppStoreProduct | null>;
   purchase(productID: string, appAccountToken: string): Promise<AppStorePurchaseResult>;
   restoreCurrentEntitlements(productID?: string): Promise<AppStoreTransaction[]>;
   startTransactionUpdates(
@@ -48,6 +53,15 @@ export class AppStoreBillingService {
     this.#native = input.native ?? defaultNative;
     this.#queryClient = input.queryClient;
     this.#trpcClient = input.trpcClient;
+  }
+
+  async loadProduct(): Promise<AppStoreProduct | null> {
+    try {
+      return await this.#native.loadProduct(APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID);
+    } catch (error: unknown) {
+      captureException(error, { source: "app-store-billing-load-product" });
+      throw error;
+    }
   }
 
   async subscribe(): Promise<AppStorePurchaseResult> {

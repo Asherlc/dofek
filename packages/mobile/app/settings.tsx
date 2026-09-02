@@ -34,6 +34,7 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { AppStoreBillingService } from "../lib/app-store-billing";
+import type { AppStoreProduct } from "../modules/app-store-billing";
 import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -250,6 +251,7 @@ export default function SettingsScreen() {
   );
   const [appStoreBillingError, setAppStoreBillingError] = useState<string | null>(null);
   const [appStoreBillingMessage, setAppStoreBillingMessage] = useState<string | null>(null);
+  const [appStoreProduct, setAppStoreProduct] = useState<AppStoreProduct | null>(null);
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
@@ -301,6 +303,19 @@ export default function SettingsScreen() {
       .showManageSubscriptions()
       .then(() => completeAppStoreBillingAction(), failAppStoreBillingAction);
   }
+
+  useEffect(() => {
+    let active = true;
+    void appStoreBillingService.loadProduct().then(
+      (product) => {
+        if (active) setAppStoreProduct(product);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [appStoreBillingService]);
 
   useEffect(() => {
     if (
@@ -774,7 +789,7 @@ export default function SettingsScreen() {
                       accessibilityLabel={
                         appStoreBillingAction === "subscribe"
                           ? "Subscribing..."
-                          : "Subscribe for $4.99/month"
+                          : `Subscribe for ${appStoreProduct?.displayPrice ?? "Premium"}/month`
                       }
                       accessibilityState={{
                         busy: appStoreBillingAction === "subscribe",
@@ -784,7 +799,7 @@ export default function SettingsScreen() {
                       <Text style={styles.billingButtonText}>
                         {appStoreBillingAction === "subscribe"
                           ? "Subscribing..."
-                          : "Subscribe for $4.99/month"}
+                          : `Subscribe for ${appStoreProduct?.displayPrice ?? "Premium"}/month`}
                       </Text>
                     </TouchableOpacity>
                   )}

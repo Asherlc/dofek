@@ -37,4 +37,17 @@ describe("getAppStoreBillingConfig", () => {
       "APP_STORE_APP_ID environment variable must be a positive integer",
     );
   });
+
+  it("normalizes escaped PEM line breaks from environment configuration", () => {
+    vi.stubEnv("APP_STORE_PRIVATE_KEY", "-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----");
+    vi.stubEnv(
+      "APP_STORE_ROOT_CERTIFICATES_PEM",
+      "-----BEGIN CERTIFICATE-----\\ncertificate\\n-----END CERTIFICATE-----",
+    );
+
+    expect(getAppStoreBillingConfig()).toMatchObject({
+      privateKey: "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----",
+      rootCertificatesPem: "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----",
+    });
+  });
 });

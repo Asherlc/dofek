@@ -1,7 +1,11 @@
 import { QueryClient } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppStorePurchaseResult, AppStoreTransaction } from "../modules/app-store-billing";
+import type {
+  AppStoreProduct,
+  AppStorePurchaseResult,
+  AppStoreTransaction,
+} from "../modules/app-store-billing";
 
 const mockCaptureException = vi.fn();
 
@@ -34,12 +38,14 @@ function createDeferred<T>() {
 }
 
 function createFixture(options?: {
+  product?: AppStoreProduct | null;
   purchaseResult?: AppStorePurchaseResult;
   restoredTransactions?: AppStoreTransaction[];
 }) {
   let transactionUpdateListener: ((transaction: AppStoreTransaction) => void) | null = null;
   const updateSubscription = { remove: vi.fn() };
   const native: AppStoreBillingNative = {
+    loadProduct: vi.fn().mockResolvedValue(options?.product ?? null),
     purchase: vi.fn().mockResolvedValue(
       options?.purchaseResult ?? {
         outcome: "verified",
@@ -90,6 +96,19 @@ function createFixture(options?: {
 describe("AppStoreBillingService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("loads the localized StoreKit product price", async () => {
+    const product = {
+      productID: "com.dofek.premium.monthly",
+      displayName: "Dofek Premium",
+      description: "Full access",
+      displayPrice: "€4.99",
+    };
+    const fixture = createFixture({ product });
+
+    await expect(fixture.service.loadProduct()).resolves.toEqual(product);
+    expect(fixture.native.loadProduct).toHaveBeenCalledWith("com.dofek.premium.monthly");
   });
 
   it("finishes a purchase only after server verification succeeds", async () => {

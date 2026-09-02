@@ -97,29 +97,36 @@ final class AppStoreBillingServiceTests: XCTestCase {
         let restored = try await service.restoreCurrentEntitlements(productID: productID)
 
         XCTAssertEqual(restored, [expected])
+        XCTAssertEqual(store.syncRequests, 1)
         XCTAssertEqual(store.finishedTransactionIDs, [])
     }
 
-    func testTransactionUpdatesDeliverOnlyVerifiedActiveTargetTransactionsWithoutFinishing() async {
+    func testTransactionUpdatesDeliverVerifiedTargetTransactionsIncludingRevocationsWithoutFinishing() async {
         let expected = makeTransaction(transactionID: 61)
+        let revoked = makeTransaction(
+            transactionID: 63,
+            revocationDate: Date(timeIntervalSince1970: 1)
+        )
         let wrongProduct = makeTransaction(transactionID: 62, productID: "other.product")
         let store = FakeStoreKit()
         let service = AppStoreBillingService(store: store)
-        let delivered = expectation(description: "verified update delivered")
         let received = TransactionRecorder()
+        let allUpdates = expectation(description: "target updates delivered")
+        allUpdates.expectedFulfillmentCount = 2
+        received.onAppend = { allUpdates.fulfill() }
 
         service.startTransactionUpdates(productID: productID) { transaction in
             received.append(transaction)
-            delivered.fulfill()
         }
         store.sendUpdate(.unverified)
         store.sendUpdate(.verified(wrongProduct))
+        store.sendUpdate(.verified(revoked))
         store.sendUpdate(.verified(expected))
 
-        await fulfillment(of: [delivered], timeout: 1)
+        await fulfillment(of: [allUpdates], timeout: 1)
         service.stopTransactionUpdates()
 
-        XCTAssertEqual(received.values, [expected])
+        XCTAssertEqual(received.values, [revoked, expected])
         XCTAssertEqual(store.finishedTransactionIDs, [])
     }
 
@@ -151,6 +158,7 @@ final class AppStoreBillingServiceTests: XCTestCase {
 private final class TransactionRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var transactions: [AppStoreTransactionInfo] = []
+    var onAppend: (() -> Void)?
 
     var values: [AppStoreTransactionInfo] {
         lock.lock()
@@ -162,6 +170,7 @@ private final class TransactionRecorder: @unchecked Sendable {
         lock.lock()
         transactions.append(transaction)
         lock.unlock()
+        onAppend?()
     }
 }
 
@@ -179,6 +188,7 @@ private final class FakeStoreKit: AppStoreKitProviding, @unchecked Sendable {
 
     private(set) var purchaseRequests: [PurchaseRequest] = []
     private(set) var finishedTransactionIDs: [UInt64] = []
+    private(set) var syncRequests = 0
 
     init(
         product: AppStoreProductInfo? = nil,
@@ -205,6 +215,10 @@ private final class FakeStoreKit: AppStoreKitProviding, @unchecked Sendable {
             PurchaseRequest(productID: productID, appAccountToken: appAccountToken)
         )
         return purchaseResult
+    }
+
+    func sync() async throws {
+        syncRequests += 1
     }
 
     func currentEntitlements() async -> [AppStoreKitVerificationResult] {

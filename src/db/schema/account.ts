@@ -339,9 +339,9 @@ export const userBilling = fitness.table(
     stripeSubscriptionEventCreated: bigint("stripe_subscription_event_created", {
       mode: "number",
     }),
-    appStoreAccountToken: uuid("app_store_account_token").unique(),
-    appStoreOriginalTransactionId: text("app_store_original_transaction_id").unique(),
-    appStoreTransactionId: text("app_store_transaction_id").unique(),
+    appStoreAccountToken: uuid("app_store_account_token"),
+    appStoreOriginalTransactionId: text("app_store_original_transaction_id"),
+    appStoreTransactionId: text("app_store_transaction_id"),
     appStoreProductId: text("app_store_product_id"),
     appStoreSubscriptionStatus: text("app_store_subscription_status"),
     appStoreExpiresAt: timestamp("app_store_expires_at", { withTimezone: true }),
@@ -354,6 +354,15 @@ export const userBilling = fitness.table(
   (table) => [
     index("user_billing_stripe_customer_idx").on(table.stripeCustomerId),
     index("user_billing_stripe_subscription_idx").on(table.stripeSubscriptionId),
+    uniqueIndex("user_billing_app_store_account_token_unique")
+      .on(table.appStoreAccountToken)
+      .where(sql`${table.appStoreAccountToken} IS NOT NULL`),
+    uniqueIndex("user_billing_app_store_original_transaction_id_unique")
+      .on(table.appStoreOriginalTransactionId)
+      .where(sql`${table.appStoreOriginalTransactionId} IS NOT NULL`),
+    uniqueIndex("user_billing_app_store_transaction_id_unique")
+      .on(table.appStoreTransactionId)
+      .where(sql`${table.appStoreTransactionId} IS NOT NULL`),
   ],
 );
 

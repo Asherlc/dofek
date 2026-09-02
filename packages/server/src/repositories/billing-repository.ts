@@ -187,6 +187,7 @@ export class BillingRepository {
             )
             AND (
               app_store_expires_at IS NULL
+              OR ${input.status} = 'revoked'
               OR ${input.expiresAt} > app_store_expires_at
               OR (
                 ${input.expiresAt} = app_store_expires_at
@@ -198,6 +199,18 @@ export class BillingRepository {
     );
     return rows.map((row) => row.user_id);
   }
+
+  async findUserIdByAppStoreAccountToken(accountToken: string): Promise<string | null> {
+    const rows = await executeWithSchema(
+      this.#db,
+      updatedBillingUserSchema,
+      sql`SELECT user_id
+            FROM fitness.user_billing
+            WHERE app_store_account_token = ${accountToken}::uuid
+            LIMIT 1`,
+    );
+    return rows[0]?.user_id ?? null;
+  }
 }
 
 export async function applyAppStoreNotification(
@@ -205,6 +218,10 @@ export async function applyAppStoreNotification(
   input: AppStoreNotificationUpdate,
 ): Promise<string[]> {
   return db.transaction(async (transaction) => {
+    const repository = new BillingRepository(transaction);
+    const updatedUserIds = input.subscription
+      ? await repository.applyAppStoreSubscription(input.subscription)
+      : [];
     const recorded = await executeWithSchema(
       transaction,
       recordedAppStoreNotificationSchema,
@@ -213,9 +230,11 @@ export async function applyAppStoreNotification(
           ON CONFLICT (notification_uuid) DO NOTHING
           RETURNING notification_uuid::text AS notification_uuid`,
     );
-    if (recorded.length === 0) return [];
-    if (!input.subscription) return [];
+    if (recorded.length > 0 || !input.subscription || updatedUserIds.length > 0) {
+      return updatedUserIds;
+    }
 
-    return new BillingRepository(transaction).applyAppStoreSubscription(input.subscription);
+    const userId = await repository.findUserIdByAppStoreAccountToken(input.subscription.accountToken);
+    return userId ? [userId] : [];
   });
 }
