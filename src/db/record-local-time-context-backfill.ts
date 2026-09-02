@@ -99,8 +99,15 @@ export async function backfillRecordLocalTimeContext(
       priorEndedAt: Date | null;
     }> = rows.flatMap((row) => {
       try {
+        resolveRecordLocalTimeContext({
+          startedAt: row.started_at,
+          endedAt: row.ended_at,
+          timezone: row.timezone,
+          source: "provider_timezone",
+        });
         const homeTimezone = row.home_timezone?.trim() || null;
-        const priorTimezone = row.timezone.trim();
+        const storedTimezone = row.timezone;
+        const priorTimezone = storedTimezone.trim();
         resolveRecordLocalTimeContext({
           startedAt: row.started_at,
           endedAt: row.ended_at,
@@ -124,7 +131,7 @@ export async function backfillRecordLocalTimeContext(
             ...context,
             source,
             priorSource: row.local_time_source,
-            priorTimezone,
+            priorTimezone: storedTimezone,
             priorStartedAt: row.started_at,
             priorEndedAt: row.ended_at,
           },

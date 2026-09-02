@@ -6,7 +6,7 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonContent, mapWithConcurrency } from "./tool-utils.ts";
+import { assertDateRange, jsonContent } from "./tool-utils.ts";
 
 const climbingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),
@@ -41,7 +41,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "activity:read");
-      if (start_date > end_date) throw new Error("start_date must be on or before end_date");
+      assertDateRange(start_date, end_date);
       const activityRepository = new ActivityRepository(
         context.db,
         context.userId,
@@ -58,7 +58,8 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
       const activities = (
         await activityRepository.listRange(start_date, end_date, ["climbing"])
       ).map((row) => climbingSessionActivitySchema.parse(row));
-      const sessions = await mapWithConcurrency(activities, 8, async (activity) => {
+      const sessions = [];
+      for (const activity of activities) {
         const entries = (await climbingRepository.getActivityEntries(activity.id)).map((entry) => {
           const detail = entry.toDetail();
           return {
@@ -77,7 +78,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
             wall_angle_degrees: detail.wallAngleDegrees,
           };
         });
-        return {
+        sessions.push({
           activity_id: activity.id,
           started_at: activity.started_at,
           duration_minutes:
@@ -91,12 +92,18 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
           location: entries.find((entry) => entry.location_name !== null)?.location_name ?? null,
           total_vertical_m: null,
           climbs: entries,
-        };
-      });
+        });
+      }
       const climbs = sessions.flatMap((session) => session.climbs);
       const gradeDistribution = new Map<
         string,
-        { discipline: ClimbingDiscipline; grade: string; attempts: number; sends: number }
+        {
+          discipline: ClimbingDiscipline;
+          grade: string;
+          grade_system: string;
+          attempts: number;
+          sends: number;
+        }
       >();
       const maxGrade: Record<"boulder" | "route", { grade: string; sort: number } | null> = {
         boulder: null,
@@ -107,6 +114,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
         const distribution = gradeDistribution.get(key) ?? {
           discipline: climb.discipline,
           grade: climb.grade,
+          grade_system: climb.grade_system,
           attempts: 0,
           sends: 0,
         };

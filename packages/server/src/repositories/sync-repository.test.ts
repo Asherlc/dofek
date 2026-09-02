@@ -269,8 +269,9 @@ describe("SyncRepository", () => {
       expect(rawSql).toContain("data_type = 'sync'");
       expect(rawSql).toContain("origin = 'scheduled'");
       expect(rawSql).toContain("ROW_NUMBER() OVER");
-      expect(rawSql).toContain("last_success_attempt_number");
-      expect(rawSql).toContain("attempt_number < COALESCE(last_success_attempt_number");
+      expect(rawSql).toContain(
+        "attempt_number < COALESCE(latest_success_attempt_number, 2147483647)",
+      );
     });
   });
 

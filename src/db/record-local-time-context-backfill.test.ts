@@ -50,7 +50,7 @@ describe("backfillRecordLocalTimeContext", () => {
       "activity.ended_at IS NOT DISTINCT FROM context_values.prior_ended_at",
     );
     expect(updateQuery.params).toContain("America/Los_Angeles");
-    expect(updateQuery.params).not.toContain("  America/Los_Angeles  ");
+    expect(updateQuery.params).toContain("  America/Los_Angeles  ");
   });
 
   it("replaces an unreliable fixed provider zone with the persisted home zone", async () => {

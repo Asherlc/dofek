@@ -1195,11 +1195,15 @@ describe("processImportJob", () => {
       await expect(access(tempFilePath)).rejects.toThrow();
     });
     it("cleans up uploaded file even when import fails", async () => {
-      mockImportAppleHealthFile.mockRejectedValue(new Error("parse error"));
+      const parseError = new Error("parse error");
+      mockImportAppleHealthFile.mockRejectedValue(parseError);
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await expect(runImportJob(job, mockDb)).rejects.toThrow("parse error");
 
       await expect(access(tempFilePath)).rejects.toThrow();
+      expect(mockCaptureException).toHaveBeenCalledWith(parseError, {
+        tags: { phase: "file-import" },
+      });
       expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
         operationId: processingOperationId,
         stage: "ingest",

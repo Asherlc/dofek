@@ -849,7 +849,15 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       aggregates: {
-        grade_distribution: [{ attempts: 3, discipline: "boulder", grade: "V5", sends: 1 }],
+        grade_distribution: [
+          {
+            attempts: 3,
+            discipline: "boulder",
+            grade: "V5",
+            grade_system: "v_scale",
+            sends: 1,
+          },
+        ],
         max_grade_by_discipline: { boulder: "V5", route: null },
         send_rate: 1,
         volume: { attempts: 3, climbs: 1, sends: 1, total_vertical_m: null },
@@ -912,6 +920,7 @@ describe("createMcpRouter", () => {
       sessions: [
         expect.objectContaining({
           activity_id: "strength-1",
+          avg_hr: 110,
           duration_minutes: 60,
           volume_load_kg: 100,
         }),

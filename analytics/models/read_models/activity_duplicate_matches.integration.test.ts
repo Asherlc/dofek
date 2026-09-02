@@ -161,8 +161,8 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
        toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0)`,
     `INSERT INTO ${database}.source_activity VALUES
       ('${tombstonedWhoopId}', '${userId}', 'whoop', 'other',
-       toDateTime64('2026-04-01 15:22:30', 6, 'UTC'),
-       toDateTime64('2026-04-01 15:35:59', 6, 'UTC'), 0,
+       toDateTime64('2026-04-01 15:40:00', 6, 'UTC'),
+       toDateTime64('2026-04-01 15:50:00', 6, 'UTC'), 0,
        toDateTime64('2026-09-01 00:00:00', 6, 'UTC'), NULL)`,
   ];
   for (const statement of statements) await client.command({ query: statement });

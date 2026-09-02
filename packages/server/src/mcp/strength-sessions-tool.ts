@@ -5,7 +5,7 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonContent, mapWithConcurrency } from "./tool-utils.ts";
+import { assertDateRange, jsonContent } from "./tool-utils.ts";
 
 const trainingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),
@@ -28,7 +28,7 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "activity:read");
-      if (start_date > end_date) throw new Error("start_date must be on or before end_date");
+      assertDateRange(start_date, end_date);
       const activityRepository = new ActivityRepository(
         context.db,
         context.userId,
@@ -46,7 +46,8 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
       ).map((row) => trainingSessionActivitySchema.parse(row));
       const muscleGroupVolume = new Map<string, number>();
       let totalVolumeLoadKg = 0;
-      const sessions = await mapWithConcurrency(activities, 8, async (activity) => {
+      const sessions = [];
+      for (const activity of activities) {
         const exercises = (await strengthRepository.getExercisesForActivity(activity.id)).map(
           (exercise) => exercise.toDetail(),
         );
@@ -66,7 +67,7 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
           }
         }
         totalVolumeLoadKg += sessionVolumeLoadKg;
-        return {
+        sessions.push({
           activity_id: activity.id,
           started_at: activity.started_at,
           duration_minutes:
@@ -78,8 +79,8 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
           name: activity.name,
           volume_load_kg: sessionVolumeLoadKg,
           exercises,
-        };
-      });
+        });
+      }
       return jsonContent({
         sessions,
         aggregates: {

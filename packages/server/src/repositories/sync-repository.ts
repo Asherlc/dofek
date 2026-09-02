@@ -312,6 +312,7 @@ export class SyncRepository {
       scheduledSyncHealthRowSchema,
       sql`WITH ordered_attempts AS (
             SELECT
+              id,
               provider_id,
               status,
               synced_at,
@@ -333,7 +334,7 @@ export class SyncRepository {
               ) AS last_success,
               MIN(attempt_number) FILTER (WHERE status = 'success') OVER (
                 PARTITION BY provider_id
-              ) AS last_success_attempt_number
+              ) AS latest_success_attempt_number
             FROM ordered_attempts
           )
           SELECT
@@ -345,7 +346,7 @@ export class SyncRepository {
             ) AS last_error,
             COUNT(*) FILTER (
               WHERE status = 'error'
-                AND attempt_number < COALESCE(last_success_attempt_number, 9223372036854775807)
+                AND attempt_number < COALESCE(latest_success_attempt_number, 2147483647)
             )::int AS consecutive_failures
           FROM attempts
           GROUP BY provider_id

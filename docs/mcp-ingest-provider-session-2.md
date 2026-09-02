@@ -122,9 +122,11 @@ Sampled untyped WHOOP payloads contain no sport identifier. The existing sport
 ID extraction and canonical mapping work when WHOOP supplies one. The merge
 defect was a containment rule that required identical types; an untyped
 contained session can now inherit its typed container while two differing known
-types remain separate. Of 164 raw WHOOP `other` activities, 13 are recoverable
-by containment; the 11 near-identical recoveries are a subset of those 13.
-That leaves an expected raw residual of 151 after refresh.
+types remain separate. Of 164 raw WHOOP `other` activities, 13 overlap a typed
+container. Eleven of those pairs already meet the existing union-overlap rule;
+the containment rule therefore changes two canonical groups. Against the
+originally reported canonical count of 154, the expected post-refresh residual
+is 152. Raw rows remain unchanged by query-time deduplication.
 
 FatSecret's last 30 scheduled jobs completed successfully in roughly 1–1.5
 seconds and wrote zero rows. Full history contains 142 `dofek` entries

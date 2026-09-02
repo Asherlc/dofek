@@ -392,6 +392,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       });
     }
   } catch (error) {
+    captureException(error, { tags: { phase: "file-import" } });
     importFailed = true;
     importError = error;
   }
