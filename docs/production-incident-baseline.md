@@ -7,6 +7,26 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-02 — PR #2648 Dependency Audit found vulnerable `fast-uri`
+
+- **Status:** Fixed in source; the fresh Dependency Audit job passes.
+- **Symptoms / user impact:** PR #2648 could not pass the required dependency
+  audit, blocking merge despite otherwise valid source changes.
+- **Evidence / root cause:** The exact failing command, `pnpm audit --prod
+  --audit-level=high --ignore-registry-errors`, reported four high-severity
+  `fast-uri` advisories. The lockfile resolved `fast-uri@3.1.5` through
+  `@modelcontextprotocol/sdk`'s `ajv` dependency, while the advisories require
+  `fast-uri >=3.1.6`. [GHSA-5jgf-p345-68v8](https://github.com/advisories/GHSA-5jgf-p345-68v8)
+- **Direct fix:** Updated the scoped workspace override and lockfile to resolve
+  every vulnerable 3.x `fast-uri` range to 3.1.6, the latest compatible patched
+  release. No audit ignore, retry, or lowered severity threshold was added.
+- **Validation:** A frozen local install resolved only `fast-uri@3.1.6` and the
+  exact production audit command reported no high vulnerabilities. GitHub's
+  fresh `Test / Dependency Audit` job passed in 52 seconds.
+- **Remaining risk / follow-up:** Continue to update the direct MCP SDK
+  dependencies as compatible releases become available so the transitive
+  override can eventually be removed.
+
 ## 2026-09-02 — PR #2648 image scan could not fetch Alpine package metadata
 
 - **Status:** Resolved by a targeted CI re-run; no source or CI configuration
