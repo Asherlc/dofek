@@ -17,7 +17,8 @@ missing account and must not enumerate, read, or mutate other accounts.
 
 The operation supplies:
 
-- daily HRV and step samples for 18–31 August;
+- daily HRV and step samples for 18–31 August in the canonical ClickHouse
+  ingestion path, so analytics-backed MCP tools can read the deduped series;
 - sleep records for 25–31 August;
 - multiple representative activities within 18–31 August; and
 - connected provider records with deterministic last-sync timestamps.
@@ -37,8 +38,8 @@ is introduced.
   including its registered UI resource URI.
 
 The Explorer reuses the existing server-side health-series service, requesting
-the supplied HRV and steps metrics. It does not calculate health values in the
-client.
+the supplied HRV and steps metrics from ClickHouse. It does not calculate
+health values in the client.
 
 Descriptions for the five approved tools directly name their intended outcome
 and exact date-range use, so prompt selection has clear tool semantics:

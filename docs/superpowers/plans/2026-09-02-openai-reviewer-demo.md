@@ -4,7 +4,7 @@
 
 **Goal:** Provide a deterministic synthetic production fixture and truthful Apps SDK/MCP demonstration for the OpenAI reviewer account.
 
-**Architecture:** A narrowly scoped TypeScript operational fixture resolves exactly `asherlc+openai-review@asherlc.com` and writes only rows with dedicated synthetic-review provenance. The MCP explorer uses the existing server-side health-series service, but returns the Apps SDK envelope expected by the registered UI resource. Focused route tests cover the public tool contracts; authenticated production calls provide final evidence.
+**Architecture:** A narrowly scoped TypeScript operational fixture resolves exactly `asherlc+openai-review@asherlc.com` and writes only rows with dedicated synthetic-review provenance. It writes relational records to Postgres and HRV/steps samples through the canonical ClickHouse ingestion path, then verifies the deduped analytics series. The MCP explorer uses the existing server-side health-series service, but returns the Apps SDK envelope expected by the registered UI resource. Focused route tests cover the public tool contracts; authenticated production calls provide final evidence.
 
 **Tech Stack:** TypeScript, Postgres/Drizzle tagged query client, ClickHouse sensor store, Express MCP SDK, Zod, Vitest, Apps SDK.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Never query, copy, expose, or mutate real health data; resolve only the exact reviewer email.
-- Seed canonical provider-attributed raw records; do not introduce provider-estimated energy data.
+- Seed canonical provider-attributed raw records; HRV/steps must enter the canonical ClickHouse ingestion path and no provider-estimated energy data may be introduced.
 - Health values remain computed on the server; the Explorer only renders server-provided series.
 - The fixture must be deterministic, idempotent, and fail loudly when the reviewer account is absent.
 - Apps SDK results use `structuredContent` matching the output contract, visible `content`, and component-only `_meta` ([OpenAI guidance](https://developers.openai.com/plugins/reference#tool-results)).
@@ -140,8 +140,8 @@ git push
 - Modify: `scripts/README.md`
 
 **Interfaces:**
-- Consumes: `DATABASE_URL`, exact reviewer email, and a ClickHouse configuration accepted by the existing tagged clients.
-- Produces: deterministic daily HRV/steps for 2026-08-18 through 2026-08-31, seven sleep sessions for 2026-08-25 through 2026-08-31, several activities in the range, and connected providers with fixed last-sync timestamps.
+- Consumes: `DATABASE_URL`, the exact reviewer email, and the configured ClickHouse ingestion/analytics clients.
+- Produces: deterministic HRV/step samples in ClickHouse for 2026-08-18 through 2026-08-31, seven Postgres sleep sessions for 2026-08-25 through 2026-08-31, several Postgres activities in the range, and connected providers with fixed last-sync timestamps.
 - Fails: reviewer account absent or a target record cannot be marked as synthetic reviewer data.
 
 - [ ] **Step 1: Write a real-Postgres integration test**
@@ -150,6 +150,10 @@ Create a fixture account with the exact reviewer email in the isolated test data
 
 ```ts
 expect(await dailyMetricDates(sql, reviewerId)).toEqual([
+  "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24",
+  "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30", "2026-08-31",
+]);
+expect(await dedupedSensorDates(clickhouse, reviewerId, ["hrv", "steps"])).toEqual([
   "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24",
   "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30", "2026-08-31",
 ]);
@@ -182,7 +186,7 @@ const START_DATE = "2026-08-18";
 const END_DATE = "2026-08-31";
 ```
 
-Resolve one `fitness.user_profile` record by the exact email. Delete or upsert only rows joined to that user and carrying `SYNTHETIC_PROVENANCE`; insert provider-attributed canonical rows for the specified dates. Store synthetic provenance in existing appropriate source/reference fields—do not add schema fields or use provider-specific food columns. Emit record counts only, never row payloads or health values.
+Resolve one `fitness.user_profile` record by the exact email. Delete or upsert only Postgres rows joined to that user and carrying `SYNTHETIC_PROVENANCE`; write HRV/steps through the existing canonical ClickHouse ingest writer using synthetic provider attribution. Verify the corresponding `analytics.deduped_sensor` rows before reporting success. Store synthetic provenance in existing appropriate source/reference fields—do not add schema fields or use provider-specific food columns. Emit record counts only, never row payloads or health values.
 
 Add a package script that executes it with `pnpm tsx`, document the exact required environment and the account-only safety boundary in `scripts/README.md`.
 
