@@ -883,6 +883,166 @@ describe("createMcpRouter", () => {
     ]);
   });
 
+  it("preserves route disciplines and incomplete climbing-session data", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: null,
+        ended_at: null,
+        id: "activity-2",
+        name: null,
+        started_at: "2026-07-11T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      {
+        toDetail: () => ({
+          ascentType: "redpoint",
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "5.10",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-1",
+          lead: true,
+          locationName: null,
+          routeName: "Lead route",
+          sent: true,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 2,
+          attempts: [],
+          climbType: "route",
+          grade: "5.11",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-2",
+          lead: false,
+          locationName: null,
+          routeName: "Top-rope route",
+          sent: false,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: "onsight",
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "5.12",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-3",
+          lead: null,
+          locationName: null,
+          routeName: "Unspecified route",
+          sent: true,
+          sourceName: "mountain_project",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "not-a-grade",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-4",
+          lead: true,
+          locationName: null,
+          routeName: null,
+          sent: true,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "5.10",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-5",
+          lead: true,
+          locationName: null,
+          routeName: "Lead route",
+          sent: false,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_climbing_sessions", {
+        end_date: "2026-07-11",
+        start_date: "2026-07-11",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      aggregates: {
+        grade_distribution: [
+          {
+            attempts: 2,
+            discipline: "lead",
+            grade: "5.10",
+            grade_system: "yds",
+            sends: 1,
+          },
+          {
+            attempts: 2,
+            discipline: "top_rope",
+            grade: "5.11",
+            grade_system: "yds",
+            sends: 0,
+          },
+          {
+            attempts: 1,
+            discipline: "route",
+            grade: "5.12",
+            grade_system: "yds",
+            sends: 1,
+          },
+          {
+            attempts: 1,
+            discipline: "lead",
+            grade: "not-a-grade",
+            grade_system: "yds",
+            sends: 1,
+          },
+        ],
+        max_grade_by_discipline: { boulder: null, route: "5.12" },
+        send_rate: 0.6,
+        volume: { attempts: 6, climbs: 5, sends: 3, total_vertical_m: null },
+      },
+      sessions: [
+        expect.objectContaining({
+          activity_id: "activity-2",
+          avg_hr: null,
+          duration_minutes: null,
+          location: null,
+          name: null,
+        }),
+      ],
+    });
+  });
+
   it("returns strength sessions with volume-load by muscle group", async () => {
     authorizeMcpToken();
     toolTestMocks.activityListRange.mockResolvedValue([
