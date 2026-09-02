@@ -16,7 +16,9 @@ import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 export const STRONG_PROVIDER_ID = "strong-csv";
 
-export class StrongCsvValidationError extends Error {}
+export class StrongCsvValidationError extends Error {
+  override name = "StrongCsvValidationError";
+}
 
 // ============================================================
 // Types

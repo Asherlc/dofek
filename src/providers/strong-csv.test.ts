@@ -106,8 +106,18 @@ describe("parseDurationString", () => {
 });
 
 describe("importStrongCsv", () => {
+  it("identifies validation errors for durable import handling", () => {
+    expect(new StrongCsvValidationError("invalid unit").name).toBe("StrongCsvValidationError");
+  });
+
   it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
-    const execute = vi.fn().mockResolvedValue([]);
+    const execute = vi.fn().mockResolvedValue([
+      {
+        alias_exercise_id: "00000000-0000-4000-8000-000000000001",
+        exercise_id: "00000000-0000-4000-8000-000000000001",
+        source_linked: true,
+      },
+    ]);
     const activityValues = vi.fn().mockReturnValue({
       onConflictDoUpdate: vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
@@ -171,7 +181,7 @@ describe("importStrongCsv", () => {
         localTimeSource: "device_timezone",
       }),
     );
-    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID });
+    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID, recordsSynced: 1, errors: [] });
   });
 
   it("imports text shares when no timezone is available", async () => {
@@ -195,7 +205,13 @@ describe("importStrongCsv", () => {
       })
       .mockReturnValueOnce({ values: vi.fn().mockResolvedValue(undefined) });
     const db = {
-      execute: vi.fn().mockResolvedValue([]),
+      execute: vi.fn().mockResolvedValue([
+        {
+          alias_exercise_id: "00000000-0000-4000-8000-000000000001",
+          exercise_id: "00000000-0000-4000-8000-000000000001",
+          source_linked: true,
+        },
+      ]),
       insert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       select: vi.fn().mockReturnValue({
@@ -229,7 +245,7 @@ describe("importStrongCsv", () => {
         localTimeSource: undefined,
       }),
     );
-    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID });
+    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID, recordsSynced: 1, errors: [] });
   });
 });
 
