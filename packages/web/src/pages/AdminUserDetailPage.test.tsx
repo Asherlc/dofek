@@ -398,7 +398,9 @@ describe("AdminUserDetailPage", () => {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
-    }).format(new Date("2026-10-01T00:00:00Z"));
+    })
+      .format(new Date("2026-10-01T00:00:00Z"))
+      .replace(/\u202f/g, " ");
     expect(screen.getByText(expectedExpiry)).toBeTruthy();
   });
 });
