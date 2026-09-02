@@ -50,7 +50,15 @@ export function createTaggedQueryClient(
         await transactionClient.query("COMMIT");
         return result;
       } catch (error) {
-        await transactionClient.query("ROLLBACK");
+        try {
+          await transactionClient.query("ROLLBACK");
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            "Transaction failed and rollback also failed",
+            { cause: error },
+          );
+        }
         throw error;
       } finally {
         transactionClient.release();

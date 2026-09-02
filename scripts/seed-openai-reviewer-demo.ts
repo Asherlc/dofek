@@ -8,6 +8,7 @@ export const OPENAI_REVIEWER_DEMO_SOURCE = "OpenAI Reviewer Demo (synthetic)";
 
 const providerIds = ["apple_health", "strava", "whoop"] as const;
 const reviewerRowSchema = z.object({ id: z.uuid() });
+const providerRowSchema = z.object({ id: z.enum(providerIds) });
 
 const dailyMetrics = [
   ["2026-08-18", 58, 7420],
@@ -58,9 +59,11 @@ export async function seedOpenAiReviewerDemo(sql: TaggedQueryClient): Promise<vo
     const userId = reviewer.id;
 
     for (const providerId of providerIds) {
-      const providers = await transaction<{ id: string }>`
-        SELECT id FROM fitness.provider WHERE id = ${providerId}
-      `;
+      const providers = providerRowSchema.array().parse(
+        await transaction<{ id: string }>`
+          SELECT id FROM fitness.provider WHERE id = ${providerId}
+        `,
+      );
       if (providers.length !== 1) {
         throw new Error(`Required provider ${providerId} must be registered before seeding`);
       }

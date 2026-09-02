@@ -37,4 +37,19 @@ describe("tagged query client transactions", () => {
       sql<{ id: string }>`SELECT id FROM fitness.user_profile WHERE id = ${userId}`,
     ).resolves.toEqual([]);
   });
+
+  it("commits writes when the transaction callback succeeds", async () => {
+    const userId = randomUUID();
+
+    await sql.transaction(async (transaction) => {
+      await transaction`
+        INSERT INTO fitness.user_profile (id, name, email)
+        VALUES (${userId}, 'Transaction commit', 'transaction-commit@example.test')
+      `;
+    });
+
+    await expect(
+      sql<{ id: string }>`SELECT id FROM fitness.user_profile WHERE id = ${userId}`,
+    ).resolves.toEqual([{ id: userId }]);
+  });
 });
