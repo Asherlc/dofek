@@ -204,6 +204,48 @@ describe("resolveProviderTimezoneLocalTimeContext", () => {
     });
   });
 
+  it("normalizes the zero-offset Etc/GMT zone", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 0,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("normalizes a two-digit fixed Etc/GMT offset", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT+12",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -720,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("trims a fixed Etc/GMT zone before classifying it", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "  Etc/GMT+4  ",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -240,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
   it("derives geographic-zone offsets instead of retaining contradictory supplied offsets", () => {
     expect(
       resolveProviderTimezoneLocalTimeContext({
