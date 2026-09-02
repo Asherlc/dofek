@@ -190,19 +190,19 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     const rows = await testContext.db.execute<{
       app_store_transaction_id: string | null;
       app_store_subscription_status: string | null;
-      app_store_expires_at: Date | null;
+      app_store_expires_at: string | null;
     }>(
       sql`SELECT
             app_store_transaction_id,
             app_store_subscription_status,
-            app_store_expires_at
+            app_store_expires_at::text AS app_store_expires_at
           FROM fitness.user_billing
           WHERE user_id = ${testUserId}::uuid`,
     );
     expect(rows[0]).toEqual({
       app_store_transaction_id: "100000000000002",
       app_store_subscription_status: "active",
-      app_store_expires_at: new Date("2026-10-01T00:00:00.000Z"),
+      app_store_expires_at: "2026-10-01 00:00:00+00",
     });
   });
 
@@ -233,20 +233,20 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
 
     const rows = await testContext.db.execute<{
       app_store_subscription_status: string | null;
-      app_store_expires_at: Date | null;
-      app_store_revocation_at: Date | null;
+      app_store_expires_at: string | null;
+      app_store_revocation_at: string | null;
     }>(
       sql`SELECT
             app_store_subscription_status,
-            app_store_expires_at,
-            app_store_revocation_at
+            app_store_expires_at::text AS app_store_expires_at,
+            app_store_revocation_at::text AS app_store_revocation_at
           FROM fitness.user_billing
           WHERE user_id = ${testUserId}::uuid`,
     );
     expect(rows[0]).toEqual({
       app_store_subscription_status: "revoked",
-      app_store_expires_at: new Date("2026-10-01T00:00:00.000Z"),
-      app_store_revocation_at: new Date("2026-09-20T00:00:00.000Z"),
+      app_store_expires_at: "2026-10-01 00:00:00+00",
+      app_store_revocation_at: "2026-09-20 00:00:00+00",
     });
   });
 
@@ -276,13 +276,13 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       user_id: string;
       app_store_original_transaction_id: string | null;
       app_store_transaction_id: string | null;
-      app_store_expires_at: Date | null;
+      app_store_expires_at: string | null;
     }>(
       sql`SELECT
             user_id,
             app_store_original_transaction_id,
             app_store_transaction_id,
-            app_store_expires_at
+            app_store_expires_at::text AS app_store_expires_at
           FROM fitness.user_billing
           WHERE user_id IN (${testUserId}::uuid, ${secondTestUserId}::uuid)
           ORDER BY user_id`,
@@ -292,7 +292,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
         user_id: testUserId,
         app_store_original_transaction_id: "100000000000001",
         app_store_transaction_id: "100000000000002",
-        app_store_expires_at: new Date("2026-10-01T00:00:00.000Z"),
+        app_store_expires_at: "2026-10-01 00:00:00+00",
       },
       {
         user_id: secondTestUserId,
