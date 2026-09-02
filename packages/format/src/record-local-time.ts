@@ -84,6 +84,10 @@ function offsetInTimezone(date: Date, timezone: string): number {
   return Math.round((projectedAsUtc - date.getTime()) / 60_000);
 }
 
+function isFixedEtcGmtZone(timezone: string): boolean {
+  return /^Etc\/GMT(?:[+-]\d{1,2})?$/.test(timezone);
+}
+
 export function localTimeContextUnknown(): RecordLocalTimeContext {
   return {
     timezone: null,
@@ -140,6 +144,33 @@ export function resolveRecordLocalTimeContext(
   }
 
   return localTimeContextUnknown();
+}
+
+export function resolveProviderTimezoneLocalTimeContext(input: {
+  startedAt: Date;
+  endedAt?: Date | null;
+  timezone: string;
+  suppliedOffsets?: {
+    startUtcOffsetMinutes?: number | null;
+    endUtcOffsetMinutes?: number | null;
+  };
+}): RecordLocalTimeContext {
+  const timezone = input.timezone.trim();
+  if (isFixedEtcGmtZone(timezone)) {
+    return resolveRecordLocalTimeContext({
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      startUtcOffsetMinutes: offsetInTimezone(input.startedAt, timezone),
+      endUtcOffsetMinutes: input.endedAt ? offsetInTimezone(input.endedAt, timezone) : null,
+      source: "provider_offset",
+    });
+  }
+  return resolveRecordLocalTimeContext({
+    startedAt: input.startedAt,
+    endedAt: input.endedAt,
+    timezone,
+    source: "provider_timezone",
+  });
 }
 
 export function offsetMinutesFromTimestamp(timestamp: string): number | null {

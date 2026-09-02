@@ -4,6 +4,7 @@ import {
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
   recordLocalHour,
+  resolveProviderTimezoneLocalTimeContext,
   resolveRecordLocalTimeContext,
   resolveTimestampOffsetLocalTimeContext,
 } from "./record-local-time.ts";
@@ -185,6 +186,38 @@ describe("resolveRecordLocalTimeContext", () => {
         source: "provider_offset",
       }),
     ).toThrow("provider_offset local-time context requires a start UTC offset");
+  });
+});
+
+describe("resolveProviderTimezoneLocalTimeContext", () => {
+  it("normalizes a fixed Etc/GMT zone to an offset-only provider context", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT+4",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -240,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("derives geographic-zone offsets instead of retaining contradictory supplied offsets", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        endedAt: new Date("2026-09-01T15:25:54.000Z"),
+        timezone: "America/Los_Angeles",
+        suppliedOffsets: { startUtcOffsetMinutes: -240, endUtcOffsetMinutes: -240 },
+      }),
+    ).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    });
   });
 });
 
