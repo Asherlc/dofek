@@ -204,22 +204,15 @@ ORDER BY duplicate_groups.activity_id`,
       { activityIds },
     );
 
-  let matchRows = await queryMatchRows(selectedIds);
-  let matchedActivityIds = unique([
-    ...selectedIds,
-    ...matchRows.flatMap((row) => [row.activity_id, row.duplicate_activity_id]),
-  ]);
-  let groupRows = await queryGroupRows(matchedActivityIds);
-  let activityIds = unique([...matchedActivityIds, ...groupRows.map((row) => row.activity_id)]);
-  while (activityIds.length > matchedActivityIds.length) {
+  let activityIds = selectedIds;
+  let matchRows: ClickHouseMatchRow[] = [];
+  let groupRows: ClickHouseGroupRow[] = [];
+  while (true) {
     matchRows = await queryMatchRows(activityIds);
-    matchedActivityIds = unique([
+    groupRows = await queryGroupRows(activityIds);
+    const expandedActivityIds = unique([
       ...activityIds,
       ...matchRows.flatMap((row) => [row.activity_id, row.duplicate_activity_id]),
-    ]);
-    groupRows = await queryGroupRows(matchedActivityIds);
-    const expandedActivityIds = unique([
-      ...matchedActivityIds,
       ...groupRows.map((row) => row.activity_id),
     ]);
     if (expandedActivityIds.length === activityIds.length) break;

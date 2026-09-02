@@ -25,8 +25,15 @@ import {
   assertNoEligibleActivityIntegrityJournal,
   createPostgresCommittedActivityIntegrityJournal,
   readActivityIntegrityJournal,
+  retireActivityIntegrityJournal,
   transitionActivityIntegrityJournal,
 } from "./activity-data-integrity-journal.ts";
+import {
+  type ActivityIntegrityRetirementReceipt,
+  activityIntegrityRetirementReceiptPath,
+  makeActivityIntegrityRetirementReceipt,
+  materializeActivityIntegrityRetirementReceipt,
+} from "./activity-data-integrity-retirement-receipt.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const MAXIMUM_BATCH_SIZE = 1_000;
@@ -266,10 +273,6 @@ function defaultArtifactDirectory(): string {
 
 function artifactPathFor(directory: string, createdAt: Date, runId: string): string {
   return resolve(directory, `${createdAt.toISOString().replaceAll(":", "-")}-${runId}.audit.json`);
-}
-
-function retirementReceiptPath(artifactPath: string): string {
-  return `${artifactPath}.retired.json`;
 }
 
 function serializeJson(value: unknown): string {
@@ -935,36 +938,75 @@ export async function retireActivityDataIntegrityArtifact(
     ) {
       throw new Error("activity integrity repair journal does not match the audit artifact");
     }
-    if (journal.phase !== "executed") {
+    const receiptPath = activityIntegrityRetirementReceiptPath(artifactPath);
+    const acceptedBy = input.acceptedBy.trim();
+    let receipt: ActivityIntegrityRetirementReceipt;
+    if (journal.phase === "executed") {
+      if (acceptedBy !== artifact.acceptance.owner) {
+        throw new Error(
+          `artifact must be retired by acceptance owner ${artifact.acceptance.owner}`,
+        );
+      }
+      const retiredAt = (dependencies.now ?? (() => new Date()))();
+      if (input.disposition === "accepted" && retiredAt > new Date(artifact.acceptance.deadline)) {
+        throw new Error(
+          "acceptance deadline has passed; rollback or explicitly supersede the artifact",
+        );
+      }
+      receipt = makeActivityIntegrityRetirementReceipt({
+        schemaVersion: AUDIT_SCHEMA_VERSION,
+        runId: artifact.runId,
+        artifactPath,
+        acceptedBy,
+        disposition: input.disposition,
+        retiredAt,
+      });
+      await db.transaction((transaction) =>
+        retireActivityIntegrityJournal(transaction, {
+          runId: artifact.runId,
+          artifactPath,
+          artifactChecksum: artifact.artifactChecksum,
+          acceptedBy,
+          disposition: input.disposition,
+          retiredAt,
+          receiptPath,
+          receiptChecksum: receipt.receiptChecksum,
+        }),
+      );
+    } else if (journal.phase === "retired") {
+      if (
+        journal.accepted_by == null ||
+        journal.retirement_disposition == null ||
+        journal.retired_at == null ||
+        journal.retirement_receipt_path == null ||
+        journal.retirement_receipt_checksum == null
+      ) {
+        throw new Error("retired activity integrity journal is missing its decision");
+      }
+      if (
+        acceptedBy !== journal.accepted_by ||
+        input.disposition !== journal.retirement_disposition
+      ) {
+        throw new Error("retirement retry conflicts with durable retirement decision");
+      }
+      if (resolve(journal.retirement_receipt_path) !== resolve(receiptPath)) {
+        throw new Error("retired activity integrity journal does not match its receipt path");
+      }
+      receipt = makeActivityIntegrityRetirementReceipt({
+        schemaVersion: AUDIT_SCHEMA_VERSION,
+        runId: artifact.runId,
+        artifactPath,
+        acceptedBy: journal.accepted_by,
+        disposition: journal.retirement_disposition,
+        retiredAt: journal.retired_at,
+      });
+      if (receipt.receiptChecksum !== journal.retirement_receipt_checksum) {
+        throw new Error("retired activity integrity journal does not match its receipt checksum");
+      }
+    } else {
       throw new Error("audit artifact is not rollback-eligible");
     }
-    if (input.acceptedBy.trim() !== artifact.acceptance.owner) {
-      throw new Error(`artifact must be retired by acceptance owner ${artifact.acceptance.owner}`);
-    }
-    const retiredAt = (dependencies.now ?? (() => new Date()))();
-    if (input.disposition === "accepted" && retiredAt > new Date(artifact.acceptance.deadline)) {
-      throw new Error(
-        "acceptance deadline has passed; rollback or explicitly supersede the artifact",
-      );
-    }
-    await transitionActivityIntegrityJournal(db, {
-      runId: artifact.runId,
-      artifactPath,
-      artifactChecksum: artifact.artifactChecksum,
-      from: ["executed"],
-      to: "retired",
-      transitionedAt: retiredAt,
-    });
-    const receiptPath = retirementReceiptPath(artifactPath);
-    await writeNewPrivateJson(receiptPath, {
-      schemaVersion: AUDIT_SCHEMA_VERSION,
-      runId: artifact.runId,
-      artifactPath: resolve(artifactPath),
-      acceptedBy: input.acceptedBy.trim(),
-      disposition: input.disposition,
-      retiredAt: retiredAt.toISOString(),
-      rollbackEligibility: "retired",
-    });
+    await materializeActivityIntegrityRetirementReceipt(receiptPath, receipt);
     return receiptPath;
   });
 }

@@ -38,6 +38,45 @@ const sourceRows = [activityA, activityB, activityC].map((activityId) => ({
 }));
 
 describe("snapshotDerivedRows", () => {
+  it("captures an edge reached through a duplicate when groups do not expand the scope", async () => {
+    const client = {
+      query: vi.fn(
+        async ({
+          query,
+          query_params,
+        }: {
+          query: string;
+          query_params?: Record<string, unknown>;
+        }) => {
+          const activityIds = Array.isArray(query_params?.activityIds)
+            ? query_params.activityIds.filter(
+                (activityId): activityId is string => typeof activityId === "string",
+              )
+            : [];
+          if (query.includes("activity_duplicate_matches")) {
+            return {
+              json: async () => (activityIds.includes(activityB) ? [matchAB, matchBC] : [matchAB]),
+            };
+          }
+          if (query.includes("activity_duplicate_groups")) {
+            return {
+              json: async () => groupRows.filter((row) => activityIds.includes(row.activity_id)),
+            };
+          }
+          if (query.includes("activity_source_records")) {
+            return { json: async () => sourceRows };
+          }
+          return { json: async () => [] };
+        },
+      ),
+    };
+
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+
+    expect(snapshot.activityIds).toEqual([activityA, activityB, activityC]);
+    expect(snapshot.matchRows).toEqual([matchAB, matchBC]);
+  });
+
   it("captures duplicate edges to a fixpoint after group membership expands the scope", async () => {
     const client = {
       query: vi.fn(

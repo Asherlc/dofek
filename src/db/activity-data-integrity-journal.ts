@@ -6,6 +6,10 @@ const uuidSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 const checksumSchema = z.string().regex(/^[0-9a-f]{64}$/);
+export const activityIntegrityRetirementDispositionSchema = z.enum(["accepted", "superseded"]);
+export type ActivityIntegrityRetirementDisposition = z.infer<
+  typeof activityIntegrityRetirementDispositionSchema
+>;
 
 export const activityIntegrityJournalPhaseSchema = z.enum([
   "postgres_committed",
@@ -18,7 +22,7 @@ export const activityIntegrityJournalPhaseSchema = z.enum([
 
 export type ActivityIntegrityJournalPhase = z.infer<typeof activityIntegrityJournalPhaseSchema>;
 
-const journalRowSchema = z.object({
+const journalBaseSchema = z.object({
   run_id: uuidSchema,
   user_id: uuidSchema,
   artifact_path: z.string().min(1),
@@ -26,15 +30,35 @@ const journalRowSchema = z.object({
   acceptance_owner: z.string().min(1),
   acceptance_deadline: z.coerce.date(),
   phase: activityIntegrityJournalPhaseSchema,
+  accepted_by: z.string().min(1).nullable(),
+  retirement_disposition: activityIntegrityRetirementDispositionSchema.nullable(),
+  retired_at: z.coerce.date().nullable(),
+  retirement_receipt_path: z.string().min(1).nullable(),
+  retirement_receipt_checksum: checksumSchema.nullable(),
   created_at: z.coerce.date(),
   updated_at: z.coerce.date(),
 });
 
+const journalRowSchema = journalBaseSchema.superRefine((journal, context) => {
+  const retirementComplete =
+    journal.accepted_by != null &&
+    journal.retirement_disposition != null &&
+    journal.retired_at != null &&
+    journal.retirement_receipt_path != null &&
+    journal.retirement_receipt_checksum != null;
+  if ((journal.phase === "retired") !== retirementComplete) {
+    context.addIssue({
+      code: "custom",
+      message: "retirement journal fields must be complete exactly when phase is retired",
+    });
+  }
+});
+
 const journalIdentitySchema = z.object({ run_id: uuidSchema });
-const eligibleJournalSchema = journalRowSchema.pick({
-  run_id: true,
-  artifact_path: true,
-  phase: true,
+const eligibleJournalSchema = z.object({
+  run_id: uuidSchema,
+  artifact_path: z.string().min(1),
+  phase: activityIntegrityJournalPhaseSchema,
 });
 
 export type ActivityIntegrityJournalRow = z.infer<typeof journalRowSchema>;
@@ -95,6 +119,11 @@ export async function createPostgresCommittedActivityIntegrityJournal(
           acceptance_owner,
           acceptance_deadline,
           phase,
+          accepted_by,
+          retirement_disposition,
+          retired_at,
+          retirement_receipt_path,
+          retirement_receipt_checksum,
           created_at,
           updated_at
         ) VALUES (
@@ -105,12 +134,53 @@ export async function createPostgresCommittedActivityIntegrityJournal(
           ${input.acceptanceOwner},
           ${input.acceptanceDeadline},
           'postgres_committed',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          NULL,
           ${input.createdAt},
           ${input.createdAt}
         )
         RETURNING run_id::text AS run_id`,
   );
   if (rows.length !== 1) throw new Error("activity integrity repair journal was not created");
+}
+
+export async function retireActivityIntegrityJournal(
+  db: SchemaExecutionDatabase,
+  input: {
+    runId: string;
+    artifactPath: string;
+    artifactChecksum: string;
+    acceptedBy: string;
+    disposition: ActivityIntegrityRetirementDisposition;
+    retiredAt: Date;
+    receiptPath: string;
+    receiptChecksum: string;
+  },
+): Promise<void> {
+  const rows = await executeWithSchema(
+    db,
+    journalIdentitySchema,
+    sql`UPDATE fitness.activity_integrity_repair_journal
+        SET
+          phase = 'retired',
+          accepted_by = ${input.acceptedBy},
+          retirement_disposition = ${input.disposition},
+          retired_at = ${input.retiredAt},
+          retirement_receipt_path = ${input.receiptPath},
+          retirement_receipt_checksum = ${input.receiptChecksum},
+          updated_at = ${input.retiredAt}
+        WHERE run_id = ${input.runId}::uuid
+          AND artifact_path = ${input.artifactPath}
+          AND artifact_checksum = ${input.artifactChecksum}
+          AND phase = 'executed'
+        RETURNING run_id::text AS run_id`,
+  );
+  if (rows.length !== 1) {
+    throw new Error("stale activity integrity repair journal retirement");
+  }
 }
 
 export async function readActivityIntegrityJournal(
@@ -128,6 +198,11 @@ export async function readActivityIntegrityJournal(
           acceptance_owner,
           acceptance_deadline,
           phase,
+          accepted_by,
+          retirement_disposition,
+          retired_at,
+          retirement_receipt_path,
+          retirement_receipt_checksum,
           created_at,
           updated_at
         FROM fitness.activity_integrity_repair_journal

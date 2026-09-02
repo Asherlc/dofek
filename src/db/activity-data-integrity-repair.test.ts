@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SQL } from "drizzle-orm";
@@ -174,6 +174,11 @@ interface RepairJournalRecord {
   acceptance_owner: string;
   acceptance_deadline: string;
   phase: string;
+  accepted_by: string | null;
+  retirement_disposition: string | null;
+  retired_at: string | null;
+  retirement_receipt_path: string | null;
+  retirement_receipt_checksum: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -213,21 +218,51 @@ function repairJournalQuery(query: SQL): object[] | undefined {
       acceptance_owner: "data-on-call@example.com",
       acceptance_deadline: deadline.toISOString(),
       phase: "postgres_committed",
+      accepted_by: null,
+      retirement_disposition: null,
+      retired_at: null,
+      retirement_receipt_path: null,
+      retirement_receipt_checksum: null,
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
     };
     return [{ run_id: runId }];
   }
   if (normalizedSql.startsWith("update")) {
-    const phase = rendered.params.find(
-      (value): value is string =>
-        typeof value === "string" &&
-        ["rebuild_failed", "executed", "rollback_committed", "rolled_back", "retired"].includes(
-          value,
-        ),
-    );
+    const phase = normalizedSql.includes("phase = 'retired'")
+      ? "retired"
+      : rendered.params.find(
+          (value): value is string =>
+            typeof value === "string" &&
+            ["rebuild_failed", "executed", "rollback_committed", "rolled_back", "retired"].includes(
+              value,
+            ),
+        );
     if (!repairJournalState.record || !phase) return [];
     repairJournalState.record.phase = phase;
+    if (phase === "retired") {
+      const acceptedBy = rendered.params.find(
+        (value): value is string => value === "data-on-call@example.com",
+      );
+      const disposition = rendered.params.find(
+        (value): value is string => value === "accepted" || value === "superseded",
+      );
+      const retiredAt = rendered.params.find((value): value is Date => value instanceof Date);
+      const receiptPath = rendered.params.find(
+        (value): value is string => typeof value === "string" && value.endsWith(".retired.json"),
+      );
+      const receiptChecksum = rendered.params.find(
+        (value): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value),
+      );
+      if (!acceptedBy || !disposition || !retiredAt || !receiptPath || !receiptChecksum) {
+        throw new Error("journal retirement omitted durable decision fields");
+      }
+      repairJournalState.record.accepted_by = acceptedBy;
+      repairJournalState.record.retirement_disposition = disposition;
+      repairJournalState.record.retired_at = retiredAt.toISOString();
+      repairJournalState.record.retirement_receipt_path = receiptPath;
+      repairJournalState.record.retirement_receipt_checksum = receiptChecksum;
+    }
     repairJournalState.record.updated_at = now.toISOString();
     return [{ run_id: repairJournalState.record.run_id }];
   }
@@ -281,17 +316,32 @@ function createClickHouse(
     summaries?: object[][];
   } = {},
 ) {
+  let snapshotRows: { groups: object[]; matches: object[] } | undefined;
+  const currentSnapshotRows = () => {
+    if (!snapshotRows) {
+      snapshotRows = {
+        groups: groups.shift() ?? [],
+        matches: rows.matches?.shift() ?? [],
+      };
+    }
+    return snapshotRows;
+  };
   return {
     query: vi.fn(async ({ query }: { query: string }) => {
       if (query.includes("postgres_fitness.activity")) return queryRows(rows.mirror?.shift() ?? []);
       if (query.includes("activity_duplicate_matches"))
-        return queryRows(rows.matches?.shift() ?? []);
-      if (query.includes("activity_duplicate_groups")) return queryRows(groups.shift() ?? []);
+        return queryRows(currentSnapshotRows().matches);
+      if (query.includes("activity_duplicate_groups"))
+        return queryRows(currentSnapshotRows().groups);
       if (query.includes("deduped_activity_members")) return queryRows(rows.members?.shift() ?? []);
       if (query.includes("deduped_activities")) return queryRows(rows.deduped?.shift() ?? []);
       if (query.includes("activity_sensor_summary_rows"))
         return queryRows(rows.sensors?.shift() ?? []);
-      if (query.includes("activity_summary_rows")) return queryRows(rows.summaries?.shift() ?? []);
+      if (query.includes("activity_summary_rows")) {
+        const summaries = rows.summaries?.shift() ?? [];
+        snapshotRows = undefined;
+        return queryRows(summaries);
+      }
       if (query.includes("activity_source_records")) return queryRows(sources.shift() ?? []);
       throw new Error(`Unexpected ClickHouse query: ${query}`);
     }),
@@ -1120,5 +1170,76 @@ describe("rollbackActivityDataIntegrity", () => {
         { now: () => now },
       ),
     ).rejects.toThrow("retired audit artifact");
+  });
+
+  it("materializes the durable retirement receipt after a filesystem failure without reopening rollback", async () => {
+    const { result, rollbackDb } = await executedArtifact();
+    const receiptPath = `${result.artifactPath}.retired.json`;
+    await mkdir(receiptPath);
+    const retirementInput = {
+      acceptedBy: "data-on-call@example.com",
+      disposition: "accepted" as const,
+    };
+
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        retirementInput,
+        {
+          now: () => now,
+        },
+      ),
+    ).rejects.toThrow();
+    expect(repairJournalState.record).toMatchObject({
+      phase: "retired",
+      accepted_by: retirementInput.acceptedBy,
+      retirement_disposition: retirementInput.disposition,
+      retired_at: now.toISOString(),
+    });
+    await expect(
+      rollbackActivityDataIntegrity(
+        rollbackDb,
+        createClickHouse([[repairedSourceRow]], [repairedGroupRows]),
+        result.artifactPath,
+        { now: () => now },
+      ),
+    ).rejects.toThrow("retired audit artifact");
+
+    await rmdir(receiptPath);
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        retirementInput,
+        {
+          now: () => new Date("2026-09-04T19:00:00.000Z"),
+        },
+      ),
+    ).resolves.toBe(receiptPath);
+    expect(JSON.parse(await readFile(receiptPath, "utf8"))).toMatchObject({
+      ...retirementInput,
+      retiredAt: now.toISOString(),
+      rollbackEligibility: "retired",
+    });
+  });
+
+  it("rejects a conflicting retry after the retirement decision is durable", async () => {
+    const { result } = await executedArtifact();
+    await retireActivityDataIntegrityArtifact(
+      createDatabase(vi.fn()),
+      result.artifactPath,
+      { acceptedBy: "data-on-call@example.com", disposition: "accepted" },
+      { now: () => now },
+    );
+
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        { acceptedBy: "data-on-call@example.com", disposition: "superseded" },
+        { now: () => now },
+      ),
+    ).rejects.toThrow("conflicts with durable retirement decision");
   });
 });

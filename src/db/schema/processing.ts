@@ -248,6 +248,11 @@ export const activityIntegrityRepairJournal = fitness.table(
     acceptanceOwner: text("acceptance_owner").notNull(),
     acceptanceDeadline: timestamp("acceptance_deadline", { withTimezone: true }).notNull(),
     phase: text("phase").notNull(),
+    acceptedBy: text("accepted_by"),
+    retirementDisposition: text("retirement_disposition"),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    retirementReceiptPath: text("retirement_receipt_path"),
+    retirementReceiptChecksum: text("retirement_receipt_checksum"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -271,6 +276,24 @@ export const activityIntegrityRepairJournal = fitness.table(
         'rollback_committed',
         'rolled_back',
         'retired'
+      )`,
+    ),
+    check(
+      "activity_integrity_repair_journal_disposition_valid",
+      sql`${table.retirementDisposition} IS NULL OR ${table.retirementDisposition} IN ('accepted', 'superseded')`,
+    ),
+    check(
+      "activity_integrity_repair_journal_receipt_checksum_valid",
+      sql`${table.retirementReceiptChecksum} IS NULL OR ${table.retirementReceiptChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_integrity_repair_journal_retirement_complete",
+      sql`(${table.phase} = 'retired') = (
+        ${table.acceptedBy} IS NOT NULL
+        AND ${table.retirementDisposition} IS NOT NULL
+        AND ${table.retiredAt} IS NOT NULL
+        AND ${table.retirementReceiptPath} IS NOT NULL
+        AND ${table.retirementReceiptChecksum} IS NOT NULL
       )`,
     ),
   ],
