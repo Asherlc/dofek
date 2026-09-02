@@ -32,27 +32,12 @@ function statusLabel(enabled: boolean): string {
   return enabled ? "Yes" : "No";
 }
 
-function accessLabel(
-  access:
-    | { kind: "full"; paid: true; reason: "paid_grant" | "stripe_subscription" }
-    | {
-        kind: "limited";
-        paid: false;
-        reason: "free_signup_week";
-        startDate: string;
-        endDateExclusive: string;
-      },
-): string {
-  if (access.kind === "limited") {
-    return `Limited to ${access.startDate} through ${access.endDateExclusive}`;
-  }
-  return access.reason === "stripe_subscription"
-    ? "Full access from Stripe subscription"
-    : "Full access from local grant";
-}
-
 type AdminUserAccess =
-  | { kind: "full"; paid: true; reason: "paid_grant" | "stripe_subscription" }
+  | {
+      kind: "full";
+      paid: true;
+      reason: "paid_grant" | "stripe_subscription" | "app_store_subscription";
+    }
   | {
       kind: "limited";
       paid: false;
@@ -60,6 +45,18 @@ type AdminUserAccess =
       startDate: string;
       endDateExclusive: string;
     };
+
+function accessLabel(access: AdminUserAccess): string {
+  if (access.kind === "limited") {
+    return `Limited to ${access.startDate} through ${access.endDateExclusive}`;
+  }
+  if (access.reason === "stripe_subscription") {
+    return "Full access from Stripe subscription";
+  }
+  return access.reason === "app_store_subscription"
+    ? "Full access from App Store subscription"
+    : "Full access from local grant";
+}
 
 export interface AdminUserDetail {
   profile: {

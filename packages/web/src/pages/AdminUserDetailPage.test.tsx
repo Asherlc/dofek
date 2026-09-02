@@ -339,4 +339,23 @@ describe("AdminUserDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Revoke free access" }));
     expect(mockSetPaidGrantMutate).toHaveBeenCalledWith({ userId: "user-paid", enabled: false });
   });
+
+  it("identifies App Store subscription access", () => {
+    const detail = mockAdminUserDetailQuery().data;
+    expect(detail).toBeDefined();
+    if (!detail) return;
+
+    mockAdminUserDetailQuery.mockReturnValue({
+      data: {
+        ...detail,
+        access: { kind: "full", paid: true, reason: "app_store_subscription" },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<AdminUserDetailPage />);
+
+    expect(screen.getByText("Full access from App Store subscription")).toBeTruthy();
+  });
 });
