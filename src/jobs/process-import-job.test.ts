@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WaitingChildrenError } from "bullmq";
+import { UnrecoverableError, WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
@@ -697,6 +697,7 @@ describe("processImportJob", () => {
         filePath: tempFilePath,
         importType: "strong-csv",
         weightUnit: "lbs",
+        timezone: "America/Los_Angeles",
       });
       await runImportJob(job, mockDb);
       expect(mockImportStrongCsv).toHaveBeenCalledWith(
@@ -704,10 +705,11 @@ describe("processImportJob", () => {
         "Date,Exercise,Reps\n2024-01-01,Squat,10",
         "user-1",
         "lbs",
+        "America/Los_Angeles",
       );
     });
 
-    it("defaults to kg when weightUnit is not specified", async () => {
+    it("passes no weight unit when the upload has no unit", async () => {
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({
         filePath: tempFilePath,
@@ -715,7 +717,35 @@ describe("processImportJob", () => {
         weightUnit: undefined,
       });
       await runImportJob(job, mockDb);
-      expect(mockImportStrongCsv).toHaveBeenCalledWith(mockDb, "csv data", "user-1", "kg");
+      expect(mockImportStrongCsv).toHaveBeenCalledWith(
+        mockDb,
+        "csv data",
+        "user-1",
+        undefined,
+        undefined,
+      );
+    });
+    it("makes Strong validation failures terminal", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const validationError = new Error("Strong CSV has no Weight Unit declaration");
+      validationError.name = "StrongCsvValidationError";
+      mockImportStrongCsv.mockRejectedValueOnce(validationError);
+
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
+      ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(UnrecoverableError), {
+        tags: { phase: "file-import" },
+      });
+    });
+    it("does not misclassify unrelated Strong import errors as terminal validation failures", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const unexpectedError = new Error("R2 unavailable");
+      mockImportStrongCsv.mockRejectedValueOnce(unexpectedError);
+
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
+      ).rejects.toBe(unexpectedError);
     });
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
