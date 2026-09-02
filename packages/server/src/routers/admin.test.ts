@@ -346,7 +346,10 @@ describe("adminRouter", () => {
       expect(result.flags.providerGuideDismissed).toBe(true);
       expect(result.billing?.stripe_customer_id).toBe("cus_123");
       expect(result.billing?.stripe_subscription_status).toBe("active");
+      expect(result.billing?.app_store_product_id).toBe("com.dofek.premium.monthly");
       expect(result.billing?.app_store_subscription_status).toBe("active");
+      expect(result.billing?.app_store_expires_at).toBe("2026-06-01T00:00:00Z");
+      expect(result.billing?.app_store_revocation_at).toBeNull();
       expect(result.access).toEqual({
         kind: "full",
         paid: true,

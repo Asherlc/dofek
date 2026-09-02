@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import type { AppStoreSubscriptionUpdate } from "../billing/app-store-subscription.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { applyAppStoreNotification, BillingRepository } from "./billing-repository.ts";
 
@@ -353,6 +354,14 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       app_store_expires_at: "2026-09-20T00:00:00.000Z",
       app_store_revocation_at: "2026-09-20T00:00:00.000Z",
     });
+
+    await expect(
+      repository.applyAppStoreSubscription({
+        ...currentUpdate,
+        transactionId: "100000000000004",
+        expiresAt: new Date("2026-11-01T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
   });
 
   it("records an expired state at the same App Store expiry", async () => {
@@ -360,12 +369,12 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       accountToken: firstAccountToken,
       originalTransactionId: "100000000000001",
       transactionId: "100000000000002",
-      productId: "com.dofek.premium.monthly" as const,
-      status: "active" as const,
+      productId: "com.dofek.premium.monthly",
+      status: "active",
       expiresAt: new Date("2026-10-01T00:00:00.000Z"),
       revokedAt: null,
-      environment: "Sandbox" as const,
-    };
+      environment: "Sandbox",
+    } satisfies AppStoreSubscriptionUpdate;
 
     await expect(repository.applyAppStoreSubscription(activeUpdate)).resolves.toEqual([testUserId]);
     await expect(

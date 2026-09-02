@@ -62,6 +62,12 @@ export interface BillingAccessStatus {
   canManageAppStoreSubscription: boolean;
 }
 
+export class BillingProfileNotFoundError extends Error {
+  constructor() {
+    super("Authenticated user profile not found");
+  }
+}
+
 export class BillingRepository {
   readonly #db: BillingDatabase;
 
@@ -140,7 +146,7 @@ export class BillingRepository {
           LIMIT 1`,
     );
     const row = rows[0];
-    if (!row) throw new Error("Authenticated user profile not found");
+    if (!row) throw new BillingProfileNotFoundError();
 
     const appStoreSubscription = toAppStoreSubscriptionState({
       productId: row.app_store_product_id,
@@ -256,7 +262,10 @@ export class BillingRepository {
                 ${input.status} = 'revoked'
                 AND app_store_subscription_status <> 'revoked'
               )
-              OR ${input.expiresAt} > app_store_expires_at
+              OR (
+                ${input.expiresAt} > app_store_expires_at
+                AND app_store_subscription_status <> 'revoked'
+              )
               OR (
                 ${input.expiresAt} = app_store_expires_at
                 AND app_store_subscription_status <> 'revoked'

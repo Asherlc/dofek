@@ -388,5 +388,8 @@ describe("AdminUserDetailPage", () => {
     render(<AdminUserDetailPage />);
 
     expect(screen.getByText("Full access from App Store subscription")).toBeTruthy();
+    expect(screen.getByText("com.dofek.premium.monthly")).toBeTruthy();
+    expect(screen.getByText("active")).toBeTruthy();
+    expect(screen.getByText("Sep 30, 2026, 5:00 PM")).toBeTruthy();
   });
 });

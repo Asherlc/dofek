@@ -209,6 +209,19 @@ describe("App Store transaction verification", () => {
     expect(verifierMock.SignedDataVerifier).toHaveBeenCalledOnce();
   });
 
+  it("reports and preserves retryable transaction verification failures", async () => {
+    setAppStoreEnv();
+    const failure = new verifierMock.VerificationException(2);
+    verifierMock.verifyAndDecodeTransaction.mockRejectedValue(failure);
+
+    await expect(verifyAppStoreTransaction("retryable-jws", expectedAccountToken)).rejects.toBe(
+      failure,
+    );
+    expect(verifierMock.captureException).toHaveBeenCalledWith(failure, {
+      tags: { source: "app-store-transaction-verifier" },
+    });
+  });
+
   it.each([
     ["a product outside the configured subscription", { productId: "com.dofek.other" }],
     ["a transaction without an account token", { appAccountToken: undefined }],

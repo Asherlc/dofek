@@ -160,6 +160,16 @@ describe("billingRouter", () => {
     });
   });
 
+  it("reports a missing authenticated profile", async () => {
+    stripeMocks.executeWithSchema.mockResolvedValue([]);
+    const caller = createCaller({ db: database(), userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.status()).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Authenticated user profile not found",
+    });
+  });
+
   it("returns a stable App Store purchase context for the authenticated user", async () => {
     stripeMocks.executeWithSchema.mockResolvedValue([
       { app_store_account_token: "a0000000-0000-4000-8000-000000000001" },
@@ -188,6 +198,7 @@ describe("billingRouter", () => {
 
   it("verifies a signed transaction for the authenticated account and returns full access", async () => {
     const accountToken = "a0000000-0000-4000-8000-000000000001";
+    const cacheInvalidationError = new Error("Redis unavailable");
     stripeMocks.executeWithSchema
       .mockResolvedValueOnce([{ app_store_account_token: accountToken }])
       .mockResolvedValueOnce([{ user_id: "user-1" }])
@@ -214,6 +225,7 @@ describe("billingRouter", () => {
       revokedAt: null,
       environment: "Sandbox",
     });
+    stripeMocks.invalidateAllUserQueries.mockRejectedValueOnce(cacheInvalidationError);
     const db = database();
     const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
@@ -239,6 +251,9 @@ describe("billingRouter", () => {
     expect(persistedSubscriptionQuery).toContain("2099-10-01T00:00:00.000Z");
     expect(persistedSubscriptionQuery).toContain(accountToken);
     expect(stripeMocks.invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(stripeMocks.captureException).toHaveBeenCalledWith(cacheInvalidationError, {
+      tags: { source: "app-store-billing-cache-invalidation" },
+    });
     expect(stripeMocks.withUserWriteFence).toHaveBeenCalledWith(db, "user-1", expect.any(Function));
   });
 

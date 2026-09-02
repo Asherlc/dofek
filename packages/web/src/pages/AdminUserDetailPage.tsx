@@ -1,5 +1,7 @@
 import { formatDateTime } from "@dofek/format/format";
 import { Link, useParams } from "@tanstack/react-router";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "dofek-server/router";
 import type { ReactNode } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
@@ -58,57 +60,9 @@ function accessLabel(access: AdminUserAccess): string {
     : "Full access from local grant";
 }
 
-export interface AdminUserDetail {
-  profile: {
-    id: string;
-    name: string;
-    email: string | null;
-    birth_date: string | null;
-    is_admin: boolean;
-    created_at: string;
-    updated_at: string;
-  };
-  flags: {
-    providerGuideDismissed: boolean;
-  };
-  billing: {
-    user_id: string;
-    stripe_customer_id: string | null;
-    stripe_subscription_id: string | null;
-    stripe_subscription_status: string | null;
-    stripe_current_period_end: string | null;
-    app_store_product_id: string | null;
-    app_store_subscription_status: string | null;
-    app_store_expires_at: string | null;
-    app_store_revocation_at: string | null;
-    paid_grant_reason: string | null;
-    created_at: string;
-    updated_at: string;
-  } | null;
-  access: AdminUserAccess;
-  stripeLinks: {
-    customer: string | null;
-    subscription: string | null;
-  };
-  accounts: {
-    id: string;
-    auth_provider: string;
-    provider_account_id: string;
-    email: string | null;
-    name: string | null;
-    created_at: string;
-  }[];
-  providers: {
-    id: string;
-    name: string;
-    created_at: string;
-  }[];
-  sessions: {
-    id: string;
-    created_at: string;
-    expires_at: string;
-  }[];
-}
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+
+export type AdminUserDetail = RouterOutputs["admin"]["userDetail"];
 
 export interface AdminUserDetailContentProps {
   detail: AdminUserDetail | null | undefined;

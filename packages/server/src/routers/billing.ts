@@ -12,7 +12,10 @@ import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "../billing/app-store-subscrip
 import { verifyAppStoreTransaction as verifySignedAppStoreTransaction } from "../billing/app-store-verifier.ts";
 import { getStripeBillingConfig } from "../billing/config.ts";
 import { createStripeClient } from "../billing/stripe-client.ts";
-import { BillingRepository } from "../repositories/billing-repository.ts";
+import {
+  BillingProfileNotFoundError,
+  BillingRepository,
+} from "../repositories/billing-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 const accessWindowSchema = z.discriminatedUnion("kind", [
@@ -43,7 +46,15 @@ const appStorePurchaseContextSchema = z.object({
 });
 
 async function getBillingStatus(db: Pick<Database, "execute">, userId: string, timezone: string) {
-  const status = await new BillingRepository(db).getAccessStatus(userId, timezone);
+  let status: Awaited<ReturnType<BillingRepository["getAccessStatus"]>>;
+  try {
+    status = await new BillingRepository(db).getAccessStatus(userId, timezone);
+  } catch (error) {
+    if (error instanceof BillingProfileNotFoundError) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Authenticated user profile not found" });
+    }
+    throw error;
+  }
 
   return {
     hasFullAccess: status.access.kind === "full",
@@ -101,7 +112,13 @@ export const billingRouter = router({
             return getBillingStatus(transaction, ctx.userId, ctx.timezone);
           },
         );
-        await invalidateAllUserQueries(ctx.userId);
+        try {
+          await invalidateAllUserQueries(ctx.userId);
+        } catch (error) {
+          Sentry.captureException(error, {
+            tags: { source: "app-store-billing-cache-invalidation" },
+          });
+        }
         return status;
       } catch (error) {
         if (error instanceof AccountErasureUserFencedError) {
