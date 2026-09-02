@@ -23,6 +23,7 @@ const snapshot: HealthExplorerSnapshot = {
       metric: "hrv",
       label: "Heart rate variability",
       unit: "ms",
+      note: null,
       points: [
         { key: "2026-08-01", value: 41 },
         { key: "2026-08-02", value: null },
@@ -33,6 +34,7 @@ const snapshot: HealthExplorerSnapshot = {
       metric: "resting_hr",
       label: "Resting heart rate",
       unit: "bpm",
+      note: null,
       points: [{ key: "2026-08-01", value: 58 }],
     },
   ],
@@ -40,7 +42,21 @@ const snapshot: HealthExplorerSnapshot = {
     { metric: "hrv", average: 42.5, min: 41, max: 44 },
     { metric: "resting_hr", average: 58, min: 58, max: 58 },
   ],
-  coverage: { requested_days: 3, observed_days: 2 },
+  coverage: {
+    requested_days: 3,
+    by_metric: {
+      hrv: {
+        observed_days: 2,
+        missing_days: ["2026-08-02"],
+        missing_days_truncated_count: 0,
+      },
+      resting_hr: {
+        observed_days: 1,
+        missing_days: ["2026-08-02", "2026-08-03"],
+        missing_days_truncated_count: 0,
+      },
+    },
+  },
 };
 
 describe("HealthExplorer", () => {
@@ -70,7 +86,16 @@ describe("HealthExplorer", () => {
           ...snapshot,
           series: [],
           summary: [{ metric: "hrv", average: null, min: null, max: null }],
-          coverage: { requested_days: 3, observed_days: 0 },
+          coverage: {
+            requested_days: 3,
+            by_metric: {
+              hrv: {
+                observed_days: 0,
+                missing_days: ["2026-08-01", "2026-08-02", "2026-08-03"],
+                missing_days_truncated_count: 0,
+              },
+            },
+          },
         }}
         onMetricChange={vi.fn()}
       />,

@@ -20,6 +20,10 @@ export interface HealthExplorerProps {
 export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const primarySeries = snapshot.series[0];
+  const displayedMetric = primarySeries?.metric ?? snapshot.summary[0]?.metric;
+  const displayedCoverage = displayedMetric
+    ? snapshot.coverage.by_metric[displayedMetric]
+    : undefined;
 
   useEffect(() => {
     if (!chartRef.current || !primarySeries) return;
@@ -70,7 +74,8 @@ export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps
           </article>
         ))}
         <p>
-          {snapshot.coverage.observed_days} of {snapshot.coverage.requested_days} days observed
+          {displayedCoverage?.observed_days ?? 0} of {snapshot.coverage.requested_days} days
+          observed
         </p>
       </section>
       <div
