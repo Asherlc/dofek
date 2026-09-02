@@ -134,6 +134,26 @@ describe("importStrongCsv", () => {
     ).rejects.toThrow(StrongCsvValidationError);
   });
 
+  it("validates every workout timestamp before writing any activity", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        db,
+        [
+          "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
+          "2026-03-07 10:00:00,Valid Workout,30m,Squat,0,100,5",
+          "2026-03-08 02:30:00,Invalid Workout,30m,Squat,0,100,5",
+        ].join("\n"),
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    ).rejects.toThrow(StrongCsvValidationError);
+
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
   it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
     const execute = vi.fn().mockResolvedValue([
       {

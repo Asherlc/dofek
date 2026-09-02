@@ -417,6 +417,41 @@ export function parseStrongText(text: string): StrongTextParseResult {
 // Import function
 // ============================================================
 
+function resolveStrongStartedAt(date: string, timezone?: string): Date {
+  const wallClockDate = parseStrongWallClockTimestamp(date);
+  if (Number.isNaN(wallClockDate.getTime())) {
+    throw new StrongCsvValidationError(`Invalid Strong workout timestamp: ${date}`);
+  }
+  if (timezone == null) return wallClockDate;
+
+  const resolveStartedAt = (candidate: Date): Date => {
+    const context = resolveRecordLocalTimeContext({
+      startedAt: candidate,
+      timezone,
+      source: "device_timezone",
+    });
+    if (context.startUtcOffsetMinutes === null) {
+      throw new Error("Strong timezone context did not include a UTC offset");
+    }
+    return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
+  };
+  const startedAt = resolveStartedAt(resolveStartedAt(wallClockDate));
+  const resolvedContext = resolveRecordLocalTimeContext({
+    startedAt,
+    timezone,
+    source: "device_timezone",
+  });
+  const resolvedWallClock = new Date(
+    startedAt.getTime() + (resolvedContext.startUtcOffsetMinutes ?? 0) * 60_000,
+  );
+  if (resolvedWallClock.getTime() !== wallClockDate.getTime()) {
+    throw new StrongCsvValidationError(
+      `Strong workout timestamp does not exist in ${timezone}: ${date}`,
+    );
+  }
+  return startedAt;
+}
+
 export async function importStrongCsv(
   db: SyncDatabase,
   csvText: string,
@@ -449,44 +484,16 @@ export async function importStrongCsv(
   } else {
     effectiveWeightUnit = parsed.weightUnit;
   }
+  const groupStartTimes = groups.map((group) => resolveStrongStartedAt(group.date, timezone));
   const exerciseCache = new Map<string, string>();
 
-  for (const group of groups) {
+  for (const [groupIndex, group] of groups.entries()) {
     try {
       const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
-      const wallClockDate = parseStrongWallClockTimestamp(group.date);
-      if (Number.isNaN(wallClockDate.getTime())) {
-        throw new StrongCsvValidationError(`Invalid Strong workout timestamp: ${group.date}`);
-      }
-      let startedAt = wallClockDate;
-      if (timezone != null) {
-        const resolveStartedAt = (candidate: Date): Date => {
-          const context = resolveRecordLocalTimeContext({
-            startedAt: candidate,
-            timezone,
-            source: "device_timezone",
-          });
-          if (context.startUtcOffsetMinutes === null) {
-            throw new Error("Strong timezone context did not include a UTC offset");
-          }
-          return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
-        };
-        startedAt = resolveStartedAt(resolveStartedAt(wallClockDate));
-        const resolvedContext = resolveRecordLocalTimeContext({
-          startedAt,
-          timezone,
-          source: "device_timezone",
-        });
-        const resolvedWallClock = new Date(
-          startedAt.getTime() + (resolvedContext.startUtcOffsetMinutes ?? 0) * 60_000,
-        );
-        if (resolvedWallClock.getTime() !== wallClockDate.getTime()) {
-          throw new StrongCsvValidationError(
-            `Strong workout timestamp does not exist in ${timezone}: ${group.date}`,
-          );
-        }
-      }
+      const startedAt = groupStartTimes[groupIndex];
+      if (!startedAt)
+        throw new Error(`Missing prevalidated Strong workout timestamp: ${group.date}`);
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
