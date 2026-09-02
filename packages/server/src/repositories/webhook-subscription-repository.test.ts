@@ -37,6 +37,39 @@ function makeInput(
 }
 
 describe("WebhookSubscriptionRepository", () => {
+  it("creates a pending app subscription before provider validation", async () => {
+    const { execute, repository } = makeRepository();
+
+    await repository.createPendingSubscription("pending-id", {
+      userId: null,
+      providerId: null,
+      providerName: "test-provider",
+      verifyToken: "verify-token",
+      metadata: { callbackUrl: "https://example.test/webhook" },
+    });
+
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("'pending'");
+    expect(query.sql).toContain("INTERVAL '5 minutes'");
+    expect(query.params).toContain("test-provider");
+  });
+
+  it("promotes a pending subscription after provider validation", async () => {
+    const { execute, repository } = makeRepository();
+
+    await repository.activatePendingSubscription("pending-id", "test-provider", {
+      subscriptionExternalId: "subscription-1",
+      signingSecret: null,
+      expiresAt: null,
+    });
+
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("status = 'active'");
+    expect(query.sql).toContain("subscription_external_id");
+    expect(query.params).toContain("pending-id");
+    expect(query.params).toContain("subscription-1");
+  });
+
   it.each([
     { userId: "user-1", providerId: null },
     { userId: null, providerId: "provider-1" },

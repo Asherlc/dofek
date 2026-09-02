@@ -38,6 +38,11 @@ export interface ActiveWebhookSubscription {
   signingSecret: string | null;
 }
 
+export interface PendingWebhookSubscription {
+  id: string;
+  verifyToken: string;
+}
+
 export interface UpsertWebhookSubscriptionInput {
   userId: string | null;
   providerId: string | null;
@@ -46,6 +51,14 @@ export interface UpsertWebhookSubscriptionInput {
   verifyToken: string;
   signingSecret: string | null;
   expiresAt: Date | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface CreatePendingWebhookSubscriptionInput {
+  userId: string | null;
+  providerId: string | null;
+  providerName: string;
+  verifyToken: string;
   metadata: Record<string, unknown>;
 }
 
@@ -88,6 +101,30 @@ export class WebhookSubscriptionRepository {
     }
   }
 
+  async *iteratePendingByProviderName(
+    providerName: string,
+  ): AsyncGenerator<PendingWebhookSubscription> {
+    const rows = await executeWithSchema(
+      this.#db,
+      z.object({ id: z.string(), verify_token: z.string() }),
+      sql`SELECT id, verify_token
+          FROM fitness.webhook_subscription
+          WHERE provider_name = ${providerName}
+            AND status = 'pending'
+            AND expires_at > NOW()
+          ORDER BY created_at`,
+    );
+    for (const row of rows) {
+      yield {
+        id: row.id,
+        verifyToken: await decryptCredentialValue(
+          row.verify_token,
+          webhookSecretContext(providerName, "verify_token"),
+        ),
+      };
+    }
+  }
+
   async hasActiveByProviderName(providerName: string): Promise<boolean> {
     const rows = await executeWithSchema(
       this.#db,
@@ -99,6 +136,49 @@ export class WebhookSubscriptionRepository {
           LIMIT 1`,
     );
     return rows.length > 0;
+  }
+
+  async createPendingSubscription(
+    id: string,
+    input: CreatePendingWebhookSubscriptionInput,
+  ): Promise<void> {
+    if ((input.userId === null) !== (input.providerId === null)) {
+      throw new Error("Webhook subscriptions require both userId and providerId, or neither");
+    }
+    const encryptedVerifyToken = await encryptCredentialValue(
+      input.verifyToken,
+      webhookSecretContext(input.providerName, "verify_token"),
+    );
+    await this.#db.execute(
+      sql`INSERT INTO fitness.webhook_subscription (
+            id, user_id, provider_id, provider_name, verify_token, status, expires_at, metadata
+          ) VALUES (
+            ${id}, ${input.userId}, ${input.providerId}, ${input.providerName}, ${encryptedVerifyToken},
+            'pending', NOW() + INTERVAL '5 minutes', ${JSON.stringify(input.metadata)}::jsonb
+          )`,
+    );
+  }
+
+  async activatePendingSubscription(
+    id: string,
+    providerName: string,
+    input: Pick<UpsertWebhookSubscriptionInput, "subscriptionExternalId" | "signingSecret" | "expiresAt">,
+  ): Promise<void> {
+    const encryptedSigningSecret = input.signingSecret
+      ? await encryptCredentialValue(
+          input.signingSecret,
+          webhookSecretContext(providerName, "signing_secret"),
+        )
+      : null;
+    await this.#db.execute(
+      sql`UPDATE fitness.webhook_subscription
+          SET subscription_external_id = ${input.subscriptionExternalId},
+              signing_secret = ${encryptedSigningSecret},
+              status = 'active',
+              expires_at = ${input.expiresAt},
+              updated_at = NOW()
+          WHERE id = ${id} AND status = 'pending'`,
+    );
   }
 
   async upsertActiveSubscription(input: UpsertWebhookSubscriptionInput): Promise<void> {

@@ -211,6 +211,29 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     expect(res.body).toBe("No subscription");
   });
 
+  it("accepts a matching pending subscription validation challenge", async () => {
+    const provider = createMockWebhookProvider({
+      handleValidationChallenge: vi.fn((query, verifyToken) =>
+        query["hub.verify_token"] === verifyToken ? { "hub.challenge": "challenge" } : null,
+      ),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: "pending-1", provider_id: null, verify_token: "pending-token", signing_secret: null },
+      ]);
+
+    const res = await request(
+      createTestApp(),
+      "get",
+      "/api/webhooks/test-provider?hub.mode=subscribe&hub.challenge=challenge&hub.verify_token=pending-token",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("challenge");
+  });
+
   it("returns 400 when challenge handler returns null", async () => {
     const provider = createMockWebhookProvider({
       handleValidationChallenge: vi.fn(() => null),
@@ -994,8 +1017,9 @@ describe("registerWebhookForProvider", () => {
       expect.stringContaining("/api/webhooks/test-provider"),
       expect.any(String),
     );
-    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]?.[0]);
-    expect(query.sql).toContain("ON CONFLICT (provider_name)");
+    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    expect(query.sql).toContain("status = 'active'");
+    expect(query.sql).toContain("subscription_external_id");
     expect(query.params).not.toContain("user-1");
   });
 
@@ -1008,8 +1032,8 @@ describe("registerWebhookForProvider", () => {
 
     await registerWebhookForProvider(db, provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalled();
-    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]?.[0]);
-    expect(query.sql).toContain("ON CONFLICT (user_id, provider_id)");
+    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    expect(query.sql).toContain("status = 'active'");
     expect(query.params).toContain("user-1");
     expect(query.params).toContain("test-provider");
   });
@@ -1104,7 +1128,7 @@ describe("registerWebhookForProvider", () => {
     expect(db.execute).toHaveBeenCalled();
   });
 
-  it("unregisters a remote webhook when subscription persistence fails", async () => {
+  it("does not create a remote webhook when pending subscription persistence fails", async () => {
     const db = getMockDb();
     vi.mocked(db.execute).mockRejectedValueOnce(new Error("database unavailable"));
     const provider = createMockWebhookProvider({
@@ -1117,6 +1141,7 @@ describe("registerWebhookForProvider", () => {
       "database unavailable",
     );
 
-    expect(provider.unregisterWebhook).toHaveBeenCalledWith("orphan-sub");
+    expect(provider.registerWebhook).not.toHaveBeenCalled();
+    expect(provider.unregisterWebhook).not.toHaveBeenCalled();
   });
 });

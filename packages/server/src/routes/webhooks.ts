@@ -13,7 +13,7 @@
  * 6. Returns 200 only after each actionable event is processed or durably queued
  */
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   AccountErasureUserFencedError,
   withAccountErasureUserWriteFence,
@@ -127,6 +127,15 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
         response = handleValidationChallenge(query, subscription.verifyToken);
         if (response !== null) {
           break;
+        }
+      }
+      if (response === null) {
+        for await (const subscription of webhookSubscriptionRepository.iteratePendingByProviderName(
+          providerName,
+        )) {
+          subscriptionFound = true;
+          response = handleValidationChallenge(query, subscription.verifyToken);
+          if (response !== null) break;
         }
       }
       if (!subscriptionFound) {
@@ -353,18 +362,20 @@ export async function registerWebhookForProvider(
   }
 
   const verifyToken = randomBytes(32).toString("hex");
+  const pendingId = randomUUID();
+  await webhookSubscriptionRepository.createPendingSubscription(pendingId, {
+    userId: provider.webhookScope === "user" ? userId : null,
+    providerId: provider.webhookScope === "user" ? provider.id : null,
+    providerName: provider.id,
+    verifyToken,
+    metadata: { callbackUrl },
+  });
   const result = await provider.registerWebhook(callbackUrl, verifyToken);
-  const userScoped = provider.webhookScope === "user";
   try {
-    await webhookSubscriptionRepository.upsertActiveSubscription({
-      userId: userScoped ? userId : null,
-      providerId: userScoped ? provider.id : null,
-      providerName: provider.id,
-      subscriptionExternalId: result.subscriptionId,
-      verifyToken,
+    await webhookSubscriptionRepository.activatePendingSubscription(pendingId, provider.id, {
       signingSecret: result.signingSecret ?? null,
       expiresAt: result.expiresAt ?? null,
-      metadata: { callbackUrl },
+      subscriptionExternalId: result.subscriptionId,
     });
   } catch (error: unknown) {
     captureException(error, {
