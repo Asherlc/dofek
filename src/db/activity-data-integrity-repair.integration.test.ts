@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   type ActivityIntegrityClickHouseClient,
   repairActivityDataIntegrity,
@@ -19,6 +20,7 @@ const wahooActivityId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
 const pelotonActivityId = "761483e6-0000-4000-8000-000000000001";
 const namedZoneActivityId = "894ce621-0000-4000-8000-000000000001";
 const initialVersion = "9007199254740993";
+const unrelatedActivityId = "9f99f9a7-0000-4000-8000-000000000001";
 
 type NativeClickHouseClient = ReturnType<typeof createClient>;
 
@@ -58,6 +60,49 @@ describe("activity data integrity repair", () => {
     await context?.cleanup();
   }, 120_000);
 
+  it("runs the production dbt path with an affected-key scope and preserves unrelated rows", async () => {
+    await seedProductionDbtFixture(client, database);
+    configureDbtEnvironment(database);
+    await runActivityIntegrityDbtBuild({
+      userId: TEST_USER_ID,
+      activityIds: [wahooActivityId, pelotonActivityId, namedZoneActivityId, unrelatedActivityId],
+    });
+    const unrelatedBefore = await taskThreeRowsForActivity(client, database, unrelatedActivityId);
+    const mirrorCommittedRows = mirrorPostgresCommit(context, client, database);
+    const repaired = await repairActivityDataIntegrity(
+      context.db,
+      scopedClient,
+      {
+        execute: true,
+        userId: TEST_USER_ID,
+        startAt: new Date("2026-09-01T00:00:00.000Z"),
+        endAt: new Date("2026-09-02T00:00:00.000Z"),
+        batchSize: 10,
+        maxBatches: 1,
+        artifactDirectory,
+        acceptanceOwner: "data-on-call@example.com",
+        acceptanceDeadline: new Date("2026-09-03T18:01:00.000Z"),
+      },
+      {
+        now: () => new Date("2026-09-02T18:01:00.000Z"),
+        generateRunId: randomUUID,
+        cdcReadinessPollIntervalMs: 10,
+      },
+    );
+    await mirrorCommittedRows;
+
+    expect(repaired).toMatchObject({ selected: 3, changed: 2, updated: 2 });
+    await expect(clickHouseLocalTimeContext(client, database, pelotonActivityId)).resolves.toEqual({
+      timezone: null,
+      start_utc_offset_minutes: -240,
+      end_utc_offset_minutes: -240,
+      local_time_source: "provider_offset",
+    });
+    await expect(taskThreeRowsForActivity(client, database, unrelatedActivityId)).resolves.toEqual(
+      unrelatedBefore,
+    );
+  }, 300_000);
+
   it("splits the false Wahoo/Peloton component, normalizes time, and rolls captured rows forward", async () => {
     const bounds = {
       userId: TEST_USER_ID,
@@ -82,6 +127,7 @@ describe("activity data integrity repair", () => {
       start_utc_offset_minutes: -300,
     });
 
+    const mirrorCommittedRows = mirrorPostgresCommit(context, client, database);
     const repaired = await repairActivityDataIntegrity(
       context.db,
       scopedClient,
@@ -98,6 +144,7 @@ describe("activity data integrity repair", () => {
         rebuildReadModels: () => rebuildTaskThreeModels(context, client, database),
       },
     );
+    await mirrorCommittedRows;
 
     expect(repaired).toMatchObject({
       selected: 3,
@@ -105,7 +152,7 @@ describe("activity data integrity repair", () => {
       updated: 2,
       beforeComponentCount: 2,
       afterComponentCount: 3,
-      incompatibleMemberCount: 1,
+      incompatibleMemberCount: 0,
     });
     const repairedGroups = await currentGroups(client, database);
     expect(groupFor(repairedGroups, wahooActivityId)).not.toBe(
@@ -210,6 +257,211 @@ async function seedPostgres(context: TestContext): Promise<void> {
   `);
 }
 
+function configureDbtEnvironment(database: string): void {
+  process.env.DBT_TARGET = "dev";
+  process.env.DBT_CLICKHOUSE_SCHEMA = database;
+  process.env.DBT_ANALYTICS_SOURCE_SCHEMA = database;
+  process.env.DBT_INGEST_SOURCE_SCHEMA = database;
+  process.env.DBT_POSTGRES_FITNESS_SOURCE_SCHEMA = database;
+}
+
+async function seedProductionDbtFixture(
+  client: NativeClickHouseClient,
+  database: string,
+): Promise<void> {
+  const statements = [
+    `DROP DATABASE IF EXISTS ${database} SYNC`,
+    `CREATE DATABASE ${database}`,
+    `CREATE TABLE ${database}.activity (
+      id UUID,
+      provider_id String,
+      user_id UUID,
+      external_id String,
+      canonical_type String,
+      provider_type String,
+      modality Nullable(String),
+      started_at DateTime64(6, 'UTC'),
+      ended_at Nullable(DateTime64(6, 'UTC')),
+      source_name Nullable(String),
+      name Nullable(String),
+      notes Nullable(String),
+      timezone Nullable(String),
+      start_utc_offset_minutes Nullable(Int16),
+      end_utc_offset_minutes Nullable(Int16),
+      local_time_source String,
+      raw String,
+      provider_absent_at Nullable(DateTime64(6, 'UTC')),
+      deleted_at Nullable(DateTime64(6, 'UTC')),
+      _peerdb_is_deleted UInt8,
+      _peerdb_synced_at DateTime64(9, 'UTC'),
+      _peerdb_version UInt64
+    ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`,
+    `CREATE TABLE ${database}.provider_priority (
+      provider_id String,
+      priority Int16,
+      _peerdb_is_deleted UInt8
+    ) ENGINE = ReplacingMergeTree() ORDER BY provider_id`,
+    `CREATE TABLE ${database}.device_priority (
+      provider_id String,
+      source_name_pattern String,
+      priority Int16,
+      _peerdb_is_deleted UInt8
+    ) ENGINE = ReplacingMergeTree() ORDER BY (provider_id, source_name_pattern)`,
+    `CREATE TABLE ${database}.activity_sensor_sample (
+      activity_id UUID,
+      user_id UUID,
+      recorded_at DateTime64(6, 'UTC'),
+      channel String,
+      scalar Nullable(Float64),
+      refresh_version UInt64,
+      is_deleted UInt8
+    ) ENGINE = ReplacingMergeTree(refresh_version)
+      ORDER BY (user_id, activity_id, channel, recorded_at)`,
+    `CREATE TABLE ${database}.activity_location_summary_rows (
+      activity_id UUID,
+      user_id UUID,
+      total_distance Nullable(Float64),
+      centroid_lat Nullable(Float64),
+      centroid_lng Nullable(Float64),
+      refresh_version UInt64,
+      is_deleted UInt8,
+      refreshed_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
+    `INSERT INTO ${database}.activity VALUES
+      (
+        '${wahooActivityId}', 'wahoo', '${TEST_USER_ID}', 'wahoo-ride', 'other',
+        'workout', NULL, toDateTime64('2026-09-01 14:50:00', 6, 'UTC'),
+        toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Wahoo ride', NULL,
+        NULL, NULL, NULL, 'unknown', '{}', NULL, NULL, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+      ),
+      (
+        '${pelotonActivityId}', 'peloton', '${TEST_USER_ID}', 'peloton-ride', 'cycling',
+        'cycling', 'indoor', toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
+        toDateTime64('2026-09-01 15:25:54', 6, 'UTC'), NULL, 'Peloton ride', NULL,
+        'Etc/GMT+4', -300, -300, 'provider_timezone', '{}', NULL, NULL, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+      ),
+      (
+        '${namedZoneActivityId}', 'wahoo', '${TEST_USER_ID}', 'named-zone-ride', 'cycling',
+        'cycling', NULL, toDateTime64('2026-09-01 16:00:00', 6, 'UTC'),
+        toDateTime64('2026-09-01 17:00:00', 6, 'UTC'), NULL, 'Named zone ride', NULL,
+        'America/New_York', -420, -420, 'provider_timezone', '{}', NULL, NULL, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+      ),
+      (
+        '${unrelatedActivityId}', 'wahoo', '${TEST_USER_ID}', 'unrelated-ride', 'cycling',
+        'cycling', NULL, toDateTime64('2026-08-01 16:00:00', 6, 'UTC'),
+        toDateTime64('2026-08-01 17:00:00', 6, 'UTC'), NULL, 'Unrelated ride', NULL,
+        'America/New_York', -240, -240, 'provider_timezone', '{}', NULL, NULL, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+      )`,
+  ];
+  for (const statement of statements) await client.command({ query: statement });
+}
+
+async function mirrorPostgresCommit(
+  context: TestContext,
+  client: NativeClickHouseClient,
+  database: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    const peloton = await postgresLocalTimeContext(context, pelotonActivityId);
+    const namedZone = await postgresLocalTimeContext(context, namedZoneActivityId);
+    if (
+      peloton?.timezone === null &&
+      peloton?.start_utc_offset_minutes === -240 &&
+      namedZone?.start_utc_offset_minutes === -240
+    ) {
+      await client.command({
+        query: `INSERT INTO ${database}.activity
+          SELECT * REPLACE(
+            CAST(NULL, 'Nullable(String)') AS timezone,
+            toInt16(-240) AS start_utc_offset_minutes,
+            toInt16(-240) AS end_utc_offset_minutes,
+            'provider_offset' AS local_time_source,
+            now64(9) AS _peerdb_synced_at,
+            _peerdb_version + 100 AS _peerdb_version
+          )
+          FROM ${database}.activity FINAL
+          WHERE id = '${pelotonActivityId}'`,
+      });
+      await client.command({
+        query: `INSERT INTO ${database}.activity
+          SELECT * REPLACE(
+            toInt16(-240) AS start_utc_offset_minutes,
+            toInt16(-240) AS end_utc_offset_minutes,
+            now64(9) AS _peerdb_synced_at,
+            _peerdb_version + 100 AS _peerdb_version
+          )
+          FROM ${database}.activity FINAL
+          WHERE id = '${namedZoneActivityId}'`,
+      });
+      return;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+  }
+  throw new Error("PostgreSQL repair commit was not observed by the integration CDC fixture");
+}
+
+async function clickHouseLocalTimeContext(
+  client: NativeClickHouseClient,
+  database: string,
+  activityId: string,
+) {
+  const response = await client.query({
+    query: `SELECT
+        timezone,
+        start_utc_offset_minutes,
+        end_utc_offset_minutes,
+        local_time_source
+      FROM ${database}.activity_source_records FINAL
+      WHERE activity_id = {activityId:UUID} AND is_deleted = 0`,
+    query_params: { activityId },
+    format: "JSONEachRow",
+  });
+  return (await response.json())[0];
+}
+
+async function taskThreeRowsForActivity(
+  client: NativeClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<Array<{ model: string; rows: unknown[] }>> {
+  const models = [
+    ["activity_source_records", "activity_id = {activityId:UUID}"],
+    [
+      "activity_duplicate_matches",
+      "activity_id = {activityId:UUID} OR duplicate_activity_id = {activityId:UUID}",
+    ],
+    ["activity_duplicate_groups", "activity_id = {activityId:UUID}"],
+    [
+      "deduped_activities",
+      "activity_id = {activityId:UUID} OR has(member_activity_ids, {activityId:UUID})",
+    ],
+    [
+      "deduped_activity_members",
+      "activity_id = {activityId:UUID} OR member_activity_id = {activityId:UUID}",
+    ],
+    ["activity_sensor_summary_rows", "activity_id = {activityId:UUID}"],
+    ["activity_summary_rows", "activity_id = {activityId:UUID}"],
+  ] as const;
+  const snapshots = [];
+  for (const [model, filter] of models) {
+    const response = await client.query({
+      query: `SELECT * REPLACE(toString(refresh_version) AS refresh_version)
+        FROM ${database}.${model} FINAL
+        WHERE ${filter}
+        ORDER BY tuple(*)`,
+      query_params: { activityId },
+      format: "JSONEachRow",
+      clickhouse_settings: { output_format_json_quote_64bit_integers: 1 },
+    });
+    snapshots.push({ model, rows: await response.json() });
+  }
+  return snapshots;
+}
+
 async function seedClickHouse(client: NativeClickHouseClient, database: string): Promise<void> {
   const statements = [
     `DROP DATABASE IF EXISTS ${database} SYNC`,
@@ -241,6 +493,19 @@ async function seedClickHouse(client: NativeClickHouseClient, database: string):
       provider_absent_at Nullable(DateTime64(6, 'UTC')),
       deleted_at Nullable(DateTime64(6, 'UTC'))
     ) ENGINE = ReplacingMergeTree() ORDER BY id`,
+    `CREATE TABLE ${database}.activity (
+      id UUID,
+      provider_id String,
+      user_id UUID,
+      canonical_type String,
+      timezone Nullable(String),
+      start_utc_offset_minutes Nullable(Int16),
+      end_utc_offset_minutes Nullable(Int16),
+      local_time_source String,
+      _peerdb_is_deleted UInt8,
+      _peerdb_synced_at DateTime64(9, 'UTC'),
+      _peerdb_version UInt64
+    ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`,
     `CREATE TABLE ${database}.activity_duplicate_matches (
       activity_id UUID,
       duplicate_activity_id UUID,
@@ -259,6 +524,8 @@ async function seedClickHouse(client: NativeClickHouseClient, database: string):
     `CREATE TABLE ${database}.deduped_activities (
       activity_id UUID,
       user_id UUID,
+      provider_id String,
+      canonical_type String,
       member_activity_ids Array(UUID),
       refresh_version UInt64,
       is_deleted UInt8,
@@ -280,6 +547,20 @@ async function seedClickHouse(client: NativeClickHouseClient, database: string):
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY activity_id`,
+    `CREATE TABLE ${database}.activity_sensor_summary_rows (
+      activity_id UUID,
+      user_id UUID,
+      refresh_version UInt64,
+      is_deleted UInt8,
+      refreshed_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY activity_id`,
+    `INSERT INTO ${database}.activity VALUES
+      ('${wahooActivityId}', 'wahoo', '${TEST_USER_ID}', 'other', NULL, NULL, NULL,
+       'unknown', 0, now64(9), 1),
+      ('${pelotonActivityId}', 'peloton', '${TEST_USER_ID}', 'cycling', 'Etc/GMT+4', -300, -300,
+       'provider_timezone', 0, now64(9), 1),
+      ('${namedZoneActivityId}', 'wahoo', '${TEST_USER_ID}', 'cycling', 'America/New_York', -420, -420,
+       'provider_timezone', 0, now64(9), 1)`,
     `INSERT INTO ${database}.activity_source_records VALUES
       ('${wahooActivityId}', 'wahoo', '${TEST_USER_ID}', 'wahoo-ride', 'other',
        toDateTime64('2026-09-01 14:50:00', 6, 'UTC'), toDateTime64('2026-09-01 15:30:00', 6, 'UTC'),
@@ -297,8 +578,8 @@ async function seedClickHouse(client: NativeClickHouseClient, database: string):
       ('${pelotonActivityId}', '${wahooActivityId}', ${initialVersion}, 0, now64(9)),
       ('${namedZoneActivityId}', '${namedZoneActivityId}', ${initialVersion}, 0, now64(9))`,
     `INSERT INTO ${database}.deduped_activities VALUES
-      ('${wahooActivityId}', '${TEST_USER_ID}', ['${wahooActivityId}', '${pelotonActivityId}'], ${initialVersion}, 0, now64(9)),
-      ('${namedZoneActivityId}', '${TEST_USER_ID}', ['${namedZoneActivityId}'], ${initialVersion}, 0, now64(9))`,
+      ('${wahooActivityId}', '${TEST_USER_ID}', 'wahoo', 'other', ['${wahooActivityId}', '${pelotonActivityId}'], ${initialVersion}, 0, now64(9)),
+      ('${namedZoneActivityId}', '${TEST_USER_ID}', 'wahoo', 'cycling', ['${namedZoneActivityId}'], ${initialVersion}, 0, now64(9))`,
     `INSERT INTO ${database}.deduped_activity_members VALUES
       ('${wahooActivityId}', '${TEST_USER_ID}', '${wahooActivityId}', ${initialVersion}, 0, now64(9)),
       ('${wahooActivityId}', '${TEST_USER_ID}', '${pelotonActivityId}', ${initialVersion}, 0, now64(9)),
@@ -314,7 +595,8 @@ function scopeClickHouseClient(
   client: NativeClickHouseClient,
   database: string,
 ): ActivityIntegrityClickHouseClient {
-  const scope = (query: string) => query.replaceAll("analytics.", `${database}.`);
+  const scope = (query: string) =>
+    query.replaceAll("analytics.", `${database}.`).replaceAll("postgres_fitness.", `${database}.`);
   return {
     query: async (options) => {
       const result = await client.query({ ...options, query: scope(options.query) });
@@ -375,16 +657,23 @@ async function rebuildTaskThreeModels(
   await client.command({
     query: `INSERT INTO ${database}.activity_duplicate_groups\n${renderGroupsModel(database)}`,
   });
+  const sourceRowsById = new Map(rows.map((row) => [row.id, row]));
   await client.insert({
     table: `${database}.deduped_activities`,
-    values: [wahooActivityId, pelotonActivityId, namedZoneActivityId].map((activityId) => ({
-      activity_id: activityId,
-      user_id: TEST_USER_ID,
-      member_activity_ids: [activityId],
-      refresh_version: "9007199254740994",
-      is_deleted: 0,
-      refreshed_at: "2026-09-02T18:01:00.000Z",
-    })),
+    values: [wahooActivityId, pelotonActivityId, namedZoneActivityId].map((activityId) => {
+      const sourceRow = sourceRowsById.get(activityId);
+      if (!sourceRow) throw new Error(`Missing source row for ${activityId}`);
+      return {
+        activity_id: activityId,
+        user_id: TEST_USER_ID,
+        provider_id: sourceRow.provider_id,
+        canonical_type: sourceRow.canonical_type,
+        member_activity_ids: [activityId],
+        refresh_version: "9007199254740994",
+        is_deleted: 0,
+        refreshed_at: "2026-09-02T18:01:00.000Z",
+      };
+    }),
     format: "JSONEachRow",
   });
   await client.insert({
@@ -432,10 +721,31 @@ function renderGroupsModel(database: string): string {
 }
 
 function readModel(name: string): string {
-  return readFileSync(
+  const model = readFileSync(
     new URL(`../../analytics/models/read_models/${name}.sql`, import.meta.url),
     "utf8",
   ).replace(/{{ config\([\s\S]*?\) }}\s*/, "");
+  return withoutActivityRefreshScope(model);
+}
+
+function withoutActivityRefreshScope(model: string): string {
+  const lines = model.split("\n");
+  const rendered: string[] = [];
+  let disabledDepth = 0;
+  for (const line of lines) {
+    if (line.includes("{% set activity_refresh_scoped")) continue;
+    if (disabledDepth === 0 && line.includes("{% if activity_refresh_scoped %}")) {
+      disabledDepth = 1;
+      continue;
+    }
+    if (disabledDepth > 0) {
+      if (line.includes("{% if ")) disabledDepth += 1;
+      if (line.includes("{% endif %}")) disabledDepth -= 1;
+      continue;
+    }
+    rendered.push(line);
+  }
+  return rendered.join("\n");
 }
 
 async function postgresLocalTimeContext(context: TestContext, activityId: string) {

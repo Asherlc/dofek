@@ -8,6 +8,8 @@
     }
 ) }}
 
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 WITH
 
 current_activities AS (
@@ -16,6 +18,9 @@ current_activities AS (
         user_id
     FROM {{ ref('activity_source_records') }} FINAL
     WHERE is_deleted = 0
+        {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        {% endif %}
 ),
 
 -- Retain only current edges whose two active endpoints belong to the same user.
@@ -160,11 +165,63 @@ current_duplicate_groups AS (
     CROSS JOIN convergence_check
 ),
 
+{% if activity_refresh_scoped %}
+prior_scope_group_ids AS (
+    {% if is_incremental() %}
+        SELECT DISTINCT group_id
+        FROM {{ this }} FINAL
+        WHERE is_deleted = 0
+            AND activity_id IN {{ activity_refresh_ids() }}
+            AND group_id IS NOT null
+    {% else %}
+        SELECT CAST(null, 'Nullable(String)') AS group_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+current_scope_group_ids AS (
+    {% if activity_refresh_scoped %}
+        SELECT DISTINCT group_id
+        FROM current_duplicate_groups
+        WHERE activity_id IN {{ activity_refresh_ids() }}
+    {% else %}
+        SELECT CAST(null, 'Nullable(String)') AS group_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+affected_activity_ids AS (
+    SELECT activity_id
+    FROM current_duplicate_groups
+    WHERE group_id IN (SELECT group_id FROM current_scope_group_ids)
+
+    {% if is_incremental() %}
+    UNION DISTINCT
+
+    SELECT activity_id
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+        AND group_id IN (SELECT group_id FROM prior_scope_group_ids)
+    {% endif %}
+),
+{% endif %}
+
+scoped_current_duplicate_groups AS (
+    SELECT *
+    FROM current_duplicate_groups
+    {% if activity_refresh_scoped %}
+    WHERE activity_id IN (SELECT activity_id FROM affected_activity_ids)
+    {% endif %}
+),
+
 existing_duplicate_groups AS (
     {% if is_incremental() %}
         SELECT activity_id
         FROM {{ this }} FINAL
         WHERE is_deleted = 0
+            {% if activity_refresh_scoped %}
+            AND activity_id IN (SELECT activity_id FROM affected_activity_ids)
+            {% endif %}
     {% else %}
         SELECT CAST(null, 'Nullable(UUID)') AS activity_id
         WHERE 1 = 0
@@ -174,9 +231,9 @@ existing_duplicate_groups AS (
 stale_duplicate_groups AS (
     SELECT existing_duplicate_groups.activity_id
     FROM existing_duplicate_groups
-    LEFT JOIN current_duplicate_groups
-        ON current_duplicate_groups.activity_id = existing_duplicate_groups.activity_id
-    WHERE current_duplicate_groups.activity_id IS null
+    LEFT JOIN scoped_current_duplicate_groups
+        ON scoped_current_duplicate_groups.activity_id = existing_duplicate_groups.activity_id
+    WHERE scoped_current_duplicate_groups.activity_id IS null
 ),
 
 refresh_clock AS (
@@ -191,7 +248,7 @@ SELECT
     refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
-FROM current_duplicate_groups
+FROM scoped_current_duplicate_groups
 CROSS JOIN refresh_clock
 
 UNION ALL

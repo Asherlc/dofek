@@ -25,6 +25,26 @@ function readModel(name: string): string {
 }
 
 describe("production analytics read-model build", () => {
+  it("gives the activity refresh chain one reusable user and affected-key scope", () => {
+    const scopeMacro = readProjectFile("analytics/macros/activity_refresh_scope.sql");
+    const scopedModels = [
+      "activity_source_records",
+      "activity_duplicate_matches",
+      "activity_duplicate_groups",
+      "deduped_activities",
+      "deduped_activity_members",
+      "activity_sensor_summary_rows",
+      "activity_summary_rows",
+    ];
+
+    expect(scopeMacro).toContain("activity_refresh_user_id");
+    expect(scopeMacro).toContain("activity_refresh_activity_ids");
+    for (const model of scopedModels) {
+      const sql = readModel(model);
+      expect(sql, model).toContain("activity_refresh_scope_enabled()");
+    }
+  });
+
   it("does not block the BullMQ worker on analytics dbt builds", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const workerBlockMatch = entrypoint.match(/  worker\)\n(?<body>[\s\S]*?)\n    ;;/);
@@ -207,7 +227,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("FROM {{ this }} AS deduped FINAL");
     expect(normalizedSql).toContain("WHERE deduped.is_deleted = 0");
     expect(normalizedSql).toContain(
-      "ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id AND current_deduped_activities.user_id = existing_deduped_activities.user_id",
+      "ON scoped_current_deduped_activities.activity_id = existing_deduped_activities.activity_id AND scoped_current_deduped_activities.user_id = existing_deduped_activities.user_id",
     );
   });
 

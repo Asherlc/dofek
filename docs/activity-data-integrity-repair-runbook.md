@@ -19,9 +19,14 @@ database update.
 - Set the acceptance deadline no more than 24 hours after execution begins.
   Before that deadline, the named owner must either accept and retire the
   artifact or roll the repair back.
+- A PostgreSQL session advisory lock serializes repair and rollback operations
+  globally, including runs that use different artifact directories. The lock
+  is held while the artifact scan, database work, and final artifact transition
+  run, which closes the scan/create race. PostgreSQL documents session-level
+  advisory locks in its [explicit locking reference](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
 - Only one rollback-eligible activity-integrity artifact may be active in an
   artifact directory. The command rejects another execute run until the prior
-  artifact has an immutable `.retired.json` sidecar.
+  artifact has been retired or successfully rolled back.
 - Do not start the separate Strong identity or speed investigation while this
   artifact remains rollback-eligible. Accept or roll back this repair first so
   later writes cannot invalidate its compare-and-swap boundary.
@@ -37,6 +42,10 @@ database update.
   tables with `FINAL`, so the visible result does not depend on background part
   merges. See the
   [ClickHouse `ReplacingMergeTree` documentation](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+- After PostgreSQL commits, execution waits for the changed rows to appear in
+  the ClickHouse PostgreSQL mirror with their repaired local-time fields. This
+  readiness check is condition-based, bounded to two minutes, and fails before
+  dbt starts if CDC has not caught up.
 
 ## Preconditions
 
@@ -77,6 +86,11 @@ path. Inspect the artifact without editing it. Confirm:
 - every `postgresActivities[].prior` and `.repaired` transition is explainable
   from the provider timezone or offset;
 - `componentsBefore` contains the expected false groups; and
+- the before-state contains rows for all seven Task 3 models:
+  `activity_source_records`, `activity_duplicate_matches`,
+  `activity_duplicate_groups`, `deduped_activities`,
+  `deduped_activity_members`, `activity_sensor_summary_rows`, and
+  `activity_summary_rows`; and
 - `highestDerivedVersion` is a decimal string, not a rounded JavaScript number.
 
 Stop if selection reaches the configured maximum, an unrelated activity would
@@ -151,17 +165,25 @@ pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.
 ```
 
 The command first persists a `phase: "snapshot"` artifact, applies the
-PostgreSQL compare-and-swap update, runs the dbt-owned activity source,
-duplicate, deduplication, member, sensor-summary, and summary model chain with
-one thread, then replaces the artifact with `phase: "executed"`. The dbt models
+PostgreSQL compare-and-swap update, and atomically records
+`phase: "postgres_committed"`. After the CDC readiness barrier, it runs the
+seven dbt-owned models with one thread and generic `activity_refresh_user_id`
+and `activity_refresh_activity_ids` vars. Each model limits its current rows,
+dirty keys, stale-key tombstones, and inserts to the affected key closure;
+normal scheduled dbt behavior is unchanged when the vars are absent. Success
+atomically records `phase: "executed"`. A caught CDC, dbt, or post-build
+verification failure records `phase: "rebuild_failed"`, the failing stage, and
+the current seven-model state so rollback remains auditable. The dbt models
 remain the owners of incremental analytics transformations; see
 [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models).
 
 The result reports selected, changed, and updated counts; changed IDs;
-before/after component counts; incompatible-member count; and the artifact
-path. `updated` must equal `changed`. Stop on any error. Do not rerun after a
-failed execute: preserve the artifact and inspect its phase before deciding
-whether recovery or rollback is appropriate.
+before/after component counts; the actual count of members whose canonical
+type (or provider for `other`) is incompatible with their canonical activity;
+and the artifact path. `updated` must equal `changed`, and the incompatible
+member count must be zero. Stop on any error. Do not rerun after a failed
+execute: preserve the artifact and inspect its phase before deciding whether
+recovery or rollback is appropriate.
 
 ## 4. Verify with `FINAL`
 
@@ -211,7 +233,8 @@ WHERE user_id = '<user-uuid>'::uuid
   );
 ```
 
-For each changed ID, every table must expose one current row under `FINAL` and
+For each changed ID, every applicable Task 3 table must expose the expected
+current row under `FINAL` and
 the artifact's `execution.highestDerivedVersion` must not be lower than its
 captured pre-write version:
 
@@ -260,24 +283,28 @@ replace either file manually.
 
 ## Rollback
 
-Rollback is allowed only for an executed artifact that has not been retired and whose captured
-PostgreSQL and ClickHouse after-state still matches current state:
+Rollback is allowed for a not-retired `postgres_committed`, `rebuild_failed`, or
+`executed` artifact. For captured post-build states, the current PostgreSQL and
+all seven ClickHouse tables must still match the artifact:
 
 ```bash
 pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.ts \
   --rollback-artifact=<artifact-path>
 ```
 
-The command restores Postgres with compare-and-swap, inserts captured source,
-group, deduped activity, member, and summary rows with a version greater than
-all captured and currently visible versions, and verifies the restored rows
-with `FINAL`. A stale-state error means a later sync or repair changed the
-scope; stop and investigate rather than forcing the rollback.
+The command restores Postgres with compare-and-swap; inserts captured source,
+match, group, deduped activity, member, sensor-summary, and summary rows with a
+version greater than all captured and currently visible versions; and inserts
+tombstones for every after-only key in those seven tables. It verifies both
+the restored active rows and the after-only tombstones with `FINAL`, including
+source and group rows that are no longer reachable through an active join. A
+stale-state error means a later sync or repair changed the scope; stop and
+investigate rather than forcing the rollback.
 
-After a successful rollback, preserve the evidence and have the same named
-owner close the artifact with `--disposition=superseded`. This records that the
-original repair is no longer an available rollback target. Do not delete the
-audit artifact.
+After a successful rollback, the command atomically records
+`phase: "rolled_back"` and `rollbackEligibility: "not_applicable"`. Preserve
+the artifact as evidence; the original repair is no longer a rollback target.
+Do not delete or edit the audit artifact.
 
 ## Artifact format and handling
 

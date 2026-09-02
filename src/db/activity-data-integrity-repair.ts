@@ -5,12 +5,32 @@ import { resolve } from "node:path";
 import { resolveProviderTimezoneLocalTimeContext } from "@dofek/format/record-local-time";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  type ActivityIntegrityClickHouseClient,
+  capturedRowsWithAfterOnlyTombstones,
+  clickHouseDedupedActivityRowSchema,
+  clickHouseDerivedActivityRowSchema,
+  clickHouseDerivedMemberRowSchema,
+  clickHouseGroupRowSchema,
+  clickHouseMatchRowSchema,
+  clickHouseSourceRowSchema,
+  componentSchema,
+  type DerivedSnapshot,
+  incompatibleMemberCount,
+  restoredRowsEqual,
+  rowsEqual,
+  snapshotDerivedRows,
+  sourceRowsMatchPostgres,
+  uint64StringSchema,
+  waitForPostgresMirror,
+} from "./activity-data-integrity-clickhouse.ts";
 import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const MAXIMUM_BATCH_SIZE = 1_000;
 const MAXIMUM_UINT64 = (1n << 64n) - 1n;
 const AUDIT_SCHEMA_VERSION = 1;
+const ACTIVITY_INTEGRITY_LEASE_NAME = "dofek:activity-data-integrity-repair:v1";
 export const ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const postgresUuidSchema = z
   .string()
@@ -40,42 +60,6 @@ const postgresCandidateSchema = z.object({
 
 const updatedActivitySchema = z.object({ id: postgresUuidSchema });
 
-const uint64StringSchema = z
-  .union([z.string().regex(/^\d+$/), z.number().int().nonnegative().safe()])
-  .transform((value) => String(value))
-  .refine((value) => BigInt(value) <= MAXIMUM_UINT64, "refresh_version exceeds UInt64");
-
-const clickHouseSourceRowSchema = z
-  .object({
-    activity_id: postgresUuidSchema,
-    user_id: postgresUuidSchema,
-    refresh_version: uint64StringSchema,
-    is_deleted: z.coerce.number().int().min(0).max(1),
-  })
-  .passthrough();
-
-const clickHouseGroupRowSchema = z
-  .object({
-    activity_id: postgresUuidSchema,
-    group_id: z.string().nullable(),
-    refresh_version: uint64StringSchema,
-    is_deleted: z.coerce.number().int().min(0).max(1),
-  })
-  .passthrough();
-
-const clickHouseDerivedActivityRowSchema = z
-  .object({
-    activity_id: postgresUuidSchema,
-    user_id: postgresUuidSchema,
-    refresh_version: uint64StringSchema,
-    is_deleted: z.coerce.number().int().min(0).max(1),
-  })
-  .passthrough();
-
-const clickHouseDerivedMemberRowSchema = clickHouseDerivedActivityRowSchema.extend({
-  member_activity_id: postgresUuidSchema,
-});
-
 const localTimeContextSchema = z.object({
   timezone: z.string().nullable(),
   startUtcOffsetMinutes: z.number().int().nullable(),
@@ -93,15 +77,29 @@ const postgresArtifactRowSchema = z.object({
   repaired: localTimeContextSchema,
 });
 
-const componentSchema = z.object({
-  groupId: z.string(),
-  memberActivityIds: z.array(postgresUuidSchema),
-});
+const capturedDerivedRowsSchema = {
+  sourceRowsAfter: z.array(clickHouseSourceRowSchema),
+  matchRowsAfter: z.array(clickHouseMatchRowSchema),
+  groupRowsAfter: z.array(clickHouseGroupRowSchema),
+  dedupedRowsAfter: z.array(clickHouseDedupedActivityRowSchema),
+  memberRowsAfter: z.array(clickHouseDerivedMemberRowSchema),
+  sensorSummaryRowsAfter: z.array(clickHouseDerivedActivityRowSchema),
+  summaryRowsAfter: z.array(clickHouseDerivedActivityRowSchema),
+  componentsAfter: z.array(componentSchema),
+  highestDerivedVersion: uint64StringSchema,
+};
 
 const auditArtifactSchema = z.object({
   schemaVersion: z.literal(AUDIT_SCHEMA_VERSION),
   runId: postgresUuidSchema,
-  phase: z.enum(["dry_run", "snapshot", "executed"]),
+  phase: z.enum([
+    "dry_run",
+    "snapshot",
+    "postgres_committed",
+    "rebuild_failed",
+    "executed",
+    "rolled_back",
+  ]),
   rollbackEligibility: z.enum(["not_applicable", "eligible"]),
   createdAt: z.string().datetime(),
   userId: postgresUuidSchema,
@@ -119,32 +117,38 @@ const auditArtifactSchema = z.object({
   highestDerivedVersion: uint64StringSchema,
   postgresActivities: z.array(postgresArtifactRowSchema),
   sourceRowsBefore: z.array(clickHouseSourceRowSchema),
+  matchRowsBefore: z.array(clickHouseMatchRowSchema),
   groupRowsBefore: z.array(clickHouseGroupRowSchema),
-  dedupedRowsBefore: z.array(clickHouseDerivedActivityRowSchema),
+  dedupedRowsBefore: z.array(clickHouseDedupedActivityRowSchema),
   memberRowsBefore: z.array(clickHouseDerivedMemberRowSchema),
+  sensorSummaryRowsBefore: z.array(clickHouseDerivedActivityRowSchema),
   summaryRowsBefore: z.array(clickHouseDerivedActivityRowSchema),
   componentsBefore: z.array(componentSchema),
+  postgresCommit: z
+    .object({ completedAt: z.string().datetime(), updated: z.number().int().nonnegative() })
+    .optional(),
   execution: z
     .object({
       completedAt: z.string().datetime(),
       updated: z.number().int().nonnegative(),
-      highestDerivedVersion: uint64StringSchema,
-      sourceRowsAfter: z.array(clickHouseSourceRowSchema),
-      groupRowsAfter: z.array(clickHouseGroupRowSchema),
-      dedupedRowsAfter: z.array(clickHouseDerivedActivityRowSchema),
-      memberRowsAfter: z.array(clickHouseDerivedMemberRowSchema),
-      summaryRowsAfter: z.array(clickHouseDerivedActivityRowSchema),
-      componentsAfter: z.array(componentSchema),
+      ...capturedDerivedRowsSchema,
     })
+    .optional(),
+  failure: z
+    .object({
+      failedAt: z.string().datetime(),
+      stage: z.enum(["cdc_readiness", "dbt_rebuild", "verification"]),
+      message: z.string().min(1),
+      ...capturedDerivedRowsSchema,
+    })
+    .optional(),
+  rollback: z
+    .object({ completedAt: z.string().datetime(), refreshVersion: uint64StringSchema })
     .optional(),
 });
 
 type PostgresCandidate = z.infer<typeof postgresCandidateSchema>;
 type PostgresArtifactRow = z.infer<typeof postgresArtifactRowSchema>;
-type ClickHouseSourceRow = z.infer<typeof clickHouseSourceRowSchema>;
-type ClickHouseGroupRow = z.infer<typeof clickHouseGroupRowSchema>;
-type ClickHouseDerivedActivityRow = z.infer<typeof clickHouseDerivedActivityRowSchema>;
-type ClickHouseDerivedMemberRow = z.infer<typeof clickHouseDerivedMemberRowSchema>;
 type AuditArtifact = z.infer<typeof auditArtifactSchema>;
 
 export interface ActivityIntegrityRepairOptions {
@@ -159,21 +163,15 @@ export interface ActivityIntegrityRepairOptions {
   acceptanceDeadline?: Date;
 }
 
-export interface ActivityIntegrityClickHouseClient {
-  query(options: {
-    query: string;
-    format: "JSONEachRow";
-    query_params?: Record<string, unknown>;
-    clickhouse_settings?: Record<string, string | number | boolean>;
-  }): Promise<{ json(): Promise<unknown> }>;
-  insert?(options: {
-    table: string;
-    values: readonly object[];
-    format: "JSONEachRow";
-  }): Promise<unknown>;
-}
+export type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 
 export interface ActivityIntegrityDatabase extends SchemaExecutionDatabase {
+  $client: {
+    connect(): Promise<{
+      query(query: string, values?: unknown[]): Promise<{ rows: object[] }>;
+      release(): void;
+    }>;
+  };
   transaction<T>(operation: (transaction: SchemaExecutionDatabase) => Promise<T>): Promise<T>;
 }
 
@@ -181,18 +179,16 @@ interface ActivityIntegrityRepairDependencies {
   artifactDirectory?: string;
   generateRunId?: () => string;
   now?: () => Date;
-  rebuildReadModels?: (input: {
-    userId: string;
-    startAt: Date;
-    endAt: Date;
-    batchSize: number;
-    maxBatches: number;
-    activityIds: readonly string[];
-  }) => Promise<void>;
+  rebuildReadModels?: (input: { userId: string; activityIds: readonly string[] }) => Promise<void>;
+  cdcReadinessTimeoutMs?: number;
+  cdcReadinessPollIntervalMs?: number;
+  monotonicNow?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
 }
 
 interface ActivityIntegrityRollbackDependencies {
   now?: () => Date;
+  generateRunId?: () => string;
 }
 
 interface ActivityIntegrityRetirementDependencies {
@@ -215,17 +211,6 @@ export interface ActivityIntegrityRollbackResult {
   runId: string;
   updated: number;
   refreshVersion: string;
-}
-
-interface DerivedSnapshot {
-  sourceRows: ClickHouseSourceRow[];
-  groupRows: ClickHouseGroupRow[];
-  dedupedRows: ClickHouseDerivedActivityRow[];
-  memberRows: ClickHouseDerivedMemberRow[];
-  summaryRows: ClickHouseDerivedActivityRow[];
-  components: Array<z.infer<typeof componentSchema>>;
-  highestVersion: string;
-  activityIds: string[];
 }
 
 function validateOptions(options: ActivityIntegrityRepairOptions, now: Date): void {
@@ -315,6 +300,31 @@ async function rejectActiveArtifacts(directory: string): Promise<void> {
     ) {
       throw new Error(`rollback-eligible audit artifact must be retired first: ${artifactPath}`);
     }
+  }
+}
+
+async function withActivityIntegrityLease<T>(
+  db: ActivityIntegrityDatabase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const connection = await db.$client.connect();
+  let acquired = false;
+  try {
+    const result = await connection.query(
+      "SELECT pg_try_advisory_lock(hashtextextended($1::text, 0)) AS acquired",
+      [ACTIVITY_INTEGRITY_LEASE_NAME],
+    );
+    acquired =
+      result.rows[0] != null && "acquired" in result.rows[0] && result.rows[0].acquired === true;
+    if (!acquired) throw new Error("activity integrity repair is already running");
+    return await operation();
+  } finally {
+    if (acquired) {
+      await connection.query("SELECT pg_advisory_unlock(hashtextextended($1::text, 0))", [
+        ACTIVITY_INTEGRITY_LEASE_NAME,
+      ]);
+    }
+    connection.release();
   }
 }
 
@@ -421,165 +431,6 @@ function localTimeContextsEqual(
   );
 }
 
-function unique(values: readonly string[]): string[] {
-  return [...new Set(values)];
-}
-
-async function queryClickHouseRows<T extends object>(
-  client: ActivityIntegrityClickHouseClient,
-  schema: z.ZodType<T>,
-  query: string,
-  queryParams: Record<string, unknown>,
-): Promise<T[]> {
-  const response = await client.query({
-    query,
-    query_params: queryParams,
-    format: "JSONEachRow",
-    clickhouse_settings: { output_format_json_quote_64bit_integers: 1 },
-  });
-  return z.array(schema).parse(await response.json());
-}
-
-function buildComponents(groupRows: ClickHouseGroupRow[]) {
-  const membersByGroup = new Map<string, string[]>();
-  for (const row of groupRows) {
-    if (row.is_deleted !== 0 || row.group_id == null) continue;
-    const members = membersByGroup.get(row.group_id) ?? [];
-    members.push(row.activity_id);
-    membersByGroup.set(row.group_id, members);
-  }
-  return [...membersByGroup.entries()]
-    .map(([groupId, memberActivityIds]) => ({
-      groupId,
-      memberActivityIds: unique(memberActivityIds).sort(),
-    }))
-    .sort((left, right) => left.groupId.localeCompare(right.groupId));
-}
-
-function maxVersion(rows: Array<{ refresh_version: string }>): string {
-  let highest = 0n;
-  for (const row of rows) {
-    const version = BigInt(row.refresh_version);
-    if (version > highest) highest = version;
-  }
-  return highest.toString();
-}
-
-async function snapshotDerivedRows(
-  client: ActivityIntegrityClickHouseClient,
-  userId: string,
-  selectedActivityIds: readonly string[],
-): Promise<DerivedSnapshot> {
-  if (selectedActivityIds.length === 0) {
-    return {
-      sourceRows: [],
-      groupRows: [],
-      dedupedRows: [],
-      memberRows: [],
-      summaryRows: [],
-      components: [],
-      highestVersion: "0",
-      activityIds: [],
-    };
-  }
-  const queryParams = { userId, activityIds: unique(selectedActivityIds) };
-  const groupRows = await queryClickHouseRows(
-    client,
-    clickHouseGroupRowSchema,
-    `WITH selected_groups AS (
-  SELECT group_id
-  FROM analytics.activity_duplicate_groups FINAL
-  WHERE activity_id IN {activityIds:Array(UUID)}
-    AND is_deleted = 0
-)
-SELECT duplicate_groups.* REPLACE(
-  toString(duplicate_groups.refresh_version) AS refresh_version
-)
-FROM analytics.activity_duplicate_groups AS duplicate_groups FINAL
-INNER JOIN analytics.activity_source_records AS source_records FINAL
-  ON source_records.activity_id = duplicate_groups.activity_id
-WHERE source_records.user_id = {userId:UUID}
-  AND source_records.is_deleted = 0
-  AND duplicate_groups.is_deleted = 0
-  AND (
-    duplicate_groups.activity_id IN {activityIds:Array(UUID)}
-    OR duplicate_groups.group_id IN (SELECT group_id FROM selected_groups)
-  )
-ORDER BY duplicate_groups.activity_id`,
-    queryParams,
-  );
-  const activityIds = unique([...selectedActivityIds, ...groupRows.map((row) => row.activity_id)]);
-  const sourceRows = await queryClickHouseRows(
-    client,
-    clickHouseSourceRowSchema,
-    `SELECT source_records.* REPLACE(
-  toString(source_records.refresh_version) AS refresh_version
-)
-FROM analytics.activity_source_records AS source_records FINAL
-WHERE source_records.user_id = {userId:UUID}
-  AND source_records.is_deleted = 0
-  AND source_records.activity_id IN {activityIds:Array(UUID)}
-ORDER BY source_records.activity_id`,
-    { userId, activityIds },
-  );
-  const dedupedRows = await queryClickHouseRows(
-    client,
-    clickHouseDerivedActivityRowSchema,
-    `SELECT deduped.* REPLACE(toString(deduped.refresh_version) AS refresh_version)
-FROM analytics.deduped_activities AS deduped FINAL
-WHERE deduped.user_id = {userId:UUID}
-  AND deduped.is_deleted = 0
-  AND (
-    deduped.activity_id IN {activityIds:Array(UUID)}
-    OR hasAny(deduped.member_activity_ids, {activityIds:Array(UUID)})
-  )
-ORDER BY deduped.activity_id`,
-    { userId, activityIds },
-  );
-  const canonicalActivityIds = unique(dedupedRows.map((row) => row.activity_id));
-  const memberRows = await queryClickHouseRows(
-    client,
-    clickHouseDerivedMemberRowSchema,
-    `SELECT members.* REPLACE(toString(members.refresh_version) AS refresh_version)
-FROM analytics.deduped_activity_members AS members FINAL
-WHERE members.user_id = {userId:UUID}
-  AND members.is_deleted = 0
-  AND (
-    members.member_activity_id IN {activityIds:Array(UUID)}
-    OR members.activity_id IN {canonicalActivityIds:Array(UUID)}
-  )
-ORDER BY members.member_activity_id`,
-    { userId, activityIds, canonicalActivityIds },
-  );
-  const summaryRows = await queryClickHouseRows(
-    client,
-    clickHouseDerivedActivityRowSchema,
-    `SELECT summary.* REPLACE(toString(summary.refresh_version) AS refresh_version)
-FROM analytics.activity_summary_rows AS summary FINAL
-WHERE summary.user_id = {userId:UUID}
-  AND summary.is_deleted = 0
-  AND summary.activity_id IN {canonicalActivityIds:Array(UUID)}
-ORDER BY summary.activity_id`,
-    { userId, canonicalActivityIds },
-  );
-  return {
-    sourceRows,
-    groupRows,
-    dedupedRows,
-    memberRows,
-    summaryRows,
-    components: buildComponents(groupRows),
-    highestVersion: maxVersion([
-      ...sourceRows,
-      ...groupRows,
-      ...dedupedRows,
-      ...memberRows,
-      ...summaryRows,
-    ]),
-    activityIds,
-  };
-}
-
 function valuesForPostgresUpdate(
   rows: readonly PostgresArtifactRow[],
   direction: "repair" | "rollback",
@@ -669,44 +520,25 @@ async function updatePostgresActivities(
   return updated;
 }
 
-function separatedMemberCount(
-  before: Array<z.infer<typeof componentSchema>>,
-  after: Array<z.infer<typeof componentSchema>>,
-): number {
-  const groupAfter = new Map<string, string>();
-  for (const component of after) {
-    for (const activityId of component.memberActivityIds)
-      groupAfter.set(activityId, component.groupId);
-  }
-  let count = 0;
-  for (const component of before) {
-    const resultingGroups = new Set(
-      component.memberActivityIds.map((activityId) => groupAfter.get(activityId) ?? activityId),
-    );
-    count += Math.max(0, resultingGroups.size - 1);
-  }
-  return count;
+function capturedDerivedRows(snapshot: DerivedSnapshot) {
+  return {
+    highestDerivedVersion: snapshot.highestVersion,
+    sourceRowsAfter: snapshot.sourceRows,
+    matchRowsAfter: snapshot.matchRows,
+    groupRowsAfter: snapshot.groupRows,
+    dedupedRowsAfter: snapshot.dedupedRows,
+    memberRowsAfter: snapshot.memberRows,
+    sensorSummaryRowsAfter: snapshot.sensorSummaryRows,
+    summaryRowsAfter: snapshot.summaryRows,
+    componentsAfter: snapshot.components,
+  };
 }
 
-function sourceRowsMatchPostgres(
-  sourceRows: ClickHouseSourceRow[],
-  repairedRows: readonly PostgresArtifactRow[],
-): boolean {
-  const sourcesById = new Map(sourceRows.map((row) => [row.activity_id, row]));
-  return repairedRows.every((row) => {
-    const source = sourcesById.get(row.id);
-    return (
-      source != null &&
-      source.is_deleted === 0 &&
-      (source.timezone ?? null) === row.repaired.timezone &&
-      (source.start_utc_offset_minutes ?? null) === row.repaired.startUtcOffsetMinutes &&
-      (source.end_utc_offset_minutes ?? null) === row.repaired.endUtcOffsetMinutes &&
-      source.local_time_source === row.repaired.localTimeSource
-    );
-  });
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
-export async function repairActivityDataIntegrity(
+async function repairActivityDataIntegrityWithLease(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
   options: ActivityIntegrityRepairOptions,
@@ -755,9 +587,11 @@ export async function repairActivityDataIntegrity(
     highestDerivedVersion: before.highestVersion,
     postgresActivities,
     sourceRowsBefore: before.sourceRows,
+    matchRowsBefore: before.matchRows,
     groupRowsBefore: before.groupRows,
     dedupedRowsBefore: before.dedupedRows,
     memberRowsBefore: before.memberRows,
+    sensorSummaryRowsBefore: before.sensorSummaryRows,
     summaryRowsBefore: before.summaryRows,
     componentsBefore: before.components,
   };
@@ -771,13 +605,7 @@ export async function repairActivityDataIntegrity(
         execution: {
           completedAt: now().toISOString(),
           updated: 0,
-          highestDerivedVersion: before.highestVersion,
-          sourceRowsAfter: before.sourceRows,
-          groupRowsAfter: before.groupRows,
-          dedupedRowsAfter: before.dedupedRows,
-          memberRowsAfter: before.memberRows,
-          summaryRowsAfter: before.summaryRows,
-          componentsAfter: before.components,
+          ...capturedDerivedRows(before),
         },
       };
       await replacePrivateJson(artifactPath, completed, generateRunId);
@@ -798,112 +626,147 @@ export async function repairActivityDataIntegrity(
   const updated = await db.transaction((transaction) =>
     updatePostgresActivities(transaction, changedRows, options.batchSize, "repair"),
   );
-  const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
-  await rebuildReadModels({
-    userId: options.userId,
-    startAt: options.startAt,
-    endAt: options.endAt,
-    batchSize: options.batchSize,
-    maxBatches: options.maxBatches,
-    activityIds: before.activityIds,
-  });
-  const after = await snapshotDerivedRows(clickHouse, options.userId, before.activityIds);
-  if (!sourceRowsMatchPostgres(after.sourceRows, changedRows)) {
-    throw new Error("activity integrity rebuild did not publish the repaired local-time context");
-  }
-  const completed: AuditArtifact = {
+  const postgresCommitted: AuditArtifact = {
     ...artifact,
-    phase: "executed",
-    execution: {
-      completedAt: now().toISOString(),
+    phase: "postgres_committed",
+    postgresCommit: { completedAt: now().toISOString(), updated },
+  };
+  await replacePrivateJson(artifactPath, postgresCommitted, generateRunId);
+  const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
+  let failureStage: "cdc_readiness" | "dbt_rebuild" | "verification" = "cdc_readiness";
+  try {
+    await waitForPostgresMirror(clickHouse, options.userId, changedRows, dependencies);
+    failureStage = "dbt_rebuild";
+    await rebuildReadModels({
+      userId: options.userId,
+      activityIds: before.activityIds,
+    });
+    failureStage = "verification";
+    const after = await snapshotDerivedRows(clickHouse, options.userId, before.activityIds);
+    if (!sourceRowsMatchPostgres(after.sourceRows, changedRows)) {
+      throw new Error("activity integrity rebuild did not publish the repaired local-time context");
+    }
+    const completed: AuditArtifact = {
+      ...postgresCommitted,
+      phase: "executed",
+      execution: {
+        completedAt: now().toISOString(),
+        updated,
+        ...capturedDerivedRows(after),
+      },
+    };
+    await replacePrivateJson(artifactPath, completed, generateRunId);
+
+    return {
+      runId,
+      selected: selectedRows.length,
+      changed: changedRows.length,
       updated,
-      highestDerivedVersion: after.highestVersion,
-      sourceRowsAfter: after.sourceRows,
-      groupRowsAfter: after.groupRows,
-      dedupedRowsAfter: after.dedupedRows,
-      memberRowsAfter: after.memberRows,
-      summaryRowsAfter: after.summaryRows,
-      componentsAfter: after.components,
-    },
-  };
-  await replacePrivateJson(artifactPath, completed, generateRunId);
-
-  return {
-    runId,
-    selected: selectedRows.length,
-    changed: changedRows.length,
-    updated,
-    changedIds: changedRows.map((row) => row.id),
-    incompatibleMemberCount: separatedMemberCount(before.components, after.components),
-    beforeComponentCount: before.components.length,
-    afterComponentCount: after.components.length,
-    artifactPath,
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
-
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => [key, stableValue(nested)]),
-  );
-}
-
-function rowsEqual(left: readonly object[], right: readonly object[]): boolean {
-  const normalize = (rows: readonly object[]) =>
-    rows.map((row) => JSON.stringify(stableValue(row))).sort();
-  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
-}
-
-function restoredRowsEqual(
-  current: readonly Record<string, unknown>[],
-  captured: readonly Record<string, unknown>[],
-  refreshVersion: string,
-): boolean {
-  if (
-    current.some((row) => String(row.refresh_version) !== refreshVersion) ||
-    current.length !== captured.length
-  ) {
-    return false;
+      changedIds: changedRows.map((row) => row.id),
+      incompatibleMemberCount: incompatibleMemberCount(after),
+      beforeComponentCount: before.components.length,
+      afterComponentCount: after.components.length,
+      artifactPath,
+    };
+  } catch (error) {
+    const failedState = await snapshotDerivedRows(clickHouse, options.userId, before.activityIds);
+    const failed: AuditArtifact = {
+      ...postgresCommitted,
+      phase: "rebuild_failed",
+      failure: {
+        failedAt: now().toISOString(),
+        stage: failureStage,
+        message: errorMessage(error),
+        ...capturedDerivedRows(failedState),
+      },
+    };
+    await replacePrivateJson(artifactPath, failed, generateRunId);
+    throw error;
   }
-  const withoutLifecycle = (rows: readonly Record<string, unknown>[]) =>
-    rows.map(({ refresh_version: _version, refreshed_at: _refreshedAt, ...row }) => row);
-  return rowsEqual(withoutLifecycle(current), withoutLifecycle(captured));
 }
 
-function rowKey(row: Record<string, unknown>, columns: readonly string[]): string {
-  return columns.map((column) => String(row[column] ?? "")).join("\u0000");
-}
-
-function capturedRowsWithAfterOnlyTombstones(
-  before: readonly Record<string, unknown>[],
-  after: readonly Record<string, unknown>[],
-  keyColumns: readonly string[],
-): Record<string, unknown>[] {
-  const capturedKeys = new Set(before.map((row) => rowKey(row, keyColumns)));
-  return [
-    ...before,
-    ...after
-      .filter((row) => !capturedKeys.has(rowKey(row, keyColumns)))
-      .map((row) => ({ ...row, is_deleted: 1 })),
-  ];
+export async function repairActivityDataIntegrity(
+  db: ActivityIntegrityDatabase,
+  clickHouse: ActivityIntegrityClickHouseClient,
+  options: ActivityIntegrityRepairOptions,
+  dependencies: ActivityIntegrityRepairDependencies = {},
+): Promise<ActivityIntegrityRepairResult> {
+  return withActivityIntegrityLease(db, () =>
+    repairActivityDataIntegrityWithLease(db, clickHouse, options, dependencies),
+  );
 }
 
 function rollbackVersion(artifact: AuditArtifact, current: DerivedSnapshot): string {
   const candidates = [
     artifact.highestDerivedVersion,
     artifact.execution?.highestDerivedVersion ?? "0",
+    artifact.failure?.highestDerivedVersion ?? "0",
     current.highestVersion,
   ].map(BigInt);
   const next = candidates.reduce((highest, value) => (value > highest ? value : highest), 0n) + 1n;
   if (next > MAXIMUM_UINT64) throw new Error("cannot allocate a newer UInt64 rollback version");
   return next.toString();
+}
+
+interface CapturedPostState {
+  sourceRowsAfter: DerivedSnapshot["sourceRows"];
+  matchRowsAfter: DerivedSnapshot["matchRows"];
+  groupRowsAfter: DerivedSnapshot["groupRows"];
+  dedupedRowsAfter: DerivedSnapshot["dedupedRows"];
+  memberRowsAfter: DerivedSnapshot["memberRows"];
+  sensorSummaryRowsAfter: DerivedSnapshot["sensorSummaryRows"];
+  summaryRowsAfter: DerivedSnapshot["summaryRows"];
+}
+
+function snapshotMatchesCaptured(current: DerivedSnapshot, captured: CapturedPostState): boolean {
+  return (
+    rowsEqual(current.sourceRows, captured.sourceRowsAfter) &&
+    rowsEqual(current.matchRows, captured.matchRowsAfter) &&
+    rowsEqual(current.groupRows, captured.groupRowsAfter) &&
+    rowsEqual(current.dedupedRows, captured.dedupedRowsAfter) &&
+    rowsEqual(current.memberRows, captured.memberRowsAfter) &&
+    rowsEqual(current.sensorSummaryRows, captured.sensorSummaryRowsAfter) &&
+    rowsEqual(current.summaryRows, captured.summaryRowsAfter)
+  );
+}
+
+function addSnapshotActivityIds(activityIds: Set<string>, snapshot: CapturedPostState): void {
+  for (const row of snapshot.sourceRowsAfter) activityIds.add(row.activity_id);
+  for (const row of snapshot.matchRowsAfter) {
+    activityIds.add(row.activity_id);
+    activityIds.add(row.duplicate_activity_id);
+  }
+  for (const row of snapshot.groupRowsAfter) {
+    activityIds.add(row.activity_id);
+    if (row.group_id && postgresUuidSchema.safeParse(row.group_id).success)
+      activityIds.add(row.group_id);
+  }
+  for (const row of snapshot.dedupedRowsAfter) {
+    activityIds.add(row.activity_id);
+    for (const memberActivityId of row.member_activity_ids) activityIds.add(memberActivityId);
+  }
+  for (const row of snapshot.memberRowsAfter) {
+    activityIds.add(row.activity_id);
+    activityIds.add(row.member_activity_id);
+  }
+  for (const row of snapshot.sensorSummaryRowsAfter) activityIds.add(row.activity_id);
+  for (const row of snapshot.summaryRowsAfter) activityIds.add(row.activity_id);
+}
+
+function affectedArtifactActivityIds(artifact: AuditArtifact): string[] {
+  const activityIds = new Set(artifact.changedActivityIds);
+  addSnapshotActivityIds(activityIds, {
+    sourceRowsAfter: artifact.sourceRowsBefore,
+    matchRowsAfter: artifact.matchRowsBefore,
+    groupRowsAfter: artifact.groupRowsBefore,
+    dedupedRowsAfter: artifact.dedupedRowsBefore,
+    memberRowsAfter: artifact.memberRowsBefore,
+    sensorSummaryRowsAfter: artifact.sensorSummaryRowsBefore,
+    summaryRowsAfter: artifact.summaryRowsBefore,
+  });
+  if (artifact.execution) addSnapshotActivityIds(activityIds, artifact.execution);
+  if (artifact.failure) addSnapshotActivityIds(activityIds, artifact.failure);
+  return [...activityIds];
 }
 
 async function insertRollbackRows(
@@ -926,7 +789,7 @@ async function insertRollbackRows(
   }
 }
 
-export async function rollbackActivityDataIntegrity(
+async function rollbackActivityDataIntegrityWithLease(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
   artifactPath: string,
@@ -937,25 +800,15 @@ export async function rollbackActivityDataIntegrity(
   }
   const artifact = await readArtifact(artifactPath);
   if (
-    artifact.phase !== "executed" ||
-    artifact.rollbackEligibility !== "eligible" ||
-    !artifact.execution
+    !["postgres_committed", "rebuild_failed", "executed"].includes(artifact.phase) ||
+    artifact.rollbackEligibility !== "eligible"
   ) {
     throw new Error("audit artifact is not rollback-eligible");
   }
-  const affectedIds = unique([
-    ...artifact.sourceRowsBefore.map((row) => row.activity_id),
-    ...artifact.groupRowsBefore.map((row) => row.activity_id),
-    ...artifact.changedActivityIds,
-  ]);
+  const capturedPostState = artifact.execution ?? artifact.failure;
+  const affectedIds = affectedArtifactActivityIds(artifact);
   const current = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds);
-  if (
-    !rowsEqual(current.sourceRows, artifact.execution.sourceRowsAfter) ||
-    !rowsEqual(current.groupRows, artifact.execution.groupRowsAfter) ||
-    !rowsEqual(current.dedupedRows, artifact.execution.dedupedRowsAfter) ||
-    !rowsEqual(current.memberRows, artifact.execution.memberRowsAfter) ||
-    !rowsEqual(current.summaryRows, artifact.execution.summaryRowsAfter)
-  ) {
+  if (capturedPostState && !snapshotMatchesCaptured(current, capturedPostState)) {
     throw new Error("stale audit artifact: ClickHouse derived state changed after repair");
   }
   const changedRows = artifact.postgresActivities.filter((row) =>
@@ -965,11 +818,55 @@ export async function rollbackActivityDataIntegrity(
     updatePostgresActivities(transaction, changedRows, artifact.bounds.batchSize, "rollback"),
   );
   const version = rollbackVersion(artifact, current);
-  const refreshedAt = (dependencies.now ?? (() => new Date()))().toISOString();
+  const completedAt = (dependencies.now ?? (() => new Date()))();
+  const refreshedAt = completedAt.toISOString();
+  const sourceRows = capturedRowsWithAfterOnlyTombstones(
+    artifact.sourceRowsBefore,
+    current.sourceRows,
+    ["activity_id"],
+  );
+  const matchRows = capturedRowsWithAfterOnlyTombstones(
+    artifact.matchRowsBefore,
+    current.matchRows,
+    ["activity_id", "duplicate_activity_id"],
+  );
+  const groupRows = capturedRowsWithAfterOnlyTombstones(
+    artifact.groupRowsBefore,
+    current.groupRows,
+    ["activity_id"],
+  );
+  const dedupedRows = capturedRowsWithAfterOnlyTombstones(
+    artifact.dedupedRowsBefore,
+    current.dedupedRows,
+    ["activity_id"],
+  );
+  const memberRows = capturedRowsWithAfterOnlyTombstones(
+    artifact.memberRowsBefore,
+    current.memberRows,
+    ["user_id", "member_activity_id"],
+  );
+  const sensorSummaryRows = capturedRowsWithAfterOnlyTombstones(
+    artifact.sensorSummaryRowsBefore,
+    current.sensorSummaryRows,
+    ["activity_id"],
+  );
+  const summaryRows = capturedRowsWithAfterOnlyTombstones(
+    artifact.summaryRowsBefore,
+    current.summaryRows,
+    ["activity_id"],
+  );
   await insertRollbackRows(
     clickHouse,
     "analytics.activity_source_records",
-    artifact.sourceRowsBefore,
+    sourceRows,
+    version,
+    refreshedAt,
+    artifact.bounds.batchSize,
+  );
+  await insertRollbackRows(
+    clickHouse,
+    "analytics.activity_duplicate_matches",
+    matchRows,
     version,
     refreshedAt,
     artifact.bounds.batchSize,
@@ -977,7 +874,7 @@ export async function rollbackActivityDataIntegrity(
   await insertRollbackRows(
     clickHouse,
     "analytics.activity_duplicate_groups",
-    artifact.groupRowsBefore,
+    groupRows,
     version,
     refreshedAt,
     artifact.bounds.batchSize,
@@ -985,11 +882,7 @@ export async function rollbackActivityDataIntegrity(
   await insertRollbackRows(
     clickHouse,
     "analytics.deduped_activities",
-    capturedRowsWithAfterOnlyTombstones(
-      artifact.dedupedRowsBefore,
-      artifact.execution.dedupedRowsAfter,
-      ["activity_id"],
-    ),
+    dedupedRows,
     version,
     refreshedAt,
     artifact.bounds.batchSize,
@@ -997,11 +890,15 @@ export async function rollbackActivityDataIntegrity(
   await insertRollbackRows(
     clickHouse,
     "analytics.deduped_activity_members",
-    capturedRowsWithAfterOnlyTombstones(
-      artifact.memberRowsBefore,
-      artifact.execution.memberRowsAfter,
-      ["user_id", "member_activity_id"],
-    ),
+    memberRows,
+    version,
+    refreshedAt,
+    artifact.bounds.batchSize,
+  );
+  await insertRollbackRows(
+    clickHouse,
+    "analytics.activity_sensor_summary_rows",
+    sensorSummaryRows,
     version,
     refreshedAt,
     artifact.bounds.batchSize,
@@ -1009,11 +906,7 @@ export async function rollbackActivityDataIntegrity(
   await insertRollbackRows(
     clickHouse,
     "analytics.activity_summary_rows",
-    capturedRowsWithAfterOnlyTombstones(
-      artifact.summaryRowsBefore,
-      artifact.execution.summaryRowsAfter,
-      ["activity_id"],
-    ),
+    summaryRows,
     version,
     refreshedAt,
     artifact.bounds.batchSize,
@@ -1021,14 +914,49 @@ export async function rollbackActivityDataIntegrity(
   const verified = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds);
   if (
     !restoredRowsEqual(verified.sourceRows, artifact.sourceRowsBefore, version) ||
+    !restoredRowsEqual(verified.matchRows, artifact.matchRowsBefore, version) ||
     !restoredRowsEqual(verified.groupRows, artifact.groupRowsBefore, version) ||
     !restoredRowsEqual(verified.dedupedRows, artifact.dedupedRowsBefore, version) ||
     !restoredRowsEqual(verified.memberRows, artifact.memberRowsBefore, version) ||
+    !restoredRowsEqual(verified.sensorSummaryRows, artifact.sensorSummaryRowsBefore, version) ||
     !restoredRowsEqual(verified.summaryRows, artifact.summaryRowsBefore, version)
   ) {
     throw new Error("rollback FINAL verification did not expose the captured derived values");
   }
+  const lifecycle = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds, true);
+  if (
+    !restoredRowsEqual(lifecycle.sourceRows, sourceRows, version) ||
+    !restoredRowsEqual(lifecycle.matchRows, matchRows, version) ||
+    !restoredRowsEqual(lifecycle.groupRows, groupRows, version) ||
+    !restoredRowsEqual(lifecycle.dedupedRows, dedupedRows, version) ||
+    !restoredRowsEqual(lifecycle.memberRows, memberRows, version) ||
+    !restoredRowsEqual(lifecycle.sensorSummaryRows, sensorSummaryRows, version) ||
+    !restoredRowsEqual(lifecycle.summaryRows, summaryRows, version)
+  ) {
+    throw new Error("rollback FINAL lifecycle verification did not expose every tombstone");
+  }
+  await replacePrivateJson(
+    artifactPath,
+    {
+      ...artifact,
+      phase: "rolled_back",
+      rollbackEligibility: "not_applicable",
+      rollback: { completedAt: completedAt.toISOString(), refreshVersion: version },
+    },
+    dependencies.generateRunId ?? randomUUID,
+  );
   return { runId: artifact.runId, updated, refreshVersion: version };
+}
+
+export async function rollbackActivityDataIntegrity(
+  db: ActivityIntegrityDatabase,
+  clickHouse: ActivityIntegrityClickHouseClient,
+  artifactPath: string,
+  dependencies: ActivityIntegrityRollbackDependencies = {},
+): Promise<ActivityIntegrityRollbackResult> {
+  return withActivityIntegrityLease(db, () =>
+    rollbackActivityDataIntegrityWithLease(db, clickHouse, artifactPath, dependencies),
+  );
 }
 
 export async function retireActivityDataIntegrityArtifact(

@@ -11,6 +11,7 @@
 
 {% set activity_source_mass_tombstone_min_existing = var('activity_source_mass_tombstone_min_existing', 10) %}
 {% set activity_source_mass_tombstone_ratio = var('activity_source_mass_tombstone_ratio', 0.95) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH active_activity AS (
     SELECT *
@@ -19,6 +20,10 @@ WITH active_activity AS (
         _peerdb_is_deleted = 0
         AND provider_absent_at IS NULL
         AND deleted_at IS NULL
+        {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND id IN {{ activity_refresh_ids() }}
+        {% endif %}
 ),
 
 active_provider_priority AS (
@@ -89,6 +94,10 @@ existing_source_records AS (
         SELECT activity_id
         FROM {{ this }} FINAL
         WHERE is_deleted = 0
+            {% if activity_refresh_scoped %}
+            AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+            AND activity_id IN {{ activity_refresh_ids() }}
+            {% endif %}
     {% else %}
         SELECT CAST(NULL, 'Nullable(UUID)') AS activity_id
         WHERE 1 = 0

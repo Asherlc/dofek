@@ -12,19 +12,11 @@ const ACTIVITY_INTEGRITY_DBT_MODELS = [
 
 export async function runActivityIntegrityDbtBuild(input: {
   userId: string;
-  startAt: Date;
-  endAt: Date;
-  batchSize: number;
-  maxBatches: number;
   activityIds: readonly string[];
 }): Promise<void> {
   const variables = {
-    activity_integrity_repair_user_id: input.userId,
-    activity_integrity_repair_start_at: input.startAt.toISOString(),
-    activity_integrity_repair_end_at: input.endAt.toISOString(),
-    activity_integrity_repair_batch_size: input.batchSize,
-    activity_integrity_repair_max_batches: input.maxBatches,
-    activity_integrity_repair_activity_ids: input.activityIds,
+    activity_refresh_user_id: input.userId,
+    activity_refresh_activity_ids: input.activityIds,
   };
   const exitCode = await new Promise<number>((resolveExit, reject) => {
     const child = spawn(

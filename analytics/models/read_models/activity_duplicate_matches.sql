@@ -8,6 +8,8 @@
     }
 ) }}
 
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 WITH source_records AS (
     SELECT
         activity_id,
@@ -97,6 +99,12 @@ active_duplicate_matches AS (
                 ), 0) > 0.8
             )
         )
+        {% if activity_refresh_scoped %}
+        AND (
+            left_activity.activity_id IN {{ activity_refresh_ids() }}
+            OR right_activity.activity_id IN {{ activity_refresh_ids() }}
+        )
+        {% endif %}
 ),
 
 active_to_tombstoned_matches AS (
@@ -161,6 +169,9 @@ active_to_tombstoned_matches AS (
                 ), 0) > 0.8
             )
         )
+        {% if activity_refresh_scoped %}
+        AND left_activity.activity_id IN {{ activity_refresh_ids() }}
+        {% endif %}
 ),
 
 current_duplicate_matches AS (
@@ -186,6 +197,12 @@ existing_duplicate_matches AS (
             duplicate_activity_id
         FROM {{ this }} FINAL
         WHERE is_deleted = 0
+            {% if activity_refresh_scoped %}
+            AND (
+                activity_id IN {{ activity_refresh_ids() }}
+                OR duplicate_activity_id IN {{ activity_refresh_ids() }}
+            )
+            {% endif %}
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
