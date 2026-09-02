@@ -26,7 +26,7 @@
 
 ## File Structure
 
-- `drizzle/0101_app_store_billing.sql` adds the App Store columns and notification idempotency table.
+- `drizzle/0101_app_store_billing.sql` adds the App Store columns and the sole notification-idempotency table.
 - `src/db/schema/account.ts` models the App Store billing columns and notification table.
 - `packages/server/src/billing/app-store-config.ts` parses required Apple configuration once.
 - `packages/server/src/billing/app-store-verifier.ts` wraps Apple's verifier behind a focused interface.
@@ -92,7 +92,7 @@ Expected: TypeScript/test failure because `appStoreSubscription` and the new acc
 
 - [ ] **Step 3: Add the schema migration and minimum resolver input**
 
-Add nullable App Store fields to `fitness.user_billing`: `app_store_account_token uuid unique`, transaction IDs, product ID, status, expiration, revocation, environment, and last notification UUID/time. Create `fitness.app_store_notification` with `notification_uuid` primary key and `signed_date` for idempotency. Extend `resolveAccessWindow` to return `app_store_subscription` only for the configured product, `active` or `grace_period` status, future expiration, and null revocation.
+Add nullable App Store fields to `fitness.user_billing`: `app_store_account_token uuid unique`, transaction IDs, product ID, status, expiration, revocation, and environment. Create `fitness.app_store_notification` with `notification_uuid` primary key and `signed_date` as the sole notification-idempotency ledger. Extend `resolveAccessWindow` to return `app_store_subscription` only for the configured product, `active` or `grace_period` status, future expiration, and null revocation.
 
 ```ts
 export type AccessWindow =

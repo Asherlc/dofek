@@ -89,8 +89,10 @@ subscription:
 - `app_store_expires_at timestamptz`
 - `app_store_revocation_at timestamptz`
 - `app_store_environment text`
-- `app_store_notification_uuid text unique`
-- `app_store_notification_signed_at timestamptz`
+
+`fitness.app_store_notification` is the sole replay-protection ledger for
+Apple notification UUIDs and signed dates; do not duplicate that information
+on the user billing row.
 
 The server treats an App Store entitlement as active only when the product ID is
 the configured product, the subscription state is active or in billing grace,
