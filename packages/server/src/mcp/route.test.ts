@@ -13,7 +13,7 @@ const toolTestMocks = vi.hoisted(() => {
     activityListRange: vi.fn(),
     activitySearch: vi.fn(),
     activityFindById: vi.fn(),
-    bodyListRange: vi.fn(),
+    bodyListReconciledRange: vi.fn(),
     climbingActivityEntries: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
@@ -31,6 +31,7 @@ const toolTestMocks = vi.hoisted(() => {
     sleepListRange: vi.fn(),
     strengthExercises: vi.fn(),
     subjectiveTimeline: vi.fn(),
+    trainingLoadListRange: vi.fn(),
     withUserWriteFence: vi.fn(),
   };
   return {
@@ -80,6 +81,12 @@ vi.mock("../repositories/data-coverage-repository.ts", () => ({
   }),
 }));
 
+vi.mock("../repositories/training-load-repository.ts", () => ({
+  TrainingLoadRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.trainingLoadListRange };
+  }),
+}));
+
 vi.mock("../repositories/food-repository.ts", () => ({
   FoodRepository: vi.fn(function vitestConstructor() {
     return { dailyTotalsRange: toolTestMocks.foodDailyTotalsRange };
@@ -94,7 +101,7 @@ vi.mock("../repositories/sleep-repository.ts", () => ({
 
 vi.mock("../repositories/body-repository.ts", () => ({
   BodyRepository: vi.fn(function vitestConstructor() {
-    return { listRange: toolTestMocks.bodyListRange };
+    return { listReconciledRange: toolTestMocks.bodyListReconciledRange };
   }),
 }));
 
@@ -329,7 +336,7 @@ describe("createMcpRouter", () => {
     toolTestMocks.activityListRange.mockResolvedValue([]);
     toolTestMocks.activitySearch.mockResolvedValue({ items: [], totalCount: 0 });
     toolTestMocks.activityFindById.mockResolvedValue(null);
-    toolTestMocks.bodyListRange.mockResolvedValue([]);
+    toolTestMocks.bodyListReconciledRange.mockResolvedValue([]);
     toolTestMocks.climbingActivityEntries.mockResolvedValue([]);
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
@@ -531,6 +538,14 @@ describe("createMcpRouter", () => {
       properties: {},
       type: "object",
     });
+    expect(findListedTool(tools, "get_training_load").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        start_date: { format: "date", type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -608,6 +623,7 @@ describe("createMcpRouter", () => {
       "get_daily_health_summary",
       "get_health_trends",
       "get_data_coverage",
+      "get_training_load",
       "get_sleep_summary",
       "search_activities",
       "get_activity_details",
@@ -920,6 +936,47 @@ describe("createMcpRouter", () => {
         source_providers: ["apple_health"],
       },
     ]);
+  });
+
+  it("returns acute and chronic training load with window coverage", async () => {
+    authorizeMcpToken();
+    toolTestMocks.trainingLoadListRange.mockResolvedValue([
+      {
+        date: "2026-09-01",
+        daily_load: 75,
+        acute_load_7d: 420,
+        chronic_load_28d: 350,
+        workload_ratio: 1.2,
+        coverage: { acute_window_days: 7, chronic_window_days: 28 },
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_training_load", {
+        start_date: "2026-08-01",
+        end_date: "2026-09-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      range: {
+        start_date: "2026-08-01",
+        end_date: "2026-09-01",
+        timezone: "UTC",
+      },
+      rows: [
+        {
+          date: "2026-09-01",
+          daily_load: 75,
+          acute_load_7d: 420,
+          chronic_load_28d: 350,
+          workload_ratio: 1.2,
+          coverage: { acute_window_days: 7, chronic_window_days: 28 },
+        },
+      ],
+    });
+    expect(toolTestMocks.trainingLoadListRange).toHaveBeenCalledWith("2026-08-01", "2026-09-01");
   });
 
   it("distinguishes an out-of-range metric from a metric with no recorded history", async () => {
@@ -1642,13 +1699,28 @@ describe("createMcpRouter", () => {
 
   it("returns body metrics and computes lean mass on the server", async () => {
     authorizeMcpToken();
-    toolTestMocks.bodyListRange.mockResolvedValue([
+    toolTestMocks.bodyListReconciledRange.mockResolvedValue([
       {
-        bmi: 24.5,
-        bodyFatPct: 20,
-        providerId: "withings",
-        recordedAt: "2026-05-18T08:00:00.000Z",
+        date: "2026-05-18",
         weightKg: 80,
+        bodyFatPct: 20,
+        leanMassKg: 64,
+        bmi: 24.5,
+        sourceProviderByMetric: {
+          weightKg: "withings",
+          bodyFatPct: "withings",
+          bmi: "withings",
+        },
+        sources: [
+          {
+            sourceProvider: "withings",
+            recordedAt: "2026-05-18T08:00:00.000Z",
+            weightKg: 80,
+            bodyFatPct: 20,
+            bmi: 24.5,
+          },
+        ],
+        coverage: { sourceCount: 1 },
       },
     ]);
 
@@ -1666,7 +1738,21 @@ describe("createMcpRouter", () => {
         body_fat_pct: 20,
         date: "2026-05-18",
         lean_mass_kg: 64,
-        source_provider: "withings",
+        source_provider_by_metric: {
+          weight_kg: "withings",
+          body_fat_pct: "withings",
+          bmi: "withings",
+        },
+        sources: [
+          {
+            source_provider: "withings",
+            recorded_at: "2026-05-18T08:00:00.000Z",
+            weight_kg: 80,
+            body_fat_pct: 20,
+            bmi: 24.5,
+          },
+        ],
+        coverage: { source_count: 1 },
         weight_kg: 80,
       },
     ]);
@@ -1687,13 +1773,20 @@ describe("createMcpRouter", () => {
       "get_body_metrics requires the ClickHouse analytics store",
     );
 
-    toolTestMocks.bodyListRange.mockResolvedValue([
+    toolTestMocks.bodyListReconciledRange.mockResolvedValue([
       {
+        date: "2026-05-18",
+        weightKg: 80,
         bmi: null,
         bodyFatPct: null,
-        providerId: "withings",
-        recordedAt: "2026-05-18T08:00:00.000Z",
-        weightKg: 80,
+        leanMassKg: null,
+        sourceProviderByMetric: {
+          weightKg: "withings",
+          bodyFatPct: null,
+          bmi: null,
+        },
+        sources: [],
+        coverage: { sourceCount: 1 },
       },
     ]);
     const response = await request(createTestApp(makeMockSensorStore()), {

@@ -50,6 +50,7 @@ import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
+import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
 export interface DofekMcpContext {
   db: Pick<Database, "execute" | "select" | "transaction">;
@@ -485,6 +486,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
   );
 
+  registerTrainingLoadTool(server, context);
+
   server.registerTool(
     "render_health_explorer",
     {
@@ -812,18 +815,27 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         throw new Error("get_body_metrics requires the ClickHouse analytics store");
       }
       const repository = new BodyRepository(context.sensorStore, context.userId, context.timezone);
-      const rows = await repository.listRange(start_date, end_date);
+      const rows = await repository.listReconciledRange(start_date, end_date);
       return jsonContent(
         rows.map((row) => ({
-          date: localDateString(new Date(row.recordedAt), context.timezone),
+          date: row.date,
           weight_kg: row.weightKg,
           body_fat_pct: row.bodyFatPct,
-          lean_mass_kg:
-            row.weightKg != null && row.bodyFatPct != null
-              ? row.weightKg * (1 - row.bodyFatPct / 100)
-              : null,
+          lean_mass_kg: row.leanMassKg,
           bmi: row.bmi,
-          source_provider: row.providerId,
+          source_provider_by_metric: {
+            weight_kg: row.sourceProviderByMetric.weightKg,
+            body_fat_pct: row.sourceProviderByMetric.bodyFatPct,
+            bmi: row.sourceProviderByMetric.bmi,
+          },
+          sources: row.sources.map((source) => ({
+            source_provider: source.sourceProvider,
+            recorded_at: source.recordedAt,
+            weight_kg: source.weightKg,
+            body_fat_pct: source.bodyFatPct,
+            bmi: source.bmi,
+          })),
+          coverage: { source_count: row.coverage.sourceCount },
         })),
       );
     },

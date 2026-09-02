@@ -89,15 +89,17 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | Tool | Scope | Purpose |
 |------|-------|---------|
 | `get_daily_health_summary` | `health:read` | Returns server-computed metrics for one date. |
-| `get_health_trends` | `health:read` | Returns daily or weekly health metric aggregates and baseline-relative recovery context for a date range. |
+| `get_health_trends` | `health:read` | Returns a structured daily or weekly metric envelope with explicit no-data diagnostics, per-series coverage, and baseline-relative recovery context. |
+| `get_data_coverage` | `health:read` | Returns first/last observed dates, observed-day counts, and providers for every supported health metric. |
 | `render_health_explorer` | `health:read` | Returns a server-computed analytics snapshot and renders the Dofek Analytics Explorer in MCP clients that support Apps UI resources. |
 | `get_sleep_summary` | `health:read` | Returns nightly sleep duration, efficiency, stages, and timing. |
 | `search_activities` | `activity:read` | Searches activities inside exact date boundaries. |
 | `get_activity_details` | `activity:read` | Returns one activity with its strength, climbing, and finger-loading details. |
-| `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type or ISO week. |
+| `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
+| `get_training_load` | `activity:read` | Returns daily load, rolling 7-day acute load, rolling 28-day chronic load, and ACWR with window coverage. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols and server-derived effective load inside exact date boundaries. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
-| `get_body_metrics` | `health:read` | Returns weight and body-composition measurements. |
+| `get_body_metrics` | `health:read` | Returns one reconciled body-composition record per local date plus all per-source values. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -109,6 +111,27 @@ preceding 28-day mean. The current day is excluded from its own 30-day baseline;
 standard deviation and z-score remain `null` until at least two varied baseline
 samples exist. See the canonical
 [baseline-relative metric contract](../packages/server/src/contracts/baseline-relative-metrics.ts).
+
+Requested health metrics are never silently omitted. A metric without samples in
+the requested range is returned with `points: []`, `note: "no_data_in_range"`,
+nullable summary values, and zero observed-day coverage. Missing daily points use
+`null`; per-metric missing-date lists are capped at 30 with a separate truncated
+count. The canonical behavior is implemented by the
+[health-series builder](../packages/server/src/mcp/health-series-service.ts).
+
+`get_body_metrics` reconciles weight, body-fat percentage, and BMI independently.
+It first keeps the latest provider-attributed value for each metric and local
+date, then selects the first non-null value by configured `body_priority`
+(falling back to the general provider priority and then `100`). Its
+`source_provider_by_metric` identifies each winner, while `sources` retains the
+provider-level values and timestamps from provider-attributed raw samples. See the
+[body repository](../packages/server/src/repositories/body-repository.ts).
+
+`get_training_load` reads the canonical incremental `daily_strain` model. ACWR is
+`null` until the 28-day chronic window is complete; each row reports the current
+7-day and 28-day window coverage explicitly. See the
+[daily-strain model](../analytics/models/read_models/daily_strain.sql) and
+[training-load repository](../packages/server/src/repositories/training-load-repository.ts).
 
 ## Connect A Header-Capable Client
 
