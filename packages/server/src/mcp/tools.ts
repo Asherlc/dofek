@@ -436,7 +436,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Health Trends",
       description:
-        "Return daily or weekly health metric aggregates with baseline-relative recovery context for an exact date range.",
+        "Show daily HRV and step trends, or other health metrics, for an exact date range with baseline-relative recovery context.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
@@ -503,7 +503,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "render_health_explorer",
     {
       title: "Render Health Explorer",
-      description: "Return a server-computed health analytics snapshot for the Dofek Explorer.",
+      description:
+        "Open the interactive Dofek Analytics Explorer for server-computed health metrics in an exact date range.",
       inputSchema: healthExplorerInputSchema,
       annotations: { readOnlyHint: true },
       _meta: { ui: { resourceUri: healthExplorerResourceUri } },
@@ -532,7 +533,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Sleep Summary",
       description:
-        "Return nightly sleep duration, efficiency, stages, and timing for a date range.",
+        "Summarize sleep by night, including duration, efficiency, stages, and timing, for an exact date range.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         start_date: dateSchema,
@@ -607,7 +608,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "search_activities",
     {
       title: "Search Activities",
-      description: "Search authenticated user activity summaries.",
+      description: "Show authenticated user activities in an exact date range, optionally filtered by text.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         from: dateSchema.optional(),
@@ -857,7 +858,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "list_providers",
     {
       title: "List Providers",
-      description: "List configured user-facing providers and connection status.",
+      description:
+        "List connected Dofek providers with connection status and last-sync timestamps.",
       annotations: { readOnlyHint: true },
       inputSchema: {},
     },

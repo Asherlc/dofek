@@ -531,6 +531,15 @@ describe("createMcpRouter", () => {
 
     const parsedResponse = toolListResponseSchema.parse(parseJsonRpcEvent(response.text));
     const tools = parsedResponse.result.tools;
+    expect(findListedTool(tools, "get_health_trends").description).toContain("HRV and step");
+    expect(findListedTool(tools, "render_health_explorer").description).toContain(
+      "interactive Dofek Analytics Explorer",
+    );
+    expect(findListedTool(tools, "get_sleep_summary").description).toContain("Summarize sleep");
+    expect(findListedTool(tools, "search_activities").description).toContain("date range");
+    expect(findListedTool(tools, "list_providers").description).toContain(
+      "last-sync timestamps",
+    );
     expect(findListedTool(tools, "get_daily_health_summary").inputSchema).toMatchObject({
       properties: {
         date: { format: "date", type: "string" },
