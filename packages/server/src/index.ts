@@ -49,6 +49,7 @@ import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { logger } from "./logger.ts";
 import { createMcpOAuthRouter, type McpAuthRateLimitOptions } from "./mcp/oauth-route.ts";
 import { createMcpRouter } from "./mcp/route.ts";
+import { BillingProfileNotFoundError } from "./repositories/billing-repository.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { DeveloperClientRepository } from "./repositories/developer-client-repository.ts";
 import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
@@ -310,9 +311,17 @@ function setupRoutes(
         const timezone = timezoneResult.data;
         const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
         const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
-        const accessWindow = session
-          ? await getAccessWindowForUser(db, session.userId, timezone)
-          : undefined;
+        let accessWindow: Context["accessWindow"];
+        try {
+          accessWindow = session
+            ? await getAccessWindowForUser(db, session.userId, timezone)
+            : undefined;
+        } catch (error) {
+          if (error instanceof BillingProfileNotFoundError) {
+            throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+          }
+          throw error;
+        }
         return {
           accountErasureRestoreLedger,
           db,
