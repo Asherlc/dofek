@@ -5,6 +5,7 @@ import {
   OAuthClientInformationFullSchema,
   OAuthClientMetadataSchema,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { captureException } from "dofek/lib/error-reporting";
 import ipaddr from "ipaddr.js";
 import { logger } from "../logger.ts";
 import { isAllowedMcpOAuthRedirectUri } from "./oauth-client-store.ts";
@@ -123,57 +124,63 @@ async function fetchMetadata(url: URL): Promise<{ body: unknown; cacheAgeMs: num
       reject(new CimdMetadataError("CIMD metadata request timed out"));
     }, CIMD_FETCH_TIMEOUT_MS);
     const requestPath = `${url.pathname}${url.search}`;
-    clientRequest = request(
-      {
-        headers: { Accept: "application/json", Host: url.host },
-        host: destination.address,
-        lookup: (_hostname, _options, callback) =>
-          callback(null, destination.address, destination.family),
-        method: "GET",
-        path: requestPath,
-        port: url.port ? Number(url.port) : 443,
-        protocol: "https:",
-        servername: url.hostname,
-      },
-      (response) => {
-        response.on("error", (error: Error) => {
-          clearTimeout(timeout);
-          reject(
-            error instanceof CimdMetadataError
-              ? error
-              : new CimdMetadataError("CIMD metadata response failed"),
-          );
-        });
-        const contentType = response.headers["content-type"];
-        if (response.statusCode !== 200 || !contentType?.includes("application/json")) {
-          response.resume();
-          clearTimeout(timeout);
-          reject(new CimdMetadataError("CIMD metadata response is invalid"));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let byteLength = 0;
-        response.on("data", (chunk: Buffer) => {
-          byteLength += chunk.length;
-          if (byteLength > CIMD_MAX_RESPONSE_BYTES) {
-            response.destroy(new CimdMetadataError("CIMD metadata response is too large"));
+    try {
+      clientRequest = request(
+        {
+          headers: { Accept: "application/json", Host: url.host },
+          host: destination.address,
+          lookup: (_hostname, _options, callback) =>
+            callback(null, destination.address, destination.family),
+          method: "GET",
+          path: requestPath,
+          port: url.port ? Number(url.port) : 443,
+          protocol: "https:",
+          servername: url.hostname,
+        },
+        (response) => {
+          response.on("error", (error: Error) => {
+            clearTimeout(timeout);
+            reject(
+              error instanceof CimdMetadataError
+                ? error
+                : new CimdMetadataError("CIMD metadata response failed"),
+            );
+          });
+          const contentType = response.headers["content-type"];
+          if (response.statusCode !== 200 || !contentType?.includes("application/json")) {
+            response.resume();
+            clearTimeout(timeout);
+            reject(new CimdMetadataError("CIMD metadata response is invalid"));
             return;
           }
-          chunks.push(chunk);
-        });
-        response.on("end", () => {
-          clearTimeout(timeout);
-          try {
-            resolve({
-              body: JSON.parse(Buffer.concat(chunks).toString("utf8")),
-              cacheAgeMs: cacheAge(response.headers["cache-control"]),
-            });
-          } catch {
-            reject(new CimdMetadataError("CIMD metadata response is not valid JSON"));
-          }
-        });
-      },
-    );
+          const chunks: Buffer[] = [];
+          let byteLength = 0;
+          response.on("data", (chunk: Buffer) => {
+            byteLength += chunk.length;
+            if (byteLength > CIMD_MAX_RESPONSE_BYTES) {
+              response.destroy(new CimdMetadataError("CIMD metadata response is too large"));
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on("end", () => {
+            clearTimeout(timeout);
+            try {
+              resolve({
+                body: JSON.parse(Buffer.concat(chunks).toString("utf8")),
+                cacheAgeMs: cacheAge(response.headers["cache-control"]),
+              });
+            } catch {
+              reject(new CimdMetadataError("CIMD metadata response is not valid JSON"));
+            }
+          });
+        },
+      );
+    } catch (error) {
+      clearTimeout(timeout);
+      reject(error);
+      return;
+    }
     clientRequest.on("error", (error) => {
       clearTimeout(timeout);
       reject(
@@ -251,6 +258,7 @@ export class McpOAuthClientMetadataResolver {
         );
         return undefined;
       }
+      captureException(error);
       throw error;
     }
   }

@@ -2,9 +2,15 @@ import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ loggerWarn: vi.fn(), lookup: vi.fn(), request: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  loggerWarn: vi.fn(),
+  lookup: vi.fn(),
+  request: vi.fn(),
+}));
 vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
 vi.mock("node:https", () => ({ request: mocks.request }));
+vi.mock("dofek/lib/error-reporting", () => ({ captureException: mocks.captureException }));
 vi.mock("../logger.ts", () => ({ logger: { warn: mocks.loggerWarn } }));
 
 import {
@@ -363,7 +369,8 @@ describe("parseCimdClientMetadata", () => {
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
   });
 
-  it("rethrows an unexpected synchronous HTTPS request error without logging a rejection", async () => {
+  it("reports and rethrows an unexpected synchronous HTTPS request error without leaving a timeout", async () => {
+    vi.useFakeTimers();
     const error = new Error("unexpected request failure");
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(() => {
@@ -371,7 +378,9 @@ describe("parseCimdClientMetadata", () => {
     });
 
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).rejects.toBe(error);
+    expect(mocks.captureException).toHaveBeenCalledWith(error);
     expect(mocks.loggerWarn).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
   });
 
   it("cancels an HTTPS request when metadata resolution times out", async () => {
