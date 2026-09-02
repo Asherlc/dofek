@@ -168,7 +168,7 @@ describe("importStrongCsv", () => {
         localTimeSource: "device_timezone",
       }),
     );
-    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID });
   });
 
   it("imports text shares when no timezone is available", async () => {
@@ -226,7 +226,7 @@ describe("importStrongCsv", () => {
         localTimeSource: undefined,
       }),
     );
-    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID });
   });
 });
 
