@@ -159,16 +159,20 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   initializeSentry();
   try {
     const command = parseActivityDataIntegrityCommand(args);
+    const db = createDatabaseFromEnv();
     if (command.kind === "retire") {
-      const receiptPath = await retireActivityDataIntegrityArtifact(command.artifactPath, {
-        acceptedBy: command.acceptedBy,
-        disposition: command.disposition,
-      });
-      console.log(JSON.stringify({ kind: "retire", receiptPath }));
+      try {
+        const receiptPath = await retireActivityDataIntegrityArtifact(db, command.artifactPath, {
+          acceptedBy: command.acceptedBy,
+          disposition: command.disposition,
+        });
+        console.log(JSON.stringify({ kind: "retire", receiptPath }));
+      } finally {
+        await db.$client.end();
+      }
       return;
     }
 
-    const db = createDatabaseFromEnv();
     const clickHouse = createClickHouseClientFromEnv();
     try {
       if (command.kind === "rollback") {

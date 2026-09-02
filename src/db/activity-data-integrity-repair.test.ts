@@ -16,7 +16,6 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const activityId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
 const pelotonId = "00000000-0000-4000-8000-000000000109";
 const runId = "00000000-0000-4000-8000-000000000777";
-const afterOnlyId = "00000000-0000-4000-8000-000000000888";
 const now = new Date("2026-09-02T19:00:00.000Z");
 const deadline = new Date("2026-09-03T19:00:00.000Z");
 const window = {
@@ -60,6 +59,14 @@ const repairedSourceRow = {
   local_time_source: "provider_offset",
   refresh_version: "9007199254740995",
   refreshed_at: "2026-09-02 19:01:00.000000000",
+};
+
+const incompatibleMemberSourceRow = {
+  ...priorSourceRow,
+  activity_id: pelotonId,
+  provider_id: "wahoo",
+  external_id: "wahoo-workout",
+  canonical_type: "running",
 };
 
 const priorMatchRows = [
@@ -108,39 +115,6 @@ const priorSensorSummaryRows = [
 ];
 
 const priorSummaryRows = priorSensorSummaryRows.map((row) => ({ ...row }));
-const afterOnlySourceRow = {
-  ...repairedSourceRow,
-  activity_id: afterOnlyId,
-  external_id: "after-only",
-  refresh_version: "9007199254740996",
-};
-const afterOnlyMatchRow = {
-  ...priorMatchRows[0],
-  duplicate_activity_id: afterOnlyId,
-  refresh_version: "9007199254740996",
-};
-const afterOnlyDedupedRow = {
-  ...priorDedupedRows[0],
-  activity_id: afterOnlyId,
-  member_activity_ids: [afterOnlyId],
-  refresh_version: "9007199254740996",
-};
-const afterOnlyMemberRow = {
-  ...priorMemberRows[0],
-  activity_id: afterOnlyId,
-  member_activity_id: afterOnlyId,
-  refresh_version: "9007199254740996",
-};
-const afterOnlySensorSummaryRow = {
-  ...priorSensorSummaryRows[0],
-  activity_id: afterOnlyId,
-  refresh_version: "9007199254740996",
-};
-const afterOnlySummaryRow = {
-  ...priorSummaryRows[0],
-  activity_id: afterOnlyId,
-  refresh_version: "9007199254740996",
-};
 
 const priorGroupRows = [
   {
@@ -165,37 +139,11 @@ const repairedGroupRows = priorGroupRows.map((row) => ({
   refresh_version: "9007199254740996",
   refreshed_at: "2026-09-02 19:01:00.000000000",
 }));
-const afterOnlyGroupRow = {
-  ...repairedGroupRows[0],
-  activity_id: afterOnlyId,
-  group_id: afterOnlyId,
-};
-
-const rolledBackSourceRow = {
-  ...priorSourceRow,
-  refresh_version: "9007199254740997",
-  refreshed_at: "2026-09-02T20:00:00.000Z",
-};
-const rolledBackGroupRows = priorGroupRows.map((row) => ({
-  ...row,
-  refresh_version: "9007199254740997",
-  refreshed_at: "2026-09-02T20:00:00.000Z",
-}));
-const atRollbackVersion = <T extends object>(rows: readonly T[]) =>
-  rows.map((row) => ({
-    ...row,
-    refresh_version: "9007199254740997",
-    refreshed_at: "2026-09-02T20:00:00.000Z",
-  }));
-const rolledBackMatchRows = atRollbackVersion(priorMatchRows);
-const rolledBackDedupedRows = atRollbackVersion(priorDedupedRows);
-const rolledBackMemberRows = atRollbackVersion(priorMemberRows);
-const rolledBackSensorSummaryRows = atRollbackVersion(priorSensorSummaryRows);
-const rolledBackSummaryRows = atRollbackVersion(priorSummaryRows);
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  repairJournalState.record = null;
   await Promise.all(
     temporaryDirectories.splice(0).map(async (directory) => {
       const { rm } = await import("node:fs/promises");
@@ -218,11 +166,82 @@ interface LeaseState {
   held: boolean;
 }
 
+interface RepairJournalRecord {
+  run_id: string;
+  user_id: string;
+  artifact_path: string;
+  artifact_checksum: string;
+  acceptance_owner: string;
+  acceptance_deadline: string;
+  phase: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const repairJournalState: { record: RepairJournalRecord | null } = { record: null };
+
+function repairJournalQuery(query: SQL): object[] | undefined {
+  const rendered = dialect.sqlToQuery(query);
+  const normalizedSql = rendered.sql.toLowerCase();
+  if (!normalizedSql.includes("fitness.activity_integrity_repair_journal")) return undefined;
+  if (normalizedSql.startsWith("select") && normalizedSql.includes("phase in")) {
+    const record = repairJournalState.record;
+    return record &&
+      ["postgres_committed", "rebuild_failed", "executed", "rollback_committed"].includes(
+        record.phase,
+      )
+      ? [record]
+      : [];
+  }
+  if (normalizedSql.startsWith("select")) {
+    return repairJournalState.record ? [repairJournalState.record] : [];
+  }
+  if (normalizedSql.startsWith("insert")) {
+    const artifactPath = rendered.params.find(
+      (value): value is string => typeof value === "string" && value.endsWith(".audit.json"),
+    );
+    const artifactChecksum = rendered.params.find(
+      (value): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value),
+    );
+    if (!artifactPath || !artifactChecksum)
+      throw new Error("journal insert omitted artifact identity");
+    repairJournalState.record = {
+      run_id: runId,
+      user_id: userId,
+      artifact_path: artifactPath,
+      artifact_checksum: artifactChecksum,
+      acceptance_owner: "data-on-call@example.com",
+      acceptance_deadline: deadline.toISOString(),
+      phase: "postgres_committed",
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    };
+    return [{ run_id: runId }];
+  }
+  if (normalizedSql.startsWith("update")) {
+    const phase = rendered.params.find(
+      (value): value is string =>
+        typeof value === "string" &&
+        ["rebuild_failed", "executed", "rollback_committed", "rolled_back", "retired"].includes(
+          value,
+        ),
+    );
+    if (!repairJournalState.record || !phase) return [];
+    repairJournalState.record.phase = phase;
+    repairJournalState.record.updated_at = now.toISOString();
+    return [{ run_id: repairJournalState.record.run_id }];
+  }
+  throw new Error(`Unexpected repair journal query: ${rendered.sql}`);
+}
+
 function createDatabase(
   execute: (query: SQL) => unknown,
   leaseState: LeaseState = { held: false },
 ): ActivityIntegrityDatabase {
-  const typedExecute = (query: SQL): Promise<unknown> => Promise.resolve(execute(query));
+  const typedExecute = (query: SQL): Promise<unknown> => {
+    const journalRows = repairJournalQuery(query);
+    return Promise.resolve(journalRows ?? execute(query));
+  };
   const database: ActivityIntegrityDatabase = {
     $client: {
       connect: async () => ({
@@ -249,17 +268,10 @@ function createDatabase(
   return database;
 }
 
-function refreshVersion(row: object): string {
-  if (!("refresh_version" in row) || typeof row.refresh_version !== "string") {
-    throw new Error("inserted row is missing a decimal refresh_version");
-  }
-  return row.refresh_version;
-}
-
 function createClickHouse(
   sources: object[][],
   groups: object[][],
-  inserted: Array<{ table: string; values: readonly object[] }> = [],
+  _inserted: Array<{ table: string; values: readonly object[] }> = [],
   rows: {
     mirror?: object[][];
     matches?: object[][];
@@ -284,9 +296,7 @@ function createClickHouse(
       throw new Error(`Unexpected ClickHouse query: ${query}`);
     }),
     command: vi.fn(async () => undefined),
-    insert: vi.fn(async ({ table, values }: { table: string; values: readonly object[] }) => {
-      inserted.push({ table, values });
-    }),
+    insert: vi.fn(async () => undefined),
   };
 }
 
@@ -338,7 +348,7 @@ describe("repairActivityDataIntegrity", () => {
 
     const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
     expect(artifact).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       runId,
       phase: "dry_run",
       rollbackEligibility: "not_applicable",
@@ -391,7 +401,7 @@ describe("repairActivityDataIntegrity", () => {
       const snapshot = JSON.parse(await readFile(expectedArtifactPath, "utf8"));
       expect(snapshot.phase).toBe("snapshot");
       expect(rendered.sql).toContain("activity.timezone IS NOT DISTINCT FROM");
-      expect(rendered.sql).toContain("activity.started_at =");
+      expect(rendered.sql).not.toContain("activity.started_at =");
       return [{ id: activityId }];
     });
     const clickhouse = createClickHouse(
@@ -481,8 +491,82 @@ describe("repairActivityDataIntegrity", () => {
     });
   });
 
-  it("blocks another write run until the prior rollback-eligible artifact is retired", async () => {
+  it("reports current incompatible members during a dry run", async () => {
     const directory = await artifactDirectory();
+    const execute = vi.fn().mockResolvedValueOnce([postgresCandidate]);
+    const clickhouse = createClickHouse(
+      [[priorSourceRow, incompatibleMemberSourceRow]],
+      [priorGroupRows],
+      [],
+      {
+        matches: [priorMatchRows],
+        deduped: [priorDedupedRows],
+        members: [priorMemberRows],
+        sensors: [priorSensorSummaryRows],
+        summaries: [priorSummaryRows],
+      },
+    );
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(execute),
+        clickhouse,
+        {
+          execute: false,
+          userId,
+          batchSize: 10,
+          maxBatches: 1,
+          ...window,
+        },
+        repairDependencies(directory),
+      ),
+    ).resolves.toMatchObject({ incompatibleMemberCount: 1 });
+  });
+
+  it("reports current incompatible members when execute finds no local-time changes", async () => {
+    const directory = await artifactDirectory();
+    const normalizedCandidate = {
+      ...postgresCandidate,
+      timezone: null,
+      start_utc_offset_minutes: -240,
+      end_utc_offset_minutes: -240,
+      local_time_source: "provider_offset",
+    };
+    const execute = vi.fn().mockResolvedValueOnce([normalizedCandidate]);
+    const clickhouse = createClickHouse(
+      [[repairedSourceRow, incompatibleMemberSourceRow]],
+      [priorGroupRows],
+      [],
+      {
+        matches: [priorMatchRows],
+        deduped: [priorDedupedRows],
+        members: [priorMemberRows],
+        sensors: [priorSensorSummaryRows],
+        summaries: [priorSummaryRows],
+      },
+    );
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(execute),
+        clickhouse,
+        {
+          execute: true,
+          userId,
+          batchSize: 10,
+          maxBatches: 1,
+          acceptanceOwner: "data-on-call@example.com",
+          acceptanceDeadline: deadline,
+          ...window,
+        },
+        repairDependencies(directory),
+      ),
+    ).resolves.toMatchObject({ changed: 0, incompatibleMemberCount: 1 });
+  });
+
+  it("blocks a sequential write in another directory while the repair journal is eligible", async () => {
+    const firstDirectory = await artifactDirectory();
+    const secondDirectory = await artifactDirectory();
     const firstDb = createDatabase(vi.fn().mockResolvedValue([{ ...postgresCandidate }]));
     const firstClickhouse = createClickHouse(
       [[priorSourceRow], [repairedSourceRow]],
@@ -490,7 +574,7 @@ describe("repairActivityDataIntegrity", () => {
       [],
       { mirror: [[repairedSourceRow]] },
     );
-    const dependencies = repairDependencies(directory);
+    const dependencies = repairDependencies(firstDirectory);
     await repairActivityDataIntegrity(
       firstDb,
       firstClickhouse,
@@ -519,12 +603,66 @@ describe("repairActivityDataIntegrity", () => {
           maxBatches: 1,
           acceptanceOwner: "data-on-call@example.com",
           acceptanceDeadline: deadline,
+          artifactDirectory: secondDirectory,
           ...window,
         },
-        { ...dependencies, generateRunId: () => "00000000-0000-4000-8000-000000000778" },
+        {
+          ...repairDependencies(secondDirectory),
+          generateRunId: () => "00000000-0000-4000-8000-000000000778",
+        },
       ),
-    ).rejects.toThrow("rollback-eligible audit artifact");
+    ).rejects.toThrow("rollback-eligible repair journal");
     expect(secondExecute).not.toHaveBeenCalled();
+  });
+
+  it("releases global sequential eligibility only after the repair journal is retired", async () => {
+    const firstDirectory = await artifactDirectory();
+    const secondDirectory = await artifactDirectory();
+    const first = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValue([postgresCandidate])),
+      createClickHouse(
+        [[priorSourceRow], [repairedSourceRow]],
+        [priorGroupRows, repairedGroupRows],
+        [],
+        { mirror: [[repairedSourceRow]] },
+      ),
+      {
+        execute: true,
+        userId,
+        batchSize: 10,
+        maxBatches: 1,
+        acceptanceOwner: "data-on-call@example.com",
+        acceptanceDeadline: deadline,
+        artifactDirectory: firstDirectory,
+        ...window,
+      },
+      repairDependencies(firstDirectory),
+    );
+
+    await retireActivityDataIntegrityArtifact(
+      createDatabase(vi.fn()),
+      first.artifactPath,
+      { acceptedBy: "data-on-call@example.com", disposition: "accepted" },
+      { now: () => now },
+    );
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(vi.fn().mockResolvedValue([])),
+        createClickHouse([], []),
+        {
+          execute: true,
+          userId,
+          batchSize: 10,
+          maxBatches: 1,
+          acceptanceOwner: "data-on-call@example.com",
+          acceptanceDeadline: deadline,
+          artifactDirectory: secondDirectory,
+          ...window,
+        },
+        repairDependencies(secondDirectory),
+      ),
+    ).resolves.toMatchObject({ selected: 0, changed: 0 });
   });
 
   it("serializes concurrent runs through one database lease even across artifact directories", async () => {
@@ -693,54 +831,17 @@ describe("repairActivityDataIntegrity", () => {
         ? [postgresCandidate]
         : [{ id: activityId }];
     });
-    const inserted: Array<{ table: string; values: readonly object[] }> = [];
     const clickhouse = createClickHouse(
-      [
-        [priorSourceRow],
-        [repairedSourceRow],
-        [repairedSourceRow],
-        [rolledBackSourceRow],
-        [rolledBackSourceRow],
-      ],
-      [
-        priorGroupRows,
-        repairedGroupRows,
-        repairedGroupRows,
-        rolledBackGroupRows,
-        rolledBackGroupRows,
-      ],
-      inserted,
+      [[priorSourceRow], [repairedSourceRow], [priorSourceRow]],
+      [priorGroupRows, repairedGroupRows, priorGroupRows],
+      [],
       {
-        mirror: [[repairedSourceRow]],
-        matches: [priorMatchRows, [], [], rolledBackMatchRows, rolledBackMatchRows],
-        deduped: [
-          priorDedupedRows,
-          priorDedupedRows,
-          priorDedupedRows,
-          rolledBackDedupedRows,
-          rolledBackDedupedRows,
-        ],
-        members: [
-          priorMemberRows,
-          priorMemberRows,
-          priorMemberRows,
-          rolledBackMemberRows,
-          rolledBackMemberRows,
-        ],
-        sensors: [
-          priorSensorSummaryRows,
-          priorSensorSummaryRows,
-          priorSensorSummaryRows,
-          rolledBackSensorSummaryRows,
-          rolledBackSensorSummaryRows,
-        ],
-        summaries: [
-          priorSummaryRows,
-          priorSummaryRows,
-          priorSummaryRows,
-          rolledBackSummaryRows,
-          rolledBackSummaryRows,
-        ],
+        mirror: [[repairedSourceRow], [priorSourceRow]],
+        matches: [priorMatchRows, priorMatchRows, priorMatchRows],
+        deduped: [priorDedupedRows, priorDedupedRows, priorDedupedRows],
+        members: [priorMemberRows, priorMemberRows, priorMemberRows],
+        sensors: [priorSensorSummaryRows, priorSensorSummaryRows, priorSensorSummaryRows],
+        summaries: [priorSummaryRows, priorSummaryRows, priorSummaryRows],
       },
     );
 
@@ -771,31 +872,85 @@ describe("repairActivityDataIntegrity", () => {
       rollbackEligibility: "eligible",
       failure: { message: "dbt failed" },
     });
+    const rollbackRebuildReadModels = vi.fn(async () => undefined);
     await expect(
       rollbackActivityDataIntegrity(createDatabase(execute), clickhouse, artifactPath, {
         now: () => new Date("2026-09-02T20:00:00.000Z"),
+        rebuildReadModels: rollbackRebuildReadModels,
       }),
     ).resolves.toMatchObject({ updated: 1 });
-    expect(inserted.map(({ table }) => table)).toEqual([
-      "analytics.activity_source_records",
-      "analytics.activity_duplicate_matches",
-      "analytics.activity_duplicate_groups",
-      "analytics.deduped_activities",
-      "analytics.deduped_activity_members",
-      "analytics.activity_sensor_summary_rows",
-      "analytics.activity_summary_rows",
-    ]);
+    expect(rollbackRebuildReadModels).toHaveBeenCalledWith({
+      userId,
+      activityIds: [activityId, pelotonId],
+    });
+  });
+
+  it("recovers from an artifact transition failure through the atomic repair journal", async () => {
+    const directory = await artifactDirectory();
+    const execute = vi.fn(async (query: SQL) => {
+      const rendered = dialect.sqlToQuery(query);
+      return rendered.sql.includes("FROM fitness.activity")
+        ? [postgresCandidate]
+        : [{ id: activityId }];
+    });
+    const clickhouse = createClickHouse(
+      [[priorSourceRow], [priorSourceRow]],
+      [priorGroupRows, priorGroupRows],
+      [],
+      {
+        mirror: [[priorSourceRow]],
+        matches: [priorMatchRows, priorMatchRows],
+        deduped: [priorDedupedRows, priorDedupedRows],
+        members: [priorMemberRows, priorMemberRows],
+        sensors: [priorSensorSummaryRows, priorSensorSummaryRows],
+        summaries: [priorSummaryRows, priorSummaryRows],
+      },
+    );
+    const generateRunId = vi
+      .fn<() => string>()
+      .mockReturnValueOnce(runId)
+      .mockReturnValue("missing/replacement");
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(execute),
+        clickhouse,
+        {
+          execute: true,
+          userId,
+          batchSize: 10,
+          maxBatches: 1,
+          acceptanceOwner: "data-on-call@example.com",
+          acceptanceDeadline: deadline,
+          artifactDirectory: directory,
+          ...window,
+        },
+        { ...repairDependencies(directory), generateRunId },
+      ),
+    ).rejects.toThrow();
+
+    const [artifactName] = await readdir(directory);
+    const artifactPath = join(directory, artifactName ?? "missing");
+    expect(JSON.parse(await readFile(artifactPath, "utf8"))).toMatchObject({ phase: "snapshot" });
+    expect(repairJournalState.record).toMatchObject({
+      artifact_path: artifactPath,
+      phase: "postgres_committed",
+    });
+
+    const rebuildReadModels = vi.fn(async () => undefined);
+    await expect(
+      rollbackActivityDataIntegrity(createDatabase(execute), clickhouse, artifactPath, {
+        now: () => new Date("2026-09-02T20:00:00.000Z"),
+        rebuildReadModels,
+      }),
+    ).resolves.toMatchObject({ updated: 1 });
+    expect(rebuildReadModels).toHaveBeenCalledOnce();
+    expect(clickhouse.insert).not.toHaveBeenCalled();
+    expect(repairJournalState.record?.phase).toBe("rolled_back");
   });
 
   it("reports actual incompatible canonical members after the rebuild", async () => {
     const directory = await artifactDirectory();
-    const incompatibleSource = {
-      ...priorSourceRow,
-      activity_id: pelotonId,
-      provider_id: "wahoo",
-      external_id: "wahoo-workout",
-      canonical_type: "running",
-    };
     const execute = vi.fn(async (query: SQL) => {
       const rendered = dialect.sqlToQuery(query);
       return rendered.sql.includes("FROM fitness.activity")
@@ -804,8 +959,8 @@ describe("repairActivityDataIntegrity", () => {
     });
     const clickhouse = createClickHouse(
       [
-        [priorSourceRow, incompatibleSource],
-        [repairedSourceRow, incompatibleSource],
+        [priorSourceRow, incompatibleMemberSourceRow],
+        [repairedSourceRow, incompatibleMemberSourceRow],
       ],
       [priorGroupRows, repairedGroupRows],
       [],
@@ -923,171 +1078,34 @@ describe("rollbackActivityDataIntegrity", () => {
     expect(clickhouse.insert).not.toHaveBeenCalled();
   });
 
-  it("writes captured values forward with a UInt64 version newer than repair state", async () => {
+  it("restores only captured local-time fields before the CDC barrier and scoped rebuild", async () => {
     const { result, rollbackDb } = await executedArtifact();
-    const inserted: Array<{ table: string; values: readonly object[] }> = [];
-    const clickhouse = createClickHouse(
-      [[repairedSourceRow], [rolledBackSourceRow], [rolledBackSourceRow]],
-      [repairedGroupRows, rolledBackGroupRows, rolledBackGroupRows],
-      inserted,
-    );
-
-    const rollback = await rollbackActivityDataIntegrity(
-      rollbackDb,
-      clickhouse,
-      result.artifactPath,
-      { now: () => new Date("2026-09-02T20:00:00.000Z") },
-    );
-
-    expect(rollback.updated).toBe(1);
-    const versions = inserted.flatMap(({ values }) =>
-      values.map((row) => BigInt(refreshVersion(row))),
-    );
-    expect(versions.length).toBeGreaterThan(0);
-    expect(versions.every((version) => version > 9007199254740996n)).toBe(true);
-  });
-
-  it("tombstones and verifies every after-only key across the complete Task 3 chain", async () => {
-    const directory = await artifactDirectory();
-    const execute = vi.fn(async (query: SQL) => {
-      const rendered = dialect.sqlToQuery(query);
-      return rendered.sql.includes("FROM fitness.activity")
-        ? [postgresCandidate]
-        : [{ id: activityId }];
+    const rebuildReadModels = vi.fn(async () => undefined);
+    const clickhouse = createClickHouse([[priorSourceRow]], [priorGroupRows], [], {
+      mirror: [[priorSourceRow]],
+      matches: [priorMatchRows],
+      deduped: [priorDedupedRows],
+      members: [priorMemberRows],
+      sensors: [priorSensorSummaryRows],
+      summaries: [priorSummaryRows],
     });
-    const afterSources = [repairedSourceRow, afterOnlySourceRow];
-    const afterMatches = [...priorMatchRows, afterOnlyMatchRow];
-    const afterGroups = [...repairedGroupRows, afterOnlyGroupRow];
-    const afterDeduped = [...priorDedupedRows, afterOnlyDedupedRow];
-    const afterMembers = [...priorMemberRows, afterOnlyMemberRow];
-    const afterSensors = [...priorSensorSummaryRows, afterOnlySensorSummaryRow];
-    const afterSummaries = [...priorSummaryRows, afterOnlySummaryRow];
-    const lifecycleSources = atRollbackVersion([
-      priorSourceRow,
-      { ...afterOnlySourceRow, is_deleted: 1 },
-    ]);
-    const lifecycleMatches = atRollbackVersion([
-      ...priorMatchRows,
-      { ...afterOnlyMatchRow, is_deleted: 1 },
-    ]);
-    const lifecycleGroups = atRollbackVersion([
-      ...priorGroupRows,
-      { ...afterOnlyGroupRow, is_deleted: 1 },
-    ]);
-    const lifecycleDeduped = atRollbackVersion([
-      ...priorDedupedRows,
-      { ...afterOnlyDedupedRow, is_deleted: 1 },
-    ]);
-    const lifecycleMembers = atRollbackVersion([
-      ...priorMemberRows,
-      { ...afterOnlyMemberRow, is_deleted: 1 },
-    ]);
-    const lifecycleSensors = atRollbackVersion([
-      ...priorSensorSummaryRows,
-      { ...afterOnlySensorSummaryRow, is_deleted: 1 },
-    ]);
-    const lifecycleSummaries = atRollbackVersion([
-      ...priorSummaryRows,
-      { ...afterOnlySummaryRow, is_deleted: 1 },
-    ]);
-    const inserted: Array<{ table: string; values: readonly object[] }> = [];
-    const clickhouse = createClickHouse(
-      [[priorSourceRow], afterSources, afterSources, [rolledBackSourceRow], lifecycleSources],
-      [priorGroupRows, afterGroups, afterGroups, rolledBackGroupRows, lifecycleGroups],
-      inserted,
-      {
-        mirror: [[repairedSourceRow]],
-        matches: [
-          priorMatchRows,
-          afterMatches,
-          afterMatches,
-          rolledBackMatchRows,
-          lifecycleMatches,
-        ],
-        deduped: [
-          priorDedupedRows,
-          afterDeduped,
-          afterDeduped,
-          rolledBackDedupedRows,
-          lifecycleDeduped,
-        ],
-        members: [
-          priorMemberRows,
-          afterMembers,
-          afterMembers,
-          rolledBackMemberRows,
-          lifecycleMembers,
-        ],
-        sensors: [
-          priorSensorSummaryRows,
-          afterSensors,
-          afterSensors,
-          rolledBackSensorSummaryRows,
-          lifecycleSensors,
-        ],
-        summaries: [
-          priorSummaryRows,
-          afterSummaries,
-          afterSummaries,
-          rolledBackSummaryRows,
-          lifecycleSummaries,
-        ],
-      },
-    );
-    const repaired = await repairActivityDataIntegrity(
-      createDatabase(execute),
-      clickhouse,
-      {
-        execute: true,
-        userId,
-        batchSize: 10,
-        maxBatches: 1,
-        acceptanceOwner: "data-on-call@example.com",
-        acceptanceDeadline: deadline,
-        artifactDirectory: directory,
-        ...window,
-      },
-      repairDependencies(directory),
-    );
-
-    await rollbackActivityDataIntegrity(
-      createDatabase(execute),
-      clickhouse,
-      repaired.artifactPath,
-      {
-        now: () => new Date("2026-09-02T20:00:00.000Z"),
-      },
-    );
-
-    expect(inserted).toHaveLength(7);
-    for (const { table, values } of inserted) {
-      const tombstone = values.find(
-        (row) =>
-          ("activity_id" in row && row.activity_id === afterOnlyId) ||
-          ("duplicate_activity_id" in row && row.duplicate_activity_id === afterOnlyId) ||
-          ("member_activity_id" in row && row.member_activity_id === afterOnlyId),
-      );
-      expect(tombstone, table).toMatchObject({ is_deleted: 1 });
-    }
-  });
-
-  it("fails loudly when FINAL does not expose the captured rollback values", async () => {
-    const { result, rollbackDb } = await executedArtifact();
-    const clickhouse = createClickHouse(
-      [[repairedSourceRow], [repairedSourceRow]],
-      [repairedGroupRows, repairedGroupRows],
-    );
 
     await expect(
       rollbackActivityDataIntegrity(rollbackDb, clickhouse, result.artifactPath, {
         now: () => new Date("2026-09-02T20:00:00.000Z"),
+        rebuildReadModels,
       }),
-    ).rejects.toThrow("FINAL verification");
+    ).resolves.toMatchObject({ updated: 1 });
+    expect(rebuildReadModels).toHaveBeenCalledWith({
+      userId,
+      activityIds: [activityId, pelotonId],
+    });
   });
 
   it("rejects rollback after the named owner retires the artifact", async () => {
     const { result, rollbackDb } = await executedArtifact();
     const receiptPath = await retireActivityDataIntegrityArtifact(
+      createDatabase(vi.fn()),
       result.artifactPath,
       { acceptedBy: "data-on-call@example.com", disposition: "accepted" },
       { now: () => now },

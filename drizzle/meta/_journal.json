@@ -736,6 +736,13 @@
       "when": 1788301853001,
       "tag": "0102_validate_user_home_timezone_context",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1788301853002,
+      "tag": "0103_activity_integrity_repair_journal",
+      "breakpoints": true
     }
   ]
 }

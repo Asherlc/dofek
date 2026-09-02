@@ -165,10 +165,11 @@ export async function snapshotDerivedRows(
   }
   const selectedIds = unique(selectedActivityIds);
   const lifecycleFilter = includeDeleted ? "" : "AND is_deleted = 0";
-  const matchRows = await queryClickHouseRows(
-    client,
-    clickHouseMatchRowSchema,
-    `SELECT duplicate_matches.* REPLACE(
+  const queryMatchRows = (activityIds: readonly string[]) =>
+    queryClickHouseRows(
+      client,
+      clickHouseMatchRowSchema,
+      `SELECT duplicate_matches.* REPLACE(
   toString(duplicate_matches.refresh_version) AS refresh_version
 )
 FROM analytics.activity_duplicate_matches AS duplicate_matches FINAL
@@ -178,16 +179,13 @@ WHERE (
   )
   ${includeDeleted ? "" : "AND duplicate_matches.is_deleted = 0"}
 ORDER BY duplicate_matches.activity_id, duplicate_matches.duplicate_activity_id`,
-    { activityIds: selectedIds },
-  );
-  const matchedActivityIds = unique([
-    ...selectedIds,
-    ...matchRows.flatMap((row) => [row.activity_id, row.duplicate_activity_id]),
-  ]);
-  const groupRows = await queryClickHouseRows(
-    client,
-    clickHouseGroupRowSchema,
-    `WITH selected_groups AS (
+      { activityIds },
+    );
+  const queryGroupRows = (activityIds: readonly string[]) =>
+    queryClickHouseRows(
+      client,
+      clickHouseGroupRowSchema,
+      `WITH selected_groups AS (
   SELECT group_id
   FROM analytics.activity_duplicate_groups FINAL
   WHERE activity_id IN {activityIds:Array(UUID)}
@@ -203,9 +201,30 @@ WHERE (
   )
   ${includeDeleted ? "" : "AND duplicate_groups.is_deleted = 0"}
 ORDER BY duplicate_groups.activity_id`,
-    { activityIds: matchedActivityIds },
-  );
-  const activityIds = unique([...matchedActivityIds, ...groupRows.map((row) => row.activity_id)]);
+      { activityIds },
+    );
+
+  let matchRows = await queryMatchRows(selectedIds);
+  let matchedActivityIds = unique([
+    ...selectedIds,
+    ...matchRows.flatMap((row) => [row.activity_id, row.duplicate_activity_id]),
+  ]);
+  let groupRows = await queryGroupRows(matchedActivityIds);
+  let activityIds = unique([...matchedActivityIds, ...groupRows.map((row) => row.activity_id)]);
+  while (activityIds.length > matchedActivityIds.length) {
+    matchRows = await queryMatchRows(activityIds);
+    matchedActivityIds = unique([
+      ...activityIds,
+      ...matchRows.flatMap((row) => [row.activity_id, row.duplicate_activity_id]),
+    ]);
+    groupRows = await queryGroupRows(matchedActivityIds);
+    const expandedActivityIds = unique([
+      ...matchedActivityIds,
+      ...groupRows.map((row) => row.activity_id),
+    ]);
+    if (expandedActivityIds.length === activityIds.length) break;
+    activityIds = expandedActivityIds;
+  }
   const sourceRows = await queryClickHouseRows(
     client,
     clickHouseSourceRowSchema,

@@ -1,13 +1,11 @@
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { resolveProviderTimezoneLocalTimeContext } from "@dofek/format/record-local-time";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   type ActivityIntegrityClickHouseClient,
-  capturedRowsWithAfterOnlyTombstones,
   clickHouseDedupedActivityRowSchema,
   clickHouseDerivedActivityRowSchema,
   clickHouseDerivedMemberRowSchema,
@@ -17,19 +15,22 @@ import {
   componentSchema,
   type DerivedSnapshot,
   incompatibleMemberCount,
-  restoredRowsEqual,
-  rowsEqual,
   snapshotDerivedRows,
   sourceRowsMatchPostgres,
   uint64StringSchema,
   waitForPostgresMirror,
 } from "./activity-data-integrity-clickhouse.ts";
 import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
+import {
+  assertNoEligibleActivityIntegrityJournal,
+  createPostgresCommittedActivityIntegrityJournal,
+  readActivityIntegrityJournal,
+  transitionActivityIntegrityJournal,
+} from "./activity-data-integrity-journal.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const MAXIMUM_BATCH_SIZE = 1_000;
-const MAXIMUM_UINT64 = (1n << 64n) - 1n;
-const AUDIT_SCHEMA_VERSION = 1;
+const AUDIT_SCHEMA_VERSION = 2;
 const ACTIVITY_INTEGRITY_LEASE_NAME = "dofek:activity-data-integrity-repair:v1";
 export const ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const postgresUuidSchema = z
@@ -98,9 +99,11 @@ const auditArtifactSchema = z.object({
     "postgres_committed",
     "rebuild_failed",
     "executed",
+    "rollback_committed",
     "rolled_back",
   ]),
   rollbackEligibility: z.enum(["not_applicable", "eligible"]),
+  artifactChecksum: z.string().regex(/^[0-9a-f]{64}$/),
   createdAt: z.string().datetime(),
   userId: postgresUuidSchema,
   window: z.object({
@@ -145,11 +148,15 @@ const auditArtifactSchema = z.object({
   rollback: z
     .object({ completedAt: z.string().datetime(), refreshVersion: uint64StringSchema })
     .optional(),
+  rollbackCommit: z
+    .object({ completedAt: z.string().datetime(), updated: z.number().int().nonnegative() })
+    .optional(),
 });
 
 type PostgresCandidate = z.infer<typeof postgresCandidateSchema>;
 type PostgresArtifactRow = z.infer<typeof postgresArtifactRowSchema>;
 type AuditArtifact = z.infer<typeof auditArtifactSchema>;
+type AuditArtifactWithoutChecksum = Omit<AuditArtifact, "artifactChecksum">;
 
 export interface ActivityIntegrityRepairOptions {
   userId: string;
@@ -189,6 +196,11 @@ interface ActivityIntegrityRepairDependencies {
 interface ActivityIntegrityRollbackDependencies {
   now?: () => Date;
   generateRunId?: () => string;
+  rebuildReadModels?: (input: { userId: string; activityIds: readonly string[] }) => Promise<void>;
+  cdcReadinessTimeoutMs?: number;
+  cdcReadinessPollIntervalMs?: number;
+  monotonicNow?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
 }
 
 interface ActivityIntegrityRetirementDependencies {
@@ -269,6 +281,36 @@ function serializeJson(value: unknown): string {
   )}\n`;
 }
 
+function recoveryArtifactData(artifact: AuditArtifactWithoutChecksum | AuditArtifact) {
+  return {
+    schemaVersion: artifact.schemaVersion,
+    runId: artifact.runId,
+    createdAt: artifact.createdAt,
+    userId: artifact.userId,
+    window: artifact.window,
+    bounds: artifact.bounds,
+    acceptance: artifact.acceptance,
+    selected: artifact.selected,
+    changedActivityIds: artifact.changedActivityIds,
+    highestDerivedVersion: artifact.highestDerivedVersion,
+    postgresActivities: artifact.postgresActivities,
+    sourceRowsBefore: artifact.sourceRowsBefore,
+    matchRowsBefore: artifact.matchRowsBefore,
+    groupRowsBefore: artifact.groupRowsBefore,
+    dedupedRowsBefore: artifact.dedupedRowsBefore,
+    memberRowsBefore: artifact.memberRowsBefore,
+    sensorSummaryRowsBefore: artifact.sensorSummaryRowsBefore,
+    summaryRowsBefore: artifact.summaryRowsBefore,
+    componentsBefore: artifact.componentsBefore,
+  };
+}
+
+function checksumArtifact(artifact: AuditArtifactWithoutChecksum | AuditArtifact): string {
+  return createHash("sha256")
+    .update(serializeJson(recoveryArtifactData(artifact)))
+    .digest("hex");
+}
+
 async function writeNewPrivateJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, serializeJson(value), { encoding: "utf8", flag: "wx", mode: 0o600 });
 }
@@ -285,22 +327,11 @@ async function replacePrivateJson(
 
 async function readArtifact(path: string): Promise<AuditArtifact> {
   const raw: unknown = JSON.parse(await readFile(path, "utf8"));
-  return auditArtifactSchema.parse(raw);
-}
-
-async function rejectActiveArtifacts(directory: string): Promise<void> {
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const fileNames = await readdir(directory);
-  for (const fileName of fileNames.filter((name) => name.endsWith(".audit.json")).sort()) {
-    const artifactPath = resolve(directory, fileName);
-    const artifact = await readArtifact(artifactPath);
-    if (
-      artifact.rollbackEligibility === "eligible" &&
-      !existsSync(retirementReceiptPath(artifactPath))
-    ) {
-      throw new Error(`rollback-eligible audit artifact must be retired first: ${artifactPath}`);
-    }
+  const artifact = auditArtifactSchema.parse(raw);
+  if (checksumArtifact(artifact) !== artifact.artifactChecksum) {
+    throw new Error("activity integrity audit artifact checksum does not match its recovery data");
   }
+  return artifact;
 }
 
 async function withActivityIntegrityLease<T>(
@@ -441,10 +472,6 @@ function valuesForPostgresUpdate(
       const expected = direction === "repair" ? row.prior : row.repaired;
       return sql`(
         ${row.id}::uuid,
-        ${row.providerId}::text,
-        ${row.externalId}::text,
-        ${new Date(row.startedAt)}::timestamptz,
-        ${row.endedAt == null ? null : new Date(row.endedAt)}::timestamptz,
         ${target.timezone}::text,
         ${target.startUtcOffsetMinutes}::bigint,
         ${target.endUtcOffsetMinutes}::bigint,
@@ -461,6 +488,7 @@ function valuesForPostgresUpdate(
 
 async function updatePostgresActivities(
   db: SchemaExecutionDatabase,
+  userId: string,
   rows: readonly PostgresArtifactRow[],
   batchSize: number,
   direction: "repair" | "rollback",
@@ -474,10 +502,6 @@ async function updatePostgresActivities(
       updatedActivitySchema,
       sql`WITH context_values (
             id,
-            provider_id,
-            external_id,
-            started_at,
-            ended_at,
             target_timezone,
             target_start_utc_offset_minutes,
             target_end_utc_offset_minutes,
@@ -498,10 +522,7 @@ async function updatePostgresActivities(
               local_time_source = context_values.target_local_time_source
             FROM context_values
             WHERE activity.id = context_values.id
-              AND activity.provider_id = context_values.provider_id
-              AND activity.external_id = context_values.external_id
-              AND activity.started_at = context_values.started_at
-              AND activity.ended_at IS NOT DISTINCT FROM context_values.ended_at
+              AND activity.user_id = ${userId}::uuid
               AND activity.timezone IS NOT DISTINCT FROM context_values.expected_timezone
               AND activity.start_utc_offset_minutes IS NOT DISTINCT FROM context_values.expected_start_utc_offset_minutes
               AND activity.end_utc_offset_minutes IS NOT DISTINCT FROM context_values.expected_end_utc_offset_minutes
@@ -551,8 +572,8 @@ async function repairActivityDataIntegrityWithLease(
   const artifactDirectory = resolve(
     options.artifactDirectory ?? dependencies.artifactDirectory ?? defaultArtifactDirectory(),
   );
-  if (options.execute) await rejectActiveArtifacts(artifactDirectory);
-  else await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+  await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+  if (options.execute) await assertNoEligibleActivityIntegrityJournal(db);
 
   const runId = generateRunId();
   const selectedRows = await selectPostgresActivities(db, options);
@@ -572,7 +593,7 @@ async function repairActivityDataIntegrityWithLease(
         deadline: options.acceptanceDeadline?.toISOString() ?? "",
       }
     : null;
-  const artifact: AuditArtifact = {
+  const artifactWithoutChecksum: AuditArtifactWithoutChecksum = {
     schemaVersion: AUDIT_SCHEMA_VERSION,
     runId,
     phase: options.execute ? "snapshot" : "dry_run",
@@ -595,6 +616,10 @@ async function repairActivityDataIntegrityWithLease(
     summaryRowsBefore: before.summaryRows,
     componentsBefore: before.components,
   };
+  const artifact: AuditArtifact = {
+    ...artifactWithoutChecksum,
+    artifactChecksum: checksumArtifact(artifactWithoutChecksum),
+  };
   await writeNewPrivateJson(artifactPath, artifact);
 
   if (!options.execute || changedRows.length === 0) {
@@ -616,16 +641,34 @@ async function repairActivityDataIntegrityWithLease(
       changed: changedRows.length,
       updated: 0,
       changedIds: changedRows.map((row) => row.id),
-      incompatibleMemberCount: 0,
+      incompatibleMemberCount: incompatibleMemberCount(before),
       beforeComponentCount: before.components.length,
       afterComponentCount: before.components.length,
       artifactPath,
     };
   }
 
-  const updated = await db.transaction((transaction) =>
-    updatePostgresActivities(transaction, changedRows, options.batchSize, "repair"),
-  );
+  if (!artifact.acceptance) throw new Error("execute artifact is missing acceptance ownership");
+  const acceptedRepair = artifact.acceptance;
+  const updated = await db.transaction(async (transaction) => {
+    const updatedRows = await updatePostgresActivities(
+      transaction,
+      options.userId,
+      changedRows,
+      options.batchSize,
+      "repair",
+    );
+    await createPostgresCommittedActivityIntegrityJournal(transaction, {
+      runId,
+      userId: options.userId,
+      artifactPath,
+      artifactChecksum: artifact.artifactChecksum,
+      acceptanceOwner: acceptedRepair.owner,
+      acceptanceDeadline: new Date(acceptedRepair.deadline),
+      createdAt,
+    });
+    return updatedRows;
+  });
   const postgresCommitted: AuditArtifact = {
     ...artifact,
     phase: "postgres_committed",
@@ -656,6 +699,14 @@ async function repairActivityDataIntegrityWithLease(
       },
     };
     await replacePrivateJson(artifactPath, completed, generateRunId);
+    await transitionActivityIntegrityJournal(db, {
+      runId,
+      artifactPath,
+      artifactChecksum: artifact.artifactChecksum,
+      from: ["postgres_committed"],
+      to: "executed",
+      transitionedAt: now(),
+    });
 
     return {
       runId,
@@ -681,6 +732,14 @@ async function repairActivityDataIntegrityWithLease(
       },
     };
     await replacePrivateJson(artifactPath, failed, generateRunId);
+    await transitionActivityIntegrityJournal(db, {
+      runId,
+      artifactPath,
+      artifactChecksum: artifact.artifactChecksum,
+      from: ["postgres_committed"],
+      to: "rebuild_failed",
+      transitionedAt: now(),
+    });
     throw error;
   }
 }
@@ -696,18 +755,6 @@ export async function repairActivityDataIntegrity(
   );
 }
 
-function rollbackVersion(artifact: AuditArtifact, current: DerivedSnapshot): string {
-  const candidates = [
-    artifact.highestDerivedVersion,
-    artifact.execution?.highestDerivedVersion ?? "0",
-    artifact.failure?.highestDerivedVersion ?? "0",
-    current.highestVersion,
-  ].map(BigInt);
-  const next = candidates.reduce((highest, value) => (value > highest ? value : highest), 0n) + 1n;
-  if (next > MAXIMUM_UINT64) throw new Error("cannot allocate a newer UInt64 rollback version");
-  return next.toString();
-}
-
 interface CapturedPostState {
   sourceRowsAfter: DerivedSnapshot["sourceRows"];
   matchRowsAfter: DerivedSnapshot["matchRows"];
@@ -716,18 +763,6 @@ interface CapturedPostState {
   memberRowsAfter: DerivedSnapshot["memberRows"];
   sensorSummaryRowsAfter: DerivedSnapshot["sensorSummaryRows"];
   summaryRowsAfter: DerivedSnapshot["summaryRows"];
-}
-
-function snapshotMatchesCaptured(current: DerivedSnapshot, captured: CapturedPostState): boolean {
-  return (
-    rowsEqual(current.sourceRows, captured.sourceRowsAfter) &&
-    rowsEqual(current.matchRows, captured.matchRowsAfter) &&
-    rowsEqual(current.groupRows, captured.groupRowsAfter) &&
-    rowsEqual(current.dedupedRows, captured.dedupedRowsAfter) &&
-    rowsEqual(current.memberRows, captured.memberRowsAfter) &&
-    rowsEqual(current.sensorSummaryRows, captured.sensorSummaryRowsAfter) &&
-    rowsEqual(current.summaryRows, captured.summaryRowsAfter)
-  );
 }
 
 function addSnapshotActivityIds(activityIds: Set<string>, snapshot: CapturedPostState): void {
@@ -769,182 +804,98 @@ function affectedArtifactActivityIds(artifact: AuditArtifact): string[] {
   return [...activityIds];
 }
 
-async function insertRollbackRows(
-  clickHouse: ActivityIntegrityClickHouseClient,
-  table: string,
-  rows: readonly Record<string, unknown>[],
-  version: string,
-  refreshedAt: string,
-  batchSize: number,
-): Promise<void> {
-  if (rows.length === 0) return;
-  if (!clickHouse.insert) throw new Error("ClickHouse rollback requires an insert-capable client");
-  for (let offset = 0; offset < rows.length; offset += batchSize) {
-    const values = rows.slice(offset, offset + batchSize).map((row) => ({
-      ...row,
-      refresh_version: version,
-      refreshed_at: refreshedAt,
-    }));
-    await clickHouse.insert({ table, values, format: "JSONEachRow" });
-  }
-}
-
 async function rollbackActivityDataIntegrityWithLease(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
   artifactPath: string,
   dependencies: ActivityIntegrityRollbackDependencies = {},
 ): Promise<ActivityIntegrityRollbackResult> {
-  if (existsSync(retirementReceiptPath(artifactPath))) {
-    throw new Error("retired audit artifact cannot be rolled back");
-  }
   const artifact = await readArtifact(artifactPath);
+  const journal = await readActivityIntegrityJournal(db, artifact.runId);
   if (
-    !["postgres_committed", "rebuild_failed", "executed"].includes(artifact.phase) ||
-    artifact.rollbackEligibility !== "eligible"
+    resolve(journal.artifact_path) !== resolve(artifactPath) ||
+    journal.artifact_checksum !== artifact.artifactChecksum ||
+    journal.user_id !== artifact.userId ||
+    journal.acceptance_owner !== artifact.acceptance?.owner ||
+    journal.acceptance_deadline.toISOString() !== artifact.acceptance?.deadline
+  ) {
+    throw new Error("activity integrity repair journal does not match the audit artifact");
+  }
+  if (journal.phase === "retired") {
+    throw new Error("retired audit artifact is not rollback-eligible");
+  }
+  if (
+    !["postgres_committed", "rebuild_failed", "executed", "rollback_committed"].includes(
+      journal.phase,
+    )
   ) {
     throw new Error("audit artifact is not rollback-eligible");
   }
-  const capturedPostState = artifact.execution ?? artifact.failure;
   const affectedIds = affectedArtifactActivityIds(artifact);
-  const current = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds);
-  if (capturedPostState && !snapshotMatchesCaptured(current, capturedPostState)) {
-    throw new Error("stale audit artifact: ClickHouse derived state changed after repair");
-  }
   const changedRows = artifact.postgresActivities.filter((row) =>
     artifact.changedActivityIds.includes(row.id),
   );
-  const updated = await db.transaction((transaction) =>
-    updatePostgresActivities(transaction, changedRows, artifact.bounds.batchSize, "rollback"),
-  );
-  const version = rollbackVersion(artifact, current);
-  const completedAt = (dependencies.now ?? (() => new Date()))();
-  const refreshedAt = completedAt.toISOString();
-  const sourceRows = capturedRowsWithAfterOnlyTombstones(
-    artifact.sourceRowsBefore,
-    current.sourceRows,
-    ["activity_id"],
-  );
-  const matchRows = capturedRowsWithAfterOnlyTombstones(
-    artifact.matchRowsBefore,
-    current.matchRows,
-    ["activity_id", "duplicate_activity_id"],
-  );
-  const groupRows = capturedRowsWithAfterOnlyTombstones(
-    artifact.groupRowsBefore,
-    current.groupRows,
-    ["activity_id"],
-  );
-  const dedupedRows = capturedRowsWithAfterOnlyTombstones(
-    artifact.dedupedRowsBefore,
-    current.dedupedRows,
-    ["activity_id"],
-  );
-  const memberRows = capturedRowsWithAfterOnlyTombstones(
-    artifact.memberRowsBefore,
-    current.memberRows,
-    ["user_id", "member_activity_id"],
-  );
-  const sensorSummaryRows = capturedRowsWithAfterOnlyTombstones(
-    artifact.sensorSummaryRowsBefore,
-    current.sensorSummaryRows,
-    ["activity_id"],
-  );
-  const summaryRows = capturedRowsWithAfterOnlyTombstones(
-    artifact.summaryRowsBefore,
-    current.summaryRows,
-    ["activity_id"],
-  );
-  await insertRollbackRows(
-    clickHouse,
-    "analytics.activity_source_records",
-    sourceRows,
-    version,
-    refreshedAt,
-    artifact.bounds.batchSize,
-  );
-  await insertRollbackRows(
-    clickHouse,
-    "analytics.activity_duplicate_matches",
-    matchRows,
-    version,
-    refreshedAt,
-    artifact.bounds.batchSize,
-  );
-  await insertRollbackRows(
-    clickHouse,
-    "analytics.activity_duplicate_groups",
-    groupRows,
-    version,
-    refreshedAt,
-    artifact.bounds.batchSize,
-  );
-  await insertRollbackRows(
-    clickHouse,
-    "analytics.deduped_activities",
-    dedupedRows,
-    version,
-    refreshedAt,
-    artifact.bounds.batchSize,
-  );
-  await insertRollbackRows(
-    clickHouse,
-    "analytics.deduped_activity_members",
-    memberRows,
-    version,
-    refreshedAt,
-    artifact.bounds.batchSize,
-  );
-  await insertRollbackRows(
-    clickHouse,
-    "analytics.activity_sensor_summary_rows",
-    sensorSummaryRows,
-    version,
-    refreshedAt,
-    artifact.bounds.batchSize,
-  );
-  await insertRollbackRows(
-    clickHouse,
-    "analytics.activity_summary_rows",
-    summaryRows,
-    version,
-    refreshedAt,
-    artifact.bounds.batchSize,
-  );
+  const now = dependencies.now ?? (() => new Date());
+  const generateRunId = dependencies.generateRunId ?? randomUUID;
+  let updated = changedRows.length;
+  let rollbackCommit = artifact.rollbackCommit;
+  if (journal.phase !== "rollback_committed") {
+    const committedAt = now();
+    updated = await db.transaction(async (transaction) => {
+      const updatedRows = await updatePostgresActivities(
+        transaction,
+        artifact.userId,
+        changedRows,
+        artifact.bounds.batchSize,
+        "rollback",
+      );
+      await transitionActivityIntegrityJournal(transaction, {
+        runId: artifact.runId,
+        artifactPath,
+        artifactChecksum: artifact.artifactChecksum,
+        from: [journal.phase],
+        to: "rollback_committed",
+        transitionedAt: committedAt,
+      });
+      return updatedRows;
+    });
+    rollbackCommit = { completedAt: committedAt.toISOString(), updated };
+    await replacePrivateJson(
+      artifactPath,
+      { ...artifact, phase: "rollback_committed", rollbackCommit },
+      generateRunId,
+    );
+  }
+
+  const rollbackMirrorRows = changedRows.map((row) => ({ id: row.id, repaired: row.prior }));
+  await waitForPostgresMirror(clickHouse, artifact.userId, rollbackMirrorRows, dependencies);
+  const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
+  await rebuildReadModels({ userId: artifact.userId, activityIds: affectedIds });
   const verified = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds);
-  if (
-    !restoredRowsEqual(verified.sourceRows, artifact.sourceRowsBefore, version) ||
-    !restoredRowsEqual(verified.matchRows, artifact.matchRowsBefore, version) ||
-    !restoredRowsEqual(verified.groupRows, artifact.groupRowsBefore, version) ||
-    !restoredRowsEqual(verified.dedupedRows, artifact.dedupedRowsBefore, version) ||
-    !restoredRowsEqual(verified.memberRows, artifact.memberRowsBefore, version) ||
-    !restoredRowsEqual(verified.sensorSummaryRows, artifact.sensorSummaryRowsBefore, version) ||
-    !restoredRowsEqual(verified.summaryRows, artifact.summaryRowsBefore, version)
-  ) {
-    throw new Error("rollback FINAL verification did not expose the captured derived values");
+  if (!sourceRowsMatchPostgres(verified.sourceRows, rollbackMirrorRows)) {
+    throw new Error("rollback rebuild did not publish the restored local-time context");
   }
-  const lifecycle = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds, true);
-  if (
-    !restoredRowsEqual(lifecycle.sourceRows, sourceRows, version) ||
-    !restoredRowsEqual(lifecycle.matchRows, matchRows, version) ||
-    !restoredRowsEqual(lifecycle.groupRows, groupRows, version) ||
-    !restoredRowsEqual(lifecycle.dedupedRows, dedupedRows, version) ||
-    !restoredRowsEqual(lifecycle.memberRows, memberRows, version) ||
-    !restoredRowsEqual(lifecycle.sensorSummaryRows, sensorSummaryRows, version) ||
-    !restoredRowsEqual(lifecycle.summaryRows, summaryRows, version)
-  ) {
-    throw new Error("rollback FINAL lifecycle verification did not expose every tombstone");
-  }
+  const version = verified.highestVersion;
+  const completedAt = now();
   await replacePrivateJson(
     artifactPath,
     {
       ...artifact,
       phase: "rolled_back",
       rollbackEligibility: "not_applicable",
+      rollbackCommit,
       rollback: { completedAt: completedAt.toISOString(), refreshVersion: version },
     },
-    dependencies.generateRunId ?? randomUUID,
+    generateRunId,
   );
+  await transitionActivityIntegrityJournal(db, {
+    runId: artifact.runId,
+    artifactPath,
+    artifactChecksum: artifact.artifactChecksum,
+    from: ["rollback_committed"],
+    to: "rolled_back",
+    transitionedAt: completedAt,
+  });
   return { runId: artifact.runId, updated, refreshVersion: version };
 }
 
@@ -960,36 +911,60 @@ export async function rollbackActivityDataIntegrity(
 }
 
 export async function retireActivityDataIntegrityArtifact(
+  db: ActivityIntegrityDatabase,
   artifactPath: string,
   input: { acceptedBy: string; disposition: "accepted" | "superseded" },
   dependencies: ActivityIntegrityRetirementDependencies = {},
 ): Promise<string> {
-  const artifact = await readArtifact(artifactPath);
-  if (
-    artifact.phase !== "executed" ||
-    artifact.rollbackEligibility !== "eligible" ||
-    !artifact.acceptance
-  ) {
-    throw new Error("audit artifact is not rollback-eligible");
-  }
-  if (input.acceptedBy.trim() !== artifact.acceptance.owner) {
-    throw new Error(`artifact must be retired by acceptance owner ${artifact.acceptance.owner}`);
-  }
-  const retiredAt = (dependencies.now ?? (() => new Date()))();
-  if (input.disposition === "accepted" && retiredAt > new Date(artifact.acceptance.deadline)) {
-    throw new Error(
-      "acceptance deadline has passed; rollback or explicitly supersede the artifact",
-    );
-  }
-  const receiptPath = retirementReceiptPath(artifactPath);
-  await writeNewPrivateJson(receiptPath, {
-    schemaVersion: AUDIT_SCHEMA_VERSION,
-    runId: artifact.runId,
-    artifactPath: resolve(artifactPath),
-    acceptedBy: input.acceptedBy.trim(),
-    disposition: input.disposition,
-    retiredAt: retiredAt.toISOString(),
-    rollbackEligibility: "retired",
+  return withActivityIntegrityLease(db, async () => {
+    const artifact = await readArtifact(artifactPath);
+    if (
+      artifact.phase !== "executed" ||
+      artifact.rollbackEligibility !== "eligible" ||
+      !artifact.acceptance
+    ) {
+      throw new Error("audit artifact is not rollback-eligible");
+    }
+    const journal = await readActivityIntegrityJournal(db, artifact.runId);
+    if (
+      resolve(journal.artifact_path) !== resolve(artifactPath) ||
+      journal.artifact_checksum !== artifact.artifactChecksum ||
+      journal.user_id !== artifact.userId ||
+      journal.acceptance_owner !== artifact.acceptance.owner ||
+      journal.acceptance_deadline.toISOString() !== artifact.acceptance.deadline
+    ) {
+      throw new Error("activity integrity repair journal does not match the audit artifact");
+    }
+    if (journal.phase !== "executed") {
+      throw new Error("audit artifact is not rollback-eligible");
+    }
+    if (input.acceptedBy.trim() !== artifact.acceptance.owner) {
+      throw new Error(`artifact must be retired by acceptance owner ${artifact.acceptance.owner}`);
+    }
+    const retiredAt = (dependencies.now ?? (() => new Date()))();
+    if (input.disposition === "accepted" && retiredAt > new Date(artifact.acceptance.deadline)) {
+      throw new Error(
+        "acceptance deadline has passed; rollback or explicitly supersede the artifact",
+      );
+    }
+    await transitionActivityIntegrityJournal(db, {
+      runId: artifact.runId,
+      artifactPath,
+      artifactChecksum: artifact.artifactChecksum,
+      from: ["executed"],
+      to: "retired",
+      transitionedAt: retiredAt,
+    });
+    const receiptPath = retirementReceiptPath(artifactPath);
+    await writeNewPrivateJson(receiptPath, {
+      schemaVersion: AUDIT_SCHEMA_VERSION,
+      runId: artifact.runId,
+      artifactPath: resolve(artifactPath),
+      acceptedBy: input.acceptedBy.trim(),
+      disposition: input.disposition,
+      retiredAt: retiredAt.toISOString(),
+      rollbackEligibility: "retired",
+    });
+    return receiptPath;
   });
-  return receiptPath;
 }
