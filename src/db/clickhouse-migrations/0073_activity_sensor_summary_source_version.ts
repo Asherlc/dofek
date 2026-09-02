@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
@@ -47,6 +48,15 @@ async function tableExists(client: ClickHouseCommandClient, name: string): Promi
     query_params: { name },
     format: "JSONEachRow",
   });
-  const rows = await result.json();
-  return Number(rows[0]?.count ?? 0) > 0;
+  const [row] = z
+    .tuple([
+      z.object({
+        count: z.union([
+          z.number().int().nonnegative(),
+          z.string().regex(/^\d+$/).transform(Number),
+        ]),
+      }),
+    ])
+    .parse(await result.json());
+  return row.count > 0;
 }

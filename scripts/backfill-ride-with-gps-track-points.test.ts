@@ -229,6 +229,30 @@ describe("planRideWithGpsActivityBackfill", () => {
     ).toThrow();
   });
 
+  it("rejects stored track points with negative speeds", () => {
+    expect(() =>
+      planRideWithGpsActivityBackfill({
+        id: "activity-1",
+        externalId: "trip-1",
+        userId: "user-1",
+        canonicalType: "cycling",
+        providerType: "cycling:generic",
+        modality: null,
+        raw: {
+          activity_type: "cycling:generic",
+          track_points: [
+            {
+              x: -122.6,
+              y: 45.5,
+              t: 1_723_276_200,
+              s: -1,
+            },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
+
   it("publishes an empty replacement for activities with no valid metric rows", async () => {
     const db = { execute: vi.fn() };
     const plan = planRideWithGpsActivityBackfill({

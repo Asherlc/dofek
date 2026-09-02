@@ -157,6 +157,25 @@ describe("parseTrackPoints", () => {
     expect(result[0]?.recordedAt).toEqual(new Date(1723276200 * 1000));
   });
 
+  it("omits a negative track-point speed while preserving zero", () => {
+    const result = parseTrackPoints([
+      {
+        longitude: -122.6,
+        latitude: 45.5,
+        epochSeconds: 1723276200,
+        speedMetersPerSecond: -1,
+      },
+      {
+        longitude: -122.6,
+        latitude: 45.5,
+        epochSeconds: 1723276201,
+        speedMetersPerSecond: 0,
+      },
+    ]);
+
+    expect(result.map((point) => point.speed)).toEqual([undefined, 0]);
+  });
+
   it("skips points without timestamp", () => {
     const points: RideWithGpsTrackPoint[] = [
       { longitude: -122.6, latitude: 45.5, distanceMeters: 0 }, // no epochSeconds
@@ -297,6 +316,30 @@ describe("buildRideWithGpsMetricRows", () => {
     });
 
     expect(rows[0]?.speed).toBe(31);
+  });
+
+  it("omits negative speed samples from outdoor cycling metrics", () => {
+    const rows = buildRideWithGpsMetricRows({
+      activityId: "activity-1",
+      externalId: "trip-1",
+      activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+      trackPoints: [
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          epochSeconds: 1723276200,
+          speedMetersPerSecond: -1,
+        },
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          epochSeconds: 1723276201,
+          speedMetersPerSecond: 10,
+        },
+      ],
+    });
+
+    expect(rows.map((row) => row.speed)).toEqual([undefined, 10]);
   });
 
   it("rejects an outdoor cycling stream with an implausible average speed", () => {

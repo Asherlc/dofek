@@ -17,9 +17,9 @@ class TestClickHouseClient implements ClickHouseCommandClient {
   readonly command = vi.fn(async () => undefined);
   readonly queryCalls: QueryOptions[] = [];
   #queryCount = 0;
-  readonly #tableCounts: readonly (number | undefined)[];
+  readonly #tableCounts: readonly (number | string | null | undefined)[];
 
-  constructor(tableCounts: readonly (number | undefined)[]) {
+  constructor(tableCounts: readonly (number | string | null | undefined)[]) {
     this.#tableCounts = tableCounts;
   }
 
@@ -74,13 +74,34 @@ MODIFY SETTING
     expect(mockRunClickHouseMigrationStatement).not.toHaveBeenCalled();
   });
 
-  it("treats an empty table lookup result as absent", async () => {
+  it("rejects an empty table lookup result", async () => {
     const client = new TestClickHouseClient([undefined, 0]);
+
+    await expect(createMigration().run?.(client, "postgres://test")).rejects.toThrow();
+  });
+
+  it("rejects a malformed table count", async () => {
+    const client = new TestClickHouseClient([null, 0]);
+
+    await expect(createMigration().run?.(client, "postgres://test")).rejects.toThrow();
+  });
+
+  it("accepts a serialized non-negative table count", async () => {
+    const client = new TestClickHouseClient(["12", "0"]);
 
     await createMigration().run?.(client, "postgres://test");
 
-    expect(mockRunClickHouseMigrationStatement).not.toHaveBeenCalled();
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["x1", "1x", "x", "-1", "1.0"])(
+    "rejects malformed serialized table count %s",
+    async (count) => {
+      const client = new TestClickHouseClient([count, 0]);
+
+      await expect(createMigration().run?.(client, "postgres://test")).rejects.toThrow();
+    },
+  );
 
   it("alters each table only when it exists", async () => {
     const client = new TestClickHouseClient([1, 1]);

@@ -23843,7 +23843,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   for that exact per-activity maximum, avoiding a repeated raw-sample scan. Both
   deduplicating merges and dbt's incremental lightweight deletes rebuild the
   projection; ClickHouse documents that
-  [`lightweight_mutation_projection_mode`](https://github.com/ClickHouse/clickhouse-docs/blob/main/docs/data-modeling/projections/2_materialized-views-versus-projections.md)
+  [`lightweight_mutation_projection_mode`](https://clickhouse.com/docs/concepts/features/projections/materialized-views-versus-projections)
   is required to make projections compatible with lightweight deletes.
   Historical raw rows were corrected in one append-only pass. No timeout, retry,
   timestamp lookback, or warn-and-continue workaround was added.
@@ -23861,12 +23861,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   projection policy rejecting dbt's incremental `DELETE`; the model and
   migration now explicitly select projection rebuild behavior, and the
   real-ClickHouse regression executes that delete before forcing the projection.
+- **Retrospective / process improvement:** Provider payload fixtures plus the
+  descent maximum-speed sanity check isolated the unit error quickly; the late
+  summary watermark and projection/delete interaction required production
+  evidence and real ClickHouse/E2E execution. For future projection changes on
+  incremental dbt tables, require an executable mutation/delete regression and
+  a monitored historical-part materialization procedure. The reusable procedure
+  now lives in the
+  [ClickHouse read-model deploy runbook](clickhouse-read-model-deploy-runbook.md#activity-source-version-projection-rollout-migration-0073).
+  Use the systematic-debugging, test-driven-development, and
+  integration-tests-ready skills for comparable provider/read-model incidents.
 - **Remaining risk / follow-up:** Merge and deploy the migration/model change,
-  materialize the new projection on existing sample parts as a controlled operator
-  action, run one analytics worker cycle, and verify all 681 stale summaries
-  converge. Confirm activity `2a7c6fa3` reports a descent-appropriate peak in the
-  50–65 km/h range and rerun the provider ratio report after new RideWithGPS
-  ingestion.
+  follow the
+  [stop-gated projection rollout](clickhouse-read-model-deploy-runbook.md#activity-source-version-projection-rollout-migration-0073),
+  run one analytics worker cycle, and verify all 681 stale summaries converge.
+  Confirm activity `2a7c6fa3` reports a descent-appropriate peak in the 50–65
+  km/h range and rerun the provider ratio report after new RideWithGPS ingestion.
 
 ## 2026-08-31 — Mobile Snyk check detected vulnerable Expo and Sentry CLI transitives
 
