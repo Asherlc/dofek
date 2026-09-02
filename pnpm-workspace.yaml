@@ -57,7 +57,7 @@ overrides:
   esbuild: 0.28.1
   decode-uri-component: 0.5.0
   dompurify: 3.4.14
-  "fast-uri@>=3.0.0 <3.1.6": 3.1.6
+  "fast-uri@>=3.0.0 <3.1.7": 3.1.7
   form-data: 4.0.6
   "gel>shell-quote": 1.10.0
   hono: 4.13.5
@@ -159,3 +159,4 @@ minimumReleaseAgeExclude:
   - '@expo/env@2.4.3'
   - expo-font@57.0.2 || 57.0.3
   - fast-uri@4.1.4
+  - fast-uri@3.1.7

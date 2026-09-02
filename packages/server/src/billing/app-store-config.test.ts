@@ -29,4 +29,15 @@ describe("getAppStoreBillingConfig", () => {
       "APP_STORE_PRIVATE_KEY environment variable is required",
     );
   });
+
+  it.each(["0", "-1", "not-a-number"]) (
+    "rejects an invalid APP_STORE_APP_ID of %s",
+    (appId) => {
+      vi.stubEnv("APP_STORE_APP_ID", appId);
+
+      expect(() => getAppStoreBillingConfig()).toThrow(
+        "APP_STORE_APP_ID environment variable must be a positive integer",
+      );
+    },
+  );
 });
