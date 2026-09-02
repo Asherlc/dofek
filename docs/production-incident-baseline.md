@@ -24472,3 +24472,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   backup into an isolated target, determine whether null-raw legacy records
   need canonical repair, and choose a migration-lineage plan for fresh legacy
   databases that may contain cross-table external-ID collisions.
+
+## 2026-09-01 — Legacy Apple Health archive completed without importing data
+
+- **Status:** Diagnosed; recovery requires a new user-initiated source import.
+- **Symptoms / user impact:** A 55.9 MB full-history archive submitted on
+  2026-08-04 remained `queued` with its outbox marked dispatched. It contributed
+  no Apple Health history, leaving HRV and sleep coverage beginning in 2026.
+- **Evidence / root cause:** The corresponding BullMQ job completed in about
+  2.6 seconds with `No export.xml found in ZIP file`. The legacy processor did
+  not propagate that terminal result to the database upload row. The archive
+  therefore was not a valid Apple export for this importer, and the retained
+  object has passed the normal import-object lifetime.
+- **Fix / mitigation:** The current durable upload processor records terminal
+  failures rather than leaving the row queued. No production row or object was
+  mutated during this investigation. Recovery requires an on-device full sync
+  or re-upload of an original archive containing `export.xml`; Apple's
+  [`HKSampleQuery`](https://developer.apple.com/documentation/healthkit/hksamplequery)
+  supports querying matching samples from the local HealthKit store.
+- **Validation:** Redis job state, job return value, database upload/outbox
+  state, and current importer archive matching were inspected independently.
+- **Remaining risk / follow-up:** The original object is probably no longer
+  recoverable. Confirm a replacement full sync advances the import record and
+  creates pre-2026 metric rows before changing coverage claims.
