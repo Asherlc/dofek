@@ -14,7 +14,7 @@ const snapshot: HealthExplorerSnapshot = {
   },
   series: [],
   summary: [],
-  coverage: { observed_days: 0, requested_days: 3 },
+  coverage: { requested_days: 3, by_metric: {} },
 };
 
 function deferred<T>() {

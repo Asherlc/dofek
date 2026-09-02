@@ -769,6 +769,12 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("dirty_keys AS");
     expect(sql).toContain("IS DISTINCT FROM tuple(");
     expect(sql).toContain("analytics.v_daily_metrics");
+    expect(sql).toContain("nullIf(hrv, 0) AS hrv");
+    expect(sql).toContain("nullIf(respiratory_rate_avg, 0) AS respiratory_rate");
+    expect(sql).toContain("nullIf(efficiency_pct, 0) AS efficiency_pct");
+    expect(normalizedSql).toContain(
+      "nullIf( argMax(resting_hr, tuple(duration_seconds, ended_at)), 0 ) AS selected_resting_hr",
+    );
     expect(sql).toContain("ref('daily_sleep')");
     expect(sql).toContain("is_deleted = 0");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");

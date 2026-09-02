@@ -32,6 +32,7 @@ const mockLookup: ProviderLookup = (id: string) => {
 const fullRow: ActivityRow = {
   id: "abc-123",
   canonical_type: "cycling",
+  raw_type: "road_cycling",
   started_at: "2026-03-01T10:00:00+00:00",
   ended_at: "2026-03-01T11:30:00+00:00",
   timezone: null,
@@ -68,6 +69,7 @@ describe("Activity", () => {
 
     expect(activity.id).toBe("abc-123");
     expect(activity.activityType).toBe("cycling");
+    expect(activity.rawType).toBe("road_cycling");
     expect(activity.startedAt).toBe("2026-03-01T10:00:00+00:00");
     expect(activity.endedAt).toBe("2026-03-01T11:30:00+00:00");
     expect(activity.name).toBe("Morning Ride");
@@ -317,6 +319,7 @@ describe("Activity", () => {
       expect(detail).toEqual({
         id: "abc-123",
         activityType: "cycling",
+        rawType: "road_cycling",
         startedAt: "2026-03-01T10:00:00+00:00",
         endedAt: "2026-03-01T11:30:00+00:00",
         localTimeContext: {

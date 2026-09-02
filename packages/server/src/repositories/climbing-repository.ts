@@ -130,6 +130,7 @@ const activityEntryRowSchema = z.object({
   hold_type: holdTypeSchema.nullable(),
   route_name: z.string().nullable(),
   location_name: z.string().nullable(),
+  lead: z.boolean().nullable().default(null),
   source_name: z.string(),
   wall_angle_degrees: z.coerce.number().nullable(),
 });
@@ -147,6 +148,7 @@ export interface ClimbingActivityEntryRow {
   holdType: z.infer<typeof holdTypeSchema> | null;
   routeName: string | null;
   locationName: string | null;
+  lead: boolean | null;
   sourceName: string;
   wallAngleDegrees: number | null;
 }
@@ -383,6 +385,7 @@ export class ClimbingRepository extends BaseRepository {
             ce.hold_type,
             ce.route_name,
             ce.location_name,
+            ce.lead,
             ce.source_name,
             ce.wall_angle_degrees
           FROM fitness.v_activity AS a
@@ -437,6 +440,7 @@ export class ClimbingRepository extends BaseRepository {
             holdType: row.hold_type,
             routeName: row.route_name,
             locationName: row.location_name,
+            lead: row.lead,
             sourceName: row.source_name,
             wallAngleDegrees: row.wall_angle_degrees,
           }),

@@ -18,12 +18,9 @@ import { dateSchema } from "../lib/date-schema.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { BodyRepository } from "../repositories/body-repository.ts";
-import { ClimbingRepository } from "../repositories/climbing-repository.ts";
-import {
-  readFingerLoadingActivity,
-  readFingerLoadingRange,
-} from "../repositories/climbing-training-log-repository.ts";
+import { readFingerLoadingRange } from "../repositories/climbing-training-log-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
+import { DataCoverageRepository } from "../repositories/data-coverage-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import {
   type DailyRecoveryBaseline,
@@ -35,9 +32,7 @@ import {
   localDateString,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
-import { SupplementsRepository } from "../repositories/supplements-repository.ts";
 import {
   type ProviderScheduledSyncHealth,
   SyncRepository,
@@ -47,13 +42,20 @@ import {
   ensureProvidersRegistered,
   toJobId,
 } from "../routers/sync-helpers.ts";
+import { registerActivityDetailsTool } from "./activity-details-tool.ts";
+import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
+import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
-import { HealthExplorerService, type HealthTrendRow } from "./health-explorer-service.ts";
+import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
+import { HealthExplorerService } from "./health-explorer-service.ts";
+import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
+import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
+import { registerSupplementsTool } from "./supplements-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange, jsonContent } from "./tool-utils.ts";
-import { registerTrainingSessionTools } from "./training-session-tools.ts";
+import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
 export type { DofekMcpContext } from "./context.ts";
 
@@ -81,22 +83,16 @@ const recoveryMetricKeys: Partial<
 
 const activityMcpRowSchema = z.object({
   canonical_type: z.string(),
+  provider_type: z.string().optional().default(""),
   started_at: z.string(),
   ended_at: z.string().nullable(),
   avg_hr: z.coerce.number().nullable().optional(),
   max_hr: z.coerce.number().nullable().optional(),
   avg_power: z.coerce.number().nullable().optional(),
   max_power: z.coerce.number().nullable().optional(),
+  elevation_gain_m: z.coerce.number().nullable().optional(),
+  modality: z.string().nullable().optional(),
 });
-const activityStreamChannelSchema = z.enum([
-  "power",
-  "heart_rate",
-  "cadence",
-  "altitude",
-  "speed",
-  "position",
-]);
-const DEFAULT_ACTIVITY_STREAM_CHANNELS = activityStreamChannelSchema.options;
 const EXPECTED_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 
 function syncHealth(health: ProviderScheduledSyncHealth | undefined) {
@@ -112,7 +108,6 @@ function syncHealth(health: ProviderScheduledSyncHealth | undefined) {
       Date.now() - new Date(lastSuccess).getTime() > EXPECTED_SYNC_INTERVAL_MS * 3,
   };
 }
-
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
 
 function daysBetween(startDate: string, endDate: string): number {
@@ -185,22 +180,31 @@ function healthTrends(
                 return matchingMetric?.value == null ? [] : [matchingMetric.value];
               })
             : [];
-          const aggregate = aggregateNumbers(
+          const datedValues =
             baselineValues.length > 0
-              ? baselineValues
-              : groupRows.map((row) =>
-                  z.coerce
+              ? baselineGroup.map((row) => {
+                  const matchingMetric = row.metrics.find(
+                    (candidate) => candidate.metric === recoveryMetricKey,
+                  );
+                  return { date: row.date, value: matchingMetric?.value ?? null };
+                })
+              : groupRows.map((row) => ({
+                  date: z.string().parse(row.date),
+                  value: z.coerce
                     .number()
                     .nullable()
                     .parse(column ? (row[column] ?? null) : null),
-                ),
-          );
+                }));
+          const aggregate = aggregateNumbers(datedValues.map(({ value }) => value));
           return aggregate
             ? [
                 [
                   metric,
                   {
                     ...aggregate,
+                    observed_dates: datedValues.flatMap(({ date, value }) =>
+                      value == null ? [] : [date],
+                    ),
                     ...(baselineMetric ? { baseline_relative: baselineMetric } : {}),
                   },
                 ],
@@ -241,13 +245,79 @@ async function listHealthTrends(
   return healthTrends(rows, baselineRows, input.metrics, input.granularity);
 }
 
+async function healthTrendsResponse(
+  context: DofekMcpContext,
+  series: HealthTrendRow[],
+  input: HealthExplorerInput,
+  timezone: string,
+): Promise<ReturnType<typeof healthTrendsEnvelope>> {
+  if (!context.sensorStore) {
+    throw new Error("get_health_trends requires the ClickHouse analytics store");
+  }
+  const coverage = await new DataCoverageRepository(
+    context.sensorStore,
+    context.userId,
+    timezone,
+  ).list();
+  const requestedMetricSet = new Set(input.metrics);
+  const firstAvailableDates = coverage.flatMap((row) =>
+    requestedMetricSet.has(row.metric) && row.first_observed ? [row.first_observed] : [],
+  );
+  return healthTrendsEnvelope(series, input, timezone, firstAvailableDates);
+}
+
+function healthTrendsEnvelope(
+  rows: HealthTrendRow[],
+  input: HealthExplorerInput,
+  timezone: string,
+  firstAvailableDates: string[],
+) {
+  const built = buildHealthSeries(rows, input);
+  const observedSeries = built.series.filter((item) => item.note == null);
+  const availableDates = observedSeries.flatMap((item) =>
+    item.points.flatMap((point) => (/^\d{4}-\d{2}-\d{2}$/.test(point.key) ? [point.key] : [])),
+  );
+  const earliestAvailable = [...availableDates, ...firstAvailableDates].sort()[0] ?? null;
+
+  return {
+    range: {
+      start_date: input.start_date,
+      end_date: input.end_date,
+      granularity: input.granularity,
+      timezone,
+    },
+    requested_metrics: input.metrics,
+    series: built.series,
+    diagnostics: {
+      metrics_with_no_data: built.series.flatMap((item) =>
+        item.note === "no_data_in_range" ? [item.metric] : [],
+      ),
+      range_clamped: earliestAvailable != null && input.start_date < earliestAvailable,
+      earliest_available: earliestAvailable,
+    },
+  };
+}
+
 function average(values: Array<number | null | undefined>): number | null {
   return aggregateNumbers(values)?.avg ?? null;
 }
 
+function activityPurpose(row: ActivityMcpRow): "commute" | "training" | null {
+  if (row.canonical_type !== "cycling") return null;
+  const rawType = row.provider_type.trim().toLowerCase();
+  return rawType === "89" || rawType === "commute" || rawType === "commuting"
+    ? "commute"
+    : "training";
+}
+
 function activitySummaries(
   rows: ActivityMcpRow[],
-  groupBy: "canonical_type" | "week" | "canonical_type_and_week",
+  groupBy:
+    | "canonical_type"
+    | "week"
+    | "canonical_type_and_week"
+    | "canonical_type_and_modality"
+    | "canonical_type_and_purpose",
   timezone: string,
 ) {
   const groups = new Map<string, ActivityMcpRow[]>();
@@ -258,31 +328,63 @@ function activitySummaries(
         ? row.canonical_type
         : groupBy === "week"
           ? week
-          : `${row.canonical_type}|${week}`;
+          : groupBy === "canonical_type_and_week"
+            ? `${row.canonical_type}|${week}`
+            : groupBy === "canonical_type_and_modality"
+              ? `${row.canonical_type}|${row.modality ?? ""}`
+              : `${row.canonical_type}|${activityPurpose(row) ?? ""}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  return [...groups.entries()].map(([key, groupRows]) => {
-    const [activityType, week] =
-      groupBy === "canonical_type_and_week" ? key.split("|") : [undefined, undefined];
-    const durations = groupRows.map((row) => {
-      if (!row.ended_at) return null;
-      return (new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()) / 60_000;
+  return [...groups.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([key, groupRows]) => {
+      const [activityType, week] =
+        groupBy === "canonical_type_and_week" ? key.split("|") : [undefined, undefined];
+      const [modalityActivityType, modality] =
+        groupBy === "canonical_type_and_modality" ? key.split("|") : [undefined, undefined];
+      const [purposeActivityType, purpose] =
+        groupBy === "canonical_type_and_purpose" ? key.split("|") : [undefined, undefined];
+      const durations = groupRows.map((row) => {
+        if (!row.ended_at) return null;
+        return (new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()) / 60_000;
+      });
+      const totalDuration = durations.reduce<number>(
+        (total, duration) => total + (duration ?? 0),
+        0,
+      );
+      const elevations = groupRows.map((row) => row.elevation_gain_m);
+      const observedElevations = elevations.filter((value): value is number => value != null);
+      const totalElevationGain =
+        observedElevations.length === 0
+          ? null
+          : observedElevations.reduce((total, elevation) => total + elevation, 0);
+      const activitiesWithPower = groupRows.filter((row) => row.avg_power != null).length;
+      return {
+        ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
+        ...(groupBy === "week" ? { week: key } : {}),
+        ...(groupBy === "canonical_type_and_week" ? { canonical_type: activityType, week } : {}),
+        ...(groupBy === "canonical_type_and_modality"
+          ? { canonical_type: modalityActivityType, modality: modality || null }
+          : {}),
+        ...(groupBy === "canonical_type_and_purpose"
+          ? { canonical_type: purposeActivityType, purpose: purpose || null }
+          : {}),
+        count: groupRows.length,
+        total_duration_minutes: totalDuration,
+        avg_duration_minutes: average(durations),
+        avg_hr: average(groupRows.map((row) => row.avg_hr)),
+        max_hr_peak: aggregateNumbers(groupRows.map((row) => row.max_hr))?.max ?? null,
+        avg_power: average(groupRows.map((row) => row.avg_power)),
+        max_power_peak: aggregateNumbers(groupRows.map((row) => row.max_power))?.max ?? null,
+        power_coverage: {
+          activities_with_power: activitiesWithPower,
+          activities_total: groupRows.length,
+          pct: (activitiesWithPower / groupRows.length) * 100,
+        },
+        total_elevation_gain_m: totalElevationGain,
+        avg_elevation_gain_m: average(elevations),
+      };
     });
-    const totalDuration = durations.reduce<number>((total, duration) => total + (duration ?? 0), 0);
-    return {
-      ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
-      ...(groupBy === "week" ? { week: key } : {}),
-      ...(groupBy === "canonical_type_and_week" ? { canonical_type: activityType, week } : {}),
-      count: groupRows.length,
-      total_duration_minutes: totalDuration,
-      avg_duration_minutes: average(durations),
-      avg_hr: average(groupRows.map((row) => row.avg_hr)),
-      max_hr_peak: aggregateNumbers(groupRows.map((row) => row.max_hr))?.max ?? null,
-      avg_power: average(groupRows.map((row) => row.avg_power)),
-      max_power_peak: aggregateNumbers(groupRows.map((row) => row.max_power))?.max ?? null,
-      total_calories: null,
-    };
-  });
 }
 
 function validateSyncWindowTriggerInput(input: {
@@ -347,17 +449,56 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async ({ start_date, end_date, metrics, granularity, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
+      const requestedTimezone = timezone ?? context.timezone;
+      const input = {
+        start_date,
+        end_date,
+        metrics: metrics ?? healthMetricSchema.options,
+        granularity: granularity ?? "daily",
+        timezone,
+      };
       return jsonContent(
-        await listHealthTrends(context, {
-          start_date,
-          end_date,
-          metrics: metrics ?? healthMetricSchema.options,
-          granularity: granularity ?? "daily",
-          timezone,
-        }),
+        await healthTrendsResponse(
+          context,
+          await listHealthTrends(context, input),
+          input,
+          requestedTimezone,
+        ),
       );
     },
   );
+
+  server.registerTool(
+    "get_data_coverage",
+    {
+      title: "Get Data Coverage",
+      description:
+        "Return first and last observed dates, observed-day counts, and source providers for every health metric.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {},
+    },
+    async () => {
+      requireMcpScope(context.scopes, "health:read");
+      if (!context.sensorStore) {
+        throw new Error("get_data_coverage requires the ClickHouse analytics store");
+      }
+      return jsonContent(
+        await new DataCoverageRepository(
+          context.sensorStore,
+          context.userId,
+          context.timezone,
+        ).list(),
+      );
+    },
+  );
+
+  registerTrainingLoadTool(server, context);
+  registerCyclingPerformanceTool(server, context);
+  registerActivityStreamsTool(server, context);
+  registerActivityDetailsTool(server, context);
+  registerClimbingSessionsTool(server, context);
+  registerStrengthSessionsTool(server, context);
+  registerSupplementsTool(server, context);
 
   server.registerTool(
     "render_health_explorer",
@@ -513,104 +654,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   );
 
   server.registerTool(
-    "get_activity_details",
-    {
-      title: "Get Activity Details",
-      description:
-        "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
-      annotations: { readOnlyHint: true },
-      inputSchema: {
-        activity_id: z.uuid(),
-      },
-    },
-    async ({ activity_id }) => {
-      requireMcpScope(context.scopes, "activity:read");
-      const activityRepository = new ActivityRepository(
-        context.db,
-        context.userId,
-        context.timezone,
-        { kind: "full", paid: true, reason: "paid_grant" },
-        context.sensorStore,
-      );
-      const activity = await activityRepository.findById(activity_id);
-      if (!activity) {
-        throw new Error("Activity not found.");
-      }
-      const [strengthExercises, climbingEntries, fingerLoading] = await Promise.all([
-        new StrengthRepository(
-          context.db,
-          context.userId,
-          context.timezone,
-        ).getExercisesForActivity(activity_id),
-        new ClimbingRepository(context.db, context.userId, context.timezone, {
-          kind: "full",
-          paid: true,
-          reason: "paid_grant",
-        }).getActivityEntries(activity_id),
-        readFingerLoadingActivity({
-          activityId: activity_id,
-          database: context.db,
-          userId: context.userId,
-        }),
-      ]);
-      return jsonContent({
-        activity,
-        climbing_entries: climbingEntries.map((entry) => entry.toDetail()),
-        finger_loading: fingerLoading,
-        strength_exercises: strengthExercises.map((exercise) => exercise.toDetail()),
-      });
-    },
-  );
-
-  registerTrainingSessionTools(server, context);
-
-  server.registerTool(
-    "get_activity_streams",
-    {
-      title: "Get Activity Streams",
-      description:
-        "Return a capped, downsampled activity time series. Select only the channels needed for analysis.",
-      annotations: { readOnlyHint: true },
-      inputSchema: {
-        activity_id: z.uuid(),
-        channels: z.array(activityStreamChannelSchema).min(1).optional(),
-        downsample_to: z.number().int().min(1).max(2000).optional(),
-      },
-    },
-    async ({ activity_id, channels, downsample_to }) => {
-      requireMcpScope(context.scopes, "activity:read");
-      if (!context.sensorStore) {
-        throw new Error("get_activity_streams requires the ClickHouse analytics store");
-      }
-      const selectedChannels = channels ?? DEFAULT_ACTIVITY_STREAM_CHANNELS;
-      const rows = await new ActivityRepository(
-        context.db,
-        context.userId,
-        context.timezone,
-        { kind: "full", paid: true, reason: "paid_grant" },
-        context.sensorStore,
-      ).getStream(activity_id, downsample_to ?? 500);
-      return jsonContent({
-        channels: selectedChannels,
-        points: rows.map((streamPoint) => {
-          const point = streamPoint.toDetail();
-          return {
-            recorded_at: point.recordedAt,
-            ...(selectedChannels.includes("power") ? { power: point.power } : {}),
-            ...(selectedChannels.includes("heart_rate") ? { heart_rate: point.heartRate } : {}),
-            ...(selectedChannels.includes("cadence") ? { cadence: point.cadence } : {}),
-            ...(selectedChannels.includes("altitude") ? { altitude: point.altitude } : {}),
-            ...(selectedChannels.includes("speed") ? { speed: point.speed } : {}),
-            ...(selectedChannels.includes("position")
-              ? { latitude: point.lat, longitude: point.lng }
-              : {}),
-          };
-        }),
-      });
-    },
-  );
-
-  server.registerTool(
     "get_activity_summary",
     {
       title: "Get Activity Summary",
@@ -619,7 +662,15 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
-        group_by: z.enum(["canonical_type", "week", "canonical_type_and_week"]).optional(),
+        group_by: z
+          .enum([
+            "canonical_type",
+            "week",
+            "canonical_type_and_week",
+            "canonical_type_and_modality",
+            "canonical_type_and_purpose",
+          ])
+          .optional(),
         canonical_types: z.array(z.string()).optional(),
       },
     },
@@ -634,13 +685,13 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         context.sensorStore,
       );
       const rows = await repository.listRange(start_date, end_date, canonical_types);
-      return jsonContent(
-        activitySummaries(
-          rows.map((row) => activityMcpRowSchema.parse(row)),
-          group_by ?? "canonical_type",
-          context.timezone,
-        ),
-      );
+      const parsedRows = rows.map((row) => activityMcpRowSchema.parse(row));
+      const unclassifiedCount = parsedRows.filter((row) => row.canonical_type === "other").length;
+      return jsonContent({
+        unclassified_pct:
+          parsedRows.length === 0 ? 0 : (unclassifiedCount / parsedRows.length) * 100,
+        summaries: activitySummaries(parsedRows, group_by ?? "canonical_type", context.timezone),
+      });
     },
   );
 
@@ -673,6 +724,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           bodyweight_kg: row.bodyweightKg,
           edge_size_mm: row.edgeSizeMm,
           effective_load_kg: row.effectiveLoadKg,
+          effective_load_formula: "bodyweight_kg + external_load_kg",
           exercise: row.exercise,
           external_load_kg: row.externalLoadKg,
           grip_position: row.gripPosition,
@@ -683,6 +735,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           rpe: row.rpe,
           set_count: row.setCount,
           started_at: row.startedAt,
+          total_time_under_tension_seconds: row.holdDurationSeconds * row.setCount,
         })),
       );
     },
@@ -748,18 +801,27 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         throw new Error("get_body_metrics requires the ClickHouse analytics store");
       }
       const repository = new BodyRepository(context.sensorStore, context.userId, context.timezone);
-      const rows = await repository.listRange(start_date, end_date);
+      const rows = await repository.listReconciledRange(start_date, end_date);
       return jsonContent(
         rows.map((row) => ({
-          date: localDateString(new Date(row.recordedAt), context.timezone),
+          date: row.date,
           weight_kg: row.weightKg,
           body_fat_pct: row.bodyFatPct,
-          lean_mass_kg:
-            row.weightKg != null && row.bodyFatPct != null
-              ? row.weightKg * (1 - row.bodyFatPct / 100)
-              : null,
+          lean_mass_kg: row.leanMassKg,
           bmi: row.bmi,
-          source_provider: row.providerId,
+          source_provider_by_metric: {
+            weight_kg: row.sourceProviderByMetric.weightKg,
+            body_fat_pct: row.sourceProviderByMetric.bodyFatPct,
+            bmi: row.sourceProviderByMetric.bmi,
+          },
+          sources: row.sources.map((source) => ({
+            source_provider: source.sourceProvider,
+            recorded_at: source.recordedAt,
+            weight_kg: source.weightKg,
+            body_fat_pct: source.bodyFatPct,
+            bmi: source.bmi,
+          })),
+          coverage: { source_count: row.coverage.sourceCount },
         })),
       );
     },
@@ -781,22 +843,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       assertDateRange(start_date, end_date);
       const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
       return jsonContent(await repository.timeline(start_date, end_date));
-    },
-  );
-
-  server.registerTool(
-    "get_supplements",
-    {
-      title: "Get Supplements",
-      description: "Return the authenticated user's current supplement definitions and nutrients.",
-      annotations: { readOnlyHint: true },
-      inputSchema: {},
-    },
-    async () => {
-      requireMcpScope(context.scopes, "nutrition:read");
-      return jsonContent(
-        await new SupplementsRepository(context.db, context.userId, context.timezone).list(),
-      );
     },
   );
 
