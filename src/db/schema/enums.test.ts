@@ -25,7 +25,7 @@ describe("schema enums", () => {
 
   it("defines strength set type values", () => {
     expect(setTypeEnum.enumName).toBe("set_type");
-    expect(setTypeEnum.enumValues).toEqual(["working", "warmup", "dropset", "failure"]);
+    expect(setTypeEnum.enumValues).toEqual(["working", "warmup", "dropset", "failure", "rest"]);
   });
 
   it("defines sleep stage name values", () => {

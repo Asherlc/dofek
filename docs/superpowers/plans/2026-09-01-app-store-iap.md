@@ -27,7 +27,7 @@
 
 ## File Structure
 
-- `drizzle/0103_app_store_billing.sql` adds the App Store columns and the sole notification-idempotency table.
+- `drizzle/0105_app_store_billing.sql` adds the App Store columns and the sole notification-idempotency table.
 - `src/db/schema/account.ts` models the App Store billing columns and notification table.
 - `packages/server/src/billing/app-store-config.ts` parses required Apple configuration once.
 - `packages/server/src/billing/app-store-verifier.ts` wraps Apple's verifier behind a focused interface.
@@ -42,7 +42,7 @@
 
 **Files:**
 - Modify: `src/db/schema/account.ts:329-390`
-- Create: `drizzle/0103_app_store_billing.sql`
+- Create: `drizzle/0105_app_store_billing.sql`
 - Modify: `packages/server/src/billing/entitlement.ts`
 - Modify: `packages/server/src/billing/entitlement.test.ts`
 
@@ -114,7 +114,7 @@ Run: `pnpm lint:migrations && pnpm typecheck`
 Commit:
 
 ```bash
-git add src/db/schema/account.ts drizzle/0103_app_store_billing.sql packages/server/src/billing/entitlement.ts packages/server/src/billing/entitlement.test.ts
+git add src/db/schema/account.ts drizzle/0105_app_store_billing.sql packages/server/src/billing/entitlement.ts packages/server/src/billing/entitlement.test.ts
 git commit -m "Add App Store billing state"
 ```
 
