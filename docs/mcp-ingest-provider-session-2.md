@@ -122,10 +122,9 @@ Sampled untyped WHOOP payloads contain no sport identifier. The existing sport
 ID extraction and canonical mapping work when WHOOP supplies one. The merge
 defect was a containment rule that required identical types; an untyped
 contained session can now inherit its typed container while two differing known
-types remain separate. Of 164 raw WHOOP `other` activities, 11 are
-near-identical recoveries and 13 are recoverable by containment. That leaves
-151 raw untyped activities; against the originally reported canonical count of
-154, the expected post-refresh residual is 152.
+types remain separate. Of 164 raw WHOOP `other` activities, 13 are recoverable
+by containment; the 11 near-identical recoveries are a subset of those 13.
+That leaves an expected raw residual of 151 after refresh.
 
 FatSecret's last 30 scheduled jobs completed successfully in roughly 1–1.5
 seconds and wrote zero rows. Full history contains 142 `dofek` entries
@@ -221,7 +220,7 @@ credentials, account access, and separate scope decisions before integration.
 2. Use the power coverage table above; outdoor Wahoo power is absent upstream.
 3. Climbing grades/sends and strength sets are now exposed. Hangboard protocols
    are absent.
-4. Expected post-refresh canonical WHOOP `other` residual: 152.
+4. Expected post-refresh raw WHOOP `other` residual: 151.
 5. `get_activity_streams` is available for power analytics.
 6. Coverage starts: HRV, RHR, and sleep all 2026-03-11. Earlier WHOOP/Apple data
    requires a user-authorized full sync; Apple archive import failed.

@@ -6,10 +6,7 @@ import { readFingerLoadingActivity } from "../repositories/climbing-training-log
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-
-function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
+import { jsonContent } from "./tool-utils.ts";
 
 /** Register one-activity structured training details. */
 export function registerActivityDetailsTool(server: McpServer, context: DofekMcpContext): void {

@@ -5,6 +5,7 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
+import { jsonContent, mapWithConcurrency } from "./tool-utils.ts";
 
 const trainingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),
@@ -13,10 +14,6 @@ const trainingSessionActivitySchema = z.object({
   name: z.string().nullable(),
   started_at: z.string(),
 });
-
-function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
 
 /** Register exact-range strength session details and volume load. */
 export function registerStrengthSessionsTool(server: McpServer, context: DofekMcpContext): void {
@@ -49,43 +46,40 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
       ).map((row) => trainingSessionActivitySchema.parse(row));
       const muscleGroupVolume = new Map<string, number>();
       let totalVolumeLoadKg = 0;
-      const sessions = await Promise.all(
-        activities.map(async (activity) => {
-          const exercises = (await strengthRepository.getExercisesForActivity(activity.id)).map(
-            (exercise) => exercise.toDetail(),
+      const sessions = await mapWithConcurrency(activities, 8, async (activity) => {
+        const exercises = (await strengthRepository.getExercisesForActivity(activity.id)).map(
+          (exercise) => exercise.toDetail(),
+        );
+        let sessionVolumeLoadKg = 0;
+        for (const exercise of exercises) {
+          const exerciseVolume = exercise.sets.reduce(
+            (sum, set) =>
+              sum + (set.weightKg === null || set.reps === null ? 0 : set.weightKg * set.reps),
+            0,
           );
-          let sessionVolumeLoadKg = 0;
-          for (const exercise of exercises) {
-            const exerciseVolume = exercise.sets.reduce(
-              (sum, set) =>
-                sum + (set.weightKg === null || set.reps === null ? 0 : set.weightKg * set.reps),
-              0,
+          sessionVolumeLoadKg += exerciseVolume;
+          for (const muscleGroup of exercise.muscleGroups ?? []) {
+            muscleGroupVolume.set(
+              muscleGroup,
+              (muscleGroupVolume.get(muscleGroup) ?? 0) + exerciseVolume,
             );
-            sessionVolumeLoadKg += exerciseVolume;
-            for (const muscleGroup of exercise.muscleGroups ?? []) {
-              muscleGroupVolume.set(
-                muscleGroup,
-                (muscleGroupVolume.get(muscleGroup) ?? 0) + exerciseVolume,
-              );
-            }
           }
-          totalVolumeLoadKg += sessionVolumeLoadKg;
-          return {
-            activity_id: activity.id,
-            started_at: activity.started_at,
-            duration_minutes:
-              activity.ended_at === null
-                ? null
-                : (new Date(activity.ended_at).getTime() -
-                    new Date(activity.started_at).getTime()) /
-                  60_000,
-            avg_hr: activity.avg_hr,
-            name: activity.name,
-            volume_load_kg: sessionVolumeLoadKg,
-            exercises,
-          };
-        }),
-      );
+        }
+        totalVolumeLoadKg += sessionVolumeLoadKg;
+        return {
+          activity_id: activity.id,
+          started_at: activity.started_at,
+          duration_minutes:
+            activity.ended_at === null
+              ? null
+              : (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
+                60_000,
+          avg_hr: activity.avg_hr,
+          name: activity.name,
+          volume_load_kg: sessionVolumeLoadKg,
+          exercises,
+        };
+      });
       return jsonContent({
         sessions,
         aggregates: {

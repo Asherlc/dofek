@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -5,11 +6,17 @@ import { QueryStatePanel } from "./QueryStatePanel.tsx";
 export function SubjectiveTrackingPanel() {
   const [bodyRegionId, setBodyRegionId] = useState("");
   const [description, setDescription] = useState("");
+  const utils = trpc.useUtils();
   const injuries = trpc.subjective.injuries.useQuery();
   const regions = trpc.subjective.regions.useQuery();
-  const createInjury = trpc.subjective.createInjury.useMutation();
+  const createInjury = trpc.subjective.createInjury.useMutation({
+    onSuccess: async () => {
+      setBodyRegionId("");
+      setDescription("");
+      await utils.subjective.injuries.invalidate();
+    },
+  });
   const saveCheckIn = trpc.subjective.saveCheckIn.useMutation();
-  const today = new Date().toISOString().slice(0, 10);
 
   return (
     <div className="card p-4 space-y-3">
@@ -19,7 +26,7 @@ export function SubjectiveTrackingPanel() {
         disabled={saveCheckIn.isPending}
         onClick={() =>
           saveCheckIn.mutate({
-            date: new Date().toISOString().slice(0, 10),
+            date: formatDateYmd(),
             symptoms: [],
           })
         }
@@ -40,7 +47,7 @@ export function SubjectiveTrackingPanel() {
             bodyRegionId,
             description: note,
             kind: "niggle",
-            onsetDate: today,
+            onsetDate: formatDateYmd(),
             resolvedDate: null,
             severity: null,
           });
@@ -59,6 +66,7 @@ export function SubjectiveTrackingPanel() {
             </option>
           ))}
         </select>
+        {regions.error ? <p className="text-sm text-red-600">{regions.error.message}</p> : null}
         <input
           aria-label="Injury note"
           className="rounded border px-2 py-1 text-sm"

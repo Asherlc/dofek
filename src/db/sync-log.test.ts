@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
@@ -27,7 +28,9 @@ describe("logSync", () => {
       origin: "scheduled",
     });
 
-    expect(db.spies.execute).toHaveBeenCalledOnce();
+    expect(db.spies.execute).toHaveBeenCalledTimes(2);
+    const lockQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[0]?.[0]);
+    expect(lockQuery.sql).toContain("pg_advisory_xact_lock");
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       extra: {
         error_message: "access token expired",
@@ -42,8 +45,10 @@ describe("logSync", () => {
     });
   });
 
-  it("does not alert before or after the consecutive-failure threshold", async () => {
-    db = createMockDatabase({ executeResult: [{ consecutive_failures: "3" }] });
+  it.each([1, 3])("does not alert at consecutive-failure count %i", async (consecutiveFailures) => {
+    db = createMockDatabase({
+      executeResult: [{ consecutive_failures: String(consecutiveFailures) }],
+    });
 
     await logSync(db.db, {
       providerId: "whoop",

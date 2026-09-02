@@ -310,15 +310,12 @@ export class SyncRepository {
     const rows = await executeWithSchema(
       this.#db,
       scheduledSyncHealthRowSchema,
-      sql`WITH attempts AS (
+      sql`WITH ordered_attempts AS (
             SELECT
               provider_id,
               status,
               synced_at,
               error_message,
-              MAX(synced_at) FILTER (WHERE status = 'success') OVER (
-                PARTITION BY provider_id
-              ) AS last_success,
               ROW_NUMBER() OVER (
                 PARTITION BY provider_id
                 ORDER BY synced_at DESC, id DESC
@@ -327,6 +324,17 @@ export class SyncRepository {
             WHERE user_id = ${this.#userId}
               AND data_type = 'sync'
               AND origin = 'scheduled'
+          ),
+          attempts AS (
+            SELECT
+              *,
+              MAX(synced_at) FILTER (WHERE status = 'success') OVER (
+                PARTITION BY provider_id
+              ) AS last_success,
+              MIN(attempt_number) FILTER (WHERE status = 'success') OVER (
+                PARTITION BY provider_id
+              ) AS last_success_attempt_number
+            FROM ordered_attempts
           )
           SELECT
             provider_id,
@@ -337,7 +345,7 @@ export class SyncRepository {
             ) AS last_error,
             COUNT(*) FILTER (
               WHERE status = 'error'
-                AND synced_at > COALESCE(last_success, '-infinity'::timestamptz)
+                AND attempt_number < COALESCE(last_success_attempt_number, 9223372036854775807)
             )::int AS consecutive_failures
           FROM attempts
           GROUP BY provider_id

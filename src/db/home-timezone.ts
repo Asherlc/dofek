@@ -2,9 +2,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
-const homeTimezoneRowSchema = z.object({ value: z.string() });
+const homeTimezoneRowSchema = z.object({ value: z.string().nullable() });
 
-function isIanaTimezone(value: string): boolean {
+export function isGeographicTimezone(value: string): boolean {
+  if (!value.includes("/") || value.startsWith("Etc/")) return false;
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
     return true;
@@ -28,5 +29,5 @@ export async function loadUserHomeTimezone(
         LIMIT 1`,
   );
   const timezone = rows[0]?.value?.trim();
-  return timezone && isIanaTimezone(timezone) ? timezone : null;
+  return timezone && isGeographicTimezone(timezone) ? timezone : null;
 }

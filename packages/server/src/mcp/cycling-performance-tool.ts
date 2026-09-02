@@ -3,10 +3,7 @@ import { dateSchema } from "../lib/date-schema.ts";
 import { CyclingPerformanceRepository } from "../repositories/cycling-performance-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-
-function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
+import { jsonContent } from "./tool-utils.ts";
 
 /** Register exact-range, load-normalized cycling analytics. */
 export function registerCyclingPerformanceTool(server: McpServer, context: DofekMcpContext): void {

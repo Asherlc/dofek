@@ -65,8 +65,18 @@ active_duplicate_matches AS (
                 left_activity.provider_id != right_activity.provider_id
                 AND (
                     left_activity.canonical_type = right_activity.canonical_type
-                    OR left_activity.canonical_type = 'other'
-                    OR right_activity.canonical_type = 'other'
+                    OR (
+                        left_activity.canonical_type = 'other'
+                        AND right_activity.canonical_type != 'other'
+                        AND dateDiff('second', left_activity.started_at, left_activity.ended_at)
+                            <= dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                    )
+                    OR (
+                        right_activity.canonical_type = 'other'
+                        AND left_activity.canonical_type != 'other'
+                        AND dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                            <= dateDiff('second', left_activity.started_at, left_activity.ended_at)
+                    )
                 )
                 AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
                 AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
@@ -117,8 +127,18 @@ active_to_tombstoned_matches AS (
                 left_activity.provider_id != right_activity.provider_id
                 AND (
                     left_activity.canonical_type = right_activity.canonical_type
-                    OR left_activity.canonical_type = 'other'
-                    OR right_activity.canonical_type = 'other'
+                    OR (
+                        left_activity.canonical_type = 'other'
+                        AND right_activity.canonical_type != 'other'
+                        AND dateDiff('second', left_activity.started_at, left_activity.ended_at)
+                            <= dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                    )
+                    OR (
+                        right_activity.canonical_type = 'other'
+                        AND left_activity.canonical_type != 'other'
+                        AND dateDiff('second', right_activity.started_at, right_activity.ended_at)
+                            <= dateDiff('second', left_activity.started_at, left_activity.ended_at)
+                    )
                 )
                 AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
                 AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0

@@ -115,7 +115,7 @@ vi.mock("../db/sync-log.ts", () => ({
   logSync: (...args: unknown[]) => mockLogSync(...args),
 }));
 const mockLoadUserHomeTimezone = vi.fn(
-  async (_database: unknown, _userId: string) => "America/Los_Angeles",
+  async (_database: unknown, _userId: string): Promise<string | null> => "America/Los_Angeles",
 );
 vi.mock("../db/home-timezone.ts", () => ({
   loadUserHomeTimezone: (database: unknown, userId: string) =>
@@ -303,6 +303,21 @@ describe("processImportJob", () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
 
       await runImportJob(job, mockDb);
+
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
+    });
+
+    it("runs imports with an explicit null ingest timezone when no home timezone is persisted", async () => {
+      mockLoadUserHomeTimezone.mockResolvedValueOnce(null);
+      mockImportAppleHealthFile.mockImplementationOnce(async () => {
+        expect(getProviderIngestContext()).toEqual({ homeTimezone: null });
+        return { recordsSynced: 1, errors: [] };
+      });
+
+      await runImportJob(
+        createMockJob({ filePath: tempFilePath, importType: "apple-health" }),
+        mockDb,
+      );
 
       expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
     });

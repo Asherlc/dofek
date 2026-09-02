@@ -18,9 +18,6 @@ ADD CONSTRAINT activity_local_time_context_check CHECK (
   )
 ) NOT VALID;
 
-ALTER TABLE fitness.activity
-VALIDATE CONSTRAINT activity_local_time_context_check;
-
 ALTER TABLE fitness.sleep_session
 DROP CONSTRAINT sleep_session_local_time_context_check,
 ADD CONSTRAINT sleep_session_local_time_context_check CHECK (
@@ -41,6 +38,3 @@ ADD CONSTRAINT sleep_session_local_time_context_check CHECK (
     AND (ended_at IS NULL OR end_utc_offset_minutes BETWEEN -840 AND 840)
   )
 ) NOT VALID;
-
-ALTER TABLE fitness.sleep_session
-VALIDATE CONSTRAINT sleep_session_local_time_context_check;

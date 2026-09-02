@@ -6,6 +6,7 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
+import { jsonContent, mapWithConcurrency } from "./tool-utils.ts";
 
 const climbingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),
@@ -25,10 +26,6 @@ function disciplineFor(climb: {
   if (climb.lead === true) return "lead";
   if (climb.lead === false) return "top_rope";
   return "route";
-}
-
-function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
 /** Register exact-range climbing session details and aggregates. */
@@ -61,46 +58,41 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
       const activities = (
         await activityRepository.listRange(start_date, end_date, ["climbing"])
       ).map((row) => climbingSessionActivitySchema.parse(row));
-      const sessions = await Promise.all(
-        activities.map(async (activity) => {
-          const entries = (await climbingRepository.getActivityEntries(activity.id)).map(
-            (entry) => {
-              const detail = entry.toDetail();
-              return {
-                id: detail.id,
-                discipline: disciplineFor(detail),
-                grade: detail.grade,
-                grade_system: detail.gradeSystem,
-                sent: detail.sent,
-                attempt_count: detail.attemptCount,
-                attempts: detail.attempts,
-                ascent_type: detail.ascentType,
-                hold_type: detail.holdType,
-                route_name: detail.routeName,
-                location_name: detail.locationName,
-                source_name: detail.sourceName,
-                wall_angle_degrees: detail.wallAngleDegrees,
-              };
-            },
-          );
+      const sessions = await mapWithConcurrency(activities, 8, async (activity) => {
+        const entries = (await climbingRepository.getActivityEntries(activity.id)).map((entry) => {
+          const detail = entry.toDetail();
           return {
-            activity_id: activity.id,
-            started_at: activity.started_at,
-            duration_minutes:
-              activity.ended_at === null
-                ? null
-                : (new Date(activity.ended_at).getTime() -
-                    new Date(activity.started_at).getTime()) /
-                  60_000,
-            avg_hr: activity.avg_hr,
-            name: activity.name,
-            gym_vs_crag: null,
-            location: entries.find((entry) => entry.location_name !== null)?.location_name ?? null,
-            total_vertical_m: null,
-            climbs: entries,
+            id: detail.id,
+            discipline: disciplineFor(detail),
+            grade: detail.grade,
+            grade_system: detail.gradeSystem,
+            sent: detail.sent,
+            attempt_count: detail.attemptCount,
+            attempts: detail.attempts,
+            ascent_type: detail.ascentType,
+            hold_type: detail.holdType,
+            route_name: detail.routeName,
+            location_name: detail.locationName,
+            source_name: detail.sourceName,
+            wall_angle_degrees: detail.wallAngleDegrees,
           };
-        }),
-      );
+        });
+        return {
+          activity_id: activity.id,
+          started_at: activity.started_at,
+          duration_minutes:
+            activity.ended_at === null
+              ? null
+              : (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
+                60_000,
+          avg_hr: activity.avg_hr,
+          name: activity.name,
+          gym_vs_crag: null,
+          location: entries.find((entry) => entry.location_name !== null)?.location_name ?? null,
+          total_vertical_m: null,
+          climbs: entries,
+        };
+      });
       const climbs = sessions.flatMap((session) => session.climbs);
       const gradeDistribution = new Map<
         string,

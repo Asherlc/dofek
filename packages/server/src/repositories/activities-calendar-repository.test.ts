@@ -290,6 +290,13 @@ describe("ActivitiesCalendarRepository", () => {
           end_utc_offset_minutes: -420,
           local_time_source: "device_timezone",
         }),
+        makeActivityRow({
+          id: "home-timezone-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -480,
+          local_time_source: "user_home_timezone",
+        }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
@@ -312,6 +319,12 @@ describe("ActivitiesCalendarRepository", () => {
       startUtcOffsetMinutes: -480,
       endUtcOffsetMinutes: -420,
       source: "device_timezone",
+    });
+    expect(contextById.get("home-timezone-context")).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -480,
+      source: "user_home_timezone",
     });
   });
 

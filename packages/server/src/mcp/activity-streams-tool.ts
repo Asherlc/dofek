@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
+import { jsonContent } from "./tool-utils.ts";
 
 const activityStreamChannelSchema = z.enum([
   "power",
@@ -12,10 +13,6 @@ const activityStreamChannelSchema = z.enum([
   "speed",
   "position",
 ]);
-
-function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
 
 /** Register capped access to deduped activity sensor streams. */
 export function registerActivityStreamsTool(server: McpServer, context: DofekMcpContext): void {

@@ -335,25 +335,57 @@ merged AS (
     any(best.source_name) AS source_name,
     argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
     argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
-    argMinIf(
-      ranked.timezone,
-      ranked.priority,
-      ranked.local_time_source IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      1
     ) AS timezone,
-    argMinIf(
-      ranked.start_utc_offset_minutes,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      2
     ) AS start_utc_offset_minutes,
-    argMinIf(
-      ranked.end_utc_offset_minutes,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      3
     ) AS end_utc_offset_minutes,
-    argMinIf(
-      ranked.local_time_source,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      4
     ) AS local_time_source,
     argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
     arraySort(groupUniqArrayIf(ranked.provider_id, ranked.id IS NOT NULL)) AS source_providers,

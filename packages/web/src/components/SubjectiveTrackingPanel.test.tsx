@@ -1,9 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
+  const createInjuryOptions: {
+    current: { onSuccess?: () => void | Promise<void> } | undefined;
+  } = { current: undefined };
   const injuriesResult: {
     data:
       | Array<{
@@ -17,20 +20,30 @@ const mocks = vi.hoisted(() => {
     error: Error | null;
     isLoading: boolean;
   } = { data: [], error: null, isLoading: false };
+  const regionsResult: {
+    data: Array<{ id: string; label: string }> | undefined;
+    error: Error | null;
+  } = { data: [{ id: "left-finger", label: "Left finger" }], error: null };
 
   return {
     createInjury: vi.fn(),
+    createInjuryOptions,
+    invalidateInjuries: vi.fn(),
     injuriesResult,
-    regionsResult: { data: [{ id: "left-finger", label: "Left finger" }] },
+    regionsResult,
     saveCheckIn: vi.fn(),
   };
 });
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    useUtils: () => ({ subjective: { injuries: { invalidate: mocks.invalidateInjuries } } }),
     subjective: {
       createInjury: {
-        useMutation: () => ({ error: null, isPending: false, mutate: mocks.createInjury }),
+        useMutation: (options: typeof mocks.createInjuryOptions.current) => {
+          mocks.createInjuryOptions.current = options;
+          return { error: null, isPending: false, mutate: mocks.createInjury };
+        },
       },
       injuries: { useQuery: () => mocks.injuriesResult },
       regions: { useQuery: () => mocks.regionsResult },
@@ -48,6 +61,10 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.injuriesResult.data = [];
     mocks.injuriesResult.error = null;
     mocks.injuriesResult.isLoading = false;
+    mocks.regionsResult.data = [{ id: "left-finger", label: "Left finger" }];
+    mocks.regionsResult.error = null;
+    mocks.invalidateInjuries.mockReset().mockResolvedValue(undefined);
+    mocks.createInjuryOptions.current = undefined;
     mocks.saveCheckIn.mockReset();
     mocks.createInjury.mockReset();
   });
@@ -85,6 +102,21 @@ describe("SubjectiveTrackingPanel", () => {
     });
   });
 
+  it("uses the device-local date without UTC serialization", () => {
+    const toISOString = vi.spyOn(Date.prototype, "toISOString").mockImplementation(() => {
+      throw new Error("UTC serialization is not allowed");
+    });
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "All clear today" }));
+
+    expect(mocks.saveCheckIn).toHaveBeenCalledWith({
+      date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      symptoms: [],
+    });
+    toISOString.mockRestore();
+  });
+
   it("records a free-text injury note with a body-region tag", () => {
     render(<SubjectiveTrackingPanel />);
 
@@ -102,6 +134,29 @@ describe("SubjectiveTrackingPanel", () => {
       resolvedDate: null,
       severity: null,
     });
+  });
+
+  it("refreshes injury history and clears the form after an injury is created", async () => {
+    render(<SubjectiveTrackingPanel />);
+    fireEvent.change(screen.getByLabelText("Body region"), { target: { value: "left-finger" } });
+    fireEvent.change(screen.getByLabelText("Injury note"), { target: { value: "Tender" } });
+
+    await act(async () => {
+      await mocks.createInjuryOptions.current?.onSuccess?.();
+    });
+
+    expect(mocks.invalidateInjuries).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Body region")).toHaveValue("");
+    expect(screen.getByLabelText("Injury note")).toHaveValue("");
+  });
+
+  it("renders the body-region loading error", () => {
+    mocks.regionsResult.data = undefined;
+    mocks.regionsResult.error = new Error("Body regions unavailable");
+
+    render(<SubjectiveTrackingPanel />);
+
+    expect(screen.getByText("Body regions unavailable")).toBeInTheDocument();
   });
 
   it("renders the injury history loading state", () => {
