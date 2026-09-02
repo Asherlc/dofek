@@ -7,10 +7,6 @@ vi.mock("./telemetry", () => ({
   captureException: mockCaptureException,
 }));
 
-vi.mock("./billing-checkout-operation", () => ({
-  clearPendingMobileBillingCheckoutOperation: vi.fn(),
-}));
-
 vi.mock("./mobile-export-cache", () => ({
   purgeMobileExportCache: vi.fn(),
 }));
@@ -43,7 +39,6 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-26T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: operation("billing-checkout"),
         clearPreparation: operation("preparation"),
         clearSession: operation("session"),
         purgeCoreMotion: vi.fn(async (cutoff) => calls.push(`core-motion:${cutoff}`)),
@@ -84,7 +79,6 @@ describe("purgeMobileAccountState", () => {
         "medication-reminders",
         "export-cache",
         "query-persistence",
-        "billing-checkout",
         "session",
         "preparation",
         "query",
@@ -107,7 +101,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: later,
         clearPreparation: later,
         clearSession,
         purgeCoreMotion: later,
@@ -143,7 +136,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: laterCleanup,
         clearPreparation: laterCleanup,
         clearSession: laterCleanup,
         purgeCoreMotion: vi.fn().mockRejectedValue(new Error("motion failed")),
@@ -186,7 +178,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: vi.fn(),
@@ -226,7 +217,6 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-25T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn().mockResolvedValue("2026-07-26T12:00:00.000Z"),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: nativePurge,
@@ -259,7 +249,6 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-26T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn().mockRejectedValue(new Error("SecureStore unavailable")),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: nativePurge,
@@ -293,7 +282,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: operation,
-        clearBillingCheckoutOperation: operation,
         clearPreparation: operation,
         clearSession: operation,
         purgeCoreMotion: operation,
@@ -336,7 +324,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession,
         purgeCoreMotion,

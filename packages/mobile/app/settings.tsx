@@ -10,11 +10,10 @@ import {
   resolveClimbingGradePreference,
 } from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   RefreshControl,
   ScrollView,
   Text,
@@ -34,11 +33,8 @@ import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
+import { AppStoreBillingService } from "../lib/app-store-billing";
 import { useAuth } from "../lib/auth-context";
-import {
-  clearMobileBillingCheckoutOperation,
-  getOrCreateMobileBillingCheckoutOperationId,
-} from "../lib/billing-checkout-operation";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
@@ -47,6 +43,7 @@ import { styles } from "./settings.styles";
 import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
+type AppStoreBillingAction = "manage" | "restore" | "subscribe";
 type SettingsCategory =
   | "account"
   | "data-sources"
@@ -238,22 +235,21 @@ export default function SettingsScreen() {
   const lastUnitReadError = useRef<unknown>(null);
   const billingStatus = trpc.billing.status.useQuery();
   const medicationDoseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
-  const [checkoutClientError, setCheckoutClientError] = useState<string | null>(null);
-  const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
-    onSuccess: async ({ url }, { operationId }) => {
-      try {
-        await clearMobileBillingCheckoutOperation(operationId);
-      } catch (error: unknown) {
-        captureException(error, { context: "billing-checkout-operation-clear" });
-      }
-      void Linking.openURL(url);
-    },
-  });
-  const portalSessionMutation = trpc.billing.createPortalSession.useMutation({
-    onSuccess: ({ url }) => {
-      void Linking.openURL(url);
-    },
-  });
+  const appStoreBillingService = useMemo(
+    () =>
+      new AppStoreBillingService({
+        queryClient: {
+          invalidateQueries: () => trpcUtils.billing.status.invalidate(),
+        },
+        trpcClient: trpcUtils.client,
+      }),
+    [trpcUtils],
+  );
+  const [appStoreBillingAction, setAppStoreBillingAction] = useState<AppStoreBillingAction | null>(
+    null,
+  );
+  const [appStoreBillingError, setAppStoreBillingError] = useState<string | null>(null);
+  const [appStoreBillingMessage, setAppStoreBillingMessage] = useState<string | null>(null);
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
@@ -261,17 +257,49 @@ export default function SettingsScreen() {
     ? resolveClimbingGradePreference(climbingGradeSetting.data.value)
     : null;
 
-  async function startCheckout(): Promise<void> {
-    setCheckoutClientError(null);
-    try {
-      const operationId = await getOrCreateMobileBillingCheckoutOperationId();
-      checkoutSessionMutation.mutate({ operationId });
-    } catch (error: unknown) {
-      captureException(error, { context: "billing-checkout-operation-create" });
-      setCheckoutClientError(
-        error instanceof Error ? error.message : "Checkout could not be started on this device.",
+  function beginAppStoreBillingAction(action: AppStoreBillingAction): void {
+    setAppStoreBillingAction(action);
+    setAppStoreBillingError(null);
+    setAppStoreBillingMessage(null);
+  }
+
+  function completeAppStoreBillingAction(message?: string): void {
+    setAppStoreBillingAction(null);
+    setAppStoreBillingMessage(message ?? null);
+  }
+
+  function failAppStoreBillingAction(error: unknown): void {
+    setAppStoreBillingAction(null);
+    setAppStoreBillingError(
+      error instanceof Error ? error.message : "App Store billing could not be completed.",
+    );
+  }
+
+  function subscribeWithAppStore(): void {
+    beginAppStoreBillingAction("subscribe");
+    void appStoreBillingService.subscribe().then((result) => {
+      completeAppStoreBillingAction(
+        result.outcome === "pending" ? "Your purchase is pending approval." : undefined,
       );
-    }
+    }, failAppStoreBillingAction);
+  }
+
+  function restoreAppStorePurchases(): void {
+    beginAppStoreBillingAction("restore");
+    void appStoreBillingService.restore().then((restoredCount) => {
+      completeAppStoreBillingAction(
+        restoredCount === 0
+          ? "No active purchases were found."
+          : `${restoredCount} purchase${restoredCount === 1 ? "" : "s"} restored.`,
+      );
+    }, failAppStoreBillingAction);
+  }
+
+  function manageAppStoreSubscription(): void {
+    beginAppStoreBillingAction("manage");
+    void appStoreBillingService
+      .showManageSubscriptions()
+      .then(() => completeAppStoreBillingAction(), failAppStoreBillingAction);
   }
 
   useEffect(() => {
@@ -719,61 +747,92 @@ export default function SettingsScreen() {
                     Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
                   </Text>
                 ) : null}
-                {checkoutSessionMutation.error ? (
-                  <Text style={styles.billingErrorText}>
-                    {checkoutSessionMutation.error.message}
+                {billingStatus.data.access.kind === "full" &&
+                billingStatus.data.access.reason === "app_store_subscription" &&
+                billingStatus.data.appStoreSubscriptionStatus ? (
+                  <Text style={styles.billingDetailText}>
+                    App Store subscription status: {billingStatus.data.appStoreSubscriptionStatus}
                   </Text>
                 ) : null}
-                {checkoutClientError ? (
-                  <Text style={styles.billingErrorText}>{checkoutClientError}</Text>
+                {appStoreBillingError ? (
+                  <Text style={styles.billingErrorText}>{appStoreBillingError}</Text>
                 ) : null}
-                {portalSessionMutation.error ? (
-                  <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
+                {appStoreBillingMessage ? (
+                  <Text style={styles.billingDetailText}>{appStoreBillingMessage}</Text>
                 ) : null}
                 <View style={styles.billingActionRow}>
                   {!billingStatus.data.hasFullAccess && (
                     <TouchableOpacity
                       style={[
                         styles.billingPrimaryButton,
-                        checkoutSessionMutation.isPending && styles.buttonDisabled,
+                        appStoreBillingAction && styles.buttonDisabled,
                       ]}
-                      onPress={() => void startCheckout()}
+                      onPress={subscribeWithAppStore}
                       activeOpacity={0.7}
-                      disabled={checkoutSessionMutation.isPending}
+                      disabled={appStoreBillingAction !== null}
                       accessibilityRole="button"
-                      accessibilityLabel="Upgrade to Full Access"
+                      accessibilityLabel={
+                        appStoreBillingAction === "subscribe"
+                          ? "Subscribing..."
+                          : "Subscribe for $4.99/month"
+                      }
                       accessibilityState={{
-                        busy: checkoutSessionMutation.isPending,
-                        disabled: checkoutSessionMutation.isPending,
+                        busy: appStoreBillingAction === "subscribe",
+                        disabled: appStoreBillingAction !== null,
                       }}
                     >
                       <Text style={styles.billingButtonText}>
-                        {checkoutSessionMutation.isPending
-                          ? "Opening checkout..."
-                          : "Upgrade to Full Access"}
+                        {appStoreBillingAction === "subscribe"
+                          ? "Subscribing..."
+                          : "Subscribe for $4.99/month"}
                       </Text>
                     </TouchableOpacity>
                   )}
-                  {billingStatus.data.canManageBilling && (
+                  <TouchableOpacity
+                    style={[
+                      styles.billingSecondaryButton,
+                      appStoreBillingAction && styles.buttonDisabled,
+                    ]}
+                    onPress={restoreAppStorePurchases}
+                    activeOpacity={0.7}
+                    disabled={appStoreBillingAction !== null}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      appStoreBillingAction === "restore" ? "Restoring..." : "Restore Purchases"
+                    }
+                    accessibilityState={{
+                      busy: appStoreBillingAction === "restore",
+                      disabled: appStoreBillingAction !== null,
+                    }}
+                  >
+                    <Text style={styles.billingButtonText}>
+                      {appStoreBillingAction === "restore" ? "Restoring..." : "Restore Purchases"}
+                    </Text>
+                  </TouchableOpacity>
+                  {billingStatus.data.canManageAppStoreSubscription && (
                     <TouchableOpacity
                       style={[
                         styles.billingSecondaryButton,
-                        portalSessionMutation.isPending && styles.buttonDisabled,
+                        appStoreBillingAction && styles.buttonDisabled,
                       ]}
-                      onPress={() => portalSessionMutation.mutate()}
+                      onPress={manageAppStoreSubscription}
                       activeOpacity={0.7}
-                      disabled={portalSessionMutation.isPending}
+                      disabled={appStoreBillingAction !== null}
                       accessibilityRole="button"
-                      accessibilityLabel="Manage Billing"
+                      accessibilityLabel={
+                        appStoreBillingAction === "manage"
+                          ? "Opening subscriptions..."
+                          : "Manage Subscription"
+                      }
                       accessibilityState={{
-                        busy: portalSessionMutation.isPending,
-                        disabled: portalSessionMutation.isPending,
+                        busy: appStoreBillingAction === "manage",
+                        disabled: appStoreBillingAction !== null,
                       }}
                     >
                       <Text style={styles.billingButtonText}>
-                        {portalSessionMutation.isPending
-                          ? "Opening billing portal..."
-                          : "Manage Billing"}
+                        {appStoreBillingAction === "manage"
+                          ? "Opening subscriptions..."
+                          : "Manage Subscription"}
                       </Text>
                     </TouchableOpacity>
                   )}
