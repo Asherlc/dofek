@@ -105,14 +105,15 @@ describe("parseDurationString", () => {
 describe("importStrongCsv", () => {
   it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
     const execute = vi.fn().mockResolvedValue([]);
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+      }),
+    });
     const insert = vi
       .fn()
       .mockReturnValueOnce({
-        values: vi.fn().mockReturnValue({
-          onConflictDoUpdate: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
-          }),
-        }),
+        values: activityValues,
       })
       .mockReturnValueOnce({
         values: vi.fn().mockReturnValue({
@@ -159,6 +160,14 @@ describe("importStrongCsv", () => {
     expect(exerciseStatement).toContain("ARRAY[");
     expect(exerciseStatement).toContain("fitness.exercise_source");
     expect(exerciseStatement).toContain("fitness.exercise_alias_source");
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2024-11-02T17:00:00.000Z"),
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        localTimeSource: "device_timezone",
+      }),
+    );
   });
 });
 
@@ -186,6 +195,15 @@ describe("parseStrongCsv", () => {
     expect(group.sets[0]?.reps).toBe(10);
     expect(group.sets[1]?.weight).toBe(155);
     expect(group.sets[1]?.reps).toBe(8);
+  });
+
+  it("matches normalized CSV headers instead of assuming their positions", () => {
+    const groups = parseStrongCsv([
+      " Exercise Name , Reps , Weight , Date , Workout Name , Duration , Set Order , Distance , Seconds , Notes , Workout Notes , RPE ",
+      "Squat (Barbell),6,155,2024-11-02 10:00:00,Leg Day,30m,1,,,,,",
+    ].join("\n"));
+    expect(groups[0]?.workoutName).toBe("Leg Day");
+    expect(groups[0]?.sets[0]).toMatchObject({ exerciseName: "Squat (Barbell)", weight: 155, reps: 6 });
   });
 
   it("groups rows by date and workout name", () => {
