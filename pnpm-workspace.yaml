@@ -54,7 +54,7 @@ overrides:
   brace-expansion: 5.0.9
   browserslist: 4.28.8
   esbuild: 0.28.1
-  "fast-uri@>=3.0.0 <3.1.5": 3.1.5
+  fast-uri: 4.1.4
   form-data: 4.0.6
   "gel>shell-quote": 1.10.0
   hono: 4.12.25
@@ -155,3 +155,4 @@ minimumReleaseAgeExclude:
   - expo-secure-store@57.0.2 || 57.0.3
   - '@expo/env@2.4.3'
   - expo-font@57.0.2 || 57.0.3
+  - fast-uri@4.1.4
