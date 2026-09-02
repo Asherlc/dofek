@@ -338,7 +338,7 @@ merged AS (
     argMinIf(
       ranked.timezone,
       ranked.priority,
-      ranked.local_time_source IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
+      ranked.local_time_source IN ('provider_timezone', 'device_timezone')
     ) AS timezone,
     argMinIf(
       ranked.start_utc_offset_minutes,

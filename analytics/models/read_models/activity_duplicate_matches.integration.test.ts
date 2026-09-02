@@ -10,6 +10,7 @@ const whoopOtherId = "00000000-0000-4000-8000-000000000101";
 const containedCyclingId = "00000000-0000-4000-8000-000000000102";
 const typedStrengthId = "00000000-0000-4000-8000-000000000103";
 const containingCyclingId = "00000000-0000-4000-8000-000000000104";
+const broadWhoopOtherId = "00000000-0000-4000-8000-000000000105";
 
 describe("activity_duplicate_matches read model", () => {
   let client: ClickHouseClient | undefined;
@@ -119,7 +120,10 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
        toDateTime64('2026-05-01 18:10:00', 6, 'UTC'), 0),
       ('${containingCyclingId}', 'wahoo', '${userId}', 'cycling',
        toDateTime64('2026-05-01 18:00:00', 6, 'UTC'),
-       toDateTime64('2026-05-01 19:00:00', 6, 'UTC'), 0)`,
+       toDateTime64('2026-05-01 19:00:00', 6, 'UTC'), 0),
+      ('${broadWhoopOtherId}', 'whoop', '${userId}', 'other',
+       toDateTime64('2026-05-01 17:59:00', 6, 'UTC'),
+       toDateTime64('2026-05-01 19:01:00', 6, 'UTC'), 0)`,
   ];
   for (const statement of statements) await client.command({ query: statement });
 }

@@ -38,6 +38,11 @@ deploy with a separate bounded command. The command also repairs fixed
 `homeTimezone` setting. Sleep rows and activities without retained trusted
 context remain `unknown`.
 
+Migration `0101` installs its replacement checks as `NOT VALID`, so deploy does
+not retain an access-exclusive table lock while scanning existing rows. After
+deploy, validate both constraints as a separate monitored operator action
+before running the data backfill.
+
 Start with a dry run over an explicit half-open UTC time window:
 
 ```bash

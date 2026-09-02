@@ -93,8 +93,15 @@ export async function backfillRecordLocalTimeContext(
       endUtcOffsetMinutes: number | null;
       source: "provider_timezone" | "user_home_timezone";
       priorSource: "unknown" | "provider_timezone";
+      priorTimezone: string;
     }> = rows.flatMap((row) => {
       try {
+        resolveRecordLocalTimeContext({
+          startedAt: row.started_at,
+          endedAt: row.ended_at,
+          timezone: row.timezone,
+          source: "provider_timezone",
+        });
         const homeTimezone = row.home_timezone?.trim() || null;
         const useHomeTimezone = isFixedEtcGmtZone(row.timezone.trim()) && homeTimezone !== null;
         const source = useHomeTimezone ? "user_home_timezone" : "provider_timezone";
@@ -104,7 +111,15 @@ export async function backfillRecordLocalTimeContext(
           timezone: useHomeTimezone ? homeTimezone : row.timezone,
           source,
         });
-        return [{ id: row.id, ...context, source, priorSource: row.local_time_source }];
+        return [
+          {
+            id: row.id,
+            ...context,
+            source,
+            priorSource: row.local_time_source,
+            priorTimezone: row.timezone,
+          },
+        ];
       } catch {
         result.skipped += 1;
         return [];
@@ -116,7 +131,7 @@ export async function backfillRecordLocalTimeContext(
     const values = sql.join(
       contexts.map(
         (context) =>
-          sql`(${context.id}::uuid, ${context.timezone}::text, ${context.startUtcOffsetMinutes}::bigint, ${context.endUtcOffsetMinutes}::bigint, ${context.source}::text, ${context.priorSource}::text)`,
+          sql`(${context.id}::uuid, ${context.timezone}::text, ${context.startUtcOffsetMinutes}::bigint, ${context.endUtcOffsetMinutes}::bigint, ${context.source}::text, ${context.priorSource}::text, ${context.priorTimezone}::text)`,
       ),
       sql`, `,
     );
@@ -129,7 +144,8 @@ export async function backfillRecordLocalTimeContext(
             start_utc_offset_minutes,
             end_utc_offset_minutes,
             local_time_source,
-            prior_local_time_source
+            prior_local_time_source,
+            prior_timezone
           ) AS (
             VALUES ${values}
           ),
@@ -143,6 +159,7 @@ export async function backfillRecordLocalTimeContext(
             FROM context_values
             WHERE activity.id = context_values.id
               AND activity.local_time_source = context_values.prior_local_time_source
+              AND activity.timezone IS NOT DISTINCT FROM context_values.prior_timezone
             RETURNING 1
           )
           SELECT count(*)::int AS count

@@ -428,7 +428,6 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
               });
             },
             userId: job.data.userId,
-            homeTimezone,
             metricStreamPublisher,
             checkpoint: createCheckpointStore(job),
             enqueueSyncContinuation: async (checkpoint) => {

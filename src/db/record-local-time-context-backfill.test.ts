@@ -42,8 +42,11 @@ describe("backfillRecordLocalTimeContext", () => {
 
     const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
     expect(updateQuery.sql).toContain("timezone = context_values.timezone");
+    expect(updateQuery.sql).toContain(
+      "activity.timezone IS NOT DISTINCT FROM context_values.prior_timezone",
+    );
     expect(updateQuery.params).toContain("America/Los_Angeles");
-    expect(updateQuery.params).not.toContain("  America/Los_Angeles  ");
+    expect(updateQuery.params).toContain("  America/Los_Angeles  ");
   });
 
   it("replaces an unreliable fixed provider zone with the persisted home zone", async () => {
@@ -72,7 +75,7 @@ describe("backfillRecordLocalTimeContext", () => {
     const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
     expect(updateQuery.params).toContain("America/Los_Angeles");
     expect(updateQuery.params).toContain("user_home_timezone");
-    expect(updateQuery.params).not.toContain("Etc/GMT+4");
+    expect(updateQuery.params).toContain("Etc/GMT+4");
   });
 
   it("is a bounded dry run and skips invalid stored timezones", async () => {
@@ -95,6 +98,26 @@ describe("backfillRecordLocalTimeContext", () => {
     ).resolves.toEqual({ eligible: 1, skipped: 1, updated: 0 });
 
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("does not hide an invalid fixed provider zone behind a valid home zone", async () => {
+    const execute = vi.fn().mockResolvedValueOnce([
+      {
+        id: "00000000-0000-4000-8000-000000000004",
+        timezone: "Etc/GMT+99",
+        local_time_source: "provider_timezone",
+        home_timezone: "America/Los_Angeles",
+        started_at: "2026-03-08T09:30:00.000Z",
+        ended_at: null,
+      },
+    ]);
+
+    await expect(
+      backfillRecordLocalTimeContext(
+        { execute },
+        { execute: false, batchSize: 1, maxBatches: 1, ...timeWindow },
+      ),
+    ).resolves.toEqual({ eligible: 1, skipped: 1, updated: 0 });
   });
 
   it("rejects unbounded or invalid batch options", async () => {

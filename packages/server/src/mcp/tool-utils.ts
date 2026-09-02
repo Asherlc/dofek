@@ -1,5 +1,9 @@
 export function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+  const text = JSON.stringify(value, null, 2);
+  if (text === undefined) {
+    throw new Error("MCP tool result must be JSON-serializable");
+  }
+  return { content: [{ type: "text" as const, text }] };
 }
 
 export function assertDateRange(startDate: string, endDate: string): void {

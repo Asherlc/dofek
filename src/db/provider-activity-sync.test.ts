@@ -89,7 +89,6 @@ describe("upsertProviderActivity", () => {
   });
 
   it("uses the persisted home timezone when a provider emits a fixed Etc/GMT zone", async () => {
-    mockExecute.mockResolvedValueOnce([{ value: "America/Los_Angeles" }]);
     const onConflictDoUpdate = vi.fn();
     const db = makeMockDb(onConflictDoUpdate);
 

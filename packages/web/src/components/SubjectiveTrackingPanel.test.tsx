@@ -17,17 +17,25 @@ const mocks = vi.hoisted(() => {
     error: Error | null;
     isLoading: boolean;
   } = { data: [], error: null, isLoading: false };
+  const regionsResult: {
+    data: Array<{ id: string; label: string }>;
+    error: Error | null;
+  } = { data: [{ id: "left-finger", label: "Left finger" }], error: null };
 
   return {
     createInjury: vi.fn(),
+    invalidateInjuries: vi.fn(),
     injuriesResult,
-    regionsResult: { data: [{ id: "left-finger", label: "Left finger" }] },
+    regionsResult,
     saveCheckIn: vi.fn(),
   };
 });
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    useUtils: () => ({
+      subjective: { injuries: { invalidate: mocks.invalidateInjuries } },
+    }),
     subjective: {
       createInjury: {
         useMutation: () => ({ error: null, isPending: false, mutate: mocks.createInjury }),
@@ -50,6 +58,8 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.injuriesResult.isLoading = false;
     mocks.saveCheckIn.mockReset();
     mocks.createInjury.mockReset();
+    mocks.invalidateInjuries.mockReset();
+    mocks.regionsResult.error = null;
   });
 
   it("renders recorded injury history", () => {
@@ -121,5 +131,13 @@ describe("SubjectiveTrackingPanel", () => {
 
     expect(screen.getByTestId("query-state-error")).toBeInTheDocument();
     expect(screen.getByText("Injury history unavailable")).toBeInTheDocument();
+  });
+
+  it("renders a body-region loading error", () => {
+    mocks.regionsResult.error = new Error("Body regions unavailable");
+
+    render(<SubjectiveTrackingPanel />);
+
+    expect(screen.getByText("Body regions unavailable")).toBeInTheDocument();
   });
 });

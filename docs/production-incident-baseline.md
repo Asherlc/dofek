@@ -24571,3 +24571,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   mobile lint and TypeScript checks pass.
 - **Remaining risk / follow-up:** Verify a Strong share on a physical iPhone
   after the fixed build is deployed.
+
+## 2026-09-01 — Analytics worker healthcheck killed long successful builds
+
+- **Status:** Unresolved; the worker was found scaled to `0/0` during the MCP
+  ingest/provider deployment preflight.
+- **Symptoms / user impact:** Scheduled ClickHouse analytics refreshes stopped,
+  so new raw provider rows could remain absent from serving models.
+- **Evidence / root cause:** Both latest Swarm tasks exited `137` as unhealthy.
+  Logs showed dbt models succeeding through `deduped_activities`, then the
+  worker was killed while the longer `sleep_heart_rate_sample` model ran. The
+  readiness implementation reports 503 once the previous success is older than
+  the interval plus retry delay, even while the current build is still active;
+  Swarm therefore treats a long-running healthy build as an unhealthy process.
+- **Fix / mitigation:** No unrelated health-policy change was added to the
+  provider PR. Its production deploy will restore the desired replica, and the
+  activity-only result needed by this maintenance is available before the long
+  sleep model. No timeout or retry was increased.
+- **Remaining risk / follow-up:** Correct readiness so an actively progressing
+  build remains ready, add a regression test for a cycle longer than the
+  freshness budget, and confirm a complete production cycle before treating
+  scheduled analytics as recovered.

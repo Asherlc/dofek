@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { trpc } from "../lib/trpc";
@@ -8,11 +9,17 @@ import { QueryStatePanel } from "./QueryStatePanel";
 export function SubjectiveTrackingPanel() {
   const [bodyRegionId, setBodyRegionId] = useState("");
   const [description, setDescription] = useState("");
+  const utils = trpc.useUtils();
   const injuries = trpc.subjective.injuries.useQuery();
   const regions = trpc.subjective.regions.useQuery();
-  const createInjury = trpc.subjective.createInjury.useMutation();
+  const createInjury = trpc.subjective.createInjury.useMutation({
+    onSuccess: async () => {
+      setBodyRegionId("");
+      setDescription("");
+      await utils.subjective.injuries.invalidate();
+    },
+  });
   const saveCheckIn = trpc.subjective.saveCheckIn.useMutation();
-  const today = new Date().toISOString().slice(0, 10);
 
   return (
     <Card>
@@ -21,9 +28,7 @@ export function SubjectiveTrackingPanel() {
         accessibilityRole="button"
         accessibilityLabel="All clear today"
         disabled={saveCheckIn.isPending}
-        onPress={() =>
-          saveCheckIn.mutate({ date: new Date().toISOString().slice(0, 10), symptoms: [] })
-        }
+        onPress={() => saveCheckIn.mutate({ date: formatDateYmd(), symptoms: [] })}
         style={styles.checkInButton}
       >
         <Text style={styles.checkInText}>All clear today</Text>
@@ -47,6 +52,7 @@ export function SubjectiveTrackingPanel() {
           })}
         </View>
       </ScrollView>
+      {regions.error ? <Text style={styles.error}>{regions.error.message}</Text> : null}
       <TextInput
         accessibilityLabel="Injury note"
         onChangeText={setDescription}
@@ -64,7 +70,7 @@ export function SubjectiveTrackingPanel() {
             bodyRegionId,
             description: description.trim(),
             kind: "niggle",
-            onsetDate: today,
+            onsetDate: formatDateYmd(),
             resolvedDate: null,
             severity: null,
           })

@@ -23,8 +23,6 @@ export interface SyncOptions {
   onProgress?: SyncProgressCallback;
   /** User ID for attributing sync log entries */
   userId?: string;
-  /** Persisted IANA home zone, used only as a local-time fallback during ingest. */
-  homeTimezone?: string | null;
   /** Provider-owned checkpoint state for retryable job resumes */
   checkpoint?: SyncCheckpointStore;
   /** Optional publisher override for metric-stream writers. */
@@ -49,7 +47,6 @@ export class SyncRun {
     window,
     onProgress,
     userId,
-    homeTimezone,
     checkpoint,
     metricStreamPublisher,
     enqueueSyncContinuation,
@@ -59,7 +56,6 @@ export class SyncRun {
     this.options = {
       onProgress,
       userId,
-      homeTimezone,
       checkpoint,
       metricStreamPublisher,
       enqueueSyncContinuation,

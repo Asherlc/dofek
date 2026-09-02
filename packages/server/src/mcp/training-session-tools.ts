@@ -50,32 +50,36 @@ export function registerTrainingSessionTools(server: McpServer, context: DofekMc
       const activities = (
         await activityRepository.listRange(start_date, end_date, ["climbing"])
       ).map((row) => trainingSessionActivitySchema.parse(row));
-      const sessions = await Promise.all(
-        activities.map(async (activity) => {
-          const entries = (await climbingRepository.getActivityEntries(activity.id)).map((entry) =>
-            entry.toDetail(),
-          );
-          return {
-            activity_id: activity.id,
-            started_at: activity.started_at,
-            duration_minutes:
-              activity.ended_at === null
-                ? null
-                : (new Date(activity.ended_at).getTime() -
-                    new Date(activity.started_at).getTime()) /
-                  60_000,
-            avg_hr: activity.avg_hr,
-            name: activity.name,
-            gym_vs_crag: null,
-            location: entries.find((entry) => entry.locationName !== null)?.locationName ?? null,
-            climbs: entries,
-          };
-        }),
-      );
+      const sessions = [];
+      for (const activity of activities) {
+        const entries = (await climbingRepository.getActivityEntries(activity.id)).map((entry) =>
+          entry.toDetail(),
+        );
+        sessions.push({
+          activity_id: activity.id,
+          started_at: activity.started_at,
+          duration_minutes:
+            activity.ended_at === null
+              ? null
+              : (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
+                60_000,
+          avg_hr: activity.avg_hr,
+          name: activity.name,
+          gym_vs_crag: null,
+          location: entries.find((entry) => entry.locationName !== null)?.locationName ?? null,
+          climbs: entries,
+        });
+      }
       const climbs = sessions.flatMap((session) => session.climbs);
       const gradeDistribution = new Map<
         string,
-        { discipline: "boulder" | "route"; grade: string; attempts: number; sends: number }
+        {
+          discipline: "boulder" | "route";
+          grade: string;
+          grade_system: string;
+          attempts: number;
+          sends: number;
+        }
       >();
       const maxGrade: Record<"boulder" | "route", { grade: string; sort: number } | null> = {
         boulder: null,
@@ -86,6 +90,7 @@ export function registerTrainingSessionTools(server: McpServer, context: DofekMc
         const distribution = gradeDistribution.get(key) ?? {
           discipline: climb.climbType,
           grade: climb.grade,
+          grade_system: climb.gradeSystem,
           attempts: 0,
           sends: 0,
         };
@@ -149,43 +154,41 @@ export function registerTrainingSessionTools(server: McpServer, context: DofekMc
       ).map((row) => trainingSessionActivitySchema.parse(row));
       const muscleGroupVolume = new Map<string, number>();
       let totalVolumeLoadKg = 0;
-      const sessions = await Promise.all(
-        activities.map(async (activity) => {
-          const exercises = (await strengthRepository.getExercisesForActivity(activity.id)).map(
-            (exercise) => exercise.toDetail(),
+      const sessions = [];
+      for (const activity of activities) {
+        const exercises = (await strengthRepository.getExercisesForActivity(activity.id)).map(
+          (exercise) => exercise.toDetail(),
+        );
+        let sessionVolumeLoadKg = 0;
+        for (const exercise of exercises) {
+          const exerciseVolume = exercise.sets.reduce(
+            (sum, set) =>
+              sum + (set.weightKg === null || set.reps === null ? 0 : set.weightKg * set.reps),
+            0,
           );
-          let sessionVolumeLoadKg = 0;
-          for (const exercise of exercises) {
-            const exerciseVolume = exercise.sets.reduce(
-              (sum, set) =>
-                sum + (set.weightKg === null || set.reps === null ? 0 : set.weightKg * set.reps),
-              0,
+          sessionVolumeLoadKg += exerciseVolume;
+          for (const muscleGroup of exercise.muscleGroups ?? []) {
+            muscleGroupVolume.set(
+              muscleGroup,
+              (muscleGroupVolume.get(muscleGroup) ?? 0) + exerciseVolume,
             );
-            sessionVolumeLoadKg += exerciseVolume;
-            for (const muscleGroup of exercise.muscleGroups ?? []) {
-              muscleGroupVolume.set(
-                muscleGroup,
-                (muscleGroupVolume.get(muscleGroup) ?? 0) + exerciseVolume,
-              );
-            }
           }
-          totalVolumeLoadKg += sessionVolumeLoadKg;
-          return {
-            activity_id: activity.id,
-            started_at: activity.started_at,
-            duration_minutes:
-              activity.ended_at === null
-                ? null
-                : (new Date(activity.ended_at).getTime() -
-                    new Date(activity.started_at).getTime()) /
-                  60_000,
-            avg_hr: activity.avg_hr,
-            name: activity.name,
-            volume_load_kg: sessionVolumeLoadKg,
-            exercises,
-          };
-        }),
-      );
+        }
+        totalVolumeLoadKg += sessionVolumeLoadKg;
+        sessions.push({
+          activity_id: activity.id,
+          started_at: activity.started_at,
+          duration_minutes:
+            activity.ended_at === null
+              ? null
+              : (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
+                60_000,
+          avg_hr: activity.avg_hr,
+          name: activity.name,
+          volume_load_kg: sessionVolumeLoadKg,
+          exercises,
+        });
+      }
       return jsonContent({
         sessions,
         aggregates: {

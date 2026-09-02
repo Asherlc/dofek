@@ -43,15 +43,19 @@ describe("logSync", () => {
   });
 
   it("does not alert before or after the consecutive-failure threshold", async () => {
-    db = createMockDatabase({ executeResult: [{ consecutive_failures: "3" }] });
+    for (const consecutiveFailures of [1, 3]) {
+      db = createMockDatabase({
+        executeResult: [{ consecutive_failures: String(consecutiveFailures) }],
+      });
 
-    await logSync(db.db, {
-      providerId: "whoop",
-      dataType: "sync",
-      status: "error",
-      userId: "user-123",
-      origin: "scheduled",
-    });
+      await logSync(db.db, {
+        providerId: "whoop",
+        dataType: "sync",
+        status: "error",
+        userId: "user-123",
+        origin: "scheduled",
+      });
+    }
 
     expect(captureException).not.toHaveBeenCalled();
   });
