@@ -305,7 +305,7 @@ describe("buildRideWithGpsMetricRows", () => {
           { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200, speedMetersPerSecond: 31 },
         ],
       }),
-    ).toThrow("RideWithGPS cycling speed is implausible");
+    ).toThrow("RideWithGPS cycling speed is implausible for activity activity-1 (external trip-1)");
   });
 
   it("validates long outdoor cycling streams without spreading every speed as function arguments", () => {

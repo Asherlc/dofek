@@ -216,7 +216,10 @@ describe("clickHouseMigrations", () => {
         (migration) => migration.id === "0073_activity_sensor_summary_source_version",
       ),
     ).toMatchObject({
-      statements: [expect.stringContaining("source_refresh_version UInt64 DEFAULT 0")],
+      statements: expect.arrayContaining([
+        expect.stringContaining("source_refresh_version UInt64 DEFAULT 0"),
+        expect.stringContaining("by_activity_source_refresh_version"),
+      ]),
     });
     expect(
       migrations.find((migration) => migration.id === "0069_canonical_activity_types"),

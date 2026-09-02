@@ -105,6 +105,30 @@ describe("planRideWithGpsActivityBackfill", () => {
     });
   });
 
+  it("preserves the legacy descriptive speedKph field as meters per second", () => {
+    const plan = planRideWithGpsActivityBackfill({
+      id: "activity-1",
+      externalId: "trip-1",
+      userId: "user-1",
+      canonicalType: "cycling",
+      providerType: "cycling:road",
+      modality: "road",
+      raw: {
+        activity_type: "cycling:road",
+        track_points: [
+          {
+            longitude: -122.6,
+            latitude: 45.5,
+            epochSeconds: 1_723_276_200,
+            speedKph: 15.25,
+          },
+        ],
+      },
+    });
+
+    expect(plan.metricRows[0]?.speed).toBe(15.25);
+  });
+
   it("returns no metric rows for empty RideWithGPS track points", () => {
     const plan = planRideWithGpsActivityBackfill({
       id: "activity-1",

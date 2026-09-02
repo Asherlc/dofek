@@ -293,7 +293,7 @@ export function buildRideWithGpsMetricRows(options: {
       const averageSpeed = totalSpeed / speedCount;
       if (maxSpeed > 30 || averageSpeed > 20) {
         throw new Error(
-          `RideWithGPS cycling speed is implausible (avg ${averageSpeed.toFixed(2)} m/s, max ${maxSpeed.toFixed(2)} m/s)`,
+          `RideWithGPS cycling speed is implausible for activity ${options.activityId} (external ${options.externalId}): avg ${averageSpeed.toFixed(2)} m/s, max ${maxSpeed.toFixed(2)} m/s`,
         );
       }
     }

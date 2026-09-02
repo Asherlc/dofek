@@ -7,7 +7,8 @@
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1,
-        'enable_materialized_cte': 1
+        'enable_materialized_cte': 1,
+        'preferred_optimize_projection_name': 'by_activity_source_refresh_version'
     }
 ) }}
 
@@ -88,6 +89,9 @@ changed_sample_dirty_keys AS (
             sample_source_versions.activity_id AS activity_id,
             sample_source_versions.user_id AS user_id
         FROM sample_source_versions
+        INNER JOIN current_activity
+            ON current_activity.activity_id = sample_source_versions.activity_id
+            AND current_activity.user_id = sample_source_versions.user_id
         LEFT JOIN existing_summary_state
             ON existing_summary_state.activity_id = sample_source_versions.activity_id
             AND existing_summary_state.user_id = sample_source_versions.user_id
