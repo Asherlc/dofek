@@ -123,23 +123,19 @@ describe("importStrongCsv", () => {
         returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
       }),
     });
+    const strengthSetValues = vi.fn().mockResolvedValue(undefined);
     const insert = vi
       .fn()
       .mockReturnValueOnce({
         values: activityValues,
       })
       .mockReturnValueOnce({
-        values: vi.fn().mockReturnValue({
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        }),
+        values: strengthSetValues,
       })
       .mockReturnValueOnce({
         values: vi.fn().mockReturnValue({
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         }),
-      })
-      .mockReturnValueOnce({
-        values: vi.fn().mockResolvedValue(undefined),
       });
     const db = {
       execute,
@@ -182,6 +178,23 @@ describe("importStrongCsv", () => {
       }),
     );
     expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID, recordsSynced: 1, errors: [] });
+    expect(strengthSetValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        exerciseIndex: 0,
+        setIndex: 0,
+        setType: "rest",
+        weightKg: 0,
+        reps: 0,
+        durationSeconds: 300,
+      }),
+      expect.objectContaining({
+        exerciseIndex: 0,
+        setIndex: 1,
+        setType: "working",
+        weightKg: 24,
+        reps: 8,
+      }),
+    ]);
   });
 
   it("imports text shares when no timezone is available", async () => {
