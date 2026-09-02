@@ -18,14 +18,25 @@ const mocks = vi.hoisted(() => {
     isLoading: boolean;
   } = { data: [], error: null, isLoading: false };
 
-  return { injuriesResult, saveCheckIn: vi.fn() };
+  return {
+    createInjury: vi.fn(),
+    injuriesResult,
+    regionsResult: { data: [{ id: "left-finger", label: "Left finger" }] },
+    saveCheckIn: vi.fn(),
+  };
 });
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     subjective: {
+      createInjury: {
+        useMutation: () => ({ error: null, isPending: false, mutate: mocks.createInjury }),
+      },
       injuries: { useQuery: () => mocks.injuriesResult },
-      saveCheckIn: { useMutation: () => ({ error: null, isPending: false, mutate: mocks.saveCheckIn }) },
+      regions: { useQuery: () => mocks.regionsResult },
+      saveCheckIn: {
+        useMutation: () => ({ error: null, isPending: false, mutate: mocks.saveCheckIn }),
+      },
     },
   },
 }));
@@ -38,6 +49,7 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.injuriesResult.error = null;
     mocks.injuriesResult.isLoading = false;
     mocks.saveCheckIn.mockReset();
+    mocks.createInjury.mockReset();
   });
 
   it("renders recorded injury history", () => {
@@ -70,6 +82,25 @@ describe("SubjectiveTrackingPanel", () => {
     expect(mocks.saveCheckIn).toHaveBeenCalledWith({
       date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       symptoms: [],
+    });
+  });
+
+  it("records a free-text injury note with a body-region tag", () => {
+    render(<SubjectiveTrackingPanel />);
+
+    fireEvent.change(screen.getByLabelText("Body region"), { target: { value: "left-finger" } });
+    fireEvent.change(screen.getByLabelText("Injury note"), {
+      target: { value: "A2 tenderness after climbing" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Log injury note" }));
+
+    expect(mocks.createInjury).toHaveBeenCalledWith({
+      bodyRegionId: "left-finger",
+      description: "A2 tenderness after climbing",
+      kind: "niggle",
+      onsetDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      resolvedDate: null,
+      severity: null,
     });
   });
 
