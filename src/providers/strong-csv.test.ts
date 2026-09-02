@@ -255,12 +255,18 @@ describe("parseStrongCsv", () => {
   });
 
   it("matches normalized CSV headers instead of assuming their positions", () => {
-    const groups = parseStrongCsv([
-      " Exercise Name , Reps , Weight , Date , Workout Name , Duration , Set Order , Distance , Seconds , Notes , Workout Notes , RPE ",
-      "Squat (Barbell),6,155,2024-11-02 10:00:00,Leg Day,30m,1,,,,,",
-    ].join("\n"));
+    const groups = parseStrongCsv(
+      [
+        " Exercise Name , Reps , Weight , Date , Workout Name , Duration , Set Order , Distance , Seconds , Notes , Workout Notes , RPE ",
+        "Squat (Barbell),6,155,2024-11-02 10:00:00,Leg Day,30m,1,,,,,",
+      ].join("\n"),
+    );
     expect(groups[0]?.workoutName).toBe("Leg Day");
-    expect(groups[0]?.sets[0]).toMatchObject({ exerciseName: "Squat (Barbell)", weight: 155, reps: 6 });
+    expect(groups[0]?.sets[0]).toMatchObject({
+      exerciseName: "Squat (Barbell)",
+      weight: 155,
+      reps: 6,
+    });
   });
 
   it("uses Strong's documented column order when header names are unavailable", () => {
