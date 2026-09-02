@@ -24706,3 +24706,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   build remains ready, add a regression test for a cycle longer than the
   freshness budget, and confirm a complete production cycle before treating
   scheduled analytics as recovered.
+
+## 2026-09-02 — Strava OAuth callback reported failure after successful token exchange
+
+- **Status:** Fixed in source; deployment pending.
+- **Symptoms / user impact:** Connecting Strava displayed `Token exchange failed`,
+  although the account was linked and tokens were saved.
+- **Evidence / root cause:** Production logs at `22:14:06Z` showed the token
+  exchange succeeded, linking completed at `22:14:16Z`, and webhook registration
+  then failed at `22:14:36Z`. Strava synchronously called the webhook validation
+  URL during `POST /api/v3/push_subscriptions`; Dofek returned 404 because it
+  persisted the verify token only after the provider call returned. Strava
+  requires the callback challenge response during this registration flow
+  ([Strava webhook documentation](https://developers.strava.com/docs/webhooks/)).
+- **Fix / mitigation:** Persist an encrypted, five-minute pending verify token
+  before provider registration; accept a matching pending challenge and promote
+  the row to active after registration succeeds.
+- **Validation:** Added repository and webhook regression tests; focused Vitest,
+  Biome, diff checks, and TypeScript typechecking passed.
+- **Remaining risk / follow-up:** Deploy the pushed fix and complete one fresh
+  Strava connection to verify the production handshake and subscription state.
