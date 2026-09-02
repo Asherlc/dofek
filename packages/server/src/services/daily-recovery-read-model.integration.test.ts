@@ -140,9 +140,7 @@ describe("daily recovery read-model lifecycle", () => {
       format: "JSONEachRow",
     });
 
-    const rows = z
-      .array(nullableRecoveryInputRowSchema)
-      .parse(await result.json<unknown>());
+    const rows = z.array(nullableRecoveryInputRowSchema).parse(await result.json<unknown>());
 
     expect(rows).toEqual([
       {

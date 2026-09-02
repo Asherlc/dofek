@@ -139,9 +139,6 @@ export async function importSharedFile(
   deps: ImportSharedFileDeps,
 ): Promise<ShareImportResult> {
   try {
-    if (deps.file.uri !== args.fileUri) {
-      throw new Error(`Shared file URI did not match: ${args.fileUri}`);
-    }
     const fileExtension = extensionForFileName(deps.file.name);
     const csvHeaderLine = fileExtension === ".csv" ? getCsvHeaderLine(await deps.file.text()) : "";
     const providerId =

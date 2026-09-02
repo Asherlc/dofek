@@ -55,6 +55,7 @@ import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
+import { assertDateRange, jsonContent } from "./tool-utils.ts";
 import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
 export interface DofekMcpContext {
@@ -63,10 +64,6 @@ export interface DofekMcpContext {
   scopes: McpScope[];
   timezone: string;
   sensorStore?: ActivitySensorStore;
-}
-
-function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
 const healthMetricColumns: Partial<Record<HealthMetric, string>> = {
@@ -119,12 +116,6 @@ function syncHealth(health: ProviderScheduledSyncHealth | undefined) {
   };
 }
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
-
-function assertDateRange(startDate: string, endDate: string): void {
-  if (startDate > endDate) {
-    throw new Error("start_date must be on or before end_date");
-  }
-}
 
 function daysBetween(startDate: string, endDate: string): number {
   const start = new Date(`${startDate}T00:00:00Z`);

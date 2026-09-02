@@ -1,9 +1,17 @@
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ lookup: vi.fn(), request: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  loggerWarn: vi.fn(),
+  lookup: vi.fn(),
+  request: vi.fn(),
+}));
 vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
 vi.mock("node:https", () => ({ request: mocks.request }));
+vi.mock("dofek/lib/error-reporting", () => ({ captureException: mocks.captureException }));
+vi.mock("../logger.ts", () => ({ logger: { warn: mocks.loggerWarn } }));
 
 import {
   McpOAuthClientMetadataResolver,
@@ -11,6 +19,7 @@ import {
 } from "./oauth-client-metadata.ts";
 
 const clientId = "https://claude.ai/oauth/client-metadata.json";
+const chatGptClientId = "https://chatgpt.com/oauth/client.json";
 
 function mockValidMetadataResponse(cacheControl = "max-age=60") {
   mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
@@ -46,6 +55,22 @@ describe("parseCimdClientMetadata", () => {
     vi.restoreAllMocks();
     vi.resetAllMocks();
   });
+
+  it("loads in Node's strip-only TypeScript runtime", () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        "await import('./oauth-client-metadata.ts')",
+      ],
+      { cwd: new URL(".", import.meta.url), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("accepts a public client whose metadata client ID and callback match", () => {
     expect(
       parseCimdClientMetadata(clientId, {
@@ -55,6 +80,21 @@ describe("parseCimdClientMetadata", () => {
         token_endpoint_auth_method: "none",
       }),
     ).toMatchObject({ client_id: clientId, client_name: "Claude" });
+  });
+
+  it("accepts ChatGPT CIMD metadata by selecting its supported public-client method", () => {
+    expect(
+      parseCimdClientMetadata(chatGptClientId, {
+        client_id: chatGptClientId,
+        redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+        jwks_uri: "https://chatgpt.com/oauth/jwks.json",
+        token_endpoint_auth_method: "private_key_jwt",
+        token_endpoint_auth_methods_supported: ["none", "private_key_jwt"],
+      }),
+    ).toMatchObject({
+      client_id: chatGptClientId,
+      token_endpoint_auth_method: "none",
+    });
   });
 
   it("rejects a document that claims a different client ID", () => {
@@ -101,6 +141,17 @@ describe("parseCimdClientMetadata", () => {
         redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
       }),
     ).toMatchObject({ client_id: clientId });
+  });
+
+  it("rejects metadata that advertises no Dofek-supported token authentication method", () => {
+    expect(() =>
+      parseCimdClientMetadata(chatGptClientId, {
+        client_id: chatGptClientId,
+        redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+        token_endpoint_auth_method: "none",
+        token_endpoint_auth_methods_supported: ["private_key_jwt"],
+      }),
+    ).toThrow("no supported token endpoint authentication method");
   });
 
   it("resolves and caches a public HTTPS metadata document", async () => {
@@ -194,6 +245,43 @@ describe("parseCimdClientMetadata", () => {
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
   });
 
+  it("logs only a sanitized client identifier and stable reason for expected metadata rejection", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(
+      (_options: unknown, callback: (response: EventEmitter) => void) => {
+        const request = Object.assign(new EventEmitter(), { end: () => {} });
+        request.end = () => {
+          const response = Object.assign(new EventEmitter(), {
+            headers: { "content-type": "application/json" },
+            resume: vi.fn(),
+            statusCode: 200,
+          });
+          callback(response);
+          response.emit(
+            "data",
+            Buffer.from(
+              JSON.stringify({
+                client_id: chatGptClientId,
+                client_secret: "must-not-appear-in-logs",
+                redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+              }),
+            ),
+          );
+          response.emit("end");
+        };
+        return request;
+      },
+    );
+
+    await expect(
+      new McpOAuthClientMetadataResolver().getClient(chatGptClientId),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.loggerWarn).toHaveBeenCalledWith(
+      "[mcp] CIMD metadata rejected clientHost=chatgpt.com reason=client_secret_not_allowed",
+    );
+  });
+
   it("rejects a successful response without JSON content type", async () => {
     mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
     mocks.request.mockImplementation(
@@ -279,6 +367,20 @@ describe("parseCimdClientMetadata", () => {
       return request;
     });
     await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).resolves.toBeUndefined();
+  });
+
+  it("reports and rethrows an unexpected synchronous HTTPS request error without leaving a timeout", async () => {
+    vi.useFakeTimers();
+    const error = new Error("unexpected request failure");
+    mocks.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    mocks.request.mockImplementation(() => {
+      throw error;
+    });
+
+    await expect(new McpOAuthClientMetadataResolver().getClient(clientId)).rejects.toBe(error);
+    expect(mocks.captureException).toHaveBeenCalledWith(error);
+    expect(mocks.loggerWarn).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
   });
 
   it("cancels an HTTPS request when metadata resolution times out", async () => {
