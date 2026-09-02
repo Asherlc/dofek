@@ -232,6 +232,16 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("current_duplicate_matches AS");
     expect(matchesSql).toContain("active_to_tombstoned_matches AS");
     expect(matchesSql).toContain("overlap_ratio");
+    const compactMatchesSql = compactWhitespace(matchesSql);
+    expect(compactMatchesSql).toContain(
+      "left_activity.canonical_type = right_activity.canonical_type OR ( left_activity.canonical_type = 'other' AND right_activity.canonical_type != 'other'",
+    );
+    expect(compactMatchesSql).toContain(
+      "dateDiff('second', left_activity.started_at, left_activity.ended_at) <= dateDiff('second', right_activity.started_at, right_activity.ended_at)",
+    );
+    expect(compactMatchesSql).toContain(
+      "right_activity.canonical_type = 'other' AND left_activity.canonical_type != 'other'",
+    );
 
     expect(groupsSql).toContain("materialized='incremental'");
     expect(groupsSql).toContain("ref('activity_source_records')");
@@ -762,6 +772,12 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("dirty_keys AS");
     expect(sql).toContain("IS DISTINCT FROM tuple(");
     expect(sql).toContain("analytics.v_daily_metrics");
+    expect(sql).toContain("nullIf(hrv, 0) AS hrv");
+    expect(sql).toContain("nullIf(respiratory_rate_avg, 0) AS respiratory_rate");
+    expect(sql).toContain("nullIf(efficiency_pct, 0) AS efficiency_pct");
+    expect(normalizedSql).toContain(
+      "nullIf( argMax(resting_hr, tuple(duration_seconds, ended_at)), 0 ) AS selected_resting_hr",
+    );
     expect(sql).toContain("ref('daily_sleep')");
     expect(sql).toContain("is_deleted = 0");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");

@@ -243,6 +243,38 @@ describe("SyncRepository", () => {
     });
   });
 
+  describe("getScheduledSyncHealth", () => {
+    it("returns exact top-level scheduled attempt health per provider", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          provider_id: "amazfit-zepp",
+          last_success: "2026-06-28T10:00:00Z",
+          last_attempt: "2026-06-28T11:00:00Z",
+          last_error: "Amazfit/Zepp access token expired.",
+          consecutive_failures: "7",
+        },
+      ]);
+
+      await expect(repo.getScheduledSyncHealth()).resolves.toEqual([
+        {
+          providerId: "amazfit-zepp",
+          lastSuccess: "2026-06-28T10:00:00.000Z",
+          lastAttempt: "2026-06-28T11:00:00.000Z",
+          lastError: "Amazfit/Zepp access token expired.",
+          consecutiveFailures: 7,
+        },
+      ]);
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("data_type = 'sync'");
+      expect(rawSql).toContain("origin = 'scheduled'");
+      expect(rawSql).toContain("ROW_NUMBER() OVER");
+      expect(rawSql).toContain(
+        "attempt_number < COALESCE(latest_success_attempt_number, 2147483647)",
+      );
+    });
+  });
+
   describe("getProviderStats", () => {
     it("returns empty array when no providers", async () => {
       const { repo, execute } = makeRepository([]);

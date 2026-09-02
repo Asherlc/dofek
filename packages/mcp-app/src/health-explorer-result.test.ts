@@ -17,10 +17,20 @@ describe("parseHealthExplorerResult", () => {
             label: "Heart rate variability",
             unit: "ms",
             points: [{ key: "2026-08-01", value: 51 }],
+            note: null,
           },
         ],
         summary: [{ metric: "hrv", average: 51, min: 51, max: 51 }],
-        coverage: { observed_days: 1, requested_days: 1 },
+        coverage: {
+          requested_days: 1,
+          by_metric: {
+            hrv: {
+              observed_days: 1,
+              missing_days: [],
+              missing_days_truncated_count: 0,
+            },
+          },
+        },
       }),
     ).toMatchObject({ series: [{ metric: "hrv" }] });
   });

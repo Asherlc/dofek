@@ -24473,6 +24473,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   need canonical repair, and choose a migration-lineage plan for fresh legacy
   databases that may contain cross-table external-ID collisions.
 
+## 2026-09-01 — Legacy Apple Health archive completed without importing data
+
+- **Status:** Diagnosed; recovery requires a new user-initiated source import.
+- **Symptoms / user impact:** A 55.9 MB full-history archive submitted on
+  2026-08-04 remained `queued` with its outbox marked dispatched. It contributed
+  no Apple Health history, leaving HRV and sleep coverage beginning in 2026.
+- **Evidence / root cause:** The corresponding BullMQ job completed in about
+  2.6 seconds with `No export.xml found in ZIP file`. The legacy processor did
+  not propagate that terminal result to the database upload row. The archive
+  therefore was not a valid Apple export for this importer, and the retained
+  object has passed the normal import-object lifetime.
+- **Fix / mitigation:** The current durable upload processor records terminal
+  failures rather than leaving the row queued. No production row or object was
+  mutated during this investigation. Recovery requires an on-device full sync
+  or re-upload of an original archive containing `export.xml`; Apple's
+  [`HKSampleQuery`](https://developer.apple.com/documentation/healthkit/hksamplequery)
+  supports querying matching samples from the local HealthKit store.
+- **Validation:** Redis job state, job return value, database upload/outbox
+  state, and current importer archive matching were inspected independently.
+- **Remaining risk / follow-up:** The original object is probably no longer
+  recoverable. Confirm a replacement full sync advances the import record and
+  creates pre-2026 metric rows before changing coverage claims.
 ## 2026-09-01 — ChatGPT CIMD legacy authentication preference rejected
 
 - **Status:** Fixed in source; deployment validation is pending.
@@ -24549,3 +24571,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   mobile lint and TypeScript checks pass.
 - **Remaining risk / follow-up:** Verify a Strong share on a physical iPhone
   after the fixed build is deployed.
+
+## 2026-09-01 — Analytics worker healthcheck killed long successful builds
+
+- **Status:** Unresolved; the worker was found scaled to `0/0` during the MCP
+  ingest/provider deployment preflight.
+- **Symptoms / user impact:** Scheduled ClickHouse analytics refreshes stopped,
+  so new raw provider rows could remain absent from serving models.
+- **Evidence / root cause:** Both latest Swarm tasks exited `137` as unhealthy.
+  Logs showed dbt models succeeding through `deduped_activities`, then the
+  worker was killed while the longer `sleep_heart_rate_sample` model ran. The
+  readiness implementation reports 503 once the previous success is older than
+  the interval plus retry delay, even while the current build is still active;
+  Swarm therefore treats a long-running healthy build as an unhealthy process.
+- **Fix / mitigation:** No unrelated health-policy change was added to the
+  provider PR. Its production deploy will restore the desired replica, and the
+  activity-only result needed by this maintenance is available before the long
+  sleep model. No timeout or retry was increased.
+- **Remaining risk / follow-up:** Correct readiness so an actively progressing
+  build remains ready, add a regression test for a cycle longer than the
+  freshness budget, and confirm a complete production cycle before treating
+  scheduled analytics as recovered.
