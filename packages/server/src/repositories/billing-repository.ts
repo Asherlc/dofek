@@ -1,6 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AppStoreSubscriptionUpdate } from "../billing/app-store-subscription.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 type BillingDatabase = Pick<Database, "execute">;
@@ -131,6 +132,35 @@ export class BillingRepository {
             AND (
               stripe_subscription_event_created IS NULL
               OR stripe_subscription_event_created < ${input.stripeEventCreated}
+            )
+          RETURNING user_id`,
+    );
+    return rows.map((row) => row.user_id);
+  }
+
+  async applyAppStoreSubscription(input: AppStoreSubscriptionUpdate): Promise<string[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      updatedBillingUserSchema,
+      sql`UPDATE fitness.user_billing
+          SET app_store_original_transaction_id = ${input.originalTransactionId},
+              app_store_transaction_id = ${input.transactionId},
+              app_store_product_id = ${input.productId},
+              app_store_subscription_status = ${input.status},
+              app_store_expires_at = ${input.expiresAt},
+              app_store_revocation_at = ${input.revokedAt},
+              app_store_environment = ${input.environment},
+              updated_at = now()
+          WHERE app_store_account_token = ${input.accountToken}::uuid
+            AND NOT EXISTS (
+              SELECT 1
+              FROM fitness.user_billing existing_subscription
+              WHERE existing_subscription.app_store_original_transaction_id = ${input.originalTransactionId}
+                AND existing_subscription.app_store_account_token <> ${input.accountToken}::uuid
+            )
+            AND (
+              app_store_expires_at IS NULL
+              OR ${input.expiresAt} > app_store_expires_at
             )
           RETURNING user_id`,
     );

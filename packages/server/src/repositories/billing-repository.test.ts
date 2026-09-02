@@ -66,4 +66,47 @@ describe("BillingRepository", () => {
       expect(queryText).toContain("<");
     });
   });
+
+  describe("App Store subscription updates", () => {
+    it("only updates the billing row that owns the verified account token", async () => {
+      const execute = vi.fn(async () => []);
+      const repository = new BillingRepository({ execute });
+
+      await repository.applyAppStoreSubscription({
+        accountToken: "a0000000-0000-4000-8000-000000000001",
+        originalTransactionId: "100000000000001",
+        transactionId: "100000000000002",
+        productId: "com.dofek.premium.monthly",
+        status: "active",
+        expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+        revokedAt: null,
+        environment: "Sandbox",
+      });
+
+      const queryText = getQueryText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("app_store_account_token");
+      expect(queryText).toContain("a0000000-0000-4000-8000-000000000001");
+      expect(queryText).toContain("app_store_expires_at");
+    });
+
+    it("does not let an older App Store expiry replace the current subscription", async () => {
+      const execute = vi.fn(async () => []);
+      const repository = new BillingRepository({ execute });
+
+      await repository.applyAppStoreSubscription({
+        accountToken: "a0000000-0000-4000-8000-000000000001",
+        originalTransactionId: "100000000000001",
+        transactionId: "100000000000003",
+        productId: "com.dofek.premium.monthly",
+        status: "expired",
+        expiresAt: new Date("2026-09-01T00:00:00.000Z"),
+        revokedAt: null,
+        environment: "Production",
+      });
+
+      const queryText = getQueryText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("app_store_expires_at");
+      expect(queryText).toContain("<");
+    });
+  });
 });

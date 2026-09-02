@@ -4,7 +4,10 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { BillingRepository } from "./billing-repository.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000172";
+const secondTestUserId = "00000000-0000-0000-0000-000000000173";
 const testCustomerId = "cus_billing_webhook_test";
+const firstAccountToken = "a0000000-0000-4000-8000-000000000001";
+const secondAccountToken = "a0000000-0000-4000-8000-000000000002";
 
 describe("BillingRepository subscription webhook updates (integration)", () => {
   let testContext: TestContext;
@@ -22,6 +25,37 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       sql`INSERT INTO fitness.user_billing (user_id, stripe_customer_id)
           VALUES (${testUserId}, ${testCustomerId})
           ON CONFLICT (user_id) DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${secondTestUserId}, 'Second Billing Webhook Test User')
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_billing (user_id, app_store_account_token)
+          VALUES (${testUserId}, ${firstAccountToken}::uuid)
+          ON CONFLICT (user_id) DO UPDATE
+            SET app_store_account_token = EXCLUDED.app_store_account_token,
+                app_store_original_transaction_id = NULL,
+                app_store_transaction_id = NULL,
+                app_store_product_id = NULL,
+                app_store_subscription_status = NULL,
+                app_store_expires_at = NULL,
+                app_store_revocation_at = NULL,
+                app_store_environment = NULL`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_billing (user_id, app_store_account_token)
+          VALUES (${secondTestUserId}, ${secondAccountToken}::uuid)
+          ON CONFLICT (user_id) DO UPDATE
+            SET app_store_account_token = EXCLUDED.app_store_account_token,
+                app_store_original_transaction_id = NULL,
+                app_store_transaction_id = NULL,
+                app_store_product_id = NULL,
+                app_store_subscription_status = NULL,
+                app_store_expires_at = NULL,
+                app_store_revocation_at = NULL,
+                app_store_environment = NULL`,
     );
   }, 120_000);
 
@@ -95,5 +129,59 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       stripe_subscription_id: "sub_newer",
       stripe_subscription_status: "canceled",
     });
+  });
+
+  it("replays App Store transactions harmlessly and rejects another account token for its original transaction", async () => {
+    const currentUpdate = {
+      accountToken: firstAccountToken,
+      originalTransactionId: "100000000000001",
+      transactionId: "100000000000002",
+      productId: "com.dofek.premium.monthly" as const,
+      status: "active" as const,
+      expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      revokedAt: null,
+      environment: "Sandbox" as const,
+    };
+
+    await expect(repository.applyAppStoreSubscription(currentUpdate)).resolves.toEqual([
+      testUserId,
+    ]);
+    await expect(repository.applyAppStoreSubscription(currentUpdate)).resolves.toEqual([]);
+    await expect(
+      repository.applyAppStoreSubscription({
+        ...currentUpdate,
+        accountToken: secondAccountToken,
+      }),
+    ).resolves.toEqual([]);
+
+    const rows = await testContext.db.execute<{
+      user_id: string;
+      app_store_original_transaction_id: string | null;
+      app_store_transaction_id: string | null;
+      app_store_expires_at: Date | null;
+    }>(
+      sql`SELECT
+            user_id,
+            app_store_original_transaction_id,
+            app_store_transaction_id,
+            app_store_expires_at
+          FROM fitness.user_billing
+          WHERE user_id IN (${testUserId}::uuid, ${secondTestUserId}::uuid)
+          ORDER BY user_id`,
+    );
+    expect(rows).toEqual([
+      {
+        user_id: testUserId,
+        app_store_original_transaction_id: "100000000000001",
+        app_store_transaction_id: "100000000000002",
+        app_store_expires_at: new Date("2026-10-01T00:00:00.000Z"),
+      },
+      {
+        user_id: secondTestUserId,
+        app_store_original_transaction_id: null,
+        app_store_transaction_id: null,
+        app_store_expires_at: null,
+      },
+    ]);
   });
 });
