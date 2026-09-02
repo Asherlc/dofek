@@ -313,7 +313,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     });
   });
 
-  it("records a same-expiry App Store revocation once", async () => {
+  it("records an earlier-expiry App Store revocation once", async () => {
     const currentUpdate = {
       accountToken: firstAccountToken,
       originalTransactionId: "100000000000001",

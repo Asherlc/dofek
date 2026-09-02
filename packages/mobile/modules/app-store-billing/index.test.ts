@@ -45,6 +45,37 @@ describe("App Store billing native boundary", () => {
     await expect(purchase("com.dofek.premium.monthly", "account-token")).rejects.toThrow();
   });
 
+  it("accepts valid product and purchase responses from the native module", async () => {
+    const product = {
+      productID: "com.dofek.premium.monthly",
+      displayName: "Dofek Premium",
+      description: "Monthly subscription",
+      displayPrice: "$4.99",
+    };
+    const verifiedPurchase = {
+      outcome: "verified" as const,
+      transactionID: "transaction-1",
+      productID: "com.dofek.premium.monthly",
+      signedTransaction: "signed-jws",
+    };
+    nativeModule.loadProduct.mockResolvedValue(product);
+    nativeModule.purchase
+      .mockResolvedValueOnce(verifiedPurchase)
+      .mockResolvedValueOnce({ outcome: "cancelled" })
+      .mockResolvedValueOnce({ outcome: "pending" });
+
+    await expect(loadProduct()).resolves.toEqual(product);
+    await expect(purchase("com.dofek.premium.monthly", "account-token")).resolves.toEqual(
+      verifiedPurchase,
+    );
+    await expect(purchase("com.dofek.premium.monthly", "account-token")).resolves.toEqual({
+      outcome: "cancelled",
+    });
+    await expect(purchase("com.dofek.premium.monthly", "account-token")).resolves.toEqual({
+      outcome: "pending",
+    });
+  });
+
   it("rejects malformed restored transactions and transaction updates", async () => {
     nativeModule.restoreCurrentEntitlements.mockResolvedValue([{ transactionID: "transaction-1" }]);
     const subscription = { remove: vi.fn() };
