@@ -196,7 +196,9 @@ export function SettingsPage() {
                         billingStatus.data.access.startDate,
                         billingStatus.data.access.endDateExclusive,
                       )}).`
-                    : "You currently have full access to your data."}
+                    : billingStatus.data.access.reason === "app_store_subscription"
+                      ? "Full access is enabled."
+                      : "You currently have full access to your data."}
                 </p>
                 <div className="space-y-1">
                   {billingStatus.data.access.kind === "limited" ? (

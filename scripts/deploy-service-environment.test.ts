@@ -88,6 +88,16 @@ const WEB_ONLY_ENVIRONMENT_KEYS = [
   "OPENAI_APPS_CHALLENGE_TOKEN",
 ] as const;
 
+const APP_STORE_ENVIRONMENT_KEYS = [
+  "APP_STORE_ISSUER_ID",
+  "APP_STORE_KEY_ID",
+  "APP_STORE_PRIVATE_KEY",
+  "APP_STORE_APP_ID",
+  "APP_STORE_BUNDLE_ID",
+  "APP_STORE_SUBSCRIPTION_PRODUCT_ID",
+  "APP_STORE_ROOT_CERTIFICATES_PEM",
+] as const;
+
 const CDC_ENVIRONMENT_KEYS = [
   "PEERDB_CDC_CLICKHOUSE_HOST",
   "PEERDB_CDC_CLICKHOUSE_PORT",
@@ -131,6 +141,7 @@ function makeTemporaryDirectory(): string {
 function completeDeployEnvironment(): Record<string, string> {
   const runtimeKeys = new Set([
     ...APPLICATION_ENVIRONMENT_KEYS,
+    ...APP_STORE_ENVIRONMENT_KEYS,
     ...WEB_ONLY_ENVIRONMENT_KEYS,
     ...CDC_ENVIRONMENT_KEYS,
     ...WORKER_ONLY_ENVIRONMENT_KEYS,
@@ -169,6 +180,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(Object.keys(web).sort()).toEqual(
       [
         ...APPLICATION_ENVIRONMENT_KEYS,
+        ...APP_STORE_ENVIRONMENT_KEYS,
         ...WEB_ONLY_ENVIRONMENT_KEYS,
         ...METRIC_STREAM_ENVIRONMENT_KEYS,
       ].sort(),
@@ -183,6 +195,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       [...APPLICATION_ENVIRONMENT_KEYS, ...WORKER_ONLY_ENVIRONMENT_KEYS].sort(),
     );
     expect(worker).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
+    expect(worker).not.toHaveProperty("APP_STORE_PRIVATE_KEY");
     expect(worker).not.toHaveProperty("GEMINI_API_KEY");
     expect(worker).not.toHaveProperty("OTA_PRIVATE_KEY_B64");
 
@@ -278,6 +291,21 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow("web deploy environment is missing required keys: OPENAI_APPS_CHALLENGE_TOKEN");
+  });
+
+  it("fails before web startup when App Store verification configuration is incomplete", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.APP_STORE_PRIVATE_KEY;
+    delete environment.APP_STORE_ROOT_CERTIFICATES_PEM;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow(
+      "web deploy environment is missing required keys: APP_STORE_PRIVATE_KEY, APP_STORE_ROOT_CERTIFICATES_PEM",
+    );
   });
 
   it("fails before web startup when transactional email configuration is incomplete", () => {

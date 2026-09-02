@@ -99,6 +99,41 @@ Before each candidate:
 5. Start device Console/Sentry/server-log observation without recording
    credentials, Health values, device serial numbers, UDIDs, or tokens.
 
+### App Store subscription audit
+
+Run the following sequence on the Current lane for every candidate that changes
+billing code, App Store product metadata, server verification, notification
+handling, account deletion, or billing configuration. TestFlight purchases use
+Apple's sandbox and do not charge the tester. Before beginning, confirm that
+`com.dofek.premium.monthly` appears as the Dofek Premium monthly subscription at
+the expected sandbox price and that the tester's renewal rate is known. Apple
+documents the TestFlight sandbox sign-in and renewal controls in
+[Testing In-App Purchases with sandbox](https://developer.apple.com/documentation/storekit/testing-in-app-purchases-with-sandbox)
+and
+[Manage Sandbox Apple Account settings](https://developer.apple.com/help/app-store-connect/test-in-app-purchases/manage-sandbox-apple-account-settings/).
+
+Use sanitized server and database evidence for every server-side assertion.
+Transaction IDs, original transaction IDs, signed JWS values, app-account
+tokens, Apple Account details, and Dofek account identifiers belong only in the
+approved secure operational evidence store. Never paste them into the audit
+issue, repository, screenshots, Sentry, or ordinary logs.
+
+| ID | Procedure | Pass evidence |
+|---|---|---|
+| IAP-01 | With no active entitlement, open Settings, choose the Dofek Premium monthly subscription, and complete the Apple sandbox payment sheet | The sheet identifies `com.dofek.premium.monthly` at the expected localized price; cancellation leaves access unchanged; a completed purchase grants Dofek access |
+| IAP-02 | For the completed purchase, correlate the device action with the sanitized server request and billing row | The server accepts an Apple-signed transaction JWS for the audit account token, stores the sandbox subscription as active, invalidates cached access, and finishes the StoreKit transaction only after server acceptance; no signed payload or identifier appears in ordinary logs |
+| IAP-03 | Force-quit, uninstall, and reinstall the same TestFlight build; sign back into the same Dofek audit account and Sandbox Apple Account; choose Restore Purchases | Restore reports the verified entitlement, the server accepts the restored signed transaction for the same Dofek account, access returns, and no duplicate subscription record is created |
+| IAP-04 | From Dofek Settings choose Manage Subscription | Apple's system-managed subscription sheet opens and identifies the active Dofek subscription with an available cancellation control. Apple documents that `showManageSubscriptions(in:)` presents the same management UI as App Store account settings: [manage subscriptions](https://developer.apple.com/documentation/storekit/appstore/showmanagesubscriptions%28in%3A%29) |
+| IAP-05 | Leave auto-renew enabled and wait for one accelerated sandbox renewal while the app is in the background; then foreground the app | StoreKit delivers the update, Notifications V2 reaches `/api/webhooks/app-store`, the server verifies both signed transaction and renewal data, advances the expiry once, retains active access, and acknowledges successful delivery. Apple documents end-to-end signed sandbox data and server notifications in [testing at all stages](https://developer.apple.com/documentation/storekit/testing-at-all-stages-of-development-with-xcode-and-the-sandbox) |
+| IAP-06 | Open Manage Subscription, cancel auto-renew, and observe access through the accelerated end of the paid period | Cancellation does not remove access before expiry; the verified renewal-status update is accepted; the later verified expiry removes access; retrying a delivered notification is idempotent |
+| IAP-07 | Start with a fresh active sandbox subscription and use Apple's supported sandbox refund-request flow for that transaction | StoreKit exposes a revocation date, the server receives and verifies the Notifications V2 `REFUND` event, stores the subscription as revoked, and removes access. If the exact candidate cannot initiate Apple's sandbox refund sheet, record this row as `Blocked` and link the product gap; do not forge or directly post a notification. Apple describes the automatic sandbox approval and `REFUND` notification in [Testing refund requests](https://developer.apple.com/documentation/storekit/testing-refund-requests) |
+| IAP-08 | Start with an active sandbox subscription, delete the Dofek audit account through Settings, and follow the normal deletion-status flow; after deletion, inspect the subscription from iOS Settings | Dofek fences new writes, completes its account-erasure workflow, removes the account's billing mapping and access, and cannot authenticate the deleted account; Apple's subscription remains independently visible and manageable in iOS until canceled or expired, and later notifications do not recreate the deleted Dofek account |
+
+App Store Server Notifications V2 requires a successful HTTP `200`–`206`
+response and retries failed deliveries. Use that contract when interpreting
+IAP-05 through IAP-07; never mark a row passed from a client-only state change:
+[App Store Server Notifications V2](https://developer.apple.com/documentation/appstoreservernotifications/app-store-server-notifications-v2).
+
 ## Physical-device matrix
 
 Run every `Every RC` row for every candidate. Run conditional compatibility
@@ -115,6 +150,7 @@ high-risk change, but must not remove required rows.
 | IOS-PHY-05 | WHOOP BLE — Current | Every RC | Discover and connect the lab WHOOP, start the supported realtime stream, background/lock the phone, return, and flush the buffer | Connection/stream state is actionable; new device-attributed samples upload; no unexplained watchdog, disconnect, or buffer-loss error |
 | IOS-PHY-06 | iPhone Core Motion — Current | Every RC | Verify availability, exercise first authorization on a clean permission state when required, record motion, background/lock the phone, then query and upload retained samples | Availability and authorization are explicit; new timestamped samples are returned and uploaded without advancing the cursor before success |
 | IOS-PHY-07 | Watch recording and transfer — Current phone + paired Watch | Every RC | Install/open the companion, record accelerometer and altitude data, queue a transfer, background both apps, then reopen the phone and sync pending files | Pair/install/reachability states are visible; both file types persist until successful upload and are deleted only after confirmation |
+| IOS-PHY-08 | App Store subscription lifecycle — Current | When billing code, product metadata, server billing configuration, or account deletion changes | Complete IAP-01 through IAP-08 in the [App Store subscription audit](#app-store-subscription-audit) | Every IAP row is `Pass`; client, server, notification, restore, management, revocation, and deletion evidence all refer to the exact candidate |
 | IOS-PHY-09 | Background refresh registration and lifecycle — Current | Every RC | Confirm Background App Refresh is available, background/lock the app during the matrix, and inspect logs for registration, submission, expiration, or completion errors | No registration/submission failure or crash occurs; any delivered task completes exactly once after required work settles |
 | IOS-PHY-10 | Compatibility native smoke — Compatibility | When native module/config/deployment target changes | Repeat the changed capability on the compatibility lane | The changed capability passes on the oldest claimed OS without availability assumptions or unsupported API failure |
 | IOS-PHY-11 | Post-run telemetry — Current | Every RC | Review device, Sentry, and server evidence after all paths | No unexplained fatal error, privacy-sensitive log value, repeated completion, or stuck upload remains |

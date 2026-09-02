@@ -4,6 +4,7 @@ import type { Database } from "../db/index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "../db/typed-sql.ts";
 
 const SHARED_SYSTEM_TABLES = new Set([
+  "fitness.app_store_notification",
   "fitness.body_region",
   "fitness.daily_metric_type",
   "fitness.device_priority",

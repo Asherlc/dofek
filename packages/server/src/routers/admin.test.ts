@@ -309,6 +309,10 @@ describe("adminRouter", () => {
           stripe_subscription_id: "sub_123",
           stripe_subscription_status: "active",
           stripe_current_period_end: "2026-05-01T00:00:00Z",
+          app_store_product_id: "com.dofek.premium.monthly",
+          app_store_subscription_status: "active",
+          app_store_expires_at: "2026-06-01T00:00:00Z",
+          app_store_revocation_at: null,
           paid_grant_reason: null,
           created_at: "2024-01-03T00:00:00Z",
           updated_at: "2024-01-04T00:00:00Z",
@@ -342,6 +346,10 @@ describe("adminRouter", () => {
       expect(result.flags.providerGuideDismissed).toBe(true);
       expect(result.billing?.stripe_customer_id).toBe("cus_123");
       expect(result.billing?.stripe_subscription_status).toBe("active");
+      expect(result.billing?.app_store_product_id).toBe("com.dofek.premium.monthly");
+      expect(result.billing?.app_store_subscription_status).toBe("active");
+      expect(result.billing?.app_store_expires_at).toBe("2026-06-01T00:00:00Z");
+      expect(result.billing?.app_store_revocation_at).toBeNull();
       expect(result.access).toEqual({
         kind: "full",
         paid: true,
@@ -397,6 +405,47 @@ describe("adminRouter", () => {
       });
     });
 
+    it("derives App Store access when Stripe and paid grants are absent", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2026-07-21T01:30:00.000Z",
+          updated_at: "2026-07-21T01:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([
+        {
+          user_id: "00000000-0000-0000-0000-000000000001",
+          stripe_customer_id: null,
+          stripe_subscription_id: null,
+          stripe_subscription_status: null,
+          stripe_current_period_end: null,
+          app_store_product_id: "com.dofek.premium.monthly",
+          app_store_subscription_status: "active",
+          app_store_expires_at: "2099-10-01T00:00:00.000Z",
+          app_store_revocation_at: null,
+          paid_grant_reason: null,
+          created_at: "2026-07-21T01:30:00.000Z",
+          updated_at: "2026-07-21T01:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+
+      const result = await makeCaller(execute).userDetail({
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result.access).toEqual({ kind: "full", paid: true, reason: "app_store_subscription" });
+    });
+
     it("uses paid grant reason from billing when present", async () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([
@@ -418,6 +467,10 @@ describe("adminRouter", () => {
           stripe_subscription_id: null,
           stripe_subscription_status: null,
           stripe_current_period_end: null,
+          app_store_product_id: null,
+          app_store_subscription_status: null,
+          app_store_expires_at: null,
+          app_store_revocation_at: null,
           paid_grant_reason: "existing_account",
           created_at: "2026-04-10T18:30:00.000Z",
           updated_at: "2026-04-10T18:30:00.000Z",

@@ -54,6 +54,11 @@ const mockCreateDeveloperClientsRouter = vi.fn(() => {
   router.get("/__test_developer_mount", (_req, res) => res.sendStatus(204));
   return router;
 });
+const mockCreateAppStoreWebhookRouter = vi.fn(() => {
+  const router = express.Router();
+  router.post("/", (_req, res) => res.sendStatus(204));
+  return router;
+});
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(function vitestConstructor() {
@@ -191,11 +196,15 @@ vi.mock("./routes/companion-token.ts", () => ({
 vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
 }));
+vi.mock("./routes/app-store-webhook.ts", () => ({
+  createAppStoreWebhookRouter: mockCreateAppStoreWebhookRouter,
+}));
 vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
 
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
 import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
+import { BillingProfileNotFoundError } from "./repositories/billing-repository.ts";
 import { makeMockSensorStore } from "./routers/test-helpers.ts";
 
 const { createApp, main } = await import("./index.ts");
@@ -399,6 +408,17 @@ describe("createApp", () => {
     const fakeDb = createDatabaseFromEnv();
     createApp(fakeDb, makeMockSensorStore());
     expect(createIngestZosHealthRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("mounts the App Store webhook at its public path with its database dependency", async () => {
+    const { createAppStoreWebhookRouter } = await import("./routes/app-store-webhook.ts");
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    expect(createAppStoreWebhookRouter).toHaveBeenCalledWith({ db: fakeDb });
+    expect((await request(app, "POST", "/api/webhooks/app-store")).status).toBe(204);
   });
 
   it("passes db to companion route modules", async () => {
@@ -637,6 +657,25 @@ describe("main", () => {
     await middlewareOptions?.createContext({ req: { headers: {} } });
 
     expect(getAccessWindowForUser).toHaveBeenCalledWith(fakeDb, "user-1", "UTC");
+  });
+
+  it("maps a missing authenticated profile to NOT_FOUND during context creation", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
+    vi.mocked(validateSession).mockResolvedValue({
+      sessionId: "session-id",
+      userId: "missing-user",
+      expiresAt: new Date("2026-07-28T00:00:00.000Z"),
+    });
+    vi.mocked(getAccessWindowForUser).mockRejectedValue(new BillingProfileNotFoundError());
+    createApp(fakeDb, makeMockSensorStore());
+    const middlewareOptions = mockCreateExpressMiddleware.mock.calls.at(-1)?.[0];
+
+    await expect(middlewareOptions?.createContext({ req: { headers: {} } })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Authenticated user profile not found",
+    });
   });
 
   it("rejects an invalid request timezone before access-window resolution", async () => {

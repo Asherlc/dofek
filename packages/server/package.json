@@ -20,6 +20,7 @@
   "dependencies": {
     "@ai-sdk/google": "3.0.43",
     "@ai-sdk/mistral": "3.0.24",
+    "@apple/app-store-server-library": "3.1.0",
     "@dofek/auth": "workspace:*",
     "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",

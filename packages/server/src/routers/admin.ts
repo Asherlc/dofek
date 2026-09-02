@@ -4,7 +4,7 @@ import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-l
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { resolveAccessWindow } from "../billing/entitlement.ts";
+import { resolveAccessWindow, toAppStoreSubscriptionState } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { DeveloperClientRepository } from "../repositories/developer-client-repository.ts";
@@ -47,6 +47,10 @@ const userDetailBillingSchema = z.object({
   stripe_subscription_id: z.string().nullable(),
   stripe_subscription_status: z.string().nullable(),
   stripe_current_period_end: timestampStringSchema.nullable(),
+  app_store_product_id: z.string().nullable(),
+  app_store_subscription_status: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+  app_store_revocation_at: timestampStringSchema.nullable(),
   paid_grant_reason: z.string().nullable(),
   created_at: timestampStringSchema,
   updated_at: timestampStringSchema,
@@ -332,6 +336,10 @@ export const adminRouter = router({
                      stripe_subscription_id,
                      stripe_subscription_status,
                      stripe_current_period_end::text AS stripe_current_period_end,
+                     app_store_product_id,
+                     app_store_subscription_status,
+                     app_store_expires_at::text AS app_store_expires_at,
+                     app_store_revocation_at::text AS app_store_revocation_at,
                      paid_grant_reason,
                      created_at::text AS created_at,
                      updated_at::text AS updated_at
@@ -373,6 +381,12 @@ export const adminRouter = router({
       timezone: ctx.timezone,
       paidGrantReason: billing?.paid_grant_reason ?? null,
       stripeSubscriptionStatus: billing?.stripe_subscription_status ?? null,
+      appStoreSubscription: toAppStoreSubscriptionState({
+        productId: billing?.app_store_product_id ?? null,
+        status: billing?.app_store_subscription_status ?? null,
+        expiresAt: billing?.app_store_expires_at ?? null,
+        revokedAt: billing?.app_store_revocation_at ?? null,
+      }),
     });
     return {
       profile,
