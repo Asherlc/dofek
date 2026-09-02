@@ -57,8 +57,8 @@ const storedTrackPointSchema = z
     d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
-    // Preserve malformed numeric samples long enough for parseTrackPoints to
-    // omit only the speed, rather than aborting the entire activity backfill.
+    // Preserve negative numeric samples long enough for parseTrackPoints to
+    // omit only the speed without rejecting an otherwise valid activity.
     s: z.number().optional(),
     T: z.number().optional(),
     h: z.number().optional(),
