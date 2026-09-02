@@ -162,7 +162,10 @@ export class WebhookSubscriptionRepository {
   async activatePendingSubscription(
     id: string,
     providerName: string,
-    input: Pick<UpsertWebhookSubscriptionInput, "subscriptionExternalId" | "signingSecret" | "expiresAt">,
+    input: Pick<
+      UpsertWebhookSubscriptionInput,
+      "subscriptionExternalId" | "signingSecret" | "expiresAt"
+    >,
   ): Promise<void> {
     const encryptedSigningSecret = input.signingSecret
       ? await encryptCredentialValue(
