@@ -7,6 +7,50 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-02 — PR #2648 Dependency Audit found vulnerable `fast-uri`
+
+- **Status:** Fixed in source; the fresh Dependency Audit job passes.
+- **Symptoms / user impact:** PR #2648 could not pass the required dependency
+  audit, blocking merge despite otherwise valid source changes.
+- **Evidence / root cause:** The exact failing command, `pnpm audit --prod
+  --audit-level=high --ignore-registry-errors`, reported four high-severity
+  `fast-uri` advisories. The lockfile resolved `fast-uri@3.1.5` through
+  `@modelcontextprotocol/sdk`'s `ajv` dependency, while the advisories require
+  `fast-uri >=3.1.6`. [GHSA-5jgf-p345-68v8](https://github.com/advisories/GHSA-5jgf-p345-68v8)
+- **Direct fix:** Updated the scoped workspace override and lockfile to resolve
+  every vulnerable 3.x `fast-uri` range to 3.1.6, the latest compatible patched
+  release. No audit ignore, retry, or lowered severity threshold was added.
+- **Validation:** A frozen local install resolved only `fast-uri@3.1.6` and the
+  exact production audit command reported no high vulnerabilities. GitHub's
+  fresh `Test / Dependency Audit` job passed in 52 seconds.
+- **Remaining risk / follow-up:** Continue to update the direct MCP SDK
+  dependencies as compatible releases become available so the transitive
+  override can eventually be removed.
+
+## 2026-09-02 — PR #2648 image scan could not fetch Alpine package metadata
+
+- **Status:** Resolved by a targeted CI re-run; no source or CI configuration
+  change was appropriate.
+- **Symptoms / user impact:** PR #2648's `Test / Image Vulnerability Scan` job
+  could not build the server image, which also left the dependent test and CI
+  gates failed and blocked the PR.
+- **Evidence / root cause:** At Dockerfile line 125, `apk add --no-cache
+  ca-certificates libbz2 libstdc++` first logged `TLS: unspecified error` while
+  fetching Alpine's `v3.24` package index. With no index, `apk` then reported
+  each requested package as unavailable. The Dockerfile was byte-for-byte
+  unchanged from `origin/main`, and the ten latest main-branch Test workflows
+  were successful. This isolates the failure to the hosted runner's transient
+  Alpine mirror TLS fetch rather than the PR's source.
+  [Failed workflow](https://github.com/Asherlc/dofek/actions/runs/33647289246)
+- **Fix / mitigation:** Re-ran only the failed workflow jobs after confirming
+  the unchanged main-branch build health. No retry, timeout, or fallback was
+  added to steady-state CI.
+- **Validation:** Attempt 2 of the same workflow completed successfully; the
+  image vulnerability scan and all dependent gates passed.
+- **Remaining risk / follow-up:** If this recurs, capture the first failing
+  Alpine-fetch line and compare concurrent main-branch runs before changing
+  image or CI behavior.
+
 ## 2026-08-31 — Mobile login targeted a retired public hostname
 
 - **Status:** Source fix and compatibility routing prepared; production rollout

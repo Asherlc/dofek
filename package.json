@@ -140,6 +140,7 @@
     "setup-db": "tsx scripts/with-env.ts -- tsx src/db/run-migrate.ts",
     "analytics:build": "pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/run-local-analytics-build.ts",
     "seed": "tsx scripts/seed-dev-db.ts",
+    "seed:openai-reviewer-demo": "pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/seed-openai-reviewer-demo.ts",
     "review:seed-clickhouse": "tsx scripts/with-env.ts -- tsx scripts/seed-review-clickhouse.ts",
     "generate": "drizzle-kit generate && tsx scripts/generate-schema-diagram.ts",
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",

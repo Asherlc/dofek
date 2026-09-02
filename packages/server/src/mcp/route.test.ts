@@ -531,6 +531,18 @@ describe("createMcpRouter", () => {
 
     const parsedResponse = toolListResponseSchema.parse(parseJsonRpcEvent(response.text));
     const tools = parsedResponse.result.tools;
+    expect(findListedTool(tools, "get_health_trends").description).toContain("HRV and step");
+    expect(findListedTool(tools, "render_health_explorer").description).toContain(
+      "interactive Dofek Analytics Explorer",
+    );
+    expect(findListedTool(tools, "get_sleep_summary").description).toContain("Summarize sleep");
+    expect(findListedTool(tools, "search_activities").description).toContain(
+      "optional date range (defaulting to the last 30 days)",
+    );
+    expect(findListedTool(tools, "list_providers").description).toContain(
+      "configured Dofek providers",
+    );
+    expect(findListedTool(tools, "list_providers").description).toContain("last-sync timestamps");
     expect(findListedTool(tools, "get_daily_health_summary").inputSchema).toMatchObject({
       properties: {
         date: { format: "date", type: "string" },
@@ -1473,27 +1485,38 @@ describe("createMcpRouter", () => {
 
     const parsedResponse = z
       .object({
-        result: z.object({
-          structuredContent: z
-            .object({
-              coverage: z.object({
-                requested_days: z.number(),
-                by_metric: z.record(
-                  z.string(),
-                  z.object({
-                    observed_days: z.number(),
-                    missing_days: z.array(z.string()),
-                    missing_days_truncated_count: z.number(),
-                  }),
-                ),
-              }),
-              series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
-            })
-            .passthrough(),
-        }),
+        result: z
+          .object({
+            structuredContent: z
+              .object({
+                coverage: z.object({
+                  requested_days: z.number(),
+                  by_metric: z.record(
+                    z.string(),
+                    z.object({
+                      observed_days: z.number(),
+                      missing_days: z.array(z.string()),
+                      missing_days_truncated_count: z.number(),
+                    }),
+                  ),
+                }),
+                series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
+              })
+              .passthrough(),
+          })
+          .passthrough(),
       })
       .parse(parseJsonRpcEvent(response.text));
 
+    expect(parsedResponse.result).toMatchObject({
+      content: [
+        {
+          type: "text",
+          text: "Dofek Analytics Explorer coverage: hrv 2 of 2 days.",
+        },
+      ],
+      _meta: { ui: { resourceUri: "ui://dofek/health-explorer.html" } },
+    });
     expect(parsedResponse.result.structuredContent).toEqual({
       coverage: {
         requested_days: 2,
