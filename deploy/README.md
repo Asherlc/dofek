@@ -259,6 +259,27 @@ terminated:
       - Must include `POSTGRES_PASSWORD`; PeerDB's catalog database and internal MinIO stage use this existing secret.
       - Must include `PEERDB_UI_NEXTAUTH_SECRET` as a dedicated high-entropy PeerDB UI session-signing secret.
       - Must include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` for Stripe billing checkout, portal, and webhook verification. Public return URLs use the deploy workflow's `PUBLIC_URL`.
+      - App Store subscription verification and Notifications V2 require
+        `APP_STORE_ISSUER_ID`, `APP_STORE_KEY_ID`, `APP_STORE_PRIVATE_KEY`,
+        `APP_STORE_APP_ID`, `APP_STORE_BUNDLE_ID`,
+        `APP_STORE_SUBSCRIPTION_PRODUCT_ID`, and
+        `APP_STORE_ROOT_CERTIFICATES_PEM` in the web service environment.
+        `APP_STORE_SUBSCRIPTION_PRODUCT_ID` must be
+        `com.dofek.premium.monthly`; `APP_STORE_APP_ID` is the positive numeric
+        Apple ID for the app; and the bundle ID must match the signed app.
+        Preserve the In-App Purchase private key and Apple root-certificate
+        chain as multiline Infisical values, never checked-in values. Apple
+        makes an In-App Purchase private key available for download only once
+        and says it must not be stored in a source repository:
+        [App Store Server API key setup](https://developer.apple.com/documentation/appstoreserverapi/creating-api-keys-to-authorize-api-requests).
+        The server names any missing variable when the App Store configuration
+        is loaded; release validation must call an App Store billing path after
+        deploy and before attaching the subscription to an App Store review.
+      - Configure both the production and sandbox App Store Server
+        Notifications URLs as `${PUBLIC_URL}/api/webhooks/app-store`, selecting
+        Notifications V2 for each. Apple otherwise sends sandbox notifications
+        to the production URL when no sandbox URL is present:
+        [enter server URLs for App Store Server Notifications](https://developer.apple.com/help/app-store-connect/configure-in-app-purchase-settings/enter-server-urls-for-app-store-server-notifications).
       - Must include `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` for metric-stream producer and sink services.
       - Must include `METRIC_STREAM_R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` for the Redpanda Connect R2 archive.
       - Must include `ACCOUNT_ERASURE_LEDGER_KEYRING_JSON` as
