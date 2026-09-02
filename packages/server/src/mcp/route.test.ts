@@ -537,9 +537,7 @@ describe("createMcpRouter", () => {
     );
     expect(findListedTool(tools, "get_sleep_summary").description).toContain("Summarize sleep");
     expect(findListedTool(tools, "search_activities").description).toContain("date range");
-    expect(findListedTool(tools, "list_providers").description).toContain(
-      "last-sync timestamps",
-    );
+    expect(findListedTool(tools, "list_providers").description).toContain("last-sync timestamps");
     expect(findListedTool(tools, "get_daily_health_summary").inputSchema).toMatchObject({
       properties: {
         date: { format: "date", type: "string" },
@@ -1482,24 +1480,26 @@ describe("createMcpRouter", () => {
 
     const parsedResponse = z
       .object({
-        result: z.object({
-          structuredContent: z
-            .object({
-              coverage: z.object({
-                requested_days: z.number(),
-                by_metric: z.record(
-                  z.string(),
-                  z.object({
-                    observed_days: z.number(),
-                    missing_days: z.array(z.string()),
-                    missing_days_truncated_count: z.number(),
-                  }),
-                ),
-              }),
-              series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
-            })
-            .passthrough(),
-        }).passthrough(),
+        result: z
+          .object({
+            structuredContent: z
+              .object({
+                coverage: z.object({
+                  requested_days: z.number(),
+                  by_metric: z.record(
+                    z.string(),
+                    z.object({
+                      observed_days: z.number(),
+                      missing_days: z.array(z.string()),
+                      missing_days_truncated_count: z.number(),
+                    }),
+                  ),
+                }),
+                series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
+              })
+              .passthrough(),
+          })
+          .passthrough(),
       })
       .parse(parseJsonRpcEvent(response.text));
 

@@ -608,7 +608,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "search_activities",
     {
       title: "Search Activities",
-      description: "Show authenticated user activities in an exact date range, optionally filtered by text.",
+      description:
+        "Show authenticated user activities in an exact date range, optionally filtered by text.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         from: dateSchema.optional(),

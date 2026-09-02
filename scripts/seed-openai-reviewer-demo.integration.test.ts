@@ -1,8 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  createTaggedQueryClient,
-  type TaggedQueryClient,
-} from "../src/db/tagged-query-client.ts";
+import { createTaggedQueryClient, type TaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { setupTestDatabase, type TestContext } from "../src/db/test-helpers.ts";
 import {
   OPENAI_REVIEWER_DEMO_SOURCE,
