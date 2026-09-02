@@ -90,6 +90,7 @@ function makeWorkoutRecord(
   overrides: Partial<{
     activity_id: string | undefined;
     during: string;
+    sport_id: number;
     timezone_offset: string;
   }> = {},
 ): WhoopWorkoutRecord {
@@ -190,7 +191,12 @@ describe("WHOOP workout sync helpers", () => {
     const client = makeClient();
     vi.spyOn(client, "listDeveloperWorkouts").mockResolvedValue({
       records: [
-        { id: "inside-window", start: "2026-05-01T12:00:00.000Z", end: "2026-05-01T13:00:00.000Z" },
+        {
+          id: "inside-window",
+          start: "2026-05-01T12:00:00.000Z",
+          end: "2026-05-01T13:00:00.000Z",
+          sport_name: "Commuting",
+        },
         {
           id: "outside-window",
           start: "2026-05-10T12:00:00.000Z",
@@ -211,6 +217,7 @@ describe("WHOOP workout sync helpers", () => {
       fetchWhoopDeveloperWorkoutsPage(context, absenceWindow, "page-1"),
     ).resolves.toEqual({
       presentIds: ["inside-window"],
+      activityTypeNamesById: { "inside-window": "Commuting" },
       nextToken: "page-2",
       reachedWindowStart: false,
     });
@@ -232,9 +239,38 @@ describe("WHOOP workout sync helpers", () => {
 
     await expect(fetchWhoopDeveloperWorkoutsPage(context, absenceWindow)).resolves.toEqual({
       presentIds: [],
+      activityTypeNamesById: {},
       nextToken: null,
       reachedWindowStart: true,
     });
+  });
+
+  it("uses the official developer sport name to classify a legacy untyped workout", async () => {
+    const context = makeContext({
+      cycles: [{ workouts: [makeWorkoutRecord({ sport_id: -1 })] }],
+    });
+
+    await expect(
+      persistWhoopWorkoutsFromCycles(context, new Set(["workout-1"]), {
+        reconcileAbsence: true,
+        developerActivityTypeNamesById: { "workout-1": "Commuting" },
+      }),
+    ).resolves.toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      context.db,
+      expect.objectContaining({
+        activityType: expect.objectContaining({
+          canonicalType: "cycling",
+          providerType: "Commuting",
+        }),
+      }),
+      expect.objectContaining({
+        activityType: expect.objectContaining({
+          canonicalType: "cycling",
+          providerType: "Commuting",
+        }),
+      }),
+    );
   });
 
   it("records workout persistence errors without aborting the batch", async () => {
