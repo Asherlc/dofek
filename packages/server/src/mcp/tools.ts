@@ -41,7 +41,10 @@ import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
 import { SupplementsRepository } from "../repositories/supplements-repository.ts";
-import { SyncRepository } from "../repositories/sync-repository.ts";
+import {
+  type ProviderScheduledSyncHealth,
+  SyncRepository,
+} from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
@@ -115,16 +118,15 @@ const DEFAULT_ACTIVITY_STREAM_CHANNELS = activityStreamChannelSchema.options;
 const EXPECTED_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 
 function syncHealth(
-  lastSuccess: string | undefined,
-  logs: Array<{ status: string; syncedAt: string; errorMessage: string | null }>,
+  health: ProviderScheduledSyncHealth | undefined,
 ) {
-  const latestAttempt = logs[0];
-  const consecutiveFailures = logs.findIndex((log) => log.status === "success");
+  const lastSuccess = health?.lastSuccess;
   return {
     last_success: lastSuccess ?? null,
-    last_attempt: latestAttempt?.syncedAt ?? null,
-    last_error: latestAttempt?.status === "error" ? latestAttempt.errorMessage : null,
-    consecutive_failures: consecutiveFailures === -1 ? logs.length : consecutiveFailures,
+    last_attempt: health?.lastAttempt ?? null,
+    last_error: health?.lastError ?? null,
+    consecutive_failures: health?.consecutiveFailures ?? 0,
+    expected_sync_interval_minutes: EXPECTED_SYNC_INTERVAL_MS / 60_000,
     stale:
       lastSuccess == null || Date.now() - new Date(lastSuccess).getTime() > EXPECTED_SYNC_INTERVAL_MS * 3,
   };
@@ -1009,13 +1011,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       requireMcpScope(context.scopes, "providers:read");
       await ensureProvidersRegistered();
       const repository = new SyncRepository(context.db, context.userId);
-      const [connectedProviders, lastSyncs, lastSuccessfulSyncs, latestErrors, recentLogs] =
-        await Promise.all([
+      const [connectedProviders, lastSyncs, latestErrors, scheduledSyncHealth] = await Promise.all([
         repository.getConnectedProviderIds(),
         repository.getLastSyncTimes(),
-        repository.getLastSuccessfulSyncTimes(),
         repository.getLatestErrors(),
-        repository.getRecentLogsByProvider(20),
+        repository.getScheduledSyncHealth(),
       ]);
       const connectedProviderIds = new Set(
         connectedProviders.map((provider) => provider.providerId),
@@ -1026,8 +1026,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       const lastSyncMap = new Map(
         lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
       );
-      const lastSuccessfulSyncMap = new Map(
-        lastSuccessfulSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
+      const scheduledSyncHealthMap = new Map(
+        scheduledSyncHealth.map((health) => [health.providerId, health]),
       );
       const authErrorProviderIds = new Set(
         latestErrors
@@ -1060,7 +1060,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
             needsReauth: model.isConnected && authErrorProviderIds.has(model.id),
             sync_health:
               model.isConnected && !model.importOnly
-                ? syncHealth(lastSuccessfulSyncMap.get(model.id), recentLogs.get(model.id) ?? [])
+                ? syncHealth(scheduledSyncHealthMap.get(model.id))
                 : null,
           };
         });

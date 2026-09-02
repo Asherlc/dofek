@@ -26,9 +26,8 @@ const toolTestMocks = vi.hoisted(() => {
     getAllProviders: vi.fn(),
     getConnectedProviderIds: vi.fn(),
     getLastSyncTimes: vi.fn(),
-    getLastSuccessfulSyncTimes: vi.fn(),
     getLatestErrors: vi.fn(),
-    getRecentLogsByProvider: vi.fn(),
+    getScheduledSyncHealth: vi.fn(),
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
@@ -119,9 +118,8 @@ vi.mock("../repositories/sync-repository.ts", () => ({
     return {
       getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
       getLastSyncTimes: toolTestMocks.getLastSyncTimes,
-      getLastSuccessfulSyncTimes: toolTestMocks.getLastSuccessfulSyncTimes,
       getLatestErrors: toolTestMocks.getLatestErrors,
-      getRecentLogsByProvider: toolTestMocks.getRecentLogsByProvider,
+      getScheduledSyncHealth: toolTestMocks.getScheduledSyncHealth,
     };
   }),
 }));
@@ -347,9 +345,8 @@ describe("createMcpRouter", () => {
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
-    toolTestMocks.getLastSuccessfulSyncTimes.mockResolvedValue([]);
     toolTestMocks.getLatestErrors.mockResolvedValue([]);
-    toolTestMocks.getRecentLogsByProvider.mockResolvedValue(new Map());
+    toolTestMocks.getScheduledSyncHealth.mockResolvedValue([]);
     toolTestMocks.getProviderSyncQueue.mockReturnValue({
       add: toolTestMocks.queueAdd,
       getJob: vi.fn(),
@@ -1691,6 +1688,15 @@ describe("createMcpRouter", () => {
     toolTestMocks.getLastSyncTimes.mockResolvedValue([
       { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
     ]);
+    toolTestMocks.getScheduledSyncHealth.mockResolvedValue([
+      {
+        providerId: "wahoo",
+        lastSuccess: "2026-05-20T11:00:00.000Z",
+        lastAttempt: "2026-05-20T12:00:00.000Z",
+        lastError: "Wahoo access token expired.",
+        consecutiveFailures: 2,
+      },
+    ]);
     toolTestMocks.getLatestErrors.mockResolvedValue([
       {
         authFailureReason: null,
@@ -1753,6 +1759,7 @@ describe("createMcpRouter", () => {
         needsReauth: false,
         sync_health: {
           consecutive_failures: 0,
+          expected_sync_interval_minutes: 30,
           last_attempt: null,
           last_error: null,
           last_success: null,
@@ -1778,10 +1785,11 @@ describe("createMcpRouter", () => {
         name: "Wahoo",
         needsReauth: true,
         sync_health: {
-          consecutive_failures: 0,
-          last_attempt: null,
-          last_error: null,
-          last_success: null,
+          consecutive_failures: 2,
+          expected_sync_interval_minutes: 30,
+          last_attempt: "2026-05-20T12:00:00.000Z",
+          last_error: "Wahoo access token expired.",
+          last_success: "2026-05-20T11:00:00.000Z",
           stale: true,
         },
       },
@@ -1829,6 +1837,7 @@ describe("createMcpRouter", () => {
         needsReauth: false,
         sync_health: {
           consecutive_failures: 0,
+          expected_sync_interval_minutes: 30,
           last_attempt: null,
           last_error: null,
           last_success: null,

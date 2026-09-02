@@ -3,11 +3,57 @@ import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
 import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
 
+const captureException = vi.hoisted(() => vi.fn());
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
+
 describe("logSync", () => {
   let db: ReturnType<typeof createMockDatabase>;
 
   beforeEach(() => {
+    captureException.mockReset();
     db = createMockDatabase();
+  });
+
+  it("alerts when a scheduled provider reaches two consecutive top-level failures", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+    await logSync(db.db, {
+      providerId: "amazfit-zepp",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "access token expired",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(db.spies.execute).toHaveBeenCalledOnce();
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      extra: {
+        error_message: "access token expired",
+        user_id: "user-123",
+      },
+      level: "warning",
+      tags: {
+        consecutive_failures: "2",
+        operation: "scheduled-provider-sync",
+        provider: "amazfit-zepp",
+      },
+    });
+  });
+
+  it("does not alert before or after the consecutive-failure threshold", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "3" }] });
+
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("inserts a success log entry with all fields", async () => {
