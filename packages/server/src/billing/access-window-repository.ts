@@ -2,7 +2,11 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { type AccessWindow, resolveAccessWindow } from "./entitlement.ts";
+import {
+  type AccessWindow,
+  resolveAccessWindow,
+  toAppStoreSubscriptionState,
+} from "./entitlement.ts";
 
 const accessWindowRowSchema = z.object({
   created_at: timestampStringSchema,
@@ -37,15 +41,12 @@ export async function getAccessWindowForUser(
   );
   const row = rows[0];
   if (!row) throw new Error("Authenticated user profile not found");
-  const appStoreSubscription =
-    row.app_store_product_id && row.app_store_subscription_status && row.app_store_expires_at
-      ? {
-          productId: row.app_store_product_id,
-          status: row.app_store_subscription_status,
-          expiresAt: row.app_store_expires_at,
-          revokedAt: row.app_store_revocation_at,
-        }
-      : undefined;
+  const appStoreSubscription = toAppStoreSubscriptionState({
+    productId: row.app_store_product_id,
+    status: row.app_store_subscription_status,
+    expiresAt: row.app_store_expires_at,
+    revokedAt: row.app_store_revocation_at,
+  });
   return resolveAccessWindow({
     userCreatedAt: row.created_at,
     timezone,

@@ -1,7 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { resolveAccessWindow } from "./entitlement.ts";
+import { resolveAccessWindow, toAppStoreSubscriptionState } from "./entitlement.ts";
 
 describe("resolveAccessWindow", () => {
+  it.each([
+    {
+      input: {
+        productId: "com.dofek.premium.monthly",
+        status: "active",
+        expiresAt: "2099-10-01T00:00:00.000Z",
+        revokedAt: null,
+      },
+      expected: {
+        productId: "com.dofek.premium.monthly",
+        status: "active",
+        expiresAt: "2099-10-01T00:00:00.000Z",
+        revokedAt: null,
+      },
+    },
+    {
+      input: {
+        productId: null,
+        status: "active",
+        expiresAt: "2099-10-01T00:00:00.000Z",
+        revokedAt: null,
+      },
+      expected: undefined,
+    },
+    {
+      input: {
+        productId: "com.dofek.premium.monthly",
+        status: null,
+        expiresAt: "2099-10-01T00:00:00.000Z",
+        revokedAt: null,
+      },
+      expected: undefined,
+    },
+    {
+      input: {
+        productId: "com.dofek.premium.monthly",
+        status: "active",
+        expiresAt: null,
+        revokedAt: null,
+      },
+      expected: undefined,
+    },
+  ])("maps App Store billing row %#", ({ input, expected }) => {
+    expect(toAppStoreSubscriptionState(input)).toEqual(expected);
+  });
+
   it("grants full access for existing-account paid grants", () => {
     const result = resolveAccessWindow({
       userCreatedAt: "2026-04-10T18:30:00.000Z",
@@ -51,7 +97,7 @@ describe("resolveAccessWindow", () => {
         stripeSubscriptionStatus: null,
         appStoreSubscription: {
           productId: "com.dofek.premium.monthly",
-          status: "expired",
+          status: "active",
           expiresAt: "2026-09-10T00:00:00.000Z",
           revokedAt: null,
         },

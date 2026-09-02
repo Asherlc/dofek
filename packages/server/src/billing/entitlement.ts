@@ -12,6 +12,22 @@ export interface AppStoreSubscriptionState {
   revokedAt: string | null;
 }
 
+export interface AppStoreSubscriptionColumns {
+  productId: string | null;
+  status: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export function toAppStoreSubscriptionState(
+  columns: AppStoreSubscriptionColumns,
+): AppStoreSubscriptionState | undefined {
+  if (columns.productId === null || columns.status === null || columns.expiresAt === null) {
+    return undefined;
+  }
+  return columns;
+}
+
 export type AccessWindow =
   | {
       kind: "full";

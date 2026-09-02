@@ -9,7 +9,7 @@ import { z } from "zod";
 import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "../billing/app-store-subscription.ts";
 import { verifyAppStoreTransaction as verifySignedAppStoreTransaction } from "../billing/app-store-verifier.ts";
 import { getStripeBillingConfig } from "../billing/config.ts";
-import { resolveAccessWindow } from "../billing/entitlement.ts";
+import { resolveAccessWindow, toAppStoreSubscriptionState } from "../billing/entitlement.ts";
 import { createStripeClient } from "../billing/stripe-client.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { BillingRepository } from "../repositories/billing-repository.ts";
@@ -77,15 +77,12 @@ async function getBillingStatus(db: Pick<Database, "execute">, userId: string, t
     throw new Error(`Authenticated user ${userId} does not exist`);
   }
 
-  const appStoreSubscription =
-    row.app_store_product_id && row.app_store_subscription_status && row.app_store_expires_at
-      ? {
-          productId: row.app_store_product_id,
-          status: row.app_store_subscription_status,
-          expiresAt: row.app_store_expires_at,
-          revokedAt: row.app_store_revocation_at,
-        }
-      : undefined;
+  const appStoreSubscription = toAppStoreSubscriptionState({
+    productId: row.app_store_product_id,
+    status: row.app_store_subscription_status,
+    expiresAt: row.app_store_expires_at,
+    revokedAt: row.app_store_revocation_at,
+  });
   const access = resolveAccessWindow({
     userCreatedAt: row.created_at,
     timezone,
