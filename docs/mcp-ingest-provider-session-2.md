@@ -10,7 +10,7 @@ backfill, provider reconnection, import, migration, or deployment was performed.
 | Timezone corruption | Forward fix and bounded backfill tooling shipped; production backfill is blocked until the user has a persisted home timezone and the change is deployed. |
 | Outdoor power | No extractor defect: the sampled Wahoo payloads and all 2022 Wahoo payloads lack power upstream. |
 | Climbing and strength | Both are present and now exposed. Hangboard protocols are absent. |
-| WHOOP typing | Sport extraction already works when upstream supplies a sport; containment merging of an untyped child into a typed activity was repaired. |
+| WHOOP typing | Official `sport_name` is now retained and takes precedence over stale BFF sport IDs; `Commuting` resolves to cycling with commute purpose. Containment merging of an untyped child into a typed activity was also repaired. |
 | Nutrition | FatSecret sync succeeds but currently returns no records. The canonical resolver is working; no truthful ingest-time `partial_log` signal exists. |
 | Streams | `get_activity_streams` shipped with deduped ClickHouse data, default downsampling, and a hard response cap. |
 | Provider health | Exact sync health and staleness shipped. Amazfit's token expired; the three never-synced sources are import-only by design. |
@@ -118,15 +118,34 @@ hangboard source to expose.
 
 ## 4–7. WHOOP, nutrition, streams, and provider sync
 
-Sampled untyped WHOOP payloads contain no sport identifier. The existing sport
-ID extraction and canonical mapping work when WHOOP supplies one. The merge
-defect was a containment rule that required identical types; an untyped
-contained session can now inherit its typed container while two differing known
-types remain separate. Of 164 raw WHOOP `other` activities, 13 overlap a typed
-container. Eleven of those pairs already meet the existing union-overlap rule;
-the containment rule therefore changes two canonical groups. Against the
-originally reported canonical count of 154, the expected post-refresh residual
-is 152. Raw rows remain unchanged by query-time deduplication.
+The three WHOOP representations have different fidelity. The unofficial BFF
+cycle payload exposes a human-readable `v2_activity.type` when WHOOP supplies
+one, and the adapter already maps `commuting`; the sampled 2026 records instead
+have a stale or absent BFF type. The official developer workout payload exposes
+required `sport_name`, while WHOOP documents that numeric `sport_id` does not
+exist after 2025-09-01
+([workout API](https://developer.whoop.com/docs/developing/user-data/workout/)).
+The sync previously used official workouts only for presence reconciliation and
+discarded `sport_name`. It now carries official names through the paginated
+checkpoint and gives a recognized official name precedence over the BFF sport
+ID. A fixture with BFF `sport_id: 0` and official `sport_name: "Commuting"`
+persists as canonical cycling with provider type `Commuting`; the MCP purpose
+resolver consequently reports `commute`.
+
+Apple Health is useful for overlapping workout identity and timing but not for
+recovering commute purpose: HealthKit defines cycling as a workout activity
+type and does not define a commute-specific workout type
+([`HKWorkoutActivityType`](https://developer.apple.com/documentation/healthkit/hkworkoutactivitytype)).
+Because the authoritative WHOOP label is available, no time-of-day heuristic
+was added.
+
+The separate merge defect was a containment rule that required identical types;
+an untyped contained session can now inherit its typed container while two
+differing known types remain separate. Of 164 raw WHOOP `other` activities, 13
+overlap a typed container, and two canonical groups change from this rule alone.
+Raw rows remain unchanged by query-time deduplication. The final unclassified
+count must be measured after a full WHOOP refresh applies official sport names;
+the earlier estimate of 152 is no longer a valid expected residual.
 
 FatSecret's last 30 scheduled jobs completed successfully in roughly 1–1.5
 seconds and wrote zero rows. Full history contains 142 `dofek` entries
@@ -222,7 +241,8 @@ credentials, account access, and separate scope decisions before integration.
 2. Use the power coverage table above; outdoor Wahoo power is absent upstream.
 3. Climbing grades/sends and strength sets are now exposed. Hangboard protocols
    are absent.
-4. Expected post-refresh canonical WHOOP `other` residual: 152.
+4. Re-measure canonical WHOOP `other` after a full refresh applies official
+   `sport_name`; do not use the earlier residual estimate of 152.
 5. `get_activity_streams` is available for power analytics.
 6. Coverage starts: HRV, RHR, and sleep all 2026-03-11. Earlier WHOOP/Apple data
    requires a user-authorized full sync; Apple archive import failed.
@@ -236,6 +256,7 @@ credentials, account access, and separate scope decisions before integration.
 3. Announce and run the single timezone dry-run/backfill pass, then report its
    exact updated-row count and re-audit >60-minute disagreements with travel
    records accounted for.
-4. Refresh the activity read model to realize the WHOOP merge result.
+4. Trigger a full WHOOP refresh, then refresh the activity read model to realize
+   official commute typing and the merge result.
 5. Trigger authorized WHOOP history pagination and/or an Apple on-device full
    sync; announce any historical write immediately before it starts.

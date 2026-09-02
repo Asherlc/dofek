@@ -164,6 +164,7 @@ type DeveloperWorkoutStub = {
   id: string;
   start: string;
   end: string;
+  sport_name?: string;
 };
 
 function extractDeveloperWorkoutsFromCycles(cycles: FakeCycle[]): DeveloperWorkoutStub[] {
@@ -770,7 +771,7 @@ describe("WhoopProvider.sync() (integration)", () => {
             activity_id: "whoop-present-workout-uuid",
             during: "['2026-03-10T12:00:00Z','2026-03-10T13:00:00Z')",
             timezone_offset: "-05:00",
-            sport_id: 0,
+            sport_id: -1,
             average_heart_rate: 145,
             max_heart_rate: 175,
             kilojoules: 2000,
@@ -873,6 +874,7 @@ describe("WhoopProvider.sync() (integration)", () => {
             id: "whoop-present-workout-uuid",
             start: "2026-03-10T12:00:00Z",
             end: "2026-03-10T13:00:00Z",
+            sport_name: "Commuting",
           },
         ],
       }),
@@ -909,6 +911,8 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     expect(staleRows[0]?.providerAbsentAt).toBeInstanceOf(Date);
     expect(presentRows[0]?.providerAbsentAt).toBeNull();
+    expect(presentRows[0]?.canonicalType).toBe("cycling");
+    expect(presentRows[0]?.providerType).toBe("Commuting");
   });
 
   it("keeps tombstones after a later sync phase upserts stale provider data", async () => {
