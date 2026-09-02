@@ -173,13 +173,26 @@ export class WebhookSubscriptionRepository {
           webhookSecretContext(providerName, "signing_secret"),
         )
       : null;
-    await this.#db.execute(
+    const rows = await executeWithSchema(
+      this.#db,
+      subscriptionIdRowSchema,
       sql`UPDATE fitness.webhook_subscription
           SET subscription_external_id = ${input.subscriptionExternalId},
               signing_secret = ${encryptedSigningSecret},
               status = 'active',
               expires_at = ${input.expiresAt},
               updated_at = NOW()
+          WHERE id = ${id} AND status = 'pending'
+          RETURNING id`,
+    );
+    if (rows.length === 0) {
+      throw new Error("Pending webhook subscription was not found");
+    }
+  }
+
+  async deletePendingSubscription(id: string): Promise<void> {
+    await this.#db.execute(
+      sql`DELETE FROM fitness.webhook_subscription
           WHERE id = ${id} AND status = 'pending'`,
     );
   }

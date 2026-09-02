@@ -370,7 +370,19 @@ export async function registerWebhookForProvider(
     verifyToken,
     metadata: { callbackUrl },
   });
-  const result = await provider.registerWebhook(callbackUrl, verifyToken);
+  let result: Awaited<ReturnType<WebhookProvider["registerWebhook"]>>;
+  try {
+    result = await provider.registerWebhook(callbackUrl, verifyToken);
+  } catch (error: unknown) {
+    try {
+      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
+      });
+    }
+    throw error;
+  }
   try {
     await webhookSubscriptionRepository.activatePendingSubscription(pendingId, provider.id, {
       signingSecret: result.signingSecret ?? null,
@@ -381,6 +393,13 @@ export async function registerWebhookForProvider(
     captureException(error, {
       tags: { provider: provider.id, webhookPhase: "subscription-persistence" },
     });
+    try {
+      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
+      });
+    }
     try {
       await provider.unregisterWebhook(result.subscriptionId);
     } catch (cleanupError: unknown) {

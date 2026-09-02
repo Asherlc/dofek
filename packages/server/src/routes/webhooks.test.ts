@@ -61,7 +61,7 @@ vi.mock("../logger.ts", () => ({ logger: mockLogger }));
 
 vi.mock("dofek/db", () => ({
   createDatabaseFromEnv: vi.fn(() => ({
-    execute: vi.fn(async () => []),
+    execute: vi.fn(async () => [{ id: "pending-1" }]),
   })),
 }));
 
@@ -993,6 +993,10 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 });
 
 describe("registerWebhookForProvider", () => {
+  beforeEach(() => {
+    mockExecuteWithSchema.mockResolvedValue([{ id: "pending-1" }]);
+  });
+
   it("skips registration when app-level subscription already exists", async () => {
     const provider = createMockWebhookProvider({ webhookScope: "app" });
     mockExecuteWithSchema.mockResolvedValue([{ id: "existing-sub" }]);
@@ -1010,14 +1014,14 @@ describe("registerWebhookForProvider", () => {
         signingSecret: "secret-123",
       })),
     });
-    mockExecuteWithSchema.mockResolvedValue([]); // No existing subscription
+    mockExecuteWithSchema.mockResolvedValueOnce([]); // No existing subscription
 
     await registerWebhookForProvider(db, provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalledWith(
       expect.stringContaining("/api/webhooks/test-provider"),
       expect.any(String),
     );
-    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    const query = new PgDialect().sqlToQuery(mockExecuteWithSchema.mock.calls[1]?.[2]);
     expect(query.sql).toContain("status = 'active'");
     expect(query.sql).toContain("subscription_external_id");
     expect(query.params).not.toContain("user-1");
@@ -1037,7 +1041,7 @@ describe("registerWebhookForProvider", () => {
     expect(pendingQuery.params).toContain("user-1");
     expect(pendingQuery.params).toContain("test-provider");
 
-    const activationQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    const activationQuery = new PgDialect().sqlToQuery(mockExecuteWithSchema.mock.calls[0]?.[2]);
     expect(activationQuery.sql).toContain("status = 'active'");
     expect(activationQuery.params).toContain("user-sub");
   });
@@ -1110,7 +1114,7 @@ describe("registerWebhookForProvider", () => {
     });
 
     // No existing subscription
-    mockExecuteWithSchema.mockResolvedValue([]);
+    mockExecuteWithSchema.mockResolvedValueOnce([]);
 
     await registerWebhookForProvider(getMockDb(), provider, "user-1");
     // Should call executeWithSchema to check for existing, then call registerWebhook
@@ -1147,5 +1151,24 @@ describe("registerWebhookForProvider", () => {
 
     expect(provider.registerWebhook).not.toHaveBeenCalled();
     expect(provider.unregisterWebhook).not.toHaveBeenCalled();
+  });
+
+  it("removes the pending row when remote webhook registration fails", async () => {
+    const db = getMockDb();
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    });
+
+    await expect(registerWebhookForProvider(db, provider, "user-1")).rejects.toThrow(
+      "provider unavailable",
+    );
+
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    const cleanupQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
+    expect(cleanupQuery.sql).toContain("status = 'pending'");
   });
 });

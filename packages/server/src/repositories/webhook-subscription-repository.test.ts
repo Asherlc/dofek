@@ -52,10 +52,13 @@ describe("WebhookSubscriptionRepository", () => {
     expect(query.sql).toContain("'pending'");
     expect(query.sql).toContain("INTERVAL '5 minutes'");
     expect(query.params).toContain("test-provider");
+    expect(query.params).toContain("encrypted:verify-token");
+    expect(query.params).not.toContain("verify-token");
   });
 
   it("promotes a pending subscription after provider validation", async () => {
     const { execute, repository } = makeRepository();
+    execute.mockResolvedValue([{ id: "pending-id" }]);
 
     await repository.activatePendingSubscription("pending-id", "test-provider", {
       subscriptionExternalId: "subscription-1",
@@ -68,6 +71,18 @@ describe("WebhookSubscriptionRepository", () => {
     expect(query.sql).toContain("subscription_external_id");
     expect(query.params).toContain("pending-id");
     expect(query.params).toContain("subscription-1");
+  });
+
+  it("rejects activation when the pending subscription no longer exists", async () => {
+    const { repository } = makeRepository();
+
+    await expect(
+      repository.activatePendingSubscription("pending-id", "test-provider", {
+        subscriptionExternalId: "subscription-1",
+        signingSecret: null,
+        expiresAt: null,
+      }),
+    ).rejects.toThrow("Pending webhook subscription was not found");
   });
 
   it.each([
