@@ -60,6 +60,43 @@ describe("logSync", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { origin: "manual" as const, dataType: "sync", status: "error" as const },
+    { origin: "scheduled" as const, dataType: "activities", status: "error" as const },
+    { origin: "scheduled" as const, dataType: "sync", status: "success" as const },
+  ])("does not query failure history for $origin $dataType $status logs", async (entry) => {
+    await logSync(db.db, { providerId: "whoop", userId: "user-123", ...entry });
+    expect(db.spies.execute).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("does not report an alert when the failure-history query returns no row", async () => {
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+    expect(db.spies.execute).toHaveBeenCalledOnce();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports malformed failure-history rows", async () => {
+    db = createMockDatabase({ executeResult: [{}] });
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      extra: { user_id: "user-123" },
+      tags: { operation: "scheduled-provider-sync-alert", provider: "whoop" },
+    });
+  });
+
   it("inserts a success log entry with all fields", async () => {
     const entry: SyncLogEntry = {
       providerId: "wahoo",

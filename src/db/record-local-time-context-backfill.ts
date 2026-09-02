@@ -102,7 +102,7 @@ export async function backfillRecordLocalTimeContext(
           timezone: row.timezone,
           source: "provider_timezone",
         });
-        const homeTimezone = row.home_timezone?.trim() || null;
+        const homeTimezone = row.home_timezone || null;
         const useHomeTimezone = isFixedEtcGmtZone(row.timezone.trim()) && homeTimezone !== null;
         const source = useHomeTimezone ? "user_home_timezone" : "provider_timezone";
         const context = resolveRecordLocalTimeContext({

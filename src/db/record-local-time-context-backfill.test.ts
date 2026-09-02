@@ -212,4 +212,153 @@ describe("backfillRecordLocalTimeContext", () => {
       ),
     ).resolves.toEqual({ eligible: 0, skipped: 0, updated: 0 });
   });
+
+  it("paginates subsequent batches from the last activity id", async () => {
+    const firstId = "00000000-0000-4000-8000-000000000010";
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: firstId,
+          timezone: "America/Los_Angeles",
+          local_time_source: "unknown",
+          home_timezone: null,
+          started_at: "2026-06-01T12:00:00.000Z",
+          ended_at: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await backfillRecordLocalTimeContext(
+      { execute },
+      { execute: false, batchSize: 1, maxBatches: 2, ...timeWindow },
+    );
+
+    const firstQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    const secondQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(firstQuery.sql).not.toContain("activity.id >");
+    expect(secondQuery.sql).toContain("activity.id >");
+    expect(secondQuery.params).toContain(firstId);
+  });
+
+  it("uses a trimmed home zone only for exact fixed Etc/GMT names", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "00000000-0000-4000-8000-000000000011",
+          timezone: "Etc/GMT",
+          local_time_source: "provider_timezone",
+          home_timezone: "  America/Los_Angeles  ",
+          started_at: "2026-06-01T12:00:00.000Z",
+          ended_at: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 1 }]);
+    await backfillRecordLocalTimeContext(
+      { execute },
+      { execute: true, batchSize: 1, maxBatches: 1, ...timeWindow },
+    );
+    const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(updateQuery.params).toContain("America/Los_Angeles");
+    expect(updateQuery.params).toContain("user_home_timezone");
+  });
+
+  it("preserves a named provider zone when a home zone is also available", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "00000000-0000-4000-8000-000000000013",
+          timezone: "America/New_York",
+          local_time_source: "provider_timezone",
+          home_timezone: "America/Los_Angeles",
+          started_at: "2026-06-01T12:00:00.000Z",
+          ended_at: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 1 }]);
+
+    await backfillRecordLocalTimeContext(
+      { execute },
+      { execute: true, batchSize: 1, maxBatches: 1, ...timeWindow },
+    );
+
+    const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(updateQuery.params).toContain("America/New_York");
+    expect(updateQuery.params).toContain("provider_timezone");
+    expect(updateQuery.params).not.toContain("user_home_timezone");
+  });
+
+  it("preserves a fixed provider zone when no home zone is available", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "00000000-0000-4000-8000-000000000014",
+          timezone: "Etc/GMT+4",
+          local_time_source: "provider_timezone",
+          home_timezone: null,
+          started_at: "2026-06-01T12:00:00.000Z",
+          ended_at: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 1 }]);
+
+    await backfillRecordLocalTimeContext(
+      { execute },
+      { execute: true, batchSize: 1, maxBatches: 1, ...timeWindow },
+    );
+
+    const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(updateQuery.params).toContain("Etc/GMT+4");
+    expect(updateQuery.params).toContain("provider_timezone");
+  });
+
+  it("recognizes a whitespace-padded fixed provider zone", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "00000000-0000-4000-8000-000000000015",
+          timezone: "  Etc/GMT+4  ",
+          local_time_source: "provider_timezone",
+          home_timezone: "America/Los_Angeles",
+          started_at: "2026-06-01T12:00:00.000Z",
+          ended_at: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 1 }]);
+
+    await backfillRecordLocalTimeContext(
+      { execute },
+      { execute: true, batchSize: 1, maxBatches: 1, ...timeWindow },
+    );
+
+    const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(updateQuery.params).toContain("America/Los_Angeles");
+    expect(updateQuery.params).toContain("user_home_timezone");
+  });
+
+  it.each(["prefixEtc/GMT+4", "Etc/GMT+4suffix"])(
+    "rejects malformed fixed-zone lookalike %s",
+    async (timezone) => {
+      const execute = vi.fn().mockResolvedValueOnce([
+        {
+          id: "00000000-0000-4000-8000-000000000012",
+          timezone,
+          local_time_source: "provider_timezone",
+          home_timezone: "America/Los_Angeles",
+          started_at: "2026-06-01T12:00:00.000Z",
+          ended_at: null,
+        },
+      ]);
+      await expect(
+        backfillRecordLocalTimeContext(
+          { execute },
+          { execute: false, batchSize: 1, maxBatches: 1, ...timeWindow },
+        ),
+      ).resolves.toEqual({ eligible: 1, skipped: 1, updated: 0 });
+    },
+  );
 });
