@@ -458,6 +458,7 @@ describe("RideWithGpsClient.getTrip", () => {
 
     const { trip } = await client.getTrip(12345);
 
+    expect(trip.track_points[0]?.speedMetersPerSecond).toBe(-1);
     expect(parseTrackPoints(trip.track_points)[0]?.speed).toBeUndefined();
   });
 });
