@@ -155,6 +155,18 @@ describe("file upload repository", () => {
     await expect(createFileUpload(database, input())).resolves.toMatchObject({ id: uploadId });
   });
 
+  it("preserves a persisted timezone on an idempotent retry that omits it", async () => {
+    mocks.executeWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row({ timezone: "America/Los_Angeles" })]);
+
+    await expect(createFileUpload(database, input({ timezone: undefined }))).resolves.toMatchObject(
+      {
+        timezone: "America/Los_Angeles",
+      },
+    );
+  });
+
   it.each([
     ["importType", "fit-file"],
     ["objectKey", "different"],

@@ -19,7 +19,7 @@ vi.mock("dofek/file-upload-metrics", () => ({
 vi.mock("@sentry/node", () => ({ captureException: sentry.captureException }));
 
 vi.mock("../trpc.ts", () => {
-  const trpc = initTRPC.context<{ db: unknown; userId: string }>().create();
+  const trpc = initTRPC.context<{ db: unknown; userId: string; timezone?: string }>().create();
   return { protectedProcedure: trpc.procedure, router: trpc.router };
 });
 
@@ -116,6 +116,7 @@ function setup(currentUpload = upload()) {
   )({
     db: {},
     userId: currentUpload.userId,
+    timezone: "America/Los_Angeles",
   });
   return { caller, repository, storage, transaction, withUserWriteFence };
 }
@@ -418,7 +419,10 @@ describe("fileUploadRouter", () => {
     });
     expect(strongSetup.repository.create).toHaveBeenCalledWith(
       strongSetup.transaction,
-      expect.objectContaining({ weightUnit: undefined }),
+      expect.objectContaining({
+        weightUnit: undefined,
+        timezone: "America/Los_Angeles",
+      }),
     );
   });
 

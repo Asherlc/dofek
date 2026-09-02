@@ -243,7 +243,7 @@ function assertMatchingInitiation(existing: FileUpload, input: CreateFileUploadI
     existing.partSizeBytes === input.partSizeBytes &&
     existing.since.getTime() === input.since.getTime() &&
     existing.weightUnit === (input.weightUnit ?? existing.weightUnit) &&
-    existing.timezone === (input.timezone ?? null);
+    existing.timezone === (input.timezone ?? existing.timezone);
   if (!matches) {
     throw new Error(`Upload ${input.id} was already initiated with different metadata`);
   }

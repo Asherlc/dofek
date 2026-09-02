@@ -110,6 +110,30 @@ describe("importStrongCsv", () => {
     expect(new StrongCsvValidationError("invalid unit").name).toBe("StrongCsvValidationError");
   });
 
+  it("fails the import for an invalid workout timestamp", async () => {
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        undefined,
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-02-30 10:00:00,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    ).rejects.toThrow(StrongCsvValidationError);
+  });
+
+  it("fails the import for a nonexistent local workout timestamp", async () => {
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        undefined,
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-03-08 02:30:00,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    ).rejects.toThrow(StrongCsvValidationError);
+  });
+
   it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
     const execute = vi.fn().mockResolvedValue([
       {
@@ -805,9 +829,12 @@ describe("strongCsvWeightUnit", () => {
     ["kilograms", "kg"],
     ["lb", "lbs"],
     ["pounds", "lbs"],
-  ] as const)("normalizes the declared %s unit", (declared, expected) => {
-    expect(strongCsvWeightUnit(`\uFEFFDate,Weight Unit\n2026-09-01,${declared}`)).toBe(expected);
-  });
+  ] satisfies Array<[string, "kg" | "lbs"]>)(
+    "normalizes the declared %s unit",
+    (declared, expected) => {
+      expect(strongCsvWeightUnit(`\uFEFFDate,Weight Unit\n2026-09-01,${declared}`)).toBe(expected);
+    },
+  );
 
   it("rejects unsupported units and treats a missing declaration as absent", () => {
     expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,stone")).toThrow(
@@ -818,6 +845,12 @@ describe("strongCsvWeightUnit", () => {
 
   it("rejects mixed unit declarations", () => {
     expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,kg\n2026-09-02,lbs")).toThrow(
+      StrongCsvValidationError,
+    );
+  });
+
+  it("rejects a partially blank unit declaration", () => {
+    expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,kg\n2026-09-02,")).toThrow(
       StrongCsvValidationError,
     );
   });

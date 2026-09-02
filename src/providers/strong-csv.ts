@@ -216,14 +216,12 @@ export function strongCsvWeightUnit(csvText: string): "kg" | "lbs" | null {
     .map((field) => field.trim().toLowerCase())
     .indexOf("weight unit");
   if (index < 0) return null;
-  const values = new Set(
-    dataLines
-      .filter((line) => line.trim() !== "")
-      .map((line) => parseCsvLine(line)[index]?.trim().toLowerCase())
-      .filter((value): value is string => value !== undefined && value !== ""),
-  );
+  const declarations = dataLines
+    .filter((line) => line.trim() !== "")
+    .map((line) => parseCsvLine(line)[index]?.trim().toLowerCase() ?? "");
+  const values = new Set(declarations.filter((value) => value !== ""));
   if (values.size === 0) return null;
-  if (values.size !== 1) {
+  if (declarations.some((value) => value === "") || values.size !== 1) {
     throw new StrongCsvValidationError("Strong CSV must declare one consistent weight unit");
   }
   const [value] = values;
@@ -459,7 +457,7 @@ export async function importStrongCsv(
 
       const wallClockDate = parseStrongWallClockTimestamp(group.date);
       if (Number.isNaN(wallClockDate.getTime())) {
-        throw new Error(`Invalid Strong workout timestamp: ${group.date}`);
+        throw new StrongCsvValidationError(`Invalid Strong workout timestamp: ${group.date}`);
       }
       let startedAt = wallClockDate;
       if (timezone != null) {
@@ -475,6 +473,19 @@ export async function importStrongCsv(
           return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
         };
         startedAt = resolveStartedAt(resolveStartedAt(wallClockDate));
+        const resolvedContext = resolveRecordLocalTimeContext({
+          startedAt,
+          timezone,
+          source: "device_timezone",
+        });
+        const resolvedWallClock = new Date(
+          startedAt.getTime() + (resolvedContext.startUtcOffsetMinutes ?? 0) * 60_000,
+        );
+        if (resolvedWallClock.getTime() !== wallClockDate.getTime()) {
+          throw new StrongCsvValidationError(
+            `Strong workout timestamp does not exist in ${timezone}: ${group.date}`,
+          );
+        }
       }
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
@@ -591,6 +602,7 @@ export async function importStrongCsv(
 
       recordsSynced++;
     } catch (err) {
+      if (err instanceof StrongCsvValidationError) throw err;
       errors.push({
         message: `Failed to import workout "${group.workoutName}" on ${group.date}: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
