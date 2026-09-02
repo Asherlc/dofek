@@ -1766,7 +1766,6 @@ describe("createMcpRouter", () => {
         max_hr: 170,
         max_power: 300,
         modality: "indoor",
-        provider_id: "peloton",
         started_at: "2026-05-18T10:00:00.000Z",
       },
       {
@@ -1777,7 +1776,6 @@ describe("createMcpRouter", () => {
         max_hr: 175,
         max_power: 320,
         modality: "indoor",
-        provider_id: "peloton",
         started_at: "2026-05-19T10:00:00.000Z",
       },
       {
@@ -1788,7 +1786,6 @@ describe("createMcpRouter", () => {
         max_hr: 178,
         max_power: 310,
         modality: "indoor",
-        provider_id: "peloton",
         started_at: "2026-05-20T10:00:00.000Z",
       },
       {
@@ -1799,7 +1796,6 @@ describe("createMcpRouter", () => {
         max_hr: 176,
         max_power: 340,
         modality: "outdoor",
-        provider_id: "wahoo",
         started_at: "2026-05-21T10:00:00.000Z",
       },
       {
@@ -1810,7 +1806,6 @@ describe("createMcpRouter", () => {
         max_hr: 177,
         max_power: 350,
         modality: "outdoor",
-        provider_id: "wahoo",
         started_at: "2026-05-22T10:00:00.000Z",
       },
       {
@@ -1821,7 +1816,6 @@ describe("createMcpRouter", () => {
         max_hr: 179,
         max_power: 360,
         modality: null,
-        provider_id: "wahoo",
         started_at: "2026-05-23T10:00:00.000Z",
       },
       {
@@ -1832,7 +1826,6 @@ describe("createMcpRouter", () => {
         max_hr: 180,
         max_power: 380,
         modality: "outdoor",
-        provider_id: "wahoo",
         started_at: "2026-05-23T11:00:00.000Z",
       },
       {
@@ -1843,25 +1836,9 @@ describe("createMcpRouter", () => {
         max_hr: null,
         max_power: 390,
         modality: null,
-        provider_id: "wahoo",
         started_at: "2026-05-23T12:00:00.000Z",
       },
     ];
-    const runningSummary = {
-      preGatePowerMemberProviderIds: preGateRows
-        .filter((row) => row.canonical_type === "running" && row.avg_power != null)
-        .map((row) => row.provider_id),
-    };
-    const otherSummary = {
-      preGatePowerMemberProviderIds: preGateRows
-        .filter((row) => row.canonical_type === "other" && row.avg_power != null)
-        .map((row) => row.provider_id),
-    };
-
-    expect(runningSummary.preGatePowerMemberProviderIds).toEqual(["wahoo"]);
-    expect(runningSummary.preGatePowerMemberProviderIds).not.toContain("peloton");
-    expect(otherSummary.preGatePowerMemberProviderIds).toEqual(["wahoo"]);
-    expect(otherSummary.preGatePowerMemberProviderIds).not.toContain("peloton");
     toolTestMocks.activityListRange.mockResolvedValue(preGateRows);
 
     const response = await request(createTestApp(), {

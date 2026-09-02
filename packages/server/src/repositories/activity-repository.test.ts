@@ -544,6 +544,75 @@ describe("ActivityRepository", () => {
       });
     });
 
+    it("does not feed Peloton power into incompatible range activities before MCP gating", async () => {
+      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
+      execute
+        .mockResolvedValueOnce(
+          withUnknownLocalTimeContext([
+            {
+              id: "running-group",
+              canonical_type: "running",
+              started_at: "2024-01-15T10:00:00.000Z",
+              ended_at: "2024-01-15T11:00:00.000Z",
+              name: "Morning Run",
+              provider_id: "wahoo",
+              source_providers: ["peloton", "wahoo"],
+              member_activity_ids: ["peloton-member"],
+              avg_hr: null,
+              max_hr: null,
+              avg_power: null,
+              distance_meters: null,
+              total_count: 1,
+            },
+            {
+              id: "other-group",
+              canonical_type: "other",
+              started_at: "2024-01-15T12:00:00.000Z",
+              ended_at: "2024-01-15T13:00:00.000Z",
+              name: "Unclassified activity",
+              provider_id: "wahoo",
+              source_providers: ["peloton", "wahoo"],
+              member_activity_ids: ["peloton-member"],
+              avg_hr: null,
+              max_hr: null,
+              avg_power: null,
+              distance_meters: null,
+              total_count: 1,
+            },
+          ]),
+        )
+        .mockResolvedValueOnce([
+          {
+            activity_id: "peloton-member",
+            canonical_type: "cycling",
+            provider_id: "peloton",
+          },
+        ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "peloton-member",
+          avg_hr: 145,
+          max_hr: 171,
+          avg_power: 220,
+          max_power: 450,
+          avg_speed: 8,
+          max_speed: 13,
+          avg_cadence: 82,
+          total_distance: 42_000,
+          elevation_gain_m: 610,
+          elevation_loss_m: 590,
+          sample_count: 3600,
+        },
+      ]);
+
+      const result = await repo.listRange("2024-01-15", "2024-01-15");
+
+      expect(result).toEqual([
+        expect.objectContaining({ id: "running-group", avg_power: null }),
+        expect.objectContaining({ id: "other-group", avg_power: null }),
+      ]);
+    });
+
     it("adds a location summary when hydrated summaries include a route centroid", async () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {
