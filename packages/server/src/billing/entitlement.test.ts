@@ -24,6 +24,57 @@ describe("resolveAccessWindow", () => {
     expect(result).toEqual({ kind: "full", paid: true, reason: "stripe_subscription" });
   });
 
+  it("grants full access for an active verified App Store subscription", () => {
+    expect(
+      resolveAccessWindow({
+        userCreatedAt: "2026-09-01T00:00:00.000Z",
+        timezone: "UTC",
+        paidGrantReason: null,
+        stripeSubscriptionStatus: null,
+        appStoreSubscription: {
+          productId: "com.dofek.premium.monthly",
+          status: "active",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+          revokedAt: null,
+        },
+        now: new Date("2026-09-15T00:00:00.000Z"),
+      }),
+    ).toEqual({ kind: "full", paid: true, reason: "app_store_subscription" });
+  });
+
+  it("does not grant App Store access after expiry or revocation", () => {
+    expect(
+      resolveAccessWindow({
+        userCreatedAt: "2026-09-01T00:00:00.000Z",
+        timezone: "UTC",
+        paidGrantReason: null,
+        stripeSubscriptionStatus: null,
+        appStoreSubscription: {
+          productId: "com.dofek.premium.monthly",
+          status: "expired",
+          expiresAt: "2026-09-10T00:00:00.000Z",
+          revokedAt: null,
+        },
+        now: new Date("2026-09-15T00:00:00.000Z"),
+      }).kind,
+    ).toBe("limited");
+    expect(
+      resolveAccessWindow({
+        userCreatedAt: "2026-09-01T00:00:00.000Z",
+        timezone: "UTC",
+        paidGrantReason: null,
+        stripeSubscriptionStatus: null,
+        appStoreSubscription: {
+          productId: "com.dofek.premium.monthly",
+          status: "active",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+          revokedAt: "2026-09-14T00:00:00.000Z",
+        },
+        now: new Date("2026-09-15T00:00:00.000Z"),
+      }).kind,
+    ).toBe("limited");
+  });
+
   it("limits unpaid users to signup day through signup day plus six", () => {
     const result = resolveAccessWindow({
       userCreatedAt: "2026-04-10T18:30:00.000Z",

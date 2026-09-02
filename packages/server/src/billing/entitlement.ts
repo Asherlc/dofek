@@ -2,9 +2,22 @@ import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { type SQL, sql } from "drizzle-orm";
 
 const ACCESS_GRANTING_STRIPE_STATUSES = new Set(["active", "trialing"]);
+const ACCESS_GRANTING_APP_STORE_STATUSES = new Set(["active", "grace_period"]);
+const APP_STORE_SUBSCRIPTION_PRODUCT_ID = "com.dofek.premium.monthly";
+
+export interface AppStoreSubscriptionState {
+  productId: string;
+  status: string;
+  expiresAt: string;
+  revokedAt: string | null;
+}
 
 export type AccessWindow =
-  | { kind: "full"; paid: true; reason: "paid_grant" | "stripe_subscription" }
+  | {
+      kind: "full";
+      paid: true;
+      reason: "paid_grant" | "stripe_subscription" | "app_store_subscription";
+    }
   | {
       kind: "limited";
       paid: false;
@@ -18,6 +31,8 @@ export interface ResolveAccessWindowInput {
   timezone: string;
   paidGrantReason: string | null;
   stripeSubscriptionStatus: string | null;
+  appStoreSubscription?: AppStoreSubscriptionState;
+  now?: Date;
 }
 
 function toDateOnly(value: Date): string {
@@ -53,6 +68,16 @@ export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWind
     ACCESS_GRANTING_STRIPE_STATUSES.has(input.stripeSubscriptionStatus)
   ) {
     return { kind: "full", paid: true, reason: "stripe_subscription" };
+  }
+
+  const appStoreSubscription = input.appStoreSubscription;
+  if (
+    appStoreSubscription?.productId === APP_STORE_SUBSCRIPTION_PRODUCT_ID &&
+    ACCESS_GRANTING_APP_STORE_STATUSES.has(appStoreSubscription.status) &&
+    new Date(appStoreSubscription.expiresAt) > (input.now ?? new Date()) &&
+    appStoreSubscription.revokedAt === null
+  ) {
+    return { kind: "full", paid: true, reason: "app_store_subscription" };
   }
 
   const startDate = formatDateYmdInTimeZone(input.userCreatedAt, input.timezone);

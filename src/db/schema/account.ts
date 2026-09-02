@@ -322,7 +322,7 @@ export const mcpOauthRefreshToken = fitness.table(
   ],
 );
 
-// User billing — Stripe subscription state and internal paid grants
+// User billing — subscription state and internal paid grants
 // ============================================================
 
 export const userBilling = fitness.table(
@@ -339,6 +339,14 @@ export const userBilling = fitness.table(
     stripeSubscriptionEventCreated: bigint("stripe_subscription_event_created", {
       mode: "number",
     }),
+    appStoreAccountToken: uuid("app_store_account_token").unique(),
+    appStoreOriginalTransactionId: text("app_store_original_transaction_id").unique(),
+    appStoreTransactionId: text("app_store_transaction_id").unique(),
+    appStoreProductId: text("app_store_product_id"),
+    appStoreSubscriptionStatus: text("app_store_subscription_status"),
+    appStoreExpiresAt: timestamp("app_store_expires_at", { withTimezone: true }),
+    appStoreRevocationAt: timestamp("app_store_revocation_at", { withTimezone: true }),
+    appStoreEnvironment: text("app_store_environment"),
     paidGrantReason: text("paid_grant_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -385,6 +393,18 @@ export const userExternalEffect = fitness.table(
 export const stripeWebhookEvent = fitness.table("stripe_webhook_event", {
   eventId: text("event_id").primaryKey(),
   eventCreated: bigint("event_created", { mode: "number" }).notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Global App Store notification replay-protection ledger.
+ *
+ * This intentionally has no user foreign key so account erasure cannot remove
+ * records needed to reject replayed Apple notifications.
+ */
+export const appStoreNotification = fitness.table("app_store_notification", {
+  notificationUuid: uuid("notification_uuid").primaryKey(),
+  signedDate: bigint("signed_date", { mode: "number" }).notNull(),
   processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
