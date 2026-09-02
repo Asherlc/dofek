@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import { formatDateTime } from "@dofek/format/format";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -390,6 +392,6 @@ describe("AdminUserDetailPage", () => {
     expect(screen.getByText("Full access from App Store subscription")).toBeTruthy();
     expect(screen.getByText("com.dofek.premium.monthly")).toBeTruthy();
     expect(screen.getByText("active")).toBeTruthy();
-    expect(screen.getByText("Sep 30, 2026, 5:00 PM")).toBeTruthy();
+    expect(screen.getByText(formatDateTime("2026-10-01T00:00:00Z"))).toBeTruthy();
   });
 });
