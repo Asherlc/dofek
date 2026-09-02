@@ -75,7 +75,7 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
               ? null
               : (new Date(activity.ended_at).getTime() - new Date(activity.started_at).getTime()) /
                 60_000,
-          avg_hr: activity.avg_hr,
+          average_heart_rate: activity.avg_hr,
           name: activity.name,
           volume_load_kg: sessionVolumeLoadKg,
           exercises,

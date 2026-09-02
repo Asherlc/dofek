@@ -1,9 +1,7 @@
+import { serializeJsonText } from "./tool-result.ts";
+
 export function jsonContent(value: unknown) {
-  const text = JSON.stringify(value, null, 2);
-  if (text === undefined) {
-    throw new Error("MCP tool result must be JSON-serializable");
-  }
-  return { content: [{ type: "text" as const, text }] };
+  return { content: [{ type: "text" as const, text: serializeJsonText(value) }] };
 }
 
 export function assertDateRange(startDate: string, endDate: string): void {

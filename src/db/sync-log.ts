@@ -63,24 +63,27 @@ async function reportConsecutiveScheduledFailures(
     const [row] = await executeWithSchema(
       db,
       consecutiveFailureRowSchema,
-      sql`WITH last_success AS (
-            SELECT MAX(synced_at) AS synced_at
+      sql`WITH ordered_attempts AS (
+            SELECT
+              status,
+              ROW_NUMBER() OVER (ORDER BY synced_at DESC, id DESC) AS attempt_number
             FROM fitness.sync_log
             WHERE user_id = ${userId}
               AND provider_id = ${entry.providerId}
               AND data_type = 'sync'
               AND origin = 'scheduled'
-              AND status = 'success'
+          ),
+          attempts AS (
+            SELECT
+              *,
+              MIN(attempt_number) FILTER (WHERE status = 'success') OVER ()
+                AS latest_success_attempt_number
+            FROM ordered_attempts
           )
           SELECT COUNT(*)::int AS consecutive_failures
-          FROM fitness.sync_log
-          CROSS JOIN last_success
-          WHERE user_id = ${userId}
-            AND provider_id = ${entry.providerId}
-            AND data_type = 'sync'
-            AND origin = 'scheduled'
-            AND status = 'error'
-            AND synced_at > COALESCE(last_success.synced_at, '-infinity'::timestamptz)`,
+          FROM attempts
+          WHERE status = 'error'
+            AND attempt_number < COALESCE(latest_success_attempt_number, 2147483647)`,
     );
 
     if (row?.consecutive_failures === 2) {

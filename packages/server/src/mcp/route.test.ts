@@ -920,6 +920,7 @@ describe("createMcpRouter", () => {
       sessions: [
         expect.objectContaining({
           activity_id: "strength-1",
+          average_heart_rate: 110,
           duration_minutes: 60,
           volume_load_kg: 100,
         }),

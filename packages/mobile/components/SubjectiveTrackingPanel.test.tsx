@@ -12,9 +12,14 @@ const mocks = vi.hoisted(() => {
     isLoading: boolean;
   } = { data: [], error: null, isLoading: false };
   const regionsResult: {
-    data: Array<{ id: string; label: string }>;
+    data: Array<{ id: string; label: string }> | undefined;
     error: Error | null;
-  } = { data: [{ id: "left-finger", label: "Left finger" }], error: null };
+    isLoading: boolean;
+  } = {
+    data: [{ id: "left-finger", label: "Left finger" }],
+    error: null,
+    isLoading: false,
+  };
 
   return {
     createInjury: vi.fn(),
@@ -54,6 +59,8 @@ describe("SubjectiveTrackingPanel", () => {
     mocks.createInjury.mockReset();
     mocks.invalidateInjuries.mockReset();
     mocks.regionsResult.error = null;
+    mocks.regionsResult.isLoading = false;
+    mocks.regionsResult.data = [{ id: "left-finger", label: "Left finger" }];
   });
 
   it("renders recorded injury history", () => {
@@ -127,5 +134,18 @@ describe("SubjectiveTrackingPanel", () => {
     render(<SubjectiveTrackingPanel />);
 
     expect(screen.getByText("Body regions unavailable")).toBeTruthy();
+  });
+
+  it("keeps injury entry disabled while body regions load or are empty", () => {
+    mocks.regionsResult.data = undefined;
+    mocks.regionsResult.isLoading = true;
+    const { rerender } = render(<SubjectiveTrackingPanel />);
+    expect(screen.getByText("Loading body regions…")).toBeTruthy();
+    expect(screen.queryByLabelText("Injury note")).toBeNull();
+
+    mocks.regionsResult.data = [];
+    mocks.regionsResult.isLoading = false;
+    rerender(<SubjectiveTrackingPanel />);
+    expect(screen.getByText("No body regions are available.")).toBeTruthy();
   });
 });
