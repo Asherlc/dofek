@@ -234,6 +234,29 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     expect(res.body).toContain("challenge");
   });
 
+  it("continues through pending subscriptions until a challenge token matches", async () => {
+    const provider = createMockWebhookProvider({
+      handleValidationChallenge: vi.fn((query, verifyToken) =>
+        query["hub.verify_token"] === verifyToken ? { "hub.challenge": verifyToken } : null,
+      ),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { id: "pending-1", provider_id: null, verify_token: "other-token", signing_secret: null },
+      { id: "pending-2", provider_id: null, verify_token: "pending-token", signing_secret: null },
+    ]);
+
+    const res = await request(
+      createTestApp(),
+      "get",
+      "/api/webhooks/test-provider?hub.verify_token=pending-token",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("pending-token");
+    expect(provider.handleValidationChallenge).toHaveBeenCalledTimes(2);
+  });
+
   it("returns 400 when challenge handler returns null", async () => {
     const provider = createMockWebhookProvider({
       handleValidationChallenge: vi.fn(() => null),
@@ -1040,6 +1063,11 @@ describe("registerWebhookForProvider", () => {
     expect(pendingQuery.sql).toContain("'pending'");
     expect(pendingQuery.params).toContain("user-1");
     expect(pendingQuery.params).toContain("test-provider");
+    expect(
+      pendingQuery.params.some(
+        (param) => typeof param === "string" && param.includes('"callbackUrl"'),
+      ),
+    ).toBe(true);
 
     const activationQuery = new PgDialect().sqlToQuery(mockExecuteWithSchema.mock.calls[0]?.[2]);
     expect(activationQuery.sql).toContain("status = 'active'");
@@ -1170,5 +1198,57 @@ describe("registerWebhookForProvider", () => {
     const cleanupQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
     expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
     expect(cleanupQuery.sql).toContain("status = 'pending'");
+  });
+
+  it("reports pending-row cleanup failure when remote registration fails", async () => {
+    const db = getMockDb();
+    let executeCount = 0;
+    vi.mocked(db.execute).mockImplementation(async () => {
+      executeCount += 1;
+      if (executeCount === 2) throw new Error("cleanup unavailable");
+      return [{ id: "pending-1" }];
+    });
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    });
+
+    await expect(registerWebhookForProvider(db, provider, "user-1")).rejects.toThrow(
+      "provider unavailable",
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "cleanup unavailable" }),
+      expect.objectContaining({
+        tags: { provider: "test-provider", webhookPhase: "pending-subscription-cleanup" },
+      }),
+    );
+  });
+
+  it("reports pending-row cleanup failure when activation fails", async () => {
+    const db = getMockDb();
+    let executeCount = 0;
+    vi.mocked(db.execute).mockImplementation(async () => {
+      executeCount += 1;
+      if (executeCount === 2) throw new Error("cleanup unavailable");
+      return [{ id: "pending-1" }];
+    });
+    mockExecuteWithSchema.mockResolvedValue([]);
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "remote-sub" })),
+    });
+
+    await expect(registerWebhookForProvider(db, provider, "user-1")).rejects.toThrow(
+      "Pending webhook subscription was not found",
+    );
+    expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-sub");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "cleanup unavailable" }),
+      expect.objectContaining({
+        tags: { provider: "test-provider", webhookPhase: "pending-subscription-cleanup" },
+      }),
+    );
   });
 });
