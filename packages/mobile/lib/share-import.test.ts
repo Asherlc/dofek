@@ -93,9 +93,12 @@ describe("importSharedFile", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(4);
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,
-      "https://example.com/api/upload/strong-csv?units=kg",
+      "https://example.com/api/upload/strong-csv",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer session-token" }),
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "x-timezone": expect.any(String),
+        }),
       }),
     );
   });

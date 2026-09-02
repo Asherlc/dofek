@@ -34,6 +34,14 @@ resource "cloudflare_r2_bucket" "exports" {
   location   = "WEUR"
 }
 
+# Immutable original files for user-initiated imports. No expiry lifecycle is
+# configured: sources remain available for audited re-imports until account deletion.
+resource "cloudflare_r2_bucket" "import_archive" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-import-archive"
+  location   = "WEUR"
+}
+
 resource "cloudflare_r2_bucket_lifecycle" "exports_cleanup" {
   account_id  = var.cloudflare_account_id
   bucket_name = cloudflare_r2_bucket.exports.name

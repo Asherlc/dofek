@@ -91,7 +91,7 @@ function getUploadTarget(serverUrl: string, providerId: ImportProviderId): Uploa
       };
     case "strong-csv":
       return {
-        uploadUrl: `${baseUrl}/api/upload/strong-csv?units=kg`,
+        uploadUrl: `${baseUrl}/api/upload/strong-csv`,
         statusUrl: `${baseUrl}/api/upload/strong-csv/status`,
       };
     case "cronometer-csv":
@@ -127,6 +127,13 @@ function getContentTypeForUpload(providerId: ImportProviderId, fileExtension: st
     return fileExtension === ".xml" ? "application/xml" : "application/zip";
   }
   return "text/csv";
+}
+
+function currentTimezone(): string {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!timezone)
+    throw new Error("Unable to determine this device's timezone for the Strong import");
+  return timezone;
 }
 
 function isCsvLike(fileExtension: string, mimeType: string | null): boolean {
@@ -314,6 +321,7 @@ async function uploadSingleFile(
     headers: {
       Authorization: `Bearer ${sessionToken}`,
       "Content-Type": getContentTypeForUpload(providerId, fileExtension),
+      ...(providerId === "strong-csv" ? { "x-timezone": currentTimezone() } : {}),
     },
     body: blob,
   });

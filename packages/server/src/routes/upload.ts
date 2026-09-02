@@ -85,7 +85,7 @@ async function enqueueImport(
   since: Date,
   importType: "apple-health" | "strong-csv" | "cronometer-csv",
   userId: string,
-  opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
+  opts?: { weightUnit?: "kg" | "lbs"; importTimezone?: string; jobId?: string },
 ): Promise<string> {
   const job = await importQueue.add(
     importType,
@@ -95,6 +95,7 @@ async function enqueueImport(
       userId,
       importType,
       weightUnit: opts?.weightUnit,
+      importTimezone: opts?.importTimezone,
     },
     opts?.jobId ? { jobId: opts.jobId } : undefined,
   );
@@ -403,7 +404,20 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       return;
     }
 
-    const weightUnit = req.query.units === "lbs" ? "lbs" : "kg";
+    const weightUnit =
+      req.query.units === "lbs" || req.query.units === "kg" ? req.query.units : undefined;
+    const importTimezone =
+      typeof req.headers["x-timezone"] === "string" ? req.headers["x-timezone"] : undefined;
+    if (!importTimezone) {
+      res.status(400).json({ error: "Strong CSV import requires an x-timezone IANA header" });
+      return;
+    }
+    try {
+      Intl.DateTimeFormat("en-US", { timeZone: importTimezone });
+    } catch {
+      res.status(400).json({ error: "x-timezone must be a valid IANA timezone" });
+      return;
+    }
     const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tmpFile = join(JOB_FILES_DIR, `strong-csv-${tmpId}.csv`);
 
@@ -411,6 +425,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       await streamToFile(req, tmpFile);
       const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "strong-csv", userId, {
         weightUnit,
+        importTimezone,
       });
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {

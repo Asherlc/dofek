@@ -24,6 +24,8 @@ export interface ImportJobData {
   importType: "apple-health" | "strong-csv" | "cronometer-csv";
   /** Weight unit for Strong CSV imports */
   weightUnit?: "kg" | "lbs";
+  /** IANA timezone captured when a local-time file import was uploaded. */
+  importTimezone?: string;
 }
 
 export interface ExportJobData {

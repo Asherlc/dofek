@@ -56,6 +56,7 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
+      IMPORT_R2_BUCKET: dofek-import-archive
       SLACK_MODE: http
     volumes:
       - job_files:/app/job-files
@@ -104,6 +105,7 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
+      IMPORT_R2_BUCKET: dofek-import-archive
     volumes:
       - job_files:/app/job-files
     healthcheck:

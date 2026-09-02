@@ -7,8 +7,10 @@ import {
   parseOptionalInt,
   parseStrongCsv,
   parseStrongExerciseName,
+  parseStrongLocalTimestamp,
   parseStrongText,
   parseStrongTextDate,
+  resolveStrongWeightUnit,
 } from "./strong-csv.ts";
 
 vi.mock("../db/tokens.ts", () => ({
@@ -91,6 +93,49 @@ describe("parseDurationString", () => {
   });
 });
 
+describe("parseStrongLocalTimestamp", () => {
+  it("interprets Strong's wall-clock timestamp in the supplied home timezone", () => {
+    expect(parseStrongLocalTimestamp("2026-09-01 07:55:54", "America/Los_Angeles")).toEqual(
+      new Date("2026-09-01T14:55:54.000Z"),
+    );
+  });
+
+  it("uses the daylight-saving offset at the imported timestamp", () => {
+    expect(parseStrongLocalTimestamp("2026-01-15 07:55:54", "America/Los_Angeles")).toEqual(
+      new Date("2026-01-15T15:55:54.000Z"),
+    );
+  });
+});
+
+describe("resolveStrongWeightUnit", () => {
+  it("uses the unit declared in the Strong CSV", () => {
+    const csv = [
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Weight Unit,Reps",
+      "2026-09-01 07:55:54,Leg Day,1h,Squat,1,155,lb,6",
+    ].join("\n");
+
+    expect(resolveStrongWeightUnit(csv, undefined)).toBe("lbs");
+  });
+
+  it("rejects a CSV whose declared unit disagrees with the upload metadata", () => {
+    const csv = [
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Weight Unit,Reps",
+      "2026-09-01 07:55:54,Leg Day,1h,Squat,1,155,lb,6",
+    ].join("\n");
+
+    expect(() => resolveStrongWeightUnit(csv, "kg")).toThrow("disagrees");
+  });
+
+  it("rejects a unitless CSV when no explicit upload unit is supplied", () => {
+    const csv = [
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
+      "2026-09-01 07:55:54,Leg Day,1h,Squat,1,155,6",
+    ].join("\n");
+
+    expect(() => resolveStrongWeightUnit(csv, undefined)).toThrow("does not declare");
+  });
+});
+
 describe("importStrongCsv", () => {
   it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
     const execute = vi.fn().mockResolvedValue([]);
@@ -139,6 +184,7 @@ describe("importStrongCsv", () => {
       ].join("\n"),
       "user-1",
       "kg",
+      "America/Los_Angeles",
     ]);
 
     expect(sqlText(execute.mock.calls[0]?.[0])).toContain(
@@ -217,6 +263,19 @@ describe("parseStrongCsv", () => {
 
     const groups = parseStrongCsv(csv);
     expect(groups[0]?.sets[0]?.rpe).toBe(8.5);
+  });
+
+  it("maps columns by header when Strong includes a declared weight-unit column", () => {
+    const csv = [
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Weight Unit,Reps,Distance,Seconds,Notes,Workout Notes,RPE",
+      "2026-09-01 07:55:54,Leg Day,1h,Squat,1,155,lb,6,,,Top set,,9",
+    ].join("\n");
+
+    const set = parseStrongCsv(csv)[0]?.sets[0];
+    expect(set?.weight).toBe(155);
+    expect(set?.reps).toBe(6);
+    expect(set?.notes).toBe("Top set");
+    expect(set?.rpe).toBe(9);
   });
 
   it("captures workout notes", () => {

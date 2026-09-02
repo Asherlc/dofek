@@ -46,7 +46,13 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("imports a single workout with multiple exercises and sets", async () => {
-    const result = await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
+    const result = await importStrongCsv(
+      ctx.db,
+      SIMPLE_CSV,
+      TEST_USER_ID,
+      "kg",
+      "America/Los_Angeles",
+    );
 
     expect(result.provider).toBe(STRONG_PROVIDER_ID);
     expect(result.recordsSynced).toBe(1); // 1 workout
@@ -62,7 +68,10 @@ describe("importStrongCsv() (integration)", () => {
     const workout = activities.find((w) => w.name === "Push Day");
     if (!workout) throw new Error("expected Push Day workout");
     // Strong CSV dates are parsed as local time (no timezone info in CSV)
-    expect(workout.startedAt).toEqual(new Date("2026-03-01 10:00:00"));
+    expect(workout.startedAt).toEqual(new Date("2026-03-01T18:00:00.000Z"));
+    expect(workout.timezone).toBe("America/Los_Angeles");
+    expect(workout.startUtcOffsetMinutes).toBe(-480);
+    expect(workout.localTimeSource).toBe("user_home_timezone");
     expect(workout.notes).toBe("First workout");
 
     // Verify strength_set rows
@@ -94,7 +103,13 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("imports multiple workouts from CSV", async () => {
-    const result = await importStrongCsv(ctx.db, TWO_WORKOUT_CSV, TEST_USER_ID, "kg");
+    const result = await importStrongCsv(
+      ctx.db,
+      TWO_WORKOUT_CSV,
+      TEST_USER_ID,
+      "kg",
+      "America/Los_Angeles",
+    );
 
     expect(result.recordsSynced).toBe(2); // 2 workouts
     expect(result.errors).toHaveLength(0);
@@ -111,7 +126,13 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("converts lbs to kg when weightUnit is lbs", async () => {
-    const result = await importStrongCsv(ctx.db, LBS_CSV, TEST_USER_ID, "lbs");
+    const result = await importStrongCsv(
+      ctx.db,
+      LBS_CSV,
+      TEST_USER_ID,
+      "lbs",
+      "America/Los_Angeles",
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -132,9 +153,32 @@ describe("importStrongCsv() (integration)", () => {
     expect(sets[0]?.weightKg).toBeCloseTo(102.058, 1);
   });
 
+  it("stores zero-load timed rows as rests and keeps sequential CSV order", async () => {
+    const csv = [
+      STRONG_CSV_HEADER,
+      '2026-09-01 07:55:54,"Rest test","30m","Squat (Barbell)",0,0,0,,300,,',
+      '2026-09-01 07:55:54,"Rest test","30m","Squat (Barbell)",0,0,0,,300,,',
+      '2026-09-01 07:55:54,"Rest test","30m","Squat (Barbell)",1,155,6,,,,',
+    ].join("\n");
+
+    const result = await importStrongCsv(ctx.db, csv, TEST_USER_ID, "lbs", "America/Los_Angeles");
+    expect(result.errors).toHaveLength(0);
+
+    const workout = (await ctx.db.select().from(activity).where(eq(activity.name, "Rest test")))[0];
+    if (!workout) throw new Error("expected Rest test workout");
+    const sets = await ctx.db
+      .select()
+      .from(strengthSet)
+      .where(eq(strengthSet.activityId, workout.id));
+
+    expect(sets.map((set) => set.setIndex)).toEqual([0, 1, 2]);
+    expect(sets.map((set) => set.setType)).toEqual(["rest", "rest", "working"]);
+    expect(sets[2]?.weightKg).toBe(70.307);
+  });
+
   it("upserts workouts on re-import (no duplicates)", async () => {
-    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
-    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg", "America/Los_Angeles");
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg", "America/Los_Angeles");
 
     const activities = await ctx.db.select().from(activity).where(eq(activity.name, "Push Day"));
 
@@ -142,7 +186,13 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("stores workout and set notes", async () => {
-    const result = await importStrongCsv(ctx.db, WITH_NOTES_CSV, TEST_USER_ID, "kg");
+    const result = await importStrongCsv(
+      ctx.db,
+      WITH_NOTES_CSV,
+      TEST_USER_ID,
+      "kg",
+      "America/Los_Angeles",
+    );
 
     expect(result.recordsSynced).toBe(1);
 
@@ -161,7 +211,7 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("creates exercise aliases for provider mapping", async () => {
-    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg", "America/Los_Angeles");
 
     const aliases = await ctx.db
       .select()
@@ -174,14 +224,26 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("returns empty result for empty CSV", async () => {
-    const result = await importStrongCsv(ctx.db, STRONG_CSV_HEADER, TEST_USER_ID, "kg");
+    const result = await importStrongCsv(
+      ctx.db,
+      STRONG_CSV_HEADER,
+      TEST_USER_ID,
+      "kg",
+      "America/Los_Angeles",
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
   });
 
   it("handles duration in HH:MM:SS format", async () => {
-    const result = await importStrongCsv(ctx.db, LBS_CSV, TEST_USER_ID, "lbs");
+    const result = await importStrongCsv(
+      ctx.db,
+      LBS_CSV,
+      TEST_USER_ID,
+      "lbs",
+      "America/Los_Angeles",
+    );
     expect(result.recordsSynced).toBe(1);
 
     const activities = await ctx.db.select().from(activity).where(eq(activity.name, "Leg Day"));
@@ -197,7 +259,7 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("inserts a record into the activity table for each workout", async () => {
-    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg", "America/Los_Angeles");
 
     const activities = await ctx.db
       .select()
@@ -207,6 +269,6 @@ describe("importStrongCsv() (integration)", () => {
     expect(activities).toHaveLength(1);
     expect(activities[0]?.activityType).toBe("strength");
     expect(activities[0]?.name).toBe("Push Day");
-    expect(activities[0]?.startedAt).toEqual(new Date("2026-03-01 10:00:00"));
+    expect(activities[0]?.startedAt).toEqual(new Date("2026-03-01T18:00:00.000Z"));
   });
 });

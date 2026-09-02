@@ -140,6 +140,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       - Must include `AUTHENTIK_OUTPOST_TOKEN` for the local management UI proxy outpost.
       - Must include `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` for metric-stream producer and sink services.
       - Must include `METRIC_STREAM_R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` for the Redpanda Connect R2 archive.
+      - The worker receives `IMPORT_R2_BUCKET=dofek-import-archive` from `deploy/stack.yml`; the existing R2 credentials must have read/write access to that bucket.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.

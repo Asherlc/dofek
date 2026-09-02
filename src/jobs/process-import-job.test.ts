@@ -70,6 +70,15 @@ vi.mock("../providers/cronometer-csv.ts", () => ({
   importCronometerCsv: (...args: unknown[]) => mockImportCronometerCsv(...args),
 }));
 
+const mockArchiveImportFileToR2 = vi.fn().mockResolvedValue({
+  objectKey: "imports/v1/user-1/apple-health/source-sha256.zip",
+  sha256: "source-sha256",
+  sizeBytes: 9,
+});
+vi.mock("../import-archive-storage.ts", () => ({
+  archiveImportFileToR2: (...args: unknown[]) => mockArchiveImportFileToR2(...args),
+}));
+
 // Import after mocks
 const { processImportJob } = await import("./process-import-job.ts");
 
@@ -93,6 +102,7 @@ function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
       since: "2024-01-01T00:00:00.000Z",
       userId: "user-1",
       importType: "apple-health",
+      importTimezone: "America/Los_Angeles",
       ...overrides,
     },
     updateProgress: vi.fn().mockResolvedValue(undefined),
@@ -124,6 +134,11 @@ describe("processImportJob", () => {
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
     mockImportStrongCsv.mockResolvedValue({ recordsSynced: 10, errors: [] });
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
+    mockArchiveImportFileToR2.mockResolvedValue({
+      objectKey: "imports/v1/user-1/apple-health/source-sha256.zip",
+      sha256: "source-sha256",
+      sizeBytes: 9,
+    });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
   });
@@ -133,6 +148,21 @@ describe("processImportJob", () => {
   });
 
   describe("apple-health import", () => {
+    it("archives the source file before parsing it", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(mockArchiveImportFileToR2).toHaveBeenCalledWith(tempFilePath, {
+        contentType: "application/zip",
+        extension: ".zip",
+        importType: "apple-health",
+        userId: "user-1",
+      });
+      expect(mockArchiveImportFileToR2.mock.invocationCallOrder[0]).toBeLessThan(
+        mockImportAppleHealthFile.mock.invocationCallOrder[0] ?? Infinity,
+      );
+    });
+
     it("calls importAppleHealthFile with correct args and reports progress", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
@@ -285,6 +315,21 @@ describe("processImportJob", () => {
   });
 
   describe("strong-csv import", () => {
+    it("archives the source CSV before parsing it", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(mockArchiveImportFileToR2).toHaveBeenCalledWith(tempFilePath, {
+        contentType: "text/csv",
+        extension: ".csv",
+        importType: "strong-csv",
+        userId: "user-1",
+      });
+      expect(mockArchiveImportFileToR2.mock.invocationCallOrder[0]).toBeLessThan(
+        mockImportStrongCsv.mock.invocationCallOrder[0] ?? Infinity,
+      );
+    });
+
     it("reads file and calls importStrongCsv with correct args", async () => {
       await writeFile(tempFilePath, "Date,Exercise,Reps\n2024-01-01,Squat,10");
 
@@ -300,6 +345,7 @@ describe("processImportJob", () => {
         "Date,Exercise,Reps\n2024-01-01,Squat,10",
         "user-1",
         "lbs",
+        "America/Los_Angeles",
       );
     });
 
@@ -313,7 +359,13 @@ describe("processImportJob", () => {
       });
       await runImportJob(job, mockDb);
 
-      expect(mockImportStrongCsv).toHaveBeenCalledWith(mockDb, "csv data", "user-1", "kg");
+      expect(mockImportStrongCsv).toHaveBeenCalledWith(
+        mockDb,
+        "csv data",
+        "user-1",
+        undefined,
+        "America/Los_Angeles",
+      );
     });
 
     it("logs sync and completion message on success", async () => {
@@ -339,6 +391,21 @@ describe("processImportJob", () => {
   });
 
   describe("cronometer-csv import", () => {
+    it("archives the source CSV before parsing it", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(mockArchiveImportFileToR2).toHaveBeenCalledWith(tempFilePath, {
+        contentType: "text/csv",
+        extension: ".csv",
+        importType: "cronometer-csv",
+        userId: "user-1",
+      });
+      expect(mockArchiveImportFileToR2.mock.invocationCallOrder[0]).toBeLessThan(
+        mockImportCronometerCsv.mock.invocationCallOrder[0] ?? Infinity,
+      );
+    });
+
     it("reads file and calls importCronometerCsv with correct args", async () => {
       await writeFile(tempFilePath, "Day,Food Name,Amount\n2024-01-01,Rice,100g");
 

@@ -558,6 +558,13 @@ Required production config:
 - `BREVO_SMTP_KEY`
 - `EXPORT_EMAIL_FROM`
 
+### Import source archival
+
+Apple Health, Strong, and Cronometer upload sources are archived before parsing in the private,
+non-expiring `dofek-import-archive` R2 bucket. Objects are content-addressed beneath
+`imports/v1/<user-id>/<provider>/`; the worker removes its temporary copy only after archival
+succeeds. The production worker needs `IMPORT_R2_BUCKET` (set in `deploy/stack.yml`).
+
 ### Credential encryption at rest (provider credentials)
 
 Provider credentials stored in the database are encrypted in the application layer before insert/update using the AWS Encryption SDK with a raw AES keyring.

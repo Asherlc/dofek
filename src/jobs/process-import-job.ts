@@ -1,7 +1,9 @@
+import { extname } from "node:path";
 import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
+import { archiveImportFileToR2 } from "../import-archive-storage.ts";
 import { logger } from "../logger.ts";
 import type { ImportJobData } from "./queues.ts";
 
@@ -11,12 +13,38 @@ interface ImportJob {
   updateProgress: (data: object) => Promise<void>;
 }
 
+function archiveDetailsForImport(
+  importType: ImportJobData["importType"],
+  filePath: string,
+): {
+  contentType: string;
+  extension: string;
+} {
+  switch (importType) {
+    case "apple-health":
+      if (extname(filePath).toLowerCase() === ".xml") {
+        return { contentType: "application/xml", extension: ".xml" };
+      }
+      return { contentType: "application/zip", extension: ".zip" };
+    case "strong-csv":
+    case "cronometer-csv":
+      return { contentType: "text/csv", extension: ".csv" };
+  }
+}
+
 export async function processImportJob(job: ImportJob, db: SyncDatabase): Promise<void> {
-  const { filePath, since, userId, importType, weightUnit } = job.data;
+  const { filePath, since, userId, importType, weightUnit, importTimezone } = job.data;
   const sinceDate = new Date(since);
   const importStart = Date.now();
 
   try {
+    const archive = await archiveImportFileToR2(filePath, {
+      ...archiveDetailsForImport(importType, filePath),
+      importType,
+      userId,
+    });
+    logger.info(`[worker] Archived ${importType} import source: ${archive.objectKey}`);
+
     await runWithTokenUser(userId, async () => {
       if (importType === "apple-health") {
         const { importAppleHealthFile } = await import("../providers/apple-health/import.ts");
@@ -62,7 +90,10 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const { readFile } = await import("node:fs/promises");
         const csvText = await readFile(filePath, "utf-8");
         const { importStrongCsv } = await import("../providers/strong-csv.ts");
-        const result = await importStrongCsv(db, csvText, userId, weightUnit ?? "kg");
+        if (!importTimezone) {
+          throw new Error("Strong CSV import requires the uploader's IANA timezone");
+        }
+        const result = await importStrongCsv(db, csvText, userId, weightUnit, importTimezone);
 
         const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
         const msg = `${result.recordsSynced} workouts imported, ${result.errors.length} errors in ${durationSec}s`;

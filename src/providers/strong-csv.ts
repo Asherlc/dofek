@@ -76,6 +76,111 @@ export function parseDurationString(duration: string): number {
   return hours * 3600 + minutes * 60;
 }
 
+function offsetMinutesAt(instant: Date, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(instant);
+    const values = Object.fromEntries(
+      parts
+        .filter((part) => ["year", "month", "day", "hour", "minute", "second"].includes(part.type))
+        .map((part) => [part.type, Number(part.value)]),
+    );
+    const localEpoch = Date.UTC(
+      values.year ?? 0,
+      (values.month ?? 1) - 1,
+      values.day ?? 1,
+      values.hour ?? 0,
+      values.minute ?? 0,
+      values.second ?? 0,
+    );
+    return Math.round((localEpoch - instant.getTime()) / 60_000);
+  } catch {
+    return Number.NaN;
+  }
+}
+
+/**
+ * Strong exports a local wall-clock timestamp without an offset. Resolve it in
+ * the importing user's IANA timezone instead of treating it as UTC.
+ */
+export function parseStrongLocalTimestamp(date: string, timezone: string): Date {
+  const match = date.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) return new Date(Number.NaN);
+
+  const [, year, month, day, hour, minute, second] = match;
+  const wallClockEpoch = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  );
+
+  try {
+    const firstPass = new Date(
+      wallClockEpoch - offsetMinutesAt(new Date(wallClockEpoch), timezone) * 60_000,
+    );
+    return new Date(wallClockEpoch - offsetMinutesAt(firstPass, timezone) * 60_000);
+  } catch {
+    return new Date(Number.NaN);
+  }
+}
+
+function normalizeStrongWeightUnit(value: string): "kg" | "lbs" | null {
+  const normalized = value.trim().toLowerCase();
+  if (["kg", "kgs", "kilogram", "kilograms"].includes(normalized)) return "kg";
+  if (["lb", "lbs", "pound", "pounds"].includes(normalized)) return "lbs";
+  return null;
+}
+
+/**
+ * Resolve a Strong CSV's weight unit from its explicit export column. The
+ * upload-supplied value is accepted only for legacy exports that omit it.
+ */
+export function resolveStrongWeightUnit(
+  csvText: string,
+  uploadWeightUnit: "kg" | "lbs" | undefined,
+): "kg" | "lbs" {
+  const lines = csvText
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "");
+  const header = lines[0] ? parseCsvLine(lines[0]).map((field) => field.trim().toLowerCase()) : [];
+  const unitIndex = header.findIndex((field) =>
+    ["weight unit", "weight units", "units"].includes(field),
+  );
+  const declaredUnits = new Set<"kg" | "lbs">();
+  if (unitIndex >= 0) {
+    for (const line of lines.slice(1)) {
+      const value = parseCsvLine(line)[unitIndex];
+      if (value === undefined || value.trim() === "") continue;
+      const unit = normalizeStrongWeightUnit(value);
+      if (!unit) throw new Error(`Strong CSV has an unrecognized weight unit: ${value}`);
+      declaredUnits.add(unit);
+    }
+  }
+
+  if (declaredUnits.size > 1) {
+    throw new Error("Strong CSV declares conflicting weight units");
+  }
+  const declaredUnit = [...declaredUnits][0];
+  if (declaredUnit && uploadWeightUnit && declaredUnit !== uploadWeightUnit) {
+    throw new Error("Strong CSV declared weight unit disagrees with the upload metadata");
+  }
+  if (declaredUnit) return declaredUnit;
+  if (uploadWeightUnit) return uploadWeightUnit;
+  throw new Error("Strong CSV does not declare a weight unit; select kg or lbs before importing");
+}
+
 /**
  * Parse RFC 4180 CSV fields from a single line, handling quoted fields.
  */
@@ -129,6 +234,26 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
 
   if (lines.length <= 1) return [];
 
+  const header = parseCsvLine(lines[0] ?? "").map((field) => field.trim().toLowerCase());
+  const indexFor = (name: string, fallbackIndex: number): number => {
+    const index = header.indexOf(name);
+    return index >= 0 ? index : fallbackIndex;
+  };
+  const columns = {
+    date: indexFor("date", 0),
+    workoutName: indexFor("workout name", 1),
+    duration: indexFor("duration", 2),
+    exerciseName: indexFor("exercise name", 3),
+    setOrder: indexFor("set order", 4),
+    weight: indexFor("weight", 5),
+    reps: indexFor("reps", 6),
+    distance: indexFor("distance", 7),
+    seconds: indexFor("seconds", 8),
+    notes: indexFor("notes", 9),
+    workoutNotes: indexFor("workout notes", 10),
+    rpe: indexFor("rpe", 11),
+  };
+
   // Skip header
   const dataLines = lines.slice(1);
   const rows: StrongCsvRow[] = [];
@@ -138,18 +263,18 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
     if (fields.length < 7) continue;
 
     rows.push({
-      date: fields[0] ?? "",
-      workoutName: fields[1] ?? "",
-      duration: fields[2] ?? "",
-      exerciseName: fields[3] ?? "",
-      setOrder: Number.parseInt(fields[4] ?? "0", 10) || 0,
-      weight: parseOptionalFloat(fields[5] ?? ""),
-      reps: parseOptionalInt(fields[6] ?? ""),
-      distance: parseOptionalFloat(fields[7] ?? ""),
-      seconds: parseOptionalInt(fields[8] ?? ""),
-      notes: fields[9]?.trim() || null,
-      workoutNotes: fields[10]?.trim() || null,
-      rpe: parseOptionalFloat(fields[11] ?? ""),
+      date: fields[columns.date] ?? "",
+      workoutName: fields[columns.workoutName] ?? "",
+      duration: fields[columns.duration] ?? "",
+      exerciseName: fields[columns.exerciseName] ?? "",
+      setOrder: Number.parseInt(fields[columns.setOrder] ?? "0", 10) || 0,
+      weight: parseOptionalFloat(fields[columns.weight] ?? ""),
+      reps: parseOptionalInt(fields[columns.reps] ?? ""),
+      distance: parseOptionalFloat(fields[columns.distance] ?? ""),
+      seconds: parseOptionalInt(fields[columns.seconds] ?? ""),
+      notes: fields[columns.notes]?.trim() || null,
+      workoutNotes: fields[columns.workoutNotes]?.trim() || null,
+      rpe: parseOptionalFloat(fields[columns.rpe] ?? ""),
     });
   }
 
@@ -348,7 +473,8 @@ export async function importStrongCsv(
   db: SyncDatabase,
   csvText: string,
   userId: string,
-  weightUnit: "kg" | "lbs",
+  weightUnit: "kg" | "lbs" | undefined,
+  timezone: string,
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
@@ -358,9 +484,10 @@ export async function importStrongCsv(
 
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
-  let effectiveWeightUnit = weightUnit;
+  let effectiveWeightUnit: "kg" | "lbs";
   if (isStrongCsvFormat(csvText)) {
     groups = parseStrongCsv(csvText);
+    effectiveWeightUnit = resolveStrongWeightUnit(csvText, weightUnit);
   } else {
     const textResult = parseStrongText(csvText);
     groups = textResult.groups;
@@ -372,7 +499,10 @@ export async function importStrongCsv(
     try {
       const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
-      const startedAt = new Date(group.date);
+      const startedAt = parseStrongLocalTimestamp(group.date, timezone);
+      if (Number.isNaN(startedAt.getTime())) {
+        throw new Error(`Invalid Strong timestamp: ${group.date}`);
+      }
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
@@ -389,6 +519,10 @@ export async function importStrongCsv(
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
+          timezone,
+          startUtcOffsetMinutes: offsetMinutesAt(startedAt, timezone),
+          endUtcOffsetMinutes: endedAt ? offsetMinutesAt(endedAt, timezone) : null,
+          localTimeSource: "user_home_timezone",
         })
         .onConflictDoUpdate({
           target: [activity.userId, activity.providerId, activity.externalId],
@@ -398,6 +532,10 @@ export async function importStrongCsv(
             endedAt,
             name: group.workoutName,
             notes: group.workoutNotes,
+            timezone,
+            startUtcOffsetMinutes: offsetMinutesAt(startedAt, timezone),
+            endUtcOffsetMinutes: endedAt ? offsetMinutesAt(endedAt, timezone) : null,
+            localTimeSource: "user_home_timezone",
             providerAbsentAt: null,
           },
         })
@@ -411,6 +549,7 @@ export async function importStrongCsv(
 
       // Track exercise index per exercise name within this workout
       const exerciseIndexMap = new Map<string, number>();
+      const setIndexMap = new Map<string, number>();
       let nextExerciseIndex = 0;
 
       const setRows: (typeof strengthSet.$inferInsert)[] = [];
@@ -474,10 +613,12 @@ export async function importStrongCsv(
         }
 
         // Compute exercise index (order of first appearance within workout)
-        if (!exerciseIndexMap.has(csvRow.exerciseName)) {
-          exerciseIndexMap.set(csvRow.exerciseName, nextExerciseIndex++);
+        if (!exerciseIndexMap.has(cacheKey)) {
+          exerciseIndexMap.set(cacheKey, nextExerciseIndex++);
         }
-        const exerciseIndex = exerciseIndexMap.get(csvRow.exerciseName) ?? 0;
+        const exerciseIndex = exerciseIndexMap.get(cacheKey) ?? 0;
+        const setIndex = setIndexMap.get(cacheKey) ?? 0;
+        setIndexMap.set(cacheKey, setIndex + 1);
 
         // Convert weight
         let weightKg = csvRow.weight;
@@ -492,8 +633,11 @@ export async function importStrongCsv(
           activityId,
           exerciseId,
           exerciseIndex,
-          setIndex: csvRow.setOrder - 1, // Strong is 1-indexed
-          setType: "working", // Strong doesn't distinguish set types
+          setIndex,
+          setType:
+            csvRow.weight === 0 && csvRow.reps === 0 && (csvRow.seconds ?? 0) > 0
+              ? "rest"
+              : "working",
           weightKg,
           reps: csvRow.reps,
           distanceMeters,

@@ -64,7 +64,13 @@ export const foodCategoryEnum = fitness.enum("food_category", [
   "other",
 ]);
 
-export const setTypeEnum = fitness.enum("set_type", ["working", "warmup", "dropset", "failure"]);
+export const setTypeEnum = fitness.enum("set_type", [
+  "working",
+  "warmup",
+  "dropset",
+  "failure",
+  "rest",
+]);
 
 export const labResultStatusEnum = fitness.enum("lab_result_status", [
   "final",
@@ -479,6 +485,9 @@ export const activity = fitness.table(
     perceivedExertion: real("perceived_exertion"),
     sourceName: text("source_name"),
     timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
+    startUtcOffsetMinutes: integer("start_utc_offset_minutes"),
+    endUtcOffsetMinutes: integer("end_utc_offset_minutes"),
+    localTimeSource: text("local_time_source").notNull().default("unknown"),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),

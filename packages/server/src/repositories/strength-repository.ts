@@ -264,8 +264,8 @@ export class StrengthRepository {
       volumeRowSchema,
       sql`SELECT
             date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
-            COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
-            COUNT(ss.id)::int AS set_count,
+            COALESCE(SUM(ss.weight_kg * ss.reps) FILTER (WHERE ss.set_type = 'working'), 0)::real AS total_volume_kg,
+            COUNT(ss.id) FILTER (WHERE ss.set_type = 'working')::int AS set_count,
             COUNT(DISTINCT a.id)::int AS workout_count
           FROM fitness.v_activity a
           JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
@@ -357,7 +357,7 @@ export class StrengthRepository {
       sql`SELECT
             mg AS muscle_group,
             date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
-            COUNT(ss.id)::int AS sets
+            COUNT(ss.id) FILTER (WHERE ss.set_type = 'working')::int AS sets
           FROM fitness.strength_set ss
           JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
@@ -499,8 +499,8 @@ export class StrengthRepository {
             (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
             a.name,
             COUNT(DISTINCT ss.exercise_id)::int AS exercise_count,
-            COUNT(ss.id)::int AS total_sets,
-            COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
+            COUNT(ss.id) FILTER (WHERE ss.set_type = 'working')::int AS total_sets,
+            COALESCE(SUM(ss.weight_kg * ss.reps) FILTER (WHERE ss.set_type = 'working'), 0)::real AS total_volume_kg,
             ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::int AS duration_minutes
           FROM fitness.v_activity a
           LEFT JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
