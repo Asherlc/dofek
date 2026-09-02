@@ -1,6 +1,6 @@
 import type { AddressInfo } from "node:net";
-import express from "express";
 import { captureException } from "dofek/lib/error-reporting";
+import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
@@ -154,6 +154,11 @@ import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
+
+vi.mock("dofek/lib/error-reporting", async (importOriginal) => {
+  const original = await importOriginal<typeof import("dofek/lib/error-reporting")>();
+  return { ...original, captureException: vi.fn() };
+});
 
 vi.mock("dofek/db/account-erasure", () => ({
   withAccountErasureUserWriteFence: (...args: unknown[]) =>
@@ -793,9 +798,7 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       aggregates: {
-        grade_distribution: [
-          { attempts: 3, discipline: "boulder", grade: "V5", sends: 1 },
-        ],
+        grade_distribution: [{ attempts: 3, discipline: "boulder", grade: "V5", sends: 1 }],
         max_grade_by_discipline: { boulder: "V5", route: null },
         send_rate: 1,
         volume: { attempts: 3, climbs: 1, sends: 1 },
@@ -809,11 +812,9 @@ describe("createMcpRouter", () => {
         }),
       ],
     });
-    expect(toolTestMocks.activityListRange).toHaveBeenCalledWith(
-      "2026-07-01",
-      "2026-07-10",
-      ["climbing"],
-    );
+    expect(toolTestMocks.activityListRange).toHaveBeenCalledWith("2026-07-01", "2026-07-10", [
+      "climbing",
+    ]);
   });
 
   it("returns strength sessions with volume-load by muscle group", async () => {
@@ -846,7 +847,10 @@ describe("createMcpRouter", () => {
     });
 
     expect(parseToolCallText(response.text)).toEqual({
-      aggregates: { by_muscle_group: [{ muscle_group: "back", volume_load_kg: 100 }], volume_load_kg: 100 },
+      aggregates: {
+        by_muscle_group: [{ muscle_group: "back", volume_load_kg: 100 }],
+        volume_load_kg: 100,
+      },
       sessions: [
         expect.objectContaining({
           activity_id: "strength-1",

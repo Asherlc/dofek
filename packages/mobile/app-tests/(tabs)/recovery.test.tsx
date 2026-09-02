@@ -179,6 +179,10 @@ vi.mock("../../lib/trpc", () => ({
       injuries: {
         useQuery: () => ({ data: mockSubjectiveInjuriesData, isLoading: false, error: null }),
       },
+      regions: {
+        useQuery: () => ({ data: [], isLoading: false, error: null }),
+      },
+      createInjury: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
       saveCheckIn: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
     },
     useUtils: () => ({
