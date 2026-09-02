@@ -4,8 +4,8 @@ import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import type { DofekMcpContext } from "./tools.ts";
 
 const climbingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),

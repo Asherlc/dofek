@@ -3,8 +3,8 @@ import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
+import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import type { DofekMcpContext } from "./tools.ts";
 
 const trainingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),

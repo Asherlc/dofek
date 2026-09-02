@@ -4,8 +4,8 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { readFingerLoadingActivity } from "../repositories/climbing-training-log-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
+import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import type { DofekMcpContext } from "./tools.ts";
 
 function jsonContent(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };

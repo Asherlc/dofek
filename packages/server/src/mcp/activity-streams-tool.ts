@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import type { DofekMcpContext } from "./tools.ts";
 
 const activityStreamChannelSchema = z.enum([
   "power",

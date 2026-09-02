@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SupplementsRepository } from "../repositories/supplements-repository.ts";
+import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import type { DofekMcpContext } from "./tools.ts";
 
 /** Register the authenticated user's current supplement definitions. */
 export function registerSupplementsTool(server: McpServer, context: DofekMcpContext): void {
