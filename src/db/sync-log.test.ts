@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
@@ -27,7 +28,9 @@ describe("logSync", () => {
       origin: "scheduled",
     });
 
-    expect(db.spies.execute).toHaveBeenCalledOnce();
+    expect(db.spies.execute).toHaveBeenCalledTimes(2);
+    const lockQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[0]?.[0]);
+    expect(lockQuery.sql).toContain("pg_advisory_xact_lock");
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       extra: {
         error_message: "access token expired",
@@ -42,20 +45,18 @@ describe("logSync", () => {
     });
   });
 
-  it("does not alert before or after the consecutive-failure threshold", async () => {
-    for (const consecutiveFailures of [1, 3]) {
-      db = createMockDatabase({
-        executeResult: [{ consecutive_failures: String(consecutiveFailures) }],
-      });
+  it.each([1, 3])("does not alert at consecutive-failure count %i", async (consecutiveFailures) => {
+    db = createMockDatabase({
+      executeResult: [{ consecutive_failures: String(consecutiveFailures) }],
+    });
 
-      await logSync(db.db, {
-        providerId: "whoop",
-        dataType: "sync",
-        status: "error",
-        userId: "user-123",
-        origin: "scheduled",
-      });
-    }
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
 
     expect(captureException).not.toHaveBeenCalled();
   });
@@ -78,23 +79,22 @@ describe("logSync", () => {
       userId: "user-123",
       origin: "scheduled",
     });
-    expect(db.spies.execute).toHaveBeenCalledOnce();
+    expect(db.spies.execute).toHaveBeenCalledTimes(2);
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it("reports malformed failure-history rows", async () => {
+  it("rejects malformed failure-history rows", async () => {
     db = createMockDatabase({ executeResult: [{}] });
-    await logSync(db.db, {
-      providerId: "whoop",
-      dataType: "sync",
-      status: "error",
-      userId: "user-123",
-      origin: "scheduled",
-    });
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      extra: { user_id: "user-123" },
-      tags: { operation: "scheduled-provider-sync-alert", provider: "whoop" },
-    });
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        dataType: "sync",
+        status: "error",
+        userId: "user-123",
+        origin: "scheduled",
+      }),
+    ).rejects.toThrow("consecutive_failures");
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("inserts a success log entry with all fields", async () => {

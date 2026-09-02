@@ -45,6 +45,10 @@ describe("backfillRecordLocalTimeContext", () => {
     expect(updateQuery.sql).toContain(
       "activity.timezone IS NOT DISTINCT FROM context_values.prior_timezone",
     );
+    expect(updateQuery.sql).toContain("activity.started_at = context_values.prior_started_at");
+    expect(updateQuery.sql).toContain(
+      "activity.ended_at IS NOT DISTINCT FROM context_values.prior_ended_at",
+    );
     expect(updateQuery.params).toContain("America/Los_Angeles");
     expect(updateQuery.params).toContain("  America/Los_Angeles  ");
   });
@@ -73,7 +77,7 @@ describe("backfillRecordLocalTimeContext", () => {
     ).resolves.toEqual({ eligible: 1, skipped: 0, updated: 1 });
 
     const updateQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
-    expect(updateQuery.params).toContain("America/Los_Angeles");
+    expect(updateQuery.params[1]).toBe("America/Los_Angeles");
     expect(updateQuery.params).toContain("user_home_timezone");
     expect(updateQuery.params).toContain("Etc/GMT+4");
   });
@@ -100,7 +104,7 @@ describe("backfillRecordLocalTimeContext", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
-  it("does not hide an invalid fixed provider zone behind a valid home zone", async () => {
+  it("does not hide a malformed fixed provider timezone behind the home timezone", async () => {
     const execute = vi.fn().mockResolvedValueOnce([
       {
         id: "00000000-0000-4000-8000-000000000004",
@@ -115,9 +119,11 @@ describe("backfillRecordLocalTimeContext", () => {
     await expect(
       backfillRecordLocalTimeContext(
         { execute },
-        { execute: false, batchSize: 1, maxBatches: 1, ...timeWindow },
+        { execute: true, batchSize: 10, maxBatches: 1, ...timeWindow },
       ),
     ).resolves.toEqual({ eligible: 1, skipped: 1, updated: 0 });
+
+    expect(execute).toHaveBeenCalledOnce();
   });
 
   it("rejects unbounded or invalid batch options", async () => {

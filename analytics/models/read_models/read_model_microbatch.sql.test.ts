@@ -232,12 +232,15 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("current_duplicate_matches AS");
     expect(matchesSql).toContain("active_to_tombstoned_matches AS");
     expect(matchesSql).toContain("overlap_ratio");
-    const normalizedMatches = compactWhitespace(matchesSql);
-    expect(normalizedMatches).toContain(
-      "left_activity.canonical_type = 'other' AND right_activity.canonical_type != 'other'",
+    const compactMatchesSql = compactWhitespace(matchesSql);
+    expect(compactMatchesSql).toContain(
+      "left_activity.canonical_type = right_activity.canonical_type OR ( left_activity.canonical_type = 'other' AND right_activity.canonical_type != 'other'",
     );
-    expect(normalizedMatches).toContain(
+    expect(compactMatchesSql).toContain(
       "dateDiff('second', left_activity.started_at, left_activity.ended_at) <= dateDiff('second', right_activity.started_at, right_activity.ended_at)",
+    );
+    expect(compactMatchesSql).toContain(
+      "right_activity.canonical_type = 'other' AND left_activity.canonical_type != 'other'",
     );
 
     expect(groupsSql).toContain("materialized='incremental'");

@@ -3,10 +3,7 @@ import { dateSchema } from "../lib/date-schema.ts";
 import { TrainingLoadRepository } from "../repositories/training-load-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-
-function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
-}
+import { jsonContent } from "./tool-utils.ts";
 
 /** Register the activity-load analytics tool. */
 export function registerTrainingLoadTool(server: McpServer, context: DofekMcpContext): void {

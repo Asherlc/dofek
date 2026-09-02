@@ -222,7 +222,7 @@ credentials, account access, and separate scope decisions before integration.
 2. Use the power coverage table above; outdoor Wahoo power is absent upstream.
 3. Climbing grades/sends and strength sets are now exposed. Hangboard protocols
    are absent.
-4. Expected post-refresh canonical WHOOP `other` residual: 152.
+4. Expected post-refresh raw WHOOP `other` residual: 151.
 5. `get_activity_streams` is available for power analytics.
 6. Coverage starts: HRV, RHR, and sleep all 2026-03-11. Earlier WHOOP/Apple data
    requires a user-authorized full sync; Apple archive import failed.

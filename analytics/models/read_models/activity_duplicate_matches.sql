@@ -195,10 +195,9 @@ stale_duplicate_matches AS (
         existing_duplicate_matches.activity_id,
         existing_duplicate_matches.duplicate_activity_id
     FROM existing_duplicate_matches
-    LEFT JOIN current_duplicate_matches
+    LEFT ANTI JOIN current_duplicate_matches
         ON current_duplicate_matches.activity_id = existing_duplicate_matches.activity_id
         AND current_duplicate_matches.duplicate_activity_id = existing_duplicate_matches.duplicate_activity_id
-    WHERE current_duplicate_matches.activity_id IS null
 ),
 
 refresh_clock AS (

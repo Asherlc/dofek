@@ -307,15 +307,19 @@ describe("processImportJob", () => {
       expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
     });
 
-    it("runs imports with an honest null home timezone when none is configured", async () => {
+    it("runs imports with an explicit null ingest timezone when no home timezone is persisted", async () => {
       mockLoadUserHomeTimezone.mockResolvedValueOnce(null);
       mockImportAppleHealthFile.mockImplementationOnce(async () => {
         expect(getProviderIngestContext()).toEqual({ homeTimezone: null });
         return { recordsSynced: 1, errors: [] };
       });
-      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
 
-      await runImportJob(job, mockDb);
+      await runImportJob(
+        createMockJob({ filePath: tempFilePath, importType: "apple-health" }),
+        mockDb,
+      );
+
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
     });
 
     it("records the import lifecycle and correlates emitted metric batches", async () => {
