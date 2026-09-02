@@ -449,6 +449,33 @@ describe("fileUploadRouter", () => {
     );
   });
 
+  it("does not persist a Strong-only weight unit for other import types", async () => {
+    const apple = upload({
+      importType: "apple-health",
+      originalFilename: "export.zip",
+      contentType: "application/zip",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const { caller, repository, transaction } = setup(apple);
+    repository.find.mockResolvedValueOnce(null);
+
+    await caller.initiate({
+      uploadId: apple.id,
+      importType: "apple-health",
+      filename: "export.zip",
+      contentType: "application/zip",
+      sizeBytes: apple.expectedSizeBytes,
+      sha256: apple.expectedSha256,
+      weightUnit: "lbs",
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({ weightUnit: undefined }),
+    );
+  });
+
   it("rejects invalid import metadata and initiation rate limits", async () => {
     const extensionSetup = setup();
     await expect(

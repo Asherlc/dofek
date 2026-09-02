@@ -738,6 +738,15 @@ describe("processImportJob", () => {
         tags: { phase: "file-import" },
       });
     });
+    it("does not misclassify unrelated Strong import errors as terminal validation failures", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const unexpectedError = new Error("R2 unavailable");
+      mockImportStrongCsv.mockRejectedValueOnce(unexpectedError);
+
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
+      ).rejects.toBe(unexpectedError);
+    });
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
