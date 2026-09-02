@@ -404,6 +404,9 @@ export async function importStrongCsv(
             timezone,
             source: "device_timezone",
           });
+          if (context.startUtcOffsetMinutes === null) {
+            throw new Error("Strong CSV timezone did not resolve a UTC offset");
+          }
           startedAt = new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
         }
       }
