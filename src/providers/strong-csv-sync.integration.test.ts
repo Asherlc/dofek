@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { activity, strengthSet } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
@@ -85,7 +85,8 @@ describe("importStrongCsv() (integration)", () => {
     const sets = await ctx.db
       .select()
       .from(strengthSet)
-      .where(eq(strengthSet.activityId, workout.id));
+      .where(eq(strengthSet.activityId, workout.id))
+      .orderBy(asc(strengthSet.setIndex));
 
     expect(sets).toHaveLength(5); // 3 bench + 2 OHP
 
