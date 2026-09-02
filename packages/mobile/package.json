@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@aws-crypto/sha256-browser": "5.2.0",
-    "@bacons/apple-targets": "4.0.7",
+    "@bacons/apple-targets": "5.0.0",
     "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/imu": "workspace:*",
