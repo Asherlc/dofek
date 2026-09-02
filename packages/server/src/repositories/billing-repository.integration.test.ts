@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { BillingRepository } from "./billing-repository.ts";
 
@@ -61,6 +61,20 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
 
   afterAll(async () => {
     await testContext?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await testContext.db.execute(
+      sql`UPDATE fitness.user_billing
+          SET app_store_original_transaction_id = NULL,
+              app_store_transaction_id = NULL,
+              app_store_product_id = NULL,
+              app_store_subscription_status = NULL,
+              app_store_expires_at = NULL,
+              app_store_revocation_at = NULL,
+              app_store_environment = NULL
+          WHERE user_id IN (${testUserId}::uuid, ${secondTestUserId}::uuid)`,
+    );
   });
 
   it("does not apply a duplicate event twice", async () => {
@@ -131,7 +145,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
     });
   });
 
-  it("replays App Store transactions harmlessly and rejects another account token for its original transaction", async () => {
+  it("makes an exact App Store transaction replay a no-op", async () => {
     const currentUpdate = {
       accountToken: firstAccountToken,
       originalTransactionId: "100000000000001",
@@ -147,6 +161,110 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       testUserId,
     ]);
     await expect(repository.applyAppStoreSubscription(currentUpdate)).resolves.toEqual([]);
+  });
+
+  it("does not let an older App Store expiry overwrite the stored subscription", async () => {
+    const currentUpdate = {
+      accountToken: firstAccountToken,
+      originalTransactionId: "100000000000001",
+      transactionId: "100000000000002",
+      productId: "com.dofek.premium.monthly" as const,
+      status: "active" as const,
+      expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      revokedAt: null,
+      environment: "Sandbox" as const,
+    };
+
+    await expect(repository.applyAppStoreSubscription(currentUpdate)).resolves.toEqual([
+      testUserId,
+    ]);
+    await expect(
+      repository.applyAppStoreSubscription({
+        ...currentUpdate,
+        transactionId: "100000000000003",
+        status: "expired",
+        expiresAt: new Date("2026-09-01T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual([]);
+
+    const rows = await testContext.db.execute<{
+      app_store_transaction_id: string | null;
+      app_store_subscription_status: string | null;
+      app_store_expires_at: Date | null;
+    }>(
+      sql`SELECT
+            app_store_transaction_id,
+            app_store_subscription_status,
+            app_store_expires_at
+          FROM fitness.user_billing
+          WHERE user_id = ${testUserId}::uuid`,
+    );
+    expect(rows[0]).toEqual({
+      app_store_transaction_id: "100000000000002",
+      app_store_subscription_status: "active",
+      app_store_expires_at: new Date("2026-10-01T00:00:00.000Z"),
+    });
+  });
+
+  it("records a same-expiry App Store revocation once", async () => {
+    const currentUpdate = {
+      accountToken: firstAccountToken,
+      originalTransactionId: "100000000000001",
+      transactionId: "100000000000002",
+      productId: "com.dofek.premium.monthly" as const,
+      status: "active" as const,
+      expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      revokedAt: null,
+      environment: "Sandbox" as const,
+    };
+    const revokedUpdate = {
+      ...currentUpdate,
+      status: "revoked" as const,
+      revokedAt: new Date("2026-09-20T00:00:00.000Z"),
+    };
+
+    await expect(repository.applyAppStoreSubscription(currentUpdate)).resolves.toEqual([
+      testUserId,
+    ]);
+    await expect(repository.applyAppStoreSubscription(revokedUpdate)).resolves.toEqual([
+      testUserId,
+    ]);
+    await expect(repository.applyAppStoreSubscription(revokedUpdate)).resolves.toEqual([]);
+
+    const rows = await testContext.db.execute<{
+      app_store_subscription_status: string | null;
+      app_store_expires_at: Date | null;
+      app_store_revocation_at: Date | null;
+    }>(
+      sql`SELECT
+            app_store_subscription_status,
+            app_store_expires_at,
+            app_store_revocation_at
+          FROM fitness.user_billing
+          WHERE user_id = ${testUserId}::uuid`,
+    );
+    expect(rows[0]).toEqual({
+      app_store_subscription_status: "revoked",
+      app_store_expires_at: new Date("2026-10-01T00:00:00.000Z"),
+      app_store_revocation_at: new Date("2026-09-20T00:00:00.000Z"),
+    });
+  });
+
+  it("rejects an App Store original transaction for another account token", async () => {
+    const currentUpdate = {
+      accountToken: firstAccountToken,
+      originalTransactionId: "100000000000001",
+      transactionId: "100000000000002",
+      productId: "com.dofek.premium.monthly" as const,
+      status: "active" as const,
+      expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      revokedAt: null,
+      environment: "Sandbox" as const,
+    };
+
+    await expect(repository.applyAppStoreSubscription(currentUpdate)).resolves.toEqual([
+      testUserId,
+    ]);
     await expect(
       repository.applyAppStoreSubscription({
         ...currentUpdate,

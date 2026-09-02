@@ -1,9 +1,9 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { type SQL, sql } from "drizzle-orm";
+import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "./app-store-subscription.ts";
 
 const ACCESS_GRANTING_STRIPE_STATUSES = new Set(["active", "trialing"]);
 const ACCESS_GRANTING_APP_STORE_STATUSES = new Set(["active", "grace_period"]);
-const APP_STORE_SUBSCRIPTION_PRODUCT_ID = "com.dofek.premium.monthly";
 
 export interface AppStoreSubscriptionState {
   productId: string;

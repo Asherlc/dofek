@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const expectedAccountToken = "a0000000-0000-4000-8000-000000000001";
 const originalEnv = { ...process.env };
@@ -35,7 +35,13 @@ function setAppStoreEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
 }
 
 describe("App Store transaction verification", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-15T00:00:00.000Z"));
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     process.env = { ...originalEnv };
     verifierMock.SignedDataVerifier.mockClear();
     verifierMock.verifyAndDecodeTransaction.mockReset();
@@ -81,6 +87,17 @@ describe("App Store transaction verification", () => {
       revokedAt: null,
       environment: "Sandbox",
     });
+    expect(verifierMock.SignedDataVerifier).toHaveBeenCalledWith(
+      [
+        Buffer.from(
+          "-----BEGIN CERTIFICATE-----\ntest-root-certificate\n-----END CERTIFICATE-----",
+        ),
+      ],
+      true,
+      "Sandbox",
+      "com.dofek.app",
+      123456789,
+    );
   });
 
   it("rejects a verified transaction for a different app account token", async () => {
