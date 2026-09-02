@@ -264,7 +264,7 @@
     "@sentry/node": "10.45.0",
     "ai": "7.0.47",
     "archiver": "8.0.0",
-    "bullmq": "5.79.2",
+    "bullmq": "6.3.0",
     "drizzle-orm": "0.45.2",
     "kafkajs": "2.2.4",
     "pg": "8.16.0",
