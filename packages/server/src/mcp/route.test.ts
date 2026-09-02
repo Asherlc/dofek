@@ -2373,6 +2373,96 @@ describe("createMcpRouter", () => {
     });
     expect(toolTestMocks.activityGetStream).toHaveBeenCalledWith(activityId, 750);
   });
+
+  it("returns every stream channel with the default downsample cap", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000002";
+    toolTestMocks.activityGetStream.mockResolvedValue([
+      {
+        toDetail: () => ({
+          altitude: 30,
+          cadence: 90,
+          heartRate: 145,
+          lat: 37.8,
+          lng: -122.4,
+          power: 250,
+          recordedAt: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", { activity_id: activityId }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      channels: ["power", "heart_rate", "cadence", "altitude", "speed", "position"],
+      points: [
+        {
+          altitude: 30,
+          cadence: 90,
+          heart_rate: 145,
+          latitude: 37.8,
+          longitude: -122.4,
+          power: 250,
+          recorded_at: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        },
+      ],
+    });
+    expect(toolTestMocks.activityGetStream).toHaveBeenCalledWith(activityId, 500);
+  });
+
+  it("omits every unselected stream channel", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000003";
+    toolTestMocks.activityGetStream.mockResolvedValue([
+      {
+        toDetail: () => ({
+          altitude: 30,
+          cadence: 90,
+          heartRate: 145,
+          lat: 37.8,
+          lng: -122.4,
+          power: 250,
+          recordedAt: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", {
+        activity_id: activityId,
+        channels: ["cadence"],
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      channels: ["cadence"],
+      points: [{ cadence: 90, recorded_at: "2026-08-30T10:00:00.000Z" }],
+    });
+  });
+
+  it("requires the analytics store for activity streams", async () => {
+    authorizeMcpToken();
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", {
+        activity_id: "00000000-0000-4000-8000-000000000004",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "get_activity_streams requires the ClickHouse analytics store",
+    );
+  });
+
   it("lists configured providers with connection and reauth state", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
