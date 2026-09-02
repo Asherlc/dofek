@@ -307,6 +307,24 @@ describe("buildRideWithGpsMetricRows", () => {
       }),
     ).toThrow("RideWithGPS cycling speed is implausible");
   });
+
+  it("validates long outdoor cycling streams without spreading every speed as function arguments", () => {
+    const trackPoints = Array.from({ length: 150_000 }, (_, index) => ({
+      longitude: -122.6,
+      latitude: 45.5,
+      epochSeconds: 1723276200 + index,
+      speedMetersPerSecond: 10,
+    }));
+
+    expect(
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints,
+      }),
+    ).toHaveLength(trackPoints.length);
+  });
 });
 
 describe("RideWithGps — rate-limit aware fetch wiring", () => {

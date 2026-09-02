@@ -53,13 +53,8 @@ describe("0059_provider_change_state", () => {
       },
       {
         providerIdColumn: "provider_id",
-        sourceTable: "postgres_fitness.lab_panel",
-        viewName: "lab_panel",
-      },
-      {
-        providerIdColumn: "provider_id",
-        sourceTable: "postgres_fitness.lab_result",
-        viewName: "lab_result",
+        sourceTable: "postgres_fitness.clinical_record",
+        viewName: "clinical_record",
       },
       {
         providerIdColumn: "provider_id",
@@ -87,8 +82,8 @@ describe("0059_provider_change_state", () => {
         expect(statement).not.toContain("WHERE user_id IS NOT NULL");
       }
     }
-    expect(sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS/g)).toHaveLength(12);
-    expect(sql.match(/max\(now64\(9\)\) AS changed_at/g)).toHaveLength(12);
+    expect(sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS/g)).toHaveLength(11);
+    expect(sql.match(/max\(now64\(9\)\) AS changed_at/g)).toHaveLength(11);
     expect(sql).not.toContain("max(ingested_at)");
     expect(sql).not.toContain("max(_peerdb_synced_at)");
   });

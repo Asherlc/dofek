@@ -17,6 +17,7 @@ import {
   initBackgroundAccelerometerSync,
   teardownBackgroundAccelerometerSync,
 } from "../lib/background-accelerometer-sync";
+import { syncBleHeartRate } from "../lib/background-ble-heart-rate-sync";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -44,9 +45,15 @@ import {
 import { captureException, initTelemetry, logger, setTelemetryRoute } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
+import { useBleHeartRateSync } from "../lib/useBleHeartRateSync";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener } from "../modules/background-refresh";
+import {
+  confirmSamplesDrain as confirmHeartRateSamplesDrain,
+  disconnectAndClearBufferedSamples as disconnectAndClearHeartRateBufferedSamples,
+  peekBufferedSamples as peekHeartRateSamples,
+} from "../modules/ble-heart-rate";
 import {
   addConnectionStateListener as addWhoopConnectionStateListener,
   confirmRealtimeDataDrain as confirmWhoopRealtimeDataDrain,
@@ -164,6 +171,33 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 
   useWhoopBleSync(whoopSyncClient, whoopDeps, whoopRealtimeClient);
 
+  return null;
+}
+
+const bleHeartRateDeps = {
+  peekBufferedSamples: peekHeartRateSamples,
+  confirmSamplesDrain: confirmHeartRateSamplesDrain,
+  disconnectAndClearBufferedSamples: disconnectAndClearHeartRateBufferedSamples,
+};
+
+function createBleHeartRateUploadClient(trpcClient: ReturnType<typeof trpc.createClient>) {
+  return {
+    bleHeartRateSync: {
+      pushSamples: {
+        mutate: (input: Parameters<typeof trpcClient.bleHeartRateSync.pushSamples.mutate>[0]) =>
+          trpcClient.bleHeartRateSync.pushSamples.mutate(input),
+      },
+    },
+  };
+}
+
+function BleHeartRateSyncManager({
+  trpcClient,
+}: {
+  trpcClient: ReturnType<typeof trpc.createClient>;
+}) {
+  const uploadClient = useMemo(() => createBleHeartRateUploadClient(trpcClient), [trpcClient]);
+  useBleHeartRateSync(uploadClient, bleHeartRateDeps);
   return null;
 }
 
@@ -363,6 +397,11 @@ function AuthGate() {
     startStartupPhase("service-bootstrap");
     let serviceBootstrapFailed = false;
     const syncClient: SyncTrpcClient = {
+      clinicalRecords: {
+        push: {
+          mutate: (input) => trpcClient.clinicalRecords.push.mutate(input),
+        },
+      },
       healthKitSync: {
         deleteQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.deleteQuantitySamples.mutate(input),
@@ -474,6 +513,10 @@ function AuthGate() {
               },
               whoopRealtimeSyncClient,
             ),
+        },
+        {
+          source: "bg-refresh-ble-heart-rate-flush",
+          run: () => syncBleHeartRate(),
         },
       ]);
     });
@@ -600,27 +643,10 @@ function AuthGate() {
       <TelemetryRouteSync isAuthenticated isLoading={false} />
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
         {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
+        {backgroundSyncReady && <BleHeartRateSyncManager trpcClient={trpcClient} />}
         <MedicationReminderNotificationListener />
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="food/add"
-            options={({ navigation }) => ({
-              presentation: "fullScreenModal",
-              title: "Add Food",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cancel adding food"
-                >
-                  <Text style={{ color: colors.accent, fontSize: 17 }}>Cancel</Text>
-                </Pressable>
-              ),
-            })}
-          />
           <Stack.Screen
             name="providers"
             options={{
@@ -631,6 +657,18 @@ function AuthGate() {
             name="settings"
             options={{
               title: "Settings",
+            }}
+          />
+          <Stack.Screen
+            name="bluetooth-devices/index"
+            options={{
+              title: "Bluetooth Devices",
+            }}
+          />
+          <Stack.Screen
+            name="bluetooth-devices/[id]"
+            options={{
+              title: "Bluetooth Device",
             }}
           />
           <Stack.Screen
@@ -649,6 +687,12 @@ function AuthGate() {
             name="data-quality"
             options={{
               title: "Data Quality",
+            }}
+          />
+          <Stack.Screen
+            name="cycle"
+            options={{
+              title: "Cycle Tracking",
             }}
           />
           <Stack.Screen
@@ -688,12 +732,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="breathwork"
-            options={{
-              title: "Breathwork",
-            }}
-          />
-          <Stack.Screen
             name="activity/[id]"
             options={{
               title: "Activity",
@@ -729,12 +767,6 @@ function AuthGate() {
             name="experiments"
             options={{
               title: "Personal Experiments",
-            }}
-          />
-          <Stack.Screen
-            name="ble-probe"
-            options={{
-              title: "BLE Probe",
             }}
           />
           <Stack.Screen

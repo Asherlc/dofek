@@ -98,11 +98,15 @@ infrastructure has been retired.
   healthy probe before it could read the state file. This timeout is scoped to
   the probe process; the state-age and consecutive-failure thresholds still
   determine CDC health.
+- `cdc-health` owns only the bounded CDC check and its state file. The separate
+  `processing-reconciliation` service runs reconciliation synchronously, then
+  waits 300 seconds before its next run with its own resource budget; its script
+  reports failures to Sentry and its loop logs the nonzero exit before the next
+  scheduled retry. A reconciliation failure never changes CDC state.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
-- Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 - The Oracle override scales Portainer, CloudBeaver, pgAdmin, PeerDB UI, and
   Netdata to zero. Databasus remains at one replica because it owns the backup
   schedule; its base-stack route is active for backup operations.
@@ -198,20 +202,22 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> upload immutable web assets
               -> sweep expired backups
               -> validate host bind sources
-              -> non-pruning stack apply with consumers quiesced
+              -> non-pruning stack apply with analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation quiesced
               -> wait for Postgres and ClickHouse
               -> migrate requested image on <stack>_default
-              -> prune deploy requested image with consumers quiesced
+              -> prune deploy requested image with analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation quiesced
               -> wait for app convergence and Postgres; run cutover
               -> wait for ClickHouse, PeerDB, and Temporal; configure CDC
-              -> final deploy restores consumers
+              -> final deploy restores analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation
               -> verify backup freshness and record Sentry release
 ```
 
 Production web deployments are serialized and never cancel an in-progress
 deployment. Automatic and manual triggers share the same production concurrency
-group. A rollout intentionally quiesces ClickHouse consumers before migrations
-and restores them only after the final stack converges, so a newer run must
+group. A rollout intentionally quiesces `analytics-worker`,
+`metric-stream-clickhouse-sink`, and `processing-reconciliation` before
+migrations and restores all three only after the final stack converges, so a
+newer run must
 wait rather than interrupt that state transition. Automatic runs also deploy
 only when an eligibility job confirms through the GitHub commits API that their
 successful CI commit is still the current `main` commit. Only eligible runs
@@ -319,7 +325,7 @@ terminated:
       The `dofek-web-assets` bucket must keep Terraform-managed CORS allowing
       cross-origin `GET` and `HEAD` requests, because Vite module scripts and
       module preloads are loaded from `assets.dofek.fit` while the HTML is
-      served from domains such as `dofek.asherlc.com`. If the CORS policy
+      served from domains such as `dofek.fit`. If the CORS policy
       changes while objects are already cached at Cloudflare, purge the
       `assets.dofek.fit` cache hostname so cached asset responses refresh with
       the current `Access-Control-Allow-Origin` header. Cloudflare documents
@@ -337,34 +343,37 @@ terminated:
       path such as `/mnt/dofek-data/redis` is missing. See
       [Docker's bind-mount constraints and syntax](https://docs.docker.com/engine/storage/bind-mounts/#syntax).
    7. Apply the stack configuration before migrations with a non-prune,
-      detached `docker stack deploy`, the temporary ClickHouse-consumer
-      quiesce overlay, and the migration quiesce overlay. On existing stacks
+      detached `docker stack deploy`, the temporary three-service quiesce
+      overlay, and the migration quiesce overlay. On existing stacks
       this uses the currently deployed app image tag, so database, ClickHouse,
       network, config, and resource-limit changes are applied before migrations
       without rolling new app code ahead of schema changes. The overlays keep
-      `analytics-worker`, the metric-stream ClickHouse sink, and the
-      migration-running `worker` at zero replicas during the migration window;
-      see the [worker entrypoint](../entrypoint.sh). On clean-slate hosts the
+      `analytics-worker`, `metric-stream-clickhouse-sink`,
+      `processing-reconciliation`, and the migration-running `worker` at zero
+      replicas during the migration window; see the
+      [worker entrypoint](../entrypoint.sh). On clean-slate hosts the
       stack apply uses the deploy image tag so the DB service and overlay network
       exist before readiness checks. After migrations, the workflow deploys the
-      requested app image with only the consumer-quiesce overlay still applied,
-      which restores `worker` using the same image that ran the migrations. The
-      deploy workflow waits explicitly for Postgres and ClickHouse instead of
-      keeping a long-lived Docker-over-SSH stack-deploy wait open while the
+      requested app image with only the three-service quiesce overlay still applied,
+      which restores `worker` using the same image that ran the migrations while
+      `analytics-worker`, `metric-stream-clickhouse-sink`, and
+      `processing-reconciliation` remain stopped until the final stack deploy.
+      The deploy workflow waits explicitly for Postgres and ClickHouse instead
+      of keeping a long-lived Docker-over-SSH stack-deploy wait open while the
       single-node host restarts services.
    8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`) and
       ClickHouse answers `/ping`.
    9. Run the requested image's tracked Postgres and ClickHouse migrations in a
       detached one-shot container on `<stack>_default`. CI polls its status and
       logs, removes it on exit, and fails if it exceeds four hours.
-   10. Historical Slack-membership and exercise-provenance backfills are
+   10. Historical exercise-provenance backfills are
        operator-run one-time tasks, not deployment steps. Run them from the
        image with an explicit `DATABASE_URL` only after reviewing their dry-run
        output, and record the completion date, image commit, and operator in
        the deployment change record. They must not be replayed on every deploy.
        Ordinary integration setup creates the current schema directly and does
        not replay either historical scan.
-   11. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The migration-only overlay is used only by the pre-migration apply to keep the old worker from starting against a newer migration journal. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final ClickHouse-consumer-only rollout remains bounded at 20 minutes.
+   11. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping `analytics-worker`, `metric-stream-clickhouse-sink`, and `processing-reconciliation` at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The migration-only overlay is used only by the pre-migration apply to keep the old worker from starting against a newer migration journal. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final rollout restoring `analytics-worker`, `metric-stream-clickhouse-sink`, and `processing-reconciliation` remains bounded at 20 minutes.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    13. After every requested app service converges, wait for Postgres to be
        writable and run the resumable `provider-connection-cutover` one-shot
@@ -384,12 +393,13 @@ terminated:
        values, creates the Postgres and ClickHouse peers if missing, and applies
        the fitness-raw, provider-inventory, and sensor-priority mirrors.
    15. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
-       `analytics-worker` and `metric-stream-clickhouse-sink` only when every
-       post-quiesce readiness step and ClickHouse CDC setup succeeds. If a
-       prerequisite fails, the workflow leaves both consumers at zero replicas
-       and reports that the operator must resolve the failed step and rerun the
-       deployment. After restoration, each consumer must keep the same Swarm
-       task at `1/1` continuously for 60 seconds; a replacement task or any
+       `analytics-worker`, `metric-stream-clickhouse-sink`, and
+       `processing-reconciliation` only when every post-quiesce readiness step
+       and ClickHouse CDC setup succeeds. If a prerequisite fails, the workflow
+       leaves all three services at zero replicas and reports that the operator
+       must resolve the failed step and rerun the deployment. After restoration,
+       each of the three services must keep the same Swarm task at `1/1`
+       continuously for 60 seconds; a replacement task or any
        replica loss restarts the stability window. Swarm creates a new task when
        a task crashes, so a transient `1/1` sample is not deployment convergence
        ([Docker Swarm tasks and scheduling](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).
@@ -540,13 +550,20 @@ before migrations:
   image tag so infrastructure/config changes are applied while app code remains
   on the old release. The migration quiesce overlay sets `worker` to zero so
   that old release cannot run its startup migration against a database that the
-  requested image will advance.
+  requested image will advance. The CDC quiesce overlay also sets
+  `analytics-worker`, `metric-stream-clickhouse-sink`, and
+  `processing-reconciliation` to zero so all three remain stopped until the
+  final stack deploy.
 - On clean-slate hosts, the pre-migration deploy uses the requested deploy tag
   because there is no old release to preserve; the migration quiesce overlay
-  still keeps `worker` stopped until the one-shot migration completes.
+  still keeps `worker` stopped until the one-shot migration completes, and the
+  CDC quiesce overlay keeps `analytics-worker`,
+  `metric-stream-clickhouse-sink`, and `processing-reconciliation` stopped.
 - After the pre-migration stack apply, the workflow waits for Postgres and
   ClickHouse, runs migrations, and then performs the pruned deploy with the
-  requested image tag while the ClickHouse consumers remain quiesced.
+  requested image tag while `analytics-worker`,
+  `metric-stream-clickhouse-sink`, and `processing-reconciliation` remain
+  quiesced. The final stack deploy restores all three.
 
 This preserves migration gating while remaining safe for both warm updates and scratch deployments.
 

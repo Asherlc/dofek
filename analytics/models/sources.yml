@@ -31,9 +31,8 @@ sources:
       - name: daily_metrics
       - name: food_entry
       - name: health_event
+      - name: clinical_record
       - name: journal_entry
-      - name: lab_panel
-      - name: lab_result
       - name: provider
       - name: provider_connection
       - name: provider_priority

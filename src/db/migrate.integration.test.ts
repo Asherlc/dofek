@@ -21,10 +21,23 @@ const migrationRollbackRowsSchema = z.array(
   }),
 );
 const migrationHashRowsSchema = z.array(z.object({ hash: z.string() }));
+const climbingEntryLeadColumnRowsSchema = z.array(
+  z.object({
+    data_type: z.literal("boolean"),
+    is_nullable: z.literal("YES"),
+    constraint_definition: z.string(),
+  }),
+);
 const accountErasureTriggerRowsSchema = z.array(
   z.object({
     function_name: z.string(),
     table_name: z.string(),
+  }),
+);
+const retainedHealthRecordRowsSchema = z.array(
+  z.object({
+    breathwork_exists: z.boolean(),
+    menstrual_period_exists: z.boolean(),
   }),
 );
 let nextMigrationTimestamp = 2_000_000_000_000;
@@ -66,6 +79,53 @@ describe("runMigrations", () => {
     );
     expect(tableNameRowsSchema.parse(result.rows).length).toBe(1);
     await client.end();
+  });
+
+  it("creates a nullable route-only lead value for climbing entries", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const result = await client.query(
+        `SELECT
+          columns.data_type,
+          columns.is_nullable,
+          pg_get_constraintdef(constraints.oid) AS constraint_definition
+        FROM information_schema.columns AS columns
+        JOIN pg_constraint AS constraints
+          ON constraints.conname = 'climbing_entry_lead_routes_only'
+        WHERE columns.table_schema = 'fitness'
+          AND columns.table_name = 'climbing_entry'
+          AND columns.column_name = 'lead'`,
+      );
+
+      expect(climbingEntryLeadColumnRowsSchema.parse(result.rows)).toEqual([
+        {
+          data_type: "boolean",
+          is_nullable: "YES",
+          constraint_definition:
+            "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
+        },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("retains canonical breathwork and menstrual records after all migrations", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const result = await client.query(`
+        SELECT
+          to_regclass('fitness.breathwork_session') IS NOT NULL AS breathwork_exists,
+          to_regclass('fitness.menstrual_period') IS NOT NULL AS menstrual_period_exists
+      `);
+      expect(retainedHealthRecordRowsSchema.parse(result.rows)).toEqual([
+        { breathwork_exists: true, menstrual_period_exists: true },
+      ]);
+    } finally {
+      await client.end();
+    }
   });
 
   it("skips already-applied migrations on second run", async () => {
@@ -215,6 +275,45 @@ describe("runMigrations", () => {
       );
       expect(relationExistsRowsSchema.parse(result.rows)).toEqual([{ relation_exists: false }]);
     } finally {
+      await client.end();
+    }
+  });
+
+  it("accepts the production clinical-record migration when it is already applied", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-production-clinical-history-"));
+    const clinicalMigration = {
+      content: readFileSync(
+        join(import.meta.dirname, "../../drizzle/0099_canonical_clinical_records.sql"),
+        "utf8",
+      ),
+      file: "0099_canonical_clinical_records.sql",
+      when: 1_787_982_000_000,
+    };
+    writeTestMigrationFiles(tmpDir, [clinicalMigration]);
+
+    await client.connect();
+    try {
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint,
+        content_hash text
+      )`);
+      await client.query(
+        `INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash)
+         VALUES ($1, $2, $3)`,
+        [
+          "3d3eb7bfc3e32fb8164f94c7be1efb5123d917f2e501f5531fbd1eea0b524115",
+          1_787_982_000_000,
+          "3d3eb7bfc3e32fb8164f94c7be1efb5123d917f2e501f5531fbd1eea0b524115",
+        ],
+      );
+
+      await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(0);
+    } finally {
+      await client.query("DROP SCHEMA drizzle CASCADE");
       await client.end();
     }
   });

@@ -19,8 +19,7 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "APPLE_TEAM_ID",
   "BODYSPEC_CLIENT_ID",
   "BODYSPEC_CLIENT_SECRET",
-  "BREVO_SMTP_KEY",
-  "BREVO_SMTP_USER",
+  "BREVO_API_KEY",
   "CONCEPT2_CLIENT_ID",
   "CONCEPT2_CLIENT_SECRET",
   "COROS_CLIENT_ID",
@@ -86,9 +85,7 @@ const APPLICATION_ENVIRONMENT_KEYS = [
 const WEB_ONLY_ENVIRONMENT_KEYS = [
   "GEMINI_API_KEY",
   "MISTRAL_API_KEY",
-  "SLACK_CLIENT_ID",
-  "SLACK_CLIENT_SECRET",
-  "SLACK_SIGNING_SECRET",
+  "OPENAI_APPS_CHALLENGE_TOKEN",
 ] as const;
 
 const CDC_ENVIRONMENT_KEYS = [
@@ -109,7 +106,6 @@ const WORKER_ONLY_ENVIRONMENT_KEYS = [
   "AXIOM_API_TOKEN",
   "AXIOM_LOG_DATASET",
   "AXIOM_ORG_ID",
-  "BREVO_API_KEY",
   "METRIC_STREAM_TOPIC",
   "PEERDB_STAGE_S3_ACCESS_KEY_ID",
   "PEERDB_STAGE_S3_BUCKET",
@@ -177,7 +173,6 @@ describe("renderDeployServiceEnvironmentFiles", () => {
         ...METRIC_STREAM_ENVIRONMENT_KEYS,
       ].sort(),
     );
-    expect(web).not.toHaveProperty("BREVO_API_KEY");
     expect(web).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
     expect(web).not.toHaveProperty("POSTGRES_PASSWORD");
     expect(web).not.toHaveProperty("POSTHOG_PERSONAL_API_KEY");
@@ -190,7 +185,6 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(worker).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
     expect(worker).not.toHaveProperty("GEMINI_API_KEY");
     expect(worker).not.toHaveProperty("OTA_PRIVATE_KEY_B64");
-    expect(worker).not.toHaveProperty("SLACK_CLIENT_SECRET");
 
     expect(parseEnv(readFileSync(paths.analyticsWorker, "utf8"))).toEqual({
       CLICKHOUSE_PASSWORD: "clickhouse_password-value",
@@ -272,6 +266,31 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     ).toThrow(
       "web deploy environment is missing required keys: METRIC_STREAM_TOPIC, REDPANDA_BROKERS",
     );
+  });
+
+  it("fails before web startup when the OpenAI Apps challenge token is missing", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.OPENAI_APPS_CHALLENGE_TOKEN;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("web deploy environment is missing required keys: OPENAI_APPS_CHALLENGE_TOKEN");
+  });
+
+  it("fails before web startup when transactional email configuration is incomplete", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.BREVO_API_KEY;
+    delete environment.EXPORT_EMAIL_FROM;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("web deploy environment is missing required keys: BREVO_API_KEY, EXPORT_EMAIL_FROM");
   });
 
   it("uses stable file names for stack interpolation", () => {

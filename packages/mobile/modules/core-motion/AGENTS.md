@@ -67,7 +67,6 @@ From `packages/mobile`:
 pnpm typecheck
 pnpm exec vitest run --project mobile \
   lib/inertial-measurement-unit-sync.test.ts \
-  lib/inertial-measurement-unit-service.test.ts \
   lib/background-accelerometer-sync.test.ts
 ```
 

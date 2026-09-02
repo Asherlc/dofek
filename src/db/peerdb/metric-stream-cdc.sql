@@ -86,12 +86,8 @@ WITH TABLE MAPPING
     to: health_event
   },
   {
-    from: fitness.lab_panel,
-    to: lab_panel
-  },
-  {
-    from: fitness.lab_result,
-    to: lab_result
+    from: fitness.clinical_record,
+    to: clinical_record
   },
   {
     from: fitness.journal_entry,

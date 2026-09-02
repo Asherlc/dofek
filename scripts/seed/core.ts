@@ -40,12 +40,8 @@ async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
   await sql`DELETE FROM fitness.dexa_scan_region WHERE scan_id IN (
     SELECT id FROM fitness.dexa_scan WHERE user_id = ${userId}
   )`;
-  await sql`DELETE FROM fitness.lab_result WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.lab_panel WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.clinical_record WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.medication_dose_event WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.medication WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.condition WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.allergy_intolerance WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.health_event WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.dexa_scan WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.journal_entry WHERE user_id = ${userId}`;
@@ -199,7 +195,6 @@ async function seedSyncLogs(sql: Sql): Promise<void> {
     ["strava", "streams", "success", 1_400, null, 1_560, 1],
     ["bodyspec", "body_composition", "success", 2, null, 330, 3],
     ["manual_review", "journal", "success", 60, null, 120, 1],
-    ["manual_review", "breathwork", "success", 16, null, 140, 1],
     ["manual_review", "cycle", "success", 6, null, 170, 1],
   ] as const;
 

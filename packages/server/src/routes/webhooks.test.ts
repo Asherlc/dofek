@@ -133,7 +133,7 @@ async function request(
   body?: string,
   headers?: Record<string, string>,
 ): Promise<{ status: number; body: string; headers: Record<string, string> }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const addr = server.address();
       if (addr === null || typeof addr === "string") throw new Error("unexpected address");
@@ -153,9 +153,9 @@ async function request(
           });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error", headers: {} });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
   });
@@ -588,6 +588,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
     expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-1", {
+      origin: "manual",
       providerId: "prov-1",
       sinceDays: 1,
       userId: "user-1",
@@ -689,6 +690,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
     expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-1", {
+      origin: "manual",
       providerId: "prov-1",
       sinceDays: 1,
       userId: "user-1",
@@ -757,6 +759,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     // Second event should still have been processed
     expect(mockEnqueueSyncJob).toHaveBeenCalledTimes(1);
     expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-2", {
+      origin: "manual",
       providerId: "prov-2",
       sinceDays: 1,
       userId: "user-2",
@@ -894,6 +897,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     const [providerId, jobData] = mockEnqueueSyncJob.mock.calls[0] ?? [];
     expect(providerId).toBe("prov-X");
     expect(jobData).toEqual({
+      origin: "manual",
       providerId: "prov-X",
       sinceDays: 1,
       userId: "user-X",
@@ -1039,7 +1043,7 @@ describe("registerWebhookForProvider", () => {
 
     await registerWebhookForProvider(getMockDb(), provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalledWith(
-      "https://dofek.asherlc.com/api/webhooks/test-provider",
+      "https://dofek.fit/api/webhooks/test-provider",
       expect.any(String),
     );
 

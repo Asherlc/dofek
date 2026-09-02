@@ -79,4 +79,44 @@ describe("review seed core", () => {
     expect(profiles).toEqual([]);
     expect(sessions).toEqual([]);
   });
+
+  it("clears retained health records for the review user", async () => {
+    await clearSeedData(sql);
+    await sql`
+      INSERT INTO fitness.user_profile (id, name, email)
+      VALUES (${USER_ID}, 'Review User', 'review@example.com')
+    `;
+    await sql`
+      INSERT INTO fitness.breathwork_session (
+        id, user_id, technique_id, rounds, duration_seconds, started_at
+      ) VALUES (
+        '55555555-5555-5555-5555-555555555555',
+        ${USER_ID},
+        'box-breathing',
+        4,
+        240,
+        '2026-08-01T07:00:00Z'
+      )
+    `;
+    await sql`
+      INSERT INTO fitness.menstrual_period (id, user_id, start_date, notes)
+      VALUES (
+        '66666666-6666-6666-6666-666666666666',
+        ${USER_ID},
+        '2026-08-01',
+        'Review cleanup fixture'
+      )
+    `;
+
+    await clearSeedData(sql);
+
+    const breathworkSessions = await sql`
+      SELECT id FROM fitness.breathwork_session WHERE user_id = ${USER_ID}
+    `;
+    const menstrualPeriods = await sql`
+      SELECT id FROM fitness.menstrual_period WHERE user_id = ${USER_ID}
+    `;
+    expect(breathworkSessions).toEqual([]);
+    expect(menstrualPeriods).toEqual([]);
+  });
 });

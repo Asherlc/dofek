@@ -28,7 +28,7 @@ import {
 } from "./withings.ts";
 
 const { mockMetricStreamPublishRows, publishedMetricStreamBatches } = vi.hoisted<{
-  mockMetricStreamPublishRows: ReturnType<typeof vi.fn>;
+  mockMetricStreamPublishRows: CallableVitestMock;
   publishedMetricStreamBatches: Record<string, unknown>[][];
 }>(() => ({
   mockMetricStreamPublishRows: vi.fn(),

@@ -135,8 +135,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("source_dirty_sleep_keys AS");
     expect(sql).toContain("stale_sleep_dirty_keys AS");
     expect(normalizedSql).toContain("LIMIT {{ sleep_dirty_key_batch_size }}");
-    expect(sql).toContain("existing_sleep_state AS materialized");
-    expect(sql).toContain("dirty_keys AS materialized");
+    expect(sql).toContain("existing_sleep_state AS MATERIALIZED");
+    expect(sql).toContain("dirty_keys AS MATERIALIZED");
     expect(sql).toContain("merged_samples AS");
     expect(sql).toContain("FULL OUTER JOIN existing_samples");
     expect(sql).toContain("'join_use_nulls': 1");

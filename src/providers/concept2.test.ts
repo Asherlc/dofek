@@ -52,9 +52,7 @@ vi.mock("../auth/oauth.ts", () => ({
     expiresAt: new Date("2027-01-01T00:00:00Z"),
     scopes: "user:read",
   })),
-  getOAuthRedirectUri: vi.fn(
-    () => process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback",
-  ),
+  getOAuthRedirectUri: vi.fn(() => process.env.OAUTH_REDIRECT_URI ?? "https://dofek.fit/callback"),
   refreshAccessToken: vi.fn(async () => ({
     accessToken: "refreshed-token",
     refreshToken: "refreshed-refresh",
@@ -744,7 +742,7 @@ describe("concept2OAuthConfig", () => {
     process.env.CONCEPT2_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = concept2OAuthConfig();
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 
   it("uses Concept2's comma-separated OAuth scope format", () => {

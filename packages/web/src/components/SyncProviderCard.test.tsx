@@ -32,6 +32,11 @@ function renderProvider({
     id: "strava",
     name: "Strava",
     lastSyncedAt: "2026-05-12T10:00:00.000Z",
+    lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+    syncFreshness: {
+      status: "current",
+      label: "Sync current",
+    },
     authorized: true,
     description: null,
   },
@@ -120,26 +125,109 @@ describe("SyncProviderCard", () => {
     });
   });
 
-  it("renders an empty sync history state", () => {
-    renderProvider();
+  it("renders server freshness for an authorized provider that needs reauthorization", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-08-12T12:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+      needsReauth: true,
+    });
 
-    expect(screen.getByText("No sync history")).not.toBeNull();
+    expect(screen.getByText("Authorization expired")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Reconnect Strava" })).not.toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("Sync overdue");
+    expect(screen.getByRole("alert")).toHaveTextContent("The last successful sync is overdue.");
   });
 
-  it("identifies recent sync outcomes without relying on color", () => {
+  it("renders an unknown server freshness state for an empty sync history", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: null,
+        lastSuccessfulSyncAt: null,
+        syncFreshness: {
+          status: "unknown",
+          label: "Sync status unknown",
+          description: "No successful sync has been recorded yet.",
+        },
+        authorized: true,
+        description: null,
+      },
+    });
+
+    expect(screen.getByText("No sync history")).not.toBeNull();
+    expect(screen.getByText("Sync status unknown")).not.toBeNull();
+    expect(screen.getByText("No successful sync has been recorded yet.")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("renders overdue server freshness as an alert beside the manual Sync action", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-08-12T12:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+    });
+
+    const overdueAlert = screen.getByRole("alert");
+    const syncButton = screen.getByRole("button", {
+      name: "Sync Strava from the last 7 days",
+    });
+
+    expect(overdueAlert).toHaveTextContent("Sync overdue");
+    expect(overdueAlert).toHaveTextContent("The last successful sync is overdue.");
+    expect(overdueAlert.parentElement).toContainElement(syncButton);
+    expect(screen.getByText(/^Last successful sync:/)).not.toBeNull();
+  });
+
+  it("renders current server freshness without raising an alert", () => {
+    renderProvider();
+
+    expect(screen.getByText("Sync current")).not.toBeNull();
+    expect(
+      screen.queryByText("The last successful sync completed within the expected cadence."),
+    ).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("summarizes the latest sync outcome in readable text", () => {
     renderProvider({
       recentLogs: [
         {
+          id: "strava-sync-1",
           syncedAt: "2026-05-12T10:00:00.000Z",
           status: "success",
+          dataType: "activities",
           recordCount: 12,
           durationMs: 100,
           errorMessage: null,
           authFailureReason: null,
         },
         {
+          id: "strava-sync-2",
           syncedAt: "2026-05-12T11:00:00.000Z",
-          status: "failed",
+          status: "error",
+          dataType: "activities",
           recordCount: 0,
           durationMs: 50,
           errorMessage: "Provider unavailable",
@@ -148,8 +236,33 @@ describe("SyncProviderCard", () => {
       ],
     });
 
-    expect(screen.getByRole("status", { name: "Sync succeeded" }).textContent).toBe("✓");
-    expect(screen.getByRole("status", { name: "Sync failed" }).textContent).toBe("!");
+    expect(screen.getByRole("status", { name: "Sync needs attention" })).toHaveTextContent(
+      "Latest sync failed",
+    );
+    expect(screen.queryByText("✓")).toBeNull();
+    expect(screen.queryByText("!")).toBeNull();
+  });
+
+  it("distinguishes a degraded sync from a failed sync", () => {
+    renderProvider({
+      recentLogs: [
+        {
+          id: "strava-sync-3",
+          syncedAt: "2026-05-12T11:00:00.000Z",
+          status: "degraded",
+          dataType: "activities",
+          recordCount: 8,
+          durationMs: 50,
+          errorMessage: "One source was unavailable",
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("status", { name: "Sync completed with issues" })).toHaveTextContent(
+      "Latest sync completed with issues",
+    );
+    expect(screen.queryByText("Latest sync failed")).toBeNull();
   });
 
   it("uses neutral push-only copy and server-provided description", () => {
@@ -159,6 +272,8 @@ describe("SyncProviderCard", () => {
           id: "whoop_ble",
           name: "WHOOP (Bluetooth)",
           lastSyncedAt: "2026-06-20T12:00:00.000Z",
+          lastSuccessfulSyncAt: null,
+          syncFreshness: null,
           authorized: true,
           description: "Synced from the iOS app when your WHOOP strap is nearby.",
         }}

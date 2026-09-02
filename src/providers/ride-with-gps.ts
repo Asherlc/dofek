@@ -280,12 +280,17 @@ export function buildRideWithGpsMetricRows(options: {
   const indoor = isIndoorCyclingModality(options.activityType.modality);
 
   if (!indoor && options.activityType.canonicalType === "cycling") {
-    const speeds = parsedTrackPoints.flatMap((point) =>
-      point.speed === undefined ? [] : [point.speed],
-    );
-    if (speeds.length > 0) {
-      const maxSpeed = Math.max(...speeds);
-      const averageSpeed = speeds.reduce((total, speed) => total + speed, 0) / speeds.length;
+    let speedCount = 0;
+    let totalSpeed = 0;
+    let maxSpeed = Number.NEGATIVE_INFINITY;
+    for (const point of parsedTrackPoints) {
+      if (point.speed === undefined) continue;
+      speedCount += 1;
+      totalSpeed += point.speed;
+      maxSpeed = Math.max(maxSpeed, point.speed);
+    }
+    if (speedCount > 0) {
+      const averageSpeed = totalSpeed / speedCount;
       if (maxSpeed > 30 || averageSpeed > 20) {
         throw new Error(
           `RideWithGPS cycling speed is implausible (avg ${averageSpeed.toFixed(2)} m/s, max ${maxSpeed.toFixed(2)} m/s)`,

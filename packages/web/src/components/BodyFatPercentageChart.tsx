@@ -1,5 +1,8 @@
 import { formatBodyCompositionNumber, formatDateShort } from "@dofek/format/format";
-import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
+import type {
+  BodyFatPrediction,
+  SmoothedBodyFatRow,
+} from "../../../server/src/routers/body-analytics.ts";
 import {
   chartColors,
   dofekAxis,
@@ -12,7 +15,8 @@ import {
 import { DofekChart } from "./DofekChart.tsx";
 
 interface BodyFatPercentageChartProps {
-  data: BodyRecompositionRow[];
+  data: SmoothedBodyFatRow[];
+  prediction?: BodyFatPrediction | null;
   loading?: boolean;
 }
 
@@ -26,7 +30,7 @@ function isBodyFatDataPoint(value: unknown): value is [string, number] {
   return Array.isArray(value) && typeof value[0] === "string" && typeof value[1] === "number";
 }
 
-export function BodyFatPercentageChart({ data, loading }: BodyFatPercentageChartProps) {
+export function BodyFatPercentageChart({ data, prediction, loading }: BodyFatPercentageChartProps) {
   if (data.length < 2) {
     return (
       <DofekChart
@@ -61,11 +65,37 @@ export function BodyFatPercentageChart({ data, loading }: BodyFatPercentageChart
     xAxis: dofekAxis.time(),
     yAxis: dofekAxis.value({ name: "%" }),
     series: [
+      dofekSeries.scatter(
+        "Raw Body Fat",
+        data.flatMap((row) =>
+          row.rawBodyFatPct == null
+            ? []
+            : [[row.date, row.rawBodyFatPct] satisfies [string, number]],
+        ),
+        { color: chartColors.purple, symbolSize: 4, itemStyle: { opacity: 0.5 } },
+      ),
       dofekSeries.line(
-        "Body Fat %",
-        data.map((row) => [row.date, row.bodyFatPct] satisfies [string, number]),
+        "Trend Body Fat",
+        data.map((row) => [row.date, row.smoothedBodyFatPct] satisfies [string, number]),
         { color: chartColors.purple },
       ),
+      ...(prediction?.projectionLine.length
+        ? [
+            {
+              ...dofekSeries.line(
+                "Projection",
+                [
+                  [data.at(-1)?.date ?? "", data.at(-1)?.smoothedBodyFatPct ?? 0],
+                  ...prediction.projectionLine.map(
+                    (point) => [point.date, point.projectedBodyFatPct] satisfies [string, number],
+                  ),
+                ],
+                { color: chartColors.purple, width: 2 },
+              ),
+              lineStyle: { type: "dashed" as const, opacity: 0.5 },
+            },
+          ]
+        : []),
     ],
   };
 

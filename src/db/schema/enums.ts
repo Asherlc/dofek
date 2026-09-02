@@ -47,7 +47,17 @@ export const setTypeEnum = fitness.enum("set_type", ["working", "warmup", "drops
 
 export const climbingClimbTypeEnum = fitness.enum("climbing_climb_type", ["boulder", "route"]);
 
-export const climbingGradeSystemEnum = fitness.enum("climbing_grade_system", ["v_scale", "yds"]);
+export const climbingGradeSystemEnum = fitness.enum("climbing_grade_system", [
+  "v_scale",
+  "font",
+  "yds",
+  "french",
+  "uiaa",
+  "ewbank",
+  "saxon",
+  "norwegian",
+  "brazilian_crux",
+]);
 
 export const fingerLoadingExerciseEnum = fitness.enum("finger_loading_exercise", [
   "max_hang",
@@ -91,13 +101,6 @@ export const climbingFailureReasonEnum = fitness.enum("climbing_failure_reason",
   "skin",
   "technique",
   "fear",
-]);
-
-export const labResultStatusEnum = fitness.enum("lab_result_status", [
-  "final",
-  "preliminary",
-  "corrected",
-  "cancelled",
 ]);
 
 export const sleepStageNameEnum = fitness.enum("sleep_stage_name", [

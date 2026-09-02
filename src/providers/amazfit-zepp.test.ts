@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runWithTokenUser } from "../db/token-user-context.ts";
@@ -239,13 +242,13 @@ describe("AmazfitZeppClient workout history", () => {
     ]);
   });
 
-  it("throws a specific error for non-success HTTP responses", async () => {
+  it("throws a provider service-unavailable error for HTTP 500 responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
-      "Amazfit/Zepp workout API error (500): server error",
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
     );
   });
 
@@ -485,32 +488,30 @@ describe("Amazfit/Zepp provider", () => {
     });
   });
 
-  it.each([
-    "dp",
-    "lt",
-    "dt",
-    "wk",
-  ] as const)("marks staging unavailable when %s is omitted", (omittedField) => {
-    const stages = { dp: 85, lt: 280, dt: 45, wk: 20 };
-    delete stages[omittedField];
+  it.each(["dp", "lt", "dt", "wk"] as const)(
+    "marks staging unavailable when %s is omitted",
+    (omittedField) => {
+      const stages = { dp: 85, lt: 280, dt: 45, wk: 20 };
+      delete stages[omittedField];
 
-    const parsed = parseZeppBandDay({
-      date_time: "2026-02-06",
-      summary: encodeBase64(
-        JSON.stringify({
-          slp: { st: 1320, ed: 1800, ...stages },
-        }),
-      ),
-    });
+      const parsed = parseZeppBandDay({
+        date_time: "2026-02-06",
+        summary: encodeBase64(
+          JSON.stringify({
+            slp: { st: 1320, ed: 1800, ...stages },
+          }),
+        ),
+      });
 
-    expect(parsed.sleep).toMatchObject({
-      stagingAvailable: false,
-      deepMinutes: omittedField === "dp" ? undefined : 85,
-      lightMinutes: omittedField === "lt" ? undefined : 280,
-      remMinutes: omittedField === "dt" ? undefined : 45,
-      awakeMinutes: omittedField === "wk" ? undefined : 20,
-    });
-  });
+      expect(parsed.sleep).toMatchObject({
+        stagingAvailable: false,
+        deepMinutes: omittedField === "dp" ? undefined : 85,
+        lightMinutes: omittedField === "lt" ? undefined : 280,
+        remMinutes: omittedField === "dt" ? undefined : 45,
+        awakeMinutes: omittedField === "wk" ? undefined : 20,
+      });
+    },
+  );
 
   it("omits daily metrics and sleep when summary values are incomplete", () => {
     const withoutMetrics = parseZeppBandDay({
@@ -563,13 +564,16 @@ describe("Amazfit/Zepp provider", () => {
     });
   });
 
-  it("throws a specific error for non-success HTTP responses", async () => {
+  it("throws a provider service-unavailable error for HTTP 500 responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
-      "Amazfit/Zepp API error (500): server error",
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toMatchObject({
+      statusCode: 500,
+    });
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
     );
   });
 
@@ -1563,6 +1567,53 @@ describe("Amazfit/Zepp provider", () => {
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
     expect(captureException).not.toHaveBeenCalled();
   });
+
+  it("rethrows Zepp HTTP 500 errors without reporting them to Sentry", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("upstream outage", { status: 500 });
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const sync = provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    await expect(sync).rejects.toMatchObject({ statusCode: 500 });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("rethrows workout-history HTTP 500 errors without reporting them to Sentry", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      if (String(input).includes("/v1/data/band_data.json")) {
+        return new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("upstream outage", { status: 500 });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+          userId: TEST_USER_ID,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(captureException).not.toHaveBeenCalled();
+  });
 });
 
 describe("Zepp token scopes", () => {
@@ -1618,9 +1669,15 @@ describe("AmazfitZeppProvider auth", () => {
     vi.clearAllMocks();
   });
 
-  it("wraps fetch with amazfit-zepp rate limit config", () => {
+  it("wraps fetch with amazfit-zepp rate limit and service-unavailable config", () => {
     new AmazfitZeppProvider();
-    expect(createProviderRateLimitFetch).toHaveBeenCalledWith("amazfit-zepp", expect.any(Function));
+    expect(createProviderRateLimitFetch).toHaveBeenCalledWith(
+      "amazfit-zepp",
+      expect.any(Function),
+      {
+        additionalServiceUnavailableStatusCodes: [500],
+      },
+    );
   });
 
   it("authSetup returns credential configuration", () => {

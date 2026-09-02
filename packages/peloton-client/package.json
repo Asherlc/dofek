@@ -1,6 +1,6 @@
 {
   "name": "@dofek/peloton",
-  "version": "0.1.5",
+  "version": "0.1.23",
   "description": "Unofficial Peloton API client with reverse-engineered Auth0 authentication",
   "type": "module",
   "license": "MIT",
@@ -60,8 +60,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "22.19.15",
+    "@types/node": "26.1.2",
     "typescript": "6.0.3",
-    "vitest": "3.2.6"
+    "vitest": "4.1.11"
   }
 }

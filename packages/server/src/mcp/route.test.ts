@@ -12,13 +12,15 @@ const toolTestMocks = vi.hoisted(() => {
     activityList: vi.fn(),
     activityListRange: vi.fn(),
     activitySearch: vi.fn(),
+    activityFindById: vi.fn(),
     bodyListRange: vi.fn(),
+    climbingActivityEntries: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
     fingerLoadingRange: vi.fn(),
-    foodCreate: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
+    fingerLoadingActivity: vi.fn(),
     getAllProviders: vi.fn(),
     getConnectedProviderIds: vi.fn(),
     getLastSyncTimes: vi.fn(),
@@ -26,21 +28,26 @@ const toolTestMocks = vi.hoisted(() => {
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
+    strengthExercises: vi.fn(),
     subjectiveTimeline: vi.fn(),
     withUserWriteFence: vi.fn(),
   };
   return {
     ...mocks,
-    activityRepository: vi.fn(() => ({
-      list: mocks.activityList,
-      listRange: mocks.activityListRange,
-      search: mocks.activitySearch,
-    })),
-    dailyMetricsRepository: vi.fn(() => ({
-      list: mocks.dailyMetricsList,
-      listRange: mocks.dailyMetricsListRange,
-    })),
-    subjectiveRepository: vi.fn(() => ({ timeline: mocks.subjectiveTimeline })),
+    activityRepository: vi.fn(function vitestConstructor() {
+      return {
+        findById: mocks.activityFindById,
+        list: mocks.activityList,
+        listRange: mocks.activityListRange,
+        search: mocks.activitySearch,
+      };
+    }),
+    dailyMetricsRepository: vi.fn(function vitestConstructor() {
+      return { list: mocks.dailyMetricsList, listRange: mocks.dailyMetricsListRange };
+    }),
+    subjectiveRepository: vi.fn(function vitestConstructor() {
+      return { timeline: mocks.subjectiveTimeline };
+    }),
   };
 });
 
@@ -56,35 +63,53 @@ vi.mock("../repositories/activity-repository.ts", () => ({
   ActivityRepository: toolTestMocks.activityRepository,
 }));
 
+vi.mock("../repositories/climbing-repository.ts", () => ({
+  ClimbingRepository: vi.fn(function vitestConstructor() {
+    return { getActivityEntries: toolTestMocks.climbingActivityEntries };
+  }),
+}));
+
 vi.mock("../repositories/daily-metrics-repository.ts", () => ({
   DailyMetricsRepository: toolTestMocks.dailyMetricsRepository,
 }));
 
 vi.mock("../repositories/food-repository.ts", () => ({
-  FoodRepository: vi.fn(() => ({
-    create: toolTestMocks.foodCreate,
-    dailyTotalsRange: toolTestMocks.foodDailyTotalsRange,
-  })),
+  FoodRepository: vi.fn(function vitestConstructor() {
+    return { dailyTotalsRange: toolTestMocks.foodDailyTotalsRange };
+  }),
 }));
 
 vi.mock("../repositories/sleep-repository.ts", () => ({
-  SleepRepository: vi.fn(() => ({ listRange: toolTestMocks.sleepListRange })),
+  SleepRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.sleepListRange };
+  }),
 }));
 
 vi.mock("../repositories/body-repository.ts", () => ({
-  BodyRepository: vi.fn(() => ({ listRange: toolTestMocks.bodyListRange })),
+  BodyRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.bodyListRange };
+  }),
 }));
 
 vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
+  readFingerLoadingActivity: toolTestMocks.fingerLoadingActivity,
   readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
 }));
 
+vi.mock("../repositories/strength-repository.ts", () => ({
+  StrengthRepository: vi.fn(function vitestConstructor() {
+    return { getExercisesForActivity: toolTestMocks.strengthExercises };
+  }),
+}));
+
 vi.mock("../repositories/sync-repository.ts", () => ({
-  SyncRepository: vi.fn(() => ({
-    getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
-    getLastSyncTimes: toolTestMocks.getLastSyncTimes,
-    getLatestErrors: toolTestMocks.getLatestErrors,
-  })),
+  SyncRepository: vi.fn(function vitestConstructor() {
+    return {
+      getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
+      getLastSyncTimes: toolTestMocks.getLastSyncTimes,
+      getLatestErrors: toolTestMocks.getLatestErrors,
+    };
+  }),
 }));
 
 vi.mock("../repositories/subjective-repository.ts", () => ({
@@ -195,7 +220,6 @@ const mcpScopes = [
   "health:read",
   "activity:read",
   "nutrition:read",
-  "nutrition:write",
   "providers:read",
   "sync:write",
 ] as const;
@@ -213,6 +237,7 @@ const toolListResponseSchema = z.object({
   result: z.object({
     tools: z.array(
       z.object({
+        annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
         description: z.string(),
         inputSchema: z.object({}).passthrough(),
         name: z.string(),
@@ -296,12 +321,14 @@ describe("createMcpRouter", () => {
     toolTestMocks.activityList.mockResolvedValue({ items: [], totalCount: 0 });
     toolTestMocks.activityListRange.mockResolvedValue([]);
     toolTestMocks.activitySearch.mockResolvedValue({ items: [], totalCount: 0 });
+    toolTestMocks.activityFindById.mockResolvedValue(null);
     toolTestMocks.bodyListRange.mockResolvedValue([]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([]);
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
-    toolTestMocks.foodCreate.mockResolvedValue(null);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
+    toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
     toolTestMocks.fingerLoadingRange.mockResolvedValue([]);
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
@@ -313,6 +340,7 @@ describe("createMcpRouter", () => {
     });
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
+    toolTestMocks.strengthExercises.mockResolvedValue([]);
     toolTestMocks.subjectiveTimeline.mockResolvedValue({ checkIns: [], injuries: [] });
     toolTestMocks.withUserWriteFence.mockImplementation(
       async (
@@ -491,6 +519,16 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        granularity: { enum: ["daily", "weekly"], type: "string" },
+        metrics: { type: "array" },
+        start_date: { format: "date", type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_subjective_timeline").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -531,13 +569,9 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
-    expect(findListedTool(tools, "log_food").inputSchema).toMatchObject({
-      properties: {
-        mealType: { enum: ["breakfast", "lunch", "dinner", "snack", "other"], type: "string" },
-        occurredAt: { format: "date-time", type: "string" },
-        text: { maxLength: 500, minLength: 1, type: "string" },
-      },
-      required: ["text"],
+    expect(findListedTool(tools, "get_activity_details").inputSchema).toMatchObject({
+      properties: { activity_id: { format: "uuid", type: "string" } },
+      required: ["activity_id"],
       type: "object",
     });
     expect(findListedTool(tools, "list_providers").inputSchema).toMatchObject({
@@ -552,6 +586,23 @@ describe("createMcpRouter", () => {
       required: ["providerId"],
       type: "object",
     });
+    for (const name of [
+      "get_daily_health_summary",
+      "get_health_trends",
+      "get_sleep_summary",
+      "search_activities",
+      "get_activity_details",
+      "get_activity_summary",
+      "get_finger_loading",
+      "get_nutrition_summary",
+      "get_body_metrics",
+      "get_subjective_timeline",
+      "list_providers",
+      "render_health_explorer",
+    ]) {
+      expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
+    }
+    expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
   });
 
   it("returns a subjective timeline using the request context timezone", async () => {
@@ -772,6 +823,60 @@ describe("createMcpRouter", () => {
       rhrEndDate: "2026-05-19",
       rhrWindowStart: "2026-05-17",
       timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("returns a structured analytics snapshot for the interactive explorer", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-18", hrv: 50 },
+      { date: "2026-05-19", hrv: 55 },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      "x-timezone": "America/Los_Angeles",
+      body: createToolCallRequest("render_health_explorer", {
+        end_date: "2026-05-19",
+        metrics: ["hrv"],
+        start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
+      }),
+    });
+
+    const parsedResponse = z
+      .object({
+        result: z.object({
+          structuredContent: z
+            .object({
+              coverage: z.object({ observed_days: z.number(), requested_days: z.number() }),
+              series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
+            })
+            .passthrough(),
+        }),
+      })
+      .parse(parseJsonRpcEvent(response.text));
+
+    expect(parsedResponse.result.structuredContent).toEqual({
+      coverage: { observed_days: 2, requested_days: 2 },
+      range: {
+        end_date: "2026-05-19",
+        granularity: "daily",
+        start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
+      },
+      series: [
+        {
+          label: "Heart rate variability",
+          metric: "hrv",
+          points: [
+            { key: "2026-05-18", value: 50 },
+            { key: "2026-05-19", value: 55 },
+          ],
+          unit: "ms",
+        },
+      ],
+      summary: [{ average: 52.5, max: 55, metric: "hrv", min: 50 }],
     });
   });
 
@@ -1299,34 +1404,33 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("logs food entries with the requested meal type and local date", async () => {
+  it("returns an activity with its strength, climbing, and finger-loading details", async () => {
     authorizeMcpToken();
-    toolTestMocks.foodCreate.mockResolvedValue({
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
-    });
+    const activityId = "00000000-0000-4000-8000-000000000001";
+    toolTestMocks.activityFindById.mockResolvedValue({ id: activityId, name: "Training" });
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      { toDetail: () => ({ exerciseName: "Pull-up", muscleGroups: ["back"] }) },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      { toDetail: () => ({ grade: "V5", routeName: "Blue Circuit" }) },
+    ]);
+    toolTestMocks.fingerLoadingActivity.mockResolvedValue([
+      { exercise: "max_hang", effectiveLoadKg: 95 },
+    ]);
 
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
-      body: createToolCallRequest("log_food", {
-        mealType: "breakfast",
-        occurredAt: "2026-05-20T08:30:00.000Z",
-        text: "oatmeal with berries",
-      }),
+      body: createToolCallRequest("get_activity_details", { activity_id: activityId }),
     });
 
     expect(parseToolCallText(response.text)).toEqual({
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
+      activity: { id: activityId, name: "Training" },
+      climbing_entries: [{ grade: "V5", routeName: "Blue Circuit" }],
+      finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
+      strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
     });
-    expect(toolTestMocks.foodCreate).toHaveBeenCalledWith({
-      date: "2026-05-20",
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
-      nutrients: {},
-    });
+    expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
   });
-
   it("lists configured providers with connection and reauth state", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
@@ -1499,6 +1603,7 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.queueAdd).toHaveBeenCalledWith(
       "sync",
       {
+        origin: "manual",
         providerId: "wahoo",
         sinceDays: 7,
         sinceIso: expect.any(String),
