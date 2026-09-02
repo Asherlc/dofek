@@ -673,7 +673,7 @@ describe("processImportJob", () => {
       );
     });
 
-    it("defaults to kg when weightUnit is not specified", async () => {
+    it("defaults the weight unit to kg when the upload has no unit", async () => {
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({
         filePath: tempFilePath,
