@@ -246,13 +246,12 @@ describe("resolveProviderTimezoneLocalTimeContext", () => {
     });
   });
 
-  it("derives geographic-zone offsets instead of retaining contradictory supplied offsets", () => {
+  it("derives geographic-zone offsets from the named timezone", () => {
     expect(
       resolveProviderTimezoneLocalTimeContext({
         startedAt: new Date("2026-09-01T14:55:54.000Z"),
         endedAt: new Date("2026-09-01T15:25:54.000Z"),
         timezone: "America/Los_Angeles",
-        suppliedOffsets: { startUtcOffsetMinutes: -240, endUtcOffsetMinutes: -240 },
       }),
     ).toEqual({
       timezone: "America/Los_Angeles",

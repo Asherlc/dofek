@@ -426,10 +426,6 @@ function normalizedLocalTimeContext(
       startedAt: row.started_at,
       endedAt: row.ended_at,
       timezone: row.timezone,
-      suppliedOffsets: {
-        startUtcOffsetMinutes: row.start_utc_offset_minutes,
-        endUtcOffsetMinutes: row.end_utc_offset_minutes,
-      },
     });
     return {
       timezone: normalized.timezone,

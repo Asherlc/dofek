@@ -237,6 +237,80 @@ describe("upsertProviderActivity", () => {
     );
   });
 
+  it("downgrades an invalid explicitly sourced provider timezone to unknown", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "invalid-explicit-zone",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Not/A_Timezone",
+        startUtcOffsetMinutes: -240,
+        endUtcOffsetMinutes: -240,
+        localTimeSource: "provider_timezone",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    const explicitUnknown = {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      localTimeSource: "unknown",
+    };
+    expect(vi.mocked(db.insert).mock.results[0]?.value.values).toHaveBeenCalledWith(
+      expect.objectContaining(explicitUnknown),
+    );
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining(explicitUnknown),
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { operation: "provider-activity-local-time-context" },
+    });
+  });
+
+  it("does not consult a home timezone when none is configured", async () => {
+    await upsertProviderActivity(
+      makeMockDb(),
+      {
+        providerId: "garmin",
+        externalId: "provider-zone-without-home",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/New_York",
+        localTimeSource: "provider_timezone",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn when provider and home timezones differ by exactly 60 minutes", async () => {
+    await upsertProviderActivity(
+      makeMockDb(),
+      {
+        providerId: "garmin",
+        externalId: "one-hour-zone-difference",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/New_York",
+        localTimeSource: "provider_timezone",
+        homeTimezone: "America/Chicago",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+
   it("reports an invalid home zone and preserves explicit authoritative context", async () => {
     const onConflictDoUpdate = vi.fn();
     const db = makeMockDb(onConflictDoUpdate);

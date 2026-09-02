@@ -150,10 +150,6 @@ export function resolveProviderTimezoneLocalTimeContext(input: {
   startedAt: Date;
   endedAt?: Date | null;
   timezone: string;
-  suppliedOffsets?: {
-    startUtcOffsetMinutes?: number | null;
-    endUtcOffsetMinutes?: number | null;
-  };
 }): RecordLocalTimeContext {
   const timezone = input.timezone.trim();
   if (isFixedEtcGmtZone(timezone)) {

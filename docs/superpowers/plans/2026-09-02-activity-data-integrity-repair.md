@@ -93,7 +93,7 @@ git commit -m "Add activity integrity inspection"
 - Modify: `src/db/provider-activity-sync.ts`
 - Modify: `src/db/provider-activity-sync.test.ts`
 
-**Produces:** `resolveProviderTimezoneLocalTimeContext({ startedAt, endedAt, timezone, suppliedOffsets })` returning a geographic timezone context or an offset-only fixed-zone context.
+**Produces:** `resolveProviderTimezoneLocalTimeContext({ startedAt, endedAt, timezone })` returning a geographic timezone context or an offset-only fixed-zone context.
 
 - [ ] **Step 1: Write failing fixed-zone and contradictory-offset tests**
 

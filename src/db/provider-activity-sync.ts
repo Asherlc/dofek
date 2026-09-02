@@ -105,10 +105,6 @@ function providerTimezoneContext(values: StoredActivityInsert, timezone: string)
     startedAt: values.startedAt,
     endedAt: values.endedAt,
     timezone,
-    suppliedOffsets: {
-      startUtcOffsetMinutes: values.startUtcOffsetMinutes,
-      endUtcOffsetMinutes: values.endUtcOffsetMinutes,
-    },
   });
 }
 
