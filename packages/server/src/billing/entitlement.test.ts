@@ -113,6 +113,21 @@ describe("resolveAccessWindow", () => {
         appStoreSubscription: {
           productId: "com.dofek.premium.monthly",
           status: "active",
+          expiresAt: "2026-09-15T00:00:00.000Z",
+          revokedAt: null,
+        },
+        now: new Date("2026-09-15T00:00:00.000Z"),
+      }).kind,
+    ).toBe("limited");
+    expect(
+      resolveAccessWindow({
+        userCreatedAt: "2026-09-01T00:00:00.000Z",
+        timezone: "UTC",
+        paidGrantReason: null,
+        stripeSubscriptionStatus: null,
+        appStoreSubscription: {
+          productId: "com.dofek.premium.monthly",
+          status: "active",
           expiresAt: "2026-10-01T00:00:00.000Z",
           revokedAt: "2026-09-14T00:00:00.000Z",
         },
