@@ -79,7 +79,7 @@
     "expo-updates": "57.0.21",
     "expo-web-browser": "57.0.2",
     "posthog-react-native": "4.61.2",
-    "react": "19.2.3",
+    "react": "19.2.8",
     "react-native": "0.86.3",
     "react-native-body-highlighter": "3.2.0",
     "react-native-gesture-handler": "2.32.0",
