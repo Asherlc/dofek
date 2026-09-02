@@ -232,6 +232,16 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("current_duplicate_matches AS");
     expect(matchesSql).toContain("active_to_tombstoned_matches AS");
     expect(matchesSql).toContain("overlap_ratio");
+    const compactMatchesSql = compactWhitespace(matchesSql);
+    expect(compactMatchesSql).toContain(
+      "left_activity.canonical_type = right_activity.canonical_type OR ( left_activity.canonical_type = 'other' AND right_activity.canonical_type != 'other'",
+    );
+    expect(compactMatchesSql).toContain(
+      "dateDiff('second', left_activity.started_at, left_activity.ended_at) <= dateDiff('second', right_activity.started_at, right_activity.ended_at)",
+    );
+    expect(compactMatchesSql).toContain(
+      "right_activity.canonical_type = 'other' AND left_activity.canonical_type != 'other'",
+    );
 
     expect(groupsSql).toContain("materialized='incremental'");
     expect(groupsSql).toContain("ref('activity_source_records')");
@@ -300,6 +310,10 @@ describe("production analytics read-model build", () => {
       "activity_sensor_sample_begin = var('activity_sensor_sample_begin', default_microbatch_begin)",
     );
     expect(sql).toContain("begin=activity_sensor_sample_begin");
+    expect(sql).toContain("'name': 'by_activity_source_refresh_version'");
+    expect(sql).toContain(
+      "'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'",
+    );
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
@@ -437,19 +451,19 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("provider_absent_at IS null");
     expect(sql).toContain("deleted_at IS null");
     expect(normalizedSql).toContain(
-      "LEFT JOIN existing_summary ON existing_summary.activity_id = sensor_sample.activity_id",
+      "LEFT JOIN existing_summary_state ON existing_summary_state.activity_id = sample_source_versions.activity_id",
     );
-    expect(normalizedSql).toContain("argMax(refreshed_at, refresh_version) AS refreshed_at");
+    expect(normalizedSql).toContain(
+      "argMax(source_refresh_version, refresh_version) AS source_refresh_version",
+    );
     expect(normalizedSql).toContain("argMax(is_deleted, refresh_version) AS is_deleted");
     expect(normalizedSql).toContain("FROM existing_summary_state WHERE is_deleted = 0");
     expect(normalizedSql).toContain("(SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain(
-      "sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+      "sample_source_versions.source_refresh_version > existing_summary_state.source_refresh_version",
     );
-    expect(normalizedSql).toContain(
-      "sensor_sample.refreshed_at > existing_summary.refreshed_at",
-    );
+    expect(normalizedSql).not.toContain("last_refreshed_at");
     expect(normalizedSql).toContain("FROM missing_summary_dirty_keys");
     expect(normalizedSql).toContain("INNER JOIN current_activity");
     expect(normalizedSql).toContain("WHERE existing_summary_state.activity_id IS null");
@@ -762,6 +776,12 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("dirty_keys AS");
     expect(sql).toContain("IS DISTINCT FROM tuple(");
     expect(sql).toContain("analytics.v_daily_metrics");
+    expect(sql).toContain("nullIf(hrv, 0) AS hrv");
+    expect(sql).toContain("nullIf(respiratory_rate_avg, 0) AS respiratory_rate");
+    expect(sql).toContain("nullIf(efficiency_pct, 0) AS efficiency_pct");
+    expect(normalizedSql).toContain(
+      "nullIf( argMax(resting_hr, tuple(duration_seconds, ended_at)), 0 ) AS selected_resting_hr",
+    );
     expect(sql).toContain("ref('daily_sleep')");
     expect(sql).toContain("is_deleted = 0");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");

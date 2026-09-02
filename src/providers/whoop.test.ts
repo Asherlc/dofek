@@ -194,7 +194,7 @@ function makeSyncMockFetch(options: {
   weightliftingError?: boolean;
   developerWorkoutsError?: boolean;
   developerWorkoutPages?: Array<{
-    records: Array<{ id: string; start: string; end: string }>;
+    records: Array<{ id: string; start: string; end: string; sport_name?: string }>;
     next_token: string | null;
   }>;
 }) {
@@ -1729,6 +1729,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
                 id: "current-workout",
                 start: "2026-03-01T12:00:00.000Z",
                 end: "2026-03-01T13:00:00.000Z",
+                sport_name: "Commuting",
               },
             ],
             next_token: "page-2",
@@ -1766,6 +1767,9 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       { type: "persist_workouts" },
     ]);
     expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
+    expect(savedCheckpoint.developerActivityTypeNamesById).toEqual({
+      "current-workout": "Commuting",
+    });
     expect(savedCheckpoint.developerWorkoutPaginationComplete).toBe(false);
   });
 

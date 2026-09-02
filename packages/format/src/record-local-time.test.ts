@@ -9,6 +9,22 @@ import {
 } from "./record-local-time.ts";
 
 describe("resolveRecordLocalTimeContext", () => {
+  it("derives offsets from a persisted user home timezone", () => {
+    expect(
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        endedAt: new Date("2026-09-01T15:25:54.000Z"),
+        timezone: "America/Los_Angeles",
+        source: "user_home_timezone",
+      }),
+    ).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "user_home_timezone",
+    });
+  });
+
   it("resolves start and end independently when a session crosses daylight saving time", () => {
     expect(
       resolveRecordLocalTimeContext({

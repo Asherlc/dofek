@@ -26,6 +26,20 @@ const settingInputSchema = z.discriminatedUnion("key", [
     value: z.enum(["metric", "imperial"]),
   }),
   z.strictObject({
+    key: z.literal("homeTimezone"),
+    value: z.string().refine(
+      (timezone) => {
+        try {
+          new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: "homeTimezone must be a valid IANA timezone" },
+    ),
+  }),
+  z.strictObject({
     key: z.literal(CLIMBING_GRADE_PREFERENCE_SETTINGS_KEY),
     value: climbingGradePreferenceSchema,
   }),

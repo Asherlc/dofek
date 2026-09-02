@@ -110,6 +110,7 @@ export default defineConfig({
           maxWorkers: 1,
           isolate: false,
           include: [
+            "analytics/models/**/*.integration.test.ts",
             "src/**/*.integration.test.ts",
             "packages/*/src/**/*.integration.test.ts",
             "scripts/**/*.integration.test.ts",

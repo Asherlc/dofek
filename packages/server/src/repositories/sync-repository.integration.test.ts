@@ -181,6 +181,63 @@ describe("SyncRepository integration", () => {
     });
   });
 
+  describe("getScheduledSyncHealth", () => {
+    it("counts an error after an equal-timestamp success using the defined id ordering", async () => {
+      await ensureProvider(
+        testContext.db,
+        "sync-repository-provider",
+        "Sync Repository Provider",
+        undefined,
+        SYNC_REPOSITORY_TEST_USER_ID,
+      );
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.sync_log (
+              id,
+              provider_id,
+              user_id,
+              data_type,
+              status,
+              error_message,
+              origin,
+              synced_at
+            )
+            VALUES
+              (
+                '00000000-0000-4000-8000-000000000001',
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'sync',
+                'success',
+                NULL,
+                'scheduled',
+                '2026-07-09T12:00:00Z'
+              ),
+              (
+                '00000000-0000-4000-8000-000000000002',
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'sync',
+                'error',
+                'later attempt failed',
+                'scheduled',
+                '2026-07-09T12:00:00Z'
+              )`,
+      );
+
+      const repository = new SyncRepository(testContext.db, SYNC_REPOSITORY_TEST_USER_ID);
+
+      await expect(repository.getScheduledSyncHealth()).resolves.toEqual([
+        {
+          providerId: "sync-repository-provider",
+          lastSuccess: "2026-07-09T12:00:00.000Z",
+          lastAttempt: "2026-07-09T12:00:00.000Z",
+          lastError: "later attempt failed",
+          consecutiveFailures: 1,
+        },
+      ]);
+    });
+  });
+
   describe("getConnectedProviderIds", () => {
     it("lists and disconnects the same provider independently for two users", async () => {
       await ensureProvider(

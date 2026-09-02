@@ -32,6 +32,7 @@ export function buildActivitySensorSummaryRowsTableSql(): string {
   smoothed_avg_power Nullable(Float64),
   climbing_elevation_gain_m Nullable(Float64),
   climbing_seconds Nullable(Int32),
+  source_refresh_version UInt64,
   refresh_version UInt64,
   is_deleted UInt8,
   refreshed_at DateTime64(9, 'UTC')

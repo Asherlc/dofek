@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
 import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
@@ -112,6 +113,13 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 const mockLogSync = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/sync-log.ts", () => ({
   logSync: (...args: unknown[]) => mockLogSync(...args),
+}));
+const mockLoadUserHomeTimezone = vi.fn(
+  async (_database: unknown, _userId: string): Promise<string | null> => "America/Los_Angeles",
+);
+vi.mock("../db/home-timezone.ts", () => ({
+  loadUserHomeTimezone: (database: unknown, userId: string) =>
+    mockLoadUserHomeTimezone(database, userId),
 }));
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/tokens.ts", () => ({
@@ -250,6 +258,7 @@ describe("processImportJob", () => {
     await writeFile(tempFilePath, "test data");
     // Restore default return values after clearAllMocks
     mockLogSync.mockResolvedValue(undefined);
+    mockLoadUserHomeTimezone.mockResolvedValue("America/Los_Angeles");
     mockEnsureProvider.mockResolvedValue(undefined);
     mockCaptureException.mockReset();
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
@@ -286,6 +295,33 @@ describe("processImportJob", () => {
     vi.restoreAllMocks();
   });
   describe("apple-health import", () => {
+    it("runs imports with the persisted home timezone in provider ingest context", async () => {
+      mockImportAppleHealthFile.mockImplementationOnce(async () => {
+        expect(getProviderIngestContext()).toEqual({ homeTimezone: "America/Los_Angeles" });
+        return { recordsSynced: 1, errors: [] };
+      });
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
+    });
+
+    it("runs imports with an explicit null ingest timezone when no home timezone is persisted", async () => {
+      mockLoadUserHomeTimezone.mockResolvedValueOnce(null);
+      mockImportAppleHealthFile.mockImplementationOnce(async () => {
+        expect(getProviderIngestContext()).toEqual({ homeTimezone: null });
+        return { recordsSynced: 1, errors: [] };
+      });
+
+      await runImportJob(
+        createMockJob({ filePath: tempFilePath, importType: "apple-health" }),
+        mockDb,
+      );
+
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
+    });
+
     it("records the import lifecycle and correlates emitted metric batches", async () => {
       mockImportAppleHealthFile.mockImplementationOnce(
         async (
@@ -1167,11 +1203,15 @@ describe("processImportJob", () => {
       await expect(access(tempFilePath)).rejects.toThrow();
     });
     it("cleans up uploaded file even when import fails", async () => {
-      mockImportAppleHealthFile.mockRejectedValue(new Error("parse error"));
+      const parseError = new Error("parse error");
+      mockImportAppleHealthFile.mockRejectedValue(parseError);
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await expect(runImportJob(job, mockDb)).rejects.toThrow("parse error");
 
       await expect(access(tempFilePath)).rejects.toThrow();
+      expect(mockCaptureException).toHaveBeenCalledWith(parseError, {
+        tags: { phase: "file-import" },
+      });
       expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
         operationId: processingOperationId,
         stage: "ingest",
@@ -1180,6 +1220,29 @@ describe("processImportJob", () => {
         errorMessage: "The file could not be imported. Check the file and try again.",
         idempotencyKey: "worker-failed",
       });
+    });
+    it("records the failed stage and cache invalidation before surfacing telemetry failure", async () => {
+      const importError = new Error("parse error");
+      const telemetryError = new Error("telemetry unavailable");
+      mockImportAppleHealthFile.mockRejectedValueOnce(importError);
+      mockCaptureException.mockImplementationOnce(() => {
+        throw telemetryError;
+      });
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toMatchObject({
+        name: "AggregateError",
+        errors: [importError, telemetryError],
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_import_failed",
+        errorMessage: "The file could not be imported. Check the file and try again.",
+        idempotencyKey: "worker-failed",
+      });
+      expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
     it("turns an invalid Apple Health archive into an unrecoverable import failure", async () => {
       const message =

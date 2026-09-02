@@ -414,12 +414,12 @@ function insertDedupedActivityMembersSql(targetSchema: string): string {
 
 function insertCanonicalSensorSummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows VALUES
-  ('${canonicalActivityId}', '${testUserId}', 150.0, 180, 90, 220.0, 500, 8.0, 16.0, 85.0, NULL, NULL, NULL, NULL, NULL, NULL, 100.0, 40.0, NULL, NULL, NULL, NULL, 1200, 1200, 600, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, 200, 0, toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
+  ('${canonicalActivityId}', '${testUserId}', 150.0, 180, 90, 220.0, 500, 8.0, 16.0, 85.0, NULL, NULL, NULL, NULL, NULL, NULL, 100.0, 40.0, NULL, NULL, NULL, NULL, 1200, 1200, 600, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, 200, 200, 0, toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
 }
 
 function insertDirtyRawMemberSensorSummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows VALUES
-  ('${memberActivityId}', '${testUserId}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 300, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${testUserId}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 300, 300, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertCanonicalLocationSummarySql(targetSchema: string): string {

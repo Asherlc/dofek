@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import {
-  buildActivitySensorSummaryRowsTableSql,
+  buildActivitySensorSummaryRowsTableSql as buildCurrentActivitySensorSummaryRowsTableSql,
   extractClickHouseTableColumnNames,
 } from "../clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "../clickhouse-activity-summary.ts";
@@ -9,6 +9,20 @@ import { createMigration } from "./0042_recreate_activity_sensor_summary_column_
 
 const sensorSummaryTable = "analytics.activity_sensor_summary_rows";
 const activitySummaryTable = "analytics.activity_summary_rows";
+
+function historicalSensorSummaryTableSql(): string {
+  const statement = createMigration().statements.find((sql) =>
+    sql.startsWith(`CREATE TABLE IF NOT EXISTS ${sensorSummaryTable}`),
+  );
+  if (!statement) {
+    throw new Error("Migration 0042 is missing its historical sensor summary table");
+  }
+  return statement;
+}
+
+function buildActivitySensorSummaryRowsTableSql(): string {
+  return historicalSensorSummaryTableSql();
+}
 
 interface RecordedCommand {
   query: string;
@@ -89,6 +103,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
 
     expect(migration.id).toBe("0042_recreate_activity_sensor_summary_column_order");
     expect(migration.run).toBeDefined();
+    expect(migration.statements.join("\n")).not.toContain("source_refresh_version");
     expect(migration.statements).toEqual([
       "DROP VIEW IF EXISTS analytics.activity_summary",
       `RENAME TABLE ${sensorSummaryTable} TO ${sensorSummaryTable}_old,
@@ -212,7 +227,9 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
 
   describe("canonical column order", () => {
     it("keeps sensor summary power and climbing columns before refresh metadata", () => {
-      const columns = extractClickHouseTableColumnNames(buildActivitySensorSummaryRowsTableSql());
+      const columns = extractClickHouseTableColumnNames(
+        buildCurrentActivitySensorSummaryRowsTableSql(),
+      );
       const refreshVersionIndex = columns.indexOf("refresh_version");
       const climbingSecondsIndex = columns.indexOf("climbing_seconds");
 

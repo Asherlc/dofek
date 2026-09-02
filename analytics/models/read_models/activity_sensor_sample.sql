@@ -13,6 +13,14 @@
     concurrent_batches=false,
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, channel, recorded_at)',
+    settings={
+        'deduplicate_merge_projection_mode': 'rebuild',
+        'lightweight_mutation_projection_mode': 'rebuild'
+    },
+    projections=[{
+        'name': 'by_activity_source_refresh_version',
+        'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'
+    }],
     query_settings={
         'max_threads': 1
     }

@@ -83,6 +83,20 @@ describe("ActivityRepository", () => {
     return rows.map((row) =>
       "canonical_type" in row || "activity_type" in row
         ? {
+            provider_type:
+              typeof row.provider_type === "string"
+                ? row.provider_type
+                : typeof row.canonical_type === "string"
+                  ? row.canonical_type
+                  : row.activity_type,
+            raw_type:
+              typeof row.raw_type === "string"
+                ? row.raw_type
+                : typeof row.provider_type === "string"
+                  ? row.provider_type
+                  : typeof row.canonical_type === "string"
+                    ? row.canonical_type
+                    : row.activity_type,
             timezone: null,
             start_utc_offset_minutes: null,
             end_utc_offset_minutes: null,
@@ -328,6 +342,7 @@ describe("ActivityRepository", () => {
         {
           id: "abc-123",
           canonical_type: "cycling",
+          provider_type: "road_cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -355,6 +370,7 @@ describe("ActivityRepository", () => {
         {
           id: "abc-123",
           canonical_type: "cycling",
+          provider_type: "road_cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -372,6 +388,7 @@ describe("ActivityRepository", () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).not.toHaveProperty("total_count");
       expect(result.items[0]).toHaveProperty("id", "abc-123");
+      expect(result.items[0]).toHaveProperty("raw_type", "road_cycling");
     });
 
     it("hydrates summaries from any member activity id", async () => {
@@ -787,6 +804,7 @@ describe("ActivityRepository", () => {
           {
             id: "tombstoned-id",
             canonical_type: "running",
+            raw_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
             ended_at: "2024-01-15T10:45:00.000Z",
             timezone: null,

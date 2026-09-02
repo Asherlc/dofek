@@ -6,6 +6,7 @@ export const localTimeSourceSchema = z.enum([
   "provider_offset",
   "device_timezone",
   "device_offset",
+  "user_home_timezone",
   "unknown",
 ]);
 
@@ -29,7 +30,11 @@ interface ResolveRecordLocalTimeContextInput {
   source: LocalTimeSource;
 }
 
-const timezoneSources = new Set<LocalTimeSource>(["provider_timezone", "device_timezone"]);
+const timezoneSources = new Set<LocalTimeSource>([
+  "provider_timezone",
+  "device_timezone",
+  "user_home_timezone",
+]);
 const offsetSources = new Set<LocalTimeSource>(["provider_offset", "device_offset"]);
 
 function requireValidDate(date: Date, field: "startedAt" | "endedAt"): void {

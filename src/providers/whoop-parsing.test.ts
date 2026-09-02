@@ -628,6 +628,24 @@ describe("parseWorkout — edge cases", () => {
     // sport_id 63 → "walking" even if v2 type says something else
     expect(parseWorkout(record, "run")?.activityType.canonicalType).toBe("walking");
   });
+
+  it("prefers an official developer sport name over a stale BFF sport ID", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-developer-sport-name-wins",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      timezone_offset: "-05:00",
+      sport_id: 0,
+      score: 3,
+      average_heart_rate: 100,
+      max_heart_rate: 120,
+      kilojoules: 500,
+    };
+
+    expect(parseWorkout(record, undefined, "Commuting")?.activityType).toMatchObject({
+      canonicalType: "cycling",
+      providerType: "Commuting",
+    });
+  });
 });
 
 describe("resolveActivityType", () => {

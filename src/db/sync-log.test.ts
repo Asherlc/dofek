@@ -1,13 +1,100 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
 import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
 
+const captureException = vi.hoisted(() => vi.fn());
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
+
 describe("logSync", () => {
   let db: ReturnType<typeof createMockDatabase>;
 
   beforeEach(() => {
+    captureException.mockReset();
     db = createMockDatabase();
+  });
+
+  it("alerts when a scheduled provider reaches two consecutive top-level failures", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+    await logSync(db.db, {
+      providerId: "amazfit-zepp",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "access token expired",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(db.spies.execute).toHaveBeenCalledTimes(2);
+    const lockQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[0]?.[0]);
+    expect(lockQuery.sql).toContain("pg_advisory_xact_lock");
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      extra: {
+        error_message: "access token expired",
+        user_id: "user-123",
+      },
+      level: "warning",
+      tags: {
+        consecutive_failures: "2",
+        operation: "scheduled-provider-sync",
+        provider: "amazfit-zepp",
+      },
+    });
+  });
+
+  it.each([1, 3])("does not alert at consecutive-failure count %i", async (consecutiveFailures) => {
+    db = createMockDatabase({
+      executeResult: [{ consecutive_failures: String(consecutiveFailures) }],
+    });
+
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { origin: "manual" as const, dataType: "sync", status: "error" as const },
+    { origin: "scheduled" as const, dataType: "activities", status: "error" as const },
+    { origin: "scheduled" as const, dataType: "sync", status: "success" as const },
+  ])("does not query failure history for $origin $dataType $status logs", async (entry) => {
+    await logSync(db.db, { providerId: "whoop", userId: "user-123", ...entry });
+    expect(db.spies.execute).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("does not report an alert when the failure-history query returns no row", async () => {
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+    expect(db.spies.execute).toHaveBeenCalledTimes(2);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed failure-history rows", async () => {
+    db = createMockDatabase({ executeResult: [{}] });
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        dataType: "sync",
+        status: "error",
+        userId: "user-123",
+        origin: "scheduled",
+      }),
+    ).rejects.toThrow("consecutive_failures");
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("inserts a success log entry with all fields", async () => {
