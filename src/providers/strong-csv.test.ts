@@ -143,7 +143,7 @@ describe("importStrongCsv", () => {
       }),
     };
 
-    await Reflect.apply(importStrongCsv, undefined, [
+    const result = await Reflect.apply(importStrongCsv, undefined, [
       db,
       [
         "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE",
@@ -168,6 +168,7 @@ describe("importStrongCsv", () => {
         localTimeSource: "device_timezone",
       }),
     );
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
   });
 
   it("imports text shares when no timezone is available", async () => {
@@ -203,7 +204,7 @@ describe("importStrongCsv", () => {
       }),
     };
 
-    await Reflect.apply(importStrongCsv, undefined, [
+    const result = await Reflect.apply(importStrongCsv, undefined, [
       db,
       [
         "Home",
@@ -225,6 +226,7 @@ describe("importStrongCsv", () => {
         localTimeSource: undefined,
       }),
     );
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
   });
 });
 
