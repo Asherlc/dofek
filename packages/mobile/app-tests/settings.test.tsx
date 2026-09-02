@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
@@ -61,9 +61,18 @@ const mockRouterPush = vi.fn();
 const mockRouterSetParams = vi.fn();
 let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {};
 const mockLogout = vi.fn();
-const mockCheckoutSession = vi.fn();
-const mockPortalSession = vi.fn();
-const checkoutOperationId = "10000000-0000-4000-8000-000000000001";
+const mockBillingStatusInvalidate = vi.fn();
+const mockAppStoreBilling = vi.hoisted(() => ({
+  loadProduct: vi.fn().mockResolvedValue({
+    productID: "com.dofek.premium.monthly",
+    displayName: "Dofek Premium",
+    description: "Full access",
+    displayPrice: "$4.99",
+  }),
+  restore: vi.fn().mockResolvedValue(0),
+  showManageSubscriptions: vi.fn().mockResolvedValue(undefined),
+  subscribe: vi.fn().mockResolvedValue({ outcome: "cancelled" }),
+}));
 let mockSessionToken: string | null = "test-token";
 const defaultBillingStatus = {
   hasFullAccess: false,
@@ -76,6 +85,8 @@ const defaultBillingStatus = {
   } as const,
   stripeSubscriptionStatus: null,
   canManageBilling: false,
+  appStoreSubscriptionStatus: null,
+  canManageAppStoreSubscription: false,
 };
 let mockBillingStatus = {
   ...defaultBillingStatus,
@@ -87,8 +98,13 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => mockSearchParams,
 }));
 
-vi.mock("expo-crypto", () => ({
-  randomUUID: () => checkoutOperationId,
+vi.mock("../lib/app-store-billing", () => ({
+  AppStoreBillingService: class AppStoreBillingService {
+    readonly loadProduct = mockAppStoreBilling.loadProduct;
+    readonly restore = mockAppStoreBilling.restore;
+    readonly showManageSubscriptions = mockAppStoreBilling.showManageSubscriptions;
+    readonly subscribe = mockAppStoreBilling.subscribe;
+  },
 }));
 
 vi.mock("../lib/auth-context", () => ({
@@ -157,7 +173,9 @@ vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
       invalidate: vi.fn(),
+      client: {},
       auth: { passwordCredentialStatus: { invalidate: vi.fn() } },
+      billing: { status: { invalidate: mockBillingStatusInvalidate } },
       bodyAnalytics: { weightPrediction: { invalidate: vi.fn() } },
       settings: {
         get: {
@@ -210,18 +228,6 @@ vi.mock("../lib/trpc", () => ({
     },
     billing: {
       status: { useQuery: () => ({ data: mockBillingStatus, isLoading: false }) },
-      createCheckoutSession: {
-        useMutation: () => ({
-          mutate: mockCheckoutSession,
-          isPending: false,
-        }),
-      },
-      createPortalSession: {
-        useMutation: () => ({
-          mutate: mockPortalSession,
-          isPending: false,
-        }),
-      },
     },
     companionPairing: {
       claim: {
@@ -308,6 +314,12 @@ beforeEach(() => {
   mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
   mockUnitSettingQuery.error = null;
   vi.clearAllMocks();
+  mockAppStoreBilling.loadProduct.mockResolvedValue({
+    productID: "com.dofek.premium.monthly",
+    displayName: "Dofek Premium",
+    description: "Full access",
+    displayPrice: "$4.99",
+  });
 });
 
 describe("SettingsScreen categories", () => {
@@ -806,43 +818,84 @@ describe("SettingsScreen billing", () => {
 
     expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
     expect(screen.getByText(/Access limited to your signup week/)).toBeTruthy();
-    expect(screen.getByText("Upgrade to Full Access")).toBeTruthy();
+    expect(screen.getByText("Subscribe for Premium/month")).toBeTruthy();
+    expect(screen.getByText("Restore Purchases")).toBeTruthy();
   });
 
-  it("starts checkout when the upgrade button is pressed", async () => {
+  it("starts a StoreKit subscription instead of opening Stripe Checkout on iOS", async () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
-    fireEvent.click(screen.getByText("Upgrade to Full Access"));
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
 
-    await waitFor(() =>
-      expect(mockCheckoutSession).toHaveBeenCalledWith({
-        operationId: checkoutOperationId,
-      }),
-    );
+    await waitFor(() => expect(mockAppStoreBilling.subscribe).toHaveBeenCalledOnce());
+    expect(Linking.openURL).not.toHaveBeenCalled();
   });
 
-  it("shows manage billing when billing is managed by Stripe", async () => {
+  it("restores App Store purchases and reports the result", async () => {
+    mockAppStoreBilling.restore.mockResolvedValueOnce(1);
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Restore Purchases" }));
+
+    await waitFor(() => expect(screen.getByText("1 purchase restored.")).toBeTruthy());
+  });
+
+  it("opens Apple subscription management for an App Store subscriber", async () => {
     mockBillingStatus = {
       hasFullAccess: true,
       access: {
         kind: "full",
         paid: true,
-        reason: "stripe_subscription",
+        reason: "app_store_subscription",
       },
-      stripeSubscriptionStatus: "active",
-      canManageBilling: true,
+      stripeSubscriptionStatus: null,
+      canManageBilling: false,
+      appStoreSubscriptionStatus: "active",
+      canManageAppStoreSubscription: true,
     };
 
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Manage Billing")).toBeTruthy();
-    fireEvent.click(screen.getByText("Manage Billing"));
+    fireEvent.click(screen.getByRole("button", { name: "Manage Subscription" }));
 
-    expect(mockPortalSession).toHaveBeenCalled();
+    await waitFor(() => expect(mockAppStoreBilling.showManageSubscriptions).toHaveBeenCalledOnce());
+  });
+
+  it("shows the specific App Store error and restores the action controls", async () => {
+    mockAppStoreBilling.subscribe.mockRejectedValueOnce(
+      new Error("Transaction belongs to another Dofek account."),
+    );
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Transaction belongs to another Dofek account.")).toBeTruthy(),
+    );
+    expect(screen.getByRole("button", { name: "Subscribe for $4.99/month" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  it("shows subscription progress and disables billing actions while purchasing", async () => {
+    mockAppStoreBilling.subscribe.mockReturnValueOnce(new Promise(() => undefined));
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+
+    expect(screen.getByRole("button", { name: "Subscribing..." })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Restore Purchases" })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 });
 

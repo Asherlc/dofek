@@ -49,12 +49,14 @@ import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { logger } from "./logger.ts";
 import { createMcpOAuthRouter, type McpAuthRateLimitOptions } from "./mcp/oauth-route.ts";
 import { createMcpRouter } from "./mcp/route.ts";
+import { BillingProfileNotFoundError } from "./repositories/billing-repository.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { DeveloperClientRepository } from "./repositories/developer-client-repository.ts";
 import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
 import { ensureProvidersRegistered } from "./routers/sync-helpers.ts";
 import { createActivityExportRouter } from "./routes/activity-export.ts";
+import { createAppStoreWebhookRouter } from "./routes/app-store-webhook.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { authRateLimiter } from "./routes/auth/shared.ts";
 import { createCompanionPairingRouter } from "./routes/companion-pairing.ts";
@@ -253,7 +255,8 @@ function setupRoutes(
   });
 
   // ── Route modules ──
-  // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
+  // Webhook routes must be mounted before JSON middleware because signature verification uses raw bodies.
+  app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }));
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
@@ -308,9 +311,17 @@ function setupRoutes(
         const timezone = timezoneResult.data;
         const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
         const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
-        const accessWindow = session
-          ? await getAccessWindowForUser(db, session.userId, timezone)
-          : undefined;
+        let accessWindow: Context["accessWindow"];
+        try {
+          accessWindow = session
+            ? await getAccessWindowForUser(db, session.userId, timezone)
+            : undefined;
+        } catch (error) {
+          if (error instanceof BillingProfileNotFoundError) {
+            throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+          }
+          throw error;
+        }
         return {
           accountErasureRestoreLedger,
           db,

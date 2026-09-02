@@ -16,7 +16,6 @@ import { teardownBackgroundBleHeartRateSync } from "./background-ble-heart-rate-
 import { teardownBackgroundHealthKitSync } from "./background-health-kit-sync";
 import { teardownBackgroundWatchInertialMeasurementUnitSync } from "./background-watch-inertial-measurement-unit-sync";
 import { teardownBackgroundWhoopBleSync } from "./background-whoop-ble-sync";
-import { clearPendingMobileBillingCheckoutOperation } from "./billing-checkout-operation";
 import { advanceDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { purgeDofekFoodWriteBackFromHealthKit } from "./health-kit-food-writeback";
 import { purgeScheduledMedicationReminderNotifications } from "./medication-reminder-notifications";
@@ -26,7 +25,6 @@ import { captureException } from "./telemetry";
 
 interface MobileAccountPurgeDependencies {
   advanceErasureCutoff(candidate: string): Promise<string>;
-  clearBillingCheckoutOperation(): Promise<unknown>;
   clearPreparation(): Promise<unknown>;
   clearSession(): Promise<unknown>;
   purgeCoreMotion(cutoff: string): Promise<unknown>;
@@ -47,7 +45,6 @@ interface MobileAccountPurgeDependencies {
 
 const defaultDependencies: MobileAccountPurgeDependencies = {
   advanceErasureCutoff: advanceDeviceErasureCutoff,
-  clearBillingCheckoutOperation: clearPendingMobileBillingCheckoutOperation,
   clearPreparation: clearMobileAccountErasurePreparation,
   clearSession: clearSessionToken,
   purgeCoreMotion: purgeCoreMotionAccountState,
@@ -152,10 +149,6 @@ export async function purgeMobileAccountState({
   );
   await attempt("account-erasure-export-cache-purge", dependencies.purgeExportCache);
   await attempt("account-erasure-query-persistence-purge", dependencies.purgeQueryCaches);
-  await attempt(
-    "account-erasure-billing-checkout-purge",
-    dependencies.clearBillingCheckoutOperation,
-  );
   await attempt("account-erasure-session-purge", dependencies.clearSession);
   await attempt("account-erasure-preparation-purge", dependencies.clearPreparation);
   await attempt("account-erasure-query-memory-purge", () => queryClient.clear());

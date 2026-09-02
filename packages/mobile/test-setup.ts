@@ -587,6 +587,25 @@ vi.mock("./modules/background-refresh", () => ({
   addBackgroundRefreshListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
+// ── App Store billing native module mock ───────────────────────────
+vi.mock("./modules/app-store-billing", () => ({
+  APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID: "com.dofek.premium.monthly",
+  loadProduct: vi.fn(() =>
+    Promise.resolve({
+      productID: "com.dofek.premium.monthly",
+      displayName: "Dofek Premium",
+      description: "Full access",
+      displayPrice: "$4.99",
+    }),
+  ),
+  purchase: vi.fn(() => Promise.resolve({ outcome: "cancelled" })),
+  restoreCurrentEntitlements: vi.fn(() => Promise.resolve([])),
+  startTransactionUpdates: vi.fn(() => ({ remove: vi.fn() })),
+  stopTransactionUpdates: vi.fn(),
+  finishTransaction: vi.fn(() => Promise.resolve()),
+  showManageSubscriptions: vi.fn(() => Promise.resolve()),
+}));
+
 // ── expo-updates mock ─────────────────────────────────────────────
 vi.mock("expo-updates", () => ({
   updateId: null,
