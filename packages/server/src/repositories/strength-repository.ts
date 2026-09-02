@@ -426,6 +426,7 @@ export class StrengthRepository {
             AND a.canonical_type = 'strength'
             ${rangeFilter}
             AND ss.weight_kg > 0
+            AND ss.set_type = 'working'
           GROUP BY e.name, 2
           ORDER BY e.name, week`,
     );
@@ -527,7 +528,7 @@ export class StrengthRepository {
       sql`SELECT
             (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
             a.name,
-            COUNT(DISTINCT ss.exercise_id)::int AS exercise_count,
+            COUNT(DISTINCT ss.exercise_id) FILTER (WHERE ss.set_type = 'working')::int AS exercise_count,
             COUNT(ss.id) FILTER (WHERE ss.set_type = 'working')::int AS total_sets,
             COALESCE(SUM(ss.weight_kg * ss.reps) FILTER (WHERE ss.set_type = 'working'), 0)::real AS total_volume_kg,
             ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::int AS duration_minutes

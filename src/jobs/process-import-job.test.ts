@@ -661,6 +661,7 @@ describe("processImportJob", () => {
         filePath: tempFilePath,
         importType: "strong-csv",
         weightUnit: "lbs",
+        timezone: "America/Los_Angeles",
       });
       await runImportJob(job, mockDb);
       expect(mockImportStrongCsv).toHaveBeenCalledWith(
@@ -668,6 +669,7 @@ describe("processImportJob", () => {
         "Date,Exercise,Reps\n2024-01-01,Squat,10",
         "user-1",
         "lbs",
+        "America/Los_Angeles",
       );
     });
 
@@ -679,7 +681,13 @@ describe("processImportJob", () => {
         weightUnit: undefined,
       });
       await runImportJob(job, mockDb);
-      expect(mockImportStrongCsv).toHaveBeenCalledWith(mockDb, "csv data", "user-1", "kg");
+      expect(mockImportStrongCsv).toHaveBeenCalledWith(
+        mockDb,
+        "csv data",
+        "user-1",
+        "kg",
+        undefined,
+      );
     });
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");

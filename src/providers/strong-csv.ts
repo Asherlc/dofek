@@ -254,6 +254,34 @@ export function parseStrongTextDate(dateStr: string): Date {
   );
 }
 
+/**
+ * Parse Strong's naive CSV timestamp without letting Date normalize impossible
+ * calendar values (for example, February 30) into a different workout day.
+ */
+export function parseStrongWallClockTimestamp(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(
+    value.trim(),
+  );
+  if (!match) return new Date(Number.NaN);
+  const [, yearText, monthText, dayText, hourText = "00", minuteText = "00", secondText = "00"] =
+    match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day &&
+    parsed.getUTCHours() === hour &&
+    parsed.getUTCMinutes() === minute &&
+    parsed.getUTCSeconds() === second
+    ? parsed
+    : new Date(Number.NaN);
+}
+
 // Set line with weight: "Set 1: 50 lb × 13" or "Set 1: 50 lb × 13 [Failure]"
 const WEIGHTED_SET_RE = /^Set\s+(\d+):\s+([\d.]+)\s+(lb|kg)\s+×\s+(\d+)(?:\s+\[.*\])?$/;
 // Bodyweight set: "Set 1: 8 reps" or "Set 1: 8 reps [Failure]"
@@ -390,7 +418,7 @@ export async function importStrongCsv(
     try {
       const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
-      const wallClockDate = new Date(`${group.date.replace(" ", "T")}Z`);
+      const wallClockDate = parseStrongWallClockTimestamp(group.date);
       if (Number.isNaN(wallClockDate.getTime())) {
         throw new Error(`Invalid Strong workout timestamp: ${group.date}`);
       }
@@ -402,6 +430,9 @@ export async function importStrongCsv(
             timezone,
             source: "device_timezone",
           });
+          if (context.startUtcOffsetMinutes === null) {
+            throw new Error("Strong timezone context did not include a UTC offset");
+          }
           return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
         };
         startedAt = resolveStartedAt(resolveStartedAt(wallClockDate));

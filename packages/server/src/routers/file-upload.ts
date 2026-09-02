@@ -342,6 +342,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
               since,
               weightUnit:
                 input.importType === "strong-csv" ? (input.weightUnit ?? "kg") : undefined,
+              timezone: ctx.timezone,
             });
             if (!existingUpload) {
               fileUploadLifecycleTotal.add(1, {

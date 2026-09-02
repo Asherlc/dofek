@@ -9,6 +9,7 @@ import {
   parseStrongExerciseName,
   parseStrongText,
   parseStrongTextDate,
+  parseStrongWallClockTimestamp,
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
 } from "./strong-csv.ts";
@@ -734,6 +735,20 @@ describe("parseStrongTextDate", () => {
   it("returns Invalid Date for unknown month names in the expected format", () => {
     const date = parseStrongTextDate("Monday, Summer 1, 2026 at 12:00");
     expect(Number.isNaN(date.getTime())).toBe(true);
+  });
+});
+
+describe("parseStrongWallClockTimestamp", () => {
+  it("accepts a date-only Strong export as local midnight", () => {
+    expect(parseStrongWallClockTimestamp("2026-09-01").toISOString()).toBe(
+      "2026-09-01T00:00:00.000Z",
+    );
+  });
+
+  it("rejects invalid calendar values instead of normalizing them", () => {
+    expect(Number.isNaN(parseStrongWallClockTimestamp("2026-02-30 10:00:00").getTime())).toBe(
+      true,
+    );
   });
 });
 

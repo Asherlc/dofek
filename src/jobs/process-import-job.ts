@@ -129,7 +129,7 @@ async function logImportCompletion(
 }
 
 export async function processImportJob(job: ImportJob, db: SyncDatabase): Promise<void> {
-  const { filePath, since, userId, importType, weightUnit } = job.data;
+  const { filePath, since, userId, importType, weightUnit, timezone } = job.data;
   const datasetKeys = processingDatasetKeysForImport(importType);
   const processingOperation = await createProcessingOperation(db, {
     userId,
@@ -249,7 +249,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           const csvText = await readFile(filePath, "utf-8");
           const { importStrongCsv } = await import("../providers/strong-csv.ts");
           await reportImportProgress(job, 25, "Importing Strong CSV workouts...");
-          const result = await importStrongCsv(db, csvText, userId, weightUnit ?? "kg");
+          const result = await importStrongCsv(db, csvText, userId, weightUnit ?? "kg", timezone);
           importedRecordCount = result.recordsSynced;
           await reportImportProgress(job, 90, "Strong CSV import complete.");
 

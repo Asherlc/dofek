@@ -49,6 +49,7 @@ function row(overrides: Record<string, unknown> = {}) {
     import_job_id: null,
     import_since: new Date(0),
     weight_unit: null,
+    timezone: null,
     progress_percent: 0,
     error_code: null,
     error_message: null,
@@ -74,6 +75,7 @@ function input(overrides: Record<string, unknown> = {}) {
     partSizeBytes: 5,
     expiresAt: new Date("2030-01-01T00:00:00Z"),
     since: new Date(0),
+    timezone: null,
     ...overrides,
   };
 }
@@ -98,6 +100,7 @@ describe("file upload repository", () => {
       completion_parts: [{ partNumber: 1, etag: "etag" }],
       import_job_id: importJobId,
       weight_unit: "kg",
+      timezone: null,
       progress_percent: 100,
       error_code: "code",
       error_message: "message",
@@ -124,6 +127,7 @@ describe("file upload repository", () => {
       importJobId,
       since: new Date(0),
       weightUnit: "kg",
+      timezone: null,
       progressPercent: 100,
       errorCode: "code",
       errorMessage: "message",
@@ -161,6 +165,7 @@ describe("file upload repository", () => {
     ["partSizeBytes", 6],
     ["since", new Date(1)],
     ["weightUnit", "kg"],
+    ["timezone", "America/Los_Angeles"],
   ])("rejects idempotent initiation when %s differs", async (field, value) => {
     mocks.executeWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([row()]);
     await expect(createFileUpload(database, input({ [field]: value }))).rejects.toThrow(
