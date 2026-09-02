@@ -379,13 +379,9 @@ export async function importStrongCsv(
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
   let effectiveWeightUnit = weightUnit;
-  if (isStrongCsvFormat(csvText)) {
-    groups = parseStrongCsv(csvText);
-  } else {
-    const textResult = parseStrongText(csvText);
-    groups = textResult.groups;
-    effectiveWeightUnit = textResult.weightUnit;
-  }
+  const parsed = [parseStrongText, parseStrongCsv][Number(isStrongCsvFormat(csvText))](csvText);
+  groups = Array.isArray(parsed) ? parsed : parsed.groups;
+  effectiveWeightUnit = Array.isArray(parsed) ? weightUnit : parsed.weightUnit;
   const exerciseCache = new Map<string, string>();
 
   for (const group of groups) {
@@ -397,7 +393,7 @@ export async function importStrongCsv(
         throw new Error(`Invalid Strong workout timestamp: ${group.date}`);
       }
       let startedAt = wallClockDate;
-      if (timezone) {
+      if (timezone != null) {
         const resolveStartedAt = (candidate: Date): Date => {
           const context = resolveRecordLocalTimeContext({
             startedAt: candidate,
