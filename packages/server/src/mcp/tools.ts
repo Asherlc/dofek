@@ -6,7 +6,6 @@ import {
   healthMetricSchema,
 } from "@dofek/mcp-contracts/health-explorer";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Database } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";
@@ -17,7 +16,6 @@ import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
-import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { BodyRepository } from "../repositories/body-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
@@ -50,19 +48,14 @@ import {
   toJobId,
 } from "../routers/sync-helpers.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
+import type { DofekMcpContext } from "./context.ts";
 import { HealthExplorerService, type HealthTrendRow } from "./health-explorer-service.ts";
-import { type McpScope, requireMcpScope } from "./token-repository.ts";
+import { requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange, jsonContent } from "./tool-utils.ts";
 import { registerTrainingSessionTools } from "./training-session-tools.ts";
 
-export interface DofekMcpContext {
-  db: Pick<Database, "execute" | "select" | "transaction">;
-  userId: string;
-  scopes: McpScope[];
-  timezone: string;
-  sensorStore?: ActivitySensorStore;
-}
+export type { DofekMcpContext } from "./context.ts";
 
 const healthMetricColumns: Partial<Record<HealthMetric, string>> = {
   hrv: "hrv",

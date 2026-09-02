@@ -5,9 +5,9 @@ import { dateSchema } from "../lib/date-schema.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
+import type { DofekMcpContext } from "./context.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 import { assertDateRange, jsonContent } from "./tool-utils.ts";
-import type { DofekMcpContext } from "./tools.ts";
 
 const trainingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),
