@@ -11,64 +11,97 @@
 WITH
 
 current_activities AS (
-    SELECT activity_id
+    SELECT
+        activity_id,
+        user_id
     FROM {{ ref('activity_source_records') }} FINAL
     WHERE is_deleted = 0
 ),
 
--- These current undirected raw edges remain immutable through every
--- bounded label-propagation round.
+-- Retain only current edges whose two active endpoints belong to the same user.
+-- This immutable edge set is shared by all bounded propagation rounds.
 current_edges AS (
     SELECT
-        duplicate_matches.activity_id,
-        duplicate_matches.duplicate_activity_id AS linked_activity_id
+        source_activity.user_id AS user_id,
+        source_activity.activity_id AS activity_id,
+        duplicate_activity.activity_id AS linked_activity_id
     FROM {{ ref('activity_duplicate_matches') }} AS duplicate_matches FINAL
+    INNER JOIN current_activities AS source_activity
+        ON source_activity.activity_id = duplicate_matches.activity_id
+    INNER JOIN current_activities AS duplicate_activity
+        ON duplicate_activity.activity_id = duplicate_matches.duplicate_activity_id
+        AND duplicate_activity.user_id = source_activity.user_id
     WHERE duplicate_matches.is_deleted = 0
 
     UNION ALL
 
     SELECT
-        duplicate_matches.duplicate_activity_id AS activity_id,
-        duplicate_matches.activity_id AS linked_activity_id
+        duplicate_activity.user_id AS user_id,
+        duplicate_activity.activity_id AS activity_id,
+        source_activity.activity_id AS linked_activity_id
     FROM {{ ref('activity_duplicate_matches') }} AS duplicate_matches FINAL
+    INNER JOIN current_activities AS source_activity
+        ON source_activity.activity_id = duplicate_matches.activity_id
+    INNER JOIN current_activities AS duplicate_activity
+        ON duplicate_activity.activity_id = duplicate_matches.duplicate_activity_id
+        AND duplicate_activity.user_id = source_activity.user_id
     WHERE duplicate_matches.is_deleted = 0
+),
+
+adjacency_with_nodes AS (
+    SELECT
+        user_id,
+        activity_id,
+        arrayFlatten(groupArray(linked_activity_ids)) AS linked_activity_ids
+    FROM (
+        SELECT
+            user_id,
+            activity_id,
+            CAST([], 'Array(UUID)') AS linked_activity_ids
+        FROM current_activities
+
+        UNION ALL
+
+        SELECT
+            user_id,
+            activity_id,
+            [linked_activity_id] AS linked_activity_ids
+        FROM current_edges
+    )
+    GROUP BY user_id, activity_id
 ),
 
 graph AS (
     SELECT
-        groupArray(current_activities.activity_id) AS activity_ids,
-        groupArray((
-            current_edges.activity_id,
-            current_edges.linked_activity_id
-        )) AS edges,
+        user_id,
+        groupArray(activity_id) AS activity_ids,
+        groupArray(linked_activity_ids) AS linked_activity_ids_by_activity,
         mapFromArrays(
-            groupArray(current_activities.activity_id),
-            groupArray(toString(current_activities.activity_id))
+            groupArray(activity_id),
+            groupArray(toString(activity_id))
         ) AS initial_labels
-    FROM current_activities
-    LEFT JOIN current_edges
-        ON current_edges.activity_id = current_activities.activity_id
+    FROM adjacency_with_nodes
+    GROUP BY user_id
 ),
 
 propagation_16 AS (
     SELECT
+        user_id,
         activity_ids,
-        edges,
+        linked_activity_ids_by_activity,
         arrayFold(
             (labels, _) -> mapFromArrays(
                 activity_ids,
                 arrayMap(
-                    activity_id -> arrayMin(arrayConcat(
+                    (activity_id, linked_activity_ids) -> arrayMin(arrayConcat(
                         [labels[activity_id]],
                         arrayMap(
-                            edge -> labels[tupleElement(edge, 2)],
-                            arrayFilter(
-                                edge -> tupleElement(edge, 1) = activity_id,
-                                edges
-                            )
+                            linked_activity_id -> labels[linked_activity_id],
+                            linked_activity_ids
                         )
                     )),
-                    activity_ids
+                    activity_ids,
+                    linked_activity_ids_by_activity
                 )
             ),
             range(16),
@@ -79,24 +112,23 @@ propagation_16 AS (
 
 propagation_17 AS (
     SELECT
+        user_id,
         activity_ids,
-        edges,
+        linked_activity_ids_by_activity,
         labels AS labels_16,
         arrayFold(
             (labels, _) -> mapFromArrays(
                 activity_ids,
                 arrayMap(
-                    activity_id -> arrayMin(arrayConcat(
+                    (activity_id, linked_activity_ids) -> arrayMin(arrayConcat(
                         [labels[activity_id]],
                         arrayMap(
-                            edge -> labels[tupleElement(edge, 2)],
-                            arrayFilter(
-                                edge -> tupleElement(edge, 1) = activity_id,
-                                edges
-                            )
+                            linked_activity_id -> labels[linked_activity_id],
+                            linked_activity_ids
                         )
                     )),
-                    activity_ids
+                    activity_ids,
+                    linked_activity_ids_by_activity
                 )
             ),
             range(1),
@@ -107,10 +139,10 @@ propagation_17 AS (
 
 convergence_check AS (
     SELECT throwIf(
-        NOT arrayAll(
+        countIf(NOT arrayAll(
             activity_id -> labels_16[activity_id] = labels_17[activity_id],
             activity_ids
-        ),
+        )) > 0,
         'Activity duplicate component propagation did not converge within 16 rounds'
     ) AS converged
     FROM propagation_17
@@ -119,10 +151,9 @@ convergence_check AS (
 current_duplicate_groups AS (
     SELECT
         activity_id,
-        if(
-            convergence_check.converged = 0,
+        concat(
             labels_16[activity_id],
-            labels_16[activity_id]
+            substring('', 1, convergence_check.converged)
         ) AS group_id
     FROM propagation_17
     ARRAY JOIN activity_ids AS activity_id
