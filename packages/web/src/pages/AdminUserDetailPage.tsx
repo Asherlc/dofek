@@ -1,7 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { Link, useParams } from "@tanstack/react-router";
-import type { inferRouterOutputs } from "@trpc/server";
-import type { AppRouter } from "dofek-server/router";
+import type { AppRouterOutputs } from "dofek-server/router";
 import type { ReactNode } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
@@ -60,9 +59,7 @@ function accessLabel(access: AdminUserAccess): string {
     : "Full access from local grant";
 }
 
-type RouterOutputs = inferRouterOutputs<AppRouter>;
-
-export type AdminUserDetail = RouterOutputs["admin"]["userDetail"];
+export type AdminUserDetail = AppRouterOutputs["admin"]["userDetail"];
 
 export interface AdminUserDetailContentProps {
   detail: AdminUserDetail | null | undefined;
