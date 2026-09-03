@@ -414,17 +414,28 @@ export async function registerWebhookForProvider(
       tags: { provider: provider.id, webhookPhase: "subscription-id-persistence" },
     });
     try {
-      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
-    } catch (cleanupError: unknown) {
-      captureException(cleanupError, {
-        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
-      });
-    }
-    try {
       await provider.unregisterWebhook(result.subscriptionId);
     } catch (cleanupError: unknown) {
       captureException(cleanupError, {
         tags: { provider: provider.id, webhookPhase: "registration-compensation" },
+      });
+      try {
+        await webhookSubscriptionRepository.recordPendingSubscriptionExternalId(
+          pendingId,
+          result.subscriptionId,
+        );
+      } catch (retryError: unknown) {
+        captureException(retryError, {
+          tags: { provider: provider.id, webhookPhase: "subscription-id-persistence-retry" },
+        });
+      }
+      throw error;
+    }
+    try {
+      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
       });
     }
     throw error;

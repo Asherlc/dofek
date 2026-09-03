@@ -273,6 +273,7 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
   });
 
   it("reports failed expired-subscription reconciliation and retains the row", async () => {
+    const db = getMockDb();
     const provider = createMockWebhookProvider({
       handleValidationChallenge: vi.fn(() => null),
       unregisterWebhook: vi.fn(async () => {
@@ -285,10 +286,11 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
       .mockResolvedValueOnce([{ id: "expired-1", subscription_external_id: "remote-expired" }])
       .mockResolvedValueOnce([]);
 
-    const res = await request(createTestApp(), "get", "/api/webhooks/test-provider");
+    const res = await request(createTestApp(db), "get", "/api/webhooks/test-provider");
 
     expect(res.status).toBe(404);
     expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-expired");
+    expect(db.execute).not.toHaveBeenCalled();
     expect(mockCaptureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "provider cleanup unavailable" }),
       expect.objectContaining({
@@ -1298,6 +1300,37 @@ describe("registerWebhookForProvider", () => {
       expect.objectContaining({ message: "subscription ID persistence unavailable" }),
       expect.objectContaining({
         tags: { provider: "test-provider", webhookPhase: "subscription-id-persistence" },
+      }),
+    );
+  });
+
+  it("retains the pending row when remote cleanup fails after ID persistence fails", async () => {
+    const db = getMockDb();
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce([{ id: "pending-1" }])
+      .mockRejectedValueOnce(new Error("subscription ID persistence unavailable"))
+      .mockResolvedValueOnce([{ id: "pending-1" }]);
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "remote-sub" })),
+      unregisterWebhook: vi.fn(async () => {
+        throw new Error("provider cleanup unavailable");
+      }),
+    });
+
+    await expect(registerWebhookForProvider(db, provider, "user-1")).rejects.toThrow(
+      "subscription ID persistence unavailable",
+    );
+
+    expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-sub");
+    expect(db.execute).toHaveBeenCalledTimes(3);
+    const retryQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[2]?.[0]);
+    expect(retryQuery.sql).toContain("subscription_external_id");
+    expect(retryQuery.sql).not.toContain("DELETE FROM fitness.webhook_subscription");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "provider cleanup unavailable" }),
+      expect.objectContaining({
+        tags: { provider: "test-provider", webhookPhase: "registration-compensation" },
       }),
     );
   });
