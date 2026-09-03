@@ -16,6 +16,7 @@
     "@dofek/auth": "workspace:*",
     "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
+    "@dofek/mcp-contracts": "workspace:*",
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",

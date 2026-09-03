@@ -57,6 +57,11 @@ vi.mock("../components/ProviderLogo", () => ({
     React.createElement("span", { "data-testid": `provider-logo-${provider}` }),
 }));
 
+vi.mock("../components/McpClientSetupPanel", () => ({
+  McpClientSetupPanel: ({ endpoint }: { endpoint: string }) =>
+    React.createElement("div", { "data-testid": "mcp-client-setup" }, endpoint),
+}));
+
 const mockRouterPush = vi.fn();
 const mockRouterSetParams = vi.fn();
 let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {};
@@ -562,6 +567,9 @@ describe("SettingsScreen data sources", () => {
 
     expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
       "true",
+    );
+    expect(screen.getByTestId("mcp-client-setup").textContent).toBe(
+      "https://test.example.com/api/mcp",
     );
     fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
     expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");

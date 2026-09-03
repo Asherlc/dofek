@@ -32,6 +32,7 @@
     "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/imu": "workspace:*",
+    "@dofek/mcp-contracts": "workspace:*",
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",
