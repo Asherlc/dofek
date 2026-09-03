@@ -6,7 +6,9 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { assertDateRange, jsonContent } from "./tool-utils.ts";
+import { climbingSessionsOutputSchema } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
+import { assertDateRange } from "./tool-utils.ts";
 
 const climbingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),
@@ -38,6 +40,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
         "Return exact-range climbing sessions with route/problem details, heart rate, duration, grade distribution, send rate, maximum grade, and volume.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { start_date: dateSchema, end_date: dateSchema },
+      outputSchema: climbingSessionsOutputSchema,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -131,7 +134,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
         }
       }
       const sends = climbs.filter((climb) => climb.sent).length;
-      return jsonContent({
+      return jsonToolResult({
         sessions,
         aggregates: {
           grade_distribution: [...gradeDistribution.values()],

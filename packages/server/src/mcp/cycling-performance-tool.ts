@@ -3,7 +3,8 @@ import { dateSchema } from "../lib/date-schema.ts";
 import { CyclingPerformanceRepository } from "../repositories/cycling-performance-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonContent } from "./tool-utils.ts";
+import { cyclingPerformanceOutputSchema } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
 
 /** Register exact-range, load-normalized cycling analytics. */
 export function registerCyclingPerformanceTool(server: McpServer, context: DofekMcpContext): void {
@@ -15,6 +16,7 @@ export function registerCyclingPerformanceTool(server: McpServer, context: Dofek
         "Return per-ride normalized power, intensity factor, 5s/1m/5m/20m best efforts, rolling-90-day bests, estimated FTP, elevation gain, and coverage.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { start_date: dateSchema, end_date: dateSchema },
+      outputSchema: cyclingPerformanceOutputSchema,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -22,7 +24,7 @@ export function registerCyclingPerformanceTool(server: McpServer, context: Dofek
       if (!context.sensorStore) {
         throw new Error("get_cycling_performance requires the ClickHouse analytics store");
       }
-      return jsonContent({
+      return jsonToolResult({
         range: { start_date, end_date, timezone: context.timezone },
         ...(await new CyclingPerformanceRepository(
           context.sensorStore,
