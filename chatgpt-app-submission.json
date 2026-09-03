@@ -1,0 +1,176 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "Dofek",
+    "subtitle": "Personal health analytics",
+    "description": "Dofek helps users review server-computed health trends, sleep, activities, nutrition, body metrics, subjective health events, and connected provider status, with optional food logging and provider sync actions.",
+    "category": "LIFESTYLE"
+  },
+  "tools": {
+    "get_daily_health_summary": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves server-computed health metrics for one day.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_health_trends": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves server-computed daily or weekly health trends for a date range.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_sleep_summary": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves nightly sleep duration, efficiency, stages, and timing.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "search_activities": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only searches the authenticated user's activity records.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_activity_summary": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only aggregates existing activity records over a requested date range.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_finger_loading": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves recorded finger-loading protocols and computed load values.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_nutrition_summary": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves daily nutrition totals and source information for a date range.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_body_metrics": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves weight and body-composition measurements for a date range.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_subjective_timeline": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves the user's recorded check-ins, symptoms, and injury events.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "log_food": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates a private food entry in the user's Dofek account.",
+        "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
+        "destructive_justification": "Creates an entry but does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "list_providers": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only lists configured providers, connection status, and last-sync information.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "start_provider_sync": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Queues a user-scoped provider synchronization job and returns its status.",
+        "open_world_justification": "Only starts a bounded private synchronization job and does not publish public state.",
+        "destructive_justification": "Queues synchronization without deleting, overwriting, revoking access, or performing irreversible actions."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Show daily HRV and steps across an exact date range.",
+      "user_prompt": "Show my HRV and step trend from August 18 through August 31, 2026.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_health_trends",
+      "expected_output": "Returns complete daily HRV and step coverage for all 14 requested days with server-computed aggregates.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Open the interactive analytics visualization for two metrics.",
+      "user_prompt": "Open the Dofek Analytics Explorer for HRV and steps from August 18 through August 31, 2026.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_health_trends",
+      "expected_output": "Opens the Dofek Analytics Explorer with HRV and steps for the requested range.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Summarize nightly sleep for a week.",
+      "user_prompt": "Summarize my sleep from August 25 through August 31, 2026.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_sleep_summary",
+      "expected_output": "Returns nightly sleep duration, efficiency, timing, stages, and source for the requested dates.",
+      "expected_output_url": null
+    },
+    {
+      "description": "List activities within an exact date range.",
+      "user_prompt": "Show my activities from August 18 through August 31, 2026.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_activities",
+      "expected_output": "Returns matching activities with date, type, local time, duration, and available details.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Review connected providers and synchronization freshness.",
+      "user_prompt": "Which Dofek providers are connected, and when did they last sync?",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_providers",
+      "expected_output": "Lists provider connection status and the latest recorded synchronization time where available.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not trigger for unrelated weather requests.",
+      "user_prompt": "Will it rain tomorrow?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because weather is outside Dofek's supported workflows.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for medical diagnosis or treatment advice.",
+      "user_prompt": "Diagnose my wrist pain and tell me which medication to take.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked to diagnose conditions or recommend medication.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for unrelated financial account requests.",
+      "user_prompt": "How much money is in my checking account?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because financial account information is outside Dofek's supported workflows.",
+      "expected_output_url": null
+    }
+  ]
+}
