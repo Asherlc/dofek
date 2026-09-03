@@ -24726,3 +24726,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Biome, diff checks, and TypeScript typechecking passed.
 - **Remaining risk / follow-up:** Deploy the pushed fix and complete one fresh
   Strava connection to verify the production handshake and subscription state.
+
+## 2026-09-03 — Webhook reconciliation CI mutation failure
+
+- **Status:** Fixed in source; fresh CI validation is running.
+- **Symptoms / user impact:** The PR's Unit Tests and Stryker shard 1 failed
+  after durable webhook reconciliation was added; the CI and mutation gates
+  consequently failed.
+- **Evidence / root cause:** The first fatal assertion expected the activation
+  cleanup query at `db.execute` call 1, but the new remote-ID persistence
+  update occupies that call. Stryker also found two uncovered reconciliation
+  branches: retaining rows without a remote ID and stopping after a matching
+  pending challenge.
+- **Direct fix:** Corrected the cleanup query index and added regression cases
+  for missing remote IDs and a third pending challenge row. No CI thresholds,
+  retries, or failure handling were changed.
+- **Validation:** Focused webhook tests, Biome, server typecheck, and the
+  targeted Stryker dry run passed locally. The fresh PR workflow for commit
+  `f53df3c83` is in progress.
+- **Remaining risk / follow-up:** Confirm the fresh PR workflow completes with
+  both Stryker shards and all gates passing.
