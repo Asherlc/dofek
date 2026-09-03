@@ -5,7 +5,9 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { assertDateRange, jsonContent } from "./tool-utils.ts";
+import { strengthSessionsOutputSchema } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
+import { assertDateRange } from "./tool-utils.ts";
 
 const trainingSessionActivitySchema = z.object({
   avg_hr: z.coerce.number().nullable(),
@@ -25,6 +27,7 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
         "Return exact-range strength sessions with exercises, sets, session volume-load, and volume-load by muscle group.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { start_date: dateSchema, end_date: dateSchema },
+      outputSchema: strengthSessionsOutputSchema,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -81,7 +84,7 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
           exercises,
         });
       }
-      return jsonContent({
+      return jsonToolResult({
         sessions,
         aggregates: {
           volume_load_kg: totalVolumeLoadKg,

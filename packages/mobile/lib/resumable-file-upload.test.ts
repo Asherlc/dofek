@@ -25,6 +25,37 @@ function api(): FileUploadApi {
 }
 
 describe("runMobileResumableFileUpload", () => {
+  it("forwards the selected Strong weight unit when initiating the upload", async () => {
+    const file: UploadableMobileFile = {
+      uri: "file:///tmp/Strong%20Export.csv",
+      name: "Strong Export.csv",
+      type: "text/csv",
+      size: 8,
+      sha256: vi.fn(async () => "a".repeat(64)),
+      uploadPart: vi.fn(async () => ({ status: 200, headers: { etag: "etag-1" } })),
+    };
+    const uploadApi = api();
+
+    await runMobileResumableFileUpload({
+      api: uploadApi,
+      file,
+      importType: "strong-csv",
+      weightUnit: "lbs",
+      onProgress: vi.fn(),
+      createUploadId: () => uploadId,
+    });
+
+    expect(uploadApi.initiate).toHaveBeenCalledWith({
+      uploadId,
+      importType: "strong-csv",
+      filename: "Strong Export.csv",
+      contentType: "text/csv",
+      sizeBytes: 8,
+      sha256: "a".repeat(64),
+      weightUnit: "lbs",
+    });
+  });
+
   it("uploads a shared file through its native URI without fetch or Blob", async () => {
     const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "etag-1" } }));
     const file: UploadableMobileFile = {

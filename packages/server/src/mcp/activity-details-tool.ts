@@ -6,7 +6,8 @@ import { readFingerLoadingActivity } from "../repositories/climbing-training-log
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonContent } from "./tool-utils.ts";
+import { activityDetailsOutputSchema } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
 
 /** Register one-activity structured training details. */
 export function registerActivityDetailsTool(server: McpServer, context: DofekMcpContext): void {
@@ -18,6 +19,7 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
         "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { activity_id: z.uuid() },
+      outputSchema: activityDetailsOutputSchema,
     },
     async ({ activity_id }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -47,7 +49,7 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
           userId: context.userId,
         }),
       ]);
-      return jsonContent({
+      return jsonToolResult({
         activity,
         climbing_entries: climbingEntries.map((entry) => entry.toDetail()),
         finger_loading: fingerLoading,

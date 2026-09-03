@@ -9,7 +9,7 @@ function bytesToHex(bytes: Uint8Array): string {
 
 export function createExpoUploadableMobileFile(
   fileUri: string,
-): UploadableMobileFile & { text(): Promise<string> } {
+): UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } {
   const file = new File(fileUri);
   if (!file.exists) throw new Error(`Shared file does not exist: ${fileUri}`);
 
@@ -18,7 +18,14 @@ export function createExpoUploadableMobileFile(
     name: file.name,
     type: file.type || "application/octet-stream",
     size: file.size,
-    text: () => file.text(),
+    async readHeader(maxBytes) {
+      const handle = file.open(FileMode.ReadOnly);
+      try {
+        return new TextDecoder().decode(handle.readBytes(Math.min(maxBytes, file.size)));
+      } finally {
+        handle.close();
+      }
+    },
     async sha256() {
       const digest = new Sha256();
       const handle = file.open(FileMode.ReadOnly);

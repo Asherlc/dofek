@@ -3,7 +3,8 @@ import { z } from "zod";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonContent } from "./tool-utils.ts";
+import { activityStreamsOutputSchema } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
 
 const activityStreamChannelSchema = z.enum([
   "power",
@@ -28,6 +29,7 @@ export function registerActivityStreamsTool(server: McpServer, context: DofekMcp
         channels: z.array(activityStreamChannelSchema).min(1).optional(),
         downsample_to: z.number().int().min(1).max(2000).optional(),
       },
+      outputSchema: activityStreamsOutputSchema,
     },
     async ({ activity_id, channels, downsample_to }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -42,7 +44,7 @@ export function registerActivityStreamsTool(server: McpServer, context: DofekMcp
         { kind: "full", paid: true, reason: "paid_grant" },
         context.sensorStore,
       ).getStream(activity_id, downsample_to ?? 500);
-      return jsonContent({
+      return jsonToolResult({
         channels: selectedChannels,
         points: rows.map((streamPoint) => {
           const point = streamPoint.toDetail();

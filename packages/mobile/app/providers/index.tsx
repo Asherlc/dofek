@@ -32,6 +32,7 @@ import {
   type ImportProviderId,
   importSharedFile,
   type ShareImportProgress,
+  type StrongWeightUnit,
 } from "../../lib/share-import";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -62,6 +63,29 @@ function deleteSharedFile(fileUri: string): void {
   if (file.exists) {
     file.delete();
   }
+}
+
+function selectStrongWeightUnit(preferredUnit: StrongWeightUnit): Promise<StrongWeightUnit | null> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      "Strong weight unit",
+      "Which unit are the weights in this Strong export?",
+      [
+        { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+        {
+          text: "Kilograms (kg)",
+          isPreferred: preferredUnit === "kg",
+          onPress: () => resolve("kg"),
+        },
+        {
+          text: "Pounds (lbs)",
+          isPreferred: preferredUnit === "lbs",
+          onPress: () => resolve("lbs"),
+        },
+      ],
+      { cancelable: true, onDismiss: () => resolve(null) },
+    );
+  });
 }
 
 export default function ProvidersScreen() {
@@ -349,11 +373,15 @@ export default function ProvidersScreen() {
         if (!sessionToken) {
           throw new Error("Sign in before importing a file");
         }
-        await importSharedFile(
+        const result = await importSharedFile(
           {
             fileUri,
             providerId,
             onProgress: setSharedImportState,
+            selectStrongWeightUnit: async () => {
+              const setting = await trpcUtils.settings.get.fetch({ key: "unitSystem" });
+              return selectStrongWeightUnit(setting?.value === "imperial" ? "lbs" : "kg");
+            },
           },
           {
             createUploadId: randomUUID,
@@ -361,7 +389,7 @@ export default function ProvidersScreen() {
             fileUploadApi,
           },
         );
-        trpcUtils.invalidate();
+        if (result) trpcUtils.invalidate();
       } catch (error: unknown) {
         captureException(error, { context: "share-import", fileUri, providerId });
         setSharedImportState({
@@ -698,7 +726,6 @@ export default function ProvidersScreen() {
         ? { percentage: sharedImportState.progress, message: sharedImportState.message }
         : undefined;
     const importProgress = localImportProgress ?? activeImportProgress;
-
     return fileImportProviderConfig ? (
       <FileImportProviderCard
         provider={provider}

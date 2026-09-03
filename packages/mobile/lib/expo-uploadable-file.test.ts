@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  close: vi.fn(),
   createUploadTask: vi.fn(),
+  open: vi.fn(),
+  readBytes: vi.fn(),
   uploadAsync: vi.fn(),
 }));
 
@@ -28,6 +31,10 @@ vi.mock("expo-file-system", () => ({
     async text() {
       return "Date,Workout Name,Duration,Exercise Name";
     }
+    open(...args: unknown[]) {
+      mocks.open(...args);
+      return { close: mocks.close, readBytes: mocks.readBytes };
+    }
     createUploadTask(...args: unknown[]) {
       mocks.createUploadTask(...args);
       return { uploadAsync: mocks.uploadAsync };
@@ -40,6 +47,17 @@ vi.mock("expo-file-system", () => ({
 import { createExpoUploadableMobileFile } from "./expo-uploadable-file";
 
 describe("createExpoUploadableMobileFile", () => {
+  it("reads only the requested shared-file header bytes", async () => {
+    mocks.readBytes.mockReturnValue(new TextEncoder().encode("Date"));
+    const file = createExpoUploadableMobileFile("file:///tmp/Strong%20Export.csv");
+
+    await expect(file.readHeader(4)).resolves.toBe("Date");
+
+    expect(mocks.open).toHaveBeenCalledWith("r");
+    expect(mocks.readBytes).toHaveBeenCalledWith(4);
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
+
   it("uploads a whole shared file through Expo's native upload task", async () => {
     mocks.uploadAsync.mockResolvedValue({ status: 200, headers: { etag: "part-etag" } });
     const file = createExpoUploadableMobileFile("file:///tmp/Strong%20Export.csv");

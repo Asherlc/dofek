@@ -64,12 +64,14 @@ export async function runMobileResumableFileUpload({
   api,
   file,
   importType,
+  weightUnit,
   onProgress,
   createUploadId,
 }: {
   api: FileUploadApi;
   file: UploadableMobileFile;
   importType: UploadImportType;
+  weightUnit?: "kg" | "lbs";
   onProgress(progress: MobileUploadProgress): void;
   createUploadId(): string;
 }): Promise<{ uploadId: string; importJobId: string | null }> {
@@ -82,7 +84,7 @@ export async function runMobileResumableFileUpload({
     contentType: file.type,
     sizeBytes: file.size,
     sha256: await file.sha256(),
-    weightUnit: undefined,
+    weightUnit: importType === "strong-csv" ? weightUnit : undefined,
   });
   const resumed = await api.resume({ uploadId: initiated.uploadId });
   const completedParts = new Map(
