@@ -277,6 +277,12 @@ async function seedProductionDbtFixture(
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
+    `INSERT INTO ${database}.deduped_sensor VALUES
+      (
+        '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
+        toDate('2026-09-01'), 'heart_rate', 150, 1, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
+      )`,
     `INSERT INTO ${database}.activity VALUES
       (
         '${wahooActivityId}', 'wahoo', '${TEST_USER_ID}', 'wahoo-ride', 'other',

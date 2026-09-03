@@ -24816,3 +24816,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The registry is exactly at the limit; the next
   functional addition should extract another cohesive MCP tool module rather
   than compressing behavior or changing the threshold.
+
+## 2026-09-02 — Activity repair lifecycle fixture omitted sensor input
+
+- **Status:** Fixed in source; isolated CI rerun pending.
+- **Symptoms / user impact:** PR CI integration shard 3/4 failed the production-path
+  activity repair lifecycle assertion because `activity_sensor_summary_rows`
+  contained no active rows, blocking merge.
+- **Evidence / root cause:** The exact failing assertion expected summaries for
+  the two rebuilt canonical activities but received `[]`. The fixture created
+  `deduped_sensor` without inserting any samples; the production summary model
+  correctly emits deleted rows when no channel aggregate exists. The retry then
+  hit the expected rollback-eligible journal guard left by the first failed run.
+  [Failed CI job](https://github.com/Asherlc/dofek/actions/runs/33711649512/job/100512474847)
+- **Fix / mitigation:** Seeded one heart-rate sample inside the overlapping
+  activity window so the lifecycle test executes the sensor hydration path it
+  asserts. No retry, timeout, or production behavior was changed.
+- **Validation:** The original isolated run completed all eight dbt models before
+  the assertion exposed the empty fixture. The exact local rerun was interrupted
+  by the separately documented workspace ClickHouse restart; the replacement
+  isolated CI shard is the final authority.
+- **Remaining risk / follow-up:** Confirm shard 3/4 passes on the replacement run.
