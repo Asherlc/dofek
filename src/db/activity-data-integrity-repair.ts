@@ -85,6 +85,8 @@ const postgresArtifactRowSchema = z.object({
   repaired: localTimeContextSchema,
 });
 
+const acceptanceSchema = z.object({ owner: z.string().min(1), deadline: z.string().datetime() });
+
 const capturedDerivedRowsSchema = {
   sourceRowsAfter: z.array(clickHouseSourceRowSchema),
   matchRowsAfter: z.array(clickHouseMatchRowSchema),
@@ -121,7 +123,7 @@ const auditArtifactSchema = z.object({
     batchSize: z.number().int().positive(),
     maxBatches: z.number().int().positive(),
   }),
-  acceptance: z.object({ owner: z.string().min(1), deadline: z.string().datetime() }).nullable(),
+  acceptance: acceptanceSchema.nullable(),
   selected: z.number().int().nonnegative(),
   changedActivityIds: z.array(postgresUuidSchema),
   highestDerivedVersion: uint64StringSchema,
@@ -587,10 +589,10 @@ async function repairActivityDataIntegrityWithLease(
   );
   const artifactPath = artifactPathFor(artifactDirectory, createdAt, runId);
   const acceptance = options.execute
-    ? {
-        owner: options.acceptanceOwner?.trim() ?? "",
-        deadline: options.acceptanceDeadline?.toISOString() ?? "",
-      }
+    ? acceptanceSchema.parse({
+        owner: options.acceptanceOwner?.trim(),
+        deadline: options.acceptanceDeadline?.toISOString(),
+      })
     : null;
   const artifactWithoutChecksum: AuditArtifactWithoutChecksum = {
     schemaVersion: AUDIT_SCHEMA_VERSION,

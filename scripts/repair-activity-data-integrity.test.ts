@@ -88,6 +88,15 @@ describe("parseActivityDataIntegrityCommand", () => {
       message: "--acceptance-owner is required with --execute",
     },
     {
+      args: [
+        ...repairBounds,
+        "--execute",
+        "--acceptance-owner=data-on-call@example.com",
+        "--acceptance-deadline=2026-09-03T00:00:00Z",
+      ],
+      message: "--artifact-directory is required with --execute",
+    },
+    {
       args: [...repairBounds, "--batch-size=0"],
       message: "--batch-size",
     },
@@ -97,11 +106,16 @@ describe("parseActivityDataIntegrityCommand", () => {
         "--execute",
         "--acceptance-owner=data-on-call@example.com",
         "--acceptance-deadline=2026-09-04T00:00:00.001Z",
+        "--artifact-directory=/secure/audits",
       ],
       message: "within 24 hours",
     },
     {
       args: ["--rollback-artifact=/tmp/a", ...repairBounds],
+      message: "cannot be combined",
+    },
+    {
+      args: ["--rollback-artifact=", "--execute"],
       message: "cannot be combined",
     },
   ])("rejects unsafe command input", ({ args, message }) => {

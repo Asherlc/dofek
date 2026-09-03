@@ -66,7 +66,9 @@ export function parseActivityDataIntegrityCommand(
     },
   });
 
-  if (values["rollback-artifact"] || values["retire-artifact"]) {
+  const rollbackRequested = values["rollback-artifact"] != null;
+  const retirementRequested = values["retire-artifact"] != null;
+  if (rollbackRequested || retirementRequested) {
     const repairArgumentsPresent =
       values["user-id"] != null ||
       values["start-at"] != null ||
@@ -77,13 +79,13 @@ export function parseActivityDataIntegrityCommand(
       values["artifact-directory"] != null ||
       values["acceptance-owner"] != null ||
       values["acceptance-deadline"] != null;
-    if (values["rollback-artifact"] && values["retire-artifact"]) {
+    if (rollbackRequested && retirementRequested) {
       throw new Error("--rollback-artifact and --retire-artifact cannot be combined");
     }
     if (repairArgumentsPresent) {
       throw new Error("artifact operations cannot be combined with repair options");
     }
-    if (values["rollback-artifact"]) {
+    if (rollbackRequested) {
       if (values["accepted-by"] || values.disposition) {
         throw new Error("rollback cannot be combined with retirement options");
       }
@@ -133,6 +135,8 @@ export function parseActivityDataIntegrityCommand(
   if (!values["acceptance-owner"]?.trim()) {
     throw new Error("--acceptance-owner is required with --execute");
   }
+  const artifactDirectory = values["artifact-directory"]?.trim();
+  if (!artifactDirectory) throw new Error("--artifact-directory is required with --execute");
   const acceptanceOwner = values["acceptance-owner"].trim();
   const acceptanceDeadline = utcDate(values["acceptance-deadline"], "--acceptance-deadline");
   if (acceptanceDeadline <= now) throw new Error("--acceptance-deadline must be in the future");
@@ -145,7 +149,7 @@ export function parseActivityDataIntegrityCommand(
       ...baseOptions,
       acceptanceOwner,
       acceptanceDeadline,
-      ...(values["artifact-directory"] ? { artifactDirectory: values["artifact-directory"] } : {}),
+      artifactDirectory,
     },
   };
 }
