@@ -453,7 +453,7 @@ describe("fileUploadRouter", () => {
     );
   });
 
-  it("accepts an extensionless Strong CSV with a CSV content type", async () => {
+  it("accepts a Strong CSV without a filename extension when its content type is CSV", async () => {
     const strong = upload({
       importType: "strong-csv",
       originalFilename: "Strong Export",
