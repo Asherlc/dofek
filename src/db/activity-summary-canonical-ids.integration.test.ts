@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   readModelSql,
   renderDbtModelSql,
-} from "../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+} from "./read-model-sql-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 

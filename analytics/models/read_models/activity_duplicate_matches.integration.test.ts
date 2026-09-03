@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
+import { readModelSql, renderDbtModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 

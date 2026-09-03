@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { compactWhitespace } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 const modelSql = readFileSync(new URL("./provider_stats.sql", import.meta.url), "utf8");
 

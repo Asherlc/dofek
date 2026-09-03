@@ -74,7 +74,7 @@ export async function materializeActivityIntegrityRetirementReceipt(
     const existing = retirementReceiptSchema.parse(JSON.parse(await readFile(receiptPath, "utf8")));
     if (
       existing.receiptChecksum !== receipt.receiptChecksum ||
-      checksumReceipt(existing) !== existing.receiptChecksum
+      checksumReceipt(retirementReceiptDecisionSchema.parse(existing)) !== existing.receiptChecksum
     ) {
       throw new Error("retirement receipt conflicts with durable journal decision");
     }

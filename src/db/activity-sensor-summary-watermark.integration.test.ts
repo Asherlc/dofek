@@ -5,7 +5,7 @@ import { z } from "zod";
 import {
   readModelSql,
   renderDbtModelSql,
-} from "../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+} from "./read-model-sql-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 
 const historicalActivityId = "00000000-0000-0000-0000-000000000901";

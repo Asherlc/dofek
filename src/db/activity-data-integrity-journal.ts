@@ -6,6 +6,7 @@ const uuidSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 const checksumSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const requiredDateSchema = z.union([z.date(), z.string(), z.number()]).pipe(z.coerce.date());
 export const activityIntegrityRetirementDispositionSchema = z.enum(["accepted", "superseded"]);
 export type ActivityIntegrityRetirementDisposition = z.infer<
   typeof activityIntegrityRetirementDispositionSchema
@@ -22,37 +23,45 @@ export const activityIntegrityJournalPhaseSchema = z.enum([
 
 export type ActivityIntegrityJournalPhase = z.infer<typeof activityIntegrityJournalPhaseSchema>;
 
-const journalBaseSchema = z.object({
+const journalSharedSchema = z.object({
   run_id: uuidSchema,
   user_id: uuidSchema,
   artifact_path: z.string().min(1),
   artifact_checksum: checksumSchema,
   acceptance_owner: z.string().min(1),
   acceptance_deadline: z.coerce.date(),
-  phase: activityIntegrityJournalPhaseSchema,
-  accepted_by: z.string().min(1).nullable(),
-  retirement_disposition: activityIntegrityRetirementDispositionSchema.nullable(),
-  retired_at: z.coerce.date().nullable(),
-  retirement_receipt_path: z.string().min(1).nullable(),
-  retirement_receipt_checksum: checksumSchema.nullable(),
   created_at: z.coerce.date(),
   updated_at: z.coerce.date(),
 });
 
-const journalRowSchema = journalBaseSchema.superRefine((journal, context) => {
-  const retirementComplete =
-    journal.accepted_by != null &&
-    journal.retirement_disposition != null &&
-    journal.retired_at != null &&
-    journal.retirement_receipt_path != null &&
-    journal.retirement_receipt_checksum != null;
-  if ((journal.phase === "retired") !== retirementComplete) {
-    context.addIssue({
-      code: "custom",
-      message: "retirement journal fields must be complete exactly when phase is retired",
-    });
-  }
+const activeJournalRowSchema = journalSharedSchema.extend({
+  phase: z.enum([
+    "postgres_committed",
+    "rebuild_failed",
+    "executed",
+    "rollback_committed",
+    "rolled_back",
+  ]),
+  accepted_by: z.null(),
+  retirement_disposition: z.null(),
+  retired_at: z.null(),
+  retirement_receipt_path: z.null(),
+  retirement_receipt_checksum: z.null(),
 });
+
+const retiredJournalRowSchema = journalSharedSchema.extend({
+  phase: z.literal("retired"),
+  accepted_by: z.string().min(1),
+  retirement_disposition: activityIntegrityRetirementDispositionSchema,
+  retired_at: requiredDateSchema,
+  retirement_receipt_path: z.string().min(1),
+  retirement_receipt_checksum: checksumSchema,
+});
+
+const journalRowSchema = z.discriminatedUnion("phase", [
+  activeJournalRowSchema,
+  retiredJournalRowSchema,
+]);
 
 const journalIdentitySchema = z.object({ run_id: uuidSchema });
 const eligibleJournalSchema = z.object({

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { compactWhitespace } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 function readProjectFile(path: string): string {
   const projectFileUrl = new URL(`../../../${path}`, import.meta.url);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readModelSql } from "./read-model-sql-test-helpers.ts";
+import { readModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 const modelSql = readModelSql("cycling_activity.sql");
 

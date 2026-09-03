@@ -5,7 +5,7 @@ import {
   extractCteSql,
   readModelSql,
   renderDbtModelSql,
-} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+} from "../../../../src/db/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,

@@ -1526,7 +1526,7 @@ describe("rollbackActivityDataIntegrity", () => {
           retirementInput,
           { now: () => now },
         ),
-      ).rejects.toThrow("retirement journal fields must be complete");
+      ).rejects.toThrow(field);
       durableRecord[field] = priorValue;
     }
 

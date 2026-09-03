@@ -35,14 +35,20 @@ const groupRows = [activityA, activityB, activityC].map((activityId) => ({
   refreshed_at: "2026-09-02 18:00:00.000000000",
 }));
 
-const sourceRows = [activityA, activityB, activityC].map((activityId) => ({
-  activity_id: activityId,
-  provider_id: "wahoo",
-  user_id: userId,
-  canonical_type: "cycling",
-  refresh_version: "10",
-  is_deleted: 0,
-}));
+function sourceRow(activityId: string): DerivedSnapshot["sourceRows"][number] {
+  return {
+    activity_id: activityId,
+    provider_id: "wahoo",
+    user_id: userId,
+    canonical_type: "cycling",
+    refresh_version: "10",
+    is_deleted: 0,
+  };
+}
+
+const sourceRowA = sourceRow(activityA);
+const sourceRowB = sourceRow(activityB);
+const sourceRows = [sourceRowA, sourceRowB, sourceRow(activityC)];
 
 function compatibilitySnapshot(
   sources: DerivedSnapshot["sourceRows"],
@@ -193,7 +199,7 @@ describe("incompatibleMemberCount", () => {
     expect(
       incompatibleMemberCount(
         compatibilitySnapshot(
-          [sourceRows[0], { ...sourceRows[1], canonical_type: "running" }],
+          [sourceRowA, { ...sourceRowB, canonical_type: "running" }],
           [dedupedRow],
         ),
       ),
@@ -238,7 +244,7 @@ describe("sourceRowsMatchPostgres", () => {
     },
   };
   const mirrored = {
-    ...sourceRows[0],
+    ...sourceRowA,
     timezone: repaired.repaired.timezone,
     start_utc_offset_minutes: repaired.repaired.startUtcOffsetMinutes,
     end_utc_offset_minutes: repaired.repaired.endUtcOffsetMinutes,
@@ -271,7 +277,7 @@ describe("waitForPostgresMirror", () => {
     },
   };
   const mirrored = {
-    ...sourceRows[0],
+    ...sourceRowA,
     timezone: null,
     start_utc_offset_minutes: -240,
     end_utc_offset_minutes: -240,

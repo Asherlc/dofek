@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 
 export function readModelSql(modelFileName: string): string {
   try {
-    return readFileSync(new URL(`./${modelFileName}`, import.meta.url), "utf8");
+    return readFileSync(
+      new URL(`../../analytics/models/read_models/${modelFileName}`, import.meta.url),
+      "utf8",
+    );
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to read read model SQL file ${modelFileName}: ${reason}`);
@@ -21,29 +24,77 @@ export function renderDbtModelSql(
     .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
     .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
     .trimStart();
-  const incrementalSql = renderDbtBooleanBranches(
-    withoutWrappers,
-    "is_incremental\\(\\)",
-    options.isIncremental,
-  );
-  return options.activityRefreshScoped == null
-    ? incrementalSql
-    : renderDbtBooleanBranches(
-        incrementalSql,
-        "activity_refresh_scoped",
-        options.activityRefreshScoped,
-      );
+  return renderDbtBooleanBranches(withoutWrappers, options);
 }
 
-function renderDbtBooleanBranches(modelSql: string, conditionPattern: string, enabled: boolean): string {
-  return modelSql.replace(
-    new RegExp(
-      `\\{%\\s*if ${conditionPattern}\\s*%\\}([\\s\\S]*?)(?:\\{%\\s*else\\s*%\\}([\\s\\S]*?))?\\{%\\s*endif\\s*%\\}`,
-      "g",
-    ),
-    (_match: string, enabledSql: string, disabledSql: string | undefined) =>
-      enabled ? enabledSql : (disabledSql ?? ""),
-  );
+interface DbtBooleanFrame {
+  condition: string;
+  enabledSql: string;
+  disabledSql: string;
+  inDisabledBranch: boolean;
+}
+
+function renderDbtBooleanBranches(
+  modelSql: string,
+  options: { isIncremental: boolean; activityRefreshScoped?: boolean },
+): string {
+  const frames: DbtBooleanFrame[] = [];
+  let renderedSql = "";
+  let previousIndex = 0;
+
+  const append = (value: string): void => {
+    const frame = frames.at(-1);
+    if (!frame) {
+      renderedSql += value;
+    } else if (frame.inDisabledBranch) {
+      frame.disabledSql += value;
+    } else {
+      frame.enabledSql += value;
+    }
+  };
+
+  for (const match of modelSql.matchAll(/\{%\s*(if\s+(.+?)|else|endif)\s*%\}/g)) {
+    append(modelSql.slice(previousIndex, match.index));
+    previousIndex = (match.index ?? 0) + match[0].length;
+
+    const directive = match[1] ?? "";
+    if (directive.startsWith("if ")) {
+      frames.push({
+        condition: (match[2] ?? "").trim(),
+        enabledSql: "",
+        disabledSql: "",
+        inDisabledBranch: false,
+      });
+      continue;
+    }
+
+    const frame = frames.at(-1);
+    if (!frame) throw new Error(`Unexpected dbt ${directive} directive`);
+    if (directive === "else") {
+      if (frame.inDisabledBranch) throw new Error("Unexpected duplicate dbt else directive");
+      frame.inDisabledBranch = true;
+      continue;
+    }
+
+    frames.pop();
+    const enabled =
+      frame.condition === "is_incremental()"
+        ? options.isIncremental
+        : frame.condition === "activity_refresh_scoped"
+          ? options.activityRefreshScoped
+          : undefined;
+    append(
+      enabled == null
+        ? `{% if ${frame.condition} %}${frame.enabledSql}${frame.disabledSql ? `{% else %}${frame.disabledSql}` : ""}{% endif %}`
+        : enabled
+          ? frame.enabledSql
+          : frame.disabledSql,
+    );
+  }
+
+  append(modelSql.slice(previousIndex));
+  if (frames.length > 0) throw new Error("Unclosed dbt if directive");
+  return renderedSql;
 }
 
 function skipSqlLineComment(sql: string, startIndex: number): number {
