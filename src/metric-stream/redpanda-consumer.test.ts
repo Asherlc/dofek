@@ -7,6 +7,7 @@ import {
 
 const captureException = vi.hoisted(() => vi.fn());
 const loggerError = vi.hoisted(() => vi.fn());
+const loggerInfo = vi.hoisted(() => vi.fn());
 const operationRevision = "1000000000000000";
 const kafkaConsumerConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerOn = vi.hoisted(() => vi.fn());
@@ -60,6 +61,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../logger.ts", () => ({
   logger: {
     error: loggerError,
+    info: loggerInfo,
   },
 }));
 
@@ -81,9 +83,84 @@ const event = createMetricStreamEvent(
 beforeEach(() => {
   captureException.mockClear();
   loggerError.mockClear();
+  loggerInfo.mockClear();
 });
 
 describe("runMetricStreamEventConsumer", () => {
+  it("reports lag, sink latency, and deletion throughput for each consumed batch", async () => {
+    const deleteEvent = createMetricStreamDeletedEvent(
+      { activityId: "20000000-0000-4000-8000-000000000001" },
+      operationRevision,
+    );
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
+            highWatermark: "30",
+            messages: [
+              { offset: "20", value: Buffer.from(JSON.stringify(deleteEvent)) },
+              { offset: "21", value: Buffer.from(JSON.stringify(event)) },
+            ],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
+            highWatermark: "50",
+            messages: [{ offset: "22", value: Buffer.from(JSON.stringify(event)) }],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: {
+        connect: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
+      topic: "metric-stream-v1",
+    });
+
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({
+        topic: "metric-stream-v1",
+        partition: 2,
+        first_offset: "20",
+        last_offset: "21",
+        high_watermark: "30",
+        consumer_lag: 8,
+        consumer_lag_growth_per_second: null,
+        event_count: 2,
+        deletion_event_count: 1,
+        sink_duration_ms: expect.any(Number),
+        per_event_sink_latency_ms: expect.any(Number),
+        deletion_events_per_second: expect.any(Number),
+      }),
+    );
+    expect(loggerInfo).toHaveBeenLastCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({
+        consumer_lag: 27,
+        consumer_lag_growth_per_second: expect.any(Number),
+      }),
+    );
+    expect(loggerInfo.mock.lastCall?.[1].consumer_lag_growth_per_second).toBeGreaterThan(0);
+  });
+
   it("subscribes to the metric stream topic and handles parsed events before resolving offsets", async () => {
     const connect = vi.fn(async () => undefined);
     const subscribe = vi.fn(async () => undefined);

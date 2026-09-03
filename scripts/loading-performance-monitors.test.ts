@@ -48,4 +48,21 @@ describe("loadingPerformanceMonitors", () => {
     expect(monitor?.aplQuery).toContain("timeout");
     expect(monitor?.aplQuery).toContain("memory");
   });
+
+  it.each([
+    ["metric-stream-absolute-lag", "consumer_lag", 100_000],
+    ["metric-stream-lag-growth", "consumer_lag_growth_per_second", 100],
+    ["metric-stream-sink-latency", "per_event_sink_latency_ms", 100],
+    ["metric-stream-deletion-rate", "deletion_events_per_second", 50],
+  ] as const)("defines the %s monitor from sink batch telemetry", (id, field, threshold) => {
+    const monitor = loadingPerformanceMonitors.find((candidate) => candidate.id === id);
+
+    expect(monitor).toBeDefined();
+    expect(monitor?.type).toBe("Threshold");
+    expect(monitor?.threshold).toBe(threshold);
+    expect(monitor?.aplQuery).toContain("metric_stream.consumer_batch");
+    expect(monitor?.aplQuery).toContain(field);
+    expect(monitor?.triggerAfterNPositiveResults).toBe(2);
+    expect(monitor?.triggerFromNRuns).toBe(3);
+  });
 });
