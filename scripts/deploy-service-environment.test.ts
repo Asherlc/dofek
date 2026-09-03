@@ -116,6 +116,7 @@ const WORKER_ONLY_ENVIRONMENT_KEYS = [
   "AXIOM_API_TOKEN",
   "AXIOM_LOG_DATASET",
   "AXIOM_ORG_ID",
+  "CLICKHOUSE_PASSWORD",
   "METRIC_STREAM_TOPIC",
   "PEERDB_STAGE_S3_ACCESS_KEY_ID",
   "PEERDB_STAGE_S3_BUCKET",
@@ -252,6 +253,19 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow("analyticsWorker deploy environment is missing required keys: CLICKHOUSE_PASSWORD");
+  });
+
+  it("provides the worker with the ClickHouse password required by dbt jobs", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
+
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+
+    expect(parseEnv(readFileSync(paths.worker, "utf8"))).toHaveProperty(
+      "CLICKHOUSE_PASSWORD",
+      "clickhouse_password-value",
+    );
   });
 
   it("fails before worker startup when a worker-only contract is incomplete", () => {
