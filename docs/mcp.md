@@ -15,7 +15,7 @@ Before retiring a previous production origin, an operator must migrate every act
 The endpoint uses Streamable HTTP and supports two authentication paths:
 
 - OAuth 2.1 authorization code with PKCE for remote MCP clients (Claude, ChatGPT, and any other client that supports OAuth auto-discovery).
-- Manually created MCP bearer tokens for clients such as Claude Code and Codex that support custom HTTP headers.
+- Manually created MCP bearer tokens for clients or deployments configured with a static `Authorization` header.
 
 Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
 
@@ -41,6 +41,72 @@ The client redirects each user to Dofek to sign in and approve the requested sco
 
 Examples that use this path include [Claude remote connectors](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers) and [ChatGPT apps / connectors](https://developers.openai.com/apps-sdk/build/auth).
 
+### Client-specific setup
+
+Open Dofek **Settings → Advanced → MCP** on the web, or **Settings → Advanced**
+in the mobile app. Both surfaces show the remote URL and provide these setup
+actions:
+
+- **Claude:** **Connect Claude** opens Anthropic's custom-connector form with
+  the Dofek name and URL prefilled. Review the connection and authorize Dofek
+  when prompted. Anthropic documents custom remote connectors and their OAuth
+  flow in the [Claude connector guide](https://claude.com/docs/connectors/building/directory-vs-custom).
+- **ChatGPT:** **Copy for ChatGPT** copies the endpoint. In the ChatGPT desktop
+  app, open **Settings → MCP servers → Add server**, select Streamable HTTP,
+  paste the URL, save, restart, and authenticate. ChatGPT web uses published
+  plugins rather than the desktop app's local MCP configuration
+  ([OpenAI MCP documentation](https://learn.chatgpt.com/docs/extend/mcp.md)).
+- **Cursor:** **Add to Cursor** opens Cursor's documented MCP install deeplink
+  containing `{ "url": "https://dofek.fit/api/mcp" }`; Cursor shows the
+  configuration for review before installation and OAuth
+  ([Cursor MCP install links](https://cursor.com/docs/mcp/install-links)).
+- **VS Code:** **Add to VS Code** opens VS Code's documented
+  `vscode:mcp/install` handler with a Streamable HTTP server definition. VS Code
+  supports remote MCP OAuth and MCP Apps
+  ([VS Code MCP developer guide](https://code.visualstudio.com/api/extension-guides/ai/mcp)).
+
+The **Other MCP clients** section provides copyable setup for clients without a
+website install link:
+
+```bash
+claude mcp add --transport http --scope user dofek https://dofek.fit/api/mcp
+```
+
+Claude Code recommends remote HTTP for cloud services and starts OAuth from its
+`/mcp` interface when the server requires authentication
+([Claude Code MCP documentation](https://code.claude.com/docs/en/mcp)).
+
+```bash
+codex mcp add dofek --url https://dofek.fit/api/mcp
+codex mcp login dofek
+```
+
+Codex supports Streamable HTTP servers and OAuth through its shared MCP
+configuration ([OpenAI MCP documentation](https://learn.chatgpt.com/docs/extend/mcp.md)).
+
+```bash
+gemini mcp add dofek https://dofek.fit/api/mcp --transport http --scope user
+```
+
+Gemini CLI documents the HTTP transport and user-scoped MCP configuration in
+its [CLI reference](https://geminicli.com/docs/cli/cli-reference/).
+
+For Windsurf, paste this into its MCP raw configuration and refresh the MCP
+list:
+
+```json
+{
+  "mcpServers": {
+    "dofek": {
+      "serverUrl": "https://dofek.fit/api/mcp"
+    }
+  }
+}
+```
+
+Windsurf supports Streamable HTTP and OAuth, and documents `serverUrl` for
+remote HTTP servers in its [Cascade MCP guide](https://docs.windsurf.com/windsurf/cascade/mcp).
+
 ### Redirect URI policy
 
 Registrations may use any absolute `https://` callback URL. `http://` is allowed only for loopback hosts (`localhost`, `127.0.0.1`, `::1`) so local MCP clients can complete OAuth during development ([OAuth 2.1](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-13#section-9.7); [RFC 8252 §7.3](https://datatracker.ietf.org/doc/html/rfc8252#section-7.3)). Fragments, embedded credentials, and non-HTTPS remote URLs are rejected. Authorization and token exchange still require exact redirect URI matching against the registered value ([OAuth 2.0 Security BCP §4.1.3](https://www.rfc-editor.org/rfc/rfc9700#section-4.1.3)).
@@ -58,7 +124,7 @@ OAuth discovery and protocol endpoints ([MCP authorization specification](https:
 
 ## Create A Token
 
-Tokens are only needed for clients that use manual bearer token authentication (such as Codex). OAuth-based clients authenticate automatically.
+Tokens are only needed when a client is configured to use manual bearer-token authentication. OAuth-based clients authenticate automatically.
 
 Open Dofek web Settings, select **Advanced**, and use the **MCP** section to create, copy, list, and revoke tokens.
 
@@ -223,7 +289,7 @@ Set the transport to Streamable HTTP, URL to `https://dofek.fit/api/mcp`, and in
 
 ## Directory Listings
 
-Dofek publishes one remote Streamable HTTP endpoint. The [MCP Registry remote-server format](https://modelcontextprotocol.io/registry/remote-servers) requires that endpoint to be publicly accessible and records it in the `remotes` field; the checked-in [registry entry](../registry/dofek/server.json) is ready for publishing after the production endpoint is deployed. ChatGPT plugin review also requires a verified individual or business identity, a production MCP URL, a support URL, policy URLs, accurate tool annotations, and reviewer-ready test credentials ([OpenAI submission requirements](https://developers.openai.com/plugins/deploy/submission)).
+Dofek publishes one remote Streamable HTTP endpoint. The [MCP Registry remote-server format](https://modelcontextprotocol.io/registry/remote-servers) requires that endpoint to be publicly accessible and records it in the `remotes` field. Version `0.1.0` of the checked-in [registry entry](../registry/dofek/server.json) is [active in the official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Asherlc%2Fdofek/versions/latest). ChatGPT plugin review also requires a verified individual or business identity, a production MCP URL, a support URL, policy URLs, accurate tool annotations, and reviewer-ready test credentials ([OpenAI submission requirements](https://developers.openai.com/plugins/deploy/submission)).
 
 For other clients, use the OAuth setup above when the client supports remote MCP OAuth discovery, or the bearer-header configuration when it does not. Clients that support MCP Apps UI render `render_health_explorer`; other clients receive the same readable JSON snapshot.
 

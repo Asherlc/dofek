@@ -26,6 +26,7 @@ import {
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
+import { McpClientSetupPanel } from "../components/McpClientSetupPanel";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
@@ -97,7 +98,8 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText: "advanced dashboard layout developer integrations OAuth callback API",
+    searchText:
+      "advanced dashboard layout developer integrations OAuth callback API MCP Claude ChatGPT Cursor VS Code Codex Gemini Windsurf",
   },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
@@ -896,6 +898,12 @@ export default function SettingsScreen() {
               <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {activeCategory === "advanced" ? (
+        <View style={styles.section}>
+          <McpClientSetupPanel endpoint={`${auth.serverUrl}/api/mcp`} />
         </View>
       ) : null}
 

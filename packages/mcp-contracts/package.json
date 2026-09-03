@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./client-setup": "./src/client-setup.ts",
     "./health-explorer": "./src/health-explorer.ts"
   },
   "dependencies": {

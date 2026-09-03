@@ -57,10 +57,16 @@ vi.mock("../components/ProviderLogo", () => ({
     React.createElement("span", { "data-testid": `provider-logo-${provider}` }),
 }));
 
+vi.mock("../components/McpClientSetupPanel", () => ({
+  McpClientSetupPanel: ({ endpoint }: { endpoint: string }) =>
+    React.createElement("div", { "data-testid": "mcp-client-setup" }, endpoint),
+}));
+
 const mockRouterPush = vi.fn();
 const mockRouterSetParams = vi.fn();
 let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {};
 const mockLogout = vi.fn();
+let mockAuthServerUrl = "https://test.example.com";
 const mockBillingStatusInvalidate = vi.fn();
 const mockAppStoreBilling = vi.hoisted(() => ({
   loadProduct: vi.fn().mockResolvedValue({
@@ -110,7 +116,7 @@ vi.mock("../lib/app-store-billing", () => ({
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
     logout: mockLogout,
-    serverUrl: "https://test.example.com",
+    serverUrl: mockAuthServerUrl,
     sessionToken: mockSessionToken,
   }),
 }));
@@ -300,6 +306,7 @@ vi.mock("../lib/telemetry", () => ({
 
 beforeEach(() => {
   mockSearchParams = {};
+  mockAuthServerUrl = "https://test.example.com";
   mockProvidersQuery.data = mockProvidersData;
   mockProvidersQuery.error = null;
   mockProvidersQuery.isLoading = false;
@@ -556,12 +563,16 @@ describe("SettingsScreen data sources", () => {
 
   it("navigates to developer integrations from Advanced settings", async () => {
     mockSearchParams = { tab: "advanced" };
+    mockAuthServerUrl = "https://test.example.com/dofek";
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
     expect(screen.getByRole("button", { name: "Advanced" }).getAttribute("aria-selected")).toBe(
       "true",
+    );
+    expect(screen.getByTestId("mcp-client-setup").textContent).toBe(
+      "https://test.example.com/dofek/api/mcp",
     );
     fireEvent.click(screen.getByRole("button", { name: "Manage developer integrations" }));
     expect(mockRouterPush).toHaveBeenCalledWith("/developer-integrations");

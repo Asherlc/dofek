@@ -1,5 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { useEffect, useState } from "react";
+import { McpClientSetupPanel } from "../components/McpClientSetupPanel.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -149,29 +150,9 @@ export function McpTokensPanel() {
 
   return (
     <div className="space-y-5">
-      <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
-        <div>
-          <p className="text-sm font-medium text-foreground">
-            Connect with Model Context Protocol (MCP) using OAuth (Open Authorization) (Recommended)
-          </p>
-          <p className="mt-1 text-sm text-subtle">
-            For clients that support OAuth auto-discovery (Claude, ChatGPT, and others). Paste the
-            URL and sign in when prompted.
-          </p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-subtle">Remote URL</p>
-          <code className="block overflow-x-auto rounded bg-surface px-3 py-2 text-xs text-foreground">
-            {mcpEndpoint}
-          </code>
-        </div>
-        <p className="text-xs text-dim">
-          OAuth clients discover endpoints automatically and handle authentication. No manual token
-          is required.
-        </p>
-      </div>
+      {isSecureOrigin === true ? <McpClientSetupPanel endpoint={mcpEndpoint} /> : null}
 
-      {isSecureOrigin !== false ? (
+      {isSecureOrigin === true ? (
         <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
           <div>
             <p className="text-sm font-medium text-foreground">Connect with a manual token</p>
