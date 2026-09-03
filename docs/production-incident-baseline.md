@@ -24736,3 +24736,20 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   restart and whether aggregate multi-workspace pressure is responsible. A
   test-process crash can still bypass `afterAll`; add workspace-scoped stale
   test-database cleanup only if that accumulation independently recurs.
+
+## 2026-09-02 — Activity dbt launcher mutation coverage regression
+
+- **Status:** Resolved.
+- **Symptoms / user impact:** PR CI failed in `Test / Stryker (4)` at a 42.86%
+  mutation score, blocking merge. Runtime unit tests were green.
+- **Evidence / root cause:** The job report showed seven surviving mutants and
+  one uncovered failure branch in `activity-data-integrity-dbt.ts`. Its only
+  test asserted model ordering, leaving scoped dbt variables, spawn options,
+  environment selection, signal exits, and non-zero exits unverified.
+- **Fix / mitigation:** Added focused behavioral tests for each launcher input
+  and failure boundary without changing the mutation threshold or excluding
+  production code.
+- **Validation:** The focused unit suite passes 5/5 and the exact Stryker target
+  reports 100% mutation score with all 14 covered mutants killed.
+- **Remaining risk / follow-up:** None identified for this launcher; the full PR
+  mutation gate remains the merge authority.
