@@ -272,11 +272,9 @@ function validateOptions(options: ActivityIntegrityRepairOptions, now: Date): vo
 function defaultArtifactDirectory(): string {
   return resolve(process.cwd(), "activity-data-integrity-artifacts");
 }
-
 function artifactPathFor(directory: string, createdAt: Date, runId: string): string {
   return resolve(directory, `${createdAt.toISOString().replaceAll(":", "-")}-${runId}.audit.json`);
 }
-
 function serializeJson(value: unknown): string {
   return `${JSON.stringify(
     value,
@@ -285,7 +283,6 @@ function serializeJson(value: unknown): string {
     2,
   )}\n`;
 }
-
 function recoveryArtifactData(artifact: AuditArtifactWithoutChecksum | AuditArtifact) {
   return {
     schemaVersion: artifact.schemaVersion,
@@ -309,7 +306,6 @@ function recoveryArtifactData(artifact: AuditArtifactWithoutChecksum | AuditArti
     componentsBefore: artifact.componentsBefore,
   };
 }
-
 function checksumArtifact(artifact: AuditArtifactWithoutChecksum | AuditArtifact): string {
   return createHash("sha256")
     .update(serializeJson(recoveryArtifactData(artifact)))
@@ -906,8 +902,9 @@ export async function rollbackActivityDataIntegrity(
   artifactPath: string,
   dependencies: ActivityIntegrityRollbackDependencies = {},
 ): Promise<ActivityIntegrityRollbackResult> {
+  const resolvedArtifactPath = resolve(artifactPath);
   return withActivityIntegrityLease(db, () =>
-    rollbackActivityDataIntegrityWithLease(db, clickHouse, artifactPath, dependencies),
+    rollbackActivityDataIntegrityWithLease(db, clickHouse, resolvedArtifactPath, dependencies),
   );
 }
 
@@ -917,7 +914,9 @@ export async function retireActivityDataIntegrityArtifact(
   input: { acceptedBy: string; disposition: "accepted" | "superseded" },
   dependencies: ActivityIntegrityRetirementDependencies = {},
 ): Promise<string> {
+  const resolvedArtifactPath = resolve(artifactPath);
   return withActivityIntegrityLease(db, async () => {
+    const artifactPath = resolvedArtifactPath;
     const artifact = await readArtifact(artifactPath);
     if (
       artifact.phase !== "executed" ||

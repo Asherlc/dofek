@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { z } from "zod";
 
 const MAXIMUM_UINT64 = (1n << 64n) - 1n;
@@ -371,7 +372,7 @@ export async function waitForPostgresMirror(
   changedRows: readonly RepairedActivityLocalTime[],
   dependencies: CdcReadinessDependencies,
 ): Promise<void> {
-  const monotonicNow = dependencies.monotonicNow ?? Date.now;
+  const monotonicNow = dependencies.monotonicNow ?? (() => performance.now());
   const timeoutMs = dependencies.cdcReadinessTimeoutMs ?? DEFAULT_CDC_READINESS_TIMEOUT_MS;
   const pollIntervalMs =
     dependencies.cdcReadinessPollIntervalMs ?? DEFAULT_CDC_READINESS_POLL_INTERVAL_MS;

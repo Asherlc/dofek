@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readdir, readFile, rmdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1345,10 +1345,15 @@ describe("rollbackActivityDataIntegrity", () => {
     });
 
     await expect(
-      rollbackActivityDataIntegrity(rollbackDb, clickhouse, result.artifactPath, {
-        now: () => new Date("2026-09-02T20:00:00.000Z"),
-        rebuildReadModels,
-      }),
+      rollbackActivityDataIntegrity(
+        rollbackDb,
+        clickhouse,
+        relative(process.cwd(), result.artifactPath),
+        {
+          now: () => new Date("2026-09-02T20:00:00.000Z"),
+          rebuildReadModels,
+        },
+      ),
     ).resolves.toMatchObject({ updated: 1 });
     expect(rebuildReadModels).toHaveBeenCalledWith({
       userId,
@@ -1382,7 +1387,7 @@ describe("rollbackActivityDataIntegrity", () => {
     await expect(
       retireActivityDataIntegrityArtifact(
         createDatabase(vi.fn()),
-        result.artifactPath,
+        relative(process.cwd(), result.artifactPath),
         { acceptedBy: "  data-on-call@example.com  ", disposition: "accepted" },
         { now: () => deadline },
       ),
