@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { compactWhitespace } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 function readProjectFile(path: string): string {
   const projectFileUrl = new URL(`../../../${path}`, import.meta.url);
@@ -25,6 +25,29 @@ function readModel(name: string): string {
 }
 
 describe("production analytics read-model build", () => {
+  it("gives the activity refresh chain one reusable user and affected-key scope", () => {
+    const scopeMacro = readProjectFile("analytics/macros/activity_refresh_scope.sql");
+    const scopedModels = [
+      "activity_source_records",
+      "activity_duplicate_matches",
+      "activity_duplicate_groups",
+      "deduped_activities",
+      "deduped_activity_members",
+      "activity_sensor_sample",
+      "activity_sensor_summary_rows",
+      "activity_summary_rows",
+    ];
+
+    expect(scopeMacro).toContain("activity_refresh_user_id");
+    expect(scopeMacro).toContain("activity_refresh_activity_ids");
+    expect(scopeMacro).toContain("activity_ids | length > 0");
+    expect(scopeMacro).toContain("user_id | string | trim | length > 0");
+    for (const model of scopedModels) {
+      const sql = readModel(model);
+      expect(sql, model).toContain("activity_refresh_scope_enabled()");
+    }
+  });
+
   it("does not block the BullMQ worker on analytics dbt builds", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const workerBlockMatch = entrypoint.match(/  worker\)\n(?<body>[\s\S]*?)\n    ;;/);
@@ -207,7 +230,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("FROM {{ this }} AS deduped FINAL");
     expect(normalizedSql).toContain("WHERE deduped.is_deleted = 0");
     expect(normalizedSql).toContain(
-      "ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id AND current_deduped_activities.user_id = existing_deduped_activities.user_id",
+      "ON scoped_current_deduped_activities.activity_id = existing_deduped_activities.activity_id AND scoped_current_deduped_activities.user_id = existing_deduped_activities.user_id",
     );
   });
 
@@ -234,7 +257,7 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("overlap_ratio");
     const compactMatchesSql = compactWhitespace(matchesSql);
     expect(compactMatchesSql).toContain(
-      "left_activity.canonical_type = right_activity.canonical_type OR ( left_activity.canonical_type = 'other' AND right_activity.canonical_type != 'other'",
+      "left_activity.canonical_type = right_activity.canonical_type AND ( left_activity.canonical_type != 'other' OR left_activity.provider_id = right_activity.provider_id )",
     );
     expect(compactMatchesSql).toContain(
       "dateDiff('second', left_activity.started_at, left_activity.ended_at) <= dateDiff('second', right_activity.started_at, right_activity.ended_at)",
@@ -242,14 +265,21 @@ describe("production analytics read-model build", () => {
     expect(compactMatchesSql).toContain(
       "right_activity.canonical_type = 'other' AND left_activity.canonical_type != 'other'",
     );
+    expect(
+      compactMatchesSql.split(
+        "left_activity.activity_id IN {{ activity_refresh_ids() }} OR right_activity.activity_id IN {{ activity_refresh_ids() }}",
+      ),
+    ).toHaveLength(3);
 
     expect(groupsSql).toContain("materialized='incremental'");
     expect(groupsSql).toContain("ref('activity_source_records')");
     expect(groupsSql).toContain("ref('activity_duplicate_matches')");
-    expect(groupsSql).toContain("duplicate_links AS");
-    expect(groupsSql).toContain("duplicate_walk AS");
+    expect(groupsSql).toContain("current_edges AS");
+    expect(groupsSql).toContain("convergence_check AS");
+    expect(groupsSql).toContain("groupArray(tuple(activity_id, linked_activity_ids))");
+    expect(groupsSql).toContain("UNION ALL");
     expect(groupsSql).toContain("current_duplicate_groups AS");
-    expect(groupsSql).toContain("GROUP BY activity_id");
+    expect(groupsSql).toContain("arrayFold(");
   });
 
   it("fails closed instead of tombstoning all activity source records from an empty source scan", () => {
@@ -558,7 +588,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("order_by='(user_id, activity_id)'");
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
     expect(sql).toContain("profile_recompute_lookback_days");
     expect(sql).toContain("groupArray(tuple(");
     expect(sql).toContain("zone_seconds AS");
@@ -720,7 +750,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("ref('activity_summary_rows')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
     expect(sql).toContain("argMax(resting.resting_hr, resting.ended_at)");
     expect(sql).toContain("nullIf(user_profile.resting_hr, 0)");
     expect(sql).toContain("canonical_type IN (");
@@ -775,7 +805,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("existing_rows AS");
     expect(sql).toContain("dirty_keys AS");
     expect(sql).toContain("IS DISTINCT FROM tuple(");
-    expect(sql).toContain("analytics.v_daily_metrics");
+    expect(sql).toContain("source('analytics', 'v_daily_metrics')");
     expect(sql).toContain("nullIf(hrv, 0) AS hrv");
     expect(sql).toContain("nullIf(respiratory_rate_avg, 0) AS respiratory_rate");
     expect(sql).toContain("nullIf(efficiency_pct, 0) AS efficiency_pct");
@@ -869,7 +899,7 @@ describe("production analytics read-model build", () => {
     );
     expect(sql).toContain("dirty_dates AS");
     expect(sql).toContain("current_rows.is_deleted = 0");
-    expect(sql).toContain("analytics.v_sleep");
+    expect(sql).toContain("source('analytics', 'v_sleep')");
     expect(sql).toContain("sleep.source_name AS source_name");
     expect(sql).toContain("sleep.source_providers AS source_providers");
     expect(sql).toContain("selected_sleep.source_name AS source_name");
@@ -916,7 +946,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("WHERE is_deleted = 0");
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
     expect(sql).toContain("FROM {{ this }} FINAL");
     expect(sql).toContain("if(zone_minutes.activity_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).toContain("sensor_samples.scalar >= activity_metadata.ftp * 0.9");

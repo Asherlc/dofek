@@ -25,6 +25,7 @@ describe("activity_sensor_summary_rows model", () => {
   });
 
   it("preserves unavailable elevation separately from measured zero", () => {
+    expect(modelSql.match(/countIf\(isNotNull\(prev_altitude\)\) = 0/g)).toHaveLength(2);
     expect(modelSql).toContain(
       "elevation_per_activity.elevation_gain_m AS elevation_gain_m",
     );

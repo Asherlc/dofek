@@ -2,13 +2,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-  readModelSql,
-  renderDbtModelSql,
-} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
-import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
 } from "../../../../src/db/clickhouse.ts";
+import { readModelSql, renderDbtModelSql } from "../../../../src/db/read-model-sql-test-helpers.ts";
 
 const resultSchema = z.array(
   z.object({

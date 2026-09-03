@@ -33,10 +33,7 @@ import {
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
-import {
-  type ProviderScheduledSyncHealth,
-  SyncRepository,
-} from "../repositories/sync-repository.ts";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
@@ -52,6 +49,7 @@ import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
+import { syncHealth } from "./sync-health.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { assertDateRange, jsonContent } from "./tool-utils.ts";
 import { registerTrainingLoadTool } from "./training-load-tool.ts";
@@ -92,21 +90,6 @@ const activityMcpRowSchema = z.object({
   elevation_gain_m: z.coerce.number().nullable().optional(),
   modality: z.string().nullable().optional(),
 });
-const EXPECTED_SYNC_INTERVAL_MS = 30 * 60 * 1000;
-
-function syncHealth(health: ProviderScheduledSyncHealth | undefined) {
-  const lastSuccess = health?.lastSuccess;
-  return {
-    last_success: lastSuccess ?? null,
-    last_attempt: health?.lastAttempt ?? null,
-    last_error: health?.lastError ?? null,
-    consecutive_failures: health?.consecutiveFailures ?? 0,
-    expected_sync_interval_minutes: EXPECTED_SYNC_INTERVAL_MS / 60_000,
-    stale:
-      lastSuccess == null ||
-      Date.now() - new Date(lastSuccess).getTime() > EXPECTED_SYNC_INTERVAL_MS * 3,
-  };
-}
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
 
 function daysBetween(startDate: string, endDate: string): number {
@@ -300,6 +283,37 @@ function healthTrendsEnvelope(
 function average(values: Array<number | null | undefined>): number | null {
   return aggregateNumbers(values)?.avg ?? null;
 }
+const powerModalities = ["indoor", "outdoor", "unknown"] as const;
+function summarizePower(rows: ActivityMcpRow[]) {
+  const poweredRows = rows.filter((row) => row.avg_power != null);
+  const coverage = {
+    activities_with_power: poweredRows.length,
+    activities_total: rows.length,
+    pct: rows.length === 0 ? 0 : (poweredRows.length / rows.length) * 100,
+  };
+  if (poweredRows.length < 3) {
+    return { avg_power: null, max_power_peak: null, ...coverage };
+  }
+  return {
+    avg_power: average(poweredRows.map((row) => row.avg_power)),
+    max_power_peak: aggregateNumbers(poweredRows.map((row) => row.max_power))?.max ?? null,
+    ...coverage,
+  };
+}
+
+function powerByModality(rows: ActivityMcpRow[]) {
+  const rowsFor = (modality: (typeof powerModalities)[number]) =>
+    rows.filter((row) =>
+      modality === "unknown"
+        ? row.modality !== "indoor" && row.modality !== "outdoor"
+        : row.modality === modality,
+    );
+  return {
+    indoor: summarizePower(rowsFor("indoor")),
+    outdoor: summarizePower(rowsFor("outdoor")),
+    unknown: summarizePower(rowsFor("unknown")),
+  };
+}
 
 function activityPurpose(row: ActivityMcpRow): "commute" | "training" | null {
   if (row.canonical_type !== "cycling") return null;
@@ -357,7 +371,6 @@ function activitySummaries(
         observedElevations.length === 0
           ? null
           : observedElevations.reduce((total, elevation) => total + elevation, 0);
-      const activitiesWithPower = groupRows.filter((row) => row.avg_power != null).length;
       return {
         ...(groupBy === "canonical_type" ? { canonical_type: key } : {}),
         ...(groupBy === "week" ? { week: key } : {}),
@@ -373,13 +386,7 @@ function activitySummaries(
         avg_duration_minutes: average(durations),
         avg_hr: average(groupRows.map((row) => row.avg_hr)),
         max_hr_peak: aggregateNumbers(groupRows.map((row) => row.max_hr))?.max ?? null,
-        avg_power: average(groupRows.map((row) => row.avg_power)),
-        max_power_peak: aggregateNumbers(groupRows.map((row) => row.max_power))?.max ?? null,
-        power_coverage: {
-          activities_with_power: activitiesWithPower,
-          activities_total: groupRows.length,
-          pct: (activitiesWithPower / groupRows.length) * 100,
-        },
+        power_by_modality: powerByModality(groupRows),
         total_elevation_gain_m: totalElevationGain,
         avg_elevation_gain_m: average(elevations),
       };
@@ -989,6 +996,5 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       });
     },
   );
-
   return server;
 }

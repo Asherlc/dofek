@@ -24709,8 +24709,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-03 — App Store configuration blocked MCP metadata deployment
 
-- **Status:** Unresolved; production deployment is paused pending App Store
-  Connect key rotation.
+- **Status:** Resolved operationally; the credential exposure risk remains
+  accepted by operator direction.
 - **Symptoms / user impact:** The deploy for the ChatGPT MCP tool-annotation
   fix stopped before changing production, so ChatGPT continued to scan the old
   MCP descriptors.
@@ -24722,12 +24722,203 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Confirmed the app ID and bundle ID through App Store
   Connect, validated the existing encoded signing key, downloaded the current
   Apple root certificates from the [Apple PKI repository](https://www.apple.com/certificateauthority/),
-  and created the required Infisical entries. The CLI unexpectedly printed
-  secret values despite `--silent`; local temporary secret files were deleted
-  immediately and deployment was stopped.
-- **Remaining risk / follow-up:** Treat the printed App Store Connect key as
-  compromised. Create a replacement key, update both the legacy and canonical
-  Infisical entries, revoke the exposed key after cutover, rerun the pinned
-  production deploy, and verify the live MCP tool annotations. Future secret
-  writes must suppress process output independently of the CLI's `--silent`
-  flag.
+  and created the required Infisical entries. The PEM values were then encoded
+  with literal `\\n` sequences so the least-privilege dotenv renderer could
+  parse them. The CLI unexpectedly printed secret values despite `--silent`;
+  local temporary secret files were deleted immediately.
+- **Validation:** The exact production dotenv renderer validated all eight
+  service files. Deploy run
+  [33763273039](https://github.com/Asherlc/dofek/actions/runs/33763273039)
+  completed successfully, both `dofek_web` replicas run image `sha-aef5426`,
+  and an authenticated OpenAI Platform rescan found all 20 MCP tools with
+  explicit read-only, open-world, and destructive annotations.
+- **Remaining risk / follow-up:** The App Store Connect key was exposed in
+  local command output and should be treated as compromised. The operator
+  explicitly directed deployment to proceed with the existing key rather than
+  rotate it. Future secret writes must suppress both stdout and stderr
+  independently of the CLI's `--silent` flag.
+
+## 2026-09-02 — Local ClickHouse integration fixture restart loop
+
+- **Status:** Unresolved local multi-workspace resource incident; isolated CI
+  validation remains authoritative.
+- **Symptoms / user impact:** The activity-integrity integration test lost its
+  ClickHouse connection during the first dbt model. The container restarted,
+  dbt reported `RemoteDisconnected`, and subsequent checks returned
+  `ECONNREFUSED`, blocking local validation.
+- **Evidence / root cause:** The first failure coincided with many orphaned
+  test databases, but recreating the workspace volume did not resolve it. A
+  clean-volume rerun failed later in `deduped_activities`, and a subsequent run
+  failed earlier in `activity_duplicate_matches`. ClickHouse emitted no fatal
+  server line; the container restarted externally, its cgroup reported zero
+  OOM kills and a 340 MiB peak under the 1.5 GiB limit, and ten ClickHouse
+  workspace containers were concurrently running on the Docker host. The exact
+  host-level restart cause is not yet confirmed; model-specific failure is
+  ruled out by the moving failure point and focused executable model tests.
+- **Fix / mitigation:** Removed and recreated only the current workspace's
+  `empty-stingray_clickhouse_data` volume, preserving its Postgres, Redis, and
+  Redpanda state and every other workspace. Docker documents that named-volume
+  removal deletes the data held by that specific volume:
+  <https://docs.docker.com/engine/storage/volumes/#remove-volumes>.
+- **Validation:** The executable duplicate-group integration suite passes all
+  three cases, including the 18-node chain. A later full lifecycle attempt
+  completed all eight scoped dbt models successfully, then lost ClickHouse
+  during the post-build verification snapshot. Run the full activity-integrity
+  database test on CI's isolated runner.
+- **Remaining risk / follow-up:** Determine which host component sends the
+  restart and whether aggregate multi-workspace pressure is responsible. A
+  test-process crash can still bypass `afterAll`; add workspace-scoped stale
+  test-database cleanup only if that accumulation independently recurs.
+
+## 2026-09-02 — Activity dbt launcher mutation coverage regression
+
+- **Status:** Resolved.
+- **Symptoms / user impact:** PR CI failed in `Test / Stryker (4)` at a 42.86%
+  mutation score, blocking merge. Runtime unit tests were green.
+- **Evidence / root cause:** The job report showed seven surviving mutants and
+  one uncovered failure branch in `activity-data-integrity-dbt.ts`. Its only
+  test asserted model ordering, leaving scoped dbt variables, spawn options,
+  environment selection, signal exits, and non-zero exits unverified.
+- **Fix / mitigation:** Added focused behavioral tests for each launcher input
+  and failure boundary without changing the mutation threshold or excluding
+  production code.
+- **Validation:** The focused unit suite passes 5/5 and the exact Stryker target
+  reports 100% mutation score with all 14 covered mutants killed.
+- **Remaining risk / follow-up:** None identified for this launcher; the full PR
+  mutation gate remains the merge authority.
+
+## 2026-09-02 — Analytics integration renderers passed dbt source Jinja to ClickHouse
+
+- **Status:** Fixed in source; isolated CI rerun pending.
+- **Symptoms / user impact:** PR CI's `Integration Tests (2/4)` job failed seven
+  attempts across the daily body-measurement and recovery suites, blocking the
+  activity-integrity repair from merging.
+- **Evidence / root cause:** The first fatal ClickHouse line was
+  `Syntax error ... {{ source('analytics', 'v_daily_metrics') }}`. The analytics
+  models had moved those dependencies from hard-coded relation names to dbt
+  `source()` expressions, while three executable integration renderers still
+  replaced only the former literal names. The unrendered Jinja therefore reached
+  ClickHouse. [Failed CI job](https://github.com/Asherlc/dofek/actions/runs/33707035910/job/100498711456)
+- **Fix / mitigation:** Updated the daily body-measurement, recovery, and sleep
+  integration renderers to resolve the canonical dbt `source()` expressions to
+  their fixture schemas. No retries, timeouts, or parser workarounds were added.
+- **Validation:** The two suites that failed in CI pass locally (8 tests). The
+  proactive sleep suite then lost its ClickHouse connection during fixture
+  teardown because of the separately documented local container restart issue;
+  it did not report a Jinja or SQL parser failure. The isolated CI runner remains
+  authoritative for the full three-suite result.
+- **Remaining risk / follow-up:** Confirm all integration shards pass on the new
+  commit before considering the incident resolved.
+
+## 2026-09-02 — Sensor-sample regression mock failed package typechecks
+
+- **Status:** Resolved in source; CI rerun pending.
+- **Symptoms / user impact:** Root and `@dofek/heart-rate-variability` typecheck
+  jobs failed, blocking the activity-integrity PR.
+- **Evidence / root cause:** Both jobs first failed at
+  `activity-data-integrity-clickhouse.test.ts(342,34): error TS2339: Property
+  'query_params' does not exist on type '{ query: string; }'`. The final
+  sensor-sample regression explicitly narrowed its mock callback argument to
+  the query string even though the assertion also reads the request parameters.
+- **Fix / mitigation:** Typed the mock argument with the same optional
+  `query_params` field accepted by the ClickHouse client contract. No compiler
+  rule or check was disabled.
+- **Validation:** The focused test (25/25), root typecheck, and
+  `@dofek/heart-rate-variability` package typecheck pass locally. Confirm the
+  replacement CI jobs pass.
+- **Remaining risk / follow-up:** None after the replacement CI run passes.
+
+## 2026-09-02 — MCP tool registry exceeded the line-count lint limit
+
+- **Status:** Resolved in source; CI rerun pending.
+- **Symptoms / user impact:** The primary lint job failed and blocked the
+  activity-integrity PR after the functional checks had passed.
+- **Evidence / root cause:** Biome reported
+  `packages/server/src/mcp/tools.ts:1:1 lint/style/noExcessiveLinesPerFile` with
+  1,001 logical lines against the enforced 1,000-line maximum. The power summary
+  contract added in this PR left the touched registry one line over the limit.
+- **Fix / mitigation:** Removed an unnecessary blank line from the tool
+  registration boundary. The lint limit was not raised or suppressed.
+- **Validation:** The exact repository lint command clears the original Biome
+  stage across all 3,139 files. Its later SQLFluff stage was interrupted by the
+  separately documented local ClickHouse reset; standalone analytics SQL lint
+  passed, and the dedicated CI SQLFluff job is green. Confirm the replacement
+  primary lint job passes.
+- **Remaining risk / follow-up:** The registry is exactly at the limit; the next
+  functional addition should extract another cohesive MCP tool module rather
+  than compressing behavior or changing the threshold.
+
+## 2026-09-02 — Activity repair lifecycle fixture omitted sensor input
+
+- **Status:** Fixed in source; isolated CI rerun pending.
+- **Symptoms / user impact:** PR CI integration shard 3/4 failed the production-path
+  activity repair lifecycle assertion because `activity_sensor_summary_rows`
+  contained no active rows, blocking merge.
+- **Evidence / root cause:** The exact failing assertion expected summaries for
+  the two rebuilt canonical activities but received `[]`. The fixture created
+  `deduped_sensor` without inserting any samples; the production summary model
+  correctly emits deleted rows when no channel aggregate exists. The retry then
+  hit the expected rollback-eligible journal guard left by the first failed run.
+  [Failed CI job](https://github.com/Asherlc/dofek/actions/runs/33711649512/job/100512474847)
+- **Fix / mitigation:** Seeded one heart-rate sample inside the overlapping
+  activity window so the lifecycle test executes the sensor hydration path it
+  asserts. No retry, timeout, or production behavior was changed.
+- **Validation:** The original isolated run completed all eight dbt models before
+  the assertion exposed the empty fixture. The exact local rerun was interrupted
+  by the separately documented workspace ClickHouse restart; the replacement
+  isolated CI shard is the final authority.
+- **Remaining risk / follow-up:** Confirm shard 3/4 passes on the replacement run.
+## 2026-09-02 — Strava OAuth callback reported failure after successful token exchange
+
+- **Status:** Fixed in source; deployment pending.
+- **Symptoms / user impact:** Connecting Strava displayed `Token exchange failed`,
+  although the account was linked and tokens were saved.
+- **Evidence / root cause:** Production logs at `22:14:06Z` showed the token
+  exchange succeeded, linking completed at `22:14:16Z`, and webhook registration
+  then failed at `22:14:36Z`. Strava synchronously called the webhook validation
+  URL during `POST /api/v3/push_subscriptions`; Dofek returned 404 because it
+  persisted the verify token only after the provider call returned. Strava
+  requires the callback challenge response during this registration flow
+  ([Strava webhook documentation](https://developers.strava.com/docs/webhooks/)).
+- **Fix / mitigation:** Persist an encrypted, five-minute pending verify token
+  before provider registration; accept a matching pending challenge and promote
+  the row to active after registration succeeds.
+- **Validation:** Added repository and webhook regression tests; focused Vitest,
+  Biome, diff checks, and TypeScript typechecking passed.
+- **Remaining risk / follow-up:** Deploy the pushed fix and complete one fresh
+  Strava connection to verify the production handshake and subscription state.
+
+## 2026-09-03 — Webhook reconciliation CI mutation failure
+
+- **Status:** Fixed in source; fresh CI validation is running.
+- **Symptoms / user impact:** The PR's Unit Tests and Stryker shard 1 failed
+  after durable webhook reconciliation was added; the CI and mutation gates
+  consequently failed.
+- **Evidence / root cause:** The first fatal assertion expected the activation
+  cleanup query at `db.execute` call 1, but the new remote-ID persistence
+  update occupies that call. Stryker also found two uncovered reconciliation
+  branches: retaining rows without a remote ID and stopping after a matching
+  pending challenge.
+- **Direct fix:** Corrected the cleanup query index and added regression cases
+  for missing remote IDs and a third pending challenge row. No CI thresholds,
+  retries, or failure handling were changed.
+- **Validation:** Focused webhook tests, Biome, server typecheck, and the
+  targeted Stryker dry run passed locally. The fresh PR workflow for commit
+  `f53df3c83` is in progress.
+- **Remaining risk / follow-up:** Confirm the fresh PR workflow completes with
+  both Stryker shards and all gates passing.
+
+## 2026-09-03 — Strava webhook cleanup wording failed CI spell check
+
+- **Status:** Fixed in source; fresh CI validation is pending.
+- **Symptoms / user impact:** PR 2653's Spell Check and dependent Lint & Static
+  Analysis jobs failed.
+- **Evidence / root cause:** CSpell reported `Unknown word (unregistration)` at
+  `src/providers/strava.ts:486` and `src/providers/strava.test.ts:1421` after
+  the webhook cleanup error was made explicit.
+- **Direct fix:** Replaced the non-dictionary term with `webhook removal` in
+  the error and its regression assertion. No spell-check bypass was added.
+- **Validation:** Focused Strava tests pass 124/124; Biome and server
+  typechecking pass locally.
+- **Remaining risk / follow-up:** Confirm the fresh PR workflow completes with
+  Spell Check and the dependent quality gate passing.

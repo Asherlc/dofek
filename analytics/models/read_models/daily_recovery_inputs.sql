@@ -57,7 +57,7 @@ daily_metrics AS (
         date,
         nullIf(hrv, 0) AS hrv,
         nullIf(respiratory_rate_avg, 0) AS respiratory_rate
-    FROM analytics.v_daily_metrics
+    FROM {{ source('analytics', 'v_daily_metrics') }}
 ),
 
 resting_by_date AS (

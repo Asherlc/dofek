@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { readModelSql, renderDbtModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 
@@ -11,9 +12,17 @@ const containedCyclingId = "00000000-0000-4000-8000-000000000102";
 const typedStrengthId = "00000000-0000-4000-8000-000000000103";
 const containingCyclingId = "00000000-0000-4000-8000-000000000104";
 const broadOtherId = "00000000-0000-4000-8000-000000000105";
+const crossProviderOtherId = "00000000-0000-4000-8000-000000000110";
+const crossProviderTombstonedOtherId = "00000000-0000-4000-8000-000000000111";
 const bridgeCyclingId = "00000000-0000-4000-8000-000000000106";
 const bridgeStrengthId = "00000000-0000-4000-8000-000000000107";
 const tombstonedWhoopId = "00000000-0000-4000-8000-000000000108";
+const pelotonMemberId = "00000000-0000-4000-8000-000000000109";
+const wahooOtherId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
+const matchRowsSchema = z.array(
+  z.object({ activityId: z.string().uuid(), duplicateActivityId: z.string().uuid() }),
+);
+const lifecycleRowsSchema = z.array(z.object({ isDeleted: z.coerce.number().int() }));
 
 describe("activity_duplicate_matches read model", () => {
   let client: ClickHouseClient | undefined;
@@ -51,10 +60,13 @@ ${renderModel(database)}`,
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([
+    const matches = matchRowsSchema.parse(await result.json<unknown>());
+
+    expect(matches).toEqual([
       { activityId: whoopOtherId, duplicateActivityId: containedCyclingId },
       { activityId: containedCyclingId, duplicateActivityId: tombstonedWhoopId },
     ]);
+    expect(groupsFor(wahooOtherId, matches)).not.toContain(pelotonMemberId);
   }, 180_000);
 
   it("emits a tombstone when an incremental refresh removes a stale match", async () => {
@@ -79,7 +91,30 @@ ${renderModel(database, true)}`,
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([{ isDeleted: 1 }]);
+    expect(lifecycleRowsSchema.parse(await result.json<unknown>())).toEqual([{ isDeleted: 1 }]);
+  }, 180_000);
+
+  it("keeps an active-to-tombstoned match when only its tombstoned endpoint is scoped", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, database);
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_matches
+${renderModel(database)}`,
+    });
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_matches
+${renderModel(database, true, [tombstonedWhoopId])}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT is_deleted AS isDeleted
+        FROM ${database}.activity_duplicate_matches FINAL
+        WHERE activity_id = toUUID('${containedCyclingId}')
+          AND duplicate_activity_id = toUUID('${tombstonedWhoopId}')`,
+      format: "JSONEachRow",
+    });
+
+    expect(lifecycleRowsSchema.parse(await result.json<unknown>())).toEqual([{ isDeleted: 0 }]);
   }, 180_000);
 });
 
@@ -88,12 +123,40 @@ function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
   return client;
 }
 
-function renderModel(database: string, incremental = false): string {
-  return readFileSync(new URL("./activity_duplicate_matches.sql", import.meta.url), "utf8")
-    .replace(/{{ config\([\s\S]*?\) }}\s*/, "")
-    .replace(
-      /{% if is_incremental\(\) %}([\s\S]*?){% else %}([\s\S]*?){% endif %}/g,
-      incremental ? "$1" : "$2",
+function groupsFor(
+  activityId: string,
+  matches: Array<{ activityId: string; duplicateActivityId: string }>,
+): string[] {
+  const members = new Set([activityId]);
+  let discoveredNewMember = true;
+  while (discoveredNewMember) {
+    discoveredNewMember = false;
+    for (const match of matches) {
+      if (members.has(match.activityId) && !members.has(match.duplicateActivityId)) {
+        members.add(match.duplicateActivityId);
+        discoveredNewMember = true;
+      }
+      if (members.has(match.duplicateActivityId) && !members.has(match.activityId)) {
+        members.add(match.activityId);
+        discoveredNewMember = true;
+      }
+    }
+  }
+  return [...members];
+}
+
+function renderModel(
+  database: string,
+  incremental = false,
+  scopedActivityIds?: readonly string[],
+): string {
+  return renderDbtModelSql(readModelSql("activity_duplicate_matches.sql"), {
+    isIncremental: incremental,
+    activityRefreshScoped: scopedActivityIds != null,
+  })
+    .replaceAll(
+      "{{ activity_refresh_ids() }}",
+      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
     )
     .replace(/{{ ref\('activity_source_records'\) }}/g, `${database}.activity_source_records`)
     .replace(
@@ -138,9 +201,9 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (activity_id, duplicate_activity_id)`,
     `INSERT INTO ${database}.activity_source_records VALUES
-      ('${whoopOtherId}', 'whoop', '${userId}', 'other',
-       toDateTime64('2026-04-01 15:22:30', 6, 'UTC'),
-       toDateTime64('2026-04-01 15:35:59', 6, 'UTC'), 0),
+      ('${whoopOtherId}', 'wahoo', '${userId}', 'other',
+       toDateTime64('2026-04-01 15:22:00', 6, 'UTC'),
+       toDateTime64('2026-04-01 16:05:00', 6, 'UTC'), 0),
       ('${containedCyclingId}', 'wahoo', '${userId}', 'cycling',
        toDateTime64('2026-04-01 15:21:24', 6, 'UTC'),
        toDateTime64('2026-04-01 16:13:42', 6, 'UTC'), 0),
@@ -153,16 +216,29 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       ('${broadOtherId}', 'whoop', '${userId}', 'other',
        toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
        toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0),
+      ('${crossProviderOtherId}', 'wahoo', '${userId}', 'other',
+       toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
+       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0),
       ('${bridgeCyclingId}', 'wahoo', '${userId}', 'cycling',
        toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
        toDateTime64('2026-06-01 18:20:00', 6, 'UTC'), 0),
       ('${bridgeStrengthId}', 'apple_health', '${userId}', 'strength',
        toDateTime64('2026-06-01 18:40:00', 6, 'UTC'),
-       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0)`,
+       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0),
+      ('${pelotonMemberId}', 'peloton', '${userId}', 'cycling',
+       toDateTime64('2026-07-01 18:00:00', 6, 'UTC'),
+       toDateTime64('2026-07-01 19:00:00', 6, 'UTC'), 0),
+      ('${wahooOtherId}', 'wahoo', '${userId}', 'other',
+       toDateTime64('2026-07-01 18:10:00', 6, 'UTC'),
+       toDateTime64('2026-07-01 18:50:00', 6, 'UTC'), 0)`,
     `INSERT INTO ${database}.source_activity VALUES
-      ('${tombstonedWhoopId}', '${userId}', 'whoop', 'other',
-       toDateTime64('2026-04-01 15:40:00', 6, 'UTC'),
-       toDateTime64('2026-04-01 15:50:00', 6, 'UTC'), 0,
+      ('${tombstonedWhoopId}', '${userId}', 'wahoo', 'other',
+       toDateTime64('2026-04-01 15:30:00', 6, 'UTC'),
+       toDateTime64('2026-04-01 16:13:00', 6, 'UTC'), 0,
+       toDateTime64('2026-09-01 00:00:00', 6, 'UTC'), NULL),
+      ('${crossProviderTombstonedOtherId}', '${userId}', 'peloton', 'other',
+       toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
+       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0,
        toDateTime64('2026-09-01 00:00:00', 6, 'UTC'), NULL)`,
   ];
   for (const statement of statements) await client.command({ query: statement });

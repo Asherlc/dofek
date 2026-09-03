@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readModelSql } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+import { readModelSql } from "../../../../src/db/read-model-sql-test-helpers.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {

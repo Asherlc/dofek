@@ -238,6 +238,67 @@ export const processingMetricStreamBatch = fitness.table(
   ],
 );
 
+export const activityIntegrityRepairJournal = fitness.table(
+  "activity_integrity_repair_journal",
+  {
+    runId: uuid("run_id").primaryKey(),
+    userId: uuid("user_id").notNull(),
+    artifactPath: text("artifact_path").notNull(),
+    artifactChecksum: text("artifact_checksum").notNull(),
+    acceptanceOwner: text("acceptance_owner").notNull(),
+    acceptanceDeadline: timestamp("acceptance_deadline", { withTimezone: true }).notNull(),
+    phase: text("phase").notNull(),
+    acceptedBy: text("accepted_by"),
+    retirementDisposition: text("retirement_disposition"),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    retirementReceiptPath: text("retirement_receipt_path"),
+    retirementReceiptChecksum: text("retirement_receipt_checksum"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("activity_integrity_repair_journal_artifact_path_key").on(table.artifactPath),
+    uniqueIndex("activity_integrity_repair_journal_single_eligible_idx")
+      .on(sql`(true)`)
+      .where(
+        sql`${table.phase} IN ('postgres_committed', 'rebuild_failed', 'executed', 'rollback_committed')`,
+      ),
+    check(
+      "activity_integrity_repair_journal_checksum_valid",
+      sql`${table.artifactChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_integrity_repair_journal_phase_valid",
+      sql`${table.phase} IN (
+        'postgres_committed',
+        'rebuild_failed',
+        'executed',
+        'rollback_committed',
+        'rolled_back',
+        'retired'
+      )`,
+    ),
+    check(
+      "activity_integrity_repair_journal_disposition_valid",
+      sql`${table.retirementDisposition} IS NULL OR ${table.retirementDisposition} IN ('accepted', 'superseded')`,
+    ),
+    check(
+      "activity_integrity_repair_journal_receipt_checksum_valid",
+      sql`${table.retirementReceiptChecksum} IS NULL OR ${table.retirementReceiptChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_integrity_repair_journal_retirement_complete",
+      sql`(${table.phase} = 'retired') = (
+        ${table.acceptedBy} IS NOT NULL
+        AND ${table.retirementDisposition} IS NOT NULL
+        AND ${table.retiredAt} IS NOT NULL
+        AND ${table.retirementReceiptPath} IS NOT NULL
+        AND ${table.retirementReceiptChecksum} IS NOT NULL
+      )`,
+    ),
+  ],
+);
+
 export const processingQueueOutbox = fitness.table(
   "processing_queue_outbox",
   {

@@ -125,9 +125,82 @@ SELECT * FROM state
   });
 
   it("selects the initial branch when incremental mode is disabled", () => {
-    expect(renderDbtModelSql(modelSql, { isIncremental: false })).toContain(
-      "WHERE active = 0",
+    expect(renderDbtModelSql(modelSql, { isIncremental: false })).toContain("WHERE active = 0");
+  });
+
+  it("renders an if directive separated from its condition by a tab", () => {
+    const renderedSql = renderDbtModelSql(
+      "{% if\tis_incremental() %}SELECT 1{% else %}SELECT 0{% endif %}",
+      { isIncremental: true },
     );
+
+    expect(renderedSql).toBe("SELECT 1");
+  });
+
+  it("selects the unscoped activity refresh branch", () => {
+    const scopedModelSql = `${modelSql}
+{% if activity_refresh_scoped %}
+SELECT 'scoped'
+{% else %}
+SELECT 'unscoped'
+{% endif %}`;
+
+    const renderedSql = renderDbtModelSql(scopedModelSql, {
+      isIncremental: false,
+      activityRefreshScoped: false,
+    });
+
+    expect(renderedSql).not.toContain("{% ");
+    expect(renderedSql).not.toContain("SELECT 'scoped'");
+    expect(renderedSql).toContain("SELECT 'unscoped'");
+  });
+
+  it("renders nested boolean branches without leaving Jinja tokens", () => {
+    const nestedModelSql = `
+{% if activity_refresh_scoped %}
+scoped AS (
+  {% if is_incremental() %}
+  SELECT 'scoped incremental'
+  {% else %}
+  SELECT 'scoped initial'
+  {% endif %}
+),
+{% endif %}
+existing AS (
+  {% if is_incremental() %}
+  SELECT 'incremental'
+    {% if activity_refresh_scoped %}
+    WHERE scope = 1
+    {% endif %}
+  {% else %}
+  SELECT 'initial'
+  {% endif %}
+)
+`;
+
+    const renderedSql = renderDbtModelSql(nestedModelSql, {
+      isIncremental: false,
+      activityRefreshScoped: false,
+    });
+
+    expect(renderedSql).not.toContain("{% ");
+    expect(renderedSql).not.toContain("scoped AS");
+    expect(renderedSql).not.toContain("scoped initial");
+    expect(renderedSql).not.toContain("SELECT 'incremental'");
+    expect(renderedSql).toContain("SELECT 'initial'");
+  });
+
+  it("renders the duplicate-groups initial model without scoped fragments", () => {
+    const renderedSql = renderDbtModelSql(readModelSql("activity_duplicate_groups.sql"), {
+      isIncremental: false,
+      activityRefreshScoped: false,
+    });
+
+    expect(renderedSql).not.toContain("{% ");
+    expect(renderedSql).not.toContain("prior_scope_group_ids AS");
+    expect(renderedSql).not.toContain("affected_activity_ids AS");
+    expect(renderedSql).not.toContain("{{ this }}");
+    expect(renderedSql).toContain("SELECT CAST(null, 'Nullable(UUID)') AS activity_id");
   });
 
   it("removes every incremental-only branch from cycling_activity initial SQL", () => {

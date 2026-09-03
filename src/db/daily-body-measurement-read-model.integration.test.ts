@@ -172,7 +172,7 @@ function renderWeeklyHealthspanSelectSql(targetSchema: string, isIncremental: bo
     )
     .replaceAll("{{ this }}", `${targetSchema}.weekly_healthspan`)
     .replaceAll("{{ ref('daily_sleep') }}", `${targetSchema}.daily_sleep`)
-    .replaceAll("analytics.v_daily_metrics", `${targetSchema}.v_daily_metrics`)
+    .replaceAll("{{ source('analytics', 'v_daily_metrics') }}", `${targetSchema}.v_daily_metrics`)
     .replaceAll(
       "{{ ref('resting_heart_rate_sleep_window') }}",
       `${targetSchema}.resting_heart_rate_sleep_window`,

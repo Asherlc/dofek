@@ -34,6 +34,21 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   ownership for exercises and provider aliases from historical strength sets,
   in bounded batches, then verifies that no attributable rows were missed.
   - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
+- `repair-activity-data-integrity.ts`: Dry-run-first, user/window-bounded repair
+  for activity local-time context and its dbt-owned ClickHouse grouping and
+  summary read models. A global PostgreSQL advisory lease serializes runs, a
+  bounded CDC barrier precedes the affected-key dbt refresh, and the private
+  audit artifact supports compare-and-swap rollback of the complete eight-model
+  chain with a monotonic `UInt64` version. PostgreSQL documents advisory locks
+  in its [explicit locking reference](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.ts --user-id=<uuid> --start-at=<utc> --end-at=<utc>`
+  - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
+- `inspect-activity-data-integrity.ts`: Read-only diagnosis of selected activity
+  groups, their chosen sensor-summary members, Strong set parentage, and peak
+  heart-rate provenance. Requires one `--user-id=<uuid>` and one or more
+  repeatable `--activity-id=<uuid-prefix>` options.
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/inspect-activity-data-integrity.ts --user-id=<uuid> --activity-id=<uuid-prefix> --activity-id=<uuid-prefix>`
+  - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
 ## Environment & Secrets
 
 - `dev-environment.ts`: Idempotent bootstrap and verification for the
