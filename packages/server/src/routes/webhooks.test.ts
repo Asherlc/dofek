@@ -272,6 +272,34 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     expect(cleanupQuery.params).toContain("expired-1");
   });
 
+  it("reports failed expired-subscription reconciliation and retains the row", async () => {
+    const provider = createMockWebhookProvider({
+      handleValidationChallenge: vi.fn(() => null),
+      unregisterWebhook: vi.fn(async () => {
+        throw new Error("provider cleanup unavailable");
+      }),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "expired-1", subscription_external_id: "remote-expired" }])
+      .mockResolvedValueOnce([]);
+
+    const res = await request(createTestApp(), "get", "/api/webhooks/test-provider");
+
+    expect(res.status).toBe(404);
+    expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-expired");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "provider cleanup unavailable" }),
+      expect.objectContaining({
+        tags: {
+          provider: "test-provider",
+          webhookPhase: "expired-subscription-reconciliation",
+        },
+      }),
+    );
+  });
+
   it("returns 400 when challenge handler returns null", async () => {
     const provider = createMockWebhookProvider({
       handleValidationChallenge: vi.fn(() => null),
@@ -1246,6 +1274,30 @@ describe("registerWebhookForProvider", () => {
       expect.objectContaining({ message: "cleanup unavailable" }),
       expect.objectContaining({
         tags: { provider: "test-provider", webhookPhase: "pending-subscription-cleanup" },
+      }),
+    );
+  });
+
+  it("compensates when remote subscription ID persistence fails", async () => {
+    const db = getMockDb();
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce([{ id: "pending-1" }])
+      .mockRejectedValueOnce(new Error("subscription ID persistence unavailable"))
+      .mockResolvedValueOnce([]);
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "remote-sub" })),
+    });
+
+    await expect(registerWebhookForProvider(db, provider, "user-1")).rejects.toThrow(
+      "subscription ID persistence unavailable",
+    );
+
+    expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-sub");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "subscription ID persistence unavailable" }),
+      expect.objectContaining({
+        tags: { provider: "test-provider", webhookPhase: "subscription-id-persistence" },
       }),
     );
   });
