@@ -266,10 +266,13 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     expect(provider.handleValidationChallenge).toHaveBeenCalledTimes(2);
     expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-expired");
     expect(provider.unregisterWebhook).not.toHaveBeenCalledWith(undefined);
-    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(db.execute).toHaveBeenCalledTimes(2);
     const cleanupQuery = new PgDialect().sqlToQuery(db.execute.mock.calls[0]?.[0]);
     expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
     expect(cleanupQuery.params).toContain("expired-1");
+    const localCleanupQuery = new PgDialect().sqlToQuery(db.execute.mock.calls[1]?.[0]);
+    expect(localCleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
+    expect(localCleanupQuery.params).toContain("expired-2");
   });
 
   it("reports failed expired-subscription reconciliation and retains the row", async () => {

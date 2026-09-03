@@ -77,9 +77,10 @@ async function reconcileExpiredPendingSubscriptions(
   provider: WebhookProvider,
 ): Promise<void> {
   for await (const subscription of repository.iterateExpiredPendingByProviderName(provider.id)) {
-    if (!subscription.subscriptionExternalId) continue;
     try {
-      await provider.unregisterWebhook(subscription.subscriptionExternalId);
+      if (subscription.subscriptionExternalId) {
+        await provider.unregisterWebhook(subscription.subscriptionExternalId);
+      }
       await repository.deletePendingSubscription(subscription.id);
     } catch (error: unknown) {
       captureException(error, {
