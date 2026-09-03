@@ -99,6 +99,37 @@ describe("selectCompatibleActivitySummary", () => {
     expect(selectCompatibleActivitySummary).toBeTypeOf("function");
     expect(selectCompatibleActivitySummary(runningRow, pelotonOnlySummaries)).toBeNull();
   });
+
+  it("allows a matching non-other type to hydrate across providers", () => {
+    const cyclingRow = { canonical_type: "cycling", provider_id: "wahoo" };
+    const pelotonCyclingSummary = {
+      activity_id: "peloton-member",
+      canonical_type: "cycling",
+      provider_id: "peloton",
+    };
+
+    expect(selectCompatibleActivitySummary(cyclingRow, [pelotonCyclingSummary])).toBe(
+      pelotonCyclingSummary,
+    );
+  });
+
+  it("requires an other summary to come from the canonical provider", () => {
+    const otherRow = { canonical_type: "other", provider_id: "wahoo" };
+    const pelotonSummary = {
+      activity_id: "peloton-member",
+      canonical_type: "other",
+      provider_id: "peloton",
+    };
+    const wahooSummary = {
+      activity_id: "wahoo-member",
+      canonical_type: "other",
+      provider_id: "wahoo",
+    };
+
+    expect(selectCompatibleActivitySummary(otherRow, [pelotonSummary, wahooSummary])).toBe(
+      wahooSummary,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
