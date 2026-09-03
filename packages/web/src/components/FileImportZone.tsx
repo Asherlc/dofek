@@ -12,6 +12,7 @@ import {
 } from "../lib/resumable-file-upload.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
+import { useUnitSystem } from "../lib/unitContext.ts";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
 import { FileImportButton } from "./FileImportButton.tsx";
 import { OperationProgressBar } from "./OperationProgressBar.tsx";
@@ -67,6 +68,12 @@ export function FileImportZone({
   showDetailsLink = true,
   activeImport,
 }: FileImportZoneProps) {
+  const { unitSystem } = useUnitSystem();
+  const [selectedWeightUnitOverride, setSelectedWeightUnitOverride] = useState<"kg" | "lbs" | null>(
+    null,
+  );
+  const selectedWeightUnit =
+    selectedWeightUnitOverride ?? weightUnit ?? (unitSystem === "imperial" ? "lbs" : "kg");
   const [state, setState] = useState<{
     phase: DisplayPhase;
     progress: number;
@@ -234,7 +241,7 @@ export function FileImportZone({
           sessionStore: indexedDbUploadSessionStore,
           signal: abortController.signal,
           fullSync,
-          weightUnit,
+          weightUnit: importType === "strong-csv" ? selectedWeightUnit : weightUnit,
           onProgress: (progress) =>
             setState({
               phase: progress.phase,
@@ -260,7 +267,7 @@ export function FileImportZone({
         abortControllerRef.current = null;
       }
     },
-    [fullSync, importType, pollUpload, sessionKey, uploadApi, weightUnit],
+    [fullSync, importType, pollUpload, selectedWeightUnit, sessionKey, uploadApi, weightUnit],
   );
 
   const cancelUpload = useCallback(async () => {
@@ -363,6 +370,22 @@ export function FileImportZone({
         ) : (
           <div className="space-y-2">
             <div className="text-xs text-dim">{state.message ?? description}</div>
+            {importType === "strong-csv" && (
+              <label className="inline-flex items-center gap-2 text-xs text-muted">
+                Weight unit
+                <select
+                  aria-label="Weight unit"
+                  value={selectedWeightUnit}
+                  onChange={(event) =>
+                    setSelectedWeightUnitOverride(event.target.value === "lbs" ? "lbs" : "kg")
+                  }
+                  className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
+                >
+                  <option value="kg">kg</option>
+                  <option value="lbs">lbs</option>
+                </select>
+              </label>
+            )}
             <FileImportButton onClick={() => fileInputRef.current?.click()} />
           </div>
         )}

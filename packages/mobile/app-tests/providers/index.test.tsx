@@ -307,6 +307,7 @@ const mockWhoopSaveTokens = vi.fn();
 const mockInitiateFileUpload = vi.fn();
 const mockAuthorizeFileUploadParts = vi.fn();
 const mockCompleteFileUpload = vi.fn();
+const mockFetchUnitSetting = vi.fn();
 const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -377,6 +378,9 @@ vi.mock("../../lib/trpc", () => ({
         activeSyncs: { invalidate: mockInvalidateActiveSyncs },
         activeImports: { invalidate: mockInvalidateActiveImports },
         syncStatus: { fetch: mockSyncStatusFetch },
+      },
+      settings: {
+        get: { fetch: mockFetchUnitSetting },
       },
     }),
   },
@@ -452,6 +456,7 @@ function setupDefaultMocks() {
   mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
   mockActiveSyncsQuery.mockReturnValue({ data: [] });
   mockActiveImportsQuery.mockReturnValue({ data: [], error: null });
+  mockFetchUnitSetting.mockResolvedValue({ key: "unitSystem", value: "metric" });
 }
 
 function makeProvider(
@@ -1014,6 +1019,7 @@ describe("ProvidersScreen", () => {
     mockInitiateFileUpload.mockReset();
     mockAuthorizeFileUploadParts.mockReset();
     mockCompleteFileUpload.mockReset();
+    mockFetchUnitSetting.mockReset();
     mockFileDelete.mockReset();
     mockAuthState.sessionToken = "test-token";
     mockFileBytes.mockClear();
@@ -2075,6 +2081,7 @@ describe("ProvidersScreen", () => {
       expect(mockImportSharedFile).toHaveBeenCalledWith(
         expect.objectContaining({
           fileUri: "file:///tmp/Strong%20Export.csv",
+          selectStrongWeightUnit: expect.any(Function),
         }),
         expect.objectContaining({
           fileUploadApi: expect.objectContaining({
@@ -2086,6 +2093,105 @@ describe("ProvidersScreen", () => {
         }),
       );
     });
+  });
+
+  it("does not load or delay unit preferences for a non-Strong shared import", async () => {
+    mockImportSharedFile.mockResolvedValue({ providerId: "garmin-dump", jobId: "job-share" });
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/garmin-export.zip",
+    });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => expect(mockImportSharedFile).toHaveBeenCalledOnce());
+    expect(mockFetchUnitSetting).not.toHaveBeenCalled();
+  });
+
+  it("awaits the unit preference after identifying a shared Strong CSV", async () => {
+    let resolveUnitSetting: ((setting: { key: string; value: string }) => void) | undefined;
+    mockFetchUnitSetting.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUnitSetting = resolve;
+        }),
+    );
+    mockAlert.mockImplementation(
+      (
+        _title: string,
+        _message: string,
+        buttons?: Array<{ text?: string; onPress?: () => void }>,
+      ) => {
+        buttons?.find((button) => button.text === "Pounds (lbs)")?.onPress?.();
+      },
+    );
+    let selection: Promise<"kg" | "lbs" | null> | undefined;
+    mockImportSharedFile.mockImplementation(
+      async (args: { selectStrongWeightUnit?: () => Promise<"kg" | "lbs" | null> }) => {
+        selection = args.selectStrongWeightUnit?.();
+        await selection;
+        return null;
+      },
+    );
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+
+    await renderProvidersScreen();
+    await waitFor(() => expect(mockFetchUnitSetting).toHaveBeenCalledWith({ key: "unitSystem" }));
+    expect(mockAlert).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveUnitSetting?.({ key: "unitSystem", value: "imperial" });
+    });
+
+    await expect(selection).resolves.toBe("lbs");
+    expect(mockAlert).toHaveBeenCalledWith(
+      "Strong weight unit",
+      "Which unit are the weights in this Strong export?",
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Pounds (lbs)", isPreferred: true }),
+      ]),
+      expect.objectContaining({ cancelable: true }),
+    );
+  });
+
+  it("prompts for Strong weight units with the Dofek preference highlighted", async () => {
+    mockFetchUnitSetting.mockResolvedValue({ key: "unitSystem", value: "imperial" });
+    let selectStrongWeightUnit: (() => Promise<"kg" | "lbs" | null>) | undefined;
+    mockImportSharedFile.mockImplementation(
+      async (args: { selectStrongWeightUnit?: () => Promise<"kg" | "lbs" | null> }) => {
+        selectStrongWeightUnit = args.selectStrongWeightUnit;
+        return { providerId: "strong-csv", jobId: "job-share" };
+      },
+    );
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+
+    await renderProvidersScreen();
+    await waitFor(() => expect(selectStrongWeightUnit).toBeTypeOf("function"));
+
+    mockAlert.mockImplementation(
+      (
+        _title: string,
+        _message: string,
+        buttons?: Array<{ text?: string; isPreferred?: boolean; onPress?: () => void }>,
+      ) => {
+        buttons?.find((button) => button.text === "Pounds (lbs)")?.onPress?.();
+      },
+    );
+    const selection = selectStrongWeightUnit?.();
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Strong weight unit",
+        "Which unit are the weights in this Strong export?",
+        expect.arrayContaining([
+          expect.objectContaining({ text: "Pounds (lbs)", isPreferred: true }),
+        ]),
+        expect.objectContaining({ cancelable: true }),
+      ),
+    );
+    await expect(selection).resolves.toBe("lbs");
   });
 
   it("deletes a shared file and surfaces auth errors when importing without a session", async () => {
@@ -2184,6 +2290,7 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/strong-export.csv",
           providerId: "strong-csv",
+          selectStrongWeightUnit: expect.any(Function),
         }),
         expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );

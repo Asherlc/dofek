@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
 
 const mocks = vi.hoisted(() => ({
   abort: vi.fn(),
@@ -105,6 +106,46 @@ describe("FileImportZone", () => {
     expect(screen.getByText(".csv export from Strong app")).toBeTruthy();
   });
 
+  it("offers Strong weight units, defaults to imperial pounds, and uploads the selection", async () => {
+    mocks.runUpload.mockResolvedValue({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+      state: "queued",
+      partSizeBytes: 16 * 1024 * 1024,
+      importJobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+    });
+    mocks.resume.mockResolvedValue({
+      upload: { state: "completed", progressPercent: 100 },
+      parts: [],
+    });
+    render(
+      <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
+        <FileImportZone
+          providerId="strong-csv"
+          importType="strong-csv"
+          title="Strong"
+          description=".csv export from Strong app"
+          accept=".csv"
+        />
+      </UnitContext.Provider>,
+    );
+
+    const weightUnit = screen.getByRole("combobox", { name: "Weight unit" });
+    expect(weightUnit).toHaveValue("lbs");
+    expect(screen.getByRole("option", { name: "kg" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "lbs" })).toBeTruthy();
+
+    fireEvent.change(weightUnit, { target: { value: "kg" } });
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["strong-data"], "strong.csv", { type: "text/csv" })] },
+    });
+
+    await waitFor(() =>
+      expect(mocks.runUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ importType: "strong-csv", weightUnit: "kg" }),
+      ),
+    );
+  });
+
   it("starts the resumable upload protocol for a dropped file", async () => {
     mocks.runUpload.mockImplementation(async ({ onProgress }) => {
       onProgress({ phase: "uploading", percentage: 42, message: "Uploaded 1 of 3 parts" });
@@ -129,6 +170,7 @@ describe("FileImportZone", () => {
       />,
     );
 
+    expect(screen.queryByRole("combobox", { name: "Weight unit" })).toBeNull();
     fireEvent.drop(screen.getByRole("region", { name: "Garmin file drop zone" }), {
       dataTransfer: { files: [new File(["zip-data"], "garmin.zip", { type: "application/zip" })] },
     });

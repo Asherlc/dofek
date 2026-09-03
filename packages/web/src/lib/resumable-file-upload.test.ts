@@ -221,6 +221,46 @@ describe("runResumableFileUpload", () => {
     expect(api.resume).toHaveBeenCalledWith({ uploadId: newUploadId });
   });
 
+  it("starts a new Strong upload when the selected weight unit changes", async () => {
+    const storedUploadId = randomUUID();
+    const newUploadId = randomUUID();
+    const file = new File(["abcdefgh"], "strong.csv", { lastModified: 456 });
+    const storedSession: StoredUploadSession = {
+      providerId: "strong-csv",
+      uploadId: storedUploadId,
+      importType: "strong-csv",
+      filename: file.name,
+      sizeBytes: file.size,
+      lastModified: file.lastModified,
+      sha256: createHash("sha256").update("abcdefgh").digest("hex"),
+      partSizeBytes: 5,
+      completedParts: [],
+      weightUnit: "kg",
+    };
+    const api = uploadApi(newUploadId);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(newUploadId);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 200, headers: { etag: "etag" } })),
+    );
+
+    await runResumableFileUpload({
+      api,
+      file,
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: memoryStore(storedSession),
+      signal: new AbortController().signal,
+      onProgress: vi.fn(),
+      weightUnit: "lbs",
+    });
+
+    expect(api.initiate).toHaveBeenCalledWith(
+      expect.objectContaining({ uploadId: newUploadId, weightUnit: "lbs" }),
+    );
+    expect(api.resume).toHaveBeenCalledWith({ uploadId: newUploadId });
+  });
+
   it("uploads exact part boundaries and persists sorted completion progress", async () => {
     const uploadId = randomUUID();
     const api = uploadApi(uploadId);
@@ -498,6 +538,7 @@ describe("indexedDbUploadSessionStore", () => {
     sha256: "a".repeat(64),
     partSizeBytes: 5,
     completedParts: [{ partNumber: 1, etag: "etag" }],
+    weightUnit: "lbs",
   };
 
   it("creates the session store and reads validated sessions", async () => {

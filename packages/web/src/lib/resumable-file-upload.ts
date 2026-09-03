@@ -31,6 +31,7 @@ export interface StoredUploadSession {
   sha256: string;
   partSizeBytes: number;
   completedParts: Array<{ partNumber: number; etag: string }>;
+  weightUnit?: "kg" | "lbs";
 }
 
 const uploadImportTypeSchema = z.enum([
@@ -55,6 +56,7 @@ const storedUploadSessionSchema = z.object({
   completedParts: z.array(
     z.object({ partNumber: z.number().int().positive(), etag: z.string().min(1) }),
   ),
+  weightUnit: z.enum(["kg", "lbs"]).optional(),
 });
 
 export type UploadImportType = z.infer<typeof uploadImportTypeSchema>;
@@ -131,12 +133,18 @@ export async function hashFile(
   return bytesToHex(await sha256.digest());
 }
 
-function sessionMatchesFile(session: StoredUploadSession, file: File, sha256: string): boolean {
+function sessionMatchesFile(
+  session: StoredUploadSession,
+  file: File,
+  sha256: string,
+  weightUnit: "kg" | "lbs" | undefined,
+): boolean {
   return (
     session.filename === file.name &&
     session.sizeBytes === file.size &&
     session.lastModified === file.lastModified &&
-    session.sha256 === sha256
+    session.sha256 === sha256 &&
+    session.weightUnit === weightUnit
   );
 }
 
@@ -204,7 +212,7 @@ export async function runResumableFileUpload(options: RunUploadOptions): Promise
   );
   const storedSession = await options.sessionStore.get(options.providerId);
   const uploadId =
-    storedSession && sessionMatchesFile(storedSession, options.file, sha256)
+    storedSession && sessionMatchesFile(storedSession, options.file, sha256, options.weightUnit)
       ? storedSession.uploadId
       : crypto.randomUUID();
   const initiated = await options.api.initiate({
@@ -234,6 +242,7 @@ export async function runResumableFileUpload(options: RunUploadOptions): Promise
     sha256,
     partSizeBytes: initiated.partSizeBytes,
     completedParts: [...completedParts.values()],
+    weightUnit: options.weightUnit,
   };
   await options.sessionStore.put(session);
 

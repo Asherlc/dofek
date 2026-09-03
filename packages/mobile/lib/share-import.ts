@@ -7,6 +7,7 @@ import {
 import { captureException } from "./telemetry";
 
 export type ImportProviderId = UploadImportType;
+export type StrongWeightUnit = "kg" | "lbs";
 
 export interface InferImportProviderInput {
   fileName: string;
@@ -26,6 +27,7 @@ export interface ImportSharedFileArgs {
   fileUri: string;
   providerId?: ImportProviderId;
   onProgress?: (progress: ShareImportProgress) => void;
+  selectStrongWeightUnit?: () => Promise<StrongWeightUnit | null>;
 }
 
 export interface SharedImportFile extends UploadableMobileFile {
@@ -137,7 +139,7 @@ function progressForUpload(
 export async function importSharedFile(
   args: ImportSharedFileArgs,
   deps: ImportSharedFileDeps,
-): Promise<ShareImportResult> {
+): Promise<ShareImportResult | null> {
   try {
     const fileExtension = extensionForFileName(deps.file.name);
     const csvHeaderLine = fileExtension === ".csv" ? getCsvHeaderLine(await deps.file.text()) : "";
@@ -150,11 +152,18 @@ export async function importSharedFile(
         csvHeaderLine,
       });
     if (!providerId) throw new Error("Unsupported shared file type");
+    let weightUnit: StrongWeightUnit | undefined;
+    if (providerId === "strong-csv" && fileExtension === ".csv") {
+      const selectedWeightUnit = await args.selectStrongWeightUnit?.();
+      if (selectedWeightUnit === null) return null;
+      weightUnit = selectedWeightUnit;
+    }
 
     const completed = await runMobileResumableFileUpload({
       api: deps.fileUploadApi,
       file: deps.file,
       importType: providerId,
+      weightUnit,
       createUploadId: deps.createUploadId,
       onProgress: (progress) => args.onProgress?.(progressForUpload(progress, providerId)),
     });
