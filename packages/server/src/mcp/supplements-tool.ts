@@ -10,7 +10,7 @@ export function registerSupplementsTool(server: McpServer, context: DofekMcpCont
     {
       title: "Get Supplements",
       description: "Return the authenticated user's current supplement definitions and nutrients.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
     },
     async () => {

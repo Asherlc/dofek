@@ -13,7 +13,7 @@ export function registerTrainingLoadTool(server: McpServer, context: DofekMcpCon
       title: "Get Training Load",
       description:
         "Return daily training load, rolling 7-day acute load, rolling 28-day chronic load, and acute-to-chronic workload ratio with window coverage.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,

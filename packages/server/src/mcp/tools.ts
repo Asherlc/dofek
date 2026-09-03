@@ -413,7 +413,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Daily Health Summary",
       description: "Return server-computed health metrics for one day.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         date: dateSchema,
         timezone: z.string().optional(),
@@ -437,7 +437,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Health Trends",
       description:
         "Show daily HRV and step trends, or other health metrics, for an exact date range with baseline-relative recovery context.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -473,7 +473,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Data Coverage",
       description:
         "Return first and last observed dates, observed-day counts, and source providers for every health metric.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
     },
     async () => {
@@ -506,7 +506,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       description:
         "Open the interactive Dofek Analytics Explorer for server-computed health metrics in an exact date range.",
       inputSchema: healthExplorerInputSchema,
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       _meta: { ui: { resourceUri: healthExplorerResourceUri } },
     },
     async (input) => {
@@ -539,7 +539,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Sleep Summary",
       description:
         "Summarize sleep by night, including duration, efficiency, stages, and timing, for an exact date range.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -615,7 +615,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Search Activities",
       description:
         "Show authenticated user activities in an optional date range (defaulting to the last 30 days), optionally filtered by text.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         from: dateSchema.optional(),
         to: dateSchema.optional(),
@@ -672,7 +672,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Activity Summary",
       description: "Aggregate activity volume and effort over an exact date range.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -715,7 +715,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Get Finger Loading",
       description:
         "Return structured finger-loading protocols and server-computed effective load for an exact date range.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -760,7 +760,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Nutrition Summary",
       description: "Return daily calorie, macronutrient, fiber, and meal totals for a date range.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -802,7 +802,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Body Metrics",
       description: "Return weight and body-composition measurements for an exact date range.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -846,7 +846,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Subjective Timeline",
       description: "Return raw subjective check-ins, symptoms, and injury events for a date range.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
@@ -866,7 +866,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "List Providers",
       description:
         "List configured Dofek providers with connection status and last-sync timestamps.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
     },
     async () => {
@@ -935,6 +935,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Start Provider Sync",
       description: "Enqueue a user-scoped provider sync job.",
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         providerId: z.string().min(1),
         sinceDays: z.number().int().positive().optional(),

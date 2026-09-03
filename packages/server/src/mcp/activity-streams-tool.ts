@@ -22,7 +22,7 @@ export function registerActivityStreamsTool(server: McpServer, context: DofekMcp
       title: "Get Activity Streams",
       description:
         "Return a capped, downsampled activity time series. Select only the channels needed for analysis.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         activity_id: z.uuid(),
         channels: z.array(activityStreamChannelSchema).min(1).optional(),
