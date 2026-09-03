@@ -283,9 +283,7 @@ function healthTrendsEnvelope(
 function average(values: Array<number | null | undefined>): number | null {
   return aggregateNumbers(values)?.avg ?? null;
 }
-
 const powerModalities = ["indoor", "outdoor", "unknown"] as const;
-
 function summarizePower(rows: ActivityMcpRow[]) {
   const poweredRows = rows.filter((row) => row.avg_power != null);
   const coverage = {
@@ -305,7 +303,11 @@ function summarizePower(rows: ActivityMcpRow[]) {
 
 function powerByModality(rows: ActivityMcpRow[]) {
   const rowsFor = (modality: (typeof powerModalities)[number]) =>
-    rows.filter((row) => (row.modality ?? "unknown") === modality);
+    rows.filter((row) =>
+      modality === "unknown"
+        ? row.modality !== "indoor" && row.modality !== "outdoor"
+        : row.modality === modality,
+    );
   return {
     indoor: summarizePower(rowsFor("indoor")),
     outdoor: summarizePower(rowsFor("outdoor")),

@@ -1842,6 +1842,16 @@ describe("createMcpRouter", () => {
         started_at: "2026-05-23T10:00:00.000Z",
       },
       {
+        canonical_type: "cycling",
+        avg_hr: 147,
+        avg_power: 225,
+        ended_at: "2026-05-23T10:30:00.000Z",
+        max_hr: 175,
+        max_power: 355,
+        modality: "road",
+        started_at: "2026-05-23T09:30:00.000Z",
+      },
+      {
         canonical_type: "running",
         avg_hr: 160,
         avg_power: 250,
@@ -1899,8 +1909,8 @@ describe("createMcpRouter", () => {
           pct: 100,
         },
         unknown: {
-          activities_total: 1,
-          activities_with_power: 1,
+          activities_total: 2,
+          activities_with_power: 2,
           avg_power: null,
           max_power_peak: null,
           pct: 100,
