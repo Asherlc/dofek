@@ -1803,6 +1803,32 @@ describe("createMcpRouter", () => {
       rolling_90_day_best: { "5s": null, "1m": null, "5m": null, "20m": null },
       summary: {
         power_coverage: { activities_with_power: 0, activities_total: 0, pct: 0 },
+        power_availability_by_modality: {
+          indoor: {
+            first_observed: "2026-08-01",
+            last_observed: "2026-09-01",
+            activities_with_power: 3,
+            activities_total: 4,
+            pct: 75,
+            source_providers: ["peloton"],
+          },
+          outdoor: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 2,
+            pct: 0,
+            source_providers: [],
+          },
+          unknown: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 0,
+            pct: 0,
+            source_providers: [],
+          },
+        },
         elevation_gain: {
           total_elevation_gain_m: null,
           avg_elevation_gain_m: null,
@@ -1825,6 +1851,32 @@ describe("createMcpRouter", () => {
       rolling_90_day_best: { "5s": null, "1m": null, "5m": null, "20m": null },
       summary: {
         power_coverage: { activities_with_power: 0, activities_total: 0, pct: 0 },
+        power_availability_by_modality: {
+          indoor: {
+            first_observed: "2026-08-01",
+            last_observed: "2026-09-01",
+            activities_with_power: 3,
+            activities_total: 4,
+            pct: 75,
+            source_providers: ["peloton"],
+          },
+          outdoor: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 2,
+            pct: 0,
+            source_providers: [],
+          },
+          unknown: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 0,
+            pct: 0,
+            source_providers: [],
+          },
+        },
         elevation_gain: {
           total_elevation_gain_m: null,
           avg_elevation_gain_m: null,

@@ -85,6 +85,21 @@ describe("resolvePlausibleActivityLocalTime", () => {
     });
   });
 
+  it("falls back to the home zone when GPS coordinates are invalid", () => {
+    const result = resolvePlausibleActivityLocalTime({
+      startedAt: new Date("2026-09-01T14:55:54.000Z"),
+      supplied: pelotonOffset,
+      homeTimezone: "America/Los_Angeles",
+      coordinates: { latitude: Number.NaN, longitude: -123.56 },
+    });
+
+    expect(result.reference).toEqual({
+      source: "home_zone",
+      timezone: "America/Los_Angeles",
+    });
+    expect(result.context.source).toBe("home_zone_fallback");
+  });
+
   it("resolves honest unknown context through the home zone without a rejected value", () => {
     const result = resolvePlausibleActivityLocalTime({
       startedAt: new Date("2026-09-01T14:55:54.000Z"),

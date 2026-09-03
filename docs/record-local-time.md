@@ -9,8 +9,8 @@ documentation for [date/time input and time-zone handling](https://www.postgresq
 
 The context consists of:
 
-- `timezone`: an IANA zone only when the provider or recording device supplied
-  that zone.
+- `timezone`: the trusted IANA zone supplied by the provider or recording
+  device, or the resolver-selected GPS/home zone used as a fallback.
 - `start_utc_offset_minutes` and `end_utc_offset_minutes`: resolved
   independently so a record that crosses a daylight-saving transition retains
   both clock offsets.

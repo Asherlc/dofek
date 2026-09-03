@@ -442,9 +442,13 @@ function resolveStrongStartedAt(date: string, timezone?: string): Date {
 
   try {
     return resolveNaiveWallClockInTimezone(wallClockDate, timezone);
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message.startsWith("Invalid IANA timezone:")) {
+      throw error;
+    }
     throw new StrongCsvValidationError(
       `Strong workout timestamp does not exist in ${timezone}: ${date}`,
+      { cause: error },
     );
   }
 }
@@ -484,7 +488,9 @@ export async function importStrongCsv(
     groupStartTimes = groups.map((group) => resolveStrongStartedAt(group.date, timezone));
   } catch (error) {
     if (error instanceof StrongCsvValidationError) throw error;
-    throw new StrongCsvValidationError(`Invalid Strong timezone: ${timezone ?? "unknown"}`);
+    throw new StrongCsvValidationError(`Invalid Strong timezone: ${timezone ?? "unknown"}`, {
+      cause: error,
+    });
   }
   const transactionalDb = requireTransactionalDatabase(db);
   await ensureProvider(db, STRONG_PROVIDER_ID, "Strong", undefined, userId);

@@ -47,7 +47,15 @@ function referenceTimezone(
   coordinates: ActivityCoordinates | null | undefined,
   homeTimezone: string | null | undefined,
 ): PlausibleActivityLocalTimeResult["reference"] {
-  if (coordinates) {
+  if (
+    coordinates &&
+    Number.isFinite(coordinates.latitude) &&
+    Number.isFinite(coordinates.longitude) &&
+    coordinates.latitude >= -90 &&
+    coordinates.latitude <= 90 &&
+    coordinates.longitude >= -180 &&
+    coordinates.longitude <= 180
+  ) {
     return {
       source: "gps",
       timezone: timezoneAt(coordinates.latitude, coordinates.longitude),

@@ -86,8 +86,8 @@ function validateRetainedRetry(
   const weightUnit = command.weightUnit ?? upload.weightUnit;
   const timezone = command.timezone ?? upload.timezone ?? null;
   if (upload.importType === "strong-csv") {
-    if (!weightUnit) throw new Error("Strong CSV retry requires an explicit weight unit");
-    if (!timezone) throw new Error("Strong CSV retry requires an explicit timezone");
+    if (!command.weightUnit) throw new Error("Strong CSV retry requires an explicit weight unit");
+    if (!command.timezone) throw new Error("Strong CSV retry requires an explicit timezone");
   }
   if (timezone) requireValidIanaTimezone(timezone);
   return { weightUnit, timezone };
@@ -129,6 +129,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       );
       return;
     }
+    const importJobId = command.importJobId;
+    if (!importJobId) throw new Error("--job-id is required with --execute");
     const retried = await withLockedFileUpload(
       database,
       command.uploadId,
@@ -146,7 +148,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         return retryFailedFileUpload(transaction, {
           uploadId: command.uploadId,
           userId: command.userId,
-          importJobId: command.importJobId ?? "",
+          importJobId,
           ...(lockedCorrection.weightUnit ? { weightUnit: lockedCorrection.weightUnit } : {}),
           ...(lockedCorrection.timezone ? { timezone: lockedCorrection.timezone } : {}),
         });

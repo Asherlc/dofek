@@ -219,7 +219,7 @@ function normalizeProviderActivityInsert(
         timezone: null,
         startUtcOffsetMinutes: null,
         endUtcOffsetMinutes: null,
-        source: "unknown" as const,
+        source: "unknown",
       },
       rejected: supplied.source === "unknown" ? null : supplied,
       reference: null,

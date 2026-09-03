@@ -241,7 +241,11 @@ describe("importStrongCsv", () => {
         "kg",
         "Fake/Zone",
       ]),
-    ).rejects.toThrow(StrongCsvValidationError);
+    ).rejects.toMatchObject({
+      name: "StrongCsvValidationError",
+      message: "Invalid Strong timezone: Fake/Zone",
+      cause: expect.objectContaining({ message: "Invalid IANA timezone: Fake/Zone" }),
+    });
   });
 
   it("persists complete ordered sets with units, rest typing, distance, and exercise indices", async () => {

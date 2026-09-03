@@ -185,6 +185,44 @@ describe("file upload state machine (integration)", () => {
     });
   });
 
+  it("allows only one concurrent retry to assign the queued job", async () => {
+    const input = {
+      ...uploadInput(),
+      importType: "strong-csv" as const,
+      originalFilename: "strong.csv",
+      contentType: "text/csv",
+    };
+    await createFileUpload(testContext.db, input);
+    await markFileUploadUploading(testContext.db, input.id, userId, "r2-multipart-id");
+    await markFileUploadObjectUploaded(testContext.db, input.id, userId);
+    await queueCompletedFileUpload(testContext.db, input.id, userId, {
+      importJobId: `file-import-${input.id}`,
+      objectSizeBytes: input.expectedSizeBytes,
+    });
+    await testContext.db.execute(sql`UPDATE fitness.file_upload
+      SET state = 'failed', error_code = 'IMPORT_REJECTED', error_message = 'Missing unit'
+      WHERE id = ${input.id}::uuid`);
+
+    const retry = (suffix: string) =>
+      retryFailedFileUpload(testContext.db, {
+        uploadId: input.id,
+        userId,
+        importJobId: `file-import-retry-${suffix}-${input.id}`,
+        weightUnit: "lbs",
+        timezone: "America/Los_Angeles",
+      });
+    const results = await Promise.allSettled([retry("one"), retry("two")]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const upload = await findFileUploadForUser(testContext.db, input.id, userId);
+    const queued = await listPendingFileUploadOutboxRequests(testContext.db, 100);
+    expect(upload?.state).toBe("queued");
+    expect(queued.filter((request) => request.uploadId === input.id)).toEqual([
+      expect.objectContaining({ importJobId: upload?.importJobId }),
+    ]);
+  });
+
   it("does not repeatedly reconcile a terminal upload after its object is deleted", async () => {
     const input = uploadInput();
     await createFileUpload(testContext.db, input);
